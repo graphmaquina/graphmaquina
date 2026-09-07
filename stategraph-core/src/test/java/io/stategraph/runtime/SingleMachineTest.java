@@ -19,6 +19,7 @@ import io.stategraph.api.GraphDefinition;
 import io.stategraph.api.GuardContext;
 import io.stategraph.api.GuardResult;
 import io.stategraph.api.Outcome;
+import io.stategraph.api.PeerView;
 import io.stategraph.api.StateMachine;
 import io.stategraph.api.TransitionAction;
 import io.stategraph.api.TransitionContext;
@@ -37,6 +38,7 @@ import io.stategraph.fixtures.GatewayException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -194,6 +196,18 @@ class SingleMachineTest {
     }
 
     @Test
+    void aWrappedListedExceptionIsUnwrappedBeforeFailsOn() {
+        submit.behaviour = () -> { throw new CompletionException(new GatewayException("x")); };
+        Doc doc = new Doc("1", DRAFT);
+        Outcome<Doc, DocStatus> outcome = machine.transitionTo(doc, REVIEW);
+        assertInstanceOf(Outcome.Failed.class, outcome);
+        Outcome.Failed<Doc, DocStatus> failed = (Outcome.Failed<Doc, DocStatus>) outcome;
+        assertEquals(ARCHIVED, failed.movedTo());
+        assertInstanceOf(GatewayException.class, failed.cause().orElseThrow());
+        assertEquals(ARCHIVED, doc.status());
+    }
+
+    @Test
     void unlistedExceptionAbortsWithJournal() {
         IllegalStateException boom = new IllegalStateException("boom");
         submit.behaviour = () -> { throw boom; };
@@ -275,6 +289,16 @@ class SingleMachineTest {
         submit.onCall = captured::set;
         machine.transitionTo(new Doc("1", DRAFT), REVIEW);
         assertThrows(StaleContextException.class, () -> captured.get().peer(DOCS));
+    }
+
+    @Test
+    void peerViewIsStaleAfterCommit() {
+        AtomicReference<PeerView<Doc, DocStatus>> captured = new AtomicReference<>();
+        submit.onCall = (TransitionContext<Doc, DocStatus> ctx) -> captured.set(ctx.peer(DOCS));
+        Doc doc = new Doc("1", DRAFT);
+        machine.transitionTo(doc, REVIEW);
+        PeerView<Doc, DocStatus> view = captured.get();
+        assertThrows(StaleContextException.class, () -> view.stateOf(doc));
     }
 
     @Test

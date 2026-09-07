@@ -49,7 +49,10 @@ public final class MachineRegistry implements AutoCloseable {
         return Collections.unmodifiableSet(machines.keySet());
     }
 
-    /** Closes only the default executors of its machines. */
+    /**
+     * Closes only the default executors of its machines. It blocks until the operations already
+     * submitted through {@code async()} terminate.
+     */
     @Override
     public void close() {
         for (DefaultStateMachine<?, ?> machine : machines.values()) {

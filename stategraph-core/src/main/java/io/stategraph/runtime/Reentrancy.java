@@ -10,10 +10,15 @@ final class Reentrancy {
 
     private Reentrancy() { }
 
-    static void enter(MachineKey<?, ?> key, Object entity) {
+    /** Rejects a call made from within an action without claiming the marker. */
+    static void check(MachineKey<?, ?> key, Object entity) {
         if (ACTIVE.get()) {
             throw new ReentrantTransitionException(key, entity);
         }
+    }
+
+    static void enter(MachineKey<?, ?> key, Object entity) {
+        check(key, entity);
         ACTIVE.set(Boolean.TRUE);
     }
 

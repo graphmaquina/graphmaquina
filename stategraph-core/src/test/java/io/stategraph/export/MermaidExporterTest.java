@@ -8,6 +8,10 @@ import io.stategraph.api.GraphDefinition;
 import io.stategraph.api.GuardContext;
 import io.stategraph.api.GuardResult;
 import io.stategraph.api.TransitionContext;
+import io.stategraph.dsl.StateGraph;
+import io.stategraph.fixtures.Doc;
+import io.stategraph.fixtures.DocStatus;
+import io.stategraph.fixtures.Keys;
 import io.stategraph.fixtures.Order;
 import io.stategraph.fixtures.OrderGraphs;
 import io.stategraph.fixtures.OrderStatus;
@@ -59,6 +63,44 @@ class MermaidExporterTest {
         EdgeView paidToShipped = view.edges().get(8);
         assertEquals(Optional.of("Item: allIn PACKED"), paidToShipped.watchRule());
         assertEquals(List.of(new WatchView("PAID", "Item", List.of("allIn PACKED → SHIPPED"))), view.watches());
+    }
+
+    @Test
+    void twoActionsSharingAFailureRouteAreBothNamed() {
+        GraphDefinition<Doc, DocStatus> graph = StateGraph.define(Keys.DOCS)
+                .initial(DocStatus.DRAFT).terminal(DocStatus.ARCHIVED)
+                .from(DocStatus.DRAFT)
+                    .to(DocStatus.REVIEW).action("A", (TransitionContext<Doc, DocStatus> ctx) -> ActionOutcome.ok())
+                        .onFailure(DocStatus.ARCHIVED)
+                    .to(DocStatus.PUBLISHED).action("B", (TransitionContext<Doc, DocStatus> ctx) -> ActionOutcome.ok())
+                        .onFailure(DocStatus.ARCHIVED)
+                    .to(DocStatus.ARCHIVED).move()
+                    .stay()
+                    .forbidOthers("a draft goes forward or is archived")
+                .from(DocStatus.REVIEW).to(DocStatus.PUBLISHED).move().stay().forbidOthers("review only publishes")
+                .from(DocStatus.PUBLISHED).to(DocStatus.ARCHIVED).move().stay().forbidOthers("published only archives")
+                .from(DocStatus.ARCHIVED).stay().forbidOthers("archived is final")
+                .build();
+        String expected = String.join("\n",
+                "stateDiagram-v2",
+                "    [*] --> DRAFT",
+                "    DRAFT --> REVIEW : A",
+                "    DRAFT --> PUBLISHED : B",
+                "    DRAFT --> ARCHIVED : [failure of A, B]",
+                "    REVIEW --> PUBLISHED",
+                "    PUBLISHED --> ARCHIVED",
+                "    ARCHIVED --> [*]",
+                "");
+        assertEquals(expected, MermaidExporter.render(GraphView.of(graph)));
+    }
+
+    @Test
+    void everyTerminalGetsItsFinalEdgeEvenIfItNeverStartsAnEdge() {
+        GraphView view = new GraphView("X", "A", Set.of("B"), List.of(
+                new EdgeView("A", "B", EdgeKind.MOVE, "", Optional.empty(), List.of(), false, Optional.empty(), Optional.empty())),
+                List.of());
+        assertEquals(String.join("\n", "stateDiagram-v2", "    [*] --> A", "    A --> B", "    B --> [*]", ""),
+                MermaidExporter.render(view));
     }
 
     @Test

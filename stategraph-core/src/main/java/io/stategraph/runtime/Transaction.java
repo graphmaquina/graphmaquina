@@ -112,7 +112,7 @@ final class Transaction {
         return new StepResult.Moved<>(from, target);
     }
 
-    /** Task 11 adds the Async arm: awaits the stage under the edge's deadline. */
+    /** Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. */
     private <E, S extends Enum<S>> ActionOutcome executeAction(DefaultStateMachine<E, S> machine, EntityRef ref, EdgeSpec<E, S> edge,
                                                                ActionRef<E, S> action, DefaultTransitionContext<E, S> ctx) {
         ActionOutcome outcome = switch (action) {
@@ -149,7 +149,7 @@ final class Transaction {
         return outcome;
     }
 
-    /** Task 11 adds the Async arm. */
+    /** Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. */
     private <E, S extends Enum<S>> GuardResult evaluateGuard(DefaultStateMachine<E, S> machine, EntityRef ref, S from, S target,
                                                              int depth, GuardRef<E, S> guard, DefaultGuardContext<E, S> ctx) {
         GuardResult verdict = switch (guard) {
@@ -159,8 +159,9 @@ final class Transaction {
                 } catch (StateMachineException e) {
                     throw e;
                 } catch (RuntimeException e) {
+                    Throwable cause = Unwrap.unwrap(e);
                     throw abort(machine, ref, from, target, Optional.empty(), depth,
-                            "the guard " + guard.name() + " threw " + e, Optional.of(e));
+                            "the guard " + guard.name() + " threw " + cause, Optional.of(cause));
                 }
             }
             case GuardRef.Async<E, S> async -> {
@@ -170,8 +171,9 @@ final class Transaction {
                 } catch (StateMachineException e) {
                     throw e;
                 } catch (RuntimeException e) {
+                    Throwable cause = Unwrap.unwrap(e);
                     throw abort(machine, ref, from, target, Optional.empty(), depth,
-                            "the guard " + guard.name() + " threw " + e, Optional.of(e));
+                            "the guard " + guard.name() + " threw " + cause, Optional.of(cause));
                 }
                 if (stage == null) {
                     throw abort(machine, ref, from, target, Optional.empty(), depth,
@@ -330,9 +332,10 @@ final class Transaction {
 
     // Peers and cascading.
 
-    <P, Q extends Enum<Q>> PeerView<P, Q> peer(ContextHandle caller, MachineKey<P, Q> key) {
+    /** {@code guard} is the caller context's own check: the view stays as alive as the context that made it. */
+    <P, Q extends Enum<Q>> PeerView<P, Q> peer(ContextHandle caller, Runnable guard, MachineKey<P, Q> key) {
         checkPoison(caller);
-        return new DefaultPeerView<>(uow, registry.machineFor(key));
+        return new DefaultPeerView<>(guard, uow, registry.machineFor(key));
     }
 
     /** Cascade to a single peer. Any failure poisons the UnitOfWork: the parent cannot carry on as if nothing happened. */

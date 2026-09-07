@@ -79,6 +79,7 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
 
     /** chain counts reaction -> transition -> reaction. Exceeding maxWatchChain aborts before evaluating anything. */
     Outcome<E, S> reevaluate(E entity, int chain) {
+        Reentrancy.check(key(), entity);
         S state = readState(entity);
         if (chain > registry.maxWatchChain()) {
             AbortDetails details = new AbortDetails(key(), entity, state, state, Optional.empty(), List.of(), List.of());
@@ -99,8 +100,8 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
     /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */
     private <P, Q extends Enum<Q>> Optional<S> firstMatch(WatchSpec<E, S, P, Q> watch, E entity) {
         Collection<? extends P> peers = watch.peersOf().apply(entity);
-        PeerView<P, Q> view = new DefaultPeerView<>(new UnitOfWork(registry.maxCascadeDepth(), Long.MAX_VALUE),
-                registry.machineFor(watch.peer()));
+        PeerView<P, Q> view = new DefaultPeerView<>(() -> { },
+                new UnitOfWork(registry.maxCascadeDepth(), Long.MAX_VALUE), registry.machineFor(watch.peer()));
         for (WatchRule<E, S, P, Q> rule : watch.rules()) {
             if (rule.condition().condition().test(entity, peers, view)) {
                 return Optional.of(rule.target());
@@ -116,7 +117,7 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
 
     /**
      * Root transaction: reentrancy marker, new UoW, step, phase 2, context invalidation.
-     * Watch reactions are delivered outside the marker (task 10).
+     * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction.
      */
     Outcome<E, S> runRoot(E entity, Function<Transaction, StepResult<S>> body, int chain) {
         Reentrancy.enter(key(), entity);

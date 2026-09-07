@@ -33,7 +33,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>> implements Transition
     @Override
     public <P, Q extends Enum<Q>> PeerView<P, Q> peer(@NonNull MachineKey<P, Q> key) {
         check();
-        return tx.peer(this, key);
+        return tx.peer(this, this::check, key);
     }
 
     @Override
@@ -50,7 +50,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>> implements Transition
     }
 
     /** Only from the thread running process(), and only while the transaction is alive. */
-    private void check() {
+    void check() {
         if (stale) {
             throw new StaleContextException(machine.key(), entity);
         }

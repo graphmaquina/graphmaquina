@@ -40,6 +40,11 @@ public final class MermaidExporter {
                 out.append("    ").append(state).append(" --> [*]\n");
             }
         }
+        for (String terminal : view.terminals()) {
+            if (!statesInOrder.contains(terminal)) {
+                out.append("    ").append(terminal).append(" --> [*]\n");
+            }
+        }
         for (WatchView watch : view.watches()) {
             out.append("    note right of ").append(watch.state()).append(" : watches ").append(watch.peerMachine()).append('\n');
         }

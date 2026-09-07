@@ -27,6 +27,12 @@ final class DefaultGuardContext<E, S extends Enum<S>> implements GuardContext<E,
 
     @Override
     public <P, Q extends Enum<Q>> PeerView<P, Q> peer(@NonNull MachineKey<P, Q> key) {
+        check();
+        return tx.peer(this, this::check, key);
+    }
+
+    /** Only from the thread running test(), and only while the transaction is alive. */
+    void check() {
         if (stale) {
             throw new StaleContextException(machine.key(), entity);
         }
@@ -34,7 +40,6 @@ final class DefaultGuardContext<E, S extends Enum<S>> implements GuardContext<E,
             throw new WrongThreadException("the context of " + machine.key()
                     + " can only be used from the thread running test(): " + owner.getName());
         }
-        return tx.peer(this, key);
     }
 
     @Override public MachineKey<?, ?> machineKey() { return machine.key(); }

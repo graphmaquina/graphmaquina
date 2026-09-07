@@ -150,6 +150,20 @@ class AsyncTest {
     }
 
     @Test
+    void aSynchronousThrowBeforeTheStageIsUnwrappedBeforeFailsOn() {
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+            throw new CompletionException(new IOException("down"));
+        };
+        Order order = new Order("o1", OrderStatus.NEW);
+        Outcome<Order, OrderStatus> outcome = registry(Duration.ofSeconds(5)).of(ORDERS).transitionTo(order, OrderStatus.PAID);
+        assertInstanceOf(Outcome.Failed.class, outcome);
+        Outcome.Failed<Order, OrderStatus> failed = (Outcome.Failed<Order, OrderStatus>) outcome;
+        assertEquals(OrderStatus.PAYMENT_DECLINED, failed.movedTo());
+        assertInstanceOf(IOException.class, failed.cause().orElseThrow());
+        assertEquals(OrderStatus.PAYMENT_DECLINED, order.status());
+    }
+
+    @Test
     void cancelledStageIsATechnicalFailure() {
         chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
             CompletableFuture<ActionOutcome> cancelled = new CompletableFuture<>();

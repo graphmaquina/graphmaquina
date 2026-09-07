@@ -20,6 +20,7 @@ import io.stategraph.api.Reaction;
 import io.stategraph.api.StateMachine;
 import io.stategraph.api.TransitionContext;
 import io.stategraph.dsl.StateGraph;
+import io.stategraph.error.ReentrantTransitionException;
 import io.stategraph.error.TransitionAbortedException;
 import io.stategraph.error.UninitializedStateException;
 import io.stategraph.error.WatchChainExceededException;
@@ -163,6 +164,19 @@ class WatchTest {
         assertInstanceOf(Outcome.Ignored.class, secondOutcome);
         Outcome.Ignored<Order, OrderStatus> ignored = (Outcome.Ignored<Order, OrderStatus>) secondOutcome;
         assertEquals(OrderStatus.NEW, ignored.from());
+    }
+
+    @Test
+    void reevaluateFromInsideAnActionIsReentrant() {
+        packItem.behaviour = (TransitionContext<Item, ItemStatus> ctx) -> {
+            orders.reevaluate(ctx.entity().order().orElseThrow());
+            return ActionOutcome.ok();
+        };
+        Order order = new Order("o1", OrderStatus.PAID);
+        Item item = new Item("i1", ItemStatus.PACKING, Optional.of(order));
+        assertThrows(ReentrantTransitionException.class, () -> items.transitionTo(item, ItemStatus.PACKED));
+        assertEquals(ItemStatus.PACKING, item.status());
+        assertEquals(OrderStatus.PAID, order.status());
     }
 
     @Test

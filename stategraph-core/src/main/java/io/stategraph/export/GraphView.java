@@ -30,14 +30,15 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
         for (S from : states) {
             for (S to : states) {
                 EdgeSpec<E, S> spec = definition.edge(from, to);
-                Optional<String> failureOf = Optional.empty();
+                List<String> failureActions = new ArrayList<>();
                 for (S other : states) {
                     EdgeSpec<E, S> candidate = definition.edge(from, other);
                     if (candidate.onFailure().isPresent() && candidate.onFailure().get() == to && candidate.action().isPresent()) {
-                        failureOf = Optional.of(candidate.action().get().name());
-                        break;
+                        failureActions.add(candidate.action().get().name());
                     }
                 }
+                Optional<String> failureOf =
+                        failureActions.isEmpty() ? Optional.empty() : Optional.of(String.join(", ", failureActions));
                 Optional<String> watchRule = Optional.empty();
                 Optional<WatchSpec<E, S, ?, ?>> watch = definition.watch(from);
                 if (watch.isPresent()) {
