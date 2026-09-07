@@ -23,12 +23,9 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
-import lombok.AccessLevel;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 
 /** Runtime {@link StateMachine}: resolves cells, runs a root transaction and commits in two phases. */
-@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E, S> {
 
     @Getter
@@ -42,6 +39,21 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
     private final Executor executor;
     private final boolean ownsExecutor;
     private final MachineRegistry registry;
+    private final DefaultAsyncStateMachine<E, S> async;
+
+    DefaultStateMachine(GraphDefinition<E, S> definition, Function<? super E, ? extends S> getter,
+                        BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
+                        Optional<Duration> asyncTimeout, Executor executor, boolean ownsExecutor, MachineRegistry registry) {
+        this.definition = definition;
+        this.getter = getter;
+        this.setter = setter;
+        this.identity = identity;
+        this.asyncTimeout = asyncTimeout;
+        this.executor = executor;
+        this.ownsExecutor = ownsExecutor;
+        this.registry = registry;
+        this.async = new DefaultAsyncStateMachine<>(this);
+    }
 
     @Override
     public MachineKey<E, S> key() { return definition.key(); }
@@ -99,7 +111,7 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
 
     @Override
     public AsyncStateMachine<E, S> async() {
-        throw new UnsupportedOperationException("async(): implemented in task 11");
+        return async;
     }
 
     /**

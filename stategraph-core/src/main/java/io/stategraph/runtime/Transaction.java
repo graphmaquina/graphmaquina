@@ -25,6 +25,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletionStage;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 
@@ -124,7 +125,22 @@ final class Transaction {
                     throw new ActionFailure(e);
                 }
             }
-            case ActionRef.Async<E, S> async -> throw new UnsupportedOperationException("asynchronous actions: implemented in task 11");
+            case ActionRef.Async<E, S> async -> {
+                CompletionStage<ActionOutcome> stage;
+                try {
+                    stage = async.action().process(ctx);
+                } catch (StateMachineException e) {
+                    throw e;
+                } catch (RuntimeException e) {
+                    throw new ActionFailure(e);
+                }
+                if (stage == null) {
+                    throw abort(machine, ref, ctx.from(), ctx.to(), Optional.of(action.name()), ctx.depth(),
+                            "the action " + action.name() + " returned a null stage", Optional.empty());
+                }
+                yield await(machine, ref, ctx.from(), ctx.to(), Optional.of(action.name()), ctx.depth(),
+                        "the action " + action.name(), stage, edgeDeadline(edge));
+            }
         };
         if (outcome == null) {
             throw abort(machine, ref, ctx.from(), ctx.to(), Optional.of(action.name()), ctx.depth(),
@@ -147,13 +163,54 @@ final class Transaction {
                             "the guard " + guard.name() + " threw " + e, Optional.of(e));
                 }
             }
-            case GuardRef.Async<E, S> async -> throw new UnsupportedOperationException("asynchronous guards: implemented in task 11");
+            case GuardRef.Async<E, S> async -> {
+                CompletionStage<GuardResult> stage;
+                try {
+                    stage = async.guard().test(ctx);
+                } catch (StateMachineException e) {
+                    throw e;
+                } catch (RuntimeException e) {
+                    throw abort(machine, ref, from, target, Optional.empty(), depth,
+                            "the guard " + guard.name() + " threw " + e, Optional.of(e));
+                }
+                if (stage == null) {
+                    throw abort(machine, ref, from, target, Optional.empty(), depth,
+                            "the guard " + guard.name() + " returned a null stage", Optional.empty());
+                }
+                try {
+                    yield await(machine, ref, from, target, Optional.empty(), depth, "the guard " + guard.name(), stage, uow.deadlineNanos());
+                } catch (ActionFailure failure) {
+                    throw abort(machine, ref, from, target, Optional.empty(), depth,
+                            "the guard " + guard.name() + " failed: " + failure.getCause(), Optional.of(failure.getCause()));
+                }
+            }
         };
         if (verdict == null) {
             throw abort(machine, ref, from, target, Optional.empty(), depth,
                     "the guard " + guard.name() + " returned null", Optional.empty());
         }
         return verdict;
+    }
+
+    /** Waits under the deadline. Timeout and interruption are aborts; the user's stage is left running. */
+    private <T> T await(DefaultStateMachine<?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> to, Optional<String> action,
+                        int depth, String what, CompletionStage<T> stage, long deadlineNanos) {
+        try {
+            return Await.await(stage, deadlineNanos);
+        } catch (Await.Timeout timeout) {
+            throw abort(machine, ref, from, to, action, depth, "waiting for " + what + " timed out", Optional.of(timeout.getCause()));
+        } catch (Await.Interrupted interrupted) {
+            throw abort(machine, ref, from, to, action, depth, "interrupted while waiting for " + what, Optional.of(interrupted.getCause()));
+        }
+    }
+
+    /** The edge's timeout can only shorten the transaction's deadline, never extend it. */
+    private <E, S extends Enum<S>> long edgeDeadline(EdgeSpec<E, S> edge) {
+        long base = uow.deadlineNanos();
+        if (edge.timeout().isEmpty()) {
+            return base;
+        }
+        return Math.min(base, System.nanoTime() + edge.timeout().get().toNanos());
     }
 
     /**
