@@ -1,0 +1,19 @@
+package io.stategraph.runtime;
+
+import io.stategraph.api.MachineKey;
+
+/** What the transaction needs to know about a live context, without its generics. */
+interface ContextHandle {
+
+    MachineKey<?, ?> machineKey();
+
+    Object entityInstance();
+
+    Enum<?> fromState();
+
+    Enum<?> toState();
+
+    int contextDepth();
+
+    void invalidate();
+}
