@@ -2,7 +2,7 @@ package io.stategraph.graph;
 
 import java.util.Objects;
 
-/** Arista desnuda de un grafo dirigido. El significado vive en EdgeSpec, no aquí. */
+/** Bare edge of a directed graph. The meaning lives in EdgeSpec, not here. */
 public record GraphEdge<N>(N from, N to) {
 
     public GraphEdge {

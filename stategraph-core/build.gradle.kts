@@ -5,7 +5,7 @@ tasks.jar {
 }
 
 tasks.test {
-    // Un solo carrier para hilos virtuales: cualquier pinning por monitor bloquea y el test lo delata.
+    // Single carrier for virtual threads: any pinning by monitor blocks and the test detects it.
     jvmArgs("-Djdk.virtualThreadScheduler.parallelism=1", "-Djdk.virtualThreadScheduler.maxPoolSize=1")
 }
 

@@ -16,7 +16,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
-/** Grafo dirigido inmutable, genérico sobre el nodo. Sirve igual a enums y a nombres. */
+/** Immutable directed graph, generic over nodes. Works equally well with enums and names. */
 public final class Graph<N> {
 
     private final Set<N> nodes;
@@ -41,7 +41,7 @@ public final class Graph<N> {
         for (GraphEdge<N> edge : edges) {
             if (!nodeSet.contains(edge.from()) || !nodeSet.contains(edge.to())) {
                 throw new IllegalArgumentException(
-                        "la arista " + edge.from() + " → " + edge.to() + " tiene un extremo fuera de los nodos");
+                        "edge " + edge.from() + " → " + edge.to() + " has an endpoint outside the declared nodes");
             }
             edgeSet.add(edge);
             mutableSuccessors.get(edge.from()).add(edge.to());
@@ -67,7 +67,10 @@ public final class Graph<N> {
     }
 
     public Set<N> reachableFrom(N origin) {
-        requireNode(origin);
+        Objects.requireNonNull(origin, "origin");
+        if (!nodes.contains(origin)) {
+            throw new IllegalArgumentException("unknown node: " + origin);
+        }
         Set<N> visited = new LinkedHashSet<>();
         Deque<N> queue = new ArrayDeque<>();
         queue.addLast(origin);
@@ -83,8 +86,14 @@ public final class Graph<N> {
     }
 
     public Optional<List<N>> shortestPath(N from, N to) {
-        requireNode(from);
-        requireNode(to);
+        Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(to, "to");
+        if (!nodes.contains(from)) {
+            throw new IllegalArgumentException("unknown node: " + from);
+        }
+        if (!nodes.contains(to)) {
+            throw new IllegalArgumentException("unknown node: " + to);
+        }
         if (from.equals(to)) {
             return Optional.of(List.of(from));
         }
@@ -120,7 +129,7 @@ public final class Graph<N> {
         return List.copyOf(path);
     }
 
-    /** Ciclos elementales. Cada uno empieza por su nodo de menor índice de declaración y no repite el de cierre. */
+    /** Elementary cycles. Each starts at its lowest-declaration-index node and does not repeat the closing node. */
     public List<List<N>> cycles() {
         List<N> order = new ArrayList<>(nodes);
         Map<N, Integer> index = new HashMap<>();
@@ -160,7 +169,7 @@ public final class Graph<N> {
     private void requireNode(N node) {
         Objects.requireNonNull(node, "node");
         if (!nodes.contains(node)) {
-            throw new IllegalArgumentException("nodo desconocido: " + node);
+            throw new IllegalArgumentException("unknown node: " + node);
         }
     }
 
