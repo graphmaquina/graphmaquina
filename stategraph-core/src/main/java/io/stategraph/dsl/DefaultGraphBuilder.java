@@ -98,7 +98,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>> implements GraphBuilder<E,
         }
         built = true;
         Assembly<E, S> assembly = GraphAssembler.assemble(key, states, initialDeclarations, cells, rowForbids, watches, problems);
-        // Task 6: GraphValidator.validate(key, states, initial, terminals, cycleAllowed, assembly, problems);
+        GraphValidator.validate(key, states, initial, terminals, cycleAllowed, assembly, problems);
         if (!problems.isEmpty()) {
             throw new InvalidGraphException(key, problems.sorted());
         }
