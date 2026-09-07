@@ -113,7 +113,7 @@ public final class MachineRegistry implements AutoCloseable {
                         targets.putIfAbsent(owner.get(), watcher);
                     }
                 } catch (RuntimeException e) {
-                    reactions.add(new Reaction.Aborted(watcher.machine().key(), moved.instance(), e));
+                    reactions.add(new Reaction.Aborted(moved.key(), moved.instance(), e));
                 }
             }
         }

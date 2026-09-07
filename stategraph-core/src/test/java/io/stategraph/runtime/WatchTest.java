@@ -21,6 +21,7 @@ import io.stategraph.api.StateMachine;
 import io.stategraph.api.TransitionContext;
 import io.stategraph.dsl.StateGraph;
 import io.stategraph.error.TransitionAbortedException;
+import io.stategraph.error.UninitializedStateException;
 import io.stategraph.error.WatchChainExceededException;
 import io.stategraph.fixtures.Doc;
 import io.stategraph.fixtures.DocStatus;
@@ -134,6 +135,20 @@ class WatchTest {
         assertInstanceOf(TransitionAbortedException.class, aborted.cause());
         assertEquals(ItemStatus.PACKED, i1.status());
         assertEquals(OrderStatus.PAID, order.status());
+    }
+
+    @Test
+    void ownerThatCannotBeReadIsReportedAsAborted() {
+        Order order = new Order("o1", null);
+        Item i1 = new Item("i1", ItemStatus.PACKING, Optional.of(order));
+        Outcome<Item, ItemStatus> outcome = items.transitionTo(i1, ItemStatus.PACKED);
+        assertInstanceOf(Outcome.Applied.class, outcome);
+        Outcome.Applied<Item, ItemStatus> applied = (Outcome.Applied<Item, ItemStatus>) outcome;
+        assertEquals(1, applied.reactions().size());
+        Reaction.Aborted aborted = assertInstanceOf(Reaction.Aborted.class, applied.reactions().get(0));
+        assertEquals(ITEMS, aborted.key());
+        assertEquals(i1, aborted.entity());
+        assertInstanceOf(UninitializedStateException.class, aborted.cause());
     }
 
     @Test
