@@ -4,11 +4,17 @@ import io.stategraph.api.AsyncStateMachine;
 import io.stategraph.api.GraphDefinition;
 import io.stategraph.api.MachineKey;
 import io.stategraph.api.Outcome;
+import io.stategraph.api.PeerView;
 import io.stategraph.api.Reaction;
 import io.stategraph.api.StateMachine;
 import io.stategraph.api.TransitionRecord;
+import io.stategraph.api.WatchRule;
+import io.stategraph.api.WatchSpec;
+import io.stategraph.error.AbortDetails;
 import io.stategraph.error.UninitializedStateException;
+import io.stategraph.error.WatchChainExceededException;
 import java.time.Duration;
+import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -56,7 +62,39 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
     @Override
     public Outcome<E, S> reevaluate(E entity) {
         Objects.requireNonNull(entity, "entity");
-        throw new UnsupportedOperationException("reevaluate: implemented in task 10");
+        return reevaluate(entity, 0);
+    }
+
+    /** chain counts reaction -> transition -> reaction. Exceeding maxWatchChain aborts before evaluating anything. */
+    Outcome<E, S> reevaluate(E entity, int chain) {
+        S state = readState(entity);
+        if (chain > registry.maxWatchChain()) {
+            AbortDetails details = new AbortDetails(key(), entity, state, state, Optional.empty(), List.of(), List.of());
+            throw new WatchChainExceededException(details, registry.maxWatchChain());
+        }
+        Optional<WatchSpec<E, S, ?, ?>> watch = definition.watch(state);
+        if (watch.isEmpty()) {
+            return new Outcome.Ignored<>(entity, state, state);
+        }
+        Optional<S> target = firstMatch(watch.get(), entity);
+        if (target.isEmpty()) {
+            return new Outcome.Ignored<>(entity, state, state);
+        }
+        S resolved = target.get();
+        return runRoot(entity, (Transaction tx) -> tx.transition(this, entity, resolved, 0), chain);
+    }
+
+    /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */
+    private <P, Q extends Enum<Q>> Optional<S> firstMatch(WatchSpec<E, S, P, Q> watch, E entity) {
+        Collection<? extends P> peers = watch.peersOf().apply(entity);
+        PeerView<P, Q> view = new DefaultPeerView<>(new UnitOfWork(registry.maxCascadeDepth(), Long.MAX_VALUE),
+                registry.machineFor(watch.peer()));
+        for (WatchRule<E, S, P, Q> rule : watch.rules()) {
+            if (rule.condition().condition().test(entity, peers, view)) {
+                return Optional.of(rule.target());
+            }
+        }
+        return Optional.empty();
     }
 
     @Override
@@ -86,7 +124,12 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
             tx.invalidate();
             Reentrancy.exit();
         }
-        List<Reaction> reactions = List.of(); // task 10: registry.dispatchWatches(uow, chain) if step is Moved or FailedTo
+        List<Reaction> reactions = switch (step) {
+            case StepResult.Moved<S> moved -> registry.dispatchWatches(uow, chain);
+            case StepResult.FailedTo<S> failed -> registry.dispatchWatches(uow, chain);
+            case StepResult.Ignored<S> ignored -> List.of();
+            case StepResult.Rejected<S> rejected -> List.of();
+        };
         return switch (step) {
             case StepResult.Moved<S> moved -> new Outcome.Applied<>(entity, moved.from(), moved.to(), records, reactions);
             case StepResult.Ignored<S> ignored -> new Outcome.Ignored<>(entity, ignored.from(), ignored.to());

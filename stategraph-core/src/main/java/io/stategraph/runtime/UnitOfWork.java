@@ -135,6 +135,18 @@ final class UnitOfWork {
         return chains;
     }
 
+    /** Entities whose final state differs from the initial one, in order of first appearance. */
+    List<EntityRef> movedEntities() {
+        List<EntityRef> moved = new ArrayList<>();
+        for (Map.Entry<EntityRef, List<LogEntry>> entry : chains().entrySet()) {
+            List<LogEntry> chain = entry.getValue();
+            if (chain.get(0).from() != chain.get(chain.size() - 1).to()) {
+                moved.add(entry.getKey());
+            }
+        }
+        return List.copyOf(moved);
+    }
+
     List<TransitionRecord<?, ?>> records() {
         List<TransitionRecord<?, ?>> records = new ArrayList<>();
         for (LogEntry entry : log) {

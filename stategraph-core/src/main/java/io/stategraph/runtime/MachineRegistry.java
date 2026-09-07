@@ -1,7 +1,9 @@
 package io.stategraph.runtime;
 
 import io.stategraph.api.MachineKey;
+import io.stategraph.api.Reaction;
 import io.stategraph.api.StateMachine;
+import io.stategraph.api.WatchSpec;
 import io.stategraph.error.UnknownPeerMachineException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -9,6 +11,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 public final class MachineRegistry implements AutoCloseable {
 
     private final Map<MachineKey<?, ?>, DefaultStateMachine<?, ?>> machines = new LinkedHashMap<>();
+    private final Map<MachineKey<?, ?>, List<Watcher<?, ?, ?, ?>>> watchers = new LinkedHashMap<>();
     private final int maxCascadeDepth;
     private final int maxWatchChain;
 
@@ -70,6 +74,53 @@ public final class MachineRegistry implements AutoCloseable {
             throw new UnknownPeerMachineException(key, machines.keySet());
         }
         return machine;
+    }
+
+    void indexWatchers() {
+        for (DefaultStateMachine<?, ?> machine : machines.values()) {
+            indexWatchersOf(machine);
+        }
+    }
+
+    private <E, S extends Enum<S>> void indexWatchersOf(DefaultStateMachine<E, S> machine) {
+        S[] states = machine.key().states().getEnumConstants();
+        for (S state : states) {
+            Optional<WatchSpec<E, S, ?, ?>> watch = machine.definition().watch(state);
+            if (watch.isEmpty()) {
+                continue;
+            }
+            MachineKey<?, ?> peer = watch.get().peer();
+            if (!machines.containsKey(peer)) {
+                throw new IllegalStateException("the watch of " + machine.key() + "." + state + " points to " + peer
+                        + ", which is not in the registry");
+            }
+            watchers.computeIfAbsent(peer, (MachineKey<?, ?> key) -> new ArrayList<>()).add(Watcher.of(machine, watch.get()));
+        }
+    }
+
+    /**
+     * After the root commit: for each moved entity, every watcher of its machine resolves the owner;
+     * an owner is re-evaluated only once even if several of its peers moved.
+     */
+    List<Reaction> dispatchWatches(UnitOfWork uow, int chain) {
+        Map<EntityRef, Watcher<?, ?, ?, ?>> targets = new LinkedHashMap<>();
+        List<Reaction> reactions = new ArrayList<>();
+        for (EntityRef moved : uow.movedEntities()) {
+            for (Watcher<?, ?, ?, ?> watcher : watchers.getOrDefault(moved.key(), List.of())) {
+                try {
+                    Optional<EntityRef> owner = watcher.ownerToReevaluate(moved.instance());
+                    if (owner.isPresent()) {
+                        targets.putIfAbsent(owner.get(), watcher);
+                    }
+                } catch (RuntimeException e) {
+                    reactions.add(new Reaction.Aborted(watcher.machine().key(), moved.instance(), e));
+                }
+            }
+        }
+        for (Map.Entry<EntityRef, Watcher<?, ?, ?, ?>> entry : targets.entrySet()) {
+            reactions.add(entry.getValue().react(entry.getKey().instance(), chain + 1));
+        }
+        return List.copyOf(reactions);
     }
 
     /** Single-use and not thread-safe. Accepts builders, not machines. */
@@ -122,7 +173,7 @@ public final class MachineRegistry implements AutoCloseable {
                 DefaultStateMachine<?, ?> machine = builder.build(registry);
                 registry.machines.put(machine.key(), machine);
             }
-            // task 10: registry.indexWatchers();
+            registry.indexWatchers();
             return registry;
         }
     }

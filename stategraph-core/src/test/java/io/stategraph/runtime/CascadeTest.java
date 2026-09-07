@@ -10,12 +10,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.stategraph.api.ActionOutcome;
 import io.stategraph.api.ActionRecord;
 import io.stategraph.api.ActionStatus;
+import io.stategraph.api.AsyncTransitionAction;
 import io.stategraph.api.CascadePolicy;
 import io.stategraph.api.EdgeKind;
+import io.stategraph.api.GraphDefinition;
 import io.stategraph.api.Outcome;
 import io.stategraph.api.StateMachine;
+import io.stategraph.api.TransitionAction;
 import io.stategraph.api.TransitionContext;
+import io.stategraph.api.TransitionGuard;
 import io.stategraph.api.TransitionRecord;
+import io.stategraph.dsl.StateGraph;
 import io.stategraph.error.AmbiguousIdentityException;
 import io.stategraph.error.CascadeCycleException;
 import io.stategraph.error.CascadeDepthExceededException;
@@ -31,6 +36,7 @@ import io.stategraph.fixtures.Order;
 import io.stategraph.fixtures.OrderGraphs;
 import io.stategraph.fixtures.OrderStatus;
 import io.stategraph.fixtures.Probe;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -55,6 +61,39 @@ class CascadeTest {
                 .add(StateMachines.from(OrderGraphs.item(packItem))
                         .state(Item::status, Item::setStatus).identity(Item::id))
                 .maxCascadeDepth(maxCascadeDepth)
+                .build();
+    }
+
+    /** Same as {@link OrderGraphs#order} but without the watch on PAID: a registry with only Order must still build. */
+    private static GraphDefinition<Order, OrderStatus> orderWithoutWatch(AsyncTransitionAction<Order, OrderStatus> chargeCard,
+                                                                        TransitionAction<Order, OrderStatus> shipOrder,
+                                                                        TransitionAction<Order, OrderStatus> cancelOrder,
+                                                                        TransitionGuard<Order, OrderStatus> retryBudgetLeft,
+                                                                        TransitionGuard<Order, OrderStatus> allItemsPacked) {
+        return StateGraph.define(ORDERS)
+                .initial(OrderStatus.NEW)
+                .terminal(OrderStatus.SHIPPED)
+                .terminal(OrderStatus.CANCELLED)
+                .allowsCycle(OrderStatus.PAYMENT_DECLINED)
+                .from(OrderStatus.NEW)
+                    .to(OrderStatus.PAID).asyncAction("ChargeCard", chargeCard).timeout(Duration.ofSeconds(5))
+                        .guard("RetryBudgetLeft", retryBudgetLeft)
+                        .onFailure(OrderStatus.PAYMENT_DECLINED).failsOn(IOException.class)
+                    .to(OrderStatus.CANCELLED).action("CancelOrder", cancelOrder)
+                    .to(OrderStatus.PAYMENT_DECLINED).move()
+                    .stay()
+                    .forbidOthers("cannot ship without payment")
+                .from(OrderStatus.PAID)
+                    .to(OrderStatus.SHIPPED).action("ShipOrder", shipOrder).guard("AllItemsPacked", allItemsPacked)
+                    .stay()
+                    .forbidOthers("money was charged: requires a refund")
+                .from(OrderStatus.PAYMENT_DECLINED)
+                    .to(OrderStatus.NEW).move().guard("RetryBudgetLeft", retryBudgetLeft)
+                    .to(OrderStatus.CANCELLED).action("CancelOrder", cancelOrder)
+                    .stay()
+                    .forbidOthers("go back to NEW to retry the charge")
+                .from(OrderStatus.SHIPPED).stay().forbidOthers("a shipment cannot be undone")
+                .from(OrderStatus.CANCELLED).stay().forbidOthers("cancelled is final")
                 .build();
     }
 
@@ -276,7 +315,7 @@ class CascadeTest {
         Order order = new Order("o1", OrderStatus.NEW);
         new Item("i1", ItemStatus.PENDING, Optional.of(order));
         MachineRegistry onlyOrders = MachineRegistry.builder()
-                .add(StateMachines.from(OrderGraphs.order(
+                .add(StateMachines.from(orderWithoutWatch(
                                 (TransitionContext<Order, OrderStatus> ctx) -> CompletableFuture.completedFuture(ActionOutcome.ok()),
                                 shipOrder, cancelOrder, retryBudget, allPacked))
                         .state(Order::status, Order::setStatus).identity(Order::id).asyncTimeout(Duration.ofSeconds(5)))
