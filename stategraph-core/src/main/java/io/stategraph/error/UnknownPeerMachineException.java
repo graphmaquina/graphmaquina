@@ -1,0 +1,28 @@
+package io.stategraph.error;
+
+import io.stategraph.api.MachineKey;
+import java.util.Collection;
+import java.util.Objects;
+import java.util.Set;
+
+/** A watch or cascade referenced a peer machine that was never registered. */
+public final class UnknownPeerMachineException extends StateMachineException {
+
+    private final MachineKey<?, ?> requested;
+    private final Set<MachineKey<?, ?>> registered;
+
+    public UnknownPeerMachineException(MachineKey<?, ?> requested, Collection<MachineKey<?, ?>> registered) {
+        super("no machine is registered for " + Objects.requireNonNull(requested, "requested")
+                + "; registered: " + Objects.requireNonNull(registered, "registered"));
+        this.requested = requested;
+        this.registered = Set.copyOf(registered);
+    }
+
+    public MachineKey<?, ?> requested() {
+        return requested;
+    }
+
+    public Set<MachineKey<?, ?>> registered() {
+        return registered;
+    }
+}
