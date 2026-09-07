@@ -13,6 +13,9 @@ import io.stategraph.api.MachineKey;
 import io.stategraph.api.Outcome;
 import io.stategraph.api.PeerView;
 import io.stategraph.error.AbortDetails;
+import io.stategraph.error.CascadeCycleException;
+import io.stategraph.error.CascadeDepthExceededException;
+import io.stategraph.error.CascadeException;
 import io.stategraph.error.PoisonedUnitOfWorkException;
 import io.stategraph.error.StateMachineException;
 import io.stategraph.error.TransitionAbortedException;
@@ -268,20 +271,90 @@ final class Transaction {
                 Optional.empty(), uow.path(), uow.journal());
     }
 
-    // Peers and cascading. Task 9 replaces the two bodies that throw UnsupportedOperationException.
+    // Peers and cascading.
 
     <P, Q extends Enum<Q>> PeerView<P, Q> peer(ContextHandle caller, MachineKey<P, Q> key) {
         checkPoison(caller);
         return new DefaultPeerView<>(uow, registry.machineFor(key));
     }
 
+    /** Cascade to a single peer. Any failure poisons the UnitOfWork: the parent cannot carry on as if nothing happened. */
     <P, Q extends Enum<Q>> Outcome<P, Q> cascade(ContextHandle caller, MachineKey<P, Q> key, P peer, Q target) {
-        throw new UnsupportedOperationException("cascade: implemented in task 9");
+        checkPoison(caller);
+        try {
+            return cascadeOne(caller, key, peer, target);
+        } catch (StateMachineException e) {
+            uow.poison(e);
+            throw e;
+        }
     }
 
+    /**
+     * Order of checks per §6.5: identity, convergent no-op, cycle, depth, and only then the step.
+     * A no-op runs no code, so it can come before the cycle check without opening a hole.
+     */
+    private <P, Q extends Enum<Q>> Outcome<P, Q> cascadeOne(ContextHandle caller, MachineKey<P, Q> key, P peer, Q target) {
+        DefaultStateMachine<P, Q> machine = registry.machineFor(key);
+        EntityRef ref = uow.register(machine.refOf(peer));
+        int depth = caller.contextDepth() + 1;
+        Optional<Enum<?>> pending = uow.pendingState(ref);
+        if (pending.isPresent() && pending.get() == target) {
+            uow.append(new LogEntry(ref, target, target, EdgeKind.STAY, Optional.empty(), depth, true));
+            return new Outcome.Ignored<>(peer, target, target);
+        }
+        Optional<InFlight> flight = uow.inFlight(ref);
+        if (flight.isPresent()) {
+            List<String> route = new ArrayList<>(uow.path());
+            route.add(ref.toString());
+            throw new CascadeCycleException(details(caller), route, flight.get().target(), target);
+        }
+        if (depth > uow.maxDepth()) {
+            throw new CascadeDepthExceededException(details(caller), uow.maxDepth());
+        }
+        StepResult<Q> step = transition(machine, peer, target, depth);
+        return switch (step) {
+            case StepResult.Moved<Q> moved -> new Outcome.Applied<>(peer, moved.from(), moved.to(), List.of(), List.of());
+            case StepResult.Ignored<Q> ignored -> new Outcome.Ignored<>(peer, ignored.from(), ignored.to());
+            // Unreachable: at depth > 0, rejected(...) always aborts. Kept only for switch exhaustiveness.
+            case StepResult.Rejected<Q> rejected ->
+                    new Outcome.Rejected<>(peer, rejected.from(), rejected.to(), rejected.reason(), rejected.guard());
+            case StepResult.FailedTo<Q> failed -> new Outcome.Failed<>(peer, failed.from(), failed.to(), failed.movedTo(),
+                    failed.reason(), failed.cause(), List.of(), List.of());
+        };
+    }
+
+    /**
+     * FAIL_FAST aborts at the first failure. COLLECT tries every element under its own savepoint, rolls back
+     * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
+     */
     <P, Q extends Enum<Q>> List<Outcome<P, Q>> cascadeAll(ContextHandle caller, MachineKey<P, Q> key,
                                                           Collection<? extends P> peers, Q target, CascadePolicy policy) {
-        throw new UnsupportedOperationException("cascadeAll: implemented in task 9");
+        checkPoison(caller);
+        List<Outcome<P, Q>> outcomes = new ArrayList<>();
+        List<TransitionAbortedException> errors = new ArrayList<>();
+        for (P peer : peers) {
+            if (policy == CascadePolicy.FAIL_FAST) {
+                outcomes.add(cascade(caller, key, peer, target));
+                continue;
+            }
+            int savepoint = uow.savepoint();
+            try {
+                outcomes.add(cascadeOne(caller, key, peer, target));
+            } catch (TransitionAbortedException e) {
+                uow.rollbackTo(savepoint);
+                uow.clearPoison();
+                errors.add(e);
+            } catch (StateMachineException e) {
+                uow.poison(e);
+                throw e;
+            }
+        }
+        if (!errors.isEmpty()) {
+            CascadeException aggregate = new CascadeException(details(caller), errors);
+            uow.poison(aggregate);
+            throw aggregate;
+        }
+        return List.copyOf(outcomes);
     }
 
     private void checkPoison(ContextHandle caller) {
