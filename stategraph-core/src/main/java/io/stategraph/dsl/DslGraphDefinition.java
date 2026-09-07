@@ -13,20 +13,26 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.Getter;
+import lombok.NonNull;
 
 /** Immutable {@link GraphDefinition} assembled by the DSL from a complete, valid matrix of drafts. */
 final class DslGraphDefinition<E, S extends Enum<S>> implements GraphDefinition<E, S> {
 
+    @Getter
     private final MachineKey<E, S> key;
     private final S[] states;
+    @Getter
     private final S initial;
+    @Getter
     private final Set<S> terminals;
     private final List<EdgeSpec<E, S>> cells;
+    @Getter
     private final Graph<S> graph;
     private final Map<S, WatchSpec<E, S, ?, ?>> watches;
+    @Getter
     private final boolean hasAsync;
     private final String rendered;
 
@@ -61,27 +67,12 @@ final class DslGraphDefinition<E, S extends Enum<S>> implements GraphDefinition<
     }
 
     @Override
-    public MachineKey<E, S> key() { return key; }
-
-    @Override
-    public S initial() { return initial; }
-
-    @Override
-    public Set<S> terminals() { return terminals; }
-
-    @Override
-    public EdgeSpec<E, S> edge(S from, S to) {
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(to, "to");
+    public EdgeSpec<E, S> edge(@NonNull S from, @NonNull S to) {
         return cells.get(from.ordinal() * states.length + to.ordinal());
     }
 
     @Override
-    public Graph<S> graph() { return graph; }
-
-    @Override
-    public Set<S> allowedFrom(S state) {
-        Objects.requireNonNull(state, "state");
+    public Set<S> allowedFrom(@NonNull S state) {
         EnumSet<S> allowed = EnumSet.noneOf(key.states());
         for (S to : states) {
             if (edge(state, to).moves()) {
@@ -92,13 +83,9 @@ final class DslGraphDefinition<E, S extends Enum<S>> implements GraphDefinition<
     }
 
     @Override
-    public Optional<WatchSpec<E, S, ?, ?>> watch(S state) {
-        Objects.requireNonNull(state, "state");
+    public Optional<WatchSpec<E, S, ?, ?>> watch(@NonNull S state) {
         return Optional.ofNullable(watches.get(state));
     }
-
-    @Override
-    public boolean hasAsync() { return hasAsync; }
 
     @Override
     public String render() { return rendered; }

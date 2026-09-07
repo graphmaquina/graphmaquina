@@ -9,11 +9,14 @@ import io.stategraph.api.WatchSpec;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /** Draft of the watch declared on one state, accumulating its when(...).goTo(...) rules. */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class WatchDraft<E, S extends Enum<S>, P, Q extends Enum<Q>>
         implements WatchBuilder<E, S, P, Q>, WatchRuleBuilder<E, S, P, Q> {
 
@@ -26,30 +29,16 @@ final class WatchDraft<E, S extends Enum<S>, P, Q extends Enum<Q>>
     private final List<WatchRule<E, S, P, Q>> rules = new ArrayList<>();
     private Optional<NamedCondition<E, P, Q>> pending = Optional.empty();
 
-    WatchDraft(DefaultGraphBuilder<E, S> graph, RowDraft<E, S> row, S state, MachineKey<P, Q> peer,
-               Function<? super E, ? extends Collection<? extends P>> peersOf,
-               Function<? super P, Optional<E>> ownerOf) {
-        this.graph = graph;
-        this.row = row;
-        this.state = state;
-        this.peer = peer;
-        this.peersOf = peersOf;
-        this.ownerOf = ownerOf;
-    }
-
     S state() { return state; }
 
     @Override
-    public WatchRuleBuilder<E, S, P, Q> when(NamedCondition<E, P, Q> condition) {
-        Objects.requireNonNull(condition, "condition");
+    public WatchRuleBuilder<E, S, P, Q> when(@NonNull NamedCondition<E, P, Q> condition) {
         pending = Optional.of(condition);
         return this;
     }
 
     @Override
-    public WatchRuleBuilder<E, S, P, Q> when(String name, WatchCondition<E, P, Q> condition) {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(condition, "condition");
+    public WatchRuleBuilder<E, S, P, Q> when(@NonNull String name, @NonNull WatchCondition<E, P, Q> condition) {
         if (name.isBlank()) {
             graph.problems().add("SG107", state.ordinal(), -1,
                     "a condition of the watch of " + state + " has a blank name");
@@ -61,8 +50,7 @@ final class WatchDraft<E, S extends Enum<S>, P, Q extends Enum<Q>>
     }
 
     @Override
-    public WatchBuilder<E, S, P, Q> goTo(S target) {
-        Objects.requireNonNull(target, "target");
+    public WatchBuilder<E, S, P, Q> goTo(@NonNull S target) {
         rules.add(new WatchRule<>(pending.orElseThrow(), target));
         pending = Optional.empty();
         return this;

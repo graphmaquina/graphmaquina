@@ -2,27 +2,18 @@ package io.stategraph.api;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /** A cell of the N×N matrix. The constructor validates what the runtime takes for granted. */
-public record EdgeSpec<E, S extends Enum<S>>(S from, S to, EdgeKind kind, String reason,
-                                             Optional<ActionRef<E, S>> action,
-                                             List<GuardRef<E, S>> guards,
-                                             Optional<S> onFailure,
-                                             List<Class<? extends Throwable>> failsOn,
-                                             Optional<Duration> timeout) {
+public record EdgeSpec<E, S extends Enum<S>>(@NonNull S from, @NonNull S to, @NonNull EdgeKind kind, @NonNull String reason,
+                                             @NonNull Optional<ActionRef<E, S>> action,
+                                             @NonNull List<GuardRef<E, S>> guards,
+                                             @NonNull Optional<S> onFailure,
+                                             @NonNull List<Class<? extends Throwable>> failsOn,
+                                             @NonNull Optional<Duration> timeout) {
 
     public EdgeSpec {
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(to, "to");
-        Objects.requireNonNull(kind, "kind");
-        Objects.requireNonNull(reason, "reason");
-        Objects.requireNonNull(action, "action");
-        Objects.requireNonNull(guards, "guards");
-        Objects.requireNonNull(onFailure, "onFailure");
-        Objects.requireNonNull(failsOn, "failsOn");
-        Objects.requireNonNull(timeout, "timeout");
         guards = List.copyOf(guards);
         failsOn = List.copyOf(failsOn);
         String cell = from + " → " + to;

@@ -5,10 +5,12 @@ import io.stategraph.api.MachineKey;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import lombok.Getter;
 
 /** ABORT: nothing moved and the UnitOfWork was discarded. */
 public class TransitionAbortedException extends StateMachineException {
 
+    @Getter
     private final AbortDetails details;
 
     public TransitionAbortedException(AbortDetails details, String message) {
@@ -20,8 +22,6 @@ public class TransitionAbortedException extends StateMachineException {
         super(describe(details, message), cause);
         this.details = details;
     }
-
-    public AbortDetails details() { return details; }
 
     public MachineKey<?, ?> key() { return details.key(); }
 

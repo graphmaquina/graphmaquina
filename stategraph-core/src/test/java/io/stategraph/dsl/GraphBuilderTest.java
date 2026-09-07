@@ -8,6 +8,7 @@ import static io.stategraph.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.stategraph.api.ActionOutcome;
 import io.stategraph.api.EdgeKind;
@@ -112,8 +113,8 @@ class GraphBuilderTest {
     @Test
     void rejectsNullArguments() {
         NullPointerException error = assertThrows(NullPointerException.class, () -> StateGraph.define(null));
-        assertEquals("key", error.getMessage());
-        assertEquals("target", assertThrows(NullPointerException.class, () -> base().from(DRAFT).to(null)).getMessage());
-        assertEquals("reason", assertThrows(NullPointerException.class, () -> base().from(DRAFT).forbidOthers(null)).getMessage());
+        assertTrue(error.getMessage().startsWith("key"), error.getMessage());
+        assertTrue(assertThrows(NullPointerException.class, () -> base().from(DRAFT).to(null)).getMessage().startsWith("target"));
+        assertTrue(assertThrows(NullPointerException.class, () -> base().from(DRAFT).forbidOthers(null)).getMessage().startsWith("reason"));
     }
 }

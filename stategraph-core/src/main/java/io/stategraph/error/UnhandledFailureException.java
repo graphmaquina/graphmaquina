@@ -1,8 +1,10 @@
 package io.stategraph.error;
 
 import java.util.Objects;
+import lombok.Getter;
 
 /** Domain failure without a declared onFailure. */
+@Getter
 public final class UnhandledFailureException extends TransitionAbortedException {
 
     private final String reason;
@@ -16,6 +18,4 @@ public final class UnhandledFailureException extends TransitionAbortedException 
         super(details, "domain failure without onFailure: " + Objects.requireNonNull(reason, "reason"), cause);
         this.reason = reason;
     }
-
-    public String reason() { return reason; }
 }

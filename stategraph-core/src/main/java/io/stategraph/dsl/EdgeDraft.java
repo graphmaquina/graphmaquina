@@ -17,12 +17,15 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import lombok.AccessLevel;
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 
 /** Draft of one cell. Implements every stage: the visible return type is what restricts it. */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class EdgeDraft<E, S extends Enum<S>>
         implements EdgeStart<E, S>, AsyncActionEdge<E, S>, MoveEdge<E, S>, StayEdge<E, S> {
 
@@ -39,12 +42,6 @@ final class EdgeDraft<E, S extends Enum<S>>
     private final List<Class<? extends Throwable>> failsOn = new ArrayList<>();
     private Optional<Duration> timeout = Optional.empty();
 
-    EdgeDraft(RowDraft<E, S> row, S from, S to) {
-        this.row = row;
-        this.from = from;
-        this.to = to;
-    }
-
     S from() { return from; }
 
     S to() { return to; }
@@ -59,31 +56,27 @@ final class EdgeDraft<E, S extends Enum<S>>
     // EdgeStart
 
     @Override
-    public EdgeDraft<E, S> action(TransitionAction<E, S> action) {
-        Objects.requireNonNull(action, "action");
+    public EdgeDraft<E, S> action(@NonNull TransitionAction<E, S> action) {
         kind = Optional.of(EdgeKind.ACTION);
         syncAction = Optional.of(action);
         return this;
     }
 
     @Override
-    public EdgeDraft<E, S> action(String name, TransitionAction<E, S> action) {
-        Objects.requireNonNull(name, "name");
+    public EdgeDraft<E, S> action(@NonNull String name, TransitionAction<E, S> action) {
         explicitActionName = Optional.of(name);
         return action(action);
     }
 
     @Override
-    public EdgeDraft<E, S> asyncAction(AsyncTransitionAction<E, S> action) {
-        Objects.requireNonNull(action, "action");
+    public EdgeDraft<E, S> asyncAction(@NonNull AsyncTransitionAction<E, S> action) {
         kind = Optional.of(EdgeKind.ACTION);
         asyncAction = Optional.of(action);
         return this;
     }
 
     @Override
-    public EdgeDraft<E, S> asyncAction(String name, AsyncTransitionAction<E, S> action) {
-        Objects.requireNonNull(name, "name");
+    public EdgeDraft<E, S> asyncAction(@NonNull String name, AsyncTransitionAction<E, S> action) {
         explicitActionName = Optional.of(name);
         return asyncAction(action);
     }
@@ -95,8 +88,7 @@ final class EdgeDraft<E, S extends Enum<S>>
     }
 
     @Override
-    public RowBuilder<E, S> forbid(String reason) {
-        Objects.requireNonNull(reason, "reason");
+    public RowBuilder<E, S> forbid(@NonNull String reason) {
         kind = Optional.of(EdgeKind.FORBID);
         this.reason = reason;
         return row;
@@ -105,52 +97,43 @@ final class EdgeDraft<E, S extends Enum<S>>
     // Modifiers
 
     @Override
-    public EdgeDraft<E, S> guard(TransitionGuard<E, S> guard) {
-        Objects.requireNonNull(guard, "guard");
+    public EdgeDraft<E, S> guard(@NonNull TransitionGuard<E, S> guard) {
         guards.add(new GuardDraft<>(Optional.empty(), Optional.of(guard), Optional.empty()));
         return this;
     }
 
     @Override
-    public EdgeDraft<E, S> guard(String name, TransitionGuard<E, S> guard) {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(guard, "guard");
+    public EdgeDraft<E, S> guard(@NonNull String name, @NonNull TransitionGuard<E, S> guard) {
         guards.add(new GuardDraft<>(Optional.of(name), Optional.of(guard), Optional.empty()));
         return this;
     }
 
     @Override
-    public EdgeDraft<E, S> asyncGuard(AsyncTransitionGuard<E, S> guard) {
-        Objects.requireNonNull(guard, "guard");
+    public EdgeDraft<E, S> asyncGuard(@NonNull AsyncTransitionGuard<E, S> guard) {
         guards.add(new GuardDraft<>(Optional.empty(), Optional.empty(), Optional.of(guard)));
         return this;
     }
 
     @Override
-    public EdgeDraft<E, S> asyncGuard(String name, AsyncTransitionGuard<E, S> guard) {
-        Objects.requireNonNull(name, "name");
-        Objects.requireNonNull(guard, "guard");
+    public EdgeDraft<E, S> asyncGuard(@NonNull String name, @NonNull AsyncTransitionGuard<E, S> guard) {
         guards.add(new GuardDraft<>(Optional.of(name), Optional.empty(), Optional.of(guard)));
         return this;
     }
 
     @Override
-    public EdgeDraft<E, S> onFailure(S target) {
-        Objects.requireNonNull(target, "target");
+    public EdgeDraft<E, S> onFailure(@NonNull S target) {
         onFailure = Optional.of(target);
         return this;
     }
 
     @Override
-    public EdgeDraft<E, S> failsOn(Class<? extends Throwable> type) {
-        Objects.requireNonNull(type, "type");
+    public EdgeDraft<E, S> failsOn(@NonNull Class<? extends Throwable> type) {
         failsOn.add(type);
         return this;
     }
 
     @Override
-    public EdgeDraft<E, S> timeout(Duration timeout) {
-        Objects.requireNonNull(timeout, "timeout");
+    public EdgeDraft<E, S> timeout(@NonNull Duration timeout) {
         this.timeout = Optional.of(timeout);
         return this;
     }

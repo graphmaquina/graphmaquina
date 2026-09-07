@@ -23,7 +23,7 @@ class ValuesTest {
     void machineKeyRejectsNulls() {
         NullPointerException error = assertThrows(NullPointerException.class,
                 () -> new MachineKey<String, DayOfWeek>(null, DayOfWeek.class));
-        assertEquals("entity", error.getMessage());
+        assertTrue(error.getMessage().startsWith("entity"), error.getMessage());
     }
 
     @Test
@@ -32,7 +32,7 @@ class ValuesTest {
         assertEquals(new ActionOutcome.Failed("x"), ActionOutcome.failed("x"));
         assertThrows(IllegalArgumentException.class, () -> ActionOutcome.failed("  "));
         NullPointerException error = assertThrows(NullPointerException.class, () -> ActionOutcome.failed(null));
-        assertEquals("reason", error.getMessage());
+        assertTrue(error.getMessage().startsWith("reason"), error.getMessage());
     }
 
     @Test

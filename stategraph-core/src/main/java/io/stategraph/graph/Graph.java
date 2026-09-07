@@ -12,9 +12,9 @@ import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import lombok.NonNull;
 
 /** Immutable directed graph, generic over nodes. Works equally well with enums and names. */
 public final class Graph<N> {
@@ -29,9 +29,7 @@ public final class Graph<N> {
         this.successors = successors;
     }
 
-    public static <N> Graph<N> of(Collection<? extends N> nodes, Collection<? extends GraphEdge<N>> edges) {
-        Objects.requireNonNull(nodes, "nodes");
-        Objects.requireNonNull(edges, "edges");
+    public static <N> Graph<N> of(@NonNull Collection<? extends N> nodes, @NonNull Collection<? extends GraphEdge<N>> edges) {
         Set<N> nodeSet = Collections.unmodifiableSet(new LinkedHashSet<N>(nodes));
         Map<N, Set<N>> mutableSuccessors = new LinkedHashMap<>();
         for (N node : nodeSet) {
@@ -61,13 +59,12 @@ public final class Graph<N> {
         return edges;
     }
 
-    public Set<N> successors(N node) {
+    public Set<N> successors(@NonNull N node) {
         requireNode(node);
         return successors.get(node);
     }
 
-    public Set<N> reachableFrom(N origin) {
-        Objects.requireNonNull(origin, "origin");
+    public Set<N> reachableFrom(@NonNull N origin) {
         if (!nodes.contains(origin)) {
             throw new IllegalArgumentException("unknown node: " + origin);
         }
@@ -85,9 +82,7 @@ public final class Graph<N> {
         return Collections.unmodifiableSet(visited);
     }
 
-    public Optional<List<N>> shortestPath(N from, N to) {
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(to, "to");
+    public Optional<List<N>> shortestPath(@NonNull N from, @NonNull N to) {
         if (!nodes.contains(from)) {
             throw new IllegalArgumentException("unknown node: " + from);
         }
@@ -167,7 +162,6 @@ public final class Graph<N> {
     }
 
     private void requireNode(N node) {
-        Objects.requireNonNull(node, "node");
         if (!nodes.contains(node)) {
             throw new IllegalArgumentException("unknown node: " + node);
         }

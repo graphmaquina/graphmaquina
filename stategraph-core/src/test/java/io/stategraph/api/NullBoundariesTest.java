@@ -1,7 +1,7 @@
 package io.stategraph.api;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.DayOfWeek;
 import java.util.List;
@@ -37,6 +37,6 @@ class NullBoundariesTest {
     @MethodSource("entries")
     void rejectsNullWithParameterName(String parameter, Executable call) {
         NullPointerException error = assertThrows(NullPointerException.class, call);
-        assertEquals(parameter, error.getMessage());
+        assertTrue(error.getMessage().startsWith(parameter), error.getMessage());
     }
 }

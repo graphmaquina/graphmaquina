@@ -4,8 +4,10 @@ import io.stategraph.api.MachineKey;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.Set;
+import lombok.Getter;
 
 /** A watch or cascade referenced a peer machine that was never registered. */
+@Getter
 public final class UnknownPeerMachineException extends StateMachineException {
 
     private final MachineKey<?, ?> requested;
@@ -16,13 +18,5 @@ public final class UnknownPeerMachineException extends StateMachineException {
                 + "; registered: " + Objects.requireNonNull(registered, "registered"));
         this.requested = requested;
         this.registered = Set.copyOf(registered);
-    }
-
-    public MachineKey<?, ?> requested() {
-        return requested;
-    }
-
-    public Set<MachineKey<?, ?>> registered() {
-        return registered;
     }
 }

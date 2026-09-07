@@ -8,10 +8,10 @@ import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import lombok.NonNull;
 
 /** Default, single-use implementation of {@link GraphBuilder}: accumulates drafts and assembles them on build(). */
 final class DefaultGraphBuilder<E, S extends Enum<S>> implements GraphBuilder<E, S> {
@@ -40,30 +40,26 @@ final class DefaultGraphBuilder<E, S extends Enum<S>> implements GraphBuilder<E,
     Problems problems() { return problems; }
 
     @Override
-    public GraphBuilder<E, S> initial(S state) {
-        Objects.requireNonNull(state, "state");
+    public GraphBuilder<E, S> initial(@NonNull S state) {
         initialDeclarations++;
         initial = Optional.of(state);
         return this;
     }
 
     @Override
-    public GraphBuilder<E, S> terminal(S state) {
-        Objects.requireNonNull(state, "state");
+    public GraphBuilder<E, S> terminal(@NonNull S state) {
         terminals.add(state);
         return this;
     }
 
     @Override
-    public GraphBuilder<E, S> allowsCycle(S state) {
-        Objects.requireNonNull(state, "state");
+    public GraphBuilder<E, S> allowsCycle(@NonNull S state) {
         cycleAllowed.add(state);
         return this;
     }
 
     @Override
-    public RowBuilder<E, S> from(S state) {
-        Objects.requireNonNull(state, "state");
+    public RowBuilder<E, S> from(@NonNull S state) {
         return new RowDraft<>(this, state);
     }
 

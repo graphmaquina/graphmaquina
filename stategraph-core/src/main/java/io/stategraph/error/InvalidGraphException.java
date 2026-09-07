@@ -4,30 +4,27 @@ import io.stategraph.api.MachineKey;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import lombok.Getter;
+import lombok.NonNull;
 
 /** build() of the DSL found problems. Tests assert on codes(), never on the text. */
 public final class InvalidGraphException extends StateMachineException {
 
     /** One problem found while validating a graph: a stable code paired with a human-readable message. */
-    public record Problem(String code, String message) {
+    public record Problem(@NonNull String code, @NonNull String message) {
         public Problem {
-            Objects.requireNonNull(code, "code");
-            Objects.requireNonNull(message, "message");
             if (code.isBlank() || message.isBlank()) {
                 throw new IllegalArgumentException("code and message must not be blank");
             }
         }
     }
 
+    @Getter
     private final List<Problem> problems;
 
     public InvalidGraphException(MachineKey<?, ?> key, List<Problem> problems) {
         super(describe(key, problems));
         this.problems = List.copyOf(problems);
-    }
-
-    public List<Problem> problems() {
-        return problems;
     }
 
     public List<String> codes() {

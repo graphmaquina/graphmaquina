@@ -1,8 +1,8 @@
 package io.stategraph.api;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
+import lombok.NonNull;
 
 /** Domain-level result of a transition. Technical failures are not modeled here: they throw. */
 public sealed interface Outcome<E, S extends Enum<S>>
@@ -16,14 +16,10 @@ public sealed interface Outcome<E, S extends Enum<S>>
     S current();
 
     /** ACTION or MOVE applied and committed. */
-    record Applied<E, S extends Enum<S>>(E entity, S from, S to, List<TransitionRecord<?, ?>> records,
-                                         List<Reaction> reactions) implements Outcome<E, S> {
+    record Applied<E, S extends Enum<S>>(@NonNull E entity, @NonNull S from, @NonNull S to,
+                                         @NonNull List<TransitionRecord<?, ?>> records,
+                                         @NonNull List<Reaction> reactions) implements Outcome<E, S> {
         public Applied {
-            Objects.requireNonNull(entity, "entity");
-            Objects.requireNonNull(from, "from");
-            Objects.requireNonNull(to, "to");
-            Objects.requireNonNull(records, "records");
-            Objects.requireNonNull(reactions, "reactions");
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
         }
@@ -35,13 +31,7 @@ public sealed interface Outcome<E, S extends Enum<S>>
     }
 
     /** STAY, a convergent no-op, or a reevaluation with no matching rule. */
-    record Ignored<E, S extends Enum<S>>(E entity, S from, S to) implements Outcome<E, S> {
-        public Ignored {
-            Objects.requireNonNull(entity, "entity");
-            Objects.requireNonNull(from, "from");
-            Objects.requireNonNull(to, "to");
-        }
-
+    record Ignored<E, S extends Enum<S>>(@NonNull E entity, @NonNull S from, @NonNull S to) implements Outcome<E, S> {
         @Override
         public S current() {
             return from;
@@ -49,16 +39,8 @@ public sealed interface Outcome<E, S extends Enum<S>>
     }
 
     /** FORBID or a guard that rejected. Nothing ran. */
-    record Rejected<E, S extends Enum<S>>(E entity, S from, S to, String reason,
-                                          Optional<String> guard) implements Outcome<E, S> {
-        public Rejected {
-            Objects.requireNonNull(entity, "entity");
-            Objects.requireNonNull(from, "from");
-            Objects.requireNonNull(to, "to");
-            Objects.requireNonNull(reason, "reason");
-            Objects.requireNonNull(guard, "guard");
-        }
-
+    record Rejected<E, S extends Enum<S>>(@NonNull E entity, @NonNull S from, @NonNull S to, @NonNull String reason,
+                                          @NonNull Optional<String> guard) implements Outcome<E, S> {
         @Override
         public S current() {
             return from;
@@ -66,18 +48,11 @@ public sealed interface Outcome<E, S extends Enum<S>>
     }
 
     /** Domain-level failure with onFailure. Commits: the entity is at {@code movedTo}. */
-    record Failed<E, S extends Enum<S>>(E entity, S from, S to, S movedTo, String reason, Optional<Throwable> cause,
-                                        List<TransitionRecord<?, ?>> records,
-                                        List<Reaction> reactions) implements Outcome<E, S> {
+    record Failed<E, S extends Enum<S>>(@NonNull E entity, @NonNull S from, @NonNull S to, @NonNull S movedTo,
+                                        @NonNull String reason, @NonNull Optional<Throwable> cause,
+                                        @NonNull List<TransitionRecord<?, ?>> records,
+                                        @NonNull List<Reaction> reactions) implements Outcome<E, S> {
         public Failed {
-            Objects.requireNonNull(entity, "entity");
-            Objects.requireNonNull(from, "from");
-            Objects.requireNonNull(to, "to");
-            Objects.requireNonNull(movedTo, "movedTo");
-            Objects.requireNonNull(reason, "reason");
-            Objects.requireNonNull(cause, "cause");
-            Objects.requireNonNull(records, "records");
-            Objects.requireNonNull(reactions, "reactions");
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
         }

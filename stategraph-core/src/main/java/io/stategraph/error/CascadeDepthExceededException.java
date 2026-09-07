@@ -1,6 +1,9 @@
 package io.stategraph.error;
 
+import lombok.Getter;
+
 /** Thrown when a cascade goes deeper than the configured maximum. */
+@Getter
 public final class CascadeDepthExceededException extends TransitionAbortedException {
 
     private final int maxDepth;
@@ -9,6 +12,4 @@ public final class CascadeDepthExceededException extends TransitionAbortedExcept
         super(details, "the cascade exceeds maxCascadeDepth = " + maxDepth);
         this.maxDepth = maxDepth;
     }
-
-    public int maxDepth() { return maxDepth; }
 }

@@ -1,6 +1,6 @@
 package io.stategraph.api;
 
-import java.util.Objects;
+import lombok.NonNull;
 
 /** Result of running a {@link TransitionGuard} or {@link AsyncTransitionGuard}: either {@link Pass} or {@link Reject}. */
 public sealed interface GuardResult permits GuardResult.Pass, GuardResult.Reject {
@@ -9,9 +9,8 @@ public sealed interface GuardResult permits GuardResult.Pass, GuardResult.Reject
     record Pass() implements GuardResult { }
 
     /** A guard that blocks the transition, carrying the reason it was rejected. */
-    record Reject(String reason) implements GuardResult {
+    record Reject(@NonNull String reason) implements GuardResult {
         public Reject {
-            Objects.requireNonNull(reason, "reason");
             if (reason.isBlank()) {
                 throw new IllegalArgumentException("reason must not be blank");
             }

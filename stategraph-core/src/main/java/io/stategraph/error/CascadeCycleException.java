@@ -2,8 +2,10 @@ package io.stategraph.error;
 
 import java.util.List;
 import java.util.Objects;
+import lombok.Getter;
 
 /** Re-entry of an entity already in flight toward a different target than the one it already has. */
+@Getter
 public final class CascadeCycleException extends TransitionAbortedException {
 
     private final List<String> route;
@@ -18,10 +20,4 @@ public final class CascadeCycleException extends TransitionAbortedException {
         this.inFlightTarget = inFlightTarget;
         this.requestedTarget = requestedTarget;
     }
-
-    public List<String> route() { return route; }
-
-    public Enum<?> inFlightTarget() { return inFlightTarget; }
-
-    public Enum<?> requestedTarget() { return requestedTarget; }
 }

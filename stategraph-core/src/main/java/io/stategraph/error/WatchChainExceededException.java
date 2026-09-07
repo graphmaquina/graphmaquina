@@ -1,6 +1,9 @@
 package io.stategraph.error;
 
+import lombok.Getter;
+
 /** Thrown when a chain of watch reactions goes longer than the configured maximum. */
+@Getter
 public final class WatchChainExceededException extends TransitionAbortedException {
 
     private final int maxChain;
@@ -9,6 +12,4 @@ public final class WatchChainExceededException extends TransitionAbortedExceptio
         super(details, "the chain of watch reactions exceeds maxWatchChain = " + maxChain);
         this.maxChain = maxChain;
     }
-
-    public int maxChain() { return maxChain; }
 }

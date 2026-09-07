@@ -2,11 +2,15 @@ package io.stategraph.error;
 
 import java.util.List;
 import java.util.Objects;
+import lombok.Getter;
 
 /** Phase 2 failed to write. If applied() is not empty, the system was left inconsistent. */
+@Getter
 public final class CommitFailedException extends StateMachineException {
 
+    /** Writes that were made and not undone. */
     private final List<Object> applied;
+    /** Entities that never got written. */
     private final List<Object> pending;
 
     public CommitFailedException(List<?> applied, List<?> pending, String message) {
@@ -20,12 +24,6 @@ public final class CommitFailedException extends StateMachineException {
         this.applied = List.copyOf(applied);
         this.pending = List.copyOf(pending);
     }
-
-    /** Writes that were made and not undone. */
-    public List<Object> applied() { return applied; }
-
-    /** Entities that never got written. */
-    public List<Object> pending() { return pending; }
 
     private static String describe(List<?> applied, List<?> pending, String message) {
         Objects.requireNonNull(applied, "applied");

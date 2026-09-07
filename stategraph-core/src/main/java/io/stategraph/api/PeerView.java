@@ -1,7 +1,7 @@
 package io.stategraph.api;
 
 import java.util.Collection;
-import java.util.Objects;
+import lombok.NonNull;
 
 /** Read-only view over another machine. Reads the UnitOfWork first, then the entity. */
 public interface PeerView<P, Q extends Enum<Q>> {
@@ -11,9 +11,7 @@ public interface PeerView<P, Q extends Enum<Q>> {
     Q stateOf(P peer);
 
     /** Non-empty and all in {@code state}. */
-    default boolean allIn(Collection<? extends P> peers, Q state) {
-        Objects.requireNonNull(peers, "peers");
-        Objects.requireNonNull(state, "state");
+    default boolean allIn(@NonNull Collection<? extends P> peers, @NonNull Q state) {
         if (peers.isEmpty()) {
             return false;
         }
@@ -25,9 +23,7 @@ public interface PeerView<P, Q extends Enum<Q>> {
         return true;
     }
 
-    default boolean anyIn(Collection<? extends P> peers, Q state) {
-        Objects.requireNonNull(peers, "peers");
-        Objects.requireNonNull(state, "state");
+    default boolean anyIn(@NonNull Collection<? extends P> peers, @NonNull Q state) {
         for (P peer : peers) {
             if (stateOf(peer) == state) {
                 return true;
