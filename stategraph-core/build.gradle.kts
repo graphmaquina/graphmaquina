@@ -1,4 +1,11 @@
-plugins { id("stategraph.java-conventions") }
+plugins {
+    id("stategraph.java-conventions")
+    `maven-publish`
+}
+
+java {
+    withSourcesJar()
+}
 
 tasks.jar {
     manifest { attributes("Automatic-Module-Name" to "io.stategraph.core") }
@@ -16,4 +23,16 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.launcher)
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+            pom {
+                name.set("stategraph-core")
+                description.set("State machines declared as graphs: exhaustive N×N matrix, cross-machine cascade, declared watches, async actions")
+            }
+        }
+    }
 }
