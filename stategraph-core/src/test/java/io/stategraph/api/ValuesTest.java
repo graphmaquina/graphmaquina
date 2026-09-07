@@ -60,7 +60,7 @@ class ValuesTest {
         Outcome<String, DayOfWeek> ignored = new Outcome.Ignored<>("e", DayOfWeek.MONDAY, DayOfWeek.MONDAY);
         Outcome<String, DayOfWeek> rejected = new Outcome.Rejected<>("e", DayOfWeek.MONDAY, DayOfWeek.TUESDAY, "no", Optional.empty());
         Outcome<String, DayOfWeek> failed = new Outcome.Failed<>("e", DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.SUNDAY,
-                "declinada", Optional.empty(), List.of(), List.of());
+                "declined", Optional.empty(), List.of(), List.of());
         assertEquals(DayOfWeek.TUESDAY, applied.current());
         assertEquals(DayOfWeek.MONDAY, ignored.current());
         assertEquals(DayOfWeek.MONDAY, rejected.current());
