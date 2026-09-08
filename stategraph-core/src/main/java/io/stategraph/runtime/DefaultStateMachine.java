@@ -1,7 +1,9 @@
 package io.stategraph.runtime;
 
 import io.stategraph.api.AsyncStateMachine;
+import io.stategraph.api.EdgeKind;
 import io.stategraph.api.GraphDefinition;
+import io.stategraph.api.HookRef;
 import io.stategraph.api.MachineKey;
 import io.stategraph.api.Outcome;
 import io.stategraph.api.PeerView;
@@ -11,6 +13,7 @@ import io.stategraph.api.TransitionRecord;
 import io.stategraph.api.WatchRule;
 import io.stategraph.api.WatchSpec;
 import io.stategraph.error.AbortDetails;
+import io.stategraph.error.AfterCommitException;
 import io.stategraph.error.UninitializedStateException;
 import io.stategraph.error.WatchChainExceededException;
 import java.time.Duration;
@@ -137,6 +140,7 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
             tx.invalidate();
             Reentrancy.exit();
         }
+        runHooks(records);
         List<Reaction> reactions = switch (step) {
             case StepResult.Moved<S> moved -> registry.dispatchWatches(uow, chain);
             case StepResult.FailedTo<S> failed -> registry.dispatchWatches(uow, chain);
@@ -151,6 +155,29 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
             case StepResult.FailedTo<S> failed -> new Outcome.Failed<>(entity, failed.from(), failed.to(), failed.movedTo(),
                     failed.reason(), failed.cause(), records, reactions);
         };
+    }
+
+    /** Spec §6.1 step 4: every committed hop with a hook, in log order, on the calling thread. */
+    private void runHooks(List<TransitionRecord<?, ?>> records) {
+        for (TransitionRecord<?, ?> record : records) {
+            if (record.convergent() || !(record.kind() == EdgeKind.ACTION || record.kind() == EdgeKind.MOVE)) {
+                continue;
+            }
+            runHook(record);
+        }
+    }
+
+    private <P, Q extends Enum<Q>> void runHook(TransitionRecord<P, Q> record) {
+        DefaultStateMachine<P, Q> owner = registry.machineFor(record.key());
+        Optional<HookRef<P>> hook = owner.definition().edge(record.from(), record.to()).afterCommit();
+        if (hook.isEmpty()) {
+            return;
+        }
+        try {
+            hook.get().hook().accept(record.entity());
+        } catch (RuntimeException e) {
+            throw new AfterCommitException(record.key(), record.entity(), record.from(), record.to(), hook.get().name(), e);
+        }
     }
 
     EntityRef refOf(E entity) {
