@@ -4,6 +4,8 @@ dependencies {
     implementation(project(":stategraph-core"))
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
+    // Lombok first: the processor reads the accessors Lombok generates on Order and Item.
+    annotationProcessor(project(":stategraph-processor"))
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

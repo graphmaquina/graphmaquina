@@ -2,14 +2,10 @@ package io.stategraph.example;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import io.stategraph.example.item.ItemGraph;
-import io.stategraph.example.item.PackItem;
-import io.stategraph.example.order.AllItemsPacked;
-import io.stategraph.example.order.CancelOrder;
-import io.stategraph.example.order.ChargeCard;
-import io.stategraph.example.order.OrderGraph;
-import io.stategraph.example.order.RetryBudgetLeft;
-import io.stategraph.example.order.ShipOrder;
+import io.stategraph.example.item.ItemActions;
+import io.stategraph.example.item.Items_;
+import io.stategraph.example.order.OrderActions;
+import io.stategraph.example.order.Orders_;
 import io.stategraph.export.GraphView;
 import io.stategraph.export.MermaidExporter;
 import java.io.IOException;
@@ -27,13 +23,12 @@ class DiagramsTest {
 
     @Test
     void orderDiagramMatchesGolden() throws IOException {
-        String rendered = MermaidExporter.render(GraphView.of(OrderGraph.define(new ChargeCard(new FakeGateway()), new ShipOrder(),
-                new CancelOrder(), new RetryBudgetLeft(), new AllItemsPacked())));
+        String rendered = MermaidExporter.render(GraphView.of(Orders_.graph(new OrderActions(new FakeGateway(), new FakeCarrier()))));
         assertEquals(golden("order.mmd"), rendered);
     }
 
     @Test
     void itemDiagramMatchesGolden() throws IOException {
-        assertEquals(golden("item.mmd"), MermaidExporter.render(GraphView.of(ItemGraph.define(new PackItem()))));
+        assertEquals(golden("item.mmd"), MermaidExporter.render(GraphView.of(Items_.graph(new ItemActions()))));
     }
 }
