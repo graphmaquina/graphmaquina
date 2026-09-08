@@ -77,5 +77,7 @@ class GraphOutlineValidatorTest {
                 List.of(new CellOutline("DRAFT", "DRAFT", EdgeKind.STAY, Optional.empty())), List.of()));
         assertThrows(IllegalArgumentException.class, () -> new GraphOutline("X", STATES, "NOPE", Set.of(), Set.of(),
                 matrix(Map.of(), Map.of()), List.of()));
+        assertThrows(IllegalArgumentException.class, () -> new GraphOutline("X", STATES, "DRAFT", Set.of(), Set.of(),
+                matrix(Map.of("REVIEW>PUBLISHED", EdgeKind.ACTION), Map.of("REVIEW>PUBLISHED", "NOPE")), List.of()));
     }
 }

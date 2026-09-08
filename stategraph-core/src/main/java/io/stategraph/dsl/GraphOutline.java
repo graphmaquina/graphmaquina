@@ -38,6 +38,9 @@ public record GraphOutline(@NonNull String name, @NonNull List<String> states, @
         for (CellOutline cell : cells) {
             requireKnown(name, states, cell.from(), "cell.from");
             requireKnown(name, states, cell.to(), "cell.to");
+            if (cell.onFailure().isPresent()) {
+                requireKnown(name, states, cell.onFailure().get(), "cell.onFailure");
+            }
             if (!seen.add(cell.from() + " → " + cell.to())) {
                 throw new IllegalArgumentException(name + ": the cell " + cell.from() + " → " + cell.to() + " appears twice");
             }
