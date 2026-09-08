@@ -18,6 +18,8 @@ import io.stategraph.api.TransitionContext;
 import io.stategraph.error.InvalidGraphException;
 import io.stategraph.fixtures.Doc;
 import io.stategraph.fixtures.DocStatus;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -116,5 +118,30 @@ class GraphBuilderTest {
         assertTrue(error.getMessage().startsWith("key"), error.getMessage());
         assertTrue(assertThrows(NullPointerException.class, () -> base().from(DRAFT).to(null)).getMessage().startsWith("target"));
         assertTrue(assertThrows(NullPointerException.class, () -> base().from(DRAFT).forbidOthers(null)).getMessage().startsWith("reason"));
+    }
+
+    @Test
+    void afterCommitIsStoredOnActionAndMoveCells() {
+        List<String> seen = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus> graph = StateGraph.define(DOCS)
+                .initial(DRAFT).terminal(ARCHIVED)
+                .from(DRAFT).to(REVIEW).move().afterCommit("noteReview", (Doc doc) -> seen.add("review")).stay().forbidOthers("x")
+                .from(REVIEW).to(PUBLISHED).action("publish", (TransitionContext<Doc, DocStatus> ctx) -> ActionOutcome.ok())
+                        .afterCommit("notePublished", (Doc doc) -> seen.add("published")).stay().forbidOthers("x")
+                .from(PUBLISHED).to(ARCHIVED).move().stay().forbidOthers("x")
+                .from(ARCHIVED).stay().forbidOthers("x")
+                .build();
+        assertEquals("noteReview", graph.edge(DRAFT, REVIEW).afterCommit().orElseThrow().name());
+        assertEquals("notePublished", graph.edge(REVIEW, PUBLISHED).afterCommit().orElseThrow().name());
+        assertTrue(graph.edge(PUBLISHED, ARCHIVED).afterCommit().isEmpty());
+        graph.edge(DRAFT, REVIEW).afterCommit().orElseThrow().hook().accept(new Doc("1", DRAFT));
+        assertEquals(List.of("review"), seen);
+    }
+
+    @Test
+    void afterCommitTwiceOnTheSameCellIsAnError() {
+        assertThrows(IllegalStateException.class, () -> StateGraph.define(DOCS)
+                .initial(DRAFT)
+                .from(DRAFT).to(REVIEW).move().afterCommit("a", (Doc doc) -> { }).afterCommit("b", (Doc doc) -> { }));
     }
 }

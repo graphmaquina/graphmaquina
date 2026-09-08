@@ -7,6 +7,7 @@ import io.stategraph.api.EdgeKind;
 import io.stategraph.api.EdgeSpec;
 import io.stategraph.api.GraphDefinition;
 import io.stategraph.api.GuardRef;
+import io.stategraph.api.HookRef;
 import io.stategraph.api.MachineKey;
 import io.stategraph.api.TransitionAction;
 import io.stategraph.api.TransitionGuard;
@@ -19,6 +20,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import lombok.AccessLevel;
 import lombok.NonNull;
@@ -41,6 +43,7 @@ final class EdgeDraft<E, S extends Enum<S>>
     private Optional<S> onFailure = Optional.empty();
     private final List<Class<? extends Throwable>> failsOn = new ArrayList<>();
     private Optional<Duration> timeout = Optional.empty();
+    private Optional<HookRef<E>> afterCommit = Optional.empty();
 
     S from() { return from; }
 
@@ -133,6 +136,15 @@ final class EdgeDraft<E, S extends Enum<S>>
     }
 
     @Override
+    public EdgeDraft<E, S> afterCommit(@NonNull String name, @NonNull Consumer<? super E> hook) {
+        if (afterCommit.isPresent()) {
+            throw new IllegalStateException(from + " → " + to + " already declares afterCommit(" + afterCommit.get().name() + ")");
+        }
+        afterCommit = Optional.of(new HookRef<>(name, hook));
+        return this;
+    }
+
+    @Override
     public EdgeDraft<E, S> timeout(@NonNull Duration timeout) {
         this.timeout = Optional.of(timeout);
         return this;
@@ -216,7 +228,7 @@ final class EdgeDraft<E, S extends Enum<S>>
         if (!valid) {
             return Optional.empty();
         }
-        return Optional.of(new EdgeSpec<>(from, to, resolvedKind, reason, actionRef, guardRefs, onFailure, failsOn, timeout));
+        return Optional.of(new EdgeSpec<>(from, to, resolvedKind, reason, actionRef, guardRefs, onFailure, failsOn, timeout, afterCommit));
     }
 
     private static boolean isForbiddenFailsOn(Class<? extends Throwable> type) {

@@ -11,7 +11,14 @@ public record EdgeSpec<E, S extends Enum<S>>(@NonNull S from, @NonNull S to, @No
                                              @NonNull List<GuardRef<E, S>> guards,
                                              @NonNull Optional<S> onFailure,
                                              @NonNull List<Class<? extends Throwable>> failsOn,
-                                             @NonNull Optional<Duration> timeout) {
+                                             @NonNull Optional<Duration> timeout,
+                                             @NonNull Optional<HookRef<E>> afterCommit) {
+
+    /** A cell without an after-commit hook. */
+    public EdgeSpec(S from, S to, EdgeKind kind, String reason, Optional<ActionRef<E, S>> action, List<GuardRef<E, S>> guards,
+                    Optional<S> onFailure, List<Class<? extends Throwable>> failsOn, Optional<Duration> timeout) {
+        this(from, to, kind, reason, action, guards, onFailure, failsOn, timeout, Optional.empty());
+    }
 
     public EdgeSpec {
         guards = List.copyOf(guards);
@@ -37,6 +44,9 @@ public record EdgeSpec<E, S extends Enum<S>>(@NonNull S from, @NonNull S to, @No
         }
         if (timeout.isPresent() && (timeout.get().isZero() || timeout.get().isNegative())) {
             throw new IllegalArgumentException(cell + ": timeout must be positive");
+        }
+        if (afterCommit.isPresent() && !(kind == EdgeKind.ACTION || kind == EdgeKind.MOVE)) {
+            throw new IllegalArgumentException(cell + ": afterCommit is only allowed on ACTION or MOVE");
         }
     }
 

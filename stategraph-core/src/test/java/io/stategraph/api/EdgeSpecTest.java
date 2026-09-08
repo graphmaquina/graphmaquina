@@ -75,4 +75,18 @@ class EdgeSpecTest {
         assertFalse(stay.isAsync());
         assertFalse(stay.moves());
     }
+
+    @Test
+    void afterCommitOnlyOnActionOrMove() {
+        HookRef<String> hook = new HookRef<>("H", (String e) -> { });
+        assertThrows(IllegalArgumentException.class, () -> new EdgeSpec<String, DayOfWeek>(DayOfWeek.MONDAY, DayOfWeek.MONDAY,
+                EdgeKind.STAY, "", Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(), Optional.of(hook)));
+        assertThrows(IllegalArgumentException.class, () -> new EdgeSpec<String, DayOfWeek>(DayOfWeek.MONDAY, DayOfWeek.TUESDAY,
+                EdgeKind.FORBID, "no", Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(), Optional.of(hook)));
+        EdgeSpec<String, DayOfWeek> move = new EdgeSpec<>(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, EdgeKind.MOVE, "",
+                Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(), Optional.of(hook));
+        assertTrue(move.afterCommit().isPresent());
+        EdgeSpec<String, DayOfWeek> legacy = spec(EdgeKind.MOVE, "", Optional.empty(), List.of(), Optional.empty(), Optional.empty());
+        assertTrue(legacy.afterCommit().isEmpty());
+    }
 }

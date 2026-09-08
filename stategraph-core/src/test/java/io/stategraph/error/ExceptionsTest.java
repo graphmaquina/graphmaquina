@@ -67,4 +67,15 @@ class ExceptionsTest {
         assertEquals(List.of("b", "c"), error.pending());
         assertThrows(NullPointerException.class, () -> new StateMachineException(null));
     }
+
+    @Test
+    void afterCommitCarriesStepAndCause() {
+        IllegalStateException cause = new IllegalStateException("ledger down");
+        AfterCommitException error = new AfterCommitException(KEY, "e", DayOfWeek.MONDAY, DayOfWeek.TUESDAY, "bookHold", cause);
+        assertSame(cause, error.getCause());
+        assertEquals("bookHold", error.step());
+        assertEquals(DayOfWeek.TUESDAY, error.to());
+        assertTrue(error.getMessage().contains("MONDAY → TUESDAY"));
+        assertTrue(error.getMessage().contains("bookHold"));
+    }
 }

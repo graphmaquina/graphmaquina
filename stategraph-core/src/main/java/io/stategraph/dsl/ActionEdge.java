@@ -2,6 +2,7 @@ package io.stategraph.dsl;
 
 import io.stategraph.api.AsyncTransitionGuard;
 import io.stategraph.api.TransitionGuard;
+import java.util.function.Consumer;
 
 /** Stage of an ACTION cell: guards, failure routing and the exception types that trigger it. */
 public interface ActionEdge<E, S extends Enum<S>> extends RowBuilder<E, S> {
@@ -18,4 +19,7 @@ public interface ActionEdge<E, S extends Enum<S>> extends RowBuilder<E, S> {
 
     /** One per call, chainable. */
     ActionEdge<E, S> failsOn(Class<? extends Throwable> type);
+
+    /** Post-commit hook of this cell. At most one per cell. */
+    ActionEdge<E, S> afterCommit(String name, Consumer<? super E> hook);
 }

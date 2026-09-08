@@ -30,7 +30,10 @@ class NullBoundariesTest {
                 Arguments.of("key", (Executable) () -> new ActionRecord(null, "e", DayOfWeek.MONDAY, DayOfWeek.MONDAY, "A", 0, ActionStatus.OK)),
                 Arguments.of("state", (Executable) () -> WatchCondition.<String, String, DayOfWeek>allIn(null)),
                 Arguments.of("name", (Executable) () -> new NamedCondition<String, String, DayOfWeek>(null,
-                        (String e, java.util.Collection<? extends String> peers, PeerView<String, DayOfWeek> v) -> true)));
+                        (String e, java.util.Collection<? extends String> peers, PeerView<String, DayOfWeek> v) -> true)),
+                Arguments.of("hook", (Executable) () -> new HookRef<String>("H", null)),
+                Arguments.of("afterCommit", (Executable) () -> new EdgeSpec<String, DayOfWeek>(DayOfWeek.MONDAY, DayOfWeek.TUESDAY,
+                        EdgeKind.MOVE, "", Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(), null)));
     }
 
     @ParameterizedTest
