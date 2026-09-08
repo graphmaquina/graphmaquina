@@ -3,6 +3,7 @@ package io.stategraph.processor;
 import io.stategraph.annotation.StateGraph;
 import io.stategraph.annotation.StateGraphs;
 import io.stategraph.processor.gen.MachineGenerator;
+import io.stategraph.processor.gen.SetGenerator;
 import io.stategraph.processor.model.MachineModel;
 import io.stategraph.processor.model.SetModel;
 import java.io.IOException;
@@ -58,8 +59,9 @@ public final class StateGraphProcessor extends AbstractProcessor {
         }
         for (Element element : round.getElementsAnnotatedWith(StateGraphs.class)) {
             Optional<SetModel> set = sets.build((TypeElement) element, (TypeElement machine) -> resolve(machine, round, models, failed));
-            // Task 12 generates here.
-            set.isPresent();
+            if (set.isPresent()) {
+                write(SetGenerator.qualifiedName(set.get()), SetGenerator.generate(set.get()), (TypeElement) element);
+            }
         }
         return true;
     }

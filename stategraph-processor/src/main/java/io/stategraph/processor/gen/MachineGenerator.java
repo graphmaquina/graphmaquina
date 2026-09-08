@@ -286,9 +286,14 @@ public final class MachineGenerator {
 
     /** Qualified name to parameter name, one entry per instance dependency; two classes sharing a simple name get a {@code 2} suffix. */
     static Map<String, String> parameterNames(MachineModel model) {
+        return parameterNames(model.instanceDependencies());
+    }
+
+    /** The same convention over any list of dependencies, so a set names them as its machines do. */
+    static Map<String, String> parameterNames(List<TypeElement> dependencies) {
         Map<String, String> names = new LinkedHashMap<>();
         Set<String> taken = new LinkedHashSet<>();
-        for (TypeElement dependency : model.instanceDependencies()) {
+        for (TypeElement dependency : dependencies) {
             String base = decapitalize(dependency.getSimpleName().toString());
             String name = base;
             int suffix = 1;
@@ -325,6 +330,7 @@ public final class MachineGenerator {
     }
 
     static String quote(String text) {
-        return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t") + "\"";
     }
 }

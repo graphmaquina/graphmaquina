@@ -1,0 +1,100 @@
+package io.stategraph.processor;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.stategraph.api.Machine;
+import io.stategraph.api.MachineKey;
+import io.stategraph.api.Machines;
+import io.stategraph.api.Outcome;
+import io.stategraph.api.Reaction;
+import io.stategraph.api.TransitionListener;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+
+class SetGenerationTest {
+
+    @Test
+    void builderSignatureFollowsTheDependenciesAndAsyncness() {
+        Compilation.Result async = Compilation.compile(Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        assertTrue(async.success(), async.describe());
+        String source = async.generated("fx.Library_");
+        assertTrue(source.contains("public static Builder builder(Duration asyncTimeout, DocActions docActions)"), source);
+        assertTrue(source.contains("public final class Library_ implements Library"), source);
+        assertTrue(source.contains(".as(Docs.class)"), source);
+        assertTrue(source.contains(".as(Pages.class)"), source);
+
+        Compilation.Result sync = Compilation.compile(Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY.replace(", action = \"archiveAsync\", timeout = \"PT2S\"", ", action = \"publish\""), Fixtures.LIBRARY));
+        assertTrue(sync.success(), sync.describe());
+        assertTrue(sync.generated("fx.Library_").contains("public static Builder builder(DocActions docActions)"), sync.generated("fx.Library_"));
+    }
+
+    @Test
+    void builtSetRunsCascadesWatchesHooksAndListener() throws Exception {
+        Compilation.Result result = Compilation.compile(Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        assertTrue(result.success(), result.describe());
+        Class<?> docActions = result.load("fx.DocActions");
+        Object actions = docActions.getConstructor().newInstance();
+        Class<?> companion = result.load("fx.Library_");
+        Object builder = companion.getMethod("builder", Duration.class, docActions).invoke(null, Duration.ofSeconds(5), actions);
+        List<String> seen = new ArrayList<>();
+        TransitionListener listener = (MachineKey<?, ?> key, Outcome<?, ?> outcome) ->
+                seen.add(key.entity().getSimpleName() + ":" + outcome.getClass().getSimpleName());
+        builder.getClass().getMethod("listener", TransitionListener.class).invoke(builder, listener);
+        Object library = builder.getClass().getMethod("build").invoke(builder);
+        assertInstanceOf(Machines.class, library);
+        try {
+            Object docs = companion.getMethod("docs").invoke(library);
+            Object pages = companion.getMethod("pages").invoke(library);
+            assertInstanceOf(Machine.class, docs);
+            Class<?> docClass = result.load("fx.Doc");
+            Class<?> pageClass = result.load("fx.Page");
+            Object doc = docClass.getConstructor(String.class).newInstance("d1");
+            Object page = pageClass.getConstructor(String.class, docClass).newInstance("p1", doc);
+            assertInstanceOf(Outcome.Applied.class, docs.getClass().getMethod("submit", docClass).invoke(docs, doc));
+            Object finished = pages.getClass().getMethod("finish", pageClass).invoke(pages, page);
+            Outcome.Applied<?, ?> applied = assertInstanceOf(Outcome.Applied.class, finished);
+            Reaction.Done reaction = assertInstanceOf(Reaction.Done.class, applied.reactions().get(0));
+            assertInstanceOf(Outcome.Applied.class, reaction.outcome());
+            assertEquals("PUBLISHED", docClass.getMethod("getStatus").invoke(doc).toString());
+            @SuppressWarnings("unchecked")
+            List<String> calls = (List<String>) docActions.getField("calls").get(actions);
+            assertEquals(List.of("publish", "notify:d1"), calls);
+            assertEquals(List.of("Doc:Applied", "Doc:Applied", "Page:Applied"), seen);
+        } finally {
+            ((Machines) library).close();
+        }
+    }
+
+    @Test
+    void perMachineTimeoutOverrideRejectsMachinesWithoutAsyncCells() throws Exception {
+        Compilation.Result result = Compilation.compile(Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        assertTrue(result.success(), result.describe());
+        Class<?> docActions = result.load("fx.DocActions");
+        Object actions = docActions.getConstructor().newInstance();
+        Object builder = result.load("fx.Library_").getMethod("builder", Duration.class, docActions).invoke(null, Duration.ofSeconds(5), actions);
+        Method override = builder.getClass().getMethod("asyncTimeout", Class.class, Duration.class);
+        override.invoke(builder, result.load("fx.Docs"), Duration.ofSeconds(1));
+        InvocationTargetException error = assertThrows(InvocationTargetException.class,
+                () -> override.invoke(builder, result.load("fx.Pages"), Duration.ofSeconds(1)));
+        assertInstanceOf(IllegalArgumentException.class, error.getCause());
+    }
+
+    @Test
+    void setIsNotGeneratedWhenAMachineFailed() {
+        Compilation.Result result = Compilation.compile(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER.replace("initial = \"DRAFT\"", "initial = \"DRAFTT\"") + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        assertFalse(result.success());
+        assertFalse(result.hasGenerated("fx.Library_"));
+        assertFalse(result.hasGenerated("fx.Docs_"));
+        assertTrue(result.hasGenerated("fx.Pages_"));
+    }
+}
