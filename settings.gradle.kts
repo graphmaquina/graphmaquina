@@ -1,5 +1,5 @@
 rootProject.name = "stategraph"
-include("stategraph-core", "stategraph-example")
+include("stategraph-core", "stategraph-processor", "stategraph-example")
 
 dependencyResolutionManagement {
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
