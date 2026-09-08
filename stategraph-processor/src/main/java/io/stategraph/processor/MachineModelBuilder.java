@@ -1,8 +1,16 @@
 package io.stategraph.processor;
 
+import io.stategraph.annotation.Action;
+import io.stategraph.annotation.Cell;
+import io.stategraph.annotation.Cells;
+import io.stategraph.annotation.Forbid;
+import io.stategraph.annotation.Forbids;
+import io.stategraph.annotation.Move;
 import io.stategraph.annotation.Row;
 import io.stategraph.annotation.Rows;
 import io.stategraph.annotation.StateGraph;
+import io.stategraph.api.EdgeKind;
+import io.stategraph.processor.model.Binding;
 import io.stategraph.processor.model.CellModel;
 import io.stategraph.processor.model.ForbidModel;
 import io.stategraph.processor.model.MachineModel;
@@ -11,6 +19,8 @@ import io.stategraph.processor.model.OperationModel;
 import io.stategraph.processor.model.Property;
 import io.stategraph.processor.model.RowModel;
 import io.stategraph.processor.model.WatchModel;
+import java.time.Duration;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -21,6 +31,7 @@ import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
@@ -35,6 +46,7 @@ final class MachineModelBuilder {
     private final Annotations annotations;
     private final Signatures signatures;
     private final Accessors accessors;
+    private final Bindings bindings;
     private final Diagnostics diagnostics;
 
     /** Empty when the interface has errors; nothing is generated for it then. */
@@ -80,20 +92,16 @@ final class MachineModelBuilder {
                     + idProperty + "() or get" + Accessors.capitalize(idProperty) + "()", type, graph, annotations.value(graph, "id"));
         }
 
-        List<RowModel> rows = readRows(type, types);
-        List<ForbidModel> forbids = new ArrayList<>();      // Task 8
-        List<CellModel> cells = new ArrayList<>();          // Task 8
-        List<OperationModel> operations = new ArrayList<>(); // Task 8
+        Set<String> closed = new LinkedHashSet<>();
+        List<RowModel> rows = readRows(type, types, closed);
+        List<ForbidModel> forbids = readForbids(type, types);
+        List<CellModel> cells = readCells(type, types);
+        List<OperationModel> operations = readOperations(type, types);
+        checkDuplicateCells(type, forbids, cells, operations);
         List<WatchModel> watches = new ArrayList<>();       // Task 9
 
         for (String state : types.stateNames()) {
-            boolean closed = false;
-            for (RowModel row : rows) {
-                if (row.state().equals(state)) {
-                    closed = true;
-                }
-            }
-            if (!closed && !terminals.contains(state)) {
+            if (!closed.contains(state) && !terminals.contains(state)) {
                 diagnostics.error("SG506", state + " is not terminal and has no @Row: add @Row(state = \"" + state
                         + "\", otherwise = \"why its other cells are forbidden\")", type, graph);
             }
@@ -147,9 +155,9 @@ final class MachineModelBuilder {
         return Optional.empty();
     }
 
-    private List<RowModel> readRows(TypeElement type, MachineTypes types) {
+    /** {@code seen} collects every state that carries a @Row, blank reason included, so SG103 does not also produce SG506. */
+    private List<RowModel> readRows(TypeElement type, MachineTypes types, Set<String> seen) {
         List<RowModel> rows = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
         for (AnnotationMirror row : annotations.findAll(type, Row.class, Rows.class)) {
             String state = annotations.string(row, "state");
             String otherwise = annotations.string(row, "otherwise");
@@ -167,6 +175,218 @@ final class MachineModelBuilder {
             rows.add(new RowModel(state, otherwise));
         }
         return rows;
+    }
+
+    private List<ForbidModel> readForbids(TypeElement type, MachineTypes types) {
+        List<ForbidModel> forbids = new ArrayList<>();
+        for (AnnotationMirror forbid : annotations.findAll(type, Forbid.class, Forbids.class)) {
+            String from = annotations.string(forbid, "from");
+            String to = annotations.string(forbid, "to");
+            String reason = annotations.string(forbid, "reason");
+            boolean valid = checkState(types, from, type, forbid, annotations.value(forbid, "from"))
+                    & checkState(types, to, type, forbid, annotations.value(forbid, "to"));
+            if (reason.isBlank()) {
+                diagnostics.error("SG103", "the @Forbid " + from + " → " + to + " has a blank reason", type, forbid, annotations.value(forbid, "reason"));
+                valid = false;
+            }
+            if (valid) {
+                forbids.add(new ForbidModel(from, to, reason));
+            }
+        }
+        return forbids;
+    }
+
+    private List<CellModel> readCells(TypeElement type, MachineTypes types) {
+        List<CellModel> cells = new ArrayList<>();
+        for (AnnotationMirror mirror : annotations.findAll(type, Cell.class, Cells.class)) {
+            cell(type, mirror, types, "", false).ifPresent(cells::add);
+        }
+        return cells;
+    }
+
+    private List<OperationModel> readOperations(TypeElement type, MachineTypes types) {
+        List<OperationModel> operations = new ArrayList<>();
+        DeclaredType outcome = signatures.declared("io.stategraph.api.Outcome", types.entity(), types.states());
+        for (Element member : type.getEnclosedElements()) {
+            if (member.getKind() != ElementKind.METHOD) {
+                continue;
+            }
+            ExecutableElement method = (ExecutableElement) member;
+            if (method.isDefault() || method.getModifiers().contains(Modifier.STATIC) || method.getModifiers().contains(Modifier.PRIVATE)) {
+                continue;
+            }
+            Optional<AnnotationMirror> action = annotations.find(method, Action.class);
+            Optional<AnnotationMirror> move = annotations.find(method, Move.class);
+            if (action.isPresent() == move.isPresent()) {
+                diagnostics.error("SG504", method.getSimpleName() + " must carry exactly one of @Action or @Move", method);
+                continue;
+            }
+            boolean signatureOk = method.getParameters().size() == 1
+                    && signatures.same(method.getParameters().get(0).asType(), types.entity())
+                    && signatures.same(method.getReturnType(), outcome);
+            if (!signatureOk) {
+                diagnostics.error("SG504", "an operation is declared as Outcome<" + types.entityName() + ", " + types.statesName() + "> "
+                        + method.getSimpleName() + "(" + types.entityName() + ")", method);
+                continue;
+            }
+            String name = method.getSimpleName().toString();
+            AnnotationMirror mirror = action.isPresent() ? action.get() : move.get();
+            cell(method, mirror, types, name, move.isPresent()).ifPresent((CellModel cell) -> operations.add(new OperationModel(name, cell)));
+        }
+        return operations;
+    }
+
+    /**
+     * One @Cell, @Action or @Move. {@code operation} is the method name for operations and empty for @Cell;
+     * {@code isMove} distinguishes @Move (no action, onFailure, failsOn, timeout elements) from the other two.
+     */
+    private Optional<CellModel> cell(Element element, AnnotationMirror mirror, MachineTypes types, String operation, boolean isMove) {
+        int before = diagnostics.errors();
+        List<String> from = checkStates(types, mirror, "from", element);
+        if (annotations.array(mirror, "from").isEmpty()) {
+            diagnostics.error("SG507", "from must name at least one state", element, mirror, annotations.value(mirror, "from"));
+        }
+        String to = annotations.string(mirror, "to");
+        checkState(types, to, element, mirror, annotations.value(mirror, "to"));
+        if (from.contains(to)) {
+            diagnostics.error("SG104", to + " is both in from and to: a cell cannot move to itself; the diagonal is always STAY",
+                    element, mirror, annotations.value(mirror, "to"));
+        }
+        TypeMirror by = annotations.type(mirror, "by");
+        boolean hasBy = !annotations.isVoid(by);
+        List<String> guardNames = annotations.strings(mirror, "guards");
+        String afterCommit = annotations.string(mirror, "afterCommit");
+
+        String actionName = "";
+        String actionMethod = "";
+        TypeMirror guardsBy = by;
+        Optional<String> onFailure = Optional.empty();
+        List<TypeMirror> failsOn = List.of();
+        Optional<Duration> timeout = Optional.empty();
+        if (!isMove) {
+            String action = annotations.string(mirror, "action");
+            if (operation.isEmpty()) {
+                if (hasBy && action.isEmpty()) {
+                    diagnostics.error("SG507", "a @Cell with by must name its action", element, mirror, annotations.value(mirror, "by"));
+                }
+                if (!hasBy && !action.isEmpty()) {
+                    diagnostics.error("SG507", "a @Cell with an action needs by", element, mirror, annotations.value(mirror, "action"));
+                }
+                actionName = action;
+                actionMethod = action;
+            } else {
+                actionName = operation;
+                actionMethod = action.isEmpty() ? operation : action;
+            }
+            TypeMirror declaredGuardsBy = annotations.type(mirror, "guardsBy");
+            if (!annotations.isVoid(declaredGuardsBy)) {
+                guardsBy = declaredGuardsBy;
+                if (guardNames.isEmpty()) {
+                    diagnostics.error("SG507", "guardsBy without guards", element, mirror, annotations.value(mirror, "guardsBy"));
+                }
+            }
+            String onFailureName = annotations.string(mirror, "onFailure");
+            if (!onFailureName.isEmpty()) {
+                if (checkState(types, onFailureName, element, mirror, annotations.value(mirror, "onFailure"))) {
+                    onFailure = Optional.of(onFailureName);
+                }
+            }
+            failsOn = annotations.types(mirror, "failsOn");
+            List<AnnotationValue> failsOnValues = annotations.array(mirror, "failsOn");
+            for (int i = 0; i < failsOn.size(); i++) {
+                if (isForbiddenFailsOn(failsOn.get(i))) {
+                    diagnostics.error("SG302", "failsOn does not allow " + failsOn.get(i) + "; only exceptions foreign to the library, and never"
+                            + " Throwable, Exception, RuntimeException or an Error", element, mirror, failsOnValues.get(i));
+                }
+            }
+            String timeoutText = annotations.string(mirror, "timeout");
+            if (!timeoutText.isEmpty()) {
+                timeout = parseTimeout(timeoutText, element, mirror, annotations.value(mirror, "timeout"));
+            }
+            boolean actionCell = hasBy && !actionName.isEmpty();
+            if (!actionCell && (onFailure.isPresent() || !failsOn.isEmpty() || timeout.isPresent())) {
+                diagnostics.error("SG507", "onFailure, failsOn and timeout need an action: add by and action", element, mirror,
+                        annotations.value(mirror, "to"));
+            }
+        }
+        boolean hasGuardHost = !annotations.isVoid(guardsBy);
+        if (!guardNames.isEmpty() && !hasGuardHost) {
+            diagnostics.error("SG507", "guards need by" + (isMove ? "" : " or guardsBy"), element, mirror, annotations.value(mirror, "guards"));
+        }
+        if (!afterCommit.isEmpty() && !hasBy) {
+            diagnostics.error("SG507", "afterCommit needs by", element, mirror, annotations.value(mirror, "afterCommit"));
+        }
+
+        // Bindings are resolved even when a state name was wrong, so every problem of the cell is reported at once.
+        boolean action = !isMove && hasBy && !actionName.isEmpty();
+        Optional<Binding> actionBinding = Optional.empty();
+        if (action) {
+            AnnotationValue anchor = annotations.string(mirror, "action").isEmpty() ? annotations.value(mirror, "by") : annotations.value(mirror, "action");
+            actionBinding = bindings.resolve(by, actionMethod, Bindings.Role.ACTION, types, Optional.empty(), element, mirror, anchor);
+        }
+        List<Binding> guards = new ArrayList<>();
+        Set<String> seenGuards = new LinkedHashSet<>();
+        List<AnnotationValue> guardValues = annotations.array(mirror, "guards");
+        for (int i = 0; i < guardNames.size() && hasGuardHost; i++) {
+            if (!seenGuards.add(guardNames.get(i))) {
+                diagnostics.error("SG105", "the guard " + guardNames.get(i) + " is declared twice", element, mirror, guardValues.get(i));
+                continue;
+            }
+            bindings.resolve(guardsBy, guardNames.get(i), Bindings.Role.GUARD, types, Optional.empty(), element, mirror, guardValues.get(i))
+                    .ifPresent(guards::add);
+        }
+        Optional<Binding> hook = Optional.empty();
+        if (!afterCommit.isEmpty() && hasBy) {
+            hook = bindings.resolve(by, afterCommit, Bindings.Role.HOOK, types, Optional.empty(), element, mirror, annotations.value(mirror, "afterCommit"));
+        }
+        if (timeout.isPresent() && actionBinding.isPresent() && !actionBinding.get().async()) {
+            diagnostics.error("SG507", "timeout is only allowed on an asynchronous action", element, mirror, annotations.value(mirror, "timeout"));
+        }
+        if (diagnostics.errors() > before) {
+            return Optional.empty();
+        }
+        EdgeKind kind = action ? EdgeKind.ACTION : EdgeKind.MOVE;
+        return Optional.of(new CellModel(from, to, kind, action ? actionName : "", actionBinding, guards, onFailure, failsOn, timeout, hook));
+    }
+
+    private Optional<Duration> parseTimeout(String text, Element element, AnnotationMirror mirror, AnnotationValue anchor) {
+        try {
+            Duration duration = Duration.parse(text);
+            if (duration.isZero() || duration.isNegative()) {
+                diagnostics.error("SG511", "timeout must be positive: " + text, element, mirror, anchor);
+                return Optional.empty();
+            }
+            return Optional.of(duration);
+        } catch (DateTimeParseException e) {
+            diagnostics.error("SG511", "timeout must be an ISO-8601 duration such as PT5S, not \"" + text + "\"", element, mirror, anchor);
+            return Optional.empty();
+        }
+    }
+
+    private boolean isForbiddenFailsOn(TypeMirror type) {
+        return signatures.erasureIs(type, "java.lang.Throwable") || signatures.erasureIs(type, "java.lang.Exception")
+                || signatures.erasureIs(type, "java.lang.RuntimeException") || signatures.subtype(type, "java.lang.Error")
+                || signatures.subtype(type, "io.stategraph.error.StateMachineException");
+    }
+
+    private void checkDuplicateCells(TypeElement type, List<ForbidModel> forbids, List<CellModel> cells, List<OperationModel> operations) {
+        Set<String> seen = new LinkedHashSet<>();
+        for (ForbidModel forbid : forbids) {
+            if (!seen.add(forbid.from() + " → " + forbid.to())) {
+                diagnostics.error("SG102", "the cell " + forbid.from() + " → " + forbid.to() + " is declared twice", type);
+            }
+        }
+        List<CellModel> all = new ArrayList<>(cells);
+        for (OperationModel operation : operations) {
+            all.add(operation.cell());
+        }
+        for (CellModel cell : all) {
+            for (String from : cell.from()) {
+                if (!seen.add(from + " → " + cell.to())) {
+                    diagnostics.error("SG102", "the cell " + from + " → " + cell.to() + " is declared twice", type);
+                }
+            }
+        }
     }
 
     /** SG501 with a suggestion; true when the name is a constant of the machine's enum. */

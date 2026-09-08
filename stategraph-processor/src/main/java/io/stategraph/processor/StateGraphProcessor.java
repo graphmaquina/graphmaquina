@@ -38,7 +38,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
         super.init(env);
         diagnostics = new Diagnostics(env.getMessager());
         Signatures signatures = new Signatures(env.getElementUtils(), env.getTypeUtils());
-        machines = new MachineModelBuilder(new Annotations(env.getElementUtils()), signatures, new Accessors(signatures), diagnostics);
+        machines = new MachineModelBuilder(new Annotations(env.getElementUtils()), signatures, new Accessors(signatures),
+                new Bindings(signatures, diagnostics), diagnostics);
     }
 
     @Override

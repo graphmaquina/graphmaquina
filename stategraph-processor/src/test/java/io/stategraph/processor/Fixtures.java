@@ -81,6 +81,15 @@ final class Fixtures {
             }
             """;
 
+    static final String HIDDEN_ACTIONS = """
+            package fx;
+            import io.stategraph.api.ActionOutcome;
+            import io.stategraph.api.TransitionContext;
+            class HiddenActions {
+                public ActionOutcome publish(TransitionContext<Doc, DocStatus> ctx) { return ActionOutcome.ok(); }
+            }
+            """;
+
     static final String PAGES = """
             package fx;
             import io.stategraph.annotation.Move;
@@ -138,6 +147,7 @@ final class Fixtures {
         sources.put("fx.Doc", DOC);
         sources.put("fx.Page", PAGE);
         sources.put("fx.DocActions", DOC_ACTIONS);
+        sources.put("fx.HiddenActions", HIDDEN_ACTIONS);
         return sources;
     }
 
