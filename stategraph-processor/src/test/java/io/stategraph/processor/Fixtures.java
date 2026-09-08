@@ -149,6 +149,17 @@ final class Fixtures {
             @Watch(state = "REVIEW", peer = Pages.class, peers = "pages", owner = "doc", rules = @When(allIn = "DONE", goTo = "PUBLISHED"))
             """;
 
+    static final String LIBRARY = """
+            package fx;
+            import io.stategraph.annotation.StateGraphs;
+            import io.stategraph.api.Machines;
+            @StateGraphs
+            public interface Library extends Machines {
+                Docs docs();
+                Pages pages();
+            }
+            """;
+
     private Fixtures() { }
 
     /** The fx domain: entities, enums and DocActions. */
@@ -179,6 +190,13 @@ final class Fixtures {
     static Map<String, String> withPages(String typeAnnotations, String members) {
         Map<String, String> sources = withDocs(typeAnnotations, members);
         sources.put("fx.Pages", PAGES);
+        return sources;
+    }
+
+    /** Domain, Pages, Docs and a set interface. */
+    static Map<String, String> withLibrary(String typeAnnotations, String members, String library) {
+        Map<String, String> sources = withPages(typeAnnotations, members);
+        sources.put("fx.Library", library);
         return sources;
     }
 

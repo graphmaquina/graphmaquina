@@ -3,6 +3,8 @@ package io.stategraph.processor;
 import io.stategraph.annotation.StateGraph;
 import io.stategraph.annotation.StateGraphs;
 import io.stategraph.processor.model.MachineModel;
+import io.stategraph.processor.model.SetModel;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -22,6 +24,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
 
     private Diagnostics diagnostics;
     private MachineModelBuilder machines;
+    private SetModelBuilder sets;
 
     @Override
     public Set<String> getSupportedAnnotationTypes() {
@@ -40,19 +43,39 @@ public final class StateGraphProcessor extends AbstractProcessor {
         Signatures signatures = new Signatures(env.getElementUtils(), env.getTypeUtils());
         machines = new MachineModelBuilder(new Annotations(env.getElementUtils()), signatures, new Accessors(signatures),
                 new Bindings(signatures, diagnostics), diagnostics);
+        sets = new SetModelBuilder(new Annotations(env.getElementUtils()), signatures, diagnostics);
     }
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
         Map<String, MachineModel> models = new LinkedHashMap<>();
+        Set<String> failed = new HashSet<>();
         for (Element element : round.getElementsAnnotatedWith(StateGraph.class)) {
-            Optional<MachineModel> model = machines.build((TypeElement) element);
-            model.ifPresent((MachineModel built) -> models.put(built.types().facade().getQualifiedName().toString(), built));
+            resolve((TypeElement) element, models, failed);
         }
         for (Element element : round.getElementsAnnotatedWith(StateGraphs.class)) {
-            // Task 10 builds the set model here.
-            element.getSimpleName();
+            Optional<SetModel> set = sets.build((TypeElement) element, (TypeElement machine) -> resolve(machine, models, failed));
+            // Task 12 generates here.
+            set.isPresent();
         }
         return true;
+    }
+
+    /** A machine's model, built once per round; a machine from the classpath is built on demand. */
+    private Optional<MachineModel> resolve(TypeElement type, Map<String, MachineModel> models, Set<String> failed) {
+        String name = type.getQualifiedName().toString();
+        if (models.containsKey(name)) {
+            return Optional.of(models.get(name));
+        }
+        if (failed.contains(name)) {
+            return Optional.empty();
+        }
+        Optional<MachineModel> model = machines.build(type);
+        if (model.isPresent()) {
+            models.put(name, model.get());
+        } else {
+            failed.add(name);
+        }
+        return model;
     }
 }
