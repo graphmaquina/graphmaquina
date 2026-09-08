@@ -77,6 +77,7 @@ class MachineHeaderErrorsTest {
         Compilation.Result blank = Compilation.compile(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER.replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \""), Fixtures.DOCS_BODY));
         assertTrue(blank.hasError("SG103"), blank.describe());
+        assertEquals(0, blank.countError("SG506"), blank.describe());
     }
 
     @Test
