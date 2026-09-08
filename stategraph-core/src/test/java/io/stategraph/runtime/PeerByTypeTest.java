@@ -1,6 +1,5 @@
 package io.stategraph.runtime;
 
-import static io.stategraph.fixtures.Keys.ITEMS;
 import static io.stategraph.fixtures.Keys.ORDERS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;

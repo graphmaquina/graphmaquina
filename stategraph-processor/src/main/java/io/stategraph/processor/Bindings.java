@@ -4,6 +4,7 @@ import io.stategraph.processor.model.Binding;
 import io.stategraph.processor.model.MachineTypes;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
@@ -59,7 +60,7 @@ final class Bindings {
             }
         }
         if (fitting.isEmpty()) {
-            diagnostics.error("SG505", owner.getSimpleName() + "." + name + " does not have the signature of a " + role.name().toLowerCase()
+            diagnostics.error("SG505", owner.getSimpleName() + "." + name + " does not have the signature of a " + role.name().toLowerCase(Locale.ROOT)
                     + "; expected " + expected(name, role, machine, peer), element, mirror, anchor);
             return Optional.empty();
         }

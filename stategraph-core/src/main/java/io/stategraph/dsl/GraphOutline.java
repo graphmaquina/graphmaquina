@@ -61,6 +61,8 @@ public record GraphOutline(@NonNull String name, @NonNull List<String> states, @
 
     /** The cell (from, to); the matrix is complete by construction. */
     public CellOutline cell(String from, String to) {
+        requireKnown(name, states, from, "cell.from");
+        requireKnown(name, states, to, "cell.to");
         int n = states.size();
         int fromIndex = states.indexOf(from);
         int toIndex = states.indexOf(to);

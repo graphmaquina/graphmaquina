@@ -1,6 +1,7 @@
 package io.stategraph.processor;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 
 /** "Did you mean" for state names, by edit distance. */
@@ -20,7 +21,7 @@ final class Suggestions {
         Optional<String> best = Optional.empty();
         int bestDistance = MAX_DISTANCE + 1;
         for (String candidate : candidates) {
-            int distance = distance(wrong.toUpperCase(), candidate.toUpperCase());
+            int distance = distance(wrong.toUpperCase(Locale.ROOT), candidate.toUpperCase(Locale.ROOT));
             if (distance < bestDistance) {
                 bestDistance = distance;
                 best = Optional.of(candidate);

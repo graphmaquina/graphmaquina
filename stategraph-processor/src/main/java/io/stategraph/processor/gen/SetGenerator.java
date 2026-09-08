@@ -101,7 +101,7 @@ public final class SetGenerator {
                                 List<String> parameters, boolean async) {
         String set = model.setName();
         String objects = names.of(OBJECTS);
-        out.line("/** Single-use. Optional settings mirror MachineRegistry.Builder and StateMachines.Builder. */");
+        out.line("/** Optional settings mirror MachineRegistry.Builder and StateMachines.Builder. */");
         out.open("public static final class Builder");
         out.blank();
         for (String parameter : parameters) {

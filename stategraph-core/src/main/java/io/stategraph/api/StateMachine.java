@@ -7,6 +7,7 @@ import java.util.function.Supplier;
 /**
  * Governs the state S of entity E. Does not protect an entity against concurrent transitions:
  * that is the caller's responsibility.
+ * SPI: applications receive facades generated from their {@code @StateGraph} interfaces; this type is what the generated code wraps.
  */
 public interface StateMachine<E, S extends Enum<S>> {
 
