@@ -42,7 +42,7 @@ public final class GraphOutlineValidator {
             boolean terminal = outline.terminals().contains(state);
             if (exits.isEmpty() && !terminal) {
                 problems.add("SG202", outline.indexOf(state), -1,
-                        state + " has no ACTION or MOVE exit: declare it with terminal(" + state + ")");
+                        state + " has no ACTION or MOVE exit: declare it as a terminal state");
             }
             if (!exits.isEmpty() && terminal) {
                 problems.add("SG202", outline.indexOf(state), -1, state + " is terminal but exits to " + exits);
