@@ -9,6 +9,7 @@ import io.stategraph.api.Outcome;
 import io.stategraph.api.PeerView;
 import io.stategraph.api.Reaction;
 import io.stategraph.api.StateMachine;
+import io.stategraph.api.TransitionListener;
 import io.stategraph.api.TransitionRecord;
 import io.stategraph.api.WatchRule;
 import io.stategraph.api.WatchSpec;
@@ -90,11 +91,11 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
         }
         Optional<WatchSpec<E, S, ?, ?>> watch = definition.watch(state);
         if (watch.isEmpty()) {
-            return new Outcome.Ignored<>(entity, state, state);
+            return notify(new Outcome.Ignored<>(entity, state, state));
         }
         Optional<S> target = firstMatch(watch.get(), entity);
         if (target.isEmpty()) {
-            return new Outcome.Ignored<>(entity, state, state);
+            return notify(new Outcome.Ignored<>(entity, state, state));
         }
         S resolved = target.get();
         return runRoot(entity, (Transaction tx) -> tx.transition(this, entity, resolved, 0), chain);
@@ -147,14 +148,28 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
             case StepResult.Ignored<S> ignored -> List.of();
             case StepResult.Rejected<S> rejected -> List.of();
         };
-        return switch (step) {
+        return notify(switch (step) {
             case StepResult.Moved<S> moved -> new Outcome.Applied<>(entity, moved.from(), moved.to(), records, reactions);
             case StepResult.Ignored<S> ignored -> new Outcome.Ignored<>(entity, ignored.from(), ignored.to());
             case StepResult.Rejected<S> rejected ->
                     new Outcome.Rejected<>(entity, rejected.from(), rejected.to(), rejected.reason(), rejected.guard());
             case StepResult.FailedTo<S> failed -> new Outcome.Failed<>(entity, failed.from(), failed.to(), failed.movedTo(),
                     failed.reason(), failed.cause(), records, reactions);
-        };
+        });
+    }
+
+    /** Spec §6.1 step 7: the registry listener sees every outcome of every call. */
+    private Outcome<E, S> notify(Outcome<E, S> outcome) {
+        Optional<TransitionListener> listener = registry.listener();
+        if (listener.isEmpty()) {
+            return outcome;
+        }
+        try {
+            listener.get().onOutcome(key(), outcome);
+        } catch (RuntimeException e) {
+            throw new AfterCommitException(key(), outcome.entity(), outcome.from(), outcome.current(), "listener", e);
+        }
+        return outcome;
     }
 
     /** Spec §6.1 step 4: every committed hop with a hook, in log order, on the calling thread. */

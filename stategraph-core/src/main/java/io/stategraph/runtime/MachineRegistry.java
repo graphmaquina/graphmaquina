@@ -3,6 +3,7 @@ package io.stategraph.runtime;
 import io.stategraph.api.MachineKey;
 import io.stategraph.api.Reaction;
 import io.stategraph.api.StateMachine;
+import io.stategraph.api.TransitionListener;
 import io.stategraph.api.WatchSpec;
 import io.stategraph.error.UnknownPeerMachineException;
 import java.util.ArrayList;
@@ -27,13 +28,14 @@ public final class MachineRegistry implements AutoCloseable {
     private final Map<MachineKey<?, ?>, List<Watcher<?, ?, ?, ?>>> watchers = new LinkedHashMap<>();
     private final int maxCascadeDepth;
     private final int maxWatchChain;
+    private final Optional<TransitionListener> listener;
 
     public static Builder builder() {
         return new Builder();
     }
 
     static <E, S extends Enum<S>> StateMachine<E, S> standalone(StateMachines.Builder<E, S> builder) {
-        MachineRegistry registry = new MachineRegistry(10, 10);
+        MachineRegistry registry = new MachineRegistry(10, 10, Optional.empty());
         DefaultStateMachine<E, S> machine = builder.build(registry);
         registry.machines.put(machine.key(), machine);
         return machine;
@@ -63,6 +65,8 @@ public final class MachineRegistry implements AutoCloseable {
     int maxCascadeDepth() { return maxCascadeDepth; }
 
     int maxWatchChain() { return maxWatchChain; }
+
+    Optional<TransitionListener> listener() { return listener; }
 
     <E, S extends Enum<S>> DefaultStateMachine<E, S> machineFor(MachineKey<E, S> key) {
         DefaultStateMachine<?, ?> machine = anyMachineFor(key);
@@ -132,6 +136,7 @@ public final class MachineRegistry implements AutoCloseable {
         private final List<StateMachines.Builder<?, ?>> builders = new ArrayList<>();
         private int maxCascadeDepth = 10;
         private int maxWatchChain = 10;
+        private Optional<TransitionListener> listener = Optional.empty();
         private boolean used;
 
         private Builder() { }
@@ -163,12 +168,22 @@ public final class MachineRegistry implements AutoCloseable {
             return this;
         }
 
+        /** One listener per registry, notified of every outcome. */
+        public Builder listener(TransitionListener listener) {
+            Objects.requireNonNull(listener, "listener");
+            if (this.listener.isPresent()) {
+                throw new IllegalStateException("this MachineRegistry.Builder already has a listener");
+            }
+            this.listener = Optional.of(listener);
+            return this;
+        }
+
         public MachineRegistry build() {
             if (used) {
                 throw new IllegalStateException("this MachineRegistry.Builder was already used");
             }
             used = true;
-            MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain);
+            MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, listener);
             for (StateMachines.Builder<?, ?> builder : builders) {
                 if (!builder.hasIdentity()) {
                     throw new IllegalStateException("the machine " + builder.key() + " must declare identity(...) within a registry");

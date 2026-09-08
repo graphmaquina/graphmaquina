@@ -37,7 +37,8 @@ class RuntimeNullBoundariesTest {
                 Arguments.of("target", (Executable) () -> machine.transitionTo(new Doc("1", DocStatus.DRAFT), null)),
                 Arguments.of("state", (Executable) () -> machine.allowedFrom(null)),
                 Arguments.of("builder", (Executable) () -> MachineRegistry.builder().add(null)),
-                Arguments.of("key", (Executable) () -> MachineRegistry.builder().build().of(null)));
+                Arguments.of("key", (Executable) () -> MachineRegistry.builder().build().of(null)),
+                Arguments.of("listener", (Executable) () -> MachineRegistry.builder().listener(null)));
     }
 
     @ParameterizedTest
