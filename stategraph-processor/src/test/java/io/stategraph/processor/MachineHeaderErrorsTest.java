@@ -53,6 +53,17 @@ class MachineHeaderErrorsTest {
     }
 
     @Test
+    void sg502NestedInterfaceIsRejectedAndGeneratesNothing() {
+        Map<String, String> nested = Fixtures.domain();
+        nested.put("fx.Holder", Fixtures.DOCS_IMPORTS + "public final class Holder {\n" + Fixtures.DOCS_HEADER
+                + "public interface Docs extends Machine<Doc, DocStatus> {\n" + Fixtures.DOCS_BODY + "}\n}\n");
+        Compilation.Result result = Compilation.compile(nested);
+        assertTrue(result.hasError("SG502"), result.describe());
+        assertFalse(result.hasGenerated("fx.Holder.Docs_"), result.describe());
+        assertFalse(result.hasGenerated("fx.Docs_"), result.describe());
+    }
+
+    @Test
     void sg503MissingAccessors() {
         Compilation.Result state = Compilation.compile(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER.replace("allowsCycle = \"REVIEW\"", "allowsCycle = \"REVIEW\", state = \"phase\""), Fixtures.DOCS_BODY));

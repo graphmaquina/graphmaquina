@@ -1,8 +1,10 @@
 package io.stategraph.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class SetErrorsTest {
@@ -22,6 +24,26 @@ class SetErrorsTest {
         assertTrue(library(Fixtures.LIBRARY.replace("public interface Library extends Machines", "public abstract class Library implements Machines"))
                 .hasError("SG502"));
         assertTrue(library(Fixtures.LIBRARY.replace(" extends Machines", "")).hasError("SG502"));
+    }
+
+    @Test
+    void sg502NestedSetIsRejectedAndGeneratesNothing() {
+        Map<String, String> sources = Fixtures.withPages(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY);
+        sources.put("fx.Holder", """
+                package fx;
+                import io.stategraph.annotation.StateGraphs;
+                import io.stategraph.api.Machines;
+                public final class Holder {
+                    @StateGraphs
+                    public interface Library extends Machines {
+                        Docs docs();
+                        Pages pages();
+                    }
+                }
+                """);
+        Compilation.Result result = Compilation.compile(sources);
+        assertTrue(result.hasError("SG502"), result.describe());
+        assertFalse(result.hasGenerated("fx.Library_"), result.describe());
     }
 
     @Test

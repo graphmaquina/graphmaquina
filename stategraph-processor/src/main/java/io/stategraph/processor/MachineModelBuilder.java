@@ -38,6 +38,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
@@ -59,6 +60,11 @@ final class MachineModelBuilder {
     Optional<MachineModel> build(TypeElement type) {
         int before = diagnostics.errors();
         AnnotationMirror graph = annotations.find(type, StateGraph.class).orElseThrow();
+        if (type.getNestingKind() != NestingKind.TOP_LEVEL) {
+            diagnostics.error("SG502", type.getSimpleName() + " must be a top-level interface: the generated companion lives next to it"
+                    + " in the package", type, graph);
+            return Optional.empty();
+        }
         Optional<MachineTypes> resolved = machineTypes(type);
         if (resolved.isEmpty()) {
             diagnostics.error("SG502", type.getSimpleName() + " must be an interface extending Machine<E, S> with a concrete entity"
