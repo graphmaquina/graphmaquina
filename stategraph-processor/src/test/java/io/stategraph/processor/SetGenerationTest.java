@@ -16,7 +16,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class SetGenerationTest {
@@ -86,6 +88,58 @@ class SetGenerationTest {
         InvocationTargetException error = assertThrows(InvocationTargetException.class,
                 () -> override.invoke(builder, result.load("fx.Pages"), Duration.ofSeconds(1)));
         assertInstanceOf(IllegalArgumentException.class, error.getCause());
+    }
+
+    /** A package holding Status, Thing and a minimal Things machine over them: three simple names shared with every twin. */
+    private static void twin(Map<String, String> sources, String name) {
+        sources.put(name + ".Status", "package " + name + ";\npublic enum Status { OPEN, DONE }\n");
+        sources.put(name + ".Thing", """
+                package %s;
+                public final class Thing {
+                    private final String id;
+                    private Status status = Status.OPEN;
+                    public Thing(String id) { this.id = id; }
+                    public String getId() { return id; }
+                    public Status getStatus() { return status; }
+                    public void setStatus(Status status) { this.status = status; }
+                }
+                """.formatted(name));
+        sources.put(name + ".Things", """
+                package %s;
+                import io.stategraph.annotation.Move;
+                import io.stategraph.annotation.Row;
+                import io.stategraph.annotation.StateGraph;
+                import io.stategraph.api.Machine;
+                import io.stategraph.api.Outcome;
+                @StateGraph(initial = "OPEN", terminals = "DONE")
+                @Row(state = "OPEN", otherwise = "a thing is finished")
+                public interface Things extends Machine<Thing, Status> {
+                    @Move(from = "OPEN", to = "DONE")
+                    Outcome<Thing, Status> finish(Thing thing);
+                }
+                """.formatted(name));
+    }
+
+    @Test
+    void twoPackagesSharingEverySimpleNameStillCompile() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        twin(sources, "a");
+        twin(sources, "b");
+        sources.put("fx.Both", """
+                package fx;
+                import io.stategraph.annotation.StateGraphs;
+                import io.stategraph.api.Machines;
+                @StateGraphs
+                public interface Both extends Machines {
+                    a.Things first();
+                    b.Things second();
+                }
+                """);
+        Compilation.Result result = Compilation.compile(sources);
+        assertTrue(result.success(), result.describe());
+        assertTrue(result.hasGenerated("a.Things_"), result.describe());
+        assertTrue(result.hasGenerated("b.Things_"), result.describe());
+        assertTrue(result.hasGenerated("fx.Both_"), result.describe());
     }
 
     @Test

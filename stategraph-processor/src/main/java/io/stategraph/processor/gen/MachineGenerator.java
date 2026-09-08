@@ -24,6 +24,20 @@ import javax.lang.model.type.TypeMirror;
 /** Emits {@code <Interface>_}: the graph factory built with the SPI DSL, and the facade that implements the interface. */
 public final class MachineGenerator {
 
+    private static final String GRAPH_DEFINITION = "io.stategraph.api.GraphDefinition";
+    private static final String MACHINE_KEY = "io.stategraph.api.MachineKey";
+    private static final String OUTCOME = "io.stategraph.api.Outcome";
+    private static final String STATE_MACHINE = "io.stategraph.api.StateMachine";
+    private static final String WATCH_CONDITION = "io.stategraph.api.WatchCondition";
+    private static final String STATE_GRAPH = "io.stategraph.dsl.StateGraph";
+    private static final String DURATION = "java.time.Duration";
+    private static final String OBJECTS = "java.util.Objects";
+    private static final String OPTIONAL = "java.util.Optional";
+    private static final String SET = "java.util.Set";
+    private static final String COMPLETABLE_FUTURE = "java.util.concurrent.CompletableFuture";
+    private static final String SUPPLIER = "java.util.function.Supplier";
+    private static final String GENERATED = "javax.annotation.processing.Generated";
+
     private MachineGenerator() { }
 
     public static String qualifiedName(MachineModel model) {
@@ -31,71 +45,79 @@ public final class MachineGenerator {
     }
 
     public static String generate(MachineModel model) {
-        String e = model.types().entityName();
-        String s = model.types().statesName();
+        Names names = new Names(model.packageName(), types(model));
+        String e = names.of(model.types().entityElement().getQualifiedName().toString());
+        String s = names.of(model.types().statesElement().getQualifiedName().toString());
         String facade = model.facadeName();
         String companion = facade + "_";
+        String key = names.of(MACHINE_KEY);
+        String outcome = names.of(OUTCOME);
+        String objects = names.of(OBJECTS);
+        String definition = names.of(GRAPH_DEFINITION);
         Map<String, String> parameters = parameterNames(model);
         String entity = entityParameter(model, parameters);
         SourceWriter out = new SourceWriter();
         out.line("package " + model.packageName() + ";");
         out.blank();
-        for (String type : imports(model)) {
+        for (String type : names.imports()) {
             out.line("import " + type + ";");
         }
         out.blank();
         out.line("/** Generated companion of {@link " + facade + "}: builds its graph and implements its facade. Do not edit. */");
-        out.line("@Generated(\"io.stategraph.processor.StateGraphProcessor\")");
+        out.line("@" + names.of(GENERATED) + "(\"io.stategraph.processor.StateGraphProcessor\")");
         out.open("public final class " + companion + " implements " + facade);
         out.blank();
-        out.line("public static final MachineKey<" + e + ", " + s + "> KEY = MachineKey.of(" + e + ".class, " + s + ".class);");
+        out.line("public static final " + key + "<" + e + ", " + s + "> KEY = " + key + ".of(" + e + ".class, " + s + ".class);");
         out.blank();
-        out.line("private final StateMachine<" + e + ", " + s + "> machine;");
+        out.line("private final " + names.of(STATE_MACHINE) + "<" + e + ", " + s + "> machine;");
         out.blank();
-        out.open("public " + companion + "(StateMachine<" + e + ", " + s + "> machine)");
-        out.line("this.machine = Objects.requireNonNull(machine, \"machine\");");
+        out.open("public " + companion + "(" + names.of(STATE_MACHINE) + "<" + e + ", " + s + "> machine)");
+        out.line("this.machine = " + objects + ".requireNonNull(machine, \"machine\");");
         out.close();
         out.blank();
-        graph(model, parameters, out);
+        graph(model, names, parameters, out);
         for (OperationModel operation : model.operations()) {
             out.blank();
             out.line("@Override");
-            out.open("public Outcome<" + e + ", " + s + "> " + operation.name() + "(" + e + " " + entity + ")");
-            out.line("Objects.requireNonNull(" + entity + ", \"" + entity + "\");");
+            out.open("public " + outcome + "<" + e + ", " + s + "> " + operation.name() + "(" + e + " " + entity + ")");
+            out.line(objects + ".requireNonNull(" + entity + ", \"" + entity + "\");");
             out.line("return machine.transitionTo(" + entity + ", " + s + "." + operation.cell().to() + ");");
             out.close();
         }
         out.blank();
         out.line("@Override");
-        out.line("public GraphDefinition<" + e + ", " + s + "> definition() { return machine.definition(); }");
+        out.line("public " + definition + "<" + e + ", " + s + "> definition() { return machine.definition(); }");
         out.blank();
         out.line("@Override");
-        out.line("public Outcome<" + e + ", " + s + "> reevaluate(" + e + " " + entity + ") { return machine.reevaluate("
+        out.line("public " + outcome + "<" + e + ", " + s + "> reevaluate(" + e + " " + entity + ") { return machine.reevaluate("
                 + entity + "); }");
         out.blank();
         out.line("@Override");
-        out.line("public Set<" + s + "> allowedFrom(" + s + " state) { return machine.allowedFrom(state); }");
+        out.line("public " + names.of(SET) + "<" + s + "> allowedFrom(" + s + " state) { return machine.allowedFrom(state); }");
         out.blank();
         out.line("@Override");
-        out.line("public <T> CompletableFuture<T> async(Supplier<T> call) { return machine.supplyAsync(call); }");
+        out.line("public <T> " + names.of(COMPLETABLE_FUTURE) + "<T> async(" + names.of(SUPPLIER)
+                + "<T> call) { return machine.supplyAsync(call); }");
         out.close();
         return out.toString();
     }
 
-    private static void graph(MachineModel model, Map<String, String> parameters, SourceWriter out) {
-        String e = model.types().entityName();
-        String s = model.types().statesName();
+    private static void graph(MachineModel model, Names names, Map<String, String> parameters, SourceWriter out) {
+        String e = names.of(model.types().entityElement().getQualifiedName().toString());
+        String s = names.of(model.types().statesElement().getQualifiedName().toString());
+        String objects = names.of(OBJECTS);
         List<String> declarations = new ArrayList<>();
         for (TypeElement dependency : model.instanceDependencies()) {
-            declarations.add(dependency.getSimpleName() + " " + parameters.get(dependency.getQualifiedName().toString()));
+            declarations.add(names.of(dependency.getQualifiedName().toString()) + " "
+                    + parameters.get(dependency.getQualifiedName().toString()));
         }
         out.line("/** The definition, built from the annotations of {@link " + model.facadeName() + "}. One parameter per class with instance members. */");
-        out.open("public static GraphDefinition<" + e + ", " + s + "> graph(" + String.join(", ", declarations) + ")");
+        out.open("public static " + names.of(GRAPH_DEFINITION) + "<" + e + ", " + s + "> graph(" + String.join(", ", declarations) + ")");
         for (TypeElement dependency : model.instanceDependencies()) {
             String name = parameters.get(dependency.getQualifiedName().toString());
-            out.line("Objects.requireNonNull(" + name + ", \"" + name + "\");");
+            out.line(objects + ".requireNonNull(" + name + ", \"" + name + "\");");
         }
-        out.line("return StateGraph.define(KEY)");
+        out.line("return " + names.of(STATE_GRAPH) + ".define(KEY)");
         out.indent().indent();
         out.line(".initial(" + s + "." + model.initial() + ")");
         for (String terminal : model.terminals()) {
@@ -114,14 +136,14 @@ public final class MachineGenerator {
                 Optional<CellModel> cell = cellOf(model, from, to);
                 Optional<ForbidModel> forbid = forbidOf(model, from, to);
                 if (cell.isPresent()) {
-                    emitCell(model, parameters, cell.get(), to, out);
+                    emitCell(model, names, parameters, cell.get(), to, out);
                 } else if (forbid.isPresent()) {
                     out.line(".to(" + s + "." + to + ").forbid(" + quote(forbid.get().reason()) + ")");
                 }
             }
             out.line(".stay()");
             Optional<WatchModel> watch = watchOf(model, from);
-            watch.ifPresent((WatchModel found) -> emitWatch(model, parameters, found, out));
+            watch.ifPresent((WatchModel found) -> emitWatch(model, names, parameters, found, out));
             out.line(".forbidOthers(" + quote(rowReason(model, from)) + ")");
             out.outdent();
         }
@@ -130,49 +152,51 @@ public final class MachineGenerator {
         out.close();
     }
 
-    private static void emitCell(MachineModel model, Map<String, String> parameters, CellModel cell, String to, SourceWriter out) {
-        String s = model.types().statesName();
+    private static void emitCell(MachineModel model, Names names, Map<String, String> parameters, CellModel cell, String to, SourceWriter out) {
+        String s = names.of(model.types().statesElement().getQualifiedName().toString());
         StringBuilder line = new StringBuilder(".to(" + s + "." + to + ")");
         if (cell.kind() == EdgeKind.ACTION) {
             Binding action = cell.action().orElseThrow();
             line.append(action.async() ? ".asyncAction(" : ".action(").append(quote(cell.name())).append(", ")
-                    .append(reference(action, parameters)).append(')');
-            cell.timeout().ifPresent((Duration timeout) -> line.append(".timeout(Duration.parse(\"").append(timeout).append("\"))"));
+                    .append(reference(action, parameters, names)).append(')');
+            cell.timeout().ifPresent((Duration timeout) -> line.append(".timeout(").append(names.of(DURATION))
+                    .append(".parse(\"").append(timeout).append("\"))"));
         } else {
             line.append(".move()");
         }
         for (Binding guard : cell.guards()) {
             line.append(guard.async() ? ".asyncGuard(" : ".guard(").append(quote(guard.methodName())).append(", ")
-                    .append(reference(guard, parameters)).append(')');
+                    .append(reference(guard, parameters, names)).append(')');
         }
         cell.onFailure().ifPresent((String state) -> line.append(".onFailure(").append(s).append('.').append(state).append(')'));
         for (TypeMirror type : cell.failsOn()) {
             line.append(".failsOn(").append(type).append(".class)");
         }
         cell.afterCommit().ifPresent((Binding hook) -> line.append(".afterCommit(").append(quote(hook.methodName())).append(", ")
-                .append(reference(hook, parameters)).append(')'));
+                .append(reference(hook, parameters, names)).append(')'));
         out.line(line.toString());
     }
 
-    private static void emitWatch(MachineModel model, Map<String, String> parameters, WatchModel watch, SourceWriter out) {
-        String e = model.types().entityName();
-        String s = model.types().statesName();
-        String p = watch.peer().entityName();
-        String q = watch.peer().statesName();
+    private static void emitWatch(MachineModel model, Names names, Map<String, String> parameters, WatchModel watch, SourceWriter out) {
+        String e = names.of(model.types().entityElement().getQualifiedName().toString());
+        String s = names.of(model.types().statesElement().getQualifiedName().toString());
+        String p = names.of(watch.peer().entityElement().getQualifiedName().toString());
+        String q = names.of(watch.peer().statesElement().getQualifiedName().toString());
         String entity = entityParameter(model, parameters);
-        String peer = lambdaParameter(decapitalize(p), parameters);
+        String peer = lambdaParameter(decapitalize(watch.peer().entityName()), parameters);
         String owner = watch.ownerIsOptional()
                 ? peer + "." + watch.owner().method() + "()"
-                : "Optional.ofNullable(" + peer + "." + watch.owner().method() + "())";
-        out.line(".watches(MachineKey.of(" + p + ".class, " + q + ".class), (" + e + " " + entity + ") -> " + entity + "." + watch.peers().method()
-                + "(), (" + p + " " + peer + ") -> " + owner + ")");
+                : names.of(OPTIONAL) + ".ofNullable(" + peer + "." + watch.owner().method() + "())";
+        out.line(".watches(" + names.of(MACHINE_KEY) + ".of(" + p + ".class, " + q + ".class), (" + e + " " + entity + ") -> " + entity + "."
+                + watch.peers().method() + "(), (" + p + " " + peer + ") -> " + owner + ")");
         out.indent();
         for (RuleModel rule : watch.rules()) {
             String condition = switch (rule.kind()) {
-                case CONDITION -> quote(rule.condition().orElseThrow().methodName()) + ", " + reference(rule.condition().orElseThrow(), parameters);
-                case ALL_IN -> "WatchCondition.allIn(" + q + "." + rule.argument() + ")";
-                case ANY_IN -> "WatchCondition.anyIn(" + q + "." + rule.argument() + ")";
-                case NONE_IN -> "WatchCondition.noneIn(" + q + "." + rule.argument() + ")";
+                case CONDITION -> quote(rule.condition().orElseThrow().methodName()) + ", "
+                        + reference(rule.condition().orElseThrow(), parameters, names);
+                case ALL_IN -> names.of(WATCH_CONDITION) + ".allIn(" + q + "." + rule.argument() + ")";
+                case ANY_IN -> names.of(WATCH_CONDITION) + ".anyIn(" + q + "." + rule.argument() + ")";
+                case NONE_IN -> names.of(WATCH_CONDITION) + ".noneIn(" + q + "." + rule.argument() + ")";
             };
             out.line(".when(" + condition + ").goTo(" + s + "." + rule.goTo() + ")");
         }
@@ -215,18 +239,21 @@ public final class MachineGenerator {
         return state + " is final";
     }
 
-    private static Set<String> imports(MachineModel model) {
-        Set<String> imports = new LinkedHashSet<>();
-        imports.add("io.stategraph.api.GraphDefinition");
-        imports.add("io.stategraph.api.MachineKey");
-        imports.add("io.stategraph.api.Outcome");
-        imports.add("io.stategraph.api.StateMachine");
-        imports.add("io.stategraph.dsl.StateGraph");
-        imports.add("java.util.Objects");
-        imports.add("java.util.Set");
-        imports.add("java.util.concurrent.CompletableFuture");
-        imports.add("java.util.function.Supplier");
-        imports.add("javax.annotation.processing.Generated");
+    /** Every type the companion names, in the order it claims them: its own first, then the fixed ones, then the model's. */
+    private static Set<String> types(MachineModel model) {
+        Set<String> types = new LinkedHashSet<>();
+        types.add(model.types().facade().getQualifiedName().toString());
+        types.add(qualifiedName(model));
+        types.add(GRAPH_DEFINITION);
+        types.add(MACHINE_KEY);
+        types.add(OUTCOME);
+        types.add(STATE_MACHINE);
+        types.add(STATE_GRAPH);
+        types.add(OBJECTS);
+        types.add(SET);
+        types.add(COMPLETABLE_FUTURE);
+        types.add(SUPPLIER);
+        types.add(GENERATED);
         boolean anyTimeout = false;
         boolean anyNullableOwner = false;
         boolean anyBuiltIn = false;
@@ -238,50 +265,38 @@ public final class MachineGenerator {
             for (RuleModel rule : watch.rules()) {
                 anyBuiltIn |= rule.kind() != RuleKind.CONDITION;
             }
-            imports.add(watch.peer().entityElement().getQualifiedName().toString());
-            imports.add(watch.peer().statesElement().getQualifiedName().toString());
+            types.add(watch.peer().entityElement().getQualifiedName().toString());
+            types.add(watch.peer().statesElement().getQualifiedName().toString());
         }
         if (anyTimeout) {
-            imports.add("java.time.Duration");
+            types.add(DURATION);
         }
         if (anyNullableOwner) {
-            imports.add("java.util.Optional");
+            types.add(OPTIONAL);
         }
         if (anyBuiltIn) {
-            imports.add("io.stategraph.api.WatchCondition");
+            types.add(WATCH_CONDITION);
         }
-        imports.add(model.types().entityElement().getQualifiedName().toString());
-        imports.add(model.types().statesElement().getQualifiedName().toString());
+        types.add(model.types().entityElement().getQualifiedName().toString());
+        types.add(model.types().statesElement().getQualifiedName().toString());
         for (TypeElement dependency : model.instanceDependencies()) {
-            imports.add(dependency.getQualifiedName().toString());
+            types.add(dependency.getQualifiedName().toString());
         }
         for (CellModel cell : model.allCells()) {
             for (Binding binding : cell.bindings()) {
                 if (binding.isStatic()) {
-                    imports.add(binding.owner().getQualifiedName().toString());
+                    types.add(binding.owner().getQualifiedName().toString());
                 }
             }
         }
         for (WatchModel watch : model.watches()) {
             for (Binding binding : watch.bindings()) {
                 if (binding.isStatic()) {
-                    imports.add(binding.owner().getQualifiedName().toString());
+                    types.add(binding.owner().getQualifiedName().toString());
                 }
             }
         }
-        Set<String> needed = new LinkedHashSet<>();
-        for (String type : imports) {
-            if (!samePackageOrJavaLang(type, model.packageName())) {
-                needed.add(type);
-            }
-        }
-        return needed;
-    }
-
-    private static boolean samePackageOrJavaLang(String qualifiedName, String packageName) {
-        int dot = qualifiedName.lastIndexOf('.');
-        String owner = dot < 0 ? "" : qualifiedName.substring(0, dot);
-        return owner.equals(packageName) || owner.equals("java.lang");
+        return types;
     }
 
     /** Qualified name to parameter name, one entry per instance dependency; two classes sharing a simple name get a {@code 2} suffix. */
@@ -307,9 +322,9 @@ public final class MachineGenerator {
     }
 
     /** {@code owner::method} for static members, {@code parameter::method} for instance members. */
-    static String reference(Binding binding, Map<String, String> parameters) {
+    static String reference(Binding binding, Map<String, String> parameters, Names names) {
         if (binding.isStatic()) {
-            return binding.ownerName() + "::" + binding.methodName();
+            return names.of(binding.owner().getQualifiedName().toString()) + "::" + binding.methodName();
         }
         return parameters.get(binding.owner().getQualifiedName().toString()) + "::" + binding.methodName();
     }

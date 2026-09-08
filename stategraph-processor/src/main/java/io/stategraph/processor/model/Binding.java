@@ -9,8 +9,4 @@ public record Binding(TypeElement owner, ExecutableElement method, boolean isSta
     public String methodName() {
         return method.getSimpleName().toString();
     }
-
-    public String ownerName() {
-        return owner.getSimpleName().toString();
-    }
 }
