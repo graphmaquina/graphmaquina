@@ -1,7 +1,6 @@
 package io.stategraph.processor;
 
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -23,8 +22,8 @@ import javax.tools.ToolProvider;
 /** Compiles sources in memory with the processor under -Xlint:all -Werror, exactly as a consumer would. */
 final class Compilation {
 
-    /** What a compilation produced: diagnostics, and the directory holding classes and generated sources. */
-    record Result(boolean success, List<Diagnostic<? extends JavaFileObject>> diagnostics, Path output) {
+    /** What a compilation produced: diagnostics, the directory holding classes and generated sources, and a loader over it. */
+    record Result(boolean success, List<Diagnostic<? extends JavaFileObject>> diagnostics, Path output, ClassLoader classes) {
 
         List<String> errors() {
             List<String> errors = new ArrayList<>();
@@ -81,11 +80,11 @@ final class Compilation {
             }
         }
 
+        /** Every class comes from the same loader, so reflection over two generated types sees one identity per type. */
         Class<?> load(String qualifiedName) {
             try {
-                URL[] urls = {output.toUri().toURL()};
-                return new URLClassLoader(urls, Compilation.class.getClassLoader()).loadClass(qualifiedName);
-            } catch (MalformedURLException | ClassNotFoundException e) {
+                return classes.loadClass(qualifiedName);
+            } catch (ClassNotFoundException e) {
                 throw new IllegalStateException(e);
             }
         }
@@ -127,7 +126,8 @@ final class Compilation {
                 files.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(output));
                 files.setLocationFromPaths(StandardLocation.SOURCE_OUTPUT, List.of(output));
                 boolean success = compiler.getTask(null, files, collector, options, null, units).call();
-                return new Result(success, collector.getDiagnostics(), output);
+                URL[] urls = {output.toUri().toURL()};
+                return new Result(success, collector.getDiagnostics(), output, new URLClassLoader(urls, Compilation.class.getClassLoader()));
             }
         } catch (IOException e) {
             throw new IllegalStateException(e);

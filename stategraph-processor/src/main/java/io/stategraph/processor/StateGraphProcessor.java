@@ -2,8 +2,11 @@ package io.stategraph.processor;
 
 import io.stategraph.annotation.StateGraph;
 import io.stategraph.annotation.StateGraphs;
+import io.stategraph.processor.gen.MachineGenerator;
 import io.stategraph.processor.model.MachineModel;
 import io.stategraph.processor.model.SetModel;
+import java.io.IOException;
+import java.io.Writer;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -17,8 +20,8 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 
 /**
- * Entry point. Claims only {@code io.stategraph.annotation.*}, so it coexists with other processors. One round
- * suffices: nothing generated is referenced by the annotations themselves.
+ * Entry point. Claims {@code io.stategraph.annotation.*} and the {@code @Generated} it writes, so it coexists with
+ * other processors. One round suffices: nothing generated is referenced by the annotations themselves.
  */
 public final class StateGraphProcessor extends AbstractProcessor {
 
@@ -28,7 +31,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
 
     @Override
     public Set<String> getSupportedAnnotationTypes() {
-        return Set.of("io.stategraph.annotation.*");
+        return Set.of("io.stategraph.annotation.*", "javax.annotation.processing.Generated");
     }
 
     @Override
@@ -51,10 +54,10 @@ public final class StateGraphProcessor extends AbstractProcessor {
         Map<String, MachineModel> models = new LinkedHashMap<>();
         Set<String> failed = new HashSet<>();
         for (Element element : round.getElementsAnnotatedWith(StateGraph.class)) {
-            resolve((TypeElement) element, models, failed);
+            resolve((TypeElement) element, round, models, failed);
         }
         for (Element element : round.getElementsAnnotatedWith(StateGraphs.class)) {
-            Optional<SetModel> set = sets.build((TypeElement) element, (TypeElement machine) -> resolve(machine, models, failed));
+            Optional<SetModel> set = sets.build((TypeElement) element, (TypeElement machine) -> resolve(machine, round, models, failed));
             // Task 12 generates here.
             set.isPresent();
         }
@@ -62,7 +65,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     }
 
     /** A machine's model, built once per round; a machine from the classpath is built on demand. */
-    private Optional<MachineModel> resolve(TypeElement type, Map<String, MachineModel> models, Set<String> failed) {
+    private Optional<MachineModel> resolve(TypeElement type, RoundEnvironment round, Map<String, MachineModel> models, Set<String> failed) {
         String name = type.getQualifiedName().toString();
         if (models.containsKey(name)) {
             return Optional.of(models.get(name));
@@ -73,9 +76,21 @@ public final class StateGraphProcessor extends AbstractProcessor {
         Optional<MachineModel> model = machines.build(type);
         if (model.isPresent()) {
             models.put(name, model.get());
+            // A machine from the classpath already carries its companion in its own jar.
+            if (round.getRootElements().contains(type)) {
+                write(MachineGenerator.qualifiedName(model.get()), MachineGenerator.generate(model.get()), type);
+            }
         } else {
             failed.add(name);
         }
         return model;
+    }
+
+    private void write(String qualifiedName, String source, TypeElement origin) {
+        try (Writer writer = processingEnv.getFiler().createSourceFile(qualifiedName, origin).openWriter()) {
+            writer.write(source);
+        } catch (IOException e) {
+            diagnostics.error("SG599", "could not write " + qualifiedName + ": " + e.getMessage(), origin);
+        }
     }
 }
