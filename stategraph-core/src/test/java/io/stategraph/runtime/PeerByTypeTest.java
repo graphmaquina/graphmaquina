@@ -125,21 +125,7 @@ class PeerByTypeTest {
     }
 
     @Test
-    void sameFacadeTypeTwiceIsRejectedByTheRegistry() {
-        MachineRegistry.Builder builder = MachineRegistry.builder()
-                .add(StateMachines.from(OrderGraphs.item((TransitionContext<Item, ItemStatus> ctx) -> ActionOutcome.ok()))
-                        .state(Item::status, Item::setStatus).identity(Item::id).as(Facades.Items.class))
-                .add(StateMachines.from(OrderGraphs.order(
-                                (TransitionContext<Order, OrderStatus> ctx) -> CompletableFuture.completedFuture(ActionOutcome.ok()),
-                                (TransitionContext<Order, OrderStatus> ctx) -> ActionOutcome.ok(),
-                                (TransitionContext<Order, OrderStatus> ctx) -> ActionOutcome.ok(),
-                                (GuardContext<Order, OrderStatus> ctx) -> GuardResult.pass(),
-                                (GuardContext<Order, OrderStatus> ctx) -> GuardResult.pass()))
-                        .state(Order::status, Order::setStatus).identity(Order::id).asyncTimeout(Duration.ofSeconds(5))
-                        .as(Facades.Orders.class));
-        MachineRegistry registry = builder.build();
-        registry.close();
-        // A second builder registering Items.class for the orders machine collides on the facade type.
+    void asTwiceOnTheSameBuilderIsRejected() {
         StateMachines.Builder<Order, OrderStatus> wrong = StateMachines.from(OrderGraphs.order(
                         (TransitionContext<Order, OrderStatus> ctx) -> CompletableFuture.completedFuture(ActionOutcome.ok()),
                         (TransitionContext<Order, OrderStatus> ctx) -> ActionOutcome.ok(),

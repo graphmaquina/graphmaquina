@@ -204,6 +204,8 @@ public final class MachineRegistry implements AutoCloseable {
                 }
                 DefaultStateMachine<?, ?> machine = builder.build(registry);
                 registry.machines.put(machine.key(), machine);
+                // Defensive: as(...) is typed by (E, S) and add(...) already rejects a duplicate key,
+                // so a typed caller cannot reach this collision.
                 Optional<? extends Class<?>> facade = builder.facade();
                 if (facade.isPresent() && registry.facades.putIfAbsent(facade.get(), machine.key()) != null) {
                     throw new IllegalStateException("the facade type " + facade.get().getSimpleName() + " is registered twice");
