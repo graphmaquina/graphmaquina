@@ -10,4 +10,6 @@ public interface GuardContext<E, S extends Enum<S>> {
     S to();
 
     <P, Q extends Enum<Q>> PeerView<P, Q> peer(MachineKey<P, Q> key);
+
+    <P, Q extends Enum<Q>, M extends Machine<P, Q>> PeerView<P, Q> peer(Class<M> peer);
 }

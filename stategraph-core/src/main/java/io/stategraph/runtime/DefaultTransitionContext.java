@@ -1,6 +1,7 @@
 package io.stategraph.runtime;
 
 import io.stategraph.api.CascadePolicy;
+import io.stategraph.api.Machine;
 import io.stategraph.api.MachineKey;
 import io.stategraph.api.Outcome;
 import io.stategraph.api.PeerView;
@@ -47,6 +48,23 @@ final class DefaultTransitionContext<E, S extends Enum<S>> implements Transition
                                                                  @NonNull Q target, @NonNull CascadePolicy policy) {
         check();
         return tx.cascadeAll(this, key, peers, target, policy);
+    }
+
+    @Override
+    public <P, Q extends Enum<Q>, M extends Machine<P, Q>> PeerView<P, Q> peer(@NonNull Class<M> peer) {
+        return peer(tx.keyFor(peer));
+    }
+
+    @Override
+    public <P, Q extends Enum<Q>, M extends Machine<P, Q>> Outcome<P, Q> cascade(@NonNull Class<M> peer, @NonNull P entity, @NonNull Q target) {
+        return cascade(tx.keyFor(peer), entity, target);
+    }
+
+    @Override
+    public <P, Q extends Enum<Q>, M extends Machine<P, Q>> List<Outcome<P, Q>> cascadeAll(@NonNull Class<M> peer,
+                                                                                         @NonNull Collection<? extends P> peers,
+                                                                                         @NonNull Q target, @NonNull CascadePolicy policy) {
+        return cascadeAll(tx.keyFor(peer), peers, target, policy);
     }
 
     /** Only from the thread running process(), and only while the transaction is alive. */

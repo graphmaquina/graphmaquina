@@ -1,6 +1,7 @@
 package io.stategraph.runtime;
 
 import io.stategraph.api.GuardContext;
+import io.stategraph.api.Machine;
 import io.stategraph.api.MachineKey;
 import io.stategraph.api.PeerView;
 import io.stategraph.error.StaleContextException;
@@ -29,6 +30,11 @@ final class DefaultGuardContext<E, S extends Enum<S>> implements GuardContext<E,
     public <P, Q extends Enum<Q>> PeerView<P, Q> peer(@NonNull MachineKey<P, Q> key) {
         check();
         return tx.peer(this, this::check, key);
+    }
+
+    @Override
+    public <P, Q extends Enum<Q>, M extends Machine<P, Q>> PeerView<P, Q> peer(@NonNull Class<M> peer) {
+        return peer(tx.keyFor(peer));
     }
 
     /** Only from the thread running test(), and only while the transaction is alive. */

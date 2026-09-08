@@ -1,6 +1,7 @@
 package io.stategraph.runtime;
 
 import io.stategraph.api.GraphDefinition;
+import io.stategraph.api.Machine;
 import io.stategraph.api.MachineKey;
 import io.stategraph.api.StateMachine;
 import java.time.Duration;
@@ -33,6 +34,7 @@ public final class StateMachines {
         private Optional<Function<? super E, ?>> identity = Optional.empty();
         private Optional<Duration> asyncTimeout = Optional.empty();
         private Optional<Executor> executor = Optional.empty();
+        private Optional<Class<? extends Machine<E, S>>> facade = Optional.empty();
         private boolean used;
 
         /** Setters must be total: one that throws breaks the atomicity of phase 2. */
@@ -65,6 +67,18 @@ public final class StateMachines {
             this.executor = Optional.of(executor);
             return this;
         }
+
+        /** The facade type that identifies this machine in {@code peer(Class)} and {@code cascade(Class, ...)}. */
+        public Builder<E, S> as(Class<? extends Machine<E, S>> facade) {
+            Objects.requireNonNull(facade, "facade");
+            if (this.facade.isPresent()) {
+                throw new IllegalStateException("the machine " + key() + " already declares as(" + this.facade.get().getSimpleName() + ")");
+            }
+            this.facade = Optional.of(facade);
+            return this;
+        }
+
+        Optional<Class<? extends Machine<E, S>>> facade() { return facade; }
 
         /** Standalone machine: no peers, with reference identity if none was declared. */
         public StateMachine<E, S> build() {

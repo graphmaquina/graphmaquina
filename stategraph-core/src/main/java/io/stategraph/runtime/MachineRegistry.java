@@ -1,10 +1,12 @@
 package io.stategraph.runtime;
 
+import io.stategraph.api.Machine;
 import io.stategraph.api.MachineKey;
 import io.stategraph.api.Reaction;
 import io.stategraph.api.StateMachine;
 import io.stategraph.api.TransitionListener;
 import io.stategraph.api.WatchSpec;
+import io.stategraph.error.UnknownFacadeException;
 import io.stategraph.error.UnknownPeerMachineException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -26,6 +28,7 @@ public final class MachineRegistry implements AutoCloseable {
 
     private final Map<MachineKey<?, ?>, DefaultStateMachine<?, ?>> machines = new LinkedHashMap<>();
     private final Map<MachineKey<?, ?>, List<Watcher<?, ?, ?, ?>>> watchers = new LinkedHashMap<>();
+    private final Map<Class<?>, MachineKey<?, ?>> facades = new LinkedHashMap<>();
     private final int maxCascadeDepth;
     private final int maxWatchChain;
     private final Optional<TransitionListener> listener;
@@ -81,6 +84,17 @@ public final class MachineRegistry implements AutoCloseable {
             throw new UnknownPeerMachineException(key, machines.keySet());
         }
         return machine;
+    }
+
+    /** Resolves a facade type to its key. The generics of the facade fix P and Q, so the cast is sound. */
+    <P, Q extends Enum<Q>> MachineKey<P, Q> keyFor(Class<? extends Machine<P, Q>> facade) {
+        MachineKey<?, ?> key = facades.get(facade);
+        if (key == null) {
+            throw new UnknownFacadeException(facade, facades.keySet());
+        }
+        @SuppressWarnings("unchecked") // put in build() from a Builder<P, Q> whose as(...) takes Class<? extends Machine<P, Q>>
+        MachineKey<P, Q> typed = (MachineKey<P, Q>) key;
+        return typed;
     }
 
     void indexWatchers() {
@@ -190,6 +204,10 @@ public final class MachineRegistry implements AutoCloseable {
                 }
                 DefaultStateMachine<?, ?> machine = builder.build(registry);
                 registry.machines.put(machine.key(), machine);
+                Optional<? extends Class<?>> facade = builder.facade();
+                if (facade.isPresent() && registry.facades.putIfAbsent(facade.get(), machine.key()) != null) {
+                    throw new IllegalStateException("the facade type " + facade.get().getSimpleName() + " is registered twice");
+                }
             }
             registry.indexWatchers();
             return registry;

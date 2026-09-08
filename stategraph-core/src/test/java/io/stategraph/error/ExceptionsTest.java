@@ -61,6 +61,14 @@ class ExceptionsTest {
     }
 
     @Test
+    void unknownFacadeListsRegistered() {
+        UnknownFacadeException error = new UnknownFacadeException(String.class, List.of(Integer.class));
+        assertTrue(error.getMessage().contains("java.lang.String"));
+        assertTrue(error.getMessage().contains("java.lang.Integer"));
+        assertEquals(String.class, error.requested());
+    }
+
+    @Test
     void commitFailedSeparatesAppliedAndPending() {
         CommitFailedException error = new CommitFailedException(List.of("a"), List.of("b", "c"), new IllegalStateException("setter"));
         assertEquals(List.of("a"), error.applied());

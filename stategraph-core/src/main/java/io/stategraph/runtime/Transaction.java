@@ -9,6 +9,7 @@ import io.stategraph.api.EdgeKind;
 import io.stategraph.api.EdgeSpec;
 import io.stategraph.api.GuardRef;
 import io.stategraph.api.GuardResult;
+import io.stategraph.api.Machine;
 import io.stategraph.api.MachineKey;
 import io.stategraph.api.Outcome;
 import io.stategraph.api.PeerView;
@@ -38,6 +39,10 @@ final class Transaction {
     private final List<ContextHandle> contexts = new ArrayList<>();
 
     UnitOfWork uow() { return uow; }
+
+    <P, Q extends Enum<Q>> MachineKey<P, Q> keyFor(Class<? extends Machine<P, Q>> facade) {
+        return registry.keyFor(facade);
+    }
 
     void invalidate() {
         for (ContextHandle context : contexts) {

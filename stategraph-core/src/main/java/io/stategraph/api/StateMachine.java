@@ -1,6 +1,8 @@
 package io.stategraph.api;
 
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 /**
  * Governs the state S of entity E. Does not protect an entity against concurrent transitions:
@@ -22,4 +24,7 @@ public interface StateMachine<E, S extends Enum<S>> {
 
     /** The same machine, running on its executor. Never runs anything on the calling thread. */
     AsyncStateMachine<E, S> async();
+
+    /** Runs {@code call} on the machine's executor; implements {@link Machine#async}. Failed future after close(). */
+    <T> CompletableFuture<T> supplyAsync(Supplier<T> call);
 }

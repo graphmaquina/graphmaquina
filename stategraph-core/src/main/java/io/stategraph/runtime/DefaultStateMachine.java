@@ -23,10 +23,13 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import lombok.Getter;
 
 /** Runtime {@link StateMachine}: resolves cells, runs a root transaction and commits in two phases. */
@@ -117,6 +120,16 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
     @Override
     public AsyncStateMachine<E, S> async() {
         return async;
+    }
+
+    @Override
+    public <T> CompletableFuture<T> supplyAsync(Supplier<T> call) {
+        Objects.requireNonNull(call, "call");
+        try {
+            return CompletableFuture.supplyAsync(call, executor);
+        } catch (RejectedExecutionException e) {
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     /**
