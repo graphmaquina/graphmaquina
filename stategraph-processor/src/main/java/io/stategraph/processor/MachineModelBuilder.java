@@ -9,7 +9,11 @@ import io.stategraph.annotation.Move;
 import io.stategraph.annotation.Row;
 import io.stategraph.annotation.Rows;
 import io.stategraph.annotation.StateGraph;
+import io.stategraph.annotation.Watch;
+import io.stategraph.annotation.Watches;
 import io.stategraph.api.EdgeKind;
+import io.stategraph.dsl.GraphOutlineValidator;
+import io.stategraph.error.InvalidGraphException;
 import io.stategraph.processor.model.Binding;
 import io.stategraph.processor.model.CellModel;
 import io.stategraph.processor.model.ForbidModel;
@@ -18,6 +22,8 @@ import io.stategraph.processor.model.MachineTypes;
 import io.stategraph.processor.model.OperationModel;
 import io.stategraph.processor.model.Property;
 import io.stategraph.processor.model.RowModel;
+import io.stategraph.processor.model.RuleKind;
+import io.stategraph.processor.model.RuleModel;
 import io.stategraph.processor.model.WatchModel;
 import java.time.Duration;
 import java.time.format.DateTimeParseException;
@@ -98,7 +104,7 @@ final class MachineModelBuilder {
         List<CellModel> cells = readCells(type, types);
         List<OperationModel> operations = readOperations(type, types);
         checkDuplicateCells(type, forbids, cells, operations);
-        List<WatchModel> watches = new ArrayList<>();       // Task 9
+        List<WatchModel> watches = readWatches(type, types);
 
         for (String state : types.stateNames()) {
             if (!closed.contains(state) && !terminals.contains(state)) {
@@ -111,8 +117,15 @@ final class MachineModelBuilder {
             return Optional.empty();
         }
         String packageName = signatures.elements().getPackageOf(type).getQualifiedName().toString();
-        return Optional.of(new MachineModel(types, packageName, initial, terminals, cycleAllowed, stateGetter.orElseThrow(),
-                stateSetter.orElseThrow(), idGetter.orElseThrow(), rows, forbids, cells, operations, watches));
+        MachineModel model = new MachineModel(types, packageName, initial, terminals, cycleAllowed, stateGetter.orElseThrow(),
+                stateSetter.orElseThrow(), idGetter.orElseThrow(), rows, forbids, cells, operations, watches);
+        for (InvalidGraphException.Problem problem : GraphOutlineValidator.validate(Outlines.of(model))) {
+            diagnostics.error(problem.code(), problem.message(), type, graph);
+        }
+        if (diagnostics.errors() > before) {
+            return Optional.empty();
+        }
+        return Optional.of(model);
     }
 
     /** E and S from {@code extends Machine<E, S>}, searched through the supertypes; empty when not an interface or not resolvable. */
@@ -234,6 +247,113 @@ final class MachineModelBuilder {
             cell(method, mirror, types, name, move.isPresent()).ifPresent((CellModel cell) -> operations.add(new OperationModel(name, cell)));
         }
         return operations;
+    }
+
+    private List<WatchModel> readWatches(TypeElement type, MachineTypes types) {
+        List<WatchModel> watches = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (AnnotationMirror watch : annotations.findAll(type, Watch.class, Watches.class)) {
+            int before = diagnostics.errors();
+            String state = annotations.string(watch, "state");
+            if (checkState(types, state, type, watch, annotations.value(watch, "state")) && !seen.add(state)) {
+                diagnostics.error("SG403", "the state " + state + " declares two watches", type, watch, annotations.value(watch, "state"));
+            }
+            TypeMirror peerType = annotations.type(watch, "peer");
+            Optional<MachineTypes> peer = Optional.empty();
+            if (peerType instanceof DeclaredType declared && annotations.find(declared.asElement(), StateGraph.class).isPresent()) {
+                peer = machineTypes((TypeElement) declared.asElement());
+            }
+            if (peer.isEmpty()) {
+                diagnostics.error("SG509", "peer must be a @StateGraph interface, not " + peerType, type, watch, annotations.value(watch, "peer"));
+                continue;
+            }
+            String peersName = annotations.string(watch, "peers");
+            Optional<ExecutableElement> peersGetter = accessors.getter(types.entityElement(), peersName);
+            TypeMirror collectionOfPeers = signatures.declared("java.util.Collection", signatures.extendsWildcard(peer.get().entity()));
+            Optional<Property> peers = Optional.empty();
+            if (peersGetter.isPresent() && signatures.assignable(peersGetter.get().getReturnType(), collectionOfPeers)) {
+                peers = Optional.of(new Property(peersGetter.get().getSimpleName().toString()));
+            } else {
+                diagnostics.error("SG503", types.entityName() + " has no public getter for property '" + peersName + "' returning Collection<? extends "
+                        + peer.get().entityName() + ">", type, watch, annotations.value(watch, "peers"));
+            }
+            String ownerName = annotations.string(watch, "owner");
+            Optional<ExecutableElement> ownerGetter = accessors.getter(peer.get().entityElement(), ownerName);
+            Optional<Property> owner = Optional.empty();
+            boolean ownerIsOptional = false;
+            if (ownerGetter.isPresent()) {
+                TypeMirror returned = ownerGetter.get().getReturnType();
+                if (signatures.same(returned, signatures.declared("java.util.Optional", types.entity()))) {
+                    owner = Optional.of(new Property(ownerGetter.get().getSimpleName().toString()));
+                    ownerIsOptional = true;
+                } else if (signatures.assignable(returned, types.entity())) {
+                    owner = Optional.of(new Property(ownerGetter.get().getSimpleName().toString()));
+                }
+            }
+            if (owner.isEmpty()) {
+                diagnostics.error("SG503", peer.get().entityName() + " has no public getter for property '" + ownerName + "' returning Optional<"
+                        + types.entityName() + "> or " + types.entityName(), type, watch, annotations.value(watch, "owner"));
+            }
+            TypeMirror by = annotations.type(watch, "by");
+            List<AnnotationMirror> ruleMirrors = annotations.annotations(watch, "rules");
+            if (ruleMirrors.isEmpty()) {
+                diagnostics.error("SG404", "the watch of " + state + " declares no rule", type, watch, annotations.value(watch, "rules"));
+            }
+            List<RuleModel> rules = new ArrayList<>();
+            for (AnnotationMirror rule : ruleMirrors) {
+                rule(rule, type, types, peer.get(), by).ifPresent(rules::add);
+            }
+            if (diagnostics.errors() == before) {
+                watches.add(new WatchModel(state, peer.get(), peers.orElseThrow(), owner.orElseThrow(), ownerIsOptional, rules));
+            }
+        }
+        return watches;
+    }
+
+    private Optional<RuleModel> rule(AnnotationMirror rule, TypeElement type, MachineTypes types, MachineTypes peer, TypeMirror by) {
+        int before = diagnostics.errors();
+        String condition = annotations.string(rule, "condition");
+        String allIn = annotations.string(rule, "allIn");
+        String anyIn = annotations.string(rule, "anyIn");
+        String noneIn = annotations.string(rule, "noneIn");
+        int given = 0;
+        for (String value : new String[] {condition, allIn, anyIn, noneIn}) {
+            if (!value.isEmpty()) {
+                given++;
+            }
+        }
+        if (given != 1) {
+            diagnostics.error("SG508", "@When needs exactly one of condition, allIn, anyIn, noneIn", type, rule);
+        }
+        String goTo = annotations.string(rule, "goTo");
+        checkState(types, goTo, type, rule, annotations.value(rule, "goTo"));
+        RuleKind kind = RuleKind.CONDITION;
+        String argument = "";
+        Optional<Binding> binding = Optional.empty();
+        if (!condition.isEmpty()) {
+            if (annotations.isVoid(by)) {
+                diagnostics.error("SG508", "a condition needs @Watch.by, the class hosting it", type, rule, annotations.value(rule, "condition"));
+            } else {
+                binding = bindings.resolve(by, condition, Bindings.Role.CONDITION, types, Optional.of(peer), type, rule,
+                        annotations.value(rule, "condition"));
+            }
+        } else if (!allIn.isEmpty()) {
+            kind = RuleKind.ALL_IN;
+            argument = allIn;
+            checkState(peer, allIn, type, rule, annotations.value(rule, "allIn"));
+        } else if (!anyIn.isEmpty()) {
+            kind = RuleKind.ANY_IN;
+            argument = anyIn;
+            checkState(peer, anyIn, type, rule, annotations.value(rule, "anyIn"));
+        } else if (!noneIn.isEmpty()) {
+            kind = RuleKind.NONE_IN;
+            argument = noneIn;
+            checkState(peer, noneIn, type, rule, annotations.value(rule, "noneIn"));
+        }
+        if (diagnostics.errors() > before) {
+            return Optional.empty();
+        }
+        return Optional.of(new RuleModel(kind, argument, binding, goTo));
     }
 
     /**

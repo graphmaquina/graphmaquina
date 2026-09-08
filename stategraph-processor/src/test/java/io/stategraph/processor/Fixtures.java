@@ -105,6 +105,14 @@ final class Fixtures {
             }
             """;
 
+    /** A Machine that carries no @StateGraph, so it cannot be watched. */
+    static final String PLAIN_PAGES = """
+            package fx;
+            import io.stategraph.api.Machine;
+            public interface PlainPages extends Machine<Page, PageStatus> {
+            }
+            """;
+
     static final String DOCS_IMPORTS = """
             package fx;
             import io.stategraph.annotation.Action;
@@ -137,6 +145,10 @@ final class Fixtures {
                 Outcome<Doc, DocStatus> archive(Doc doc);
             """;
 
+    static final String DOCS_WATCH = """
+            @Watch(state = "REVIEW", peer = Pages.class, peers = "pages", owner = "doc", rules = @When(allIn = "DONE", goTo = "PUBLISHED"))
+            """;
+
     private Fixtures() { }
 
     /** The fx domain: entities, enums and DocActions. */
@@ -160,6 +172,13 @@ final class Fixtures {
     static Map<String, String> withDocs(String typeAnnotations, String members) {
         Map<String, String> sources = domain();
         sources.put("fx.Docs", docs(typeAnnotations, members));
+        return sources;
+    }
+
+    /** The domain, Pages, and a Docs interface. */
+    static Map<String, String> withPages(String typeAnnotations, String members) {
+        Map<String, String> sources = withDocs(typeAnnotations, members);
+        sources.put("fx.Pages", PAGES);
         return sources;
     }
 
