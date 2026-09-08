@@ -143,6 +143,23 @@ class SetGenerationTest {
     }
 
     @Test
+    void aDependencyNamedLikeAGeneratedFieldStillCompiles() {
+        Map<String, String> sources = Fixtures.withLibrary(Fixtures.DOCS_HEADER,
+                Fixtures.DOCS_BODY.replace("by = DocActions.class, guards = \"approved\", onFailure = \"DRAFT\", afterCommit = \"notify\"",
+                        "by = Executor.class"), Fixtures.LIBRARY);
+        sources.put("fx.Executor", """
+                package fx;
+                import io.stategraph.api.ActionOutcome;
+                import io.stategraph.api.TransitionContext;
+                public class Executor {
+                    public ActionOutcome publish(TransitionContext<Doc, DocStatus> ctx) { return ActionOutcome.ok(); }
+                }
+                """);
+        Compilation.Result result = Compilation.compile(sources);
+        assertTrue(result.success(), result.describe());
+    }
+
+    @Test
     void setIsNotGeneratedWhenAMachineFailed() {
         Compilation.Result result = Compilation.compile(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER.replace("initial = \"DRAFT\"", "initial = \"DRAFTT\"") + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));

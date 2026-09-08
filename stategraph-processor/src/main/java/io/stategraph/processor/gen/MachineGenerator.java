@@ -38,6 +38,9 @@ public final class MachineGenerator {
     private static final String SUPPLIER = "java.util.function.Supplier";
     private static final String GENERATED = "javax.annotation.processing.Generated";
 
+    /** The identifiers the companion declares itself; no generated parameter may shadow one of them. */
+    private static final Set<String> RESERVED = Set.of("stateMachine", "call", "state");
+
     private MachineGenerator() { }
 
     public static String qualifiedName(MachineModel model) {
@@ -69,10 +72,10 @@ public final class MachineGenerator {
         out.blank();
         out.line("public static final " + key + "<" + e + ", " + s + "> KEY = " + key + ".of(" + e + ".class, " + s + ".class);");
         out.blank();
-        out.line("private final " + names.of(STATE_MACHINE) + "<" + e + ", " + s + "> machine;");
+        out.line("private final " + names.of(STATE_MACHINE) + "<" + e + ", " + s + "> stateMachine;");
         out.blank();
-        out.open("public " + companion + "(" + names.of(STATE_MACHINE) + "<" + e + ", " + s + "> machine)");
-        out.line("this.machine = " + objects + ".requireNonNull(machine, \"machine\");");
+        out.open("public " + companion + "(" + names.of(STATE_MACHINE) + "<" + e + ", " + s + "> stateMachine)");
+        out.line("this.stateMachine = " + objects + ".requireNonNull(stateMachine, \"stateMachine\");");
         out.close();
         out.blank();
         graph(model, names, parameters, out);
@@ -81,23 +84,23 @@ public final class MachineGenerator {
             out.line("@Override");
             out.open("public " + outcome + "<" + e + ", " + s + "> " + operation.name() + "(" + e + " " + entity + ")");
             out.line(objects + ".requireNonNull(" + entity + ", \"" + entity + "\");");
-            out.line("return machine.transitionTo(" + entity + ", " + s + "." + operation.cell().to() + ");");
+            out.line("return stateMachine.transitionTo(" + entity + ", " + s + "." + operation.cell().to() + ");");
             out.close();
         }
         out.blank();
         out.line("@Override");
-        out.line("public " + definition + "<" + e + ", " + s + "> definition() { return machine.definition(); }");
+        out.line("public " + definition + "<" + e + ", " + s + "> definition() { return stateMachine.definition(); }");
         out.blank();
         out.line("@Override");
-        out.line("public " + outcome + "<" + e + ", " + s + "> reevaluate(" + e + " " + entity + ") { return machine.reevaluate("
+        out.line("public " + outcome + "<" + e + ", " + s + "> reevaluate(" + e + " " + entity + ") { return stateMachine.reevaluate("
                 + entity + "); }");
         out.blank();
         out.line("@Override");
-        out.line("public " + names.of(SET) + "<" + s + "> allowedFrom(" + s + " state) { return machine.allowedFrom(state); }");
+        out.line("public " + names.of(SET) + "<" + s + "> allowedFrom(" + s + " state) { return stateMachine.allowedFrom(state); }");
         out.blank();
         out.line("@Override");
         out.line("public <T> " + names.of(COMPLETABLE_FUTURE) + "<T> async(" + names.of(SUPPLIER)
-                + "<T> call) { return machine.supplyAsync(call); }");
+                + "<T> call) { return stateMachine.supplyAsync(call); }");
         out.close();
         return out.toString();
     }
@@ -301,13 +304,13 @@ public final class MachineGenerator {
 
     /** Qualified name to parameter name, one entry per instance dependency; two classes sharing a simple name get a {@code 2} suffix. */
     static Map<String, String> parameterNames(MachineModel model) {
-        return parameterNames(model.instanceDependencies());
+        return parameterNames(model.instanceDependencies(), RESERVED);
     }
 
-    /** The same convention over any list of dependencies, so a set names them as its machines do. */
-    static Map<String, String> parameterNames(List<TypeElement> dependencies) {
+    /** The same convention over any list of dependencies, so a set names them as its machines do; {@code reserved} is what the file already declares. */
+    static Map<String, String> parameterNames(List<TypeElement> dependencies, Set<String> reserved) {
         Map<String, String> names = new LinkedHashMap<>();
-        Set<String> taken = new LinkedHashSet<>();
+        Set<String> taken = new LinkedHashSet<>(reserved);
         for (TypeElement dependency : dependencies) {
             String base = decapitalize(dependency.getSimpleName().toString());
             String name = base;
@@ -329,10 +332,10 @@ public final class MachineGenerator {
         return parameters.get(binding.owner().getQualifiedName().toString()) + "::" + binding.methodName();
     }
 
-    /** The decapitalised entity name, suffixed with {@code Entity} when a dependency parameter already claims it. */
+    /** The decapitalised entity name, suffixed with {@code Entity} when a dependency parameter or the companion itself already claims it. */
     static String entityParameter(MachineModel model, Map<String, String> parameters) {
         String name = decapitalize(model.types().entityName());
-        return parameters.containsValue(name) ? name + "Entity" : name;
+        return parameters.containsValue(name) || RESERVED.contains(name) ? name + "Entity" : name;
     }
 
     /** A lambda parameter of {@code graph(...)} may not shadow one of its own parameters. */

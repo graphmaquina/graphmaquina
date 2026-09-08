@@ -35,7 +35,7 @@ class MachineGenerationTest {
         assertTrue(source.contains(".asyncAction(\"archive\", docActions::archiveAsync)"), source);
         assertTrue(source.contains(".timeout(Duration.parse(\"PT2S\"))"), source);
         assertTrue(source.contains(".forbidOthers(\"ARCHIVED is final\")"), source);
-        assertTrue(source.contains("return machine.transitionTo(doc, DocStatus.REVIEW);"), source);
+        assertTrue(source.contains("return stateMachine.transitionTo(doc, DocStatus.REVIEW);"), source);
         assertTrue(source.contains("@Generated(\"io.stategraph.processor.StateGraphProcessor\")"), source);
     }
 

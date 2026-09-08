@@ -38,7 +38,7 @@ public final class SetGenerator {
         String companion = set + "_";
         boolean async = model.hasAsync();
         Names names = new Names(model.packageName(), types(model));
-        Map<String, String> parameterNames = MachineGenerator.parameterNames(model.dependencies());
+        Map<String, String> parameterNames = MachineGenerator.parameterNames(model.dependencies(), reserved(model));
         SourceWriter out = new SourceWriter();
         out.line("package " + model.packageName() + ";");
         out.blank();
@@ -55,16 +55,16 @@ public final class SetGenerator {
                     + asyncMachines(model, names) + ");");
             out.blank();
         }
-        out.line("private final " + names.of(MACHINE_REGISTRY) + " registry;");
+        out.line("private final " + names.of(MACHINE_REGISTRY) + " machineRegistry;");
         for (MachineAccessor accessor : model.machines()) {
             out.line("private final " + facadeName(accessor, names) + " " + accessor.method() + ";");
         }
         out.blank();
-        out.open("private " + companion + "(" + names.of(MACHINE_REGISTRY) + " registry)");
-        out.line("this.registry = registry;");
+        out.open("private " + companion + "(" + names.of(MACHINE_REGISTRY) + " machineRegistry)");
+        out.line("this.machineRegistry = machineRegistry;");
         for (MachineAccessor accessor : model.machines()) {
             String companionOf = companionName(accessor, names);
-            out.line("this." + accessor.method() + " = new " + companionOf + "(registry.of(" + companionOf + ".KEY));");
+            out.line("this." + accessor.method() + " = new " + companionOf + "(machineRegistry.of(" + companionOf + ".KEY));");
         }
         out.close();
         out.blank();
@@ -92,7 +92,7 @@ public final class SetGenerator {
         }
         out.blank();
         out.line("@Override");
-        out.line("public void close() { registry.close(); }");
+        out.line("public void close() { machineRegistry.close(); }");
         out.close();
         return out.toString();
     }
@@ -188,6 +188,24 @@ public final class SetGenerator {
         out.line("return new " + set + "_(registry.build());");
         out.close();
         out.close();
+    }
+
+    /** The identifiers the set companion declares itself: its fields, the builder's fields and the locals of {@code build()}. */
+    private static Set<String> reserved(SetModel model) {
+        Set<String> reserved = new LinkedHashSet<>();
+        reserved.add("machineRegistry");
+        reserved.add("registry");
+        reserved.add("asyncTimeout");
+        reserved.add("timeouts");
+        reserved.add("executor");
+        reserved.add("maxCascadeDepth");
+        reserved.add("maxWatchChain");
+        reserved.add("listener");
+        for (MachineAccessor accessor : model.machines()) {
+            reserved.add(accessor.method());
+            reserved.add(accessor.method() + "Builder");
+        }
+        return reserved;
     }
 
     /** How this file writes the machine's facade interface. */
