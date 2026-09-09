@@ -25,8 +25,22 @@ dependencies {
     testImplementation("com.google.code.gson:gson:2.13.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
+publishing {
+    // The same file repository the sibling projects publish core, codegen and the processor to, so a fixture
+    // build can resolve the plugin and its marker the way any consumer resolves them from a repository.
+    repositories {
+        maven {
+            name = "adapterTests"
+            url = layout.projectDirectory.dir("../build/adapter-test-repository").asFile.toURI()
+        }
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
+    // The published-artifact test resolves `id("io.stategraph") version …` from the file repository, so this
+    // build's own plugin jar and its marker must be there before the tests start.
+    dependsOn(tasks.named("publishAllPublicationsToAdapterTestsRepository"))
     systemProperty(
         "stategraph.fixtureRepository",
         layout.projectDirectory.dir("../build/adapter-test-repository").asFile.absolutePath

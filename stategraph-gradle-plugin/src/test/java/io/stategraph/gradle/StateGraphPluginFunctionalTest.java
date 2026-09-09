@@ -58,6 +58,31 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
+     * The published artifacts are enough on their own: a build that declares {@code id("io.stategraph") version
+     * "0.3.0-SNAPSHOT"} resolves the plugin marker and the plugin jar from the repository, with nothing injected
+     * by TestKit, and produces the same jar — typed vocabulary, published index, no compilation carrier.
+     *
+     * <p>{@code --refresh-dependencies} is deliberate: the plugin is republished under the same snapshot version
+     * before every run, and without it Gradle may keep serving a snapshot it cached earlier.</p>
+     */
+    @Test
+    void publishedPluginMarkerResolves() throws IOException {
+        PluginFixture fixture = PluginFixture.publishedPlugin(tempDirectory, FIXTURE_REPOSITORY);
+
+        BuildResult result = fixture.run("jar", "--refresh-dependencies", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertTrue(fixture.jarContains("fx/OrderRefs$Status.class"));
+        assertTrue(fixture.jarContains("fx/ActionsRefs$Approve.class"));
+        assertTrue(fixture.jarContains("fx/Orders_.class"));
+        assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
+                fixture.localExports());
+        assertFalse(fixture.jarContainsGraphCompilationCarrier());
+    }
+
+    /**
      * The generated vocabulary is a source root of the source set, not extra source handed to the compile task:
      * that is the only form an IDE import, javadoc or a sources jar reads. The generator itself must still not
      * see it, or every build would hand javac the units it wrote twice and parse its own output as originals.

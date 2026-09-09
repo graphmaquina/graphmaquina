@@ -58,8 +58,12 @@ public final class PluginFixture {
 
     private final Path directory;
 
-    private PluginFixture(Path directory) {
+    /** Whether TestKit injects the plugin under development, instead of the build resolving a published one. */
+    private final boolean injectedPluginClasspath;
+
+    private PluginFixture(Path directory, boolean injectedPluginClasspath) {
         this.directory = directory;
+        this.injectedPluginClasspath = injectedPluginClasspath;
     }
 
     /**
@@ -80,7 +84,7 @@ public final class PluginFixture {
                     id("io.stategraph")
                 }
                 """);
-        return new PluginFixture(directory);
+        return new PluginFixture(directory, true);
     }
 
     /**
@@ -95,8 +99,22 @@ public final class PluginFixture {
      * @throws IOException if the project cannot be written
      */
     public static PluginFixture basic(Path directory, Path repository) throws IOException {
-        return materialize(directory, repository,
+        return materialize(directory, repository, "", true,
                 "    testAnnotationProcessor(\"io.stategraph:stategraph-processor:" + VERSION + "\")\n", "");
+    }
+
+    /**
+     * The same domain, in a build that declares the plugin with a version and resolves it — plugin marker and
+     * plugin jar — from the fixture repository, with nothing injected by TestKit. It is the shape of a consumer
+     * build outside this repository.
+     *
+     * @param directory the temporary directory to materialize the project under
+     * @param repository the file Maven repository the StateGraph artifacts and the plugin were published to
+     * @return a fixture bound to the written project
+     * @throws IOException if the project cannot be written
+     */
+    public static PluginFixture publishedPlugin(Path directory, Path repository) throws IOException {
+        return materialize(directory, repository, " version \"" + VERSION + "\"", false, "", "");
     }
 
     /**
@@ -110,7 +128,7 @@ public final class PluginFixture {
      * @throws IOException if the project cannot be written
      */
     public static PluginFixture plainJUnitTests(Path directory, Path repository) throws IOException {
-        PluginFixture fixture = materialize(directory, repository, """
+        PluginFixture fixture = materialize(directory, repository, "", true, """
                         testImplementation(platform("org.junit:junit-bom:%1$s"))
                         testImplementation("org.junit.jupiter:junit-jupiter")
                         testRuntimeOnly("org.junit.platform:junit-platform-launcher")
@@ -146,8 +164,8 @@ public final class PluginFixture {
     }
 
     /** Writes the shared project with {@code testProcessors} and {@code extraConfiguration} spliced into it. */
-    private static PluginFixture materialize(Path directory, Path repository, String testProcessors,
-            String extraConfiguration) throws IOException {
+    private static PluginFixture materialize(Path directory, Path repository, String pluginVersion,
+            boolean injectedPluginClasspath, String testProcessors, String extraConfiguration) throws IOException {
         if (!Files.isDirectory(repository)) {
             throw new IllegalStateException("the fixture repository " + repository + " does not exist; run"
                     + " ./gradlew :stategraph-core:publishMavenPublicationToAdapterTestsRepository"
@@ -157,8 +175,8 @@ public final class PluginFixture {
         Path project = Files.createDirectories(directory.resolve("fixture project ñ"));
         Files.writeString(project.resolve("settings.gradle.kts"), settings(repository));
         Files.writeString(project.resolve("build.gradle.kts"),
-                buildScript(testProcessors, extraConfiguration));
-        PluginFixture fixture = new PluginFixture(project);
+                buildScript(pluginVersion, testProcessors, extraConfiguration));
+        PluginFixture fixture = new PluginFixture(project, injectedPluginClasspath);
         fixture.writeSources(domainSources());
         return fixture;
     }
@@ -190,13 +208,14 @@ public final class PluginFixture {
      * The build script: the plugin, a Java 21 toolchain, the strict compiler options, Lombok before the
      * StateGraph processor, and the two reporting tasks the assertions read.
      */
-    private static String buildScript(String testProcessors, String extraConfiguration) {
+    private static String buildScript(String pluginVersion, String testProcessors,
+            String extraConfiguration) {
         return """
                 import io.stategraph.gradle.GenerateGraphApi
 
                 plugins {
                     java
-                    id("io.stategraph")
+                    id("io.stategraph")%7$s
                 }
 
                 group = "fx.build"
@@ -255,7 +274,8 @@ public final class PluginFixture {
                 }
 
                 %6$s
-                """.formatted(VERSION, LOMBOK, RUNTIME_ENTRY, SOURCE_ROOT, testProcessors, extraConfiguration);
+                """.formatted(VERSION, LOMBOK, RUNTIME_ENTRY, SOURCE_ROOT, testProcessors, extraConfiguration,
+                pluginVersion);
     }
 
     /**
@@ -448,10 +468,10 @@ public final class PluginFixture {
     }
 
     private GradleRunner runner(String... arguments) {
-        return GradleRunner.create()
+        GradleRunner runner = GradleRunner.create()
                 .withProjectDir(directory.toFile())
-                .withPluginClasspath()
                 .withArguments(arguments);
+        return injectedPluginClasspath ? runner.withPluginClasspath() : runner;
     }
 
     /**

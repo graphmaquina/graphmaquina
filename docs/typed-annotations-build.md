@@ -1,0 +1,322 @@
+# Building with the typed graph API (v0.3)
+
+StateGraph 0.3 replaces the string-based `@StateGraph` declarations of v0.2 with a vocabulary that is
+**generated before javac runs**. A machine no longer names its states, methods and properties as text: it
+references generated annotations and generated symbol classes, and javac checks every one of them.
+
+That has one consequence the build must respect: **generation is mandatory and it happens before compilation**.
+`stategraph-codegen` reads the sources, writes the typed vocabulary and an annotation manifest; javac then
+compiles the sources together with that vocabulary while `stategraph-processor` runs inside it; a completion
+step publishes the index of what javac accepted and seals the inventory of the files the compilation owns.
+
+```
+generate  ->  prepare-compile  ->  javac (Lombok, then stategraph-processor)  ->  complete-compile
+```
+
+Both build adapters implement exactly those four steps. Neither works without the other half: the generator
+without the processor would compile a vocabulary nobody indexes, and the processor without the generator would
+find no manifest and refuse the compilation with SG602.
+
+| Artifact | Coordinates | Role |
+| --- | --- | --- |
+| Runtime and annotations | `io.stategraph:stategraph-core:0.3.0-SNAPSHOT` | the engine, the markers, the symbol categories |
+| Generator | `io.stategraph:stategraph-codegen:0.3.0-SNAPSHOT` | pre-javac generation, run as a separate process by the adapters |
+| Annotation processor | `io.stategraph:stategraph-processor:0.3.0-SNAPSHOT` | runs inside javac, emits the facades and publishes the index |
+| Gradle adapter | plugin id `io.stategraph`, version `0.3.0-SNAPSHOT` | the Gradle build integration |
+| Maven adapter | `io.stategraph:stategraph-maven-plugin:0.3.0-SNAPSHOT` | the Maven build integration |
+
+Only `stategraph-core` is a dependency of the application. The generator and the processor are build-time only
+and never reach the runtime classpath.
+
+## Gradle
+
+```kotlin
+plugins {
+    java
+    id("io.stategraph") version "0.3.0-SNAPSHOT"
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+}
+
+dependencies {
+    implementation("io.stategraph:stategraph-core:0.3.0-SNAPSHOT")
+
+    compileOnly("org.projectlombok:lombok:1.18.48")
+    // Lombok first: the StateGraph processor reads the accessors Lombok generates on the entities.
+    annotationProcessor("org.projectlombok:lombok:1.18.48")
+    annotationProcessor("io.stategraph:stategraph-processor:0.3.0-SNAPSHOT")
+}
+```
+
+That is the whole consumer-side configuration. The plugin does not apply the `java` plugin; it reacts to it,
+so `java` (or any plugin that applies it) must be applied too.
+
+### Which source sets take part
+
+A source set takes part **when, and only when, its own annotation-processor configuration declares
+`io.stategraph:stategraph-processor`** — `annotationProcessor` for `main`, `testAnnotationProcessor` for
+`test`, and so on. The processor is what publishes the index of what javac accepted, so a source set compiled
+without it could never complete a compilation the plugin prepared.
+
+A source set that does not declare it is left exactly as the `java` plugin configured it: no generated source
+root, no annotation manifest, no lifecycle around javac, and no `-Xlint:processing` warning about a processor
+that claims none of its annotations. Its generation task still exists, and skips itself with the declaration it
+is waiting for as the reason:
+
+```
+$ ./gradlew generateTestStateGraphApi --info
+Skipping task ':generateTestStateGraphApi' as task onlyIf 'the test source set declares
+io.stategraph:stategraph-processor in testAnnotationProcessor' is false.
+```
+
+### Tasks and outputs
+
+| Task | Source set |
+| --- | --- |
+| `generateStateGraphApi` | `main` |
+| `generateTestStateGraphApi` | `test` |
+| `generate<SourceSet>StateGraphApi` | any other source set |
+
+All of them are in the `stategraph` task group.
+
+| Path | Content |
+| --- | --- |
+| `build/generated/sources/stategraph/<sourceSet>` | the generated vocabulary and symbol classes; registered as a source directory of the source set |
+| `build/stategraph/<sourceSet>/request.json` | the request the adapter wrote for the generator |
+| `build/stategraph/<sourceSet>/annotation-manifest.json` | the manifest javac is pointed at |
+| `build/stategraph/<sourceSet>/owned-outputs.json` | the sealed inventory of everything that compilation owns |
+| `build/stategraph/<sourceSet>/processor-inventory.json` | what the processor emitted, written during javac and read by the completion step |
+| `build/classes/java/<sourceSet>/META-INF/stategraph/exports.json` | the published index, packaged into the jar |
+
+The generated directory is added with `sourceSet.java.srcDir(...)`, not handed to `JavaCompile` alone, so an
+IDE import, a sources jar and a javadoc task all see it.
+
+### What the plugin does to the compilation
+
+For every participating source set the plugin makes `compileJava`:
+
+- depend on the generation task and compile what it generated;
+- receive `-Astategraph.annotationManifest=<work>/annotation-manifest.json` through an argument provider;
+- run with `options.isIncremental = false` — the cycle owns and retires whole outputs, so javac's own
+  incremental bookkeeping must not compete with it;
+- run `prepare-compile` before javac and `complete-compile` after it, and declare
+  `build/stategraph/<sourceSet>/owned-outputs.json` as an output.
+
+The annotation-processor path itself is never touched, so Lombok keeps running first, exactly as declared.
+
+### Toolchain
+
+The generator runs as a separate process under the launcher of the project's Java toolchain, not under the
+Gradle daemon's JVM. The toolchain must be a **JDK 21 or later**; below that, or an installation with no
+`bin/javac`, the build fails before anything is generated:
+
+```
+the StateGraph generator needs a Java 21 toolchain or later, but the one selected for this project is
+Java 17 at <installation>. Raise java.toolchain.languageVersion to 21 or later.
+```
+
+### Choosing the generator
+
+The `stategraphGenerator` configuration carries the generator's classpath. By default it resolves
+`io.stategraph:stategraph-codegen:<stategraph.generatorVersion>`, and `generatorVersion` defaults to the
+plugin's own version, so nothing needs to be declared. Two cases where it does:
+
+```kotlin
+stategraph { generatorVersion = "0.3.0-SNAPSHOT" }        // a generator other than the plugin's own version
+dependencies { add("stategraphGenerator", project(":stategraph-codegen")) }  // inside this repository
+```
+
+Declaring any dependency on that configuration replaces the default, which is how `stategraph-example` runs
+against the sibling project instead of a published artifact.
+
+## Maven
+
+Two plugins are required, and neither works without the other.
+
+```xml
+<properties>
+  <java.version>21</java.version>
+  <stategraph.version>0.3.0-SNAPSHOT</stategraph.version>
+</properties>
+
+<dependencies>
+  <dependency>
+    <groupId>io.stategraph</groupId>
+    <artifactId>stategraph-core</artifactId>
+    <version>${stategraph.version}</version>
+  </dependency>
+  <dependency>
+    <groupId>org.projectlombok</groupId>
+    <artifactId>lombok</artifactId>
+    <scope>provided</scope>
+  </dependency>
+</dependencies>
+
+<build>
+  <plugins>
+    <plugin>
+      <groupId>org.apache.maven.plugins</groupId>
+      <artifactId>maven-compiler-plugin</artifactId>
+      <configuration>
+        <annotationProcessorPaths>
+          <!-- Lombok first: the StateGraph processor reads the accessors Lombok generates. -->
+          <path>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+          </path>
+          <path>
+            <groupId>io.stategraph</groupId>
+            <artifactId>stategraph-processor</artifactId>
+            <version>${stategraph.version}</version>
+          </path>
+        </annotationProcessorPaths>
+      </configuration>
+      <executions>
+        <!-- Each compilation reads the manifest the generation that precedes it wrote. -->
+        <execution>
+          <id>default-compile</id>
+          <configuration>
+            <compilerArgs>
+              <arg>-Astategraph.annotationManifest=${project.build.directory}/stategraph/main/annotation-manifest.json</arg>
+            </compilerArgs>
+          </configuration>
+        </execution>
+        <execution>
+          <id>default-testCompile</id>
+          <configuration>
+            <compilerArgs>
+              <arg>-Astategraph.annotationManifest=${project.build.directory}/stategraph/test/annotation-manifest.json</arg>
+            </compilerArgs>
+          </configuration>
+        </execution>
+      </executions>
+    </plugin>
+    <plugin>
+      <groupId>io.stategraph</groupId>
+      <artifactId>stategraph-maven-plugin</artifactId>
+      <version>${stategraph.version}</version>
+      <executions>
+        <execution><id>sg-generate</id><phase>generate-sources</phase><goals><goal>generate</goal></goals></execution>
+        <execution><id>sg-prepare</id><phase>process-sources</phase><goals><goal>prepare</goal></goals></execution>
+        <execution><id>sg-complete</id><phase>compile</phase><goals><goal>complete</goal></goals></execution>
+        <execution><id>sg-generate-test</id><phase>generate-test-sources</phase><goals><goal>generate-test</goal></goals></execution>
+        <execution><id>sg-prepare-test</id><phase>process-test-sources</phase><goals><goal>prepare-test</goal></goals></execution>
+        <execution><id>sg-complete-test</id><phase>test-compile</phase><goals><goal>complete-test</goal></goals></execution>
+      </executions>
+    </plugin>
+  </plugins>
+</build>
+```
+
+`<release>` does not have to be written out when a parent already sets it — the Spring Boot parent, for
+instance, derives `maven.compiler.release` from `java.version`, and the plugin resolves the setting the way
+Maven resolves a parameter. What matters is that the effective release is 21 or later.
+
+### The six goals
+
+| Goal | Phase | What it does |
+| --- | --- | --- |
+| `generate` | `generate-sources` | checks the compiler configuration, runs the generator, adds `target/generated-sources/stategraph` as a compile source root |
+| `prepare` | `process-sources` | retires the outputs the previous compilation owned and dates the generated carrier past the newest surviving class file |
+| `complete` | `compile` | publishes the index of what javac accepted and seals the inventory |
+| `generate-test` | `generate-test-sources` | the same for the test source set, into `target/generated-test-sources/stategraph` |
+| `prepare-test` | `process-test-sources` | the same for the test source set |
+| `complete-test` | `test-compile` | the same for the test source set |
+
+The goal prefix is `stategraph`, so a goal can also be invoked directly, for example
+`mvn stategraph:generate`.
+
+The observed order of a `mvn test-compile`, which the plugin's own suite asserts from real Maven output:
+
+```
+stategraph:generate (sg-generate)
+stategraph:prepare (sg-prepare)
+resources:resources
+compiler:compile (default-compile)
+stategraph:complete (sg-complete)
+stategraph:generate-test (sg-generate-test)
+stategraph:prepare-test (sg-prepare-test)
+resources:testResources
+compiler:testCompile (default-testCompile)
+stategraph:complete-test (sg-complete-test)
+```
+
+Declaration order in the POM does not matter: Maven injects the lifecycle's `maven-compiler-plugin` before the
+plugins a POM adds, and a POM declaration of a lifecycle plugin keeps that injected position.
+
+### Outputs
+
+| Path | Content |
+| --- | --- |
+| `target/generated-sources/stategraph` | the generated vocabulary of the main compilation |
+| `target/generated-test-sources/stategraph` | the same for the test compilation |
+| `target/stategraph/main/{request,annotation-manifest,owned-outputs,processor-inventory}.json` | the main cycle's request, manifest, sealed inventory and the processor's own inventory |
+| `target/stategraph/test/…` | the same for the test compilation |
+| `target/classes/META-INF/stategraph/exports.json` | the published index, packaged into the jar |
+
+### Configuration parameters
+
+| Parameter | Property | Default |
+| --- | --- | --- |
+| `javaExecutable` | `stategraph.javaExecutable` | the selected `jdk` toolchain, and the JVM running Maven only when that is a JDK 21 or later |
+| `compilationId` | `stategraph.compilationId` | `groupId:artifactId:main`, and `groupId:artifactId:test` for the test source set |
+
+### What the Maven adapter requires, and refuses
+
+Every one of these is checked in `generate-sources`, before anything is retired, and every failure names what
+to change:
+
+- **A release of 21 or later.** Resolved from the execution's configuration, the plugin's configuration,
+  `maven.compiler.release`, `source`/`target` or their properties. No release at all is a failure too, because
+  `maven-compiler-plugin` would then fall back to its own default, which is below 21.
+- **The annotation processor on the compiler's processor path.** `<proc>none</proc>`,
+  `${maven.compiler.proc}=none` and `-proc:none` are refused, and so is a compilation whose
+  `<annotationProcessorPaths>` (or, when it declares none, whose resolved dependencies) does not carry
+  `io.stategraph:stategraph-processor`.
+- **The manifest argument, per execution.** Every `-Astategraph.annotationManifest=` the two scopes declare
+  must name the manifest of that execution's own work directory. A missing or divergent one is refused with the
+  exact argument to declare.
+- **The compiler and the generator on the same JDK.** A compiler forked at an `<executable>`, or a
+  `<jdkToolchain>` that selects a different `java`, is refused.
+- **No skipped compilation.** `<skipMain>`, `<skip>`, `maven.main.skip` and `maven.test.skip` are refused:
+  the build would retire everything the previous compilation published and compile nothing to replace it.
+- **The processor's own generated-sources directory left where StateGraph owns it.** A configured
+  `<generatedSourcesDirectory>` / `<generatedTestSourcesDirectory>` must match the request's.
+
+## Troubleshooting
+
+| Symptom | Cause and remedy |
+| --- | --- |
+| `SG602` "…names no manifest at all" | javac ran without `-Astategraph.annotationManifest=…`. In Maven, add the argument to that execution; in Gradle, the source set is not participating — declare `stategraph-processor` in its annotation-processor configuration. |
+| `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `stategraph:generate` and `stategraph:prepare` precede it. |
+| `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host). The message names the type and the declaration. |
+| `SG609` | a v0.2 string-based declaration is still there. See `typed-annotations-migration.md`. |
+| `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
+| "the StateGraph generator needs a Java 21 toolchain or later" | raise the Gradle toolchain to 21+, or point Maven's `stategraph.javaExecutable` / `jdk` toolchain at a JDK 21+. |
+| "…is not on the `<annotationProcessorPaths>` …" | the processor is missing from the compiler's processor path; declare it after Lombok. |
+| "…switches annotation processing off…" | remove `proc=none` / `-proc:none`. |
+| "…reads the annotation manifest X, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. |
+| "…switches the main compilation off…" | drop `maven.main.skip` / `maven.test.skip` / `<skipMain>`, or drop the StateGraph plugin from that build. |
+| `complete` fails naming `pending-exports.json` | javac ran but published no index: the processor was not on the path for that compilation. |
+| `[INFO] StateGraph completes nothing for <id>` | javac did not run at all in this invocation (for example `mvn generate-sources`). Nothing was retired; this is a no-op, not an error. |
+
+### Repeated builds, renames and deletions
+
+Both adapters retire what the previous compilation owned before the next javac, and publish an index only for
+what javac actually accepted, so:
+
+- building twice without changes regenerates nothing and republishes nothing (Gradle reports
+  `UP-TO-DATE`; Maven rewrites identical artifacts);
+- renaming or deleting a machine, an action, a property or a state removes the generated symbols and facades
+  of the old names from the next jar, **without `clean`**;
+- deleting the last graph declaration leaves an empty index and a jar with no generated class in it;
+- a javac failure leaves the pending inventory behind, seals nothing and publishes no index, so a broken
+  compilation can never ship the index of the previous one.
+
+## Verification
+
+The evidence behind every claim in this document — commands, test names and counts — is in
+`typed-annotations-verification.md`.
