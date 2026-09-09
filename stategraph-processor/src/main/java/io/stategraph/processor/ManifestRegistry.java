@@ -57,6 +57,13 @@ import javax.annotation.processing.ProcessingEnvironment;
  * keeps the fixed set, records why, and the processor reports that reason as {@code SG602} from its first
  * round. {@code init} has no round to anchor a diagnostic at, which is why the failure is recorded here
  * instead of being reported here.</p>
+ *
+ * <p><strong>Transition.</strong> While the legacy v0.2 frontend still exists, a compilation that names no
+ * manifest at all is not a failure: it is a consumer that has not been moved to the generator yet, and it
+ * keeps compiling with the fixed set alone. Once the v0.2 frontend is removed, a missing option must become
+ * {@code SG602} like every other unusable manifest, since by then no consumer can do without one. An option
+ * that is given but names a file that cannot be read or trusted is already a failure today: the build meant
+ * to supply a manifest and did not.</p>
  */
 final class ManifestRegistry {
 
@@ -82,13 +89,15 @@ final class ManifestRegistry {
 
     /**
      * Reads the manifest named by {@link #OPTION} and checks it against the declarations of {@code environment}.
-     * A registry whose {@link #failure()} is present claims the fixed set alone.
+     * A registry whose {@link #failure()} is present claims the fixed set alone, and so does one for a
+     * compilation that names no manifest while the legacy frontend still accepts such a compilation.
      */
     static ManifestRegistry load(ProcessingEnvironment environment) {
         String option = environment.getOptions().get(OPTION);
         if (option == null || option.isBlank()) {
-            return failed("no -A" + OPTION + " was given to javac, so the annotations generated for this"
-                + " compilation cannot be discovered; run the StateGraph generator before javac");
+            // Transition until the v0.2 frontend is removed: a consumer that names no manifest generates
+            // nothing yet, so it keeps the fixed set and no failure. Then this must become SG602.
+            return unloaded();
         }
         Path file;
         try {

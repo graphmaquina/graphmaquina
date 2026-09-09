@@ -120,14 +120,35 @@ class ManifestDiscoveryTest {
         assertEquals(new TreeSet<>(FIXED), new TreeSet<>(ManifestProcessors.Recording.claimed()));
     }
 
+    /**
+     * Transition: a build that names no manifest has not been moved to the generator yet, so it keeps the
+     * fixed set and its legacy machines. Task 13 turns this into SG602 with the legacy frontend it removes.
+     */
     @Test
-    void reportsAMissingManifestOnce() {
-        Compilation.Result result = Compilation.compileRaw(TypedFixtures.minimal(), List.of());
+    void toleratesAnAbsentOptionWhileTheLegacyFrontendExists() {
+        Compilation.Result legacy = Compilation.compileRaw(Fixtures.validDocs(), List.of());
+
+        assertTrue(legacy.success(), legacy.describe());
+        assertEquals(0, legacy.countError("SG602"), legacy.describe());
+        assertTrue(legacy.hasGenerated("fx.Docs_"), legacy.describe());
+
+        ManifestProcessors.Recording.reset();
+        ManifestProcessors.Other.reset();
+        Compilation.compileRaw(Fixtures.validDocs(), processors(ManifestProcessors.Recording.class));
+
+        assertEquals(new TreeSet<>(FIXED), new TreeSet<>(ManifestProcessors.Recording.claimed()));
+    }
+
+    @Test
+    void reportsAManifestTheOptionNamesButNothingWrote() {
+        Compilation.Result result = Compilation.compileRaw(TypedFixtures.minimal(),
+                List.of("-A" + ManifestRegistry.OPTION + '=' + absentManifest()));
 
         assertFalse(result.success(), result.describe());
         assertEquals(1, result.countError("SG602"), result.describe());
         assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG602]")
-                && error.contains(ManifestRegistry.OPTION)), result::describe);
+                && error.contains("annotation-manifest.json") && error.contains("does not exist")),
+                result::describe);
     }
 
     @Test
@@ -242,6 +263,15 @@ class ManifestDiscoveryTest {
         Path file = prepared.generation().annotationManifest();
         try {
             ManifestCodec.writeCompile(file, change.apply(ManifestCodec.readCompile(file)));
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
+    }
+
+    /** A manifest path under a directory that exists, so only the file itself is missing. */
+    private static Path absentManifest() {
+        try {
+            return Files.createTempDirectory("stategraph-absent-").resolve("annotation-manifest.json");
         } catch (IOException failure) {
             throw new UncheckedIOException(failure);
         }
