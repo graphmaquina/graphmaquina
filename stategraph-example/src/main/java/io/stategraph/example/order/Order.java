@@ -1,5 +1,6 @@
 package io.stategraph.example.order;
 
+import io.stategraph.annotation.GraphProperty;
 import io.stategraph.example.item.Item;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,9 +12,11 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public final class Order {
 
+    @GraphProperty
     @Getter
     @NonNull
     private final String id;
+    @GraphProperty
     @Getter
     private OrderStatus status = OrderStatus.NEW;
     private final List<Item> items = new ArrayList<>();
@@ -24,6 +27,7 @@ public final class Order {
         this.status = status;
     }
 
+    @GraphProperty
     public List<Item> items() {
         return List.copyOf(items);
     }

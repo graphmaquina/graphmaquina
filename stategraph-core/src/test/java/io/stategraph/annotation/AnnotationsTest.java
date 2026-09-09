@@ -13,6 +13,11 @@ import java.lang.annotation.Target;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The v0.2 vocabulary, kept in core for the migration diagnostic alone. Its shape is still asserted because
+ * the processor reads these very declarations to tell an unmigrated project what to write instead.
+ */
+@SuppressWarnings("deprecation")
 class AnnotationsTest {
 
     static final List<Class<? extends Annotation>> ALL = List.of(StateGraph.class, Row.class, Rows.class, Action.class, Move.class,
@@ -47,5 +52,19 @@ class AnnotationsTest {
         assertEquals(void.class, Cell.class.getMethod("by").getDefaultValue());
         assertEquals(void.class, Watch.class.getMethod("by").getDefaultValue());
         assertNotNull(When.class.getMethod("goTo"));
+    }
+
+    /** Every declaration of the old vocabulary is deprecated; the set entry point is not, and stays. */
+    @Test
+    void theOldVocabularyIsDeprecatedAndTheSetEntryPointIsNot() {
+        for (Class<? extends Annotation> type : ALL) {
+            assertEquals(type != StateGraphs.class, type.isAnnotationPresent(Deprecated.class),
+                    type.getSimpleName());
+        }
+        for (Class<? extends Annotation> type : ALL) {
+            if (type != StateGraphs.class) {
+                assertEquals("0.3", type.getAnnotation(Deprecated.class).since(), type.getSimpleName());
+            }
+        }
     }
 }

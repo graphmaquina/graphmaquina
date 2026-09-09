@@ -32,13 +32,13 @@ final class TypedTransitions {
 
     private static final String DUPLICATE_GUARD = "SG105";
 
-    private final MachineModelBuilder structure;
+    private final StructuralChecks structure;
     private final SymbolResolver symbols;
     private final TypedTimeouts timeouts;
     private final Annotations annotations;
     private final Diagnostics diagnostics;
 
-    TypedTransitions(MachineModelBuilder structure, SymbolResolver symbols, TypedTimeouts timeouts,
+    TypedTransitions(StructuralChecks structure, SymbolResolver symbols, TypedTimeouts timeouts,
             Annotations annotations, Diagnostics diagnostics) {
         this.structure = structure;
         this.symbols = symbols;

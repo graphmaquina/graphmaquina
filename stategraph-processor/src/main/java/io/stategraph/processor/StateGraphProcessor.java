@@ -1,7 +1,6 @@
 package io.stategraph.processor;
 
 import io.stategraph.annotation.GenerateGraphApi;
-import io.stategraph.annotation.StateGraph;
 import io.stategraph.annotation.StateGraphs;
 import io.stategraph.codegen.manifest.CompileManifest;
 import io.stategraph.codegen.model.SymbolDescriptor;
@@ -40,12 +39,11 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private boolean reportedManifest;
     private boolean validatedExports;
     private boolean validExports = true;
-    private Annotations annotations;
     private Diagnostics diagnostics;
     private ExportValidator exports;
     private ExportIndexWriter indexes;
     private BoundInvocation invocations;
-    private MachineModelBuilder machines;
+    private LegacyDeclarations legacy;
     private Optional<TypedMachineModelBuilder> typed = Optional.empty();
     private SetModelBuilder sets;
     private Map<String, MachineModel> models;
@@ -78,24 +76,25 @@ public final class StateGraphProcessor extends AbstractProcessor {
         generated = new LinkedHashSet<>();
         verified = new LinkedHashSet<>();
         Signatures signatures = new Signatures(env.getElementUtils(), env.getTypeUtils());
-        annotations = new Annotations(env.getElementUtils());
+        Annotations annotations = new Annotations(env.getElementUtils());
         Accessors accessors = new Accessors(signatures);
-        Bindings bindings = new Bindings(signatures, diagnostics);
+        Bindings bindings = new Bindings(signatures);
         EffectiveMethods effective = new EffectiveMethods(signatures);
         exports = new ExportValidator(signatures, effective, diagnostics);
         indexes = new ExportIndexWriter(env);
         invocations = new BoundInvocation(env.getElementUtils(), env.getTypeUtils());
-        machines = new MachineModelBuilder(annotations, signatures, accessors, bindings, diagnostics);
+        legacy = new LegacyDeclarations(annotations, diagnostics);
+        StructuralChecks structure = new StructuralChecks(signatures, diagnostics);
         sets = new SetModelBuilder(annotations, signatures, diagnostics);
         typed = manifests.manifest().map((CompileManifest manifest) -> {
             Map<String, SymbolDescriptor> symbols = SymbolResolver.symbols(manifest);
             VocabularyRegistry vocabulary = new VocabularyRegistry(manifest, env.getElementUtils());
             PropertyResolver propertyResolver = new PropertyResolver(symbols, signatures, accessors, diagnostics);
             SymbolResolver symbolResolver = new SymbolResolver(symbols, signatures, effective, bindings, diagnostics);
-            return new TypedMachineModelBuilder(vocabulary, machines, propertyResolver,
-                    new TypedTransitions(machines, symbolResolver, new TypedTimeouts(annotations, diagnostics),
+            return new TypedMachineModelBuilder(vocabulary, structure, propertyResolver,
+                    new TypedTransitions(structure, symbolResolver, new TypedTimeouts(annotations, diagnostics),
                             annotations, diagnostics),
-                    new TypedWatchReader(vocabulary, machines, propertyResolver, symbolResolver, signatures, diagnostics),
+                    new TypedWatchReader(vocabulary, structure, propertyResolver, symbolResolver, signatures, diagnostics),
                     signatures, diagnostics);
         });
     }
@@ -106,13 +105,9 @@ public final class StateGraphProcessor extends AbstractProcessor {
         if (!validateExports()) {
             return true;
         }
-        for (Element element : round.getElementsAnnotatedWith(StateGraph.class)) {
+        failed.addAll(legacy.report(round));
+        for (Element element : round.getElementsAnnotatedWith(GenerateGraphApi.class)) {
             resolve((TypeElement) element, round);
-        }
-        if (typed.isPresent()) {
-            for (Element element : round.getElementsAnnotatedWith(GenerateGraphApi.class)) {
-                resolve((TypeElement) element, round);
-            }
         }
         for (Element element : round.getElementsAnnotatedWith(StateGraphs.class)) {
             Optional<SetModel> set = sets.build((TypeElement) element,
@@ -159,8 +154,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
     }
 
     /**
-     * A machine's model, built once for the whole compilation by the frontend its own marker names; a machine
-     * from the classpath is built on demand and carries its companion in its own jar already.
+     * A machine's model, built once for the whole compilation; a machine from the classpath is built on demand
+     * and carries its companion in its own jar already.
      */
     private Optional<MachineModel> resolve(TypeElement type, RoundEnvironment round) {
         String name = type.getQualifiedName().toString();
@@ -183,17 +178,12 @@ public final class StateGraphProcessor extends AbstractProcessor {
         return model;
     }
 
-    /** The frontend that reads {@code type}: the typed one for a generated API, the legacy one otherwise. */
+    /**
+     * The model of {@code type}, read with the vocabulary generated for it. A compilation whose manifest could
+     * not be trusted has no vocabulary to read anything with, and has already said so once as {@code SG602}.
+     */
     private Optional<MachineModel> build(TypeElement type) {
-        if (annotations.find(type, GenerateGraphApi.class).isEmpty()) {
-            return machines.build(type);
-        }
-        if (typed.isEmpty()) {
-            diagnostics.error("SG602", type.getQualifiedName() + " declares its graph with generated vocabulary,"
-                    + " but this compilation names no annotation manifest to read that vocabulary with", type);
-            return Optional.empty();
-        }
-        return typed.get().build(type);
+        return typed.flatMap((TypedMachineModelBuilder builder) -> builder.build(type));
     }
 
     /**

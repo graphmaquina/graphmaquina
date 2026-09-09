@@ -26,8 +26,8 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 
 /**
- * Turns a machine that declares its graph with the vocabulary generated for it into the same
- * {@link MachineModel} the legacy frontend builds, reporting every problem it finds with an SG code.
+ * Turns a machine that declares its graph with the vocabulary generated for it into the {@link MachineModel}
+ * the generators read, reporting every problem it finds with an SG code.
  *
  * <p>Identity comes first. The facade must carry the {@code Definition} generated for that very machine, and
  * every other declaration on it must belong to the same vocabulary, so a machine can never be described with
@@ -36,9 +36,9 @@ import javax.lang.model.type.TypeMirror;
  * exported member behind it. What the language itself refuses — a constant of another enum, an annotation that
  * omits an element it requires — is left to javac, which has already reported it precisely.</p>
  *
- * <p>Everything the model must hold beyond that is checked by the same code the legacy frontend calls: the
- * signature of an operation, the closure of the rows, the duplicated cells and the full outline of the graph.
- * The two frontends therefore accept exactly the same graphs, and only the way one is declared differs.</p>
+ * <p>Everything the model must hold beyond that is a rule about a graph and not about a declaration, so it is
+ * asked of {@link StructuralChecks}: the signature of an operation, the closure of the rows, the duplicated
+ * cells and the full outline of the graph.</p>
  */
 final class TypedMachineModelBuilder {
 
@@ -48,7 +48,7 @@ final class TypedMachineModelBuilder {
     private static final String BLANK_REASON = "SG103";
 
     private final VocabularyRegistry vocabulary;
-    private final MachineModelBuilder structure;
+    private final StructuralChecks structure;
     private final PropertyResolver properties;
     private final TypedTransitions transitions;
     private final TypedWatchReader watches;
@@ -56,7 +56,7 @@ final class TypedMachineModelBuilder {
     private final Diagnostics diagnostics;
     private final Annotations annotations;
 
-    TypedMachineModelBuilder(VocabularyRegistry vocabulary, MachineModelBuilder structure, PropertyResolver properties,
+    TypedMachineModelBuilder(VocabularyRegistry vocabulary, StructuralChecks structure, PropertyResolver properties,
             TypedTransitions transitions, TypedWatchReader watches, Signatures signatures, Diagnostics diagnostics) {
         this.vocabulary = vocabulary;
         this.structure = structure;
@@ -197,7 +197,7 @@ final class TypedMachineModelBuilder {
                 continue;
             }
             ExecutableElement method = (ExecutableElement) member;
-            if (!MachineModelBuilder.isOperation(method)) {
+            if (!StructuralChecks.isOperation(method)) {
                 continue;
             }
             List<AnnotationMirror> actions = own(method, VocabularyKind.ACTION, type);

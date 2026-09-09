@@ -197,15 +197,6 @@ final class Compilation {
     }
 
     /**
-     * The pipeline the legacy string-based fixtures still go through: the generator sees no
-     * {@code @GenerateGraphApi} in them, so it only writes the compilation carrier and a manifest that
-     * describes an empty model, and the processor keeps building them with its legacy frontend.
-     */
-    static Result compile(Map<String, String> sources) {
-        return compileTyped(sources);
-    }
-
-    /**
      * Compiles {@code sources} with the processor but without any generated bootstrap and without a manifest
      * option, so a test can observe what the processor reports when it has no manifest at all.
      */

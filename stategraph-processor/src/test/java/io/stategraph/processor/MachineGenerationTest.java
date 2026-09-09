@@ -24,7 +24,7 @@ class MachineGenerationTest {
 
     @Test
     void generatesTheCompanionWithGraphFacadeAndKey() {
-        Compilation.Result result = Compilation.compile(Fixtures.validDocs());
+        Compilation.Result result = Compilation.compileTyped(Fixtures.validDocs());
         assertTrue(result.success(), result.describe());
         assertTrue(result.hasGenerated("fx.Docs_"), result.describe());
         String source = result.generated("fx.Docs_");
@@ -43,9 +43,10 @@ class MachineGenerationTest {
 
     @Test
     void staticGuardsNeedNoInstanceAndForbidAndWatchAreEmitted() {
-        Compilation.Result result = Compilation.compile(Fixtures.withPages(
-                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH + "@Forbid(from = \"DRAFT\", to = \"ARCHIVED\", reason = \"never\")\n",
-                Fixtures.DOCS_BODY.replace("guards = \"approved\"", "guards = \"ready\"")));
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withPages(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH
+                        + "@DocsGraph.Forbid(from = DRAFT, to = ARCHIVED, reason = \"never\")\n",
+                Fixtures.DOCS_BODY.replace("guards = DocActionsRefs.Approved.class", "guards = DocActionsRefs.Ready.class")));
         assertTrue(result.success(), result.describe());
         String source = result.generated("fx.Docs_");
         assertTrue(source.contains(".guard(\"ready\", (context) -> DocActions.ready(context))"), source);
@@ -58,7 +59,7 @@ class MachineGenerationTest {
     @Test
     void namesTheParametersOfAConditionLambdaApartFromEachOther() {
         for (String entity : List.of("Peers", "View")) {
-            Compilation.Result result = Compilation.compile(watched(entity));
+            Compilation.Result result = Compilation.compileTyped(watched(entity));
 
             assertTrue(result.success(), result.describe());
             String source = result.generated("fx.Mains_");
@@ -92,33 +93,37 @@ class MachineGenerationTest {
                 """);
         sources.put("fx." + entity, """
                 package fx;
+                import io.stategraph.annotation.GraphProperty;
                 import java.util.ArrayList;
                 import java.util.List;
                 public final class %s {
-                    private MainStatus status = MainStatus.OPEN;
+                    @GraphProperty private MainStatus status = MainStatus.OPEN;
                     private final List<Part> parts = new ArrayList<>();
-                    public String id() { return "main"; }
+                    @GraphProperty public String id() { return "main"; }
                     public MainStatus status() { return status; }
                     public void status(MainStatus value) { status = value; }
-                    public List<Part> parts() { return parts; }
+                    @GraphProperty public List<Part> parts() { return parts; }
                 }
                 """.formatted(entity));
         sources.put("fx.Part", """
                 package fx;
+                import io.stategraph.annotation.GraphProperty;
                 import java.util.Optional;
                 public final class Part {
-                    private PartStatus status = PartStatus.OPEN;
-                    public String id() { return "part"; }
+                    @GraphProperty private PartStatus status = PartStatus.OPEN;
+                    @GraphProperty public String id() { return "part"; }
                     public PartStatus status() { return status; }
                     public void status(PartStatus value) { status = value; }
-                    public Optional<%s> owner() { return Optional.empty(); }
+                    @GraphProperty public Optional<%s> owner() { return Optional.empty(); }
                 }
                 """.formatted(entity));
         sources.put("fx.Rules", """
                 package fx;
+                import io.stategraph.annotation.GraphCondition;
                 import io.stategraph.api.PeerView;
                 import java.util.Collection;
                 public final class Rules {
+                    @GraphCondition
                     public boolean ready(%s entity, Collection<? extends Part> parts, PeerView<Part, PartStatus> view) {
                         return view.allIn(parts, PartStatus.DONE);
                     }
@@ -126,42 +131,44 @@ class MachineGenerationTest {
                 """.formatted(entity));
         sources.put("fx.Parts", """
                 package fx;
-                import io.stategraph.annotation.Move;
-                import io.stategraph.annotation.Row;
-                import io.stategraph.annotation.StateGraph;
+                import io.stategraph.annotation.GenerateGraphApi;
                 import io.stategraph.api.Machine;
                 import io.stategraph.api.Outcome;
-                @StateGraph(initial = "OPEN", terminals = "DONE")
-                @Row(state = "OPEN", otherwise = "a part is finished")
+                import static fx.PartStatus.DONE;
+                import static fx.PartStatus.OPEN;
+                @GenerateGraphApi
+                @PartsGraph.Definition(initial = OPEN, terminals = DONE, state = PartRefs.Status.class, id = PartRefs.Id.class)
+                @PartsGraph.Row(state = OPEN, otherwise = "a part is finished")
                 public interface Parts extends Machine<Part, PartStatus> {
-                    @Move(from = "OPEN", to = "DONE")
+                    @PartsGraph.Move(from = OPEN, to = DONE)
                     Outcome<Part, PartStatus> finish(Part part);
                 }
                 """);
         sources.put("fx.Mains", """
                 package fx;
-                import io.stategraph.annotation.Move;
-                import io.stategraph.annotation.Row;
-                import io.stategraph.annotation.StateGraph;
-                import io.stategraph.annotation.Watch;
-                import io.stategraph.annotation.When;
+                import io.stategraph.annotation.GenerateGraphApi;
+                import io.stategraph.annotation.GraphPeers;
                 import io.stategraph.api.Machine;
                 import io.stategraph.api.Outcome;
-                @StateGraph(initial = "OPEN", terminals = "CLOSED")
-                @Row(state = "OPEN", otherwise = "the parts decide")
-                @Watch(state = "OPEN", peer = Parts.class, peers = "parts", owner = "owner", by = Rules.class,
-                       rules = @When(condition = "ready", goTo = "CLOSED"))
-                public interface Mains extends Machine<%s, MainStatus> {
-                    @Move(from = "OPEN", to = "CLOSED")
-                    Outcome<%s, MainStatus> close(%s entity);
+                import static fx.MainStatus.CLOSED;
+                import static fx.MainStatus.OPEN;
+                @GenerateGraphApi
+                @GraphPeers(Parts.class)
+                @MainsGraph.Definition(initial = OPEN, terminals = CLOSED, state = %1$sRefs.Status.class, id = %1$sRefs.Id.class)
+                @MainsGraph.Row(state = OPEN, otherwise = "the parts decide")
+                @MainsParts.Watch(state = OPEN, peers = %1$sRefs.Parts.class, owner = PartRefs.Owner.class,
+                        rules = @MainsParts.When(condition = RulesRefs.Ready.class, goTo = CLOSED))
+                public interface Mains extends Machine<%1$s, MainStatus> {
+                    @MainsGraph.Move(from = OPEN, to = CLOSED)
+                    Outcome<%1$s, MainStatus> close(%1$s entity);
                 }
-                """.formatted(entity, entity, entity));
+                """.formatted(entity));
         return sources;
     }
 
     @Test
     void generatedGraphBuildsAndTheFacadeRuns() throws Exception {
-        Compilation.Result result = Compilation.compile(Fixtures.validDocs());
+        Compilation.Result result = Compilation.compileTyped(Fixtures.validDocs());
         assertTrue(result.success(), result.describe());
         Class<?> docActions = result.load("fx.DocActions");
         Object actions = docActions.getConstructor().newInstance();

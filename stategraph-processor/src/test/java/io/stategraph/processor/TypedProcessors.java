@@ -130,7 +130,7 @@ public final class TypedProcessors {
             Diagnostics diagnostics = new Diagnostics(processingEnv.getMessager());
             Map<String, SymbolDescriptor> symbols = SymbolResolver.symbols(registry.manifest().orElseThrow());
             SymbolResolver methods = new SymbolResolver(symbols, signatures, new EffectiveMethods(signatures),
-                    new Bindings(signatures, diagnostics), diagnostics);
+                    new Bindings(signatures), diagnostics);
             PropertyResolver properties = new PropertyResolver(symbols, signatures, new Accessors(signatures),
                     diagnostics);
             BoundInvocation invocations = new BoundInvocation(elements, types);

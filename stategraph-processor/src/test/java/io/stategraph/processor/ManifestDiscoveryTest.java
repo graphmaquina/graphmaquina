@@ -58,6 +58,14 @@ class ManifestDiscoveryTest {
             "io.stategraph.annotation.When",
             "javax.annotation.processing.Generated");
 
+    /** A machine marked for generation whose vocabulary no generation emitted, so nothing can read it. */
+    private static final Map<String, String> UNGENERATED = Map.of("fx.Docs", """
+            package fx;
+            import io.stategraph.annotation.GenerateGraphApi;
+            @GenerateGraphApi
+            public interface Docs { }
+            """);
+
     /** The vocabulary the generator emits for the machine of {@link TypedFixtures#minimal()}. */
     private static final Set<String> GENERATED = Set.of(
             "fx.DocsGraph.Definition", "fx.DocsGraph.Row", "fx.DocsGraph.Rows", "fx.DocsGraph.Action",
@@ -121,20 +129,23 @@ class ManifestDiscoveryTest {
     }
 
     /**
-     * Transition: a build that names no manifest has not been moved to the generator yet, so it keeps the
-     * fixed set and its legacy machines. Task 13 turns this into SG602 with the legacy frontend it removes.
+     * A graph is declared with the vocabulary a generation emitted, so a build that names no manifest has run
+     * no generation and has nothing to declare one with. The fixed set is still claimed, so the marker it did
+     * write is met with SG602 rather than with an annotation nobody owns.
      */
     @Test
-    void toleratesAnAbsentOptionWhileTheLegacyFrontendExists() {
-        Compilation.Result legacy = Compilation.compileRaw(Fixtures.validDocs(), List.of());
+    void reportsACompilationThatNamesNoManifestAtAll() {
+        Compilation.Result result = Compilation.compileRaw(UNGENERATED, List.of());
 
-        assertTrue(legacy.success(), legacy.describe());
-        assertEquals(0, legacy.countError("SG602"), legacy.describe());
-        assertTrue(legacy.hasGenerated("fx.Docs_"), legacy.describe());
+        assertFalse(result.success(), result.describe());
+        assertEquals(1, result.countError("SG602"), result.describe());
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG602]")
+                && error.contains(ManifestRegistry.OPTION)), result::describe);
+        assertFalse(result.hasGenerated("fx.Docs_"), result.describe());
 
         ManifestProcessors.Recording.reset();
         ManifestProcessors.Other.reset();
-        Compilation.compileRaw(Fixtures.validDocs(), processors(ManifestProcessors.Recording.class));
+        Compilation.compileRaw(UNGENERATED, processors(ManifestProcessors.Recording.class));
 
         assertEquals(new TreeSet<>(FIXED), new TreeSet<>(ManifestProcessors.Recording.claimed()));
     }

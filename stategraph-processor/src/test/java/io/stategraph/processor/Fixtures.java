@@ -3,7 +3,11 @@ package io.stategraph.processor;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** Source fixtures shared by the processor tests. Everything lives in package fx. */
+/**
+ * Source fixtures shared by the processor tests, written against the typed graph API. Everything lives in
+ * package {@code fx}, and every generated type a fixture names is one the pre-javac generator produces from
+ * these very sources, so a fixture is prepared and compiled exactly as a consumer build does.
+ */
 final class Fixtures {
 
     static final String DOC_STATUS = """
@@ -18,14 +22,15 @@ final class Fixtures {
 
     static final String DOC = """
             package fx;
+            import io.stategraph.annotation.GraphProperty;
             import java.util.ArrayList;
             import java.util.List;
             public final class Doc {
                 private final String id;
-                private DocStatus status = DocStatus.DRAFT;
-                private final List<Page> pages = new ArrayList<>();
+                @GraphProperty private DocStatus status = DocStatus.DRAFT;
+                @GraphProperty private final List<Page> pages = new ArrayList<>();
                 public Doc(String id) { this.id = id; }
-                public String getId() { return id; }
+                @GraphProperty public String getId() { return id; }
                 public DocStatus getStatus() { return status; }
                 public void setStatus(DocStatus status) { this.status = status; }
                 public List<Page> getPages() { return pages; }
@@ -35,21 +40,26 @@ final class Fixtures {
 
     static final String PAGE = """
             package fx;
+            import io.stategraph.annotation.GraphProperty;
             import java.util.Optional;
             public final class Page {
                 private final String id;
-                private PageStatus status = PageStatus.OPEN;
+                @GraphProperty private PageStatus status = PageStatus.OPEN;
                 private final Doc doc;
                 public Page(String id, Doc doc) { this.id = id; this.doc = doc; if (doc != null) { doc.attach(this); } }
-                public String id() { return id; }
+                @GraphProperty public String id() { return id; }
                 public PageStatus status() { return status; }
                 public void status(PageStatus status) { this.status = status; }
-                public Optional<Doc> doc() { return Optional.ofNullable(doc); }
+                @GraphProperty public Optional<Doc> doc() { return Optional.ofNullable(doc); }
             }
             """;
 
     static final String DOC_ACTIONS = """
             package fx;
+            import io.stategraph.annotation.GraphAction;
+            import io.stategraph.annotation.GraphCondition;
+            import io.stategraph.annotation.GraphGuard;
+            import io.stategraph.annotation.GraphHook;
             import io.stategraph.api.ActionOutcome;
             import io.stategraph.api.GuardContext;
             import io.stategraph.api.GuardResult;
@@ -63,90 +73,85 @@ final class Fixtures {
             public class DocActions {
                 public final List<String> calls = new ArrayList<>();
                 public boolean approved = true;
-                public ActionOutcome publish(TransitionContext<Doc, DocStatus> ctx) { calls.add("publish"); return ActionOutcome.ok(); }
-                public CompletionStage<ActionOutcome> archiveAsync(TransitionContext<Doc, DocStatus> ctx) {
+                @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> ctx) { calls.add("publish"); return ActionOutcome.ok(); }
+                @GraphAction public CompletionStage<ActionOutcome> archiveAsync(TransitionContext<Doc, DocStatus> ctx) {
                     calls.add("archive");
                     return CompletableFuture.completedFuture(ActionOutcome.ok());
                 }
-                public GuardResult approved(GuardContext<Doc, DocStatus> ctx) {
+                @GraphGuard public GuardResult approved(GuardContext<Doc, DocStatus> ctx) {
                     return approved ? GuardResult.pass() : GuardResult.reject("not approved");
                 }
-                public static GuardResult ready(GuardContext<Doc, DocStatus> ctx) { return GuardResult.pass(); }
-                public void notify(Doc doc) { calls.add("notify:" + doc.getId()); }
-                public boolean allPagesDone(Doc doc, Collection<? extends Page> pages, PeerView<Page, PageStatus> view) {
+                @GraphGuard public static GuardResult ready(GuardContext<Doc, DocStatus> ctx) { return GuardResult.pass(); }
+                @GraphHook public void notify(Doc doc) { calls.add("notify:" + doc.getId()); }
+                @GraphCondition public boolean allPagesDone(Doc doc, Collection<? extends Page> pages, PeerView<Page, PageStatus> view) {
                     return view.allIn(pages, PageStatus.DONE);
                 }
-                public String notAnAction(TransitionContext<Doc, DocStatus> ctx) { return ""; }
-                private ActionOutcome hidden(TransitionContext<Doc, DocStatus> ctx) { return ActionOutcome.ok(); }
-            }
-            """;
-
-    static final String HIDDEN_ACTIONS = """
-            package fx;
-            import io.stategraph.api.ActionOutcome;
-            import io.stategraph.api.TransitionContext;
-            class HiddenActions {
-                public ActionOutcome publish(TransitionContext<Doc, DocStatus> ctx) { return ActionOutcome.ok(); }
             }
             """;
 
     static final String PAGES = """
             package fx;
-            import io.stategraph.annotation.Move;
-            import io.stategraph.annotation.Row;
-            import io.stategraph.annotation.StateGraph;
+            import io.stategraph.annotation.GenerateGraphApi;
             import io.stategraph.api.Machine;
             import io.stategraph.api.Outcome;
-            @StateGraph(initial = "OPEN", terminals = "DONE")
-            @Row(state = "OPEN", otherwise = "a page is finished")
+            import static fx.PageStatus.DONE;
+            import static fx.PageStatus.OPEN;
+            @GenerateGraphApi
+            @PagesGraph.Definition(initial = OPEN, terminals = DONE, state = PageRefs.Status.class, id = PageRefs.Id.class)
+            @PagesGraph.Row(state = OPEN, otherwise = "a page is finished")
             public interface Pages extends Machine<Page, PageStatus> {
-                @Move(from = "OPEN", to = "DONE")
+                @PagesGraph.Move(from = OPEN, to = DONE)
                 Outcome<Page, PageStatus> finish(Page page);
             }
             """;
 
-    /** A Machine that carries no @StateGraph, so it cannot be watched. */
-    static final String PLAIN_PAGES = """
-            package fx;
-            import io.stategraph.api.Machine;
-            public interface PlainPages extends Machine<Page, PageStatus> {
-            }
-            """;
-
+    /** Nine lines, so the first line of a header is line 10 of the facade it opens. */
     static final String DOCS_IMPORTS = """
             package fx;
-            import io.stategraph.annotation.Action;
-            import io.stategraph.annotation.Cell;
-            import io.stategraph.annotation.Forbid;
-            import io.stategraph.annotation.Move;
-            import io.stategraph.annotation.Row;
-            import io.stategraph.annotation.StateGraph;
-            import io.stategraph.annotation.Watch;
-            import io.stategraph.annotation.When;
+            import io.stategraph.annotation.GenerateGraphApi;
+            import io.stategraph.annotation.GraphPeers;
+            import io.stategraph.annotation.Timeout;
             import io.stategraph.api.Machine;
             import io.stategraph.api.Outcome;
             import java.io.IOException;
+            import static fx.DocStatus.*;
+            @GenerateGraphApi
             """;
 
+    /** The line the diagnostics of a header are anchored at, counted from the first line of the facade. */
+    static final int HEADER_LINE = 10;
+
     static final String DOCS_HEADER = """
-            @StateGraph(initial = "DRAFT", terminals = {"ARCHIVED"}, allowsCycle = "REVIEW")
-            @Row(state = "DRAFT", otherwise = "a draft is sent to review")
-            @Row(state = "REVIEW", otherwise = "a review is published or sent back")
-            @Row(state = "PUBLISHED", otherwise = "a published doc can only be archived")
-            @Cell(from = "REVIEW", to = "DRAFT")
+            @DocsGraph.Definition(initial = DRAFT, terminals = ARCHIVED, allowsCycle = REVIEW, state = DocRefs.Status.class, id = DocRefs.Id.class)
+            @DocsGraph.Row(state = DRAFT, otherwise = "a draft is sent to review")
+            @DocsGraph.Row(state = REVIEW, otherwise = "a review is published or sent back")
+            @DocsGraph.Row(state = PUBLISHED, otherwise = "a published doc can only be archived")
+            @DocsGraph.Cell(from = REVIEW, to = DRAFT)
             """;
 
     static final String DOCS_BODY = """
-                @Move(from = "DRAFT", to = "REVIEW")
+                @DocsGraph.Move(from = DRAFT, to = REVIEW)
                 Outcome<Doc, DocStatus> submit(Doc doc);
-                @Action(from = "REVIEW", to = "PUBLISHED", by = DocActions.class, guards = "approved", onFailure = "DRAFT", afterCommit = "notify")
+                @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                        guards = DocActionsRefs.Approved.class, onFailure = DRAFT, afterCommit = DocActionsRefs.Notify.class)
                 Outcome<Doc, DocStatus> publish(Doc doc);
-                @Action(from = "PUBLISHED", to = "ARCHIVED", by = DocActions.class, action = "archiveAsync", timeout = "PT2S")
+                @DocsGraph.Action(from = PUBLISHED, to = ARCHIVED, action = DocActionsRefs.ArchiveAsync.class, timeout = @Timeout(seconds = 2))
                 Outcome<Doc, DocStatus> archive(Doc doc);
             """;
 
+    /** What {@link #DOCS_BODY} spells to run the archive asynchronously, so a test can make it synchronous. */
+    static final String ASYNC_ARCHIVE = "action = DocActionsRefs.ArchiveAsync.class, timeout = @Timeout(seconds = 2)";
+
+    /** What {@link #DOCS_BODY} spells to publish, so a test can bind the operation to another host. */
+    static final String PUBLISH_BINDING = "action = DocActionsRefs.Publish.class,\n"
+            + "            guards = DocActionsRefs.Approved.class, onFailure = DRAFT,"
+            + " afterCommit = DocActionsRefs.Notify.class";
+
+    /** The pair Docs watches and the watch that uses it; both halves of a pair are declared together. */
     static final String DOCS_WATCH = """
-            @Watch(state = "REVIEW", peer = Pages.class, peers = "pages", owner = "doc", rules = @When(allIn = "DONE", goTo = "PUBLISHED"))
+            @GraphPeers(Pages.class)
+            @DocsPages.Watch(state = REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
+                    rules = @DocsPages.When(allIn = PageStatus.DONE, goTo = PUBLISHED))
             """;
 
     static final String LIBRARY = """
@@ -170,7 +175,6 @@ final class Fixtures {
         sources.put("fx.Doc", DOC);
         sources.put("fx.Page", PAGE);
         sources.put("fx.DocActions", DOC_ACTIONS);
-        sources.put("fx.HiddenActions", HIDDEN_ACTIONS);
         return sources;
     }
 

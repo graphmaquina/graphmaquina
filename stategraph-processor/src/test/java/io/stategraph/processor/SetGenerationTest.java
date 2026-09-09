@@ -25,7 +25,8 @@ class SetGenerationTest {
 
     @Test
     void builderSignatureFollowsTheDependenciesAndAsyncness() {
-        Compilation.Result async = Compilation.compile(Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        Compilation.Result async = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertTrue(async.success(), async.describe());
         String source = async.generated("fx.Library_");
         assertTrue(source.contains("public static Builder builder(Duration asyncTimeout, DocActions docActions)"), source);
@@ -33,15 +34,19 @@ class SetGenerationTest {
         assertTrue(source.contains(".as(Docs.class)"), source);
         assertTrue(source.contains(".as(Pages.class)"), source);
 
-        Compilation.Result sync = Compilation.compile(Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
-                Fixtures.DOCS_BODY.replace(", action = \"archiveAsync\", timeout = \"PT2S\"", ", action = \"publish\""), Fixtures.LIBRARY));
+        Compilation.Result sync = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY.replace(Fixtures.ASYNC_ARCHIVE, "action = DocActionsRefs.Publish.class"),
+                Fixtures.LIBRARY));
         assertTrue(sync.success(), sync.describe());
-        assertTrue(sync.generated("fx.Library_").contains("public static Builder builder(DocActions docActions)"), sync.generated("fx.Library_"));
+        assertTrue(sync.generated("fx.Library_").contains("public static Builder builder(DocActions docActions)"),
+                sync.generated("fx.Library_"));
     }
 
     @Test
     void builtSetRunsCascadesWatchesHooksAndListener() throws Exception {
-        Compilation.Result result = Compilation.compile(Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertTrue(result.success(), result.describe());
         Class<?> docActions = result.load("fx.DocActions");
         Object actions = docActions.getConstructor().newInstance();
@@ -78,7 +83,8 @@ class SetGenerationTest {
 
     @Test
     void perMachineTimeoutOverrideRejectsMachinesWithoutAsyncCells() throws Exception {
-        Compilation.Result result = Compilation.compile(Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertTrue(result.success(), result.describe());
         Class<?> docActions = result.load("fx.DocActions");
         Object actions = docActions.getConstructor().newInstance();
@@ -95,26 +101,28 @@ class SetGenerationTest {
         sources.put(name + ".Status", "package " + name + ";\npublic enum Status { OPEN, DONE }\n");
         sources.put(name + ".Thing", """
                 package %s;
+                import io.stategraph.annotation.GraphProperty;
                 public final class Thing {
                     private final String id;
-                    private Status status = Status.OPEN;
+                    @GraphProperty private Status status = Status.OPEN;
                     public Thing(String id) { this.id = id; }
-                    public String getId() { return id; }
+                    @GraphProperty public String getId() { return id; }
                     public Status getStatus() { return status; }
                     public void setStatus(Status status) { this.status = status; }
                 }
                 """.formatted(name));
         sources.put(name + ".Things", """
-                package %s;
-                import io.stategraph.annotation.Move;
-                import io.stategraph.annotation.Row;
-                import io.stategraph.annotation.StateGraph;
+                package %1$s;
+                import io.stategraph.annotation.GenerateGraphApi;
                 import io.stategraph.api.Machine;
                 import io.stategraph.api.Outcome;
-                @StateGraph(initial = "OPEN", terminals = "DONE")
-                @Row(state = "OPEN", otherwise = "a thing is finished")
+                import static %1$s.Status.DONE;
+                import static %1$s.Status.OPEN;
+                @GenerateGraphApi
+                @ThingsGraph.Definition(initial = OPEN, terminals = DONE, state = ThingRefs.Status.class, id = ThingRefs.Id.class)
+                @ThingsGraph.Row(state = OPEN, otherwise = "a thing is finished")
                 public interface Things extends Machine<Thing, Status> {
-                    @Move(from = "OPEN", to = "DONE")
+                    @ThingsGraph.Move(from = OPEN, to = DONE)
                     Outcome<Thing, Status> finish(Thing thing);
                 }
                 """.formatted(name));
@@ -135,7 +143,7 @@ class SetGenerationTest {
                     b.Things second();
                 }
                 """);
-        Compilation.Result result = Compilation.compile(sources);
+        Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
         assertTrue(result.hasGenerated("a.Things_"), result.describe());
         assertTrue(result.hasGenerated("b.Things_"), result.describe());
@@ -145,24 +153,26 @@ class SetGenerationTest {
     @Test
     void aDependencyNamedLikeAGeneratedFieldStillCompiles() {
         Map<String, String> sources = Fixtures.withLibrary(Fixtures.DOCS_HEADER,
-                Fixtures.DOCS_BODY.replace("by = DocActions.class, guards = \"approved\", onFailure = \"DRAFT\", afterCommit = \"notify\"",
-                        "by = Executor.class"), Fixtures.LIBRARY);
+                Fixtures.DOCS_BODY.replace(Fixtures.PUBLISH_BINDING, "action = ExecutorRefs.Publish.class"),
+                Fixtures.LIBRARY);
         sources.put("fx.Executor", """
                 package fx;
+                import io.stategraph.annotation.GraphAction;
                 import io.stategraph.api.ActionOutcome;
                 import io.stategraph.api.TransitionContext;
                 public class Executor {
-                    public ActionOutcome publish(TransitionContext<Doc, DocStatus> ctx) { return ActionOutcome.ok(); }
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> ctx) { return ActionOutcome.ok(); }
                 }
                 """);
-        Compilation.Result result = Compilation.compile(sources);
+        Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
     }
 
     @Test
     void setIsNotGeneratedWhenAMachineFailed() {
-        Compilation.Result result = Compilation.compile(Fixtures.withLibrary(
-                Fixtures.DOCS_HEADER.replace("initial = \"DRAFT\"", "initial = \"DRAFTT\"") + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER.replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \"")
+                        + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertFalse(result.success());
         assertFalse(result.hasGenerated("fx.Library_"));
         assertFalse(result.hasGenerated("fx.Docs_"));

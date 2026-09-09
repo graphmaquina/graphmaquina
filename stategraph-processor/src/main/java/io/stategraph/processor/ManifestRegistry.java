@@ -58,12 +58,10 @@ import javax.annotation.processing.ProcessingEnvironment;
  * round. {@code init} has no round to anchor a diagnostic at, which is why the failure is recorded here
  * instead of being reported here.</p>
  *
- * <p><strong>Transition.</strong> While the legacy v0.2 frontend still exists, a compilation that names no
- * manifest at all is not a failure: it is a consumer that has not been moved to the generator yet, and it
- * keeps compiling with the fixed set alone. Once the v0.2 frontend is removed, a missing option must become
- * {@code SG602} like every other unusable manifest, since by then no consumer can do without one. An option
- * that is given but names a file that cannot be read or trusted is already a failure today: the build meant
- * to supply a manifest and did not.</p>
+ * <p>A compilation that names no manifest at all is refused the same way: a graph is declared with the
+ * vocabulary a generation emitted, so a build that ran no generation has nothing to declare one with. The
+ * fixed set is still claimed, so the declarations that were written are met with {@code SG602} and not with an
+ * annotation nobody owns.</p>
  */
 final class ManifestRegistry {
 
@@ -89,15 +87,13 @@ final class ManifestRegistry {
 
     /**
      * Reads the manifest named by {@link #OPTION} and checks it against the declarations of {@code environment}.
-     * A registry whose {@link #failure()} is present claims the fixed set alone, and so does one for a
-     * compilation that names no manifest while the legacy frontend still accepts such a compilation.
+     * A registry whose {@link #failure()} is present claims the fixed set alone.
      */
     static ManifestRegistry load(ProcessingEnvironment environment) {
         String option = environment.getOptions().get(OPTION);
         if (option == null || option.isBlank()) {
-            // Transition until the v0.2 frontend is removed: a consumer that names no manifest generates
-            // nothing yet, so it keeps the fixed set and no failure. Then this must become SG602.
-            return unloaded();
+            return failed("this compilation names no annotation manifest: run the StateGraph generator before"
+                    + " javac and pass -A" + OPTION + "=<its annotation-manifest.json>");
         }
         Path file;
         try {
@@ -152,9 +148,11 @@ final class ManifestRegistry {
 
     /**
      * The annotations this processor owns whatever a compilation generates: every stable marker, the internal
-     * metadata the generator writes, the legacy v0.2 vocabulary while it exists, and the {@code @Generated} it
-     * writes itself, so it coexists with other processors instead of claiming a package.
+     * metadata the generator writes, the deprecated v0.2 vocabulary it only claims to report {@code SG609} at,
+     * and the {@code @Generated} it writes itself, so it coexists with other processors instead of claiming a
+     * package.
      */
+    @SuppressWarnings("deprecation")
     private static Set<String> fixed() {
         List<Class<? extends Annotation>> types = List.of(
             GenerateGraphApi.class, GraphPeers.class, GraphAction.class, GraphGuard.class, GraphHook.class,

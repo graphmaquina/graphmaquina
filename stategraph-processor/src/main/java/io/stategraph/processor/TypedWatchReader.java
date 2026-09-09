@@ -55,14 +55,14 @@ final class TypedWatchReader {
     private static final List<String> ALTERNATIVES = List.of("condition", "allIn", "anyIn", "noneIn");
 
     private final VocabularyRegistry vocabulary;
-    private final MachineModelBuilder structure;
+    private final StructuralChecks structure;
     private final PropertyResolver properties;
     private final SymbolResolver symbols;
     private final Signatures signatures;
     private final Diagnostics diagnostics;
     private final Annotations annotations;
 
-    TypedWatchReader(VocabularyRegistry vocabulary, MachineModelBuilder structure, PropertyResolver properties,
+    TypedWatchReader(VocabularyRegistry vocabulary, StructuralChecks structure, PropertyResolver properties,
             SymbolResolver symbols, Signatures signatures, Diagnostics diagnostics) {
         this.vocabulary = vocabulary;
         this.structure = structure;

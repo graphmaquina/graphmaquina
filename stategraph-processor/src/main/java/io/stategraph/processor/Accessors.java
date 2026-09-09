@@ -5,15 +5,12 @@ import io.stategraph.processor.model.Binding;
 import io.stategraph.processor.model.Property;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
-import javax.lang.model.type.TypeKind;
-import javax.lang.model.type.TypeMirror;
 import lombok.RequiredArgsConstructor;
 
 /** Resolves property accessors by the conventions of spec §4.2: p()/getP()/isP() and setP(x)/p(x). */
@@ -21,35 +18,6 @@ import lombok.RequiredArgsConstructor;
 final class Accessors {
 
     private final Signatures signatures;
-
-    Optional<ExecutableElement> getter(TypeElement owner, String property) {
-        for (String name : readerNames(property)) {
-            for (Element member : signatures.elements().getAllMembers(owner)) {
-                if (member.getKind() == ElementKind.METHOD && member.getSimpleName().contentEquals(name)) {
-                    ExecutableElement method = (ExecutableElement) member;
-                    if (isPublicInstance(method) && method.getParameters().isEmpty() && method.getReturnType().getKind() != TypeKind.VOID) {
-                        return Optional.of(method);
-                    }
-                }
-            }
-        }
-        return Optional.empty();
-    }
-
-    Optional<ExecutableElement> setter(TypeElement owner, String property, TypeMirror parameter) {
-        for (String name : writerNames(property)) {
-            for (Element member : signatures.elements().getAllMembers(owner)) {
-                if (member.getKind() == ElementKind.METHOD && member.getSimpleName().contentEquals(name)) {
-                    ExecutableElement method = (ExecutableElement) member;
-                    if (isPublicInstance(method) && method.getParameters().size() == 1
-                            && signatures.assignable(parameter, method.getParameters().get(0).asType())) {
-                        return Optional.of(method);
-                    }
-                }
-            }
-        }
-        return Optional.empty();
-    }
 
     /**
      * Every public instance method {@code owner} has under {@code name} with {@code arity} parameters,

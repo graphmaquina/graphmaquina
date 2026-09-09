@@ -1,7 +1,6 @@
 package io.stategraph.processor;
 
 import io.stategraph.annotation.GenerateGraphApi;
-import io.stategraph.annotation.StateGraph;
 import io.stategraph.annotation.StateGraphs;
 import io.stategraph.processor.model.MachineAccessor;
 import io.stategraph.processor.model.MachineModel;
@@ -27,9 +26,9 @@ import lombok.RequiredArgsConstructor;
 /**
  * Turns a @StateGraphs interface into a {@link SetModel}: one accessor per machine, every watched peer inside the set.
  *
- * <p>A machine is named by its own marker, whichever frontend declared it: the typed {@code @GenerateGraphApi}
- * and the legacy {@code @StateGraph} are both accepted, so one set may hold machines of both while the two
- * frontends coexist. Which of them builds a machine's model is the caller's decision, not this builder's.</p>
+ * <p>A machine is named by its own marker, {@code @GenerateGraphApi}, and by nothing else: an accessor that
+ * returns anything else returns no machine of this library. Building a machine's model is the caller's work,
+ * not this builder's; here a machine that failed is only a set that is not generated.</p>
  */
 @RequiredArgsConstructor
 final class SetModelBuilder {
@@ -40,7 +39,7 @@ final class SetModelBuilder {
     private final Signatures signatures;
     private final Diagnostics diagnostics;
 
-    /** {@code machines} resolves a @StateGraph type to its model, or empty when that type has errors (already reported). */
+    /** {@code machines} resolves a machine to its model, or empty when that type has errors (already reported). */
     Optional<SetModel> build(TypeElement type, Function<TypeElement, Optional<MachineModel>> machines) {
         int before = diagnostics.errors();
         AnnotationMirror set = annotations.find(type, StateGraphs.class).orElseThrow();
@@ -71,7 +70,7 @@ final class SetModelBuilder {
             }
             if (!method.getParameters().isEmpty() || machineType.isEmpty()) {
                 diagnostics.error("SG510", method.getSimpleName() + " must be a no-argument accessor returning a"
-                        + " @GenerateGraphApi or @StateGraph interface", method);
+                        + " @GenerateGraphApi interface", method);
                 continue;
             }
             if (!seen.add(machineType.get().getQualifiedName().toString())) {
@@ -86,7 +85,8 @@ final class SetModelBuilder {
             accessors.add(new MachineAccessor(method.getSimpleName().toString(), model.get()));
         }
         if (accessors.isEmpty() && !silent) {
-            diagnostics.error("SG510", type.getSimpleName() + " declares no machine: add one accessor per @StateGraph interface", type, set);
+            diagnostics.error("SG510", type.getSimpleName() + " declares no machine: add one accessor per"
+                    + " @GenerateGraphApi interface", type, set);
         }
         for (MachineAccessor accessor : accessors) {
             for (WatchModel watch : accessor.machine().watches()) {
@@ -104,9 +104,8 @@ final class SetModelBuilder {
         return Optional.of(new SetModel(type, packageName, accessors));
     }
 
-    /** Whether {@code element} declares a graph, with the marker of either frontend. */
+    /** Whether {@code element} declares a graph this library generates an API for. */
     private boolean isMachine(Element element) {
-        return annotations.find(element, GenerateGraphApi.class).isPresent()
-                || annotations.find(element, StateGraph.class).isPresent();
+        return annotations.find(element, GenerateGraphApi.class).isPresent();
     }
 }

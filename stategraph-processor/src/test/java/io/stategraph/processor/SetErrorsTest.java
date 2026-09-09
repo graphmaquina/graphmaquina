@@ -10,7 +10,8 @@ import org.junit.jupiter.api.Test;
 class SetErrorsTest {
 
     private static Compilation.Result library(String source) {
-        return Compilation.compile(Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, source));
+        return Compilation.compileTyped(Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY, source));
     }
 
     @Test
@@ -41,7 +42,7 @@ class SetErrorsTest {
                     }
                 }
                 """);
-        Compilation.Result result = Compilation.compile(sources);
+        Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.hasError("SG502"), result.describe());
         assertFalse(result.hasGenerated("fx.Library_"), result.describe());
     }
@@ -59,9 +60,10 @@ class SetErrorsTest {
 
     @Test
     void aMachineWithErrorsDoesNotAddSetErrors() {
-        Compilation.Result result = Compilation.compile(Fixtures.withLibrary(
-                Fixtures.DOCS_HEADER.replace("initial = \"DRAFT\"", "initial = \"DRAFTT\"") + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER.replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \"")
+                        + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertEquals(1, result.errors().size(), result.describe());
-        assertTrue(result.hasError("SG501"), result.describe());
+        assertTrue(result.hasError("SG103"), result.describe());
     }
 }

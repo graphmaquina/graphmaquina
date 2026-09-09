@@ -5,9 +5,16 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** An operation with code: the facade method moves the entity from any of {@code from} to {@code to} by running the action. */
+/**
+ * An operation with code: the facade method moves the entity from any of {@code from} to {@code to} by running the action.
+ *
+ * @deprecated since 0.3: declare the graph with the vocabulary the StateGraph generator emits for the
+ *     machine. This declaration is kept only so a project that has not been migrated is met with SG609
+ *     and the typed declaration to write instead.
+ */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.CLASS)
+@Deprecated(since = "0.3")
 public @interface Action {
 
     String[] from();
