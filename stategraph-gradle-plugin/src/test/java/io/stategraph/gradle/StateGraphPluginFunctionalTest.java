@@ -1,5 +1,7 @@
 package io.stategraph.gradle;
 
+import com.google.gson.JsonElement;
+
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.TaskOutcome;
 import org.junit.jupiter.api.Test;
@@ -7,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +54,33 @@ class StateGraphPluginFunctionalTest {
         assertFalse(fixture.jarContainsGraphCompilationCarrier());
         assertFalse(fixture.runtimeClasspathContains("stategraph-codegen"));
         assertFalse(fixture.runtimeClasspathContains("stategraph-processor"));
+    }
+
+    /**
+     * The generated vocabulary is a source root of the source set, not extra source handed to the compile task:
+     * that is the only form an IDE import, javadoc or a sources jar reads. The generator itself must still not
+     * see it, or every build would hand javac the units it wrote twice and parse its own output as originals.
+     */
+    @Test
+    void registersGeneratedSourcesInTheSourceSet() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+
+        List<String> roots = fixture.mainSourceRoots();
+
+        assertTrue(roots.stream().anyMatch(root -> root.endsWith("/src/main/java")), roots.toString());
+        assertTrue(roots.stream().anyMatch(root ->
+                root.endsWith("/build/generated/sources/stategraph/main")), roots.toString());
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        List<String> requested = new ArrayList<>();
+        for (JsonElement source : fixture.request("main").getAsJsonArray("sources")) {
+            requested.add(source.getAsString());
+        }
+        assertEquals(1, requested.size(), requested.toString());
+        assertTrue(requested.get(0).endsWith("/src/main/java"), requested.toString());
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
     }
 
     /**

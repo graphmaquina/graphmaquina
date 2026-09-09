@@ -16,7 +16,9 @@ import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 
 import java.io.File;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Gradle plugin that generates the StateGraph typed API for each Java source set of the applying project and
@@ -95,8 +97,8 @@ public final class StateGraphPlugin implements Plugin<Project> {
             task.setGroup("stategraph");
             task.setDescription("Generates the StateGraph API sources for the '" + sourceSet.getName()
                     + "' source set.");
-            task.getSources().from(sourceSet.getJava().getSourceDirectories()
-                    .filter(directory -> !isGenerated(directory, sourcesOutput, processorSourcesOutput)));
+            task.getSources().from(project.provider(
+                    () -> originalSourceDirectories(sourceSet, sourcesOutput, processorSourcesOutput)));
             task.getApplicationClasspath().from(sourceSet.getCompileClasspath()
                     .filter(entry -> !entry.equals(classesOutput.get().getAsFile())));
             task.getGeneratorClasspath().from(generatorClasspath);
@@ -124,9 +126,14 @@ public final class StateGraphPlugin implements Plugin<Project> {
             action.getRequestFile().set(generate.flatMap(GenerateGraphApi::getRequestFile));
         }
 
+        // The generated vocabulary is a source root of the source set, not extra source handed to one task:
+        // that is what javadoc, a sources jar and an IDE import all read. The directory is contributed as its
+        // own plain location so it stays resolvable before the generator has run, and the dependency on the
+        // generation task travels with it to every consumer of the source set.
+        sourceSet.getJava().srcDir(project.files(sourcesOutput).builtBy(generate));
+
         compile.configure(task -> {
             task.dependsOn(generate);
-            task.source(generate.flatMap(GenerateGraphApi::getSourcesOutput));
             // The completion step enumerates every class file this compilation produced, which an incremental
             // recompilation of a subset would leave incomplete.
             task.getOptions().setIncremental(false);
@@ -152,10 +159,17 @@ public final class StateGraphPlugin implements Plugin<Project> {
                 : group + ':' + project.getName() + ':' + sourceSet.getName();
     }
 
-    /** Whether {@code directory} is one of the two directories this build generates sources into. */
-    private static boolean isGenerated(File directory, Provider<Directory> sourcesOutput,
+    /**
+     * The original source directories of {@code sourceSet}: everything it declares except the two directories
+     * this build generates into. The result is a plain set of files rather than a view over the source set, so
+     * that the generation task's own input never inherits the dependency the source set now carries on that
+     * very task, which would be a cycle.
+     */
+    private static Set<File> originalSourceDirectories(SourceSet sourceSet, Provider<Directory> sourcesOutput,
             Provider<Directory> processorSourcesOutput) {
-        return directory.equals(sourcesOutput.get().getAsFile())
-                || directory.equals(processorSourcesOutput.get().getAsFile());
+        Set<File> directories = new LinkedHashSet<>(sourceSet.getJava().getSrcDirs());
+        directories.remove(sourcesOutput.get().getAsFile());
+        directories.remove(processorSourcesOutput.get().getAsFile());
+        return directories;
     }
 }

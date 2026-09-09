@@ -44,6 +44,9 @@ public final class PluginFixture {
     /** Marker the fixture's classpath reporting task prefixes every runtime entry with. */
     private static final String RUNTIME_ENTRY = "RUNTIME_CLASSPATH_ENTRY=";
 
+    /** Marker the fixture's source-root reporting task prefixes every source directory with. */
+    private static final String SOURCE_ROOT = "MAIN_SOURCE_ROOT=";
+
     /** The published index a compilation leaves beside its classes. */
     private static final String EXPORTS = "META-INF/stategraph/exports.json";
 
@@ -170,6 +173,15 @@ public final class PluginFixture {
                     }
                 }
 
+                tasks.register("printSourceRoots") {
+                    val roots = provider {
+                        sourceSets.getByName("main").java.srcDirs.map { it.absolutePath }.sorted()
+                    }
+                    doLast {
+                        roots.get().forEach { println("%4$s" + it) }
+                    }
+                }
+
                 tasks.register("printGeneratorLauncher") {
                     val generator = tasks.named<GenerateGraphApi>("generateStateGraphApi")
                             .flatMap { it.javaLauncher }
@@ -182,7 +194,7 @@ public final class PluginFixture {
                         println("DAEMON_JAVA_HOME=" + System.getProperty("java.home"))
                     }
                 }
-                """.formatted(VERSION, LOMBOK, RUNTIME_ENTRY);
+                """.formatted(VERSION, LOMBOK, RUNTIME_ENTRY, SOURCE_ROOT);
     }
 
     /**
@@ -446,6 +458,22 @@ public final class PluginFixture {
             }
         }
         return false;
+    }
+
+    /**
+     * The source directories the {@code main} source set declares, as the project model reports them — which is
+     * what an IDE import and every consumer of {@code sourceSets.main.java} read.
+     *
+     * @return the absolute paths of the source roots
+     */
+    public List<String> mainSourceRoots() {
+        List<String> roots = new ArrayList<>();
+        for (String line : run("printSourceRoots").getOutput().lines().toList()) {
+            if (line.startsWith(SOURCE_ROOT)) {
+                roots.add(line.substring(SOURCE_ROOT.length()));
+            }
+        }
+        return List.copyOf(roots);
     }
 
     /**
