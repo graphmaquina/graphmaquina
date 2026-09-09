@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -172,7 +173,7 @@ public final class ExportDeclarations {
     private static SymbolDescriptor method(DeclarationIndex index, TypeHeader host, String member,
             List<Declaration> declarations) {
         List<MemberDescriptor> candidates = new ArrayList<>();
-        Set<SymbolKind> kinds = new LinkedHashSet<>();
+        Set<SymbolKind> kinds = EnumSet.noneOf(SymbolKind.class);
         for (Declaration declaration : declarations) {
             candidates.add(candidate(index, host, declaration));
             kinds.add(declaration.role());
@@ -244,13 +245,17 @@ public final class ExportDeclarations {
                 : host.canonicalName().substring(packageName.length() + 1);
     }
 
-    /** Identifies a declaration by the type that declares it, so an override is never merged into its base. */
+    /**
+     * Identifies a declaration by the type that declares it, so an override is never merged into its base, and
+     * by its kind, so a field never shares a key with a same-named method that declares no parameter.
+     */
     private static String signature(DeclarationIndex index, TypeHeader declaring, TypeHeader.Member member) {
         List<String> parameterTypes = new ArrayList<>();
         for (TypeUse parameter : member.parameterTypes()) {
             parameterTypes.add(index.canonicalize(declaring, parameter).render());
         }
-        return declaring.canonicalName() + '#' + member.name() + '(' + String.join(",", parameterTypes) + ')';
+        return declaring.canonicalName() + '#' + member.kind() + ':' + member.name()
+                + '(' + String.join(",", parameterTypes) + ')';
     }
 
     /**
@@ -271,8 +276,13 @@ public final class ExportDeclarations {
     private static CodegenException duplicateProperty(TypeHeader host, String logicalName, Declaration first,
             Declaration second) {
         return new CodegenException(COLLISION, "the property " + logicalName + " of " + host.canonicalName()
-                + " is declared twice, by " + first.member().name() + " and by " + second.member().name(),
+                + " is declared twice, by " + describe(first) + " and by " + describe(second),
                 second.member().origin().orElseGet(() -> origin(host)));
+    }
+
+    /** Names one declaration by kind, so two declarations that spell the same name stay distinguishable. */
+    private static String describe(Declaration declaration) {
+        return (isGetter(declaration) ? "the method " : "the field ") + declaration.member().name();
     }
 
     private static CodegenException sharedSymbol(TypeHeader host, String member) {

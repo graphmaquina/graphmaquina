@@ -277,9 +277,75 @@ class ExportDeclarationsTest {
                     """)));
 
         assertEquals("SG603", failure.code());
-        assertEquals("the property status of fx.Order is declared twice, by status and by getStatus",
-                failure.getMessage());
+        assertEquals("the property status of fx.Order is declared twice, by the field status and by the "
+                + "method getStatus", failure.getMessage());
         assertEquals(6L, failure.location().orElseThrow().line());
+    }
+
+    @Test
+    void reportsAPropertyDeclaredByBothAFieldAndAFluentGetterOfTheSameName() {
+        CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of(
+                "fx.Order", """
+                    package fx;
+                    import io.stategraph.annotation.GraphProperty;
+                    public class Order {
+                        @GraphProperty
+                        private String status;
+                        @GraphProperty
+                        public String status() { return status; }
+                    }
+                    """)));
+
+        assertEquals("SG603", failure.code());
+        assertEquals("the property status of fx.Order is declared twice, by the field status and by the "
+                + "method status", failure.getMessage());
+        assertEquals(6L, failure.location().orElseThrow().line());
+    }
+
+    @Test
+    void reportsANoArgumentMethodThatSharesTheSymbolNameOfAField() {
+        CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of(
+                "fx.Order", """
+                    package fx;
+                    import io.stategraph.annotation.GraphAction;
+                    import io.stategraph.annotation.GraphProperty;
+                    public class Order {
+                        @GraphProperty
+                        private String status;
+                        @GraphAction
+                        public void status() {}
+                    }
+                    """)));
+
+        assertEquals("SG603", failure.code());
+        assertEquals("the symbol status of fx.Order is exported as both a method and a property",
+                failure.getMessage());
+    }
+
+    @Test
+    void exportsAFieldAndAGetterThatSpellTheSameDeclarationName() {
+        List<SymbolDescriptor> symbols = collect(Map.of(
+                "fx.Order", """
+                    package fx;
+                    import io.stategraph.annotation.GraphProperty;
+                    public class Order {
+                        @GraphProperty
+                        private String getStatus;
+                        @GraphProperty
+                        public String getStatus() { return getStatus; }
+                    }
+                    """));
+
+        assertEquals(List.of("fx.OrderRefs.GetStatus", "fx.OrderRefs.Status"),
+                symbols.stream().map(SymbolDescriptor::qualifiedName).toList());
+        assertEquals(new PropertyDescriptor("fx.Order", "getStatus", "getStatus", false,
+                        symbols.get(0).origin()),
+                symbols.get(0).property().orElseThrow());
+        assertEquals(new PropertyDescriptor("fx.Order", "status", "getStatus", true,
+                        symbols.get(1).origin()),
+                symbols.get(1).property().orElseThrow());
+        assertEquals(4L, symbols.get(0).origin().line());
+        assertEquals(6L, symbols.get(1).origin().line());
     }
 
     @Test
