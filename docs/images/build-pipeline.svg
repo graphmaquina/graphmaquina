@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="730" viewBox="0 0 1440 730" role="img" aria-labelledby="title desc">
+<title id="title">From Java declarations to a typed runtime</title><desc id="desc">Build-time generation produces vocabulary and a manifest; javac validates and emits facades; completion publishes exports. Only core is an application dependency.</desc>
+<defs>
+  <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
+</defs>
+<rect x="0" y="0" width="1440" height="730" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="730" rx="24" fill="url(#grid)" />
+<text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / BUILD PIPELINE</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">From declarations to a running machine</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">The build resolves and validates the graph before application code calls it.</text>
+<rect x="52" y="222" width="298" height="202" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="52" y="240" width="4" height="166" rx="2" fill="#7aafff" />
+<text x="76" y="266" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#7aafff" text-anchor="start">01</text>
+<text x="76" y="304" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Declare</text>
+<text x="76" y="344" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Entities + state enums</text>
+<text x="76" y="375" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Machine interfaces</text>
+<rect x="398" y="222" width="298" height="202" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="398" y="240" width="4" height="166" rx="2" fill="#c3a2ff" />
+<text x="422" y="266" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#c3a2ff" text-anchor="start">02</text>
+<text x="422" y="304" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Generate</text>
+<text x="422" y="344" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Typed vocabulary</text>
+<text x="422" y="375" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Symbols + manifest</text>
+<rect x="744" y="222" width="298" height="202" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="744" y="240" width="4" height="166" rx="2" fill="#55e0c0" />
+<text x="768" y="266" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">03</text>
+<text x="768" y="304" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Compile</text>
+<text x="768" y="344" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">javac + processor</text>
+<text x="768" y="375" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Validate + emit facades</text>
+<rect x="1090" y="222" width="298" height="202" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="1090" y="240" width="4" height="166" rx="2" fill="#ffc77a" />
+<text x="1114" y="266" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#ffc77a" text-anchor="start">04</text>
+<text x="1114" y="304" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Complete</text>
+<text x="1114" y="344" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Accepted export index</text>
+<text x="1114" y="375" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Seal owned outputs</text>
+<path d="M 356 324 L 392 324" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 382 317 L 392 324 L 382 331" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 702 324 L 738 324" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 728 317 L 738 324 L 728 331" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1048 324 L 1084 324" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1074 317 L 1084 324 L 1074 331" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="74" y="466" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="650" fill="#a9b8ce" text-anchor="start">BUILD TIME</text>
+<path d="M 52 486 H 1388" fill="none" stroke="#2b3c54" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<rect x="52" y="516" width="1336" height="106" rx="16" fill="url(#glow)" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="556" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="650" fill="#55e0c0" text-anchor="start">RUNTIME</text>
+<text x="78" y="594" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="29" font-weight="600" fill="#f2f6fc" text-anchor="start">Application → typed facade → graphmaquina-core → entity state</text>
+<path d="M 52 666 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="701" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">Generator + processor stay on the build path. Completion publishes META-INF/graphmaquina/exports.json.</text>
+</svg>

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="774" viewBox="0 0 1440 774" role="img" aria-labelledby="title desc">
+<title id="title">Watch reactions: items trigger an order shipment</title><desc id="desc">After the last item commits PACKED, its PAID order is reevaluated in a new transaction. If all items are PACKED, the normal PAID to SHIPPED edge executes. A reaction failure does not undo the item commit. Both machine APIs must be generated in the same compilation.</desc>
+<defs>
+  <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
+</defs>
+<rect x="0" y="0" width="1440" height="774" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="774" rx="24" fill="url(#grid)" />
+<text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / CROSS-MACHINE WATCHES</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">The last item is packed. The order can ship.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">An ordered watch rule connects two machines without hiding the transition it executes.</text>
+<rect x="52" y="211" width="610" height="361" rx="20" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="254" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#7aafff" text-anchor="start">ITEM MACHINE</text>
+<text x="78" y="301" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="600" fill="#f2f6fc" text-anchor="start">Item #1</text>
+<rect x="413" y="273" width="198" height="38" rx="19" fill="#0b1220" stroke="#55e0c0" stroke-width="2" />
+<text x="512.0" y="299" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="600" fill="#55e0c0" text-anchor="middle">PACKED</text>
+<text x="78" y="368" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="600" fill="#f2f6fc" text-anchor="start">Item #2</text>
+<rect x="413" y="340" width="198" height="38" rx="19" fill="#0b1220" stroke="#55e0c0" stroke-width="2" />
+<text x="512.0" y="366" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="600" fill="#55e0c0" text-anchor="middle">PACKED</text>
+<text x="78" y="435" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="600" fill="#f2f6fc" text-anchor="start">Item #3</text>
+<rect x="413" y="407" width="198" height="38" rx="19" fill="#0b1220" stroke="#55e0c0" stroke-width="2" />
+<text x="512.0" y="433" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="600" fill="#55e0c0" text-anchor="middle">PACKED</text>
+<text x="78" y="517" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="600" fill="#55e0c0" text-anchor="start">Last peer commits its final state</text>
+<rect x="778" y="211" width="610" height="361" rx="20" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="804" y="254" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#c3a2ff" text-anchor="start">ORDER MACHINE</text>
+<text x="804" y="310" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="29" font-weight="650" fill="#f2f6fc" text-anchor="start">Owner is PAID</text>
+<rect x="804" y="345" width="558" height="76" rx="12" fill="url(#glow)" stroke="#2b3c54" stroke-width="2" />
+<text x="829" y="391" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="25" font-weight="600" fill="#55e0c0" text-anchor="start">allIn(ItemStatus.PACKED)</text>
+<text x="804" y="475" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="600" fill="#f2f6fc" text-anchor="start">Run the PAID → SHIPPED edge</text>
+<text x="804" y="521" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="400" fill="#a9b8ce" text-anchor="start">Guards → action → commit → hook</text>
+<path d="M 662 389 L 778 389" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 768 382 L 778 389 L 768 396" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="720" y="330" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#c3a2ff" text-anchor="middle">notify</text>
+<text x="720" y="357" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#c3a2ff" text-anchor="middle">owner</text>
+<rect x="52" y="610" width="1336" height="71" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="654" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#c3a2ff" text-anchor="start">NEW TRANSACTION</text>
+<text x="319" y="654" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="400" fill="#a9b8ce" text-anchor="start">Reaction.Done or Reaction.Aborted · the item commit is already complete</text>
+<path d="M 52 710 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="745" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">First matching rule wins. Both machine APIs must be generated in the same compilation; cross-JAR watches are pending.</text>
+</svg>

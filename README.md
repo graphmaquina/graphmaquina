@@ -1,5 +1,7 @@
 # GraphMaquina
 
+![GraphMaquina: typed graphs and predictable transitions, illustrated by a ticket moving from OPEN through IN_PROGRESS to DONE or FAILED.](docs/images/graphmaquina-overview.svg)
+
 **Typed, graph-based state machines for Java 21.** Declare the transitions your domain allows, give every
 forbidden transition a reason, and let the build validate the complete graph before the application runs.
 
@@ -65,15 +67,7 @@ for the responsibilities that remain with your application.
 
 The build and runtime have separate jobs:
 
-```mermaid
-flowchart LR
-    A[Java declarations] --> B[Pre-compilation generator]
-    B --> C[Typed vocabulary and manifest]
-    C --> D[javac and annotation processor]
-    D --> E[Generated facade and export index]
-    E --> F[Application calls domain operations]
-    F --> G[Runtime validates guards and executes transitions]
-```
+![Build pipeline: declare Java entities and machines, generate vocabulary and a manifest, compile and validate facades, then publish accepted exports. At runtime the application uses the typed facade and core.](docs/images/build-pipeline.svg)
 
 ## Requirements and artifacts
 
@@ -417,6 +411,8 @@ Maven configurations above and require no Lombok, framework or external service.
 
 The workflow is `OPEN → IN_PROGRESS → DONE`, with a handled completion failure leading to `FAILED`.
 
+![Ticket workflow: start moves OPEN to IN_PROGRESS if hasTitle passes; complete commits DONE on success or FAILED through onFailure. Rejection leaves the source state unchanged.](docs/images/ticket-workflow.svg)
+
 ### TicketStatus.java
 
 ```java
@@ -610,6 +606,8 @@ operation; it does not rely on Java assertions being enabled.
 
 With `N` enum constants, the graph has `N × N` cells. Rows represent the current state; columns represent the
 requested destination. The ticket example resolves to this matrix:
+
+![All sixteen ticket transition cells: STAY on the diagonal, MOVE from OPEN to IN_PROGRESS and from IN_PROGRESS to FAILED, ACTION from IN_PROGRESS to DONE, and FORBID in every other cell.](docs/images/transition-matrix.svg)
 
 | From / to | OPEN | IN_PROGRESS | DONE | FAILED |
 | --- | --- | --- | --- | --- |
@@ -1046,6 +1044,9 @@ A watch reevaluates an owner after one of its peers changes state. It declares b
 relationship: owner → peer collection and peer → optional owner.
 
 The shop has orders and items. An order watches its items while it is `PAID`, and ships when all are `PACKED`.
+
+![After the last item commits PACKED, the PAID order is reevaluated in a new transaction. If all peers are PACKED, its normal shipping edge runs. A failed reaction does not undo the item commit.](docs/images/watch-reactions.svg)
+
 This excerpt belongs on the shop's `Orders` interface, alongside its definition, rows and operations:
 
 ```java
@@ -1134,6 +1135,8 @@ A peer in another module or dependency JAR is rejected with `SG608`. Track the e
 [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1).
 
 ## Commit, hooks and listeners
+
+![Root actions and cascades stage changes in a shared unit of work. Commit checks original states and writes final states; hooks, independent watch reactions, listener notification and return follow on normal completion.](docs/images/commit-lifecycle.svg)
 
 The runtime's normal root execution follows this sequence:
 
@@ -1255,21 +1258,14 @@ This is a fragment: put the imports at file scope and the statements inside a me
 transitions or evaluate guards.
 
 You can also build a definition directly through `Tickets_.graph(new TicketActions())` without constructing a
-running set. For a preview of the quickstart's moving edges:
+running set.
 
-```mermaid
-stateDiagram-v2
-    [*] --> OPEN
-    OPEN --> IN_PROGRESS : start [if hasTitle]
-    IN_PROGRESS --> DONE : complete
-    IN_PROGRESS --> FAILED : failure route
-    DONE --> [*]
-    FAILED --> [*]
-```
-
-This illustration summarizes the workflow. The exporter produces its own labels from the definition. The
-repository keeps exact expected exports in
+[The illustrated ticket workflow](docs/images/ticket-workflow.svg) summarizes the moving edges and failure
+route. The exporter produces its own labels from the definition. The repository keeps exact expected exports in
 [the example's golden diagrams](graphmaquina-example/src/test/resources/golden).
+
+The illustrations in this guide are maintained separately from the Mermaid exporter. Their accessible SVG
+sources and regeneration instructions are in [docs/images](docs/images/README.md).
 
 ## Test your machines
 
