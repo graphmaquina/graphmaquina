@@ -5,3 +5,5 @@ build/
 *.iml
 .vscode/
 !gradle/wrapper/gradle-wrapper.jar
+
+.worktrees/
