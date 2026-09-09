@@ -114,7 +114,16 @@ final class Compilation {
      * {@code sources} maps qualified names to source text, one top-level type each.
      */
     static Prepared prepare(Map<String, String> sources) {
-        GenerationRequest request = materialize(sources);
+        return prepare(sources, List.of());
+    }
+
+    /**
+     * The same, with {@code extraClasspath} appended to the classpath of the request. The entries reach the
+     * generator, which reads the indexes their producers published, and javac, which compiles against their
+     * classes: a dependency a build puts on one of the two only is a dependency of neither stage.
+     */
+    static Prepared prepare(Map<String, String> sources, List<Path> extraClasspath) {
+        GenerationRequest request = materialize(sources, extraClasspath);
         try {
             return new Prepared(request, StateGraphCodegen.generate(request));
         } catch (IOException e) {
@@ -146,6 +155,11 @@ final class Compilation {
         return compilePrepared(prepare(sources));
     }
 
+    /** The same, over a classpath that also carries {@code extraClasspath}. */
+    static Result compileTyped(Map<String, String> sources, List<Path> extraClasspath) {
+        return compilePrepared(prepare(sources, extraClasspath));
+    }
+
     /**
      * The pipeline the legacy string-based fixtures still go through: the generator sees no
      * {@code @GenerateGraphApi} in them, so it only writes the compilation carrier and a manifest that
@@ -160,18 +174,20 @@ final class Compilation {
      * option, so a test can observe what the processor reports when it has no manifest at all.
      */
     static Result compileRaw(Map<String, String> sources, List<String> extra) {
-        GenerationRequest request = materialize(sources);
+        GenerationRequest request = materialize(sources, List.of());
         List<String> options = new ArrayList<>(standardOptions(request));
         options.addAll(extra);
         return run(javaFiles(request.sources().get(0)), options, request);
     }
 
     /** Writes {@code sources} under a fresh temporary project and describes the compilation they belong to. */
-    private static GenerationRequest materialize(Map<String, String> sources) {
+    private static GenerationRequest materialize(Map<String, String> sources, List<Path> extraClasspath) {
         try {
             Path project = Files.createTempDirectory("stategraph-processor-");
             Path originals = write(project.resolve("originals"), sources);
-            return new GenerationRequest(project, List.of(originals), classpath(),
+            List<Path> classpath = new ArrayList<>(classpath());
+            classpath.addAll(extraClasspath);
+            return new GenerationRequest(project, List.of(originals), List.copyOf(classpath),
                     project.resolve("bootstrap"), project.resolve("processor"), project.resolve("classes"),
                     project.resolve("work"), COMPILATION_ID);
         } catch (IOException e) {
@@ -179,10 +195,15 @@ final class Compilation {
         }
     }
 
+    /** javac compiles against the very classpath the request names, so both stages see one set of dependencies. */
     private static List<String> standardOptions(GenerationRequest request) {
+        List<String> entries = new ArrayList<>();
+        for (Path entry : request.classpath()) {
+            entries.add(entry.toString());
+        }
         return List.of(
                 "-processor", StateGraphProcessor.class.getName(),
-                "-classpath", System.getProperty("java.class.path"),
+                "-classpath", String.join(File.pathSeparator, entries),
                 "-d", request.classesOutput().toString(),
                 "-s", request.processorSourcesOutput().toString(),
                 "-Xlint:all,-serial", "-Werror");

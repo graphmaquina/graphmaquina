@@ -1,5 +1,6 @@
 package io.stategraph.processor;
 
+import io.stategraph.annotation.GenerateGraphApi;
 import io.stategraph.annotation.StateGraph;
 import io.stategraph.annotation.StateGraphs;
 import io.stategraph.processor.model.MachineAccessor;
@@ -23,7 +24,13 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import lombok.RequiredArgsConstructor;
 
-/** Turns a @StateGraphs interface into a {@link SetModel}: one accessor per machine, every watched peer inside the set. */
+/**
+ * Turns a @StateGraphs interface into a {@link SetModel}: one accessor per machine, every watched peer inside the set.
+ *
+ * <p>A machine is named by its own marker, whichever frontend declared it: the typed {@code @GenerateGraphApi}
+ * and the legacy {@code @StateGraph} are both accepted, so one set may hold machines of both while the two
+ * frontends coexist. Which of them builds a machine's model is the caller's decision, not this builder's.</p>
+ */
 @RequiredArgsConstructor
 final class SetModelBuilder {
 
@@ -59,11 +66,12 @@ final class SetModelBuilder {
             }
             TypeMirror returned = method.getReturnType();
             Optional<TypeElement> machineType = Optional.empty();
-            if (returned instanceof DeclaredType declared && annotations.find(declared.asElement(), StateGraph.class).isPresent()) {
+            if (returned instanceof DeclaredType declared && isMachine(declared.asElement())) {
                 machineType = Optional.of((TypeElement) declared.asElement());
             }
             if (!method.getParameters().isEmpty() || machineType.isEmpty()) {
-                diagnostics.error("SG510", method.getSimpleName() + " must be a no-argument accessor returning a @StateGraph interface", method);
+                diagnostics.error("SG510", method.getSimpleName() + " must be a no-argument accessor returning a"
+                        + " @GenerateGraphApi or @StateGraph interface", method);
                 continue;
             }
             if (!seen.add(machineType.get().getQualifiedName().toString())) {
@@ -94,5 +102,11 @@ final class SetModelBuilder {
         }
         String packageName = signatures.elements().getPackageOf(type).getQualifiedName().toString();
         return Optional.of(new SetModel(type, packageName, accessors));
+    }
+
+    /** Whether {@code element} declares a graph, with the marker of either frontend. */
+    private boolean isMachine(Element element) {
+        return annotations.find(element, GenerateGraphApi.class).isPresent()
+                || annotations.find(element, StateGraph.class).isPresent();
     }
 }

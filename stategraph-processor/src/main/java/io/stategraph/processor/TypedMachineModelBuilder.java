@@ -10,6 +10,7 @@ import io.stategraph.processor.model.OperationModel;
 import io.stategraph.processor.model.Property;
 import io.stategraph.processor.model.RowModel;
 import io.stategraph.processor.model.StateAccess;
+import io.stategraph.processor.model.WatchModel;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -50,16 +51,18 @@ final class TypedMachineModelBuilder {
     private final MachineModelBuilder structure;
     private final PropertyResolver properties;
     private final TypedTransitions transitions;
+    private final TypedWatchReader watches;
     private final Signatures signatures;
     private final Diagnostics diagnostics;
     private final Annotations annotations;
 
     TypedMachineModelBuilder(VocabularyRegistry vocabulary, MachineModelBuilder structure, PropertyResolver properties,
-            TypedTransitions transitions, Signatures signatures, Diagnostics diagnostics) {
+            TypedTransitions transitions, TypedWatchReader watches, Signatures signatures, Diagnostics diagnostics) {
         this.vocabulary = vocabulary;
         this.structure = structure;
         this.properties = properties;
         this.transitions = transitions;
+        this.watches = watches;
         this.signatures = signatures;
         this.diagnostics = diagnostics;
         this.annotations = new Annotations(signatures.elements());
@@ -112,14 +115,14 @@ final class TypedMachineModelBuilder {
         List<ForbidModel> forbids = forbids(type, types);
         List<CellModel> cells = cells(type, types);
         List<OperationModel> operations = operations(type, types);
+        List<WatchModel> watched = watches.read(type, types);
         structure.checkDuplicateCells(type, forbids, cells, operations);
         structure.checkRowsClosed(types, closed, terminals.get(), header);
         if (state.isEmpty() || id.isEmpty() || diagnostics.errors() > before) {
             return Optional.empty();
         }
-        // Watches arrive with task 9; a machine declares none through this frontend yet.
         MachineModel model = new MachineModel(types, packageName(type), initial.get(), terminals.get(), cycleAllowed.get(),
-                state.get().reader(), state.get().writer(), id.get(), rows, forbids, cells, operations, List.of());
+                state.get().reader(), state.get().writer(), id.get(), rows, forbids, cells, operations, watched);
         structure.checkOutline(model, header);
         return diagnostics.errors() > before ? Optional.empty() : Optional.of(model);
     }

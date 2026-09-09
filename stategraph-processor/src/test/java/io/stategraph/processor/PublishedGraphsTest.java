@@ -1,0 +1,273 @@
+package io.stategraph.processor;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.stategraph.codegen.CodegenException;
+import io.stategraph.codegen.manifest.CompileManifest;
+import io.stategraph.codegen.manifest.ExportIndex;
+import io.stategraph.codegen.manifest.ManifestCodec;
+import io.stategraph.codegen.model.GraphDescriptor;
+import io.stategraph.codegen.model.SymbolDescriptor;
+import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.function.UnaryOperator;
+import java.util.jar.JarEntry;
+import java.util.jar.JarOutputStream;
+import java.util.stream.Stream;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+/**
+ * What one compilation publishes about its graphs, and what the next one reads back from it.
+ *
+ * <p>The processor writes a provisional index of the local exports only, next to the classes it belongs to, and
+ * only when nothing failed: the build promotes it to the published name after javac succeeds, so a dependent
+ * never binds to declarations that never compiled. A dependent reads that published index from the classpath,
+ * claims the annotation types it lists and links against the members it describes, and publishes an index of
+ * its own that names none of them.</p>
+ */
+class PublishedGraphsTest {
+
+    private static final String PENDING = "META-INF/stategraph/pending-exports.json";
+    private static final String PUBLISHED = "META-INF/stategraph/exports.json";
+
+    @TempDir
+    Path directory;
+
+    @Test
+    void publishesTheLocalIndexAndTheInventoryOfWhatItGenerated() throws IOException {
+        Compilation.Prepared prepared = Compilation.prepare(TypedFixtures.watching());
+        Compilation.Result result = Compilation.compilePrepared(prepared);
+        assertTrue(result.success(), result.describe());
+
+        Path classes = prepared.request().classesOutput();
+        assertTrue(Files.isRegularFile(classes.resolve(PENDING)), result::describe);
+        assertFalse(Files.exists(classes.resolve(PUBLISHED)), result::describe);
+
+        CompileManifest manifest = ManifestCodec.readCompile(prepared.generation().annotationManifest());
+        ExportIndex index = ManifestCodec.readExports(classes.resolve(PENDING));
+        assertEquals("fx:test:main", index.compilationId());
+        assertEquals(List.of("fx.Docs", "fx.Pages"), facades(index));
+        assertEquals(facades(manifest.local()), facades(index));
+        assertEquals(symbols(manifest.local()), symbols(index));
+        assertEquals(manifest.local().annotationTypes(), index.annotationTypes());
+
+        assertEquals("""
+                {
+                  "schemaVersion": 1,
+                  "generatedTypes": [
+                    "fx.Docs_",
+                    "fx.Library_",
+                    "fx.Pages_"
+                  ]
+                }
+                """, Files.readString(Path.of(manifest.processorInventory()), StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void publishesNothingWhenADeclarationFailed() throws IOException {
+        Compilation.Prepared prepared = Compilation.prepare(TypedFixtures.watching(TypedFixtures.PEERS, """
+                @DocsPages.Watch(state = REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
+                    rules = {})
+                """));
+        Compilation.Result result = Compilation.compilePrepared(prepared);
+
+        assertFalse(result.success(), result.describe());
+        assertTrue(result.hasError("SG404"), result.describe());
+        assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result::describe);
+        assertFalse(Files.exists(Path.of(ManifestCodec.readCompile(prepared.generation().annotationManifest())
+                .processorInventory())), result::describe);
+    }
+
+    @Test
+    void linksAgainstThePublishedIndexOfAProducerAndPublishesOnlyItsOwn() throws IOException {
+        Path jar = publish(producer(), directory.resolve("producer.jar"), UnaryOperator.identity());
+        ManifestProcessors.Recording.reset();
+
+        Compilation.Prepared prepared = Compilation.prepare(consumer(), List.of(jar));
+        Compilation.Result result = Compilation.compilePrepared(prepared, List.of("-processor",
+                StateGraphProcessor.class.getName() + ',' + ManifestProcessors.Recording.class.getName()));
+
+        assertTrue(result.success(), result.describe());
+        assertTrue(result.hasGenerated("cons.Archives_"), result::describe);
+        assertTrue(result.hasGenerated("cons.Shelf_"), result::describe);
+        assertTrue(ManifestProcessors.Recording.claimed().containsAll(
+                List.of("prod.BillsGraph.Definition", "prod.BillsGraph.Action", "cons.ArchivesGraph.Definition")),
+                () -> ManifestProcessors.Recording.claimed().toString());
+
+        ExportIndex index = ManifestCodec.readExports(prepared.request().classesOutput().resolve(PENDING));
+        assertEquals(List.of("cons.Archives"), facades(index));
+        assertEquals(List.of(), symbols(index));
+        assertTrue(index.annotationTypes().stream().allMatch(name -> name.startsWith("cons.")),
+                () -> index.annotationTypes().toString());
+    }
+
+    @Test
+    void refusesAProducerWhosePublishedIndexCannotBeRead() throws IOException {
+        Path jar = publish(producer(), directory.resolve("corrupt.jar"),
+                (String index) -> index.replace("\"compilationId\"", "\"compilationIdentifier\""));
+
+        CodegenException failure = assertThrows(CodegenException.class,
+                () -> Compilation.prepare(consumer(), List.of(jar)));
+
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().contains("compilationId"), failure.getMessage());
+    }
+
+    /** A producer compiled on its own, packaged with the index it would publish under the published name. */
+    private static Path publish(Map<String, String> sources, Path jar, UnaryOperator<String> index)
+            throws IOException {
+        Compilation.Prepared prepared = Compilation.prepare(sources);
+        Compilation.Result result = Compilation.compilePrepared(prepared);
+        assertTrue(result.success(), result.describe());
+        Path classes = prepared.request().classesOutput();
+        String pending = Files.readString(classes.resolve(PENDING), StandardCharsets.UTF_8);
+        try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
+            for (Path file : files(classes)) {
+                String name = classes.relativize(file).toString().replace(File.separatorChar, '/');
+                // The carrier of a compilation and its provisional index belong to that compilation alone.
+                if (name.equals(PENDING) || name.startsWith("io/stategraph/generated/bootstrap/")) {
+                    continue;
+                }
+                out.putNextEntry(new JarEntry(name));
+                out.write(Files.readAllBytes(file));
+                out.closeEntry();
+            }
+            out.putNextEntry(new JarEntry(PUBLISHED));
+            out.write(index.apply(pending).getBytes(StandardCharsets.UTF_8));
+            out.closeEntry();
+        }
+        return jar;
+    }
+
+    /** A machine, its entity and two exported actions, in a package of their own. */
+    private static Map<String, String> producer() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("prod.BillStatus", """
+                package prod;
+                public enum BillStatus { OPEN, PAID }
+                """);
+        sources.put("prod.Bill", """
+                package prod;
+                import io.stategraph.annotation.GraphProperty;
+                public final class Bill {
+                    private final String id;
+                    @GraphProperty private BillStatus status = BillStatus.OPEN;
+                    public Bill(String id) { this.id = id; }
+                    @GraphProperty public String id() { return id; }
+                    public BillStatus status() { return status; }
+                    public void status(BillStatus value) { status = value; }
+                }
+                """);
+        sources.put("prod.BillActions", """
+                package prod;
+                import io.stategraph.annotation.GraphAction;
+                import io.stategraph.api.ActionOutcome;
+                import io.stategraph.api.TransitionContext;
+                public final class BillActions {
+                    @GraphAction public ActionOutcome settle(TransitionContext<Bill, BillStatus> context) {
+                        return ActionOutcome.ok();
+                    }
+                    @GraphAction public ActionOutcome cancel(TransitionContext<Bill, BillStatus> context) {
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
+        sources.put("prod.Bills", """
+                package prod;
+                import io.stategraph.annotation.GenerateGraphApi;
+                import io.stategraph.api.Machine;
+                import io.stategraph.api.Outcome;
+                import static prod.BillStatus.*;
+                @GenerateGraphApi
+                @BillsGraph.Definition(initial = OPEN, terminals = PAID,
+                    state = BillRefs.Status.class, id = BillRefs.Id.class)
+                @BillsGraph.Row(state = OPEN, otherwise = "a bill is settled")
+                public interface Bills extends Machine<Bill, BillStatus> {
+                    @BillsGraph.Action(from = OPEN, to = PAID, action = BillActionsRefs.Settle.class)
+                    Outcome<Bill, BillStatus> settle(Bill bill);
+                }
+                """);
+        sources.put("prod.Ledger", """
+                package prod;
+                import io.stategraph.annotation.StateGraphs;
+                import io.stategraph.api.Machines;
+                @StateGraphs
+                public interface Ledger extends Machines {
+                    Bills bills();
+                }
+                """);
+        return sources;
+    }
+
+    /** A machine bound to a producer's action and a set holding a producer's machine, with no source of it. */
+    private static Map<String, String> consumer() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("cons.Archives", """
+                package cons;
+                import io.stategraph.annotation.GenerateGraphApi;
+                import io.stategraph.api.Machine;
+                import io.stategraph.api.Outcome;
+                import prod.Bill;
+                import prod.BillActionsRefs;
+                import prod.BillRefs;
+                import prod.BillStatus;
+                import static prod.BillStatus.*;
+                @GenerateGraphApi
+                @ArchivesGraph.Definition(initial = OPEN, terminals = PAID,
+                    state = BillRefs.Status.class, id = BillRefs.Id.class)
+                @ArchivesGraph.Row(state = OPEN, otherwise = "an archived bill is cancelled")
+                public interface Archives extends Machine<Bill, BillStatus> {
+                    @ArchivesGraph.Action(from = OPEN, to = PAID, action = BillActionsRefs.Cancel.class)
+                    Outcome<Bill, BillStatus> cancel(Bill bill);
+                }
+                """);
+        sources.put("cons.Shelf", """
+                package cons;
+                import io.stategraph.annotation.StateGraphs;
+                import io.stategraph.api.Machines;
+                import prod.Bills;
+                @StateGraphs
+                public interface Shelf extends Machines {
+                    Bills bills();
+                }
+                """);
+        return sources;
+    }
+
+    private static List<String> facades(ExportIndex index) {
+        List<String> facades = new ArrayList<>();
+        for (GraphDescriptor graph : index.model().graphs()) {
+            facades.add(graph.facade());
+        }
+        return facades;
+    }
+
+    private static List<String> symbols(ExportIndex index) {
+        List<String> symbols = new ArrayList<>();
+        for (SymbolDescriptor symbol : index.model().symbols()) {
+            symbols.add(symbol.qualifiedName());
+        }
+        return symbols;
+    }
+
+    /** Every file under {@code root}, in a stable order. */
+    private static List<Path> files(Path root) {
+        try (Stream<Path> walk = Files.walk(root)) {
+            return walk.filter(Files::isRegularFile).sorted().toList();
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
+    }
+}
