@@ -28,28 +28,27 @@ final class WatchVocabularyEmitter {
     private WatchVocabularyEmitter() {
     }
 
-    /** The canonical name of the watch vocabulary generated for {@code owner} watching {@code peer}. */
-    static String vocabularyName(String owner, String peer) {
-        String packageName = SymbolNames.packageOf(owner);
-        String simpleName = SymbolNames.hostName(SymbolNames.nameWithoutPackage(owner))
-            + SymbolNames.hostName(SymbolNames.nameWithoutPackage(peer));
-        return packageName.isEmpty() ? simpleName : packageName + '.' + simpleName;
+    /** The canonical name of the watch vocabulary of {@code owner} over {@code peer}, in the owner's package. */
+    static String vocabularyName(GraphDescriptor owner, GraphDescriptor peer) {
+        String simpleName = SymbolNames.hostName(SymbolNames.nameWithin(owner.packageName(), owner.facade()))
+            + SymbolNames.hostName(SymbolNames.nameWithin(peer.packageName(), peer.facade()));
+        return SymbolNames.qualified(owner.packageName(), simpleName);
     }
 
     /** The canonical names of the annotations the pair declares, in declaration order. */
     static List<String> annotationTypes(GraphDescriptor owner, GraphDescriptor peer) {
-        String vocabulary = vocabularyName(owner.facade(), peer.facade());
+        String vocabulary = vocabularyName(owner, peer);
         return List.of(vocabulary + ".Watch", vocabulary + ".Watches", vocabulary + ".When");
     }
 
     /** The compilation unit carrying the watch vocabulary of {@code owner} over {@code peer}. */
     static GeneratedSource emit(GraphDescriptor owner, GraphDescriptor peer) {
-        String vocabulary = vocabularyName(owner.facade(), peer.facade());
-        String simpleName = vocabulary.substring(vocabulary.lastIndexOf('.') + 1);
+        String vocabulary = vocabularyName(owner, peer);
+        String simpleName = SymbolNames.nameWithin(owner.packageName(), vocabulary);
         String pair = "machine = " + owner.facade() + ".class, peer = " + peer.facade() + ".class";
 
         JavaSource source = new JavaSource();
-        source.header(SymbolNames.packageOf(vocabulary), IMPORTS);
+        source.header(owner.packageName(), IMPORTS);
         source.javadoc("Typed watch vocabulary generated for {@link " + owner.facade() + "} over {@link "
                 + peer.facade() + "}.",
             "",

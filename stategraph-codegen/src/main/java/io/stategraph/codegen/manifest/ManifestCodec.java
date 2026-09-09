@@ -57,7 +57,8 @@ import java.util.List;
  *   "model": {
  *     "graphs": [
  *       {
- *         "facade": "<string>", "entityType": "<string>", "stateType": "<string>",
+ *         "facade": "<string>", "packageName": "<string, empty for the unnamed package>",
+ *         "entityType": "<string>", "stateType": "<string>",
  *         "states": ["<string>", ...], "peers": ["<string>", ...],
  *         "origin": {"path": "<string>", "line": <number>, "column": <number>}
  *       }, ...

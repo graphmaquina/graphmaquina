@@ -151,6 +151,79 @@ class GeneratedApiCompilationTest {
                 () -> String.valueOf(compilation.messages()));
     }
 
+    /** A package whose second segment is upper-case: legal Java that no canonical name can be split by hand. */
+    private static final Map<String, String> UPPER_CASE_PACKAGE = Map.of(
+        "com.Acme.docs.DocStatus", """
+            package com.Acme.docs;
+            public enum DocStatus { DRAFT, PUBLISHED }
+            """,
+        "com.Acme.docs.Doc", """
+            package com.Acme.docs;
+            import io.stategraph.annotation.GraphProperty;
+            public class Doc {
+                @GraphProperty
+                private DocStatus status;
+                public DocStatus status() { return status; }
+            }
+            """,
+        "com.Acme.docs.Docs", """
+            package com.Acme.docs;
+            import io.stategraph.annotation.GenerateGraphApi;
+            import io.stategraph.api.Machine;
+            @GenerateGraphApi
+            public interface Docs extends Machine<Doc, DocStatus> {}
+            """,
+        "com.Acme.docs.DocActions", """
+            package com.Acme.docs;
+            import io.stategraph.annotation.GraphAction;
+            public class DocActions {
+                @GraphAction
+                public Doc publish(Doc doc) { return doc; }
+            }
+            """);
+
+    @Test
+    void keepsTheDeclaredPackageOfAFacadeWhoseSegmentsAreNotAllLowerCase() {
+        Path sources = directory.resolve("sources");
+        SourceFiles.write(sources, UPPER_CASE_PACKAGE);
+        GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(sources),
+                SourceFiles.classpath(), directory.resolve("generated"),
+                directory.resolve("processor-generated"), directory.resolve("classes"),
+                directory.resolve("work"), "io.stategraph:test:main"));
+        List<GeneratedSource> emitted = ApiEmitter.emit(model, "io.stategraph:test:main");
+
+        assertEquals(List.of("com.Acme.docs.DocsGraph", "com.Acme.docs.DocActionsRefs",
+                "com.Acme.docs.DocRefs"),
+                emitted.stream().map(GeneratedSource::qualifiedName)
+                        .filter(name -> name.startsWith("com.")).toList());
+        assertTrue(content(emitted, "com.Acme.docs.DocsGraph").startsWith("package com.Acme.docs;\n"),
+                content(emitted, "com.Acme.docs.DocsGraph"));
+        assertTrue(content(emitted, "com.Acme.docs.DocActionsRefs").startsWith("package com.Acme.docs;\n"),
+                content(emitted, "com.Acme.docs.DocActionsRefs"));
+
+        List<Path> files = new ArrayList<>(SourceFiles.write(sources, UPPER_CASE_PACKAGE));
+        files.addAll(SourceFiles.write(directory.resolve("usage"), Map.of("use.AcmeUsage", """
+            package use;
+            @com.Acme.docs.DocsGraph.Definition(
+                    initial = com.Acme.docs.DocStatus.DRAFT,
+                    state = com.Acme.docs.DocRefs.Status.class,
+                    id = com.Acme.docs.DocRefs.Status.class)
+            @com.Acme.docs.DocsGraph.Cell(
+                    from = com.Acme.docs.DocStatus.DRAFT,
+                    to = com.Acme.docs.DocStatus.PUBLISHED,
+                    action = com.Acme.docs.DocActionsRefs.Publish.class)
+            public interface AcmeUsage {}
+            """)));
+        List<Path> generated = write(directory.resolve("generated"), emitted);
+        files.addAll(generated);
+        assertTrue(generated.contains(directory.resolve("generated/com/Acme/docs/DocsGraph.java")),
+                generated.toString());
+
+        SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, directory.resolve("classes"));
+        assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+        assertEquals(List.of(), compilation.messages());
+    }
+
     @Test
     void namesEveryGeneratedAnnotationAndContainerCanonically() {
         assertEquals(List.of("fx.DocsGraph.Action", "fx.DocsGraph.Cell", "fx.DocsGraph.Cells",

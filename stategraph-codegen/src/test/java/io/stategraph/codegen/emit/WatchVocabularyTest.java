@@ -150,7 +150,7 @@ class WatchVocabularyTest {
 
     @Test
     void reportsAPeerThatIsNotALocalMachineAtTheOwnerOrigin() {
-        GraphDescriptor owner = new GraphDescriptor("fx.Docs", "fx.Doc", "fx.DocStatus",
+        GraphDescriptor owner = new GraphDescriptor("fx.Docs", "fx", "fx.Doc", "fx.DocStatus",
                 List.of("DRAFT"), List.of("other.Bills"), new SourceLocation("fx/Docs.java", 7L, 1L));
         CodegenException failure = assertThrows(CodegenException.class,
                 () -> ApiEmitter.emit(new GenerationModel(List.of(owner), List.of()), "io.stategraph:test:main"));

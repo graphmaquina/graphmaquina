@@ -126,9 +126,9 @@ class ManifestCodecTest {
 
     @Test
     void writingSortsIdentityListsRegardlessOfInputOrder() throws IOException {
-        GraphDescriptor ordersGraph = new GraphDescriptor("fx.Orders", "fx.Order", "fx.Status",
+        GraphDescriptor ordersGraph = new GraphDescriptor("fx.Orders", "fx", "fx.Order", "fx.Status",
             List.of("NEW", "DONE"), List.of(), origin());
-        GraphDescriptor billingGraph = new GraphDescriptor("fx.Billing", "fx.Invoice", "fx.Status",
+        GraphDescriptor billingGraph = new GraphDescriptor("fx.Billing", "fx", "fx.Invoice", "fx.Status",
             List.of("NEW", "DONE"), List.of(), origin());
 
         ExportIndex ordersFirst = new ExportIndex(1, "0.3.0-SNAPSHOT", "fx:demo:main",

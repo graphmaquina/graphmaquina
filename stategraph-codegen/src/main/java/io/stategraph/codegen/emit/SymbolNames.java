@@ -1,8 +1,11 @@
 package io.stategraph.codegen.emit;
 
 /**
- * Derives the generated references container of a host and the symbol type names it encloses, and splits a
- * canonical name into the package it belongs to and the name it carries inside that package.
+ * Derives the generated references container of a host and the symbol type names it encloses, and joins or
+ * separates a canonical name and the package it is declared in.
+ *
+ * <p>No method here infers a package from a canonical name: the package is always given, because only the
+ * declaration that was read knows where it ends and the nested type names begin.</p>
  */
 public final class SymbolNames {
 
@@ -10,38 +13,24 @@ public final class SymbolNames {
     }
 
     /**
-     * Returns the package of {@code canonicalName}, empty for a type of the unnamed package. The type part of a
-     * canonical name begins at its first segment that starts with an upper-case letter, the naming convention of
-     * every package and type this generator reads; a name whose segments are all lower-case is taken as a
-     * top-level type of the package its leading segments spell.
+     * Returns {@code canonicalName} without the {@code packageName} it is declared in, so a nested type keeps
+     * the dots joining its enclosing simple names and can be passed to {@link #hostName(String)}.
+     *
+     * @throws IllegalArgumentException if {@code canonicalName} is not declared in {@code packageName}
      */
-    public static String packageOf(String canonicalName) {
-        int start = typeStart(canonicalName);
-        return start == 0 ? "" : canonicalName.substring(0, start - 1);
-    }
-
-    /**
-     * Returns {@code canonicalName} without its package, so a nested type keeps the dots joining its enclosing
-     * simple names and can be passed to {@link #hostName(String)}.
-     */
-    public static String nameWithoutPackage(String canonicalName) {
-        return canonicalName.substring(typeStart(canonicalName));
-    }
-
-    /** The index of the first character of the type part of {@code canonicalName}. */
-    private static int typeStart(String canonicalName) {
-        int segment = 0;
-        while (segment < canonicalName.length()) {
-            if (Character.isUpperCase(canonicalName.charAt(segment))) {
-                return segment;
-            }
-            int dot = canonicalName.indexOf('.', segment);
-            if (dot < 0) {
-                return segment;
-            }
-            segment = dot + 1;
+    public static String nameWithin(String packageName, String canonicalName) {
+        if (packageName.isEmpty()) {
+            return canonicalName;
         }
-        return segment;
+        if (!canonicalName.startsWith(packageName + '.')) {
+            throw new IllegalArgumentException(canonicalName + " is not declared in package " + packageName);
+        }
+        return canonicalName.substring(packageName.length() + 1);
+    }
+
+    /** Joins {@code packageName}, which may be empty, and the top-level type name {@code simpleName}. */
+    public static String qualified(String packageName, String simpleName) {
+        return packageName.isEmpty() ? simpleName : packageName + '.' + simpleName;
     }
 
     /**

@@ -95,6 +95,28 @@ class MachineHeadersTest {
     }
 
     @Test
+    void resolvesThePackageOfAFacadeWhoseSegmentsAreNotAllLowerCase() {
+        Map<String, String> sources = Map.of(
+                "com.Acme.docs.Status", "package com.Acme.docs; public enum Status { NEW, DONE }",
+                "com.Acme.docs.Order", "package com.Acme.docs; public class Order {}",
+                "com.Acme.docs.Orders", """
+                    package com.Acme.docs;
+                    import io.stategraph.annotation.GenerateGraphApi;
+                    import io.stategraph.api.Machine;
+                    @GenerateGraphApi
+                    public interface Orders extends Machine<Order, Status> {}
+                    """);
+        List<Path> files = SourceFiles.write(directory, sources);
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            GraphDescriptor graph = MachineHeaders.resolve(index, "com.Acme.docs.Orders");
+            assertEquals("com.Acme.docs.Orders", graph.facade());
+            assertEquals("com.Acme.docs", graph.packageName());
+            assertEquals("com.Acme.docs.Status", graph.stateType());
+        }
+    }
+
+    @Test
     void resolvesAMarkedFacadeWhoseGeneratedImportsAndAnnotationsDoNotExistYet() {
         Map<String, String> sources = Map.of(
                 "fx.Status", "package fx; public enum Status { NEW, DONE }",

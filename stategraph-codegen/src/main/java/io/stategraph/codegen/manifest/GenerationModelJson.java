@@ -75,6 +75,7 @@ final class GenerationModelJson {
     private static void writeGraph(JsonWriter writer, GraphDescriptor graph) throws IOException {
         writer.beginObject();
         writer.name("facade").value(graph.facade());
+        writer.name("packageName").value(graph.packageName());
         writer.name("entityType").value(graph.entityType());
         writer.name("stateType").value(graph.stateType());
         writer.name("states");
@@ -88,12 +89,13 @@ final class GenerationModelJson {
 
     private static GraphDescriptor readGraph(JsonObject object, Path file) {
         String facade = JsonSupport.requireString(object, "facade", file);
+        String packageName = JsonSupport.requireString(object, "packageName", file);
         String entityType = JsonSupport.requireString(object, "entityType", file);
         String stateType = JsonSupport.requireString(object, "stateType", file);
         List<String> states = JsonSupport.requireStringArray(object, "states", file);
         List<String> peers = JsonSupport.requireStringArray(object, "peers", file);
         SourceLocation origin = readOrigin(JsonSupport.requireObject(object, "origin", file), file);
-        return new GraphDescriptor(facade, entityType, stateType, states, peers, origin);
+        return new GraphDescriptor(facade, packageName, entityType, stateType, states, peers, origin);
     }
 
     private static void writeMember(JsonWriter writer, MemberDescriptor member) throws IOException {

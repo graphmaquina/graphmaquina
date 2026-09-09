@@ -55,8 +55,8 @@ public final class MachineHeaders {
             throw new CodegenException(UNRESOLVED, "the state type " + stateHeader.canonicalName() + " of "
                     + facade + " is not an enum", origin);
         }
-        return new GraphDescriptor(header.canonicalName(), entity.render(), stateHeader.canonicalName(),
-                stateHeader.constants(), peers(index, header, origin), origin);
+        return new GraphDescriptor(header.canonicalName(), header.scope().packageName(), entity.render(),
+                stateHeader.canonicalName(), stateHeader.constants(), peers(index, header, origin), origin);
     }
 
     /**
