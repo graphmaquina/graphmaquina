@@ -8,7 +8,6 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.toolchain.Toolchain;
 import org.apache.maven.toolchain.ToolchainManager;
-import org.apache.maven.toolchain.ToolchainManagerPrivate;
 
 import java.io.File;
 import java.io.IOException;
@@ -51,6 +50,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /** The lowest Java feature release the generator and the compilation it prepares are supported on. */
     private static final int MINIMUM_LANGUAGE_VERSION = 21;
 
+    /** The annotation processor that publishes the index of what javac accepted, named by failures. */
+    private static final String PROCESSOR = "io.stategraph:stategraph-processor";
+
     /** The name of the request file every step of one compilation reads, inside that compilation's directory. */
     private static final String REQUEST = "request.json";
 
@@ -72,11 +74,11 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /** An explicit compilation identity; injected from {@code ${stategraph.compilationId}}. */
     private String compilationId;
 
-    /** The selected {@code jdk} toolchain of the build, injected as a descriptor requirement. */
+    /**
+     * The toolchains of the build, injected as a descriptor requirement: it both reports the {@code jdk}
+     * toolchain the build selected and resolves the one a compiler execution requires for itself.
+     */
     private ToolchainManager toolchainManager;
-
-    /** Resolves the {@code jdk} toolchains a compiler execution selects; injected as a requirement. */
-    private ToolchainManagerPrivate toolchainManagerPrivate;
 
     /**
      * The project this goal runs for.
@@ -145,8 +147,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
      */
     protected final void verifyCompiler(CompilerExecution execution, Request request)
             throws MojoExecutionException {
-        CompilerConfiguration compiler = CompilerConfiguration.of(project, execution);
-        compiler.requireAgreementWith(javaExecutable(), toolchainManagerPrivate, session);
+        CompilerConfiguration compiler = CompilerConfiguration.of(project, session, execution);
+        compiler.requireAgreementWith(javaExecutable(), toolchainManager, session);
+        compiler.requireAnnotationProcessor(project);
         compiler.requireManifestArgument(request);
         compiler.requireProcessorSourcesOutput(request);
     }
@@ -166,7 +169,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
      *     this generation cannot be found or dated
      */
     protected final void prepare(CompilerExecution execution, Request request) throws MojoExecutionException {
-        CompilerConfiguration.of(project, execution).requireNotSkipped(project, session);
+        CompilerConfiguration.of(project, session, execution).requireNotSkipped();
         Path sourcesOutput = Path.of(request.sourcesOutput());
         try {
             FileTime newest = CarrierTimestamp.newestOutput(Path.of(request.classesOutput()));
@@ -196,12 +199,23 @@ public abstract class StateGraphMojo extends AbstractMojo {
      */
     protected final void complete(Request request) throws MojoExecutionException {
         Path pendingIndex = request.pendingIndexFile();
-        if (!Files.isRegularFile(pendingIndex)) {
-            getLog().info("StateGraph completes nothing for " + request.compilationId() + ": there is no "
-                + pendingIndex + ", so javac did not compile this source set in this build");
+        if (Files.isRegularFile(pendingIndex)) {
+            run("complete-compile", request);
             return;
         }
-        run("complete-compile", request);
+        Path pendingInventory = request.pendingInventoryFile();
+        if (Files.isRegularFile(pendingInventory)) {
+            throw new MojoExecutionException("this build prepared the compilation of "
+                + request.compilationId() + " — " + pendingInventory + " is there, so its previous outputs"
+                + " have been retired — but javac left no " + pendingIndex
+                + ". The StateGraph annotation processor did not run: it is what publishes the index of an"
+                + " accepted compilation. Check that " + PROCESSOR
+                + " is on the <annotationProcessorPaths> of this compilation and that annotation processing"
+                + " is not switched off.");
+        }
+        getLog().info("StateGraph completes nothing for " + request.compilationId() + ": there is no "
+            + pendingIndex + " and no " + pendingInventory
+            + ", so javac did not compile this source set in this build");
     }
 
     /**
@@ -493,6 +507,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
         /** The index the annotation processor publishes for a compilation javac has not yet accepted. */
         private static final String PENDING_INDEX = "META-INF/stategraph/pending-exports.json";
 
+        /** The inventory the preparation of a cycle writes before it retires the first output of the previous one. */
+        private static final String PENDING_INVENTORY = "owned-outputs.pending.json";
+
         /** Copies the two lists, so a request never reflects a later change of the collection it was built from. */
         public Request {
             Objects.requireNonNull(projectDirectory, "projectDirectory");
@@ -521,6 +538,15 @@ public abstract class StateGraphMojo extends AbstractMojo {
          */
         public Path pendingIndexFile() {
             return Path.of(classesOutput).toAbsolutePath().normalize().resolve(PENDING_INDEX);
+        }
+
+        /**
+         * The inventory of what this cycle retired, which exists only between preparation and completion.
+         *
+         * @return the absolute path of the pending inventory
+         */
+        public Path pendingInventoryFile() {
+            return Path.of(workDirectory).toAbsolutePath().normalize().resolve(PENDING_INVENTORY);
         }
     }
 }

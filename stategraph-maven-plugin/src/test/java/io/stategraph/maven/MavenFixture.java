@@ -411,6 +411,28 @@ public final class MavenFixture {
     }
 
     /**
+     * The single carrier source of the main generation: the tool-internal type every generation emits, whose
+     * timestamp the preparation dates past the outputs it retired.
+     *
+     * @return the carrier source of the main compilation
+     */
+    public Path carrierSource() {
+        Path carriers = directory.resolve("target/generated-sources/stategraph").resolve(CARRIER_PACKAGE);
+        try (Stream<Path> walk = Files.walk(carriers)) {
+            List<Path> sources = walk.filter(Files::isRegularFile)
+                    .filter(file -> file.getFileName().toString().endsWith(".java"))
+                    .toList();
+            if (sources.size() != 1) {
+                throw new IllegalStateException("the generation left " + sources.size() + " carrier sources"
+                        + " under " + carriers + ", not one");
+            }
+            return sources.get(0);
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
+    }
+
+    /**
      * Whether the project's jar carries {@code entry}.
      *
      * @param entry the jar entry name

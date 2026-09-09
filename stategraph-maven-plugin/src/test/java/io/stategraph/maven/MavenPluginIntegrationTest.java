@@ -395,6 +395,158 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * The annotation processor is not optional: it is the only thing that publishes the index of what javac
+     * accepted, so a compilation that would run without it — because annotation processing is off, or because
+     * the processor is on no path javac reads — is refused by {@code generate}, before the preparation retires
+     * the outputs of the previous cycle.
+     */
+    @Test
+    void theAnnotationProcessorMustBeOnTheCompilerPath() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+
+        MavenResult off = fixture.run("-Dmaven.compiler.proc=none", "package");
+
+        assertNotEquals(0, off.exitCode(), off.output());
+        assertTrue(off.output().contains("maven.compiler.proc=none switches annotation processing off"),
+                off.output());
+        assertNothingWasRetiredOrPublished(fixture);
+
+        fixture.editPom("""
+                            <path>
+                              <groupId>io.stategraph</groupId>
+                              <artifactId>stategraph-processor</artifactId>
+                              <version>${stategraph.version}</version>
+                            </path>
+                """, "");
+
+        MavenResult missing = fixture.run("package");
+
+        assertNotEquals(0, missing.exitCode(), missing.output());
+        assertTrue(missing.output().contains("io.stategraph:stategraph-processor is not on the"
+                + " <annotationProcessorPaths> of the default-compile execution"), missing.output());
+        assertNothingWasRetiredOrPublished(fixture);
+    }
+
+    /**
+     * A compilation this build prepared but javac never published for is a failure, not a no-op: the outputs of
+     * the previous cycle are already retired, so leaving the build green would package a jar with the carrier
+     * of the compilation in it and no index at all.
+     */
+    @Test
+    void completionOfAPreparedButUnpublishedCompilationFails() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        String goal = "io.stategraph:stategraph-maven-plugin:" + VERSION + ':';
+
+        MavenResult result = fixture.run(goal + "generate", goal + "prepare", goal + "complete");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("The StateGraph annotation processor did not run"),
+                result.output());
+        assertTrue(fixture.exists("target/stategraph/main/owned-outputs.pending.json"));
+        assertFalse(fixture.inventoryIsSealed("main"));
+        assertFalse(fixture.exists(MAIN_EXPORTS));
+    }
+
+    /**
+     * A compiler configured entirely through {@code maven.compiler.*} properties is checked the same way as one
+     * configured in XML, and a project that configures no release at all is refused as well: the default source
+     * and target of {@code maven-compiler-plugin} are far below what the generated vocabulary parses.
+     */
+    @Test
+    void propertyConfiguredCompilerSettingsAreCheckedToo() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "");
+        fixture.editPom("<lombok.version>1.18.48</lombok.version>",
+                "<lombok.version>1.18.48</lombok.version>\n"
+                        + "    <maven.compiler.release>17</maven.compiler.release>");
+
+        MavenResult property = fixture.run("generate-sources");
+
+        assertNotEquals(0, property.exitCode(), property.output());
+        assertTrue(property.output().contains("compiles with maven.compiler.release=17"), property.output());
+
+        // Back to the supported configuration, then take the release away entirely.
+        fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "");
+
+        MavenResult absent = fixture.run("generate-sources");
+
+        assertNotEquals(0, absent.exitCode(), absent.output());
+        assertTrue(absent.output().contains("configures no release"), absent.output());
+
+        fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+
+        MavenResult forked = fixture.run("-Dmaven.compiler.fork=true",
+                "-Dmaven.compiler.executable=/nonexistent/javac", "generate-sources");
+
+        assertNotEquals(0, forked.exitCode(), forked.output());
+        assertTrue(forked.output().contains("forks javac at /nonexistent/javac"), forked.output());
+    }
+
+    /**
+     * The two javac executions name the directory of the annotation processor's sources with two different
+     * parameters, and each generation reads its own: a redirected test directory is reported by
+     * {@code generate-test}, and a main directory left at its default is not reported by either.
+     */
+    @Test
+    void eachCompilationChecksItsOwnGeneratedSourcesDirectory() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <generatedTestSourcesDirectory>${project.build.directory}/elsewhere"
+                + "</generatedTestSourcesDirectory>");
+
+        MavenResult redirected = fixture.run("generate-test-sources");
+
+        assertNotEquals(0, redirected.exitCode(), redirected.output());
+        List<String> executed = goalExecutions(redirected.output());
+        assertTrue(indexOf(executed, ":generate (sg-generate)") >= 0, executed.toString());
+        assertTrue(indexOf(executed, ":generate-test (sg-generate-test)") >= 0, executed.toString());
+        assertTrue(redirected.output().contains("Failed to execute goal io.stategraph:"
+                + "stategraph-maven-plugin:" + VERSION + ":generate-test (sg-generate-test)"),
+                redirected.output());
+        assertTrue(redirected.output().contains("<generatedTestSourcesDirectory>"), redirected.output());
+
+        fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <generatedSourcesDirectory>${project.build.directory}/generated-sources/"
+                + "annotations</generatedSourcesDirectory>");
+
+        MavenResult supported = fixture.run("generate-test-sources");
+
+        assertEquals(0, supported.exitCode(), supported.output());
+    }
+
+    /**
+     * The preparation dates the carrier of this generation past everything the previous compilation left, so a
+     * compiler that decides by timestamp cannot read a class output it has just been emptied of as up to date.
+     * The bytes of the carrier are not touched, which is what keeps the generation deterministic.
+     */
+    @Test
+    void preparationDatesTheCarrierPastTheNewestPreviousOutput() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        String before = Files.readString(fixture.carrierSource(), StandardCharsets.UTF_8);
+        Path classes = fixture.projectDirectory().resolve("target/classes");
+        FileTime future = FileTime.fromMillis(System.currentTimeMillis() + 3_600_000L);
+        for (Path file : filesUnder(classes)) {
+            Files.setLastModifiedTime(file, future);
+        }
+
+        MavenResult result = fixture.run("process-sources");
+
+        assertEquals(0, result.exitCode(), result.output());
+        Path carrier = fixture.carrierSource();
+        FileTime dated = Files.getLastModifiedTime(carrier);
+        assertTrue(dated.compareTo(future) > 0,
+                "the carrier is dated " + dated + ", not past the outputs dated " + future);
+        for (Path file : filesUnder(classes)) {
+            assertTrue(dated.compareTo(Files.getLastModifiedTime(file)) > 0,
+                    "the carrier is dated " + dated + ", not past " + file);
+        }
+        assertEquals(before, Files.readString(carrier, StandardCharsets.UTF_8));
+    }
+
+    /**
      * A build that switched a compilation off is refused before the first deletion: the index and the sealed
      * inventory of the previous build are untouched, because retiring them and compiling nothing would leave
      * the project published with nothing at all.
@@ -408,7 +560,7 @@ class MavenPluginIntegrationTest {
         MavenResult main = fixture.run("-Dmaven.main.skip=true", "compile");
 
         assertNotEquals(0, main.exitCode(), main.output());
-        assertTrue(main.output().contains("maven.main.skip switches the default-compile compilation off"),
+        assertTrue(main.output().contains("maven.main.skip=true switches the default-compile compilation off"),
                 main.output());
         assertTrue(fixture.inventoryIsSealed("main"));
         assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
@@ -416,7 +568,7 @@ class MavenPluginIntegrationTest {
         MavenResult test = fixture.run("-Dmaven.test.skip=true", "test-compile");
 
         assertNotEquals(0, test.exitCode(), test.output());
-        assertTrue(test.output().contains("maven.test.skip switches the default-testCompile compilation off"),
+        assertTrue(test.output().contains("maven.test.skip=true switches the default-testCompile compilation off"),
                 test.output());
     }
 
@@ -486,6 +638,27 @@ class MavenPluginIntegrationTest {
         // generator is a dependency of the plugin alone, so nothing it carries reaches a consumer's classpath.
         assertEquals(List.of("io.stategraph:stategraph-codegen:runtime"), scopedDependencies(pom));
         assertEquals(List.of("io.stategraph:stategraph-codegen:" + VERSION), dependencies(descriptor));
+
+        // The goals resolve toolchains through the public component alone; the private one is Maven internals
+        // this plugin has no reason to require.
+        assertEquals(List.of("org.apache.maven.toolchain.ToolchainManager"), requirements(descriptor));
+    }
+
+    /** Asserts that a build refused before the preparation left the previous cycle and the jar untouched. */
+    private static void assertNothingWasRetiredOrPublished(MavenFixture fixture) {
+        assertFalse(fixture.exists("target/stategraph/main/owned-outputs.pending.json"));
+        assertFalse(fixture.exists(MAIN_EXPORTS));
+        assertFalse(fixture.exists("target/fixture-1.0.0.jar"));
+    }
+
+    /** Every regular file under {@code root}, or nothing when the build has not written it yet. */
+    private static List<Path> filesUnder(Path root) throws IOException {
+        if (!Files.isDirectory(root)) {
+            return List.of();
+        }
+        try (Stream<Path> walk = Files.walk(root)) {
+            return walk.filter(Files::isRegularFile).toList();
+        }
     }
 
     /** The domain with the action and the facade renamed, so the previous names must be retired. */
@@ -653,6 +826,20 @@ class MavenPluginIntegrationTest {
             goals.add(text(mojo, "goal"));
         }
         return goals;
+    }
+
+    /** The distinct component roles the mojos of the descriptor require, in the order they first appear. */
+    private static List<String> requirements(Element descriptor) {
+        List<String> roles = new ArrayList<>();
+        for (Element mojo : children(child(descriptor, "mojos"), "mojo")) {
+            for (Element requirement : children(child(mojo, "requirements"), "requirement")) {
+                String role = text(requirement, "role");
+                if (!roles.contains(role)) {
+                    roles.add(role);
+                }
+            }
+        }
+        return List.copyOf(roles);
     }
 
     /** The dependencies of the published POM, as {@code groupId:artifactId:scope}. */
