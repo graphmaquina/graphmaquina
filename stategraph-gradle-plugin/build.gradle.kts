@@ -21,6 +21,8 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation(gradleTestKit())
+    // Only the tests decode the JSON the generator publishes; the plugin itself never loads codegen classes.
+    testImplementation("com.google.code.gson:gson:2.13.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 tasks.test {
