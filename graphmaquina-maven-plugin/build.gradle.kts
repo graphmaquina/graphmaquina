@@ -72,15 +72,26 @@ publishing {
     }
 }
 
+val clearFixtureReleases = tasks.register<Delete>("clearFixtureReleases") {
+    // Fixtures consume the release GAV 1.0.0. Maven never refreshes an already cached release jar, even
+    // when this checkout republishes it, so retain external dependencies but discard our own cached jars.
+    delete(layout.buildDirectory.dir("maven-fixture-repo/io/github/graphmaquina"))
+}
+
 tasks.test {
     // The integration tests run a real Maven build against the file repository, so every StateGraph artifact
     // that build resolves — this plugin included — must be published before they start.
     dependsOn(
+        clearFixtureReleases,
         tasks.named("publishMavenPublicationToAdapterTestsRepository"),
         ":graphmaquina-core:publishMavenPublicationToAdapterTestsRepository",
         ":graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository",
         ":graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository"
     )
+    inputs.files(listOf("graphmaquina-core", "graphmaquina-codegen", "graphmaquina-processor",
+        "graphmaquina-maven-plugin").map {
+        rootProject.layout.buildDirectory.dir("adapter-test-repository/io/github/graphmaquina/$it")
+    }).withPropertyName("fixtureReleaseArtifacts")
     systemProperty(
         "graphmaquina.fixtureRepository",
         rootProject.layout.buildDirectory.dir("adapter-test-repository").get().asFile.absolutePath

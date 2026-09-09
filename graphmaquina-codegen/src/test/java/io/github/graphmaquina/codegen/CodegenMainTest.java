@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -127,6 +128,32 @@ class CodegenMainTest {
         assertEquals("java.io.UncheckedIOException: cannot read the original sources"
                 + ": java.io.IOException: classes/fx is a directory"
                 + ": [SG603] the inventory claims a file it does not own", described);
+    }
+
+    @Test
+    void describesACyclicCauseChainWithoutRepeatingIt() throws IOException, InterruptedException {
+        Path output = directory.resolve("cyclic-cause.log");
+        Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-Xmx32m", "-cp", System.getProperty("java.class.path"), CyclicCause.class.getName())
+                .redirectErrorStream(true).redirectOutput(output.toFile()).start();
+        try {
+            assertTrue(process.waitFor(5, TimeUnit.SECONDS), "describing a cyclic cause must terminate");
+            assertEquals(0, process.exitValue(), Files.readString(output));
+            assertEquals("java.lang.RuntimeException: outer: java.lang.RuntimeException: inner",
+                    Files.readString(output).strip());
+        } finally {
+            process.destroyForcibly();
+        }
+    }
+
+    /** Runs an intentionally cyclic exception in a bounded JVM so a regression cannot exhaust the test JVM. */
+    public static final class CyclicCause {
+        public static void main(String[] args) {
+            RuntimeException outer = new RuntimeException("outer");
+            RuntimeException inner = new RuntimeException("inner", outer);
+            outer.initCause(inner);
+            System.out.println(CodegenMain.describe(outer));
+        }
     }
 
     /** Writes the fixture and the request file the tool reads, and returns the path of that file. */

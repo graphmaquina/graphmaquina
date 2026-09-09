@@ -151,6 +151,20 @@ class CompilationOutputsTest {
     }
 
     @Test
+    void refusesInventoryPathsThatNormalizeToTheOutputRoot() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        Path kept = write(classesOutput.resolve("fx/Kept.class"), new byte[] {1});
+        for (String entry : List.of(".", "fx/..")) {
+            ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(1,
+                    List.of(), List.of(entry), List.of(), List.of()));
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> CompilationOutputs.prepare(request()));
+            assertEquals("SG603", failure.code());
+            assertTrue(Files.exists(kept));
+        }
+    }
+
+    @Test
     void refusesToCompleteACompilationThatWasNeverPrepared() throws IOException {
         writeManifest(List.of(CARRIER_SOURCE));
 

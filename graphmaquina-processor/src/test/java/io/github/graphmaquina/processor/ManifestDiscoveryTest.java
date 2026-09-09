@@ -219,6 +219,91 @@ class ManifestDiscoveryTest {
     }
 
     @Test
+    void refusesAChangedParameterTypeBeforePublishingAnUnusedExport() {
+        String original = """
+                package fx;
+                public final class Hooks {
+                    @io.github.graphmaquina.annotation.GraphHook
+                    public void notify(java.lang.Object value) {}
+                }
+                """;
+        Compilation.Prepared prepared = Compilation.prepare(Map.of("fx.Hooks", original));
+        rewriteOriginal(prepared, "fx.Hooks", original.replace("java.lang.Object", "java.lang.String"));
+        assertSingleManifestError(Compilation.compilePrepared(prepared), "fx.Hooks.notify");
+        assertFalse(Files.exists(prepared.request().classesOutput().resolve("META-INF/graphmaquina/exports.json")));
+    }
+
+    @Test
+    void refusesAChangedStaticModifierBeforePublishingAnUnusedExport() {
+        String original = """
+                package fx;
+                public final class Hooks {
+                    @io.github.graphmaquina.annotation.GraphHook
+                    public void notify(java.lang.Object value) {}
+                }
+                """;
+        Compilation.Prepared prepared = Compilation.prepare(Map.of("fx.Hooks", original));
+        rewriteOriginal(prepared, "fx.Hooks", original.replace("public void", "public static void"));
+        assertSingleManifestError(Compilation.compilePrepared(prepared), "fx.Hooks.notify");
+    }
+
+    @Test
+    void acceptsUnchangedSignaturesWithAParameterizedEnclosingType() {
+        Compilation.Result result = Compilation.compileTyped(Map.of(
+                "fx.Outer", "package fx; public class Outer<T> { public class Inner {} }",
+                "fx.Hooks", """
+                    package fx;
+                    public final class Hooks {
+                        @io.github.graphmaquina.annotation.GraphHook
+                        public void notify(Outer<String>.Inner value) {}
+                    }
+                    """));
+        assertTrue(result.success(), result.describe());
+    }
+
+    @Test
+    void acceptsUnchangedSignaturesWithAnImplicitEnclosingType() {
+        Compilation.Result result = Compilation.compileTyped(Map.of("fx.Outer", """
+                package fx;
+                public class Outer<T> {
+                    public class Inner {}
+                    @io.github.graphmaquina.annotation.GraphHook
+                    public void notify(Inner value) {}
+                }
+                """));
+        assertTrue(result.success(), result.describe());
+    }
+
+    @Test
+    void acceptsUnchangedSignaturesWithAnInheritedEnclosingType() {
+        Compilation.Result result = Compilation.compileTyped(Map.of(
+                "fx.Base", "package fx; public class Base<T> { public class Inner {} }",
+                "fx.Sub", "package fx; public class Sub<A, B> extends Base<B> {}",
+                "fx.Hooks", """
+                    package fx;
+                    public final class Hooks {
+                        @io.github.graphmaquina.annotation.GraphHook
+                        public void notify(Sub<Integer, String>.Inner value) {}
+                    }
+                    """));
+        assertTrue(result.success(), result.describe());
+    }
+
+    @Test
+    void acceptsUnchangedSignaturesWithAnImplicitInheritedEnclosingType() {
+        Compilation.Result result = Compilation.compileTyped(Map.of(
+                "fx.Base", "package fx; public class Base<T> { public class Inner {} }",
+                "fx.Sub", """
+                    package fx;
+                    public class Sub<A, B> extends Base<B> {
+                        @io.github.graphmaquina.annotation.GraphHook
+                        public void notify(Inner value) {}
+                    }
+                    """));
+        assertTrue(result.success(), result.describe());
+    }
+
+    @Test
     void reportsAnEnumWhoseConstantsChangedAfterGeneration() {
         Compilation.Prepared prepared = Compilation.prepare(TypedFixtures.minimal());
         rewriteOriginal(prepared, "fx.DocStatus", """

@@ -90,7 +90,9 @@ public final class CodegenMain {
      */
     static String describe(Throwable failure) {
         StringBuilder description = new StringBuilder(headline(failure));
-        for (Throwable cause = failure.getCause(); cause != null; cause = cause.getCause()) {
+        java.util.Set<Throwable> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        seen.add(failure);
+        for (Throwable cause = failure.getCause(); cause != null && seen.add(cause); cause = cause.getCause()) {
             description.append(": ").append(headline(cause));
         }
         return description.toString();

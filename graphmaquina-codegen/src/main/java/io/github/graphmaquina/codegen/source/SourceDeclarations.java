@@ -274,6 +274,13 @@ public final class SourceDeclarations {
                 return key == null ? TypeUse.Declared.of(name) : new TypeUse.Variable(name, key);
             }
             case MEMBER_SELECT -> {
+                MemberSelectTree select = (MemberSelectTree) tree;
+                TypeUse selected = type(select.getExpression(), variables);
+                if (selected instanceof TypeUse.Declared owner
+                        && (!owner.arguments().isEmpty() || owner.owner().isPresent())) {
+                    return new TypeUse.Declared(owner.name() + '.' + select.getIdentifier(), List.of(),
+                            Optional.of(owner));
+                }
                 return TypeUse.Declared.of(spell(tree));
             }
             case PARAMETERIZED_TYPE -> {

@@ -235,8 +235,9 @@ public final class CompilationOutputs {
      */
     private static void requireInside(List<String> entries, Path root, String inventory) {
         for (String entry : entries) {
+            Path resolved = resolve(root, entry).normalize();
             if (entry.isBlank() || Path.of(entry).isAbsolute()
-                    || !resolve(root, entry).normalize().startsWith(root)) {
+                    || resolved.equals(root) || !resolved.startsWith(root)) {
                 throw new CodegenException(COLLISION, "the inventory " + inventory + " claims '" + entry
                     + "', which is not a file under " + root);
             }

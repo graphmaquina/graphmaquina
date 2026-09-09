@@ -30,6 +30,22 @@ class ExactInvocationTest {
     }
 
     @Test
+    void runsTheMarkedOverloadInsteadOfAPackagePrivateOverload() throws Exception {
+        Map<String, String> sources = TypedFixtures.watching();
+        sources.put("fx.DocActions", sources.get("fx.DocActions").replace(
+                "public boolean ready(Doc doc, Collection", "boolean ready(Doc doc, Collection"));
+        assertEquals("marked", publishThroughTheWatch(sources));
+    }
+
+    @Test
+    void runsTheMarkedOverloadInsteadOfAProtectedOverload() throws Exception {
+        Map<String, String> sources = TypedFixtures.watching();
+        sources.put("fx.DocActions", sources.get("fx.DocActions").replace(
+                "public boolean ready(Doc doc, Collection", "protected boolean ready(Doc doc, Collection"));
+        assertEquals("marked", publishThroughTheWatch(sources));
+    }
+
+    @Test
     void runsTheMarkedOverloadInheritedFromABaseHost() throws Exception {
         assertEquals("marked", publishThroughTheWatch(inheritedHost()));
     }

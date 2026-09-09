@@ -8,7 +8,7 @@ A machine is one annotated interface. Every cell of its matrix is either declare
 declarations into a typed vocabulary, an annotation processor turns the interface into a facade, and the
 runtime executes the transitions.
 
-**Version: `1.0.0`, on Maven Central under `io.github.graphmaquina`.** The declarations are typed: no state,
+**Version: `1.0.0`, under `io.github.graphmaquina`. Publication to Maven Central is pending.** The declarations are typed: no state,
 method or property is written as a string. If you are coming from 0.2, read
 [docs/typed-annotations-migration.md](docs/typed-annotations-migration.md).
 
@@ -98,10 +98,12 @@ re-evaluates the order when its items move.
 generator has written it, so a build must run the generator, then javac with the annotation processor, then the
 completion step that publishes the index of what javac accepted. Both build adapters do exactly that.
 
-Every artifact is on Maven Central, so `mavenCentral()` in the consuming build's dependency repositories
-covers the runtime, the generator and the processor. The Gradle plugin is published to Central rather than
-to the Gradle Plugin Portal, so declare `mavenCentral()` inside `pluginManagement { repositories { … } }`
-too, otherwise the `plugins {}` block cannot resolve it.
+Install the artifacts locally before using the coordinates below; see the
+[local installation commands](docs/typed-annotations-build.md#where-the-artifacts-come-from). Configure
+`mavenLocal()` in both dependency repositories and `pluginManagement.repositories`.
+After publication is confirmed, use `mavenCentral()` in both places: the Gradle plugin is intended for
+Central, including its plugin marker. See [preparing a release](docs/typed-annotations-build.md#preparing-a-central-release)
+for the signed bundle workflow.
 
 Gradle:
 

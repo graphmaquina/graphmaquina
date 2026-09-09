@@ -47,7 +47,10 @@ public final class BoundInvocation {
                 continue;
             }
             ExecutableElement other = (ExecutableElement) member;
-            if (!other.equals(binding.method()) && other.getModifiers().contains(Modifier.PUBLIC)
+            // Package and protected overloads can also be visible from the generated facade. Considering
+            // every non-private candidate is conservative when the facade lives in another package: it may
+            // add a cast, but must never let javac select a different accessible overload.
+            if (!other.equals(binding.method()) && !other.getModifiers().contains(Modifier.PRIVATE)
                     && other.getSimpleName().contentEquals(binding.methodName())
                     && other.getParameters().size() == binding.arguments().size()
                     && applies(binding, other)) {

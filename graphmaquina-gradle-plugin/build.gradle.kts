@@ -19,6 +19,7 @@ gradlePlugin {
     plugins {
         create("graphmaquina") {
             id = "io.github.graphmaquina"
+            displayName = "GraphMaquina Gradle plugin"
             implementationClass = "io.github.graphmaquina.gradle.StateGraphPlugin"
         }
     }
@@ -34,7 +35,7 @@ dependencies {
 signing {
     // Same environment-driven key as the root build's convention plugin; this build cannot see that plugin.
     val key = providers.environmentVariable("SIGNING_KEY").orNull
-    val password = providers.environmentVariable("SIGNING_PASSWORD").orNull
+    val password = providers.environmentVariable("SIGNING_PASSWORD").orElse("").get()
     isRequired = key != null
     if (key != null) {
         useInMemoryPgpKeys(key, password)
@@ -47,6 +48,7 @@ publishing {
     // POM metadata Central requires is repeated here rather than shared.
     publications.withType<MavenPublication>().configureEach {
         pom {
+            name = "GraphMaquina Gradle plugin"
             description = "Gradle plugin that generates the typed graph API before javac and runs the verified compilation lifecycle around it"
             url = "https://github.com/graphmaquina/graphmaquina"
             licenses {
@@ -80,6 +82,16 @@ publishing {
         maven {
             name = "centralStaging"
             url = layout.projectDirectory.dir("../build/central-staging").asFile.toURI()
+        }
+    }
+}
+
+tasks.withType<PublishToMavenRepository>().configureEach {
+    doFirst {
+        if (repository.name == "centralStaging") {
+            check(!providers.environmentVariable("SIGNING_KEY").orNull.isNullOrBlank()) {
+                "Central staging requires SIGNING_KEY; use adapterTests or publishToMavenLocal for unsigned builds"
+            }
         }
     }
 }

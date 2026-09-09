@@ -11,6 +11,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.Modifier;
 
 /**
  * The headers the generator can see: every type declared by the original sources plus every type the
@@ -85,10 +87,23 @@ public final class DeclarationIndex implements AutoCloseable {
                 for (TypeUse argument : declared.arguments()) {
                     arguments.add(canonicalize(context, argument));
                 }
-                yield new TypeUse.Declared(
-                        resolve(context, declared.name()).map(TypeHeader::canonicalName)
-                                .orElse(declared.name()),
-                        arguments, declared.owner().map(owner -> canonicalize(context, owner)));
+                Optional<TypeHeader> resolved = resolve(context, declared.name());
+                Optional<TypeUse> owner = declared.owner().map(value -> canonicalize(context, value));
+                if (resolved.isPresent() && resolved.get().kind() == ElementKind.CLASS
+                        && !resolved.get().modifiers().contains(Modifier.STATIC)) {
+                    int separator = declared.name().lastIndexOf('.');
+                    if (owner.isEmpty()) {
+                        owner = separator < 0 ? implicitOwner(context, resolved.get())
+                                : resolve(context, declared.name().substring(0, separator))
+                                    .map(header -> TypeUse.Declared.of(header.canonicalName()));
+                    }
+                    String parent = parentName(resolved.get());
+                    if (owner.isPresent() && owner.get() instanceof TypeUse.Declared selected) {
+                        owner = asSuper(selected, parent, new HashSet<>()).map(value -> (TypeUse) value);
+                    }
+                }
+                yield new TypeUse.Declared(resolved.map(TypeHeader::canonicalName).orElse(declared.name()),
+                        arguments, owner);
             }
             case TypeUse.Array array -> new TypeUse.Array(canonicalize(context, array.component()));
             case TypeUse.Wildcard wildcard -> new TypeUse.Wildcard(
@@ -97,6 +112,79 @@ public final class DeclarationIndex implements AutoCloseable {
             case TypeUse.Variable variable -> variable;
             case TypeUse.Primitive primitive -> primitive;
         };
+    }
+
+    /** An unqualified inner type in its enclosing generic declaration implicitly captures that owner's variables. */
+    private Optional<TypeUse> implicitOwner(TypeHeader context, TypeHeader member) {
+        if (member.kind() != ElementKind.CLASS || member.modifiers().contains(Modifier.STATIC)) {
+            return Optional.empty();
+        }
+        String parent = parentName(member);
+        if (find(parent).isEmpty()) {
+            return Optional.empty();
+        }
+        for (TypeHeader scope : enclosingChain(context)) {
+            if (!scope.canonicalName().equals(member.canonicalName())) {
+                Optional<TypeUse.Declared> owner = asSuper(lexicalType(scope), parent, new HashSet<>());
+                if (owner.isPresent()) {
+                    return owner.map(value -> (TypeUse) value);
+                }
+            }
+            if (scope.modifiers().contains(Modifier.STATIC)) {
+                break;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private TypeUse.Declared lexicalType(TypeHeader header) {
+        List<TypeUse> variables = new ArrayList<>();
+        for (int at = 0; at < header.typeParameters().size(); at++) {
+            variables.add(new TypeUse.Variable(header.typeParameters().get(at), header.parameterKey(at)));
+        }
+        return new TypeUse.Declared(header.canonicalName(), variables, implicitOwner(header, header));
+    }
+
+    private static String parentName(TypeHeader header) {
+        int separator = header.canonicalName().lastIndexOf('.');
+        return separator < 0 ? "" : header.canonicalName().substring(0, separator);
+    }
+
+    /** Specializes an inherited inner type's actual declaring owner, including reordered type arguments. */
+    private Optional<TypeUse.Declared> asSuper(TypeUse.Declared use, String target, Set<String> visited) {
+        if (use.name().equals(target)) {
+            return Optional.of(use);
+        }
+        Optional<TypeHeader> found = find(use.name());
+        if (found.isEmpty() || !visited.add(use.name())) {
+            return Optional.empty();
+        }
+        TypeHeader header = found.get();
+        Map<TypeParameterKey, TypeUse> environment = new LinkedHashMap<>();
+        bindOwner(use, environment);
+        for (TypeUse supertype : header.supertypes()) {
+            TypeUse specialized = substitute(canonicalize(header, supertype), environment);
+            if (specialized instanceof TypeUse.Declared declared) {
+                if (!header.typeParameters().isEmpty() && use.arguments().isEmpty()) {
+                    declared = new TypeUse.Declared(declared.name(), List.of(), Optional.empty());
+                }
+                Optional<TypeUse.Declared> result = asSuper(declared, target, visited);
+                if (result.isPresent()) {
+                    return result;
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private void bindOwner(TypeUse.Declared use, Map<TypeParameterKey, TypeUse> environment) {
+        use.owner().filter(TypeUse.Declared.class::isInstance).map(TypeUse.Declared.class::cast)
+                .ifPresent(owner -> bindOwner(owner, environment));
+        find(use.name()).ifPresent(header -> {
+            for (int at = 0; at < Math.min(header.typeParameters().size(), use.arguments().size()); at++) {
+                environment.put(header.parameterKey(at), use.arguments().get(at));
+            }
+        });
     }
 
     /** Applies {@code environment} to every type variable of {@code use}, owners and arguments included. */

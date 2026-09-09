@@ -258,8 +258,7 @@ runs exactly the marked one.
 | SG605 | A symbol with no valid original member, or the wrong host |
 | SG606 | Vocabulary of another machine or of another pair |
 | SG607 | Invalid cardinality of an optional element |
-| SG608 | A peer declaration duplicated, invalid or unused |
-| SG608 | A watched peer that this compilation does not generate |
+| SG608 | A peer declaration duplicated, invalid or unused, or a watched peer that this compilation does not generate |
 | SG609 | A legacy String-based declaration |
 
 The v0.2 codes are unchanged where the rule is unchanged: operation signatures still report SG505, incompatible

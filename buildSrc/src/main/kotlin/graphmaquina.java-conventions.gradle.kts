@@ -28,6 +28,15 @@ pluginManager.withPlugin("maven-publish") {
     // Everything a release needs beyond the binary: the two extra jars, the signatures, and a staging
     // directory laid out as a Maven repository so the whole set can be zipped into a Central bundle.
     apply(plugin = "signing")
+    tasks.withType<PublishToMavenRepository>().configureEach {
+        doFirst {
+            if (repository.name == "centralStaging") {
+                check(!providers.environmentVariable("SIGNING_KEY").orNull.isNullOrBlank()) {
+                    "Central staging requires SIGNING_KEY; use adapterTests or publishToMavenLocal for unsigned builds"
+                }
+            }
+        }
+    }
     extensions.configure<PublishingExtension> {
         repositories {
             maven {
@@ -40,7 +49,7 @@ pluginManager.withPlugin("maven-publish") {
         // The key is read from the environment, never from a keyring, so the same command works on a
         // developer machine and in CI. With no key set the build still runs; it just signs nothing.
         val key = providers.environmentVariable("SIGNING_KEY").orNull
-        val password = providers.environmentVariable("SIGNING_PASSWORD").orNull
+        val password = providers.environmentVariable("SIGNING_PASSWORD").orElse("").get()
         isRequired = key != null
         if (key != null) {
             useInMemoryPgpKeys(key, password)

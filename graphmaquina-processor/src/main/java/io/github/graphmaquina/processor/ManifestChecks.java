@@ -23,6 +23,7 @@ import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
+import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
@@ -37,7 +38,7 @@ import javax.lang.model.util.Elements;
  * its enum, and a symbol must still name a member that exists. A claim that no longer holds means the
  * generation is stale, and the whole manifest is refused rather than used in part.</p>
  *
- * <p>Only existence and identity are checked here. Whether a member's effective signature suits the role it
+ * <p>Existence, identity and the declared signature are checked here. Whether a member's effective signature suits the role it
  * declares is the frontend's work, once the model is being built.</p>
  */
 final class ManifestChecks {
@@ -226,14 +227,13 @@ final class ManifestChecks {
         return originals(symbol, elements);
     }
 
-    /** The original declarations a symbol was resolved from must still exist under the same name and arity. */
+    /** The original declarations must still have the signatures the generator recorded. */
     private static Optional<String> originals(SymbolDescriptor symbol, Elements elements) {
         for (MemberDescriptor candidate : symbol.candidates()) {
-            if (!declares(elements, candidate.declaringType(), candidate.name(),
-                    candidate.parameterTypes().size())) {
+            if (!declares(elements, candidate)) {
                 return Optional.of("describes " + symbol.qualifiedName() + " over " + candidate.declaringType()
-                    + '.' + candidate.name() + " with " + candidate.parameterTypes().size()
-                    + " parameters, which that type no longer declares");
+                    + '.' + candidate.name() + candidate.parameterTypes() + " returning " + candidate.returnType()
+                    + ", which that type no longer declares with the same signature");
             }
         }
         Optional<PropertyDescriptor> property = symbol.property();
@@ -246,17 +246,20 @@ final class ManifestChecks {
         return Optional.empty();
     }
 
-    /**
-     * Whether {@code declaringType} declares a member named {@code name} taking {@code arity} parameters, a
-     * field counting as none. Only the name and the arity are matched: which overload a role actually resolves
-     * to is decided against the effective signature, when the model is built.
-     */
-    private static boolean declares(Elements elements, String declaringType, String name, int arity) {
-        for (Element member : members(elements, declaringType, name)) {
-            if (member instanceof ExecutableElement method && method.getParameters().size() == arity) {
+    /** Compare declaration types, before substituting host arguments or selecting a role's effective overload. */
+    private static boolean declares(Elements elements, MemberDescriptor candidate) {
+        for (Element member : members(elements, candidate.declaringType(), candidate.name())) {
+            if (member.getModifiers().contains(Modifier.STATIC) != candidate.staticMember()) {
+                continue;
+            }
+            if (member instanceof ExecutableElement method
+                    && method.getParameters().stream().map(parameter -> ManifestTypes.render(parameter.asType()))
+                        .toList().equals(candidate.parameterTypes())
+                    && ManifestTypes.render(method.getReturnType()).equals(candidate.returnType())) {
                 return true;
             }
-            if (member.getKind() == ElementKind.FIELD && arity == 0) {
+            if (member.getKind() == ElementKind.FIELD && candidate.parameterTypes().isEmpty()
+                    && ManifestTypes.render(member.asType()).equals(candidate.returnType())) {
                 return true;
             }
         }

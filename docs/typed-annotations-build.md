@@ -28,11 +28,27 @@ find no manifest and refuse the compilation with SG602.
 Only `graphmaquina-core` is a dependency of the application. The generator and the processor are build-time only
 and never reach the runtime classpath.
 
+## Preparing a Central release
+
+Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD` to its passphrase, then run:
+
+```bash
+./gradlew centralBundle
+```
+
+This stages the four library/Maven publications plus the Gradle plugin and its marker, then validates the
+expected artifacts, POM metadata, signature files and MD5/SHA-1 checksums. Central staging refuses to run
+without `SIGNING_KEY`; local and adapter-test repositories still support unsigned development builds.
+The ZIP contains only the current release's expected files, excluding repository metadata and older releases.
+Only after the command succeeds, use `build/graphmaquina-central-bundle.zip` for a manual Central Portal upload.
+Nothing uploads automatically. Portal validation, namespace ownership and availability of the public signing
+key remain external requirements; these local structural checks do not replace Portal validation.
+
 ## Where the artifacts come from
 
-**Everything below is on Maven Central under `io.github.graphmaquina`.** `mavenCentral()` in the dependency
-repositories resolves the runtime, the generator and the processor; the Gradle plugin is published there too
-rather than to the Gradle Plugin Portal, so `pluginManagement` needs `mavenCentral()` as well.
+**The coordinates below target Maven Central under `io.github.graphmaquina`; publication is pending.**
+Install the artifacts locally first. After publication is confirmed, `mavenCentral()` resolves the runtime,
+generator and processor, and must also be added to `pluginManagement.repositories` for the Gradle plugin.
 
 Publish from a checkout of this repository:
 
@@ -149,6 +165,7 @@ All of them are in the `graphmaquina` task group.
 | `build/generated/sources/graphmaquina/<sourceSet>` | the generated vocabulary and symbol classes; registered as a source directory of the source set |
 | `build/graphmaquina/<sourceSet>/request.json` | the request the adapter wrote for the generator |
 | `build/graphmaquina/<sourceSet>/annotation-manifest.json` | the manifest javac is pointed at |
+| `build/graphmaquina/<sourceSet>/annotation-manifest.pending.json` | recovery ownership during generation; retained on failure, removed after successful publication |
 | `build/graphmaquina/<sourceSet>/owned-outputs.json` | the sealed inventory of everything that compilation owns |
 | `build/graphmaquina/<sourceSet>/processor-inventory.json` | what the processor emitted, written during javac and read by the completion step |
 | `build/classes/java/<sourceSet>/META-INF/graphmaquina/exports.json` | the published index, packaged into the jar |
@@ -329,6 +346,7 @@ plugins a POM adds, and a POM declaration of a lifecycle plugin keeps that injec
 | `target/generated-sources/graphmaquina` | the generated vocabulary of the main compilation |
 | `target/generated-test-sources/graphmaquina` | the same for the test compilation |
 | `target/graphmaquina/main/{request,annotation-manifest,owned-outputs,processor-inventory}.json` | the main cycle's request, manifest, sealed inventory and the processor's own inventory |
+| `target/graphmaquina/main/annotation-manifest.pending.json` | the generation's recovery ownership; not a manifest javac may consume |
 | `target/graphmaquina/test/…` | the same for the test compilation |
 | `target/classes/META-INF/graphmaquina/exports.json` | the published index, packaged into the jar |
 

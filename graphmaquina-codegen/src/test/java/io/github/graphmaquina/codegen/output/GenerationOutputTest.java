@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -155,6 +156,69 @@ class GenerationOutputTest {
         assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
         assertFalse(Files.exists(directory.resolve("work").resolve("annotation-manifest.json")));
+    }
+
+    @Test
+    void retiresDeletedReferencesAfterRepeatedFailedGenerations() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        StateGraphCodegen.generate(request());
+        Path manual = output().resolve("fx/Handwritten.java");
+        String handwritten = "package fx; public final class Handwritten {}\n";
+        Files.writeString(manual, handwritten);
+
+        SourceFiles.write(sources(), Map.of("fx.DocsGraph", "package fx; public final class DocsGraph {}"));
+        for (int attempt = 0; attempt < 2; attempt++) {
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> StateGraphCodegen.generate(request()));
+            assertEquals("SG603", failure.code());
+            assertFalse(Files.exists(request().workDirectory().resolve("annotation-manifest.json")));
+        }
+        Files.delete(sources().resolve("fx/DocsGraph.java"));
+        Files.delete(sources().resolve("fx/DocActions.java"));
+        GenerationResult result = StateGraphCodegen.generate(request());
+
+        assertFalse(Files.exists(output().resolve("fx/DocActionsRefs.java")));
+        assertEquals(handwritten, Files.readString(manual));
+        assertEquals(published().stream().filter(name -> !name.equals("fx/Handwritten.java")).toList(),
+                ManifestCodec.readCompile(result.annotationManifest()).ownedSources().stream().sorted().toList());
+    }
+
+    @Test
+    void refusesToOverwriteAnUnownedFileInTheGeneratedSourceDirectory() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        Path manual = output().resolve("fx/DocActionsRefs.java");
+        Files.createDirectories(manual.getParent());
+        String handwritten = "package fx; public final class DocActionsRefs {}\n";
+        Files.writeString(manual, handwritten);
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> StateGraphCodegen.generate(request()));
+            assertEquals("SG603", failure.code());
+            assertEquals(handwritten, Files.readString(manual));
+        }
+    }
+
+    @Test
+    void refusesAGeneratedTypeAlreadyPresentInADependency() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        Path work = directory.resolve("dependency");
+        Path jar = SourceFiles.compileToJar(work,
+                Map.of("fx.DocsGraph", "package fx; public final class DocsGraph {}"),
+                directory.resolve("dependency.jar"));
+        for (Path dependency : List.of(jar, work.resolve("jar-classes"))) {
+            GenerationRequest original = request();
+            List<Path> classpath = new ArrayList<>(original.classpath());
+            classpath.add(dependency);
+            GenerationRequest withDependency = new GenerationRequest(original.projectDirectory(), original.sources(),
+                    classpath, original.sourcesOutput(), original.processorSourcesOutput(), original.classesOutput(),
+                    original.workDirectory(), original.compilationId());
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> StateGraphCodegen.generate(withDependency));
+            assertEquals("SG603", failure.code());
+            assertTrue(failure.getMessage().contains("fx.DocsGraph"));
+            assertTrue(failure.getMessage().contains(dependency.toString()));
+        }
     }
 
     private GenerationRequest request() {
