@@ -11,6 +11,13 @@ tasks.jar {
     manifest { attributes("Automatic-Module-Name" to "io.stategraph.codegen") }
 }
 
+tasks.processResources {
+    inputs.property("version", project.version)
+    filesMatching("io/stategraph/codegen/version.properties") {
+        expand("version" to project.version)
+    }
+}
+
 dependencies {
     implementation(project(":stategraph-core"))
     implementation(libs.gson)

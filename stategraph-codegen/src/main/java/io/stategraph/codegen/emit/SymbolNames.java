@@ -1,9 +1,47 @@
 package io.stategraph.codegen.emit;
 
-/** Derives the generated references container of a host and the symbol type names it encloses. */
+/**
+ * Derives the generated references container of a host and the symbol type names it encloses, and splits a
+ * canonical name into the package it belongs to and the name it carries inside that package.
+ */
 public final class SymbolNames {
 
     private SymbolNames() {
+    }
+
+    /**
+     * Returns the package of {@code canonicalName}, empty for a type of the unnamed package. The type part of a
+     * canonical name begins at its first segment that starts with an upper-case letter, the naming convention of
+     * every package and type this generator reads; a name whose segments are all lower-case is taken as a
+     * top-level type of the package its leading segments spell.
+     */
+    public static String packageOf(String canonicalName) {
+        int start = typeStart(canonicalName);
+        return start == 0 ? "" : canonicalName.substring(0, start - 1);
+    }
+
+    /**
+     * Returns {@code canonicalName} without its package, so a nested type keeps the dots joining its enclosing
+     * simple names and can be passed to {@link #hostName(String)}.
+     */
+    public static String nameWithoutPackage(String canonicalName) {
+        return canonicalName.substring(typeStart(canonicalName));
+    }
+
+    /** The index of the first character of the type part of {@code canonicalName}. */
+    private static int typeStart(String canonicalName) {
+        int segment = 0;
+        while (segment < canonicalName.length()) {
+            if (Character.isUpperCase(canonicalName.charAt(segment))) {
+                return segment;
+            }
+            int dot = canonicalName.indexOf('.', segment);
+            if (dot < 0) {
+                return segment;
+            }
+            segment = dot + 1;
+        }
+        return segment;
     }
 
     /**

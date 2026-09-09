@@ -96,7 +96,7 @@ import java.util.List;
  *   "toolVersion": "<string>",
  *   "local": { ...an ExportIndex, as above... },
  *   "dependencies": [ { ...an ExportIndex, as above... }, ... ],
- *   "processorInventory": "<string, path relative to workDirectory>",
+ *   "processorInventory": "<string, absolute execution path of the processor's inventory>",
  *   "ownedSources": ["<string, path relative to its source root>", ...]
  * }
  * }</pre>
