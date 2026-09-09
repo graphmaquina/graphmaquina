@@ -204,8 +204,9 @@ Mixing the two enums does not compile — that is the point.
 
 ### 5. Optional elements are arrays with at most one value
 
-`onFailure`, `timeout`, `afterCommit` (of `Action` and `Move`), `condition` (of `When`) and `action` (of
-`Cell`) are declared as arrays so that "absent" is expressible. Write **zero or one** value:
+`onFailure` and `timeout` (of `Action` and `Cell`), `afterCommit` (of `Action`, `Move` and `Cell`),
+`condition` (of `When`) and `action` (of `Cell`) are declared as arrays so that "absent" is expressible. A
+`Move` runs no action, so it declares only `guards` and `afterCommit`. Write **zero or one** value:
 
 - `onFailure = PAYMENT_DECLINED` — one failure state; omit it entirely when a failed action does not move;
 - `timeout = @Timeout(seconds = 5)` — `@Timeout` replaces the ISO-8601 string and keeps nanosecond
@@ -224,8 +225,10 @@ Declare the peers on the machine and use the pair's vocabulary:
 ```
 
 `@GraphPeers` is what makes the generator emit `<Owner><Peer>` for each pair. A peer declared twice, a peer
-that is not a `@GenerateGraphApi` machine, or a peer nothing watches is **SG608**. In a `Watch`, `peers` is the
-owner entity's collection property and `owner` is the peer entity's back-reference property, both as
+that is not a `@GenerateGraphApi` machine, or a peer nothing watches is **SG608**, and so is a peer this very
+compilation does not generate: a watched pair is typed with both machines' states, so a peer that lives in
+another module or in a dependency jar cannot be watched yet. In a `Watch`, `peers` is the owner entity's
+collection property and `owner` is the peer entity's back-reference property, both as
 `<Entity>Refs.<Property>.class`. A rule is `condition` (a `@GraphCondition` method) **or** exactly one of
 `allIn` / `anyIn` / `noneIn` over the peer's enum, plus the `goTo` state of the owner. Rule order is kept: the
 first rule that holds wins.
@@ -256,6 +259,7 @@ runs exactly the marked one.
 | SG606 | Vocabulary of another machine or of another pair |
 | SG607 | Invalid cardinality of an optional element |
 | SG608 | A peer declaration duplicated, invalid or unused |
+| SG608 | A watched peer that this compilation does not generate |
 | SG609 | A legacy String-based declaration |
 
 The v0.2 codes are unchanged where the rule is unchanged: operation signatures still report SG505, incompatible

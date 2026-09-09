@@ -34,7 +34,7 @@ publishing {
             from(components["java"])
             pom {
                 name.set("stategraph-processor")
-                description.set("Annotation processor that turns @StateGraph interfaces into graph definitions, facades and builders")
+                description.set("Annotation processor that turns @GenerateGraphApi machines and their generated typed vocabulary into graph definitions, facades and builders")
             }
         }
     }
