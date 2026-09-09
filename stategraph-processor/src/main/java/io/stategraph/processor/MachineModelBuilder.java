@@ -60,9 +60,7 @@ final class MachineModelBuilder {
     Optional<MachineModel> build(TypeElement type) {
         int before = diagnostics.errors();
         AnnotationMirror graph = annotations.find(type, StateGraph.class).orElseThrow();
-        if (type.getNestingKind() != NestingKind.TOP_LEVEL) {
-            diagnostics.error("SG502", type.getSimpleName() + " must be a top-level interface: the generated companion lives next to it"
-                    + " in the package", type, graph);
+        if (!checkTopLevel(type, DiagnosticAnchor.of(type, graph))) {
             return Optional.empty();
         }
         Optional<MachineTypes> resolved = machineTypes(type);
@@ -112,12 +110,7 @@ final class MachineModelBuilder {
         checkDuplicateCells(type, forbids, cells, operations);
         List<WatchModel> watches = readWatches(type, types);
 
-        for (String state : types.stateNames()) {
-            if (!closed.contains(state) && !terminals.contains(state)) {
-                diagnostics.error("SG506", state + " is not terminal and has no @Row: add @Row(state = \"" + state
-                        + "\", otherwise = \"why its other cells are forbidden\")", type, graph);
-            }
-        }
+        checkRowsClosed(types, closed, terminals, DiagnosticAnchor.of(type, graph));
 
         if (diagnostics.errors() > before) {
             return Optional.empty();
@@ -125,9 +118,7 @@ final class MachineModelBuilder {
         String packageName = signatures.elements().getPackageOf(type).getQualifiedName().toString();
         MachineModel model = new MachineModel(types, packageName, initial, terminals, cycleAllowed, stateGetter.orElseThrow(),
                 stateSetter.orElseThrow(), idGetter.orElseThrow(), rows, forbids, cells, operations, watches);
-        for (InvalidGraphException.Problem problem : GraphOutlineValidator.validate(Outlines.of(model))) {
-            diagnostics.error(problem.code(), problem.message(), type, graph);
-        }
+        checkOutline(model, DiagnosticAnchor.of(type, graph));
         if (diagnostics.errors() > before) {
             return Optional.empty();
         }
@@ -225,27 +216,18 @@ final class MachineModelBuilder {
 
     private List<OperationModel> readOperations(TypeElement type, MachineTypes types) {
         List<OperationModel> operations = new ArrayList<>();
-        DeclaredType outcome = signatures.declared("io.stategraph.api.Outcome", types.entity(), types.states());
         for (Element member : type.getEnclosedElements()) {
             if (member.getKind() != ElementKind.METHOD) {
                 continue;
             }
             ExecutableElement method = (ExecutableElement) member;
-            if (method.isDefault() || method.getModifiers().contains(Modifier.STATIC) || method.getModifiers().contains(Modifier.PRIVATE)) {
+            if (!isOperation(method)) {
                 continue;
             }
             Optional<AnnotationMirror> action = annotations.find(method, Action.class);
             Optional<AnnotationMirror> move = annotations.find(method, Move.class);
-            if (action.isPresent() == move.isPresent()) {
-                diagnostics.error("SG504", method.getSimpleName() + " must carry exactly one of @Action or @Move", method);
-                continue;
-            }
-            boolean signatureOk = method.getParameters().size() == 1
-                    && signatures.same(method.getParameters().get(0).asType(), types.entity())
-                    && signatures.same(method.getReturnType(), outcome);
-            if (!signatureOk) {
-                diagnostics.error("SG504", "an operation is declared as Outcome<" + types.entityName() + ", " + types.statesName() + "> "
-                        + method.getSimpleName() + "(" + types.entityName() + ")", method);
+            if (!checkOperationKinds(method, action.isPresent(), move.isPresent())
+                    || !checkOperationSignature(method, types)) {
                 continue;
             }
             String name = method.getSimpleName().toString();
@@ -369,15 +351,10 @@ final class MachineModelBuilder {
     private Optional<CellModel> cell(Element element, AnnotationMirror mirror, MachineTypes types, String operation, boolean isMove) {
         int before = diagnostics.errors();
         List<String> from = checkStates(types, mirror, "from", element);
-        if (annotations.array(mirror, "from").isEmpty()) {
-            diagnostics.error("SG507", "from must name at least one state", element, mirror, annotations.value(mirror, "from"));
-        }
+        checkFrom(!annotations.array(mirror, "from").isEmpty(), DiagnosticAnchor.of(element, mirror, annotations.value(mirror, "from")));
         String to = annotations.string(mirror, "to");
         checkState(types, to, element, mirror, annotations.value(mirror, "to"));
-        if (from.contains(to)) {
-            diagnostics.error("SG104", to + " is both in from and to: a cell cannot move to itself; the diagonal is always STAY",
-                    element, mirror, annotations.value(mirror, "to"));
-        }
+        checkDiagonal(from, to, DiagnosticAnchor.of(element, mirror, annotations.value(mirror, "to")));
         TypeMirror by = annotations.type(mirror, "by");
         boolean hasBy = !annotations.isVoid(by);
         List<String> guardNames = annotations.strings(mirror, "guards");
@@ -418,22 +395,13 @@ final class MachineModelBuilder {
                 }
             }
             failsOn = annotations.types(mirror, "failsOn");
-            List<AnnotationValue> failsOnValues = annotations.array(mirror, "failsOn");
-            for (int i = 0; i < failsOn.size(); i++) {
-                if (isForbiddenFailsOn(failsOn.get(i))) {
-                    diagnostics.error("SG302", "failsOn does not allow " + failsOn.get(i) + "; only exceptions foreign to the library, and never"
-                            + " Throwable, Exception, RuntimeException or an Error", element, mirror, failsOnValues.get(i));
-                }
-            }
+            checkFailsOn(failsOn, annotations.array(mirror, "failsOn"), element, mirror);
             String timeoutText = annotations.string(mirror, "timeout");
             if (!timeoutText.isEmpty()) {
                 timeout = parseTimeout(timeoutText, element, mirror, annotations.value(mirror, "timeout"));
             }
-            boolean actionCell = hasBy && !actionName.isEmpty();
-            if (!actionCell && (onFailure.isPresent() || !failsOn.isEmpty() || timeout.isPresent())) {
-                diagnostics.error("SG507", "onFailure, failsOn and timeout need an action: add by and action", element, mirror,
-                        annotations.value(mirror, "to"));
-            }
+            checkActionRequired(hasBy && !actionName.isEmpty(), onFailure, failsOn, timeout, ": add by and action",
+                    DiagnosticAnchor.of(element, mirror, annotations.value(mirror, "to")));
         }
         boolean hasGuardHost = !annotations.isVoid(guardsBy);
         if (!guardNames.isEmpty() && !hasGuardHost) {
@@ -465,9 +433,10 @@ final class MachineModelBuilder {
         if (!afterCommit.isEmpty() && hasBy) {
             hook = bindings.resolve(by, afterCommit, Bindings.Role.HOOK, types, Optional.empty(), element, mirror, annotations.value(mirror, "afterCommit"));
         }
-        if (timeout.isPresent() && actionBinding.isPresent() && !actionBinding.get().async()) {
-            diagnostics.error("SG507", "timeout is only allowed on an asynchronous action", element, mirror, annotations.value(mirror, "timeout"));
-        }
+        // A @Move declares no timeout element at all, so only the other two anchor the check at that value.
+        checkAsyncTimeout(timeout, actionBinding, isMove
+                ? DiagnosticAnchor.of(element, mirror)
+                : DiagnosticAnchor.of(element, mirror, annotations.value(mirror, "timeout")));
         if (diagnostics.errors() > before) {
             return Optional.empty();
         }
@@ -495,7 +464,8 @@ final class MachineModelBuilder {
                 || signatures.subtype(type, "io.stategraph.error.StateMachineException");
     }
 
-    private void checkDuplicateCells(TypeElement type, List<ForbidModel> forbids, List<CellModel> cells, List<OperationModel> operations) {
+    /** SG102 for every pair of states two declarations of the same machine both claim. */
+    void checkDuplicateCells(TypeElement type, List<ForbidModel> forbids, List<CellModel> cells, List<OperationModel> operations) {
         Set<String> seen = new LinkedHashSet<>();
         for (ForbidModel forbid : forbids) {
             if (!seen.add(forbid.from() + " → " + forbid.to())) {
@@ -512,6 +482,100 @@ final class MachineModelBuilder {
                     diagnostics.error("SG102", "the cell " + from + " → " + cell.to() + " is declared twice", type);
                 }
             }
+        }
+    }
+
+    /** SG502 unless {@code type} is top-level: the generated companion lives next to it in its package. */
+    boolean checkTopLevel(TypeElement type, DiagnosticAnchor anchor) {
+        if (type.getNestingKind() == NestingKind.TOP_LEVEL) {
+            return true;
+        }
+        anchor.report(diagnostics, "SG502", type.getSimpleName() + " must be a top-level interface: the generated companion"
+                + " lives next to it in the package");
+        return false;
+    }
+
+    /** Whether {@code method} must declare a cell: a default, static or private declaration is not an operation. */
+    static boolean isOperation(ExecutableElement method) {
+        return !method.isDefault() && !method.getModifiers().contains(Modifier.STATIC)
+                && !method.getModifiers().contains(Modifier.PRIVATE);
+    }
+
+    /** SG504 unless the operation carries exactly one of the two annotations that declare its cell. */
+    boolean checkOperationKinds(ExecutableElement method, boolean action, boolean move) {
+        if (action == move) {
+            diagnostics.error("SG504", method.getSimpleName() + " must carry exactly one of @Action or @Move", method);
+            return false;
+        }
+        return true;
+    }
+
+    /** SG504 unless the operation is declared as {@code Outcome<E, S> operation(E)}. */
+    boolean checkOperationSignature(ExecutableElement method, MachineTypes types) {
+        DeclaredType outcome = signatures.declared("io.stategraph.api.Outcome", types.entity(), types.states());
+        if (method.getParameters().size() == 1 && signatures.same(method.getParameters().get(0).asType(), types.entity())
+                && signatures.same(method.getReturnType(), outcome)) {
+            return true;
+        }
+        diagnostics.error("SG504", "an operation is declared as Outcome<" + types.entityName() + ", " + types.statesName() + "> "
+                + method.getSimpleName() + "(" + types.entityName() + ")", method);
+        return false;
+    }
+
+    /** SG507 unless the cell names at least one state to leave. */
+    void checkFrom(boolean declared, DiagnosticAnchor anchor) {
+        if (!declared) {
+            anchor.report(diagnostics, "SG507", "from must name at least one state");
+        }
+    }
+
+    /** SG104 when a cell leaves a state to reach that same state: the diagonal is always STAY. */
+    void checkDiagonal(List<String> from, String to, DiagnosticAnchor anchor) {
+        if (from.contains(to)) {
+            anchor.report(diagnostics, "SG104", to + " is both in from and to: a cell cannot move to itself;"
+                    + " the diagonal is always STAY");
+        }
+    }
+
+    /** SG302 for every exception failsOn reserves, reported at the value that names it. */
+    void checkFailsOn(List<TypeMirror> failsOn, List<AnnotationValue> values, Element element, AnnotationMirror mirror) {
+        for (int i = 0; i < failsOn.size(); i++) {
+            if (isForbiddenFailsOn(failsOn.get(i))) {
+                diagnostics.error("SG302", "failsOn does not allow " + failsOn.get(i) + "; only exceptions foreign to the library, and never"
+                        + " Throwable, Exception, RuntimeException or an Error", element, mirror, values.get(i));
+            }
+        }
+    }
+
+    /** SG507 when a cell that runs no action still declares what only an action can use. {@code remedy} ends the message. */
+    void checkActionRequired(boolean action, Optional<String> onFailure, List<TypeMirror> failsOn, Optional<Duration> timeout,
+            String remedy, DiagnosticAnchor anchor) {
+        if (!action && (onFailure.isPresent() || !failsOn.isEmpty() || timeout.isPresent())) {
+            anchor.report(diagnostics, "SG507", "onFailure, failsOn and timeout need an action" + remedy);
+        }
+    }
+
+    /** SG507 when a timeout is declared on an action that does not run asynchronously. */
+    void checkAsyncTimeout(Optional<Duration> timeout, Optional<Binding> action, DiagnosticAnchor anchor) {
+        if (timeout.isPresent() && action.isPresent() && !action.get().async()) {
+            anchor.report(diagnostics, "SG507", "timeout is only allowed on an asynchronous action");
+        }
+    }
+
+    /** SG506 for every state that is neither terminal nor closed by a row of its own. */
+    void checkRowsClosed(MachineTypes types, Set<String> closed, List<String> terminals, DiagnosticAnchor anchor) {
+        for (String state : types.stateNames()) {
+            if (!closed.contains(state) && !terminals.contains(state)) {
+                anchor.report(diagnostics, "SG506", state + " is not terminal and has no @Row: close its row with the reason"
+                        + " every transition it does not declare is refused for");
+            }
+        }
+    }
+
+    /** Every problem the full outline of {@code model} has, reported where its graph is declared. */
+    void checkOutline(MachineModel model, DiagnosticAnchor anchor) {
+        for (InvalidGraphException.Problem problem : GraphOutlineValidator.validate(Outlines.of(model))) {
+            anchor.report(diagnostics, problem.code(), problem.message());
         }
     }
 

@@ -48,13 +48,22 @@ final class Annotations {
         return declared.getQualifiedName().contentEquals(type.getCanonicalName());
     }
 
-    AnnotationValue value(AnnotationMirror mirror, String name) {
+    /**
+     * The value of the element {@code name}, or empty when the mirror carries none: javac refuses an annotation
+     * that omits an element without a default, and it leaves that element out of the mirror it hands over.
+     */
+    Optional<AnnotationValue> find(AnnotationMirror mirror, String name) {
         for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> entry : elements.getElementValuesWithDefaults(mirror).entrySet()) {
             if (entry.getKey().getSimpleName().contentEquals(name)) {
-                return entry.getValue();
+                return Optional.of(entry.getValue());
             }
         }
-        throw new IllegalArgumentException(mirror.getAnnotationType() + " has no element " + name);
+        return Optional.empty();
+    }
+
+    AnnotationValue value(AnnotationMirror mirror, String name) {
+        return find(mirror, name).orElseThrow(() ->
+                new IllegalArgumentException(mirror.getAnnotationType() + " has no element " + name));
     }
 
     String string(AnnotationMirror mirror, String name) {

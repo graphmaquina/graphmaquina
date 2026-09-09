@@ -1,7 +1,10 @@
 package io.stategraph.processor;
 
+import io.stategraph.annotation.GenerateGraphApi;
 import io.stategraph.annotation.StateGraph;
 import io.stategraph.annotation.StateGraphs;
+import io.stategraph.codegen.manifest.CompileManifest;
+import io.stategraph.codegen.model.SymbolDescriptor;
 import io.stategraph.processor.gen.BoundInvocation;
 import io.stategraph.processor.gen.MachineGenerator;
 import io.stategraph.processor.gen.SetGenerator;
@@ -14,6 +17,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
@@ -36,6 +40,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private ExportValidator exports;
     private BoundInvocation invocations;
     private MachineModelBuilder machines;
+    private Optional<TypedMachineModelBuilder> typed = Optional.empty();
     private SetModelBuilder sets;
 
     @Override
@@ -59,11 +64,22 @@ public final class StateGraphProcessor extends AbstractProcessor {
         manifests = ManifestRegistry.load(env);
         diagnostics = new Diagnostics(env.getMessager());
         Signatures signatures = new Signatures(env.getElementUtils(), env.getTypeUtils());
-        exports = new ExportValidator(signatures, new EffectiveMethods(signatures), diagnostics);
+        Annotations annotations = new Annotations(env.getElementUtils());
+        Accessors accessors = new Accessors(signatures);
+        Bindings bindings = new Bindings(signatures, diagnostics);
+        EffectiveMethods effective = new EffectiveMethods(signatures);
+        exports = new ExportValidator(signatures, effective, diagnostics);
         invocations = new BoundInvocation(env.getElementUtils(), env.getTypeUtils());
-        machines = new MachineModelBuilder(new Annotations(env.getElementUtils()), signatures, new Accessors(signatures),
-                new Bindings(signatures, diagnostics), diagnostics);
-        sets = new SetModelBuilder(new Annotations(env.getElementUtils()), signatures, diagnostics);
+        machines = new MachineModelBuilder(annotations, signatures, accessors, bindings, diagnostics);
+        sets = new SetModelBuilder(annotations, signatures, diagnostics);
+        typed = manifests.manifest().map((CompileManifest manifest) -> {
+            Map<String, SymbolDescriptor> symbols = SymbolResolver.symbols(manifest);
+            return new TypedMachineModelBuilder(new VocabularyRegistry(manifest, env.getElementUtils()), machines,
+                    new PropertyResolver(symbols, signatures, accessors, diagnostics),
+                    new TypedTransitions(machines, new SymbolResolver(symbols, signatures, effective, bindings, diagnostics),
+                            new TypedTimeouts(annotations, diagnostics), annotations, diagnostics),
+                    signatures, diagnostics);
+        });
     }
 
     @Override
@@ -75,10 +91,17 @@ public final class StateGraphProcessor extends AbstractProcessor {
         Map<String, MachineModel> models = new LinkedHashMap<>();
         Set<String> failed = new HashSet<>();
         for (Element element : round.getElementsAnnotatedWith(StateGraph.class)) {
-            resolve((TypeElement) element, round, models, failed);
+            resolve((TypeElement) element, round, models, failed, machines::build);
+        }
+        if (typed.isPresent()) {
+            TypedMachineModelBuilder frontend = typed.get();
+            for (Element element : round.getElementsAnnotatedWith(GenerateGraphApi.class)) {
+                resolve((TypeElement) element, round, models, failed, frontend::build);
+            }
         }
         for (Element element : round.getElementsAnnotatedWith(StateGraphs.class)) {
-            Optional<SetModel> set = sets.build((TypeElement) element, (TypeElement machine) -> resolve(machine, round, models, failed));
+            Optional<SetModel> set = sets.build((TypeElement) element,
+                    (TypeElement machine) -> resolve(machine, round, models, failed, machines::build));
             if (set.isPresent()) {
                 write(SetGenerator.qualifiedName(set.get()), SetGenerator.generate(set.get()), (TypeElement) element);
             }
@@ -108,8 +131,12 @@ public final class StateGraphProcessor extends AbstractProcessor {
         return validExports;
     }
 
-    /** A machine's model, built once per round; a machine from the classpath is built on demand. */
-    private Optional<MachineModel> resolve(TypeElement type, RoundEnvironment round, Map<String, MachineModel> models, Set<String> failed) {
+    /**
+     * A machine's model, built once per round by the frontend its declarations belong to; a machine from the
+     * classpath is built on demand.
+     */
+    private Optional<MachineModel> resolve(TypeElement type, RoundEnvironment round, Map<String, MachineModel> models,
+            Set<String> failed, Function<TypeElement, Optional<MachineModel>> frontend) {
         String name = type.getQualifiedName().toString();
         if (models.containsKey(name)) {
             return Optional.of(models.get(name));
@@ -117,7 +144,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
         if (failed.contains(name)) {
             return Optional.empty();
         }
-        Optional<MachineModel> model = machines.build(type);
+        Optional<MachineModel> model = frontend.apply(type);
         if (model.isPresent()) {
             models.put(name, model.get());
             // A machine from the classpath already carries its companion in its own jar.
