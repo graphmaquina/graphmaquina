@@ -163,9 +163,55 @@ public final class PluginFixture {
         return fixture;
     }
 
+    /**
+     * The same project as {@link #basic}, with a block that realizes both {@code JavaCompile} tasks — and so
+     * runs every configuration action they carry — before the {@code dependencies} block declares the
+     * processor either source set takes part with. It is the ordering a build script falls into as soon as it
+     * configures a compilation near the top of the file.
+     *
+     * @param directory the temporary directory to materialize the project under
+     * @param repository the file Maven repository the StateGraph artifacts were published to
+     * @return a fixture bound to the written project
+     * @throws IOException if the project cannot be written
+     */
+    public static PluginFixture realizingCompilationsEarly(Path directory, Path repository) throws IOException {
+        return materialize(directory, repository, "", true,
+                "    testAnnotationProcessor(\"io.stategraph:stategraph-processor:" + VERSION + "\")\n", "", """
+                // Realized before anything is declared for them, which is what the wiring must survive.
+                tasks.named<JavaCompile>("compileJava").get()
+                tasks.named<JavaCompile>("compileTestJava").get()
+                """);
+    }
+
+    /**
+     * Moves the class output of the main compilation, by appending what a build script would have carried from
+     * the start.
+     *
+     * @param relativePath the new destination directory, relative to the build directory
+     * @throws IOException if the build script cannot be rewritten
+     */
+    public void relocateClassOutput(String relativePath) throws IOException {
+        Path script = directory.resolve("build.gradle.kts");
+        Files.writeString(script, Files.readString(script, StandardCharsets.UTF_8) + """
+
+                tasks.named<JavaCompile>("compileJava") {
+                    destinationDirectory = layout.buildDirectory.dir("%s")
+                }
+                """.formatted(relativePath), StandardCharsets.UTF_8);
+    }
+
     /** Writes the shared project with {@code testProcessors} and {@code extraConfiguration} spliced into it. */
     private static PluginFixture materialize(Path directory, Path repository, String pluginVersion,
-            boolean injectedPluginClasspath, String testProcessors, String extraConfiguration) throws IOException {
+            boolean injectedPluginClasspath, String testProcessors, String extraConfiguration)
+            throws IOException {
+        return materialize(directory, repository, pluginVersion, injectedPluginClasspath, testProcessors,
+                extraConfiguration, "");
+    }
+
+    /** The same, with {@code earlyConfiguration} spliced in before the {@code dependencies} block. */
+    private static PluginFixture materialize(Path directory, Path repository, String pluginVersion,
+            boolean injectedPluginClasspath, String testProcessors, String extraConfiguration,
+            String earlyConfiguration) throws IOException {
         if (!Files.isDirectory(repository)) {
             throw new IllegalStateException("the fixture repository " + repository + " does not exist; run"
                     + " ./gradlew :stategraph-core:publishMavenPublicationToAdapterTestsRepository"
@@ -175,7 +221,7 @@ public final class PluginFixture {
         Path project = Files.createDirectories(directory.resolve("fixture project ñ"));
         Files.writeString(project.resolve("settings.gradle.kts"), settings(repository));
         Files.writeString(project.resolve("build.gradle.kts"),
-                buildScript(pluginVersion, testProcessors, extraConfiguration));
+                buildScript(pluginVersion, testProcessors, extraConfiguration, earlyConfiguration));
         PluginFixture fixture = new PluginFixture(project, injectedPluginClasspath);
         fixture.writeSources(domainSources());
         return fixture;
@@ -209,7 +255,7 @@ public final class PluginFixture {
      * StateGraph processor, and the two reporting tasks the assertions read.
      */
     private static String buildScript(String pluginVersion, String testProcessors,
-            String extraConfiguration) {
+            String extraConfiguration, String earlyConfiguration) {
         return """
                 import io.stategraph.gradle.GenerateGraphApi
 
@@ -229,6 +275,7 @@ public final class PluginFixture {
                     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
                 }
 
+                %8$s
                 dependencies {
                     implementation("io.stategraph:stategraph-core:%1$s")
                     implementation(fileTree("lib") { include("*.jar") })
@@ -275,7 +322,7 @@ public final class PluginFixture {
 
                 %6$s
                 """.formatted(VERSION, LOMBOK, RUNTIME_ENTRY, SOURCE_ROOT, testProcessors, extraConfiguration,
-                pluginVersion);
+                pluginVersion, earlyConfiguration);
     }
 
     /**

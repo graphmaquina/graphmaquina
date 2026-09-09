@@ -112,6 +112,29 @@ public abstract class GenerateGraphApi extends DefaultTask {
     public abstract DirectoryProperty getWorkDirectory();
 
     /**
+     * The two roots of the compilation this task only names in the request: the class output and the
+     * processor's source output, as one value holding both absolute paths.
+     *
+     * <p>Both are {@link Internal internal} as directories, since they are outputs of {@code JavaCompile} and
+     * not of this task, which leaves their locations untracked. Naming them here is what makes a build that
+     * moves the compiler's output write the request again instead of leaving the previous paths in it.</p>
+     *
+     * @return the class output and the processor's source output, as absolute paths
+     */
+    @Input
+    public abstract Property<String> getCompilationOutputLocations();
+
+    /**
+     * Whether the source set this task belongs to declares the StateGraph processor, which is the condition of
+     * this task's {@code onlyIf}. It is an input, so a source set that starts declaring it generates instead of
+     * staying up to date on a run that was skipped.
+     *
+     * @return whether the source set takes part
+     */
+    @Input
+    public abstract Property<Boolean> getParticipates();
+
+    /**
      * The identity of the compilation, spelled {@code group:name:sourceSet}, or {@code name:sourceSet} when the
      * project declares no group. It never carries a path or a timestamp, so the same sources generate the same
      * manifest wherever the build runs.

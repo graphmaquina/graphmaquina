@@ -34,6 +34,9 @@ class StateGraphPluginFunctionalTest {
     /** The published index of the test compilation, beside its own classes. */
     private static final String TEST_EXPORTS = "build/classes/java/test/META-INF/stategraph/exports.json";
 
+    /** Where a compilation publishes its index, relative to whatever class output it was given. */
+    private static final String EXPORTS_ENTRY = "META-INF/stategraph/exports.json";
+
     @TempDir
     Path tempDirectory;
 
@@ -223,10 +226,11 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * A source set that declares no StateGraph processor takes no part at all. Nothing of this plugin reaches
-     * its compilation: no generation runs for it, no source root is added, no annotation manifest is passed and
-     * no lifecycle wraps javac — so its plain JUnit tests compile under {@code -Xlint:all -Werror} without a
-     * processor claiming none of their annotations, while the main source set still publishes its own index.
+     * A source set that declares no StateGraph processor takes no part at all. The wiring is registered on its
+     * compilation like on any other and every piece of it is empty: no generation runs for it, no source root
+     * is added, no annotation manifest is passed and no lifecycle wraps javac — so its plain JUnit tests
+     * compile under {@code -Xlint:all -Werror} without a processor claiming none of their annotations, while
+     * the main source set still publishes its own index.
      */
     @Test
     void aSourceSetThatDeclaresNoProcessorIsLeftAlone() throws IOException {
@@ -256,6 +260,79 @@ class StateGraphPluginFunctionalTest {
                 "the test source set declares io.stategraph:stategraph-processor in testAnnotationProcessor"),
                 asked::getOutput);
         assertFalse(fixture.exists("build/stategraph/test"), "a skipped generation writes nothing");
+    }
+
+    /**
+     * The wiring of a compilation must not depend on when that compilation was realized. A build script that
+     * configures {@code compileTestJava} before it declares the processor of the test source set gets the same
+     * build as one that does not: the generation runs, the manifest argument reaches javac and the lifecycle
+     * seals the inventory, instead of a compilation that was generated for but never prepared.
+     */
+    @Test
+    void wiresACompilationThatWasRealizedBeforeItsDependencies() throws IOException {
+        PluginFixture fixture = PluginFixture.realizingCompilationsEarly(tempDirectory, FIXTURE_REPOSITORY);
+        for (Map.Entry<String, String> source : testDomain().entrySet()) {
+            fixture.writeTestSource(source.getKey(), source.getValue());
+        }
+
+        BuildResult result = fixture.run("testClasses", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateTestStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileTestJava").getOutcome());
+        assertTrue(fixture.exists("build/stategraph/test/annotation-manifest.json"));
+        assertTrue(fixture.inventoryIsSealed("test"));
+        assertEquals(List.of("fxt.Tickets", "fxt.TicketActionsRefs.Resolve", "fxt.TicketRefs.Id",
+                "fxt.TicketRefs.Status"), fixture.localExportsOf(TEST_EXPORTS));
+        assertTrue(fixture.inventoryIsSealed("main"));
+    }
+
+    /**
+     * The class output and the processor's source output are outputs of {@code JavaCompile}, so the generation
+     * task only names them in the request. A build that moves either of them must still write the request
+     * again, or the next lifecycle step would retire and publish under the paths of the previous layout.
+     */
+    @Test
+    void movingTheClassOutputRewritesTheRequest() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.run("classes");
+        assertEquals(TaskOutcome.UP_TO_DATE, fixture.run("classes").task(":generateStateGraphApi").getOutcome());
+
+        fixture.relocateClassOutput("elsewhere/classes");
+
+        BuildResult result = fixture.run("classes", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateStateGraphApi").getOutcome());
+        String classesOutput = fixture.request("main").get("classesOutput").getAsString();
+        assertTrue(classesOutput.endsWith("/build/elsewhere/classes"), classesOutput);
+        assertTrue(fixture.exists("build/elsewhere/classes/" + EXPORTS_ENTRY), classesOutput);
+    }
+
+    /**
+     * The build is configuration-cache compatible: nothing the plugin puts on a task holds a {@code Project}, a
+     * {@code Configuration} or a source set, so the whole cycle stores an entry and the next run reuses it.
+     *
+     * <p>Gradle keys an entry by the tasks that were requested, so the clean build and the runs that follow it
+     * are asked for the same task twice: the second of them is the one that both reuses the entry and finds
+     * every step of the cycle up to date.</p>
+     */
+    @Test
+    void reusesTheConfigurationCache() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        BuildResult clean = fixture.run("clean", "--configuration-cache", "--stacktrace");
+        assertTrue(clean.getOutput().contains("Configuration cache entry stored."), clean::getOutput);
+
+        BuildResult first = fixture.run("jar", "--configuration-cache", "--stacktrace");
+        BuildResult second = fixture.run("jar", "--configuration-cache", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, first.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, first.task(":compileJava").getOutcome());
+        assertTrue(first.getOutput().contains("Configuration cache entry stored."), first::getOutput);
+        assertTrue(second.getOutput().contains("Reusing configuration cache."), second::getOutput);
+        assertEquals(TaskOutcome.UP_TO_DATE, second.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.UP_TO_DATE, second.task(":compileJava").getOutcome());
+        assertTrue(fixture.exists(MAIN_EXPORTS));
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.localExports().contains("fx.Orders"));
     }
 
     /**

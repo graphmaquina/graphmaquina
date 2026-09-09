@@ -3,12 +3,13 @@ package io.stategraph.gradle;
 import org.gradle.api.Action;
 import org.gradle.api.Task;
 import org.gradle.api.file.ConfigurableFileCollection;
-import org.gradle.api.file.RegularFileProperty;
 import org.gradle.api.provider.Property;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.process.ExecOperations;
 
 import javax.inject.Inject;
+import java.io.File;
+import java.util.Set;
 
 /**
  * The two steps a compilation runs around javac, as the actions the {@code JavaCompile} task carries.
@@ -22,7 +23,9 @@ import javax.inject.Inject;
  *
  * <p>Both actions are named classes holding provider values and the injected process service only. They never
  * capture a {@code Project}, so the compilation task stays serializable and the two steps run the very request
- * the generation task of the same source set wrote.</p>
+ * the generation task of the same source set wrote. An action of a compilation that takes no part finds no
+ * request and does nothing, which is how the wiring can be added to every compilation and still leave the ones
+ * that declare no StateGraph processor alone.</p>
  */
 public final class CompilationLifecycle {
 
@@ -61,11 +64,13 @@ public final class CompilationLifecycle {
         public abstract ConfigurableFileCollection getGeneratorClasspath();
 
         /**
-         * The request the generation task of this source set wrote.
+         * The request the generation task of this source set wrote, or nothing when the source set takes no
+         * part: whether it does is only known once the build script has been read, long after this action was
+         * added to the compilation.
          *
          * @return the request file
          */
-        public abstract RegularFileProperty getRequestFile();
+        public abstract ConfigurableFileCollection getRequestFile();
 
         /**
          * The operation this step runs.
@@ -76,8 +81,12 @@ public final class CompilationLifecycle {
 
         @Override
         public void execute(Task task) {
+            Set<File> requests = getRequestFile().getFiles();
+            if (requests.isEmpty()) {
+                return;
+            }
             CodegenProcess.of(getJavaLauncher().get(), getGeneratorClasspath().getFiles(), execOperations)
-                .run(operation(), getRequestFile().get().getAsFile().toPath());
+                .run(operation(), requests.iterator().next().toPath());
         }
     }
 
