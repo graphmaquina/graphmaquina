@@ -16,6 +16,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -194,6 +195,42 @@ class StateGraphPluginFunctionalTest {
                 "fxt.TicketRefs.Status"), fixture.localExportsOf(TEST_EXPORTS));
         assertEquals(main, fixture.localExportsOf(MAIN_EXPORTS));
         assertTrue(main.contains("fx.Orders"));
+    }
+
+    /**
+     * A source set that declares no StateGraph processor takes no part at all. Nothing of this plugin reaches
+     * its compilation: no generation runs for it, no source root is added, no annotation manifest is passed and
+     * no lifecycle wraps javac — so its plain JUnit tests compile under {@code -Xlint:all -Werror} without a
+     * processor claiming none of their annotations, while the main source set still publishes its own index.
+     */
+    @Test
+    void aSourceSetThatDeclaresNoProcessorIsLeftAlone() throws IOException {
+        PluginFixture fixture = PluginFixture.plainJUnitTests(tempDirectory, FIXTURE_REPOSITORY);
+
+        BuildResult result = fixture.run("build", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileTestJava").getOutcome());
+        assertNull(result.task(":generateTestStateGraphApi"), "no generation is wired into that compilation");
+        assertFalse(fixture.exists("build/stategraph/test"), "the test source set owns no work directory");
+        assertFalse(fixture.exists("build/generated/sources/stategraph/test"));
+        assertFalse(fixture.exists(TEST_EXPORTS));
+        List<String> arguments = fixture.testCompilerArguments();
+        assertFalse(arguments.stream().anyMatch(argument -> argument.contains("stategraph.annotationManifest")),
+                arguments.toString());
+        assertTrue(arguments.contains("-Werror"), arguments.toString());
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        assertTrue(fixture.exists(MAIN_EXPORTS));
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.localExportsOf(MAIN_EXPORTS).contains("fx.Orders"));
+
+        // The task is still there to be named, and says which declaration it is waiting for.
+        BuildResult asked = fixture.run("generateTestStateGraphApi", "--info");
+        assertEquals(TaskOutcome.SKIPPED, asked.task(":generateTestStateGraphApi").getOutcome());
+        assertTrue(asked.getOutput().contains(
+                "the test source set declares io.stategraph:stategraph-processor in testAnnotationProcessor"),
+                asked::getOutput);
+        assertFalse(fixture.exists("build/stategraph/test"), "a skipped generation writes nothing");
     }
 
     /**

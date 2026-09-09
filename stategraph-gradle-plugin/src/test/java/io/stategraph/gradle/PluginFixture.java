@@ -41,11 +41,17 @@ public final class PluginFixture {
     /** The Lombok version the entity's accessors are generated with; declared before the StateGraph processor. */
     private static final String LOMBOK = "1.18.48";
 
+    /** The JUnit platform the fixture with plain tests runs its own test source set on. */
+    private static final String JUNIT = "5.13.4";
+
     /** Marker the fixture's classpath reporting task prefixes every runtime entry with. */
     private static final String RUNTIME_ENTRY = "RUNTIME_CLASSPATH_ENTRY=";
 
     /** Marker the fixture's source-root reporting task prefixes every source directory with. */
     private static final String SOURCE_ROOT = "MAIN_SOURCE_ROOT=";
+
+    /** Marker the fixture's compiler-argument reporting task prefixes every argument with. */
+    private static final String TEST_COMPILER_ARG = "TEST_COMPILER_ARG=";
 
     /** The published index a compilation leaves beside its classes. */
     private static final String EXPORTS = "META-INF/stategraph/exports.json";
@@ -89,6 +95,59 @@ public final class PluginFixture {
      * @throws IOException if the project cannot be written
      */
     public static PluginFixture basic(Path directory, Path repository) throws IOException {
+        return materialize(directory, repository,
+                "    testAnnotationProcessor(\"io.stategraph:stategraph-processor:" + VERSION + "\")\n", "");
+    }
+
+    /**
+     * The same project, with a test source set that declares no StateGraph processor at all: plain JUnit tests
+     * beside a main source set that does declare one. It is the shape of every project whose tests only assert
+     * on the machines the main sources declare.
+     *
+     * @param directory the temporary directory to materialize the project under
+     * @param repository the file Maven repository the StateGraph artifacts were published to
+     * @return a fixture bound to the written project
+     * @throws IOException if the project cannot be written
+     */
+    public static PluginFixture plainJUnitTests(Path directory, Path repository) throws IOException {
+        PluginFixture fixture = materialize(directory, repository, """
+                        testImplementation(platform("org.junit:junit-bom:%1$s"))
+                        testImplementation("org.junit.jupiter:junit-jupiter")
+                        testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+                """.formatted(JUNIT), """
+                tasks.named<Test>("test") {
+                    useJUnitPlatform()
+                }
+
+                tasks.register("printTestCompilerArgs") {
+                    val arguments = tasks.named<JavaCompile>("compileTestJava").map { it.options.allCompilerArgs }
+                    doLast {
+                        arguments.get().forEach { println("%1$s" + it) }
+                    }
+                }
+                """.formatted(TEST_COMPILER_ARG));
+        fixture.writeTestSource("fx.OrderTest", """
+                package fx;
+
+                import static org.junit.jupiter.api.Assertions.assertEquals;
+
+                import org.junit.jupiter.api.Test;
+
+                /** A plain JUnit test: nothing it declares belongs to a graph. */
+                class OrderTest {
+
+                    @Test
+                    void anOrderStartsNew() {
+                        assertEquals(Status.NEW, new Order().getStatus());
+                    }
+                }
+                """);
+        return fixture;
+    }
+
+    /** Writes the shared project with {@code testProcessors} and {@code extraConfiguration} spliced into it. */
+    private static PluginFixture materialize(Path directory, Path repository, String testProcessors,
+            String extraConfiguration) throws IOException {
         if (!Files.isDirectory(repository)) {
             throw new IllegalStateException("the fixture repository " + repository + " does not exist; run"
                     + " ./gradlew :stategraph-core:publishMavenPublicationToAdapterTestsRepository"
@@ -97,7 +156,8 @@ public final class PluginFixture {
         }
         Path project = Files.createDirectories(directory.resolve("fixture project ñ"));
         Files.writeString(project.resolve("settings.gradle.kts"), settings(repository));
-        Files.writeString(project.resolve("build.gradle.kts"), buildScript());
+        Files.writeString(project.resolve("build.gradle.kts"),
+                buildScript(testProcessors, extraConfiguration));
         PluginFixture fixture = new PluginFixture(project);
         fixture.writeSources(domainSources());
         return fixture;
@@ -130,7 +190,7 @@ public final class PluginFixture {
      * The build script: the plugin, a Java 21 toolchain, the strict compiler options, Lombok before the
      * StateGraph processor, and the two reporting tasks the assertions read.
      */
-    private static String buildScript() {
+    private static String buildScript(String testProcessors, String extraConfiguration) {
         return """
                 import io.stategraph.gradle.GenerateGraphApi
 
@@ -157,8 +217,7 @@ public final class PluginFixture {
                     // Lombok first: the processor reads the accessors Lombok generates on Order.
                     annotationProcessor("org.projectlombok:lombok:%2$s")
                     annotationProcessor("io.stategraph:stategraph-processor:%1$s")
-                    testAnnotationProcessor("io.stategraph:stategraph-processor:%1$s")
-                }
+                %5$s}
 
                 tasks.withType<JavaCompile>().configureEach {
                     options.encoding = "UTF-8"
@@ -194,7 +253,9 @@ public final class PluginFixture {
                         println("DAEMON_JAVA_HOME=" + System.getProperty("java.home"))
                     }
                 }
-                """.formatted(VERSION, LOMBOK, RUNTIME_ENTRY, SOURCE_ROOT);
+
+                %6$s
+                """.formatted(VERSION, LOMBOK, RUNTIME_ENTRY, SOURCE_ROOT, testProcessors, extraConfiguration);
     }
 
     /**
@@ -474,6 +535,22 @@ public final class PluginFixture {
             }
         }
         return List.copyOf(roots);
+    }
+
+    /**
+     * The compiler arguments {@code compileTestJava} runs with, argument providers included, as the fixture's
+     * own reporting task prints them.
+     *
+     * @return the effective compiler arguments of the test compilation
+     */
+    public List<String> testCompilerArguments() {
+        List<String> arguments = new ArrayList<>();
+        for (String line : run("printTestCompilerArgs").getOutput().lines().toList()) {
+            if (line.startsWith(TEST_COMPILER_ARG)) {
+                arguments.add(line.substring(TEST_COMPILER_ARG.length()));
+            }
+        }
+        return List.copyOf(arguments);
     }
 
     /**
