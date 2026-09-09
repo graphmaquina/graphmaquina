@@ -1,0 +1,433 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  The goal descriptor of the StateGraph Maven plugin, maintained by hand.
+
+  A Gradle build does not run Maven's maven-plugin-plugin, so no descriptor is generated from Java annotations;
+  these six goals declare here what Maven needs to look them up, inject them and place them in a lifecycle. The
+  ${project}, ${session} and ${plugin.artifacts} expressions below are read by Maven at execution time and must
+  reach it unchanged: only @STATEGRAPH_VERSION@ is replaced, while this file is copied into the jar.
+-->
+
+<plugin>
+  <name>StateGraph Maven Plugin</name>
+  <description>Generates the StateGraph typed API of a Maven project and runs the verified compilation lifecycle around javac.</description>
+  <groupId>io.stategraph</groupId>
+  <artifactId>stategraph-maven-plugin</artifactId>
+  <version>@STATEGRAPH_VERSION@</version>
+  <goalPrefix>stategraph</goalPrefix>
+  <isolatedRealm>false</isolatedRealm>
+  <inheritedByDefault>true</inheritedByDefault>
+  <mojos>
+    <mojo>
+      <goal>generate</goal>
+      <description>Emits the typed StateGraph vocabulary of the main compilation and the manifest the annotation processor reads, and adds the generated directory as a compile source root.</description>
+      <requiresDependencyResolution>compile</requiresDependencyResolution>
+      <requiresDirectInvocation>false</requiresDirectInvocation>
+      <requiresProject>true</requiresProject>
+      <requiresReports>false</requiresReports>
+      <aggregator>false</aggregator>
+      <requiresOnline>false</requiresOnline>
+      <inheritedByDefault>true</inheritedByDefault>
+      <phase>generate-sources</phase>
+      <implementation>io.stategraph.maven.GenerateMojo</implementation>
+      <language>java</language>
+      <instantiationStrategy>per-lookup</instantiationStrategy>
+      <executionStrategy>once-per-session</executionStrategy>
+      <threadSafe>true</threadSafe>
+      <parameters>
+        <parameter>
+          <name>project</name>
+          <type>org.apache.maven.project.MavenProject</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The project this compilation belongs to. Every source root, class output and build directory of the request is read from it.</description>
+        </parameter>
+        <parameter>
+          <name>session</name>
+          <type>org.apache.maven.execution.MavenSession</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The session this build runs in. It is what the toolchain manager resolves the selected jdk toolchain against.</description>
+        </parameter>
+        <parameter>
+          <name>pluginArtifacts</name>
+          <type>java.util.List</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The artifacts of this plugin, which carry the generator this goal starts. The dependencies of the project being built are never on that classpath.</description>
+        </parameter>
+        <parameter>
+          <name>javaExecutable</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+        </parameter>
+        <parameter>
+          <name>compilationId</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+        </parameter>
+      </parameters>
+      <configuration>
+        <project implementation="org.apache.maven.project.MavenProject" default-value="${project}"/>
+        <session implementation="org.apache.maven.execution.MavenSession" default-value="${session}"/>
+        <pluginArtifacts implementation="java.util.List" default-value="${plugin.artifacts}"/>
+        <javaExecutable implementation="java.lang.String">${stategraph.javaExecutable}</javaExecutable>
+        <compilationId implementation="java.lang.String">${stategraph.compilationId}</compilationId>
+      </configuration>
+      <requirements>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManager</role>
+          <field-name>toolchainManager</field-name>
+        </requirement>
+      </requirements>
+    </mojo>
+    <mojo>
+      <goal>prepare</goal>
+      <description>Retires the outputs the previous cycle of the main compilation owned and invalidates its published index, before javac runs.</description>
+      <requiresDependencyResolution>compile</requiresDependencyResolution>
+      <requiresDirectInvocation>false</requiresDirectInvocation>
+      <requiresProject>true</requiresProject>
+      <requiresReports>false</requiresReports>
+      <aggregator>false</aggregator>
+      <requiresOnline>false</requiresOnline>
+      <inheritedByDefault>true</inheritedByDefault>
+      <phase>process-sources</phase>
+      <implementation>io.stategraph.maven.PrepareCompileMojo</implementation>
+      <language>java</language>
+      <instantiationStrategy>per-lookup</instantiationStrategy>
+      <executionStrategy>once-per-session</executionStrategy>
+      <threadSafe>true</threadSafe>
+      <parameters>
+        <parameter>
+          <name>project</name>
+          <type>org.apache.maven.project.MavenProject</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The project this compilation belongs to. Every source root, class output and build directory of the request is read from it.</description>
+        </parameter>
+        <parameter>
+          <name>session</name>
+          <type>org.apache.maven.execution.MavenSession</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The session this build runs in. It is what the toolchain manager resolves the selected jdk toolchain against.</description>
+        </parameter>
+        <parameter>
+          <name>pluginArtifacts</name>
+          <type>java.util.List</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The artifacts of this plugin, which carry the generator this goal starts. The dependencies of the project being built are never on that classpath.</description>
+        </parameter>
+        <parameter>
+          <name>javaExecutable</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+        </parameter>
+        <parameter>
+          <name>compilationId</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+        </parameter>
+      </parameters>
+      <configuration>
+        <project implementation="org.apache.maven.project.MavenProject" default-value="${project}"/>
+        <session implementation="org.apache.maven.execution.MavenSession" default-value="${session}"/>
+        <pluginArtifacts implementation="java.util.List" default-value="${plugin.artifacts}"/>
+        <javaExecutable implementation="java.lang.String">${stategraph.javaExecutable}</javaExecutable>
+        <compilationId implementation="java.lang.String">${stategraph.compilationId}</compilationId>
+      </configuration>
+      <requirements>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManager</role>
+          <field-name>toolchainManager</field-name>
+        </requirement>
+      </requirements>
+    </mojo>
+    <mojo>
+      <goal>complete</goal>
+      <description>Publishes the index of what javac accepted for the main compilation and seals its inventory, after the compiler goal of the same phase succeeded.</description>
+      <requiresDependencyResolution>compile</requiresDependencyResolution>
+      <requiresDirectInvocation>false</requiresDirectInvocation>
+      <requiresProject>true</requiresProject>
+      <requiresReports>false</requiresReports>
+      <aggregator>false</aggregator>
+      <requiresOnline>false</requiresOnline>
+      <inheritedByDefault>true</inheritedByDefault>
+      <phase>compile</phase>
+      <implementation>io.stategraph.maven.CompleteCompileMojo</implementation>
+      <language>java</language>
+      <instantiationStrategy>per-lookup</instantiationStrategy>
+      <executionStrategy>once-per-session</executionStrategy>
+      <threadSafe>true</threadSafe>
+      <parameters>
+        <parameter>
+          <name>project</name>
+          <type>org.apache.maven.project.MavenProject</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The project this compilation belongs to. Every source root, class output and build directory of the request is read from it.</description>
+        </parameter>
+        <parameter>
+          <name>session</name>
+          <type>org.apache.maven.execution.MavenSession</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The session this build runs in. It is what the toolchain manager resolves the selected jdk toolchain against.</description>
+        </parameter>
+        <parameter>
+          <name>pluginArtifacts</name>
+          <type>java.util.List</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The artifacts of this plugin, which carry the generator this goal starts. The dependencies of the project being built are never on that classpath.</description>
+        </parameter>
+        <parameter>
+          <name>javaExecutable</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+        </parameter>
+        <parameter>
+          <name>compilationId</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+        </parameter>
+      </parameters>
+      <configuration>
+        <project implementation="org.apache.maven.project.MavenProject" default-value="${project}"/>
+        <session implementation="org.apache.maven.execution.MavenSession" default-value="${session}"/>
+        <pluginArtifacts implementation="java.util.List" default-value="${plugin.artifacts}"/>
+        <javaExecutable implementation="java.lang.String">${stategraph.javaExecutable}</javaExecutable>
+        <compilationId implementation="java.lang.String">${stategraph.compilationId}</compilationId>
+      </configuration>
+      <requirements>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManager</role>
+          <field-name>toolchainManager</field-name>
+        </requirement>
+      </requirements>
+    </mojo>
+    <mojo>
+      <goal>generate-test</goal>
+      <description>Emits the typed StateGraph vocabulary of the test compilation and adds the generated directory as a test compile source root.</description>
+      <requiresDependencyResolution>test</requiresDependencyResolution>
+      <requiresDirectInvocation>false</requiresDirectInvocation>
+      <requiresProject>true</requiresProject>
+      <requiresReports>false</requiresReports>
+      <aggregator>false</aggregator>
+      <requiresOnline>false</requiresOnline>
+      <inheritedByDefault>true</inheritedByDefault>
+      <phase>generate-test-sources</phase>
+      <implementation>io.stategraph.maven.GenerateTestMojo</implementation>
+      <language>java</language>
+      <instantiationStrategy>per-lookup</instantiationStrategy>
+      <executionStrategy>once-per-session</executionStrategy>
+      <threadSafe>true</threadSafe>
+      <parameters>
+        <parameter>
+          <name>project</name>
+          <type>org.apache.maven.project.MavenProject</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The project this compilation belongs to. Every source root, class output and build directory of the request is read from it.</description>
+        </parameter>
+        <parameter>
+          <name>session</name>
+          <type>org.apache.maven.execution.MavenSession</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The session this build runs in. It is what the toolchain manager resolves the selected jdk toolchain against.</description>
+        </parameter>
+        <parameter>
+          <name>pluginArtifacts</name>
+          <type>java.util.List</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The artifacts of this plugin, which carry the generator this goal starts. The dependencies of the project being built are never on that classpath.</description>
+        </parameter>
+        <parameter>
+          <name>javaExecutable</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+        </parameter>
+        <parameter>
+          <name>compilationId</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+        </parameter>
+      </parameters>
+      <configuration>
+        <project implementation="org.apache.maven.project.MavenProject" default-value="${project}"/>
+        <session implementation="org.apache.maven.execution.MavenSession" default-value="${session}"/>
+        <pluginArtifacts implementation="java.util.List" default-value="${plugin.artifacts}"/>
+        <javaExecutable implementation="java.lang.String">${stategraph.javaExecutable}</javaExecutable>
+        <compilationId implementation="java.lang.String">${stategraph.compilationId}</compilationId>
+      </configuration>
+      <requirements>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManager</role>
+          <field-name>toolchainManager</field-name>
+        </requirement>
+      </requirements>
+    </mojo>
+    <mojo>
+      <goal>prepare-test</goal>
+      <description>Retires the outputs the previous cycle of the test compilation owned and invalidates its published index, before javac runs.</description>
+      <requiresDependencyResolution>test</requiresDependencyResolution>
+      <requiresDirectInvocation>false</requiresDirectInvocation>
+      <requiresProject>true</requiresProject>
+      <requiresReports>false</requiresReports>
+      <aggregator>false</aggregator>
+      <requiresOnline>false</requiresOnline>
+      <inheritedByDefault>true</inheritedByDefault>
+      <phase>process-test-sources</phase>
+      <implementation>io.stategraph.maven.PrepareTestCompileMojo</implementation>
+      <language>java</language>
+      <instantiationStrategy>per-lookup</instantiationStrategy>
+      <executionStrategy>once-per-session</executionStrategy>
+      <threadSafe>true</threadSafe>
+      <parameters>
+        <parameter>
+          <name>project</name>
+          <type>org.apache.maven.project.MavenProject</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The project this compilation belongs to. Every source root, class output and build directory of the request is read from it.</description>
+        </parameter>
+        <parameter>
+          <name>session</name>
+          <type>org.apache.maven.execution.MavenSession</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The session this build runs in. It is what the toolchain manager resolves the selected jdk toolchain against.</description>
+        </parameter>
+        <parameter>
+          <name>pluginArtifacts</name>
+          <type>java.util.List</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The artifacts of this plugin, which carry the generator this goal starts. The dependencies of the project being built are never on that classpath.</description>
+        </parameter>
+        <parameter>
+          <name>javaExecutable</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+        </parameter>
+        <parameter>
+          <name>compilationId</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+        </parameter>
+      </parameters>
+      <configuration>
+        <project implementation="org.apache.maven.project.MavenProject" default-value="${project}"/>
+        <session implementation="org.apache.maven.execution.MavenSession" default-value="${session}"/>
+        <pluginArtifacts implementation="java.util.List" default-value="${plugin.artifacts}"/>
+        <javaExecutable implementation="java.lang.String">${stategraph.javaExecutable}</javaExecutable>
+        <compilationId implementation="java.lang.String">${stategraph.compilationId}</compilationId>
+      </configuration>
+      <requirements>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManager</role>
+          <field-name>toolchainManager</field-name>
+        </requirement>
+      </requirements>
+    </mojo>
+    <mojo>
+      <goal>complete-test</goal>
+      <description>Publishes the index of what javac accepted for the test compilation and seals its inventory, after the compiler goal of the same phase succeeded.</description>
+      <requiresDependencyResolution>test</requiresDependencyResolution>
+      <requiresDirectInvocation>false</requiresDirectInvocation>
+      <requiresProject>true</requiresProject>
+      <requiresReports>false</requiresReports>
+      <aggregator>false</aggregator>
+      <requiresOnline>false</requiresOnline>
+      <inheritedByDefault>true</inheritedByDefault>
+      <phase>test-compile</phase>
+      <implementation>io.stategraph.maven.CompleteTestCompileMojo</implementation>
+      <language>java</language>
+      <instantiationStrategy>per-lookup</instantiationStrategy>
+      <executionStrategy>once-per-session</executionStrategy>
+      <threadSafe>true</threadSafe>
+      <parameters>
+        <parameter>
+          <name>project</name>
+          <type>org.apache.maven.project.MavenProject</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The project this compilation belongs to. Every source root, class output and build directory of the request is read from it.</description>
+        </parameter>
+        <parameter>
+          <name>session</name>
+          <type>org.apache.maven.execution.MavenSession</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The session this build runs in. It is what the toolchain manager resolves the selected jdk toolchain against.</description>
+        </parameter>
+        <parameter>
+          <name>pluginArtifacts</name>
+          <type>java.util.List</type>
+          <required>true</required>
+          <editable>false</editable>
+          <description>The artifacts of this plugin, which carry the generator this goal starts. The dependencies of the project being built are never on that classpath.</description>
+        </parameter>
+        <parameter>
+          <name>javaExecutable</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+        </parameter>
+        <parameter>
+          <name>compilationId</name>
+          <type>java.lang.String</type>
+          <required>false</required>
+          <editable>true</editable>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+        </parameter>
+      </parameters>
+      <configuration>
+        <project implementation="org.apache.maven.project.MavenProject" default-value="${project}"/>
+        <session implementation="org.apache.maven.execution.MavenSession" default-value="${session}"/>
+        <pluginArtifacts implementation="java.util.List" default-value="${plugin.artifacts}"/>
+        <javaExecutable implementation="java.lang.String">${stategraph.javaExecutable}</javaExecutable>
+        <compilationId implementation="java.lang.String">${stategraph.compilationId}</compilationId>
+      </configuration>
+      <requirements>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManager</role>
+          <field-name>toolchainManager</field-name>
+        </requirement>
+      </requirements>
+    </mojo>
+  </mojos>
+  <dependencies>
+    <dependency>
+      <groupId>io.stategraph</groupId>
+      <artifactId>stategraph-codegen</artifactId>
+      <type>jar</type>
+      <version>@STATEGRAPH_VERSION@</version>
+    </dependency>
+  </dependencies>
+</plugin>

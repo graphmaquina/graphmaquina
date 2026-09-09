@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The consumer project every Maven integration test builds: the shared adapter domain, Lombok before the
+  StateGraph annotation processor, and the strict compiler options of this repository.
+
+  The StateGraph plugin is declared here without executions on purpose: this task only proves that the goal
+  the published artifact carries can be invoked. Task 12.2 adds the six lifecycle executions.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>fx.build</groupId>
+  <artifactId>fixture</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <stategraph.version>0.3.0-SNAPSHOT</stategraph.version>
+    <lombok.version>1.18.48</lombok.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.stategraph</groupId>
+      <artifactId>stategraph-core</artifactId>
+      <version>${stategraph.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>${lombok.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>io.stategraph</groupId>
+        <artifactId>stategraph-maven-plugin</artifactId>
+        <version>${stategraph.version}</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.15.0</version>
+        <configuration>
+          <release>21</release>
+          <useIncrementalCompilation>true</useIncrementalCompilation>
+          <annotationProcessorPaths>
+            <!-- Lombok first: the processor reads the accessors Lombok generates on Order. -->
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+              <version>${lombok.version}</version>
+            </path>
+            <path>
+              <groupId>io.stategraph</groupId>
+              <artifactId>stategraph-processor</artifactId>
+              <version>${stategraph.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <configuration>
+              <compilerArgs>
+                <arg>-Astategraph.annotationManifest=${project.build.directory}/stategraph/main/annotation-manifest.json</arg>
+                <arg>-Xlint:all,-serial</arg>
+                <arg>-Werror</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+          <execution>
+            <id>default-testCompile</id>
+            <configuration>
+              <compilerArgs>
+                <arg>-Astategraph.annotationManifest=${project.build.directory}/stategraph/test/annotation-manifest.json</arg>
+                <arg>-Xlint:all,-serial</arg>
+                <arg>-Werror</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
