@@ -5,12 +5,12 @@ StateGraph 0.3 replaces the string-based `@StateGraph` declarations of v0.2 with
 references generated annotations and generated symbol classes, and javac checks every one of them.
 
 That has one consequence the build must respect: **generation is mandatory and it happens before compilation**.
-`stategraph-codegen` reads the sources, writes the typed vocabulary and an annotation manifest; javac then
-compiles the sources together with that vocabulary while `stategraph-processor` runs inside it; a completion
+`graphmaquina-codegen` reads the sources, writes the typed vocabulary and an annotation manifest; javac then
+compiles the sources together with that vocabulary while `graphmaquina-processor` runs inside it; a completion
 step publishes the index of what javac accepted and seals the inventory of the files the compilation owns.
 
 ```
-generate  ->  prepare-compile  ->  javac (Lombok, then stategraph-processor)  ->  complete-compile
+generate  ->  prepare-compile  ->  javac (Lombok, then graphmaquina-processor)  ->  complete-compile
 ```
 
 Both build adapters implement exactly those four steps. Neither works without the other half: the generator
@@ -19,13 +19,13 @@ find no manifest and refuse the compilation with SG602.
 
 | Artifact | Coordinates | Role |
 | --- | --- | --- |
-| Runtime and annotations | `io.stategraph:stategraph-core:0.3.0-SNAPSHOT` | the engine, the markers, the symbol categories |
-| Generator | `io.stategraph:stategraph-codegen:0.3.0-SNAPSHOT` | pre-javac generation, run as a separate process by the adapters |
-| Annotation processor | `io.stategraph:stategraph-processor:0.3.0-SNAPSHOT` | runs inside javac, emits the facades and publishes the index |
-| Gradle adapter | plugin id `io.stategraph`, version `0.3.0-SNAPSHOT` | the Gradle build integration |
-| Maven adapter | `io.stategraph:stategraph-maven-plugin:0.3.0-SNAPSHOT` | the Maven build integration |
+| Runtime and annotations | `io.github.graphmaquina:graphmaquina-core:0.3.0-SNAPSHOT` | the engine, the markers, the symbol categories |
+| Generator | `io.github.graphmaquina:graphmaquina-codegen:0.3.0-SNAPSHOT` | pre-javac generation, run as a separate process by the adapters |
+| Annotation processor | `io.github.graphmaquina:graphmaquina-processor:0.3.0-SNAPSHOT` | runs inside javac, emits the facades and publishes the index |
+| Gradle adapter | plugin id `io.github.graphmaquina`, version `0.3.0-SNAPSHOT` | the Gradle build integration |
+| Maven adapter | `io.github.graphmaquina:graphmaquina-maven-plugin:0.3.0-SNAPSHOT` | the Maven build integration |
 
-Only `stategraph-core` is a dependency of the application. The generator and the processor are build-time only
+Only `graphmaquina-core` is a dependency of the application. The generator and the processor are build-time only
 and never reach the runtime classpath.
 
 ## Where the artifacts come from
@@ -37,14 +37,14 @@ below are unresolvable.
 Publish from a checkout of this repository:
 
 ```bash
-./gradlew :stategraph-core:publishToMavenLocal :stategraph-codegen:publishToMavenLocal \
-          :stategraph-processor:publishToMavenLocal :stategraph-maven-plugin:publishToMavenLocal
-./gradlew -p stategraph-gradle-plugin publishToMavenLocal      # the plugin jar and its marker
+./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-codegen:publishToMavenLocal \
+          :graphmaquina-processor:publishToMavenLocal :graphmaquina-maven-plugin:publishToMavenLocal
+./gradlew -p graphmaquina-gradle-plugin publishToMavenLocal      # the plugin jar and its marker
 ```
 
 The second command is a separate invocation because the Gradle adapter is an included build. It installs both
-`io.stategraph:stategraph-gradle-plugin` and the marker `io.stategraph:io.stategraph.gradle.plugin`, which is
-what `plugins { id("io.stategraph") version … }` resolves. Replace `publishToMavenLocal` with
+`io.github.graphmaquina:graphmaquina-gradle-plugin` and the marker `io.github.graphmaquina:io.github.graphmaquina.gradle.plugin`, which is
+what `plugins { id("io.github.graphmaquina") version … }` resolves. Replace `publishToMavenLocal` with
 `publishAllPublicationsTo<Name>Repository` to publish to a file or internal repository instead.
 
 **Gradle** does not read the local Maven repository unless it is declared, and the plugin marker is resolved
@@ -72,14 +72,14 @@ declaration at all. A file or internal repository does need one — either in th
 ```xml
 <repositories>
   <repository>
-    <id>stategraph-local</id>
+    <id>graphmaquina-local</id>
     <url>file:///…/adapter-test-repository</url>
     <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
   </repository>
 </repositories>
 <pluginRepositories>
   <pluginRepository>
-    <id>stategraph-local</id>
+    <id>graphmaquina-local</id>
     <url>file:///…/adapter-test-repository</url>
     <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
   </pluginRepository>
@@ -87,14 +87,14 @@ declaration at all. A file or internal repository does need one — either in th
 ```
 
 or, without touching the POM, in an active profile of a `settings.xml` passed with `mvn -s`. Both halves are
-needed: `<repositories>` for `stategraph-core`, `<pluginRepositories>` for `stategraph-maven-plugin`.
+needed: `<repositories>` for `graphmaquina-core`, `<pluginRepositories>` for `graphmaquina-maven-plugin`.
 
 ## Gradle
 
 ```kotlin
 plugins {
     java
-    id("io.stategraph") version "0.3.0-SNAPSHOT"
+    id("io.github.graphmaquina") version "0.3.0-SNAPSHOT"
 }
 
 java {
@@ -102,12 +102,12 @@ java {
 }
 
 dependencies {
-    implementation("io.stategraph:stategraph-core:0.3.0-SNAPSHOT")
+    implementation("io.github.graphmaquina:graphmaquina-core:0.3.0-SNAPSHOT")
 
     compileOnly("org.projectlombok:lombok:1.18.48")
     // Lombok first: the StateGraph processor reads the accessors Lombok generates on the entities.
     annotationProcessor("org.projectlombok:lombok:1.18.48")
-    annotationProcessor("io.stategraph:stategraph-processor:0.3.0-SNAPSHOT")
+    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:0.3.0-SNAPSHOT")
 }
 ```
 
@@ -118,7 +118,7 @@ applied too.
 ### Which source sets take part
 
 A source set takes part **when, and only when, its own annotation-processor configuration declares
-`io.stategraph:stategraph-processor`** — `annotationProcessor` for `main`, `testAnnotationProcessor` for
+`io.github.graphmaquina:graphmaquina-processor`** — `annotationProcessor` for `main`, `testAnnotationProcessor` for
 `test`, and so on. The processor is what publishes the index of what javac accepted, so a source set compiled
 without it could never complete a compilation the plugin prepared.
 
@@ -131,7 +131,7 @@ declaration it is waiting for as the reason:
 ```
 $ ./gradlew generateTestStateGraphApi --info
 Skipping task ':generateTestStateGraphApi' as task onlyIf 'the test source set declares
-io.stategraph:stategraph-processor in testAnnotationProcessor' is false.
+io.github.graphmaquina:graphmaquina-processor in testAnnotationProcessor' is false.
 ```
 
 ### Tasks and outputs
@@ -142,16 +142,16 @@ io.stategraph:stategraph-processor in testAnnotationProcessor' is false.
 | `generateTestStateGraphApi` | `test` |
 | `generate<SourceSet>StateGraphApi` | any other source set |
 
-All of them are in the `stategraph` task group.
+All of them are in the `graphmaquina` task group.
 
 | Path | Content |
 | --- | --- |
-| `build/generated/sources/stategraph/<sourceSet>` | the generated vocabulary and symbol classes; registered as a source directory of the source set |
-| `build/stategraph/<sourceSet>/request.json` | the request the adapter wrote for the generator |
-| `build/stategraph/<sourceSet>/annotation-manifest.json` | the manifest javac is pointed at |
-| `build/stategraph/<sourceSet>/owned-outputs.json` | the sealed inventory of everything that compilation owns |
-| `build/stategraph/<sourceSet>/processor-inventory.json` | what the processor emitted, written during javac and read by the completion step |
-| `build/classes/java/<sourceSet>/META-INF/stategraph/exports.json` | the published index, packaged into the jar |
+| `build/generated/sources/graphmaquina/<sourceSet>` | the generated vocabulary and symbol classes; registered as a source directory of the source set |
+| `build/graphmaquina/<sourceSet>/request.json` | the request the adapter wrote for the generator |
+| `build/graphmaquina/<sourceSet>/annotation-manifest.json` | the manifest javac is pointed at |
+| `build/graphmaquina/<sourceSet>/owned-outputs.json` | the sealed inventory of everything that compilation owns |
+| `build/graphmaquina/<sourceSet>/processor-inventory.json` | what the processor emitted, written during javac and read by the completion step |
+| `build/classes/java/<sourceSet>/META-INF/graphmaquina/exports.json` | the published index, packaged into the jar |
 
 The generated directory is added with `sourceSet.java.srcDir(...)`, not handed to `JavaCompile` alone, so an
 IDE import, a sources jar and a javadoc task all see it.
@@ -161,9 +161,9 @@ IDE import, a sources jar and a javadoc task all see it.
 For every participating source set the plugin makes `compileJava`:
 
 - depend on the generation task and compile what it generated;
-- receive `-Astategraph.annotationManifest=<work>/annotation-manifest.json` through an argument provider;
+- receive `-Agraphmaquina.annotationManifest=<work>/annotation-manifest.json` through an argument provider;
 - run `prepare-compile` before javac and `complete-compile` after it, and declare
-  `build/stategraph/<sourceSet>/owned-outputs.json` as an output.
+  `build/graphmaquina/<sourceSet>/owned-outputs.json` as an output.
 
 Every one of those is wired lazily: which source sets take part is only known once the build script has been
 read, so each piece carries an empty value until then. A build script that configures `compileTestJava` before
@@ -191,36 +191,36 @@ Java 17 at <installation>. Raise java.toolchain.languageVersion to 21 or later.
 
 ### Choosing the generator
 
-The `stategraphGenerator` configuration carries the generator's classpath. By default it resolves
-`io.stategraph:stategraph-codegen:<stategraph.generatorVersion>`, and `generatorVersion` defaults to the
+The `graphmaquinaGenerator` configuration carries the generator's classpath. By default it resolves
+`io.github.graphmaquina:graphmaquina-codegen:<graphmaquina.generatorVersion>`, and `generatorVersion` defaults to the
 plugin's own version, so nothing needs to be declared. Two cases where it does:
 
 ```kotlin
-stategraph { generatorVersion = "0.3.0-SNAPSHOT" }        // a generator other than the plugin's own version
-dependencies { add("stategraphGenerator", project(":stategraph-codegen")) }  // inside this repository
+graphmaquina { generatorVersion = "0.3.0-SNAPSHOT" }        // a generator other than the plugin's own version
+dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) }  // inside this repository
 ```
 
-Declaring any dependency on that configuration replaces the default, which is how `stategraph-example` runs
+Declaring any dependency on that configuration replaces the default, which is how `graphmaquina-example` runs
 against the sibling project instead of a published artifact.
 
 ## Maven
 
 Two plugins are required, and neither works without the other.
 
-The repositories of the previous section are assumed; `stategraph-core` and `stategraph-maven-plugin` must be
+The repositories of the previous section are assumed; `graphmaquina-core` and `graphmaquina-maven-plugin` must be
 resolvable, which for a locally installed snapshot means nothing further to declare.
 
 ```xml
 <properties>
   <java.version>21</java.version>
-  <stategraph.version>0.3.0-SNAPSHOT</stategraph.version>
+  <graphmaquina.version>0.3.0-SNAPSHOT</graphmaquina.version>
 </properties>
 
 <dependencies>
   <dependency>
-    <groupId>io.stategraph</groupId>
-    <artifactId>stategraph-core</artifactId>
-    <version>${stategraph.version}</version>
+    <groupId>io.github.graphmaquina</groupId>
+    <artifactId>graphmaquina-core</artifactId>
+    <version>${graphmaquina.version}</version>
   </dependency>
   <dependency>
     <groupId>org.projectlombok</groupId>
@@ -243,9 +243,9 @@ resolvable, which for a locally installed snapshot means nothing further to decl
             <version>${lombok.version}</version>
           </path>
           <path>
-            <groupId>io.stategraph</groupId>
-            <artifactId>stategraph-processor</artifactId>
-            <version>${stategraph.version}</version>
+            <groupId>io.github.graphmaquina</groupId>
+            <artifactId>graphmaquina-processor</artifactId>
+            <version>${graphmaquina.version}</version>
           </path>
         </annotationProcessorPaths>
       </configuration>
@@ -255,7 +255,7 @@ resolvable, which for a locally installed snapshot means nothing further to decl
           <id>default-compile</id>
           <configuration>
             <compilerArgs>
-              <arg>-Astategraph.annotationManifest=${project.build.directory}/stategraph/main/annotation-manifest.json</arg>
+              <arg>-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/main/annotation-manifest.json</arg>
             </compilerArgs>
           </configuration>
         </execution>
@@ -263,16 +263,16 @@ resolvable, which for a locally installed snapshot means nothing further to decl
           <id>default-testCompile</id>
           <configuration>
             <compilerArgs>
-              <arg>-Astategraph.annotationManifest=${project.build.directory}/stategraph/test/annotation-manifest.json</arg>
+              <arg>-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/test/annotation-manifest.json</arg>
             </compilerArgs>
           </configuration>
         </execution>
       </executions>
     </plugin>
     <plugin>
-      <groupId>io.stategraph</groupId>
-      <artifactId>stategraph-maven-plugin</artifactId>
-      <version>${stategraph.version}</version>
+      <groupId>io.github.graphmaquina</groupId>
+      <artifactId>graphmaquina-maven-plugin</artifactId>
+      <version>${graphmaquina.version}</version>
       <executions>
         <execution><id>sg-generate</id><phase>generate-sources</phase><goals><goal>generate</goal></goals></execution>
         <execution><id>sg-prepare</id><phase>process-sources</phase><goals><goal>prepare</goal></goals></execution>
@@ -294,29 +294,29 @@ Maven resolves a parameter. What matters is that the effective release is 21 or 
 
 | Goal | Phase | What it does |
 | --- | --- | --- |
-| `generate` | `generate-sources` | checks the compiler configuration, runs the generator, adds `target/generated-sources/stategraph` as a compile source root |
+| `generate` | `generate-sources` | checks the compiler configuration, runs the generator, adds `target/generated-sources/graphmaquina` as a compile source root |
 | `prepare` | `process-sources` | retires the outputs the previous compilation owned and dates the generated carrier past the newest surviving class file |
 | `complete` | `compile` | publishes the index of what javac accepted and seals the inventory |
-| `generate-test` | `generate-test-sources` | the same for the test source set, into `target/generated-test-sources/stategraph` |
+| `generate-test` | `generate-test-sources` | the same for the test source set, into `target/generated-test-sources/graphmaquina` |
 | `prepare-test` | `process-test-sources` | the same for the test source set |
 | `complete-test` | `test-compile` | the same for the test source set |
 
-The goal prefix is `stategraph`, so a goal can also be invoked directly, for example
-`mvn stategraph:generate`.
+The goal prefix is `graphmaquina`, so a goal can also be invoked directly, for example
+`mvn graphmaquina:generate`.
 
 The observed order of a `mvn test-compile`, which the plugin's own suite asserts from real Maven output:
 
 ```
-stategraph:generate (sg-generate)
-stategraph:prepare (sg-prepare)
+graphmaquina:generate (sg-generate)
+graphmaquina:prepare (sg-prepare)
 resources:resources
 compiler:compile (default-compile)
-stategraph:complete (sg-complete)
-stategraph:generate-test (sg-generate-test)
-stategraph:prepare-test (sg-prepare-test)
+graphmaquina:complete (sg-complete)
+graphmaquina:generate-test (sg-generate-test)
+graphmaquina:prepare-test (sg-prepare-test)
 resources:testResources
 compiler:testCompile (default-testCompile)
-stategraph:complete-test (sg-complete-test)
+graphmaquina:complete-test (sg-complete-test)
 ```
 
 Declaration order in the POM does not matter: Maven injects the lifecycle's `maven-compiler-plugin` before the
@@ -326,18 +326,18 @@ plugins a POM adds, and a POM declaration of a lifecycle plugin keeps that injec
 
 | Path | Content |
 | --- | --- |
-| `target/generated-sources/stategraph` | the generated vocabulary of the main compilation |
-| `target/generated-test-sources/stategraph` | the same for the test compilation |
-| `target/stategraph/main/{request,annotation-manifest,owned-outputs,processor-inventory}.json` | the main cycle's request, manifest, sealed inventory and the processor's own inventory |
-| `target/stategraph/test/…` | the same for the test compilation |
-| `target/classes/META-INF/stategraph/exports.json` | the published index, packaged into the jar |
+| `target/generated-sources/graphmaquina` | the generated vocabulary of the main compilation |
+| `target/generated-test-sources/graphmaquina` | the same for the test compilation |
+| `target/graphmaquina/main/{request,annotation-manifest,owned-outputs,processor-inventory}.json` | the main cycle's request, manifest, sealed inventory and the processor's own inventory |
+| `target/graphmaquina/test/…` | the same for the test compilation |
+| `target/classes/META-INF/graphmaquina/exports.json` | the published index, packaged into the jar |
 
 ### Configuration parameters
 
 | Parameter | Property | Default |
 | --- | --- | --- |
-| `javaExecutable` | `stategraph.javaExecutable` | the selected `jdk` toolchain, and the JVM running Maven only when that is a JDK 21 or later |
-| `compilationId` | `stategraph.compilationId` | `groupId:artifactId:main`, and `groupId:artifactId:test` for the test source set |
+| `javaExecutable` | `graphmaquina.javaExecutable` | the selected `jdk` toolchain, and the JVM running Maven only when that is a JDK 21 or later |
+| `compilationId` | `graphmaquina.compilationId` | `groupId:artifactId:main`, and `groupId:artifactId:test` for the test source set |
 
 ### What the Maven adapter requires, and refuses
 
@@ -350,8 +350,8 @@ to change:
 - **The annotation processor on the compiler's processor path.** `<proc>none</proc>`,
   `${maven.compiler.proc}=none` and `-proc:none` are refused, and so is a compilation whose
   `<annotationProcessorPaths>` (or, when it declares none, whose resolved dependencies) does not carry
-  `io.stategraph:stategraph-processor`.
-- **The manifest argument, per execution.** Every `-Astategraph.annotationManifest=` the two scopes declare
+  `io.github.graphmaquina:graphmaquina-processor`.
+- **The manifest argument, per execution.** Every `-Agraphmaquina.annotationManifest=` the two scopes declare
   must name the manifest of that execution's own work directory. A missing or divergent one is refused with the
   exact argument to declare.
 - **The compiler and the generator on the same JDK.** A compiler forked at an `<executable>`, or a
@@ -365,12 +365,12 @@ to change:
 
 | Symptom | Cause and remedy |
 | --- | --- |
-| `SG602` "…names no manifest at all" | javac ran without `-Astategraph.annotationManifest=…`. In Maven, add the argument to that execution; in Gradle, the source set is not participating — declare `stategraph-processor` in its annotation-processor configuration. |
-| `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `stategraph:generate` and `stategraph:prepare` precede it. |
+| `SG602` "…names no manifest at all" | javac ran without `-Agraphmaquina.annotationManifest=…`. In Maven, add the argument to that execution; in Gradle, the source set is not participating — declare `graphmaquina-processor` in its annotation-processor configuration. |
+| `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
 | `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host). The message names the type and the declaration. |
 | `SG609` | a v0.2 string-based declaration is still there. See `typed-annotations-migration.md`. |
 | `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
-| "the StateGraph generator needs a Java 21 toolchain or later" | raise the Gradle toolchain to 21+, or point Maven's `stategraph.javaExecutable` / `jdk` toolchain at a JDK 21+. |
+| "the StateGraph generator needs a Java 21 toolchain or later" | raise the Gradle toolchain to 21+, or point Maven's `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
 | "…is not on the `<annotationProcessorPaths>` …" | the processor is missing from the compiler's processor path; declare it after Lombok. |
 | "…switches annotation processing off…" | remove `proc=none` / `-proc:none`. |
 | "…reads the annotation manifest X, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. |

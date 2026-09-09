@@ -99,7 +99,7 @@ with `@GraphBindings`, and its inherited marked members are exported through its
 
 ### 3. Rewrite the machine
 
-`stategraph-example`'s order machine, before and after. This is the whole shape of the migration.
+`graphmaquina-example`'s order machine, before and after. This is the whole shape of the migration.
 
 **v0.2**
 
@@ -135,11 +135,11 @@ public interface Orders extends Machine<Order, OrderStatus> {
 **v0.3**
 
 ```java
-import static io.stategraph.example.order.OrderStatus.CANCELLED;
-import static io.stategraph.example.order.OrderStatus.NEW;
-import static io.stategraph.example.order.OrderStatus.PAID;
-import static io.stategraph.example.order.OrderStatus.PAYMENT_DECLINED;
-import static io.stategraph.example.order.OrderStatus.SHIPPED;
+import static io.github.graphmaquina.example.order.OrderStatus.CANCELLED;
+import static io.github.graphmaquina.example.order.OrderStatus.NEW;
+import static io.github.graphmaquina.example.order.OrderStatus.PAID;
+import static io.github.graphmaquina.example.order.OrderStatus.PAYMENT_DECLINED;
+import static io.github.graphmaquina.example.order.OrderStatus.SHIPPED;
 
 @GenerateGraphApi
 @GraphPeers(Items.class)
@@ -196,7 +196,7 @@ An annotation element typed with an enum takes the constant, not a string. Stati
 the declarations as readable as the string form was:
 
 ```java
-import static io.stategraph.example.order.OrderStatus.NEW;
+import static io.github.graphmaquina.example.order.OrderStatus.NEW;
 ```
 
 A peer's states are the peer enum's constants, so a rule spells `ItemStatus.PACKED` (or static-imports it too).

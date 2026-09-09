@@ -1,8 +1,8 @@
-pluginManagement { includeBuild("stategraph-gradle-plugin") }
+pluginManagement { includeBuild("graphmaquina-gradle-plugin") }
 
-rootProject.name = "stategraph"
-include("stategraph-core", "stategraph-processor", "stategraph-codegen", "stategraph-example",
-        "stategraph-maven-plugin")
+rootProject.name = "graphmaquina"
+include("graphmaquina-core", "graphmaquina-processor", "graphmaquina-codegen", "graphmaquina-example",
+        "graphmaquina-maven-plugin")
 
 dependencyResolutionManagement {
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS

@@ -16,12 +16,12 @@ string any more. If you are coming from 0.2, read
 
 | Module | Artifact | Role |
 | --- | --- | --- |
-| `stategraph-core` | `io.stategraph:stategraph-core` | the runtime, the markers and the symbol categories — the only artifact the application depends on |
-| `stategraph-codegen` | `io.stategraph:stategraph-codegen` | the generator that writes the typed vocabulary before javac runs |
-| `stategraph-processor` | `io.stategraph:stategraph-processor` | the annotation processor that validates the graph, emits the facades and publishes the export index |
-| `stategraph-gradle-plugin` | plugin id `io.stategraph` | the Gradle build integration (an included build of this repository) |
-| `stategraph-maven-plugin` | `io.stategraph:stategraph-maven-plugin` | the Maven build integration, six goals |
-| `stategraph-example` | — | a two-machine shop used as the reference consumer |
+| `graphmaquina-core` | `io.github.graphmaquina:graphmaquina-core` | the runtime, the markers and the symbol categories — the only artifact the application depends on |
+| `graphmaquina-codegen` | `io.github.graphmaquina:graphmaquina-codegen` | the generator that writes the typed vocabulary before javac runs |
+| `graphmaquina-processor` | `io.github.graphmaquina:graphmaquina-processor` | the annotation processor that validates the graph, emits the facades and publishes the export index |
+| `graphmaquina-gradle-plugin` | plugin id `io.github.graphmaquina` | the Gradle build integration (an included build of this repository) |
+| `graphmaquina-maven-plugin` | `io.github.graphmaquina:graphmaquina-maven-plugin` | the Maven build integration, six goals |
+| `graphmaquina-example` | — | a two-machine shop used as the reference consumer |
 
 ## What a machine looks like
 
@@ -99,9 +99,9 @@ generator has written it, so a build must run the generator, then javac with the
 completion step that publishes the index of what javac accepted. Both build adapters do exactly that.
 
 Nothing is published to a public repository yet, so install the artifacts locally first —
-`./gradlew :stategraph-core:publishToMavenLocal :stategraph-codegen:publishToMavenLocal
-:stategraph-processor:publishToMavenLocal :stategraph-maven-plugin:publishToMavenLocal` and
-`./gradlew -p stategraph-gradle-plugin publishToMavenLocal` for the plugin and its marker — and declare
+`./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-codegen:publishToMavenLocal
+:graphmaquina-processor:publishToMavenLocal :graphmaquina-maven-plugin:publishToMavenLocal` and
+`./gradlew -p graphmaquina-gradle-plugin publishToMavenLocal` for the plugin and its marker — and declare
 `mavenLocal()` in both `pluginManagement` and the dependency repositories of the consuming build.
 
 Gradle:
@@ -109,18 +109,18 @@ Gradle:
 ```kotlin
 plugins {
     java
-    id("io.stategraph") version "0.3.0-SNAPSHOT"
+    id("io.github.graphmaquina") version "0.3.0-SNAPSHOT"
 }
 
 dependencies {
-    implementation("io.stategraph:stategraph-core:0.3.0-SNAPSHOT")
+    implementation("io.github.graphmaquina:graphmaquina-core:0.3.0-SNAPSHOT")
     compileOnly("org.projectlombok:lombok:1.18.48")
     annotationProcessor("org.projectlombok:lombok:1.18.48")           // Lombok first
-    annotationProcessor("io.stategraph:stategraph-processor:0.3.0-SNAPSHOT")
+    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:0.3.0-SNAPSHOT")
 }
 ```
 
-Maven needs `stategraph-maven-plugin` with its six goals plus the manifest argument on each compiler
+Maven needs `graphmaquina-maven-plugin` with its six goals plus the manifest argument on each compiler
 execution. Both setups, the requirements they enforce and their troubleshooting are in
 [docs/typed-annotations-build.md](docs/typed-annotations-build.md). A Java 21 toolchain or later is required.
 
@@ -136,10 +136,10 @@ execution. Both setups, the requirements they enforce and their troubleshooting 
 
 ```bash
 ./gradlew build                                   # every module, tests included
-./gradlew -p stategraph-gradle-plugin test        # the Gradle adapter's TestKit suite
-./gradlew :stategraph-maven-plugin:test           # the Maven adapter's integration suite (drives real mvn builds)
+./gradlew -p graphmaquina-gradle-plugin test        # the Gradle adapter's TestKit suite
+./gradlew :graphmaquina-maven-plugin:test           # the Maven adapter's integration suite (drives real mvn builds)
 ```
 
-The Gradle adapter is an included build (`pluginManagement { includeBuild("stategraph-gradle-plugin") }`), so
-`stategraph-example` applies `id("io.stategraph")` without a version and points the `stategraphGenerator`
-configuration at the sibling `stategraph-codegen` project. Java 21 is required.
+The Gradle adapter is an included build (`pluginManagement { includeBuild("graphmaquina-gradle-plugin") }`), so
+`graphmaquina-example` applies `id("io.github.graphmaquina")` without a version and points the `graphmaquinaGenerator`
+configuration at the sibling `graphmaquina-codegen` project. Java 21 is required.
