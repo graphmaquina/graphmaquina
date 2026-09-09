@@ -1,3 +1,5 @@
+pluginManagement { includeBuild("stategraph-gradle-plugin") }
+
 rootProject.name = "stategraph"
 include("stategraph-core", "stategraph-processor", "stategraph-codegen", "stategraph-example")
 

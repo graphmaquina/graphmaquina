@@ -28,6 +28,12 @@ dependencies {
 }
 
 publishing {
+    repositories {
+        maven {
+            name = "adapterTests"
+            url = rootProject.layout.buildDirectory.dir("adapter-test-repository").get().asFile.toURI()
+        }
+    }
     publications {
         create<MavenPublication>("maven") {
             from(components["java"])
