@@ -136,6 +136,36 @@ class ExportValidationTest {
     }
 
     @Test
+    void refusesAMarkedGetterTheGeneratedCodeCouldNotCall() {
+        Compilation.Result result = Compilation.compileTyped(exports("fx.Shut", """
+                package fx;
+                import io.stategraph.annotation.GraphProperty;
+                public final class Shut {
+                    @GraphProperty private DocStatus status() { return DocStatus.DRAFT; }
+                }
+                """));
+
+        assertFalse(result.success(), result.describe());
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+                && error.contains("status") && error.contains("public instance method")), result::describe);
+    }
+
+    @Test
+    void refusesAMarkedGetterThatIsNotReadFromAnEntityAtAll() {
+        Compilation.Result result = Compilation.compileTyped(exports("fx.Shared", """
+                package fx;
+                import io.stategraph.annotation.GraphProperty;
+                public final class Shared {
+                    @GraphProperty public static String id() { return "shared"; }
+                }
+                """));
+
+        assertFalse(result.success(), result.describe());
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
+                && error.contains("id") && error.contains("public instance method")), result::describe);
+    }
+
+    @Test
     void refusesAnExportWhoseMarkerDisappearedAfterItWasGenerated() {
         Compilation.Prepared prepared = Compilation.prepare(exports("fx.Host", ACTION_HOST));
         rewriteOriginal(prepared, "fx.Host", ACTION_HOST.replace("@GraphAction ", ""));

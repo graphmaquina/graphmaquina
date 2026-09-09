@@ -191,6 +191,7 @@ public final class MachineGenerator {
         String p = names.of(watch.peer().entityElement().getQualifiedName().toString());
         String q = names.of(watch.peer().statesElement().getQualifiedName().toString());
         String entity = entityParameter(model, parameters);
+        List<String> arguments = conditionParameters(entity, parameters);
         String peer = lambdaParameter(decapitalize(watch.peer().entityName()), parameters);
         String owner = watch.ownerIsOptional()
                 ? peer + "." + watch.owner().method() + "()"
@@ -201,8 +202,7 @@ public final class MachineGenerator {
         for (RuleModel rule : watch.rules()) {
             String condition = switch (rule.kind()) {
                 case CONDITION -> quote(rule.condition().orElseThrow().methodName()) + ", "
-                        + lambda(rule.condition().orElseThrow(), List.of(entity, lambdaParameter("peers", parameters),
-                                lambdaParameter("view", parameters)), parameters, names, invocations);
+                        + lambda(rule.condition().orElseThrow(), arguments, parameters, names, invocations);
                 case ALL_IN -> names.of(WATCH_CONDITION) + ".allIn(" + q + "." + rule.argument() + ")";
                 case ANY_IN -> names.of(WATCH_CONDITION) + ".anyIn(" + q + "." + rule.argument() + ")";
                 case NONE_IN -> names.of(WATCH_CONDITION) + ".noneIn(" + q + "." + rule.argument() + ")";
@@ -352,13 +352,35 @@ public final class MachineGenerator {
 
     /** A lambda parameter of {@code graph(...)} may not shadow one of its own parameters, nor a reserved name. */
     private static String lambdaParameter(String name, Map<String, String> parameters) {
-        String unique = name;
+        return unique(name, taken(parameters));
+    }
+
+    /**
+     * The three parameters of a condition lambda. They are named against one another as well as against the
+     * enclosing method, because an entity type named {@code Peers} or {@code View} would otherwise give the
+     * lambda two parameters of one name.
+     */
+    private static List<String> conditionParameters(String entity, Map<String, String> parameters) {
+        Set<String> taken = taken(parameters);
+        return List.of(unique(entity, taken), unique("peers", taken), unique("view", taken));
+    }
+
+    /** The names {@code graph(...)} already declares, which no lambda parameter of its body may shadow. */
+    private static Set<String> taken(Map<String, String> parameters) {
+        Set<String> taken = new LinkedHashSet<>(parameters.values());
+        taken.addAll(RESERVED);
+        return taken;
+    }
+
+    /** {@code name}, suffixed until nothing in {@code taken} claims it; the answer joins {@code taken}. */
+    private static String unique(String name, Set<String> taken) {
+        String candidate = name;
         int suffix = 1;
-        while (parameters.containsValue(unique) || RESERVED.contains(unique)) {
+        while (!taken.add(candidate)) {
             suffix++;
-            unique = name + suffix;
+            candidate = name + suffix;
         }
-        return unique;
+        return candidate;
     }
 
     static String decapitalize(String name) {

@@ -188,7 +188,11 @@ final class PropertyResolver {
         return Optional.empty();
     }
 
-    /** The declaration a marked getter names, read as the member of {@code entity} that answers a call to it. */
+    /**
+     * The declaration a marked getter names, read as the member of {@code entity} that answers a call to it.
+     * A getter the generated code could not call — one that is not public, or that is static and so is not
+     * called on an entity at all — is no reader: the marker names it, so no other one stands in for it.
+     */
     private Optional<ExecutableElement> marked(PropertyDescriptor property, DeclaredType entity) {
         TypeElement declaring = signatures.elements().getTypeElement(property.declaringType());
         if (declaring == null) {
@@ -198,7 +202,10 @@ final class PropertyResolver {
             if (member.getKind() == ElementKind.METHOD
                     && member.getSimpleName().contentEquals(property.declarationName())
                     && ((ExecutableElement) member).getParameters().isEmpty()) {
-                return Optional.of(effective((ExecutableElement) member, entity));
+                ExecutableElement method = (ExecutableElement) member;
+                return Accessors.isPublicInstance(method)
+                        ? Optional.of(effective(method, entity))
+                        : Optional.empty();
             }
         }
         return Optional.empty();

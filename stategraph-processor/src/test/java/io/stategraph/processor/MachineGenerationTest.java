@@ -13,7 +13,9 @@ import io.stategraph.export.MermaidExporter;
 import io.stategraph.runtime.StateMachines;
 import java.lang.reflect.Method;
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
@@ -51,6 +53,110 @@ class MachineGenerationTest {
         assertTrue(source.contains(".watches(MachineKey.of(Page.class, PageStatus.class), (Doc doc) -> doc.getPages(), (Page page) -> page.doc())"), source);
         assertTrue(source.contains(".when(WatchCondition.allIn(PageStatus.DONE)).goTo(DocStatus.PUBLISHED)"), source);
         assertTrue(result.hasGenerated("fx.Pages_"), result.describe());
+    }
+
+    @Test
+    void namesTheParametersOfAConditionLambdaApartFromEachOther() {
+        for (String entity : List.of("Peers", "View")) {
+            Compilation.Result result = Compilation.compile(watched(entity));
+
+            assertTrue(result.success(), result.describe());
+            String source = result.generated("fx.Mains_");
+            assertTrue(source.contains(".when(\"ready\", (" + parameters(entity) + ") -> rules.ready("
+                    + parameters(entity) + ")).goTo(MainStatus.CLOSED)"), source);
+        }
+    }
+
+    /** The three names the condition lambda must declare when the entity is named {@code entity}. */
+    private static String parameters(String entity) {
+        return switch (entity) {
+            case "Peers" -> "peers, peers2, view";
+            case "View" -> "view, peers, view2";
+            default -> throw new IllegalArgumentException(entity);
+        };
+    }
+
+    /**
+     * A watched machine whose entity type is named {@code entity}, so the entity's own lambda parameter takes
+     * the name one of the other two parameters of a condition would otherwise claim.
+     */
+    private static Map<String, String> watched(String entity) {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("fx.MainStatus", """
+                package fx;
+                public enum MainStatus { OPEN, CLOSED }
+                """);
+        sources.put("fx.PartStatus", """
+                package fx;
+                public enum PartStatus { OPEN, DONE }
+                """);
+        sources.put("fx." + entity, """
+                package fx;
+                import java.util.ArrayList;
+                import java.util.List;
+                public final class %s {
+                    private MainStatus status = MainStatus.OPEN;
+                    private final List<Part> parts = new ArrayList<>();
+                    public String id() { return "main"; }
+                    public MainStatus status() { return status; }
+                    public void status(MainStatus value) { status = value; }
+                    public List<Part> parts() { return parts; }
+                }
+                """.formatted(entity));
+        sources.put("fx.Part", """
+                package fx;
+                import java.util.Optional;
+                public final class Part {
+                    private PartStatus status = PartStatus.OPEN;
+                    public String id() { return "part"; }
+                    public PartStatus status() { return status; }
+                    public void status(PartStatus value) { status = value; }
+                    public Optional<%s> owner() { return Optional.empty(); }
+                }
+                """.formatted(entity));
+        sources.put("fx.Rules", """
+                package fx;
+                import io.stategraph.api.PeerView;
+                import java.util.Collection;
+                public final class Rules {
+                    public boolean ready(%s entity, Collection<? extends Part> parts, PeerView<Part, PartStatus> view) {
+                        return view.allIn(parts, PartStatus.DONE);
+                    }
+                }
+                """.formatted(entity));
+        sources.put("fx.Parts", """
+                package fx;
+                import io.stategraph.annotation.Move;
+                import io.stategraph.annotation.Row;
+                import io.stategraph.annotation.StateGraph;
+                import io.stategraph.api.Machine;
+                import io.stategraph.api.Outcome;
+                @StateGraph(initial = "OPEN", terminals = "DONE")
+                @Row(state = "OPEN", otherwise = "a part is finished")
+                public interface Parts extends Machine<Part, PartStatus> {
+                    @Move(from = "OPEN", to = "DONE")
+                    Outcome<Part, PartStatus> finish(Part part);
+                }
+                """);
+        sources.put("fx.Mains", """
+                package fx;
+                import io.stategraph.annotation.Move;
+                import io.stategraph.annotation.Row;
+                import io.stategraph.annotation.StateGraph;
+                import io.stategraph.annotation.Watch;
+                import io.stategraph.annotation.When;
+                import io.stategraph.api.Machine;
+                import io.stategraph.api.Outcome;
+                @StateGraph(initial = "OPEN", terminals = "CLOSED")
+                @Row(state = "OPEN", otherwise = "the parts decide")
+                @Watch(state = "OPEN", peer = Parts.class, peers = "parts", owner = "owner", by = Rules.class,
+                       rules = @When(condition = "ready", goTo = "CLOSED"))
+                public interface Mains extends Machine<%s, MainStatus> {
+                    @Move(from = "OPEN", to = "CLOSED")
+                    Outcome<%s, MainStatus> close(%s entity);
+                }
+                """.formatted(entity, entity, entity));
+        return sources;
     }
 
     @Test

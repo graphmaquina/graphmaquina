@@ -1,5 +1,6 @@
 package io.stategraph.processor;
 
+import io.stategraph.annotation.GraphProperty;
 import io.stategraph.annotation.internal.SymbolKind;
 import io.stategraph.codegen.manifest.CompileManifest;
 import io.stategraph.codegen.model.MemberDescriptor;
@@ -10,6 +11,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
@@ -42,11 +44,13 @@ final class ExportValidator {
     private final Signatures signatures;
     private final EffectiveMethods effective;
     private final Diagnostics diagnostics;
+    private final Annotations annotations;
 
     ExportValidator(Signatures signatures, EffectiveMethods effective, Diagnostics diagnostics) {
         this.signatures = signatures;
         this.effective = effective;
         this.diagnostics = diagnostics;
+        this.annotations = new Annotations(signatures.elements());
     }
 
     /** Whether every local export of {@code manifest} holds; each one that does not is reported as SG604. */
@@ -134,6 +138,7 @@ final class ExportValidator {
             }
             if (property.directGetter() && member.getKind() == ElementKind.METHOD
                     && ((ExecutableElement) member).getParameters().isEmpty()) {
+                reader((ExecutableElement) member, declaring, property);
                 return;
             }
             if (!property.directGetter() && member.getKind() == ElementKind.FIELD) {
@@ -143,6 +148,23 @@ final class ExportValidator {
         diagnostics.error(INVALID, symbol.qualifiedName() + " exports the property " + property.logicalName()
                 + " of " + property.declaringType() + ", which no longer declares "
                 + (property.directGetter() ? "a getter " : "a field ") + property.declarationName(), declaring);
+    }
+
+    /**
+     * A marked getter is the reader itself, and the generated code calls it on an entity from another package.
+     * One that is not public, or that is static and so is not called on an entity at all, is refused where it
+     * is declared: no other accessor stands in for a getter a marker named.
+     */
+    private void reader(ExecutableElement getter, TypeElement declaring, PropertyDescriptor property) {
+        if (Accessors.isPublicInstance(getter)) {
+            return;
+        }
+        DiagnosticAnchor anchor = annotations.find(getter, GraphProperty.class)
+                .map((AnnotationMirror marker) -> DiagnosticAnchor.of(getter, marker))
+                .orElseGet(() -> DiagnosticAnchor.of(getter));
+        anchor.report(diagnostics, INVALID, declaring.getQualifiedName() + "." + getter.getSimpleName()
+                + " exports the property " + property.logicalName()
+                + ", so it must be a public instance method: generated code calls it on the entity");
     }
 
     /**

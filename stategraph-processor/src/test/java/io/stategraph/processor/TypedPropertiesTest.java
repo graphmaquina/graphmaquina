@@ -155,6 +155,28 @@ class TypedPropertiesTest {
     }
 
     @Test
+    void refusesAMarkedGetterItCouldNotCallInsteadOfSubstitutingAConventionalOne() {
+        TypedProcessors.Resolving.reset();
+        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus");
+
+        Compilation.Result result = resolve(entity("""
+                package fx;
+                import io.stategraph.annotation.GraphProperty;
+                public final class Doc {
+                    private DocStatus status = DocStatus.DRAFT;
+                    @GraphProperty private DocStatus status() { return status; }
+                    public DocStatus getStatus() { return status; }
+                    public void setStatus(DocStatus value) { status = value; }
+                }
+                """));
+
+        assertFalse(result.success(), result.describe());
+        assertEquals(1, result.countError("SG503"), result::describe);
+        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG503]")
+                && error.contains("status")), result::describe);
+    }
+
+    @Test
     void refusesTwoIncomparableWritersOfTheSameAlternative() {
         TypedProcessors.Resolving.reset();
         TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus");
