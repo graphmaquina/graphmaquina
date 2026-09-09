@@ -101,6 +101,32 @@ import java.util.List;
  *   "ownedSources": ["<string, path relative to its source root>", ...]
  * }
  * }</pre>
+ *
+ * <h2>{@code OwnedOutputs} JSON (readOwned/writeOwned)</h2>
+ *
+ * <pre>{@code
+ * {
+ *   "schemaVersion": <number, currently 1>,
+ *   "sources": ["<string, path relative to processorSourcesOutput>", ...],
+ *   "binaries": ["<string, path relative to classesOutput>", ...],
+ *   "resources": ["<string, path relative to classesOutput>", ...],
+ *   "excludedBinaries": ["<string, path relative to classesOutput>", ...]
+ * }
+ * }</pre>
+ *
+ * <p>Unlike {@link CompileManifest#ownedSources()}, the four inventory lists are not validated against their
+ * roots here: an inventory is read to decide what a build may delete, and that decision belongs to
+ * {@link io.stategraph.codegen.output.CompilationOutputs}, which knows each root and reports a path that
+ * escapes one as {@code SG603} instead of accepting a file it does not own.
+ *
+ * <h2>Processor inventory JSON (readProcessorInventory)</h2>
+ *
+ * <pre>{@code
+ * {
+ *   "schemaVersion": <number, currently 1>,
+ *   "generatedTypes": ["<string, qualified name of a source the processor generated>", ...]
+ * }
+ * }</pre>
  */
 public final class ManifestCodec {
 
@@ -217,6 +243,58 @@ public final class ManifestCodec {
             JsonSupport.writeStringArray(writer, JsonSupport.sortedCopy(manifest.ownedSources()));
             writer.endObject();
         }
+    }
+
+    /**
+     * Reads an {@link OwnedOutputs} inventory from {@code path}.
+     *
+     * @throws IOException if {@code path} cannot be read
+     */
+    public static OwnedOutputs readOwned(Path path) throws IOException {
+        JsonObject object = JsonSupport.readObject(path);
+        int schemaVersion = JsonSupport.requireInt(object, "schemaVersion", path);
+        JsonSupport.requireSupportedSchema(schemaVersion, path);
+        return new OwnedOutputs(schemaVersion,
+            JsonSupport.requireStringArray(object, "sources", path),
+            JsonSupport.requireStringArray(object, "binaries", path),
+            JsonSupport.requireStringArray(object, "resources", path),
+            JsonSupport.requireStringArray(object, "excludedBinaries", path));
+    }
+
+    /**
+     * Writes {@code owned} to {@code path}, with every list sorted so an unchanged inventory is unchanged bytes.
+     *
+     * @throws IOException if {@code path} cannot be written
+     */
+    public static void writeOwned(Path path, OwnedOutputs owned) throws IOException {
+        try (JsonWriter writer = JsonSupport.newWriter(path)) {
+            writer.beginObject();
+            writer.name("schemaVersion").value(owned.schemaVersion());
+            writer.name("sources");
+            JsonSupport.writeStringArray(writer, JsonSupport.sortedCopy(owned.sources()));
+            writer.name("binaries");
+            JsonSupport.writeStringArray(writer, JsonSupport.sortedCopy(owned.binaries()));
+            writer.name("resources");
+            JsonSupport.writeStringArray(writer, JsonSupport.sortedCopy(owned.resources()));
+            writer.name("excludedBinaries");
+            JsonSupport.writeStringArray(writer, JsonSupport.sortedCopy(owned.excludedBinaries()));
+            writer.endObject();
+        }
+    }
+
+    /**
+     * Reads the qualified names the annotation processor recorded in the inventory at {@code path}, sorted.
+     *
+     * <p>The processor writes that file itself, with {@code java.nio} and at the absolute path
+     * {@link CompileManifest#processorInventory()} names, because the {@code Filer} cannot address the build's
+     * work directory; reading it stays here, so this class remains the only place that knows the format.</p>
+     *
+     * @throws IOException if {@code path} cannot be read
+     */
+    public static List<String> readProcessorInventory(Path path) throws IOException {
+        JsonObject object = JsonSupport.readObject(path);
+        JsonSupport.requireSupportedSchema(JsonSupport.requireInt(object, "schemaVersion", path), path);
+        return JsonSupport.sortedCopy(JsonSupport.requireStringArray(object, "generatedTypes", path));
     }
 
     private static ExportIndex readExportIndex(JsonObject object, Path file) {

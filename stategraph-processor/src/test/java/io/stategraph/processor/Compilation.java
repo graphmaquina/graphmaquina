@@ -3,6 +3,7 @@ package io.stategraph.processor;
 import io.stategraph.codegen.GenerationRequest;
 import io.stategraph.codegen.GenerationResult;
 import io.stategraph.codegen.StateGraphCodegen;
+import io.stategraph.codegen.output.CompilationOutputs;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -12,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
@@ -123,7 +125,20 @@ final class Compilation {
      * classes: a dependency a build puts on one of the two only is a dependency of neither stage.
      */
     static Prepared prepare(Map<String, String> sources, List<Path> extraClasspath) {
-        GenerationRequest request = materialize(sources, extraClasspath);
+        return prepare(temporaryProject(), sources, extraClasspath);
+    }
+
+    /**
+     * The same, in a project directory a test chooses, so consecutive generations and compilations land in the
+     * very same outputs a developer's build reuses. The originals are replaced wholesale, which is what editing
+     * a source tree does; everything the two stages produced before is left for the lifecycle to retire.
+     */
+    static Prepared prepare(Path project, Map<String, String> sources) {
+        return prepare(project, sources, List.of());
+    }
+
+    private static Prepared prepare(Path project, Map<String, String> sources, List<Path> extraClasspath) {
+        GenerationRequest request = materialize(project, sources, extraClasspath);
         try {
             return new Prepared(request, StateGraphCodegen.generate(request));
         } catch (IOException e) {
@@ -138,9 +153,30 @@ final class Compilation {
 
     /**
      * Compiles {@code prepared} with {@code extra} appended to the standard options, so a test can replace the
-     * processor javac runs. Lifecycle steps around javac arrive with task 10; nothing runs them yet.
+     * processor javac runs. The build's own lifecycle runs around javac: {@code prepare} retires what the
+     * previous cycle owned before the compiler starts, and {@code complete} publishes the index and the
+     * inventory only when javac succeeded, exactly as the Gradle and Maven plugins drive it.
      */
     static Result compilePrepared(Prepared prepared, List<String> extra) {
+        GenerationRequest request = prepared.request();
+        try {
+            CompilationOutputs.prepare(request);
+            Result result = compileWithoutLifecycle(prepared, extra);
+            if (result.success()) {
+                CompilationOutputs.complete(request);
+            }
+            return result;
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Compiles {@code prepared} without that lifecycle, for a test whose compilation is not one a build would
+     * prepare and complete: one that replaces the StateGraph processor with a test processor of its own, so
+     * nothing publishes an index, or one that corrupts the manifest after the generator wrote it.
+     */
+    static Result compileWithoutLifecycle(Prepared prepared, List<String> extra) {
         GenerationRequest request = prepared.request();
         List<Path> files = new ArrayList<>(javaFiles(request.sources().get(0)));
         files.addAll(javaFiles(request.sourcesOutput()));
@@ -174,22 +210,30 @@ final class Compilation {
      * option, so a test can observe what the processor reports when it has no manifest at all.
      */
     static Result compileRaw(Map<String, String> sources, List<String> extra) {
-        GenerationRequest request = materialize(sources, List.of());
+        GenerationRequest request = materialize(temporaryProject(), sources, List.of());
         List<String> options = new ArrayList<>(standardOptions(request));
         options.addAll(extra);
         return run(javaFiles(request.sources().get(0)), options, request);
     }
 
-    /** Writes {@code sources} under a fresh temporary project and describes the compilation they belong to. */
-    private static GenerationRequest materialize(Map<String, String> sources, List<Path> extraClasspath) {
+    /** Writes {@code sources} under {@code project} and describes the compilation they belong to. */
+    private static GenerationRequest materialize(Path project, Map<String, String> sources,
+            List<Path> extraClasspath) {
         try {
-            Path project = Files.createTempDirectory("stategraph-processor-");
             Path originals = write(project.resolve("originals"), sources);
             List<Path> classpath = new ArrayList<>(classpath());
             classpath.addAll(extraClasspath);
             return new GenerationRequest(project, List.of(originals), List.copyOf(classpath),
                     project.resolve("bootstrap"), project.resolve("processor"), project.resolve("classes"),
                     project.resolve("work"), COMPILATION_ID);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    private static Path temporaryProject() {
+        try {
+            return Files.createTempDirectory("stategraph-processor-");
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -229,8 +273,12 @@ final class Compilation {
         }
     }
 
-    /** Writes each source at the package path its qualified name implies and returns {@code root}. */
+    /**
+     * Writes each source at the package path its qualified name implies and returns {@code root}, which is
+     * emptied first: a source a test no longer declares must be gone, as it is after an edit.
+     */
     private static Path write(Path root, Map<String, String> sources) throws IOException {
+        deleteRecursively(root);
         Files.createDirectories(root);
         for (Map.Entry<String, String> source : sources.entrySet()) {
             Path file = root.resolve(source.getKey().replace('.', File.separatorChar) + ".java");
@@ -238,6 +286,18 @@ final class Compilation {
             Files.writeString(file, source.getValue(), StandardCharsets.UTF_8);
         }
         return root;
+    }
+
+    /** Removes {@code root} and everything below it, deepest entry first; an absent root is nothing to do. */
+    private static void deleteRecursively(Path root) throws IOException {
+        if (!Files.exists(root)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(root)) {
+            for (Path entry : walk.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(entry);
+            }
+        }
     }
 
     /** Every {@code .java} file under {@code root}, in a stable order; an absent root contributes nothing. */

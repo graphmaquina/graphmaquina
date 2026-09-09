@@ -264,7 +264,7 @@ class TypedPropertiesTest {
 
     /** Compiles a prepared fixture with the resolving processor instead of the real one. */
     private static Compilation.Result resolve(Compilation.Prepared prepared) {
-        return Compilation.compilePrepared(prepared,
+        return Compilation.compileWithoutLifecycle(prepared,
                 List.of("-processor", TypedProcessors.Resolving.class.getName()));
     }
 

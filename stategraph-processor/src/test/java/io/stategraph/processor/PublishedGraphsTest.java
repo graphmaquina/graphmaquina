@@ -52,11 +52,11 @@ class PublishedGraphsTest {
         assertTrue(result.success(), result.describe());
 
         Path classes = prepared.request().classesOutput();
-        assertTrue(Files.isRegularFile(classes.resolve(PENDING)), result::describe);
-        assertFalse(Files.exists(classes.resolve(PUBLISHED)), result::describe);
+        assertTrue(Files.isRegularFile(classes.resolve(PUBLISHED)), result::describe);
+        assertFalse(Files.exists(classes.resolve(PENDING)), result::describe);
 
         CompileManifest manifest = ManifestCodec.readCompile(prepared.generation().annotationManifest());
-        ExportIndex index = ManifestCodec.readExports(classes.resolve(PENDING));
+        ExportIndex index = ManifestCodec.readExports(classes.resolve(PUBLISHED));
         assertEquals("fx:test:main", index.compilationId());
         assertEquals(List.of("fx.Docs", "fx.Pages"), facades(index));
         assertEquals(facades(manifest.local()), facades(index));
@@ -86,6 +86,7 @@ class PublishedGraphsTest {
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG404"), result.describe());
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result::describe);
+        assertFalse(Files.exists(prepared.request().classesOutput().resolve(PUBLISHED)), result::describe);
         assertFalse(Files.exists(Path.of(ManifestCodec.readCompile(prepared.generation().annotationManifest())
                 .processorInventory())), result::describe);
     }
@@ -106,7 +107,7 @@ class PublishedGraphsTest {
                 List.of("prod.BillsGraph.Definition", "prod.BillsGraph.Action", "cons.ArchivesGraph.Definition")),
                 () -> ManifestProcessors.Recording.claimed().toString());
 
-        ExportIndex index = ManifestCodec.readExports(prepared.request().classesOutput().resolve(PENDING));
+        ExportIndex index = ManifestCodec.readExports(prepared.request().classesOutput().resolve(PUBLISHED));
         assertEquals(List.of("cons.Archives"), facades(index));
         assertEquals(List.of(), symbols(index));
         assertTrue(index.annotationTypes().stream().allMatch(name -> name.startsWith("cons.")),
@@ -125,19 +126,20 @@ class PublishedGraphsTest {
         assertTrue(failure.getMessage().contains("compilationId"), failure.getMessage());
     }
 
-    /** A producer compiled on its own, packaged with the index it would publish under the published name. */
+    /** A producer compiled on its own, packaged with the index its completion step published. */
     private static Path publish(Map<String, String> sources, Path jar, UnaryOperator<String> index)
             throws IOException {
         Compilation.Prepared prepared = Compilation.prepare(sources);
         Compilation.Result result = Compilation.compilePrepared(prepared);
         assertTrue(result.success(), result.describe());
         Path classes = prepared.request().classesOutput();
-        String pending = Files.readString(classes.resolve(PENDING), StandardCharsets.UTF_8);
+        String published = Files.readString(classes.resolve(PUBLISHED), StandardCharsets.UTF_8);
         try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(jar))) {
             for (Path file : files(classes)) {
                 String name = classes.relativize(file).toString().replace(File.separatorChar, '/');
-                // The carrier of a compilation and its provisional index belong to that compilation alone.
-                if (name.equals(PENDING) || name.startsWith("io/stategraph/generated/bootstrap/")) {
+                // The completion step already removed the carrier, whose binaries belong to no jar.
+                assertFalse(name.startsWith("io/stategraph/generated/bootstrap/"), name);
+                if (name.equals(PUBLISHED)) {
                     continue;
                 }
                 out.putNextEntry(new JarEntry(name));
@@ -145,7 +147,7 @@ class PublishedGraphsTest {
                 out.closeEntry();
             }
             out.putNextEntry(new JarEntry(PUBLISHED));
-            out.write(index.apply(pending).getBytes(StandardCharsets.UTF_8));
+            out.write(index.apply(published).getBytes(StandardCharsets.UTF_8));
             out.closeEntry();
         }
         return jar;

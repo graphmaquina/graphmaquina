@@ -48,7 +48,7 @@ public final class GenerationOutput {
         Objects.requireNonNull(sources, "sources");
         Objects.requireNonNull(manifest, "manifest");
         Path work = Files.createDirectories(request.workDirectory().toAbsolutePath());
-        Path manifestPath = work.resolve(MANIFEST);
+        Path manifestPath = manifestPath(request);
         Path staging = work.resolve(STAGING);
         try {
             delete(staging);
@@ -64,6 +64,14 @@ public final class GenerationOutput {
         } finally {
             delete(staging);
         }
+    }
+
+    /**
+     * Where the combined manifest of {@code request} lives, which is what {@link CompilationOutputs} reads to
+     * know the generator ran for this very compilation before javac did.
+     */
+    static Path manifestPath(GenerationRequest request) {
+        return request.workDirectory().toAbsolutePath().resolve(MANIFEST);
     }
 
     /** Writes every source under {@code staging}, refusing one that would overwrite an original source. */

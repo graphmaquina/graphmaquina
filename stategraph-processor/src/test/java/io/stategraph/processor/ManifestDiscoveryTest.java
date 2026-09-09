@@ -115,7 +115,7 @@ class ManifestDiscoveryTest {
 
         ManifestProcessors.Recording.reset();
         ManifestProcessors.Other.reset();
-        Compilation.compilePrepared(prepared, processors(ManifestProcessors.Recording.class));
+        Compilation.compileWithoutLifecycle(prepared, processors(ManifestProcessors.Recording.class));
 
         assertEquals(new TreeSet<>(FIXED), new TreeSet<>(ManifestProcessors.Recording.claimed()));
     }
@@ -158,7 +158,8 @@ class ManifestDiscoveryTest {
                 manifest.local(), manifest.dependencies(), manifest.processorInventory(),
                 manifest.ownedSources()));
 
-        assertSingleManifestError(Compilation.compilePrepared(prepared), "0.0.0-another-tool");
+        assertSingleManifestError(Compilation.compileWithoutLifecycle(prepared, List.of()),
+                "0.0.0-another-tool");
     }
 
     @Test
@@ -167,7 +168,7 @@ class ManifestDiscoveryTest {
         rewrite(prepared, manifest -> new CompileManifest(9, manifest.toolVersion(), manifest.local(),
                 manifest.dependencies(), manifest.processorInventory(), manifest.ownedSources()));
 
-        assertSingleManifestError(Compilation.compilePrepared(prepared), "schemaVersion 9");
+        assertSingleManifestError(Compilation.compileWithoutLifecycle(prepared, List.of()), "schemaVersion 9");
     }
 
     @Test
@@ -175,7 +176,8 @@ class ManifestDiscoveryTest {
         Compilation.Prepared prepared = Compilation.prepare(TypedFixtures.minimal());
         rewrite(prepared, manifest -> annotationTypes(manifest, added(manifest, "fx.DocsGraph.Nope")));
 
-        assertSingleManifestError(Compilation.compilePrepared(prepared), "fx.DocsGraph.Nope");
+        assertSingleManifestError(Compilation.compileWithoutLifecycle(prepared, List.of()),
+                "fx.DocsGraph.Nope");
     }
 
     @Test
@@ -183,7 +185,8 @@ class ManifestDiscoveryTest {
         Compilation.Prepared prepared = Compilation.prepare(TypedFixtures.minimal());
         rewrite(prepared, manifest -> annotationTypes(manifest, added(manifest, "fx.DocsGraph.Row")));
 
-        assertSingleManifestError(Compilation.compilePrepared(prepared), "fx.DocsGraph.Row twice");
+        assertSingleManifestError(Compilation.compileWithoutLifecycle(prepared, List.of()),
+                "fx.DocsGraph.Row twice");
     }
 
     @Test
@@ -227,7 +230,7 @@ class ManifestDiscoveryTest {
     private static Compilation.Result record(Map<String, String> sources, Class<?>... processors) {
         ManifestProcessors.Recording.reset();
         ManifestProcessors.Other.reset();
-        return Compilation.compilePrepared(Compilation.prepare(sources), processors(processors));
+        return Compilation.compileWithoutLifecycle(Compilation.prepare(sources), processors(processors));
     }
 
     private static List<String> processors(Class<?>... processors) {

@@ -160,7 +160,7 @@ class TypedBindingsTest {
 
     /** Prepares the fixture and compiles it with the resolving processor instead of the real one. */
     private static Compilation.Result resolve(Map<String, String> sources) {
-        return Compilation.compilePrepared(Compilation.prepare(sources),
+        return Compilation.compileWithoutLifecycle(Compilation.prepare(sources),
                 List.of("-processor", TypedProcessors.Resolving.class.getName()));
     }
 
