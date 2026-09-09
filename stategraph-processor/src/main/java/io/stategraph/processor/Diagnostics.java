@@ -14,6 +14,12 @@ final class Diagnostics {
     private final Messager messager;
     private int errors;
 
+    /** Reported without an anchor, for a failure of the compilation itself rather than of a declaration. */
+    void error(String code, String message) {
+        errors++;
+        messager.printMessage(Diagnostic.Kind.ERROR, "[" + code + "] " + message);
+    }
+
     void error(String code, String message, Element element) {
         errors++;
         messager.printMessage(Diagnostic.Kind.ERROR, "[" + code + "] " + message, element);

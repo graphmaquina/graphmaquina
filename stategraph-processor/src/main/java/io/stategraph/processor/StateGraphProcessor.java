@@ -21,18 +21,26 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.TypeElement;
 
 /**
- * Entry point. Claims {@code io.stategraph.annotation.*} and the {@code @Generated} it writes, so it coexists with
- * other processors. One round suffices: nothing generated is referenced by the annotations themselves.
+ * Entry point. Claims the annotations {@link ManifestRegistry} enumerates for this compilation, the fixed ones
+ * and the generated ones alike, so it coexists with other processors and never matches a name it does not own.
+ * One round suffices: nothing generated is referenced by the annotations themselves.
  */
 public final class StateGraphProcessor extends AbstractProcessor {
 
+    private ManifestRegistry manifests = ManifestRegistry.unloaded();
+    private boolean reportedManifest;
     private Diagnostics diagnostics;
     private MachineModelBuilder machines;
     private SetModelBuilder sets;
 
     @Override
+    public Set<String> getSupportedOptions() {
+        return Set.of(ManifestRegistry.OPTION);
+    }
+
+    @Override
     public Set<String> getSupportedAnnotationTypes() {
-        return Set.of("io.stategraph.annotation.*", "javax.annotation.processing.Generated");
+        return manifests.supportedAnnotationTypes();
     }
 
     @Override
@@ -43,6 +51,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     @Override
     public synchronized void init(ProcessingEnvironment env) {
         super.init(env);
+        manifests = ManifestRegistry.load(env);
         diagnostics = new Diagnostics(env.getMessager());
         Signatures signatures = new Signatures(env.getElementUtils(), env.getTypeUtils());
         machines = new MachineModelBuilder(new Annotations(env.getElementUtils()), signatures, new Accessors(signatures),
@@ -52,6 +61,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
+        reportManifestFailure();
         Map<String, MachineModel> models = new LinkedHashMap<>();
         Set<String> failed = new HashSet<>();
         for (Element element : round.getElementsAnnotatedWith(StateGraph.class)) {
@@ -64,6 +74,15 @@ public final class StateGraphProcessor extends AbstractProcessor {
             }
         }
         return true;
+    }
+
+    /** A manifest the registry refused is reported once: init has no round to anchor a diagnostic at. */
+    private void reportManifestFailure() {
+        if (reportedManifest) {
+            return;
+        }
+        reportedManifest = true;
+        manifests.failure().ifPresent(reason -> diagnostics.error("SG602", reason));
     }
 
     /** A machine's model, built once per round; a machine from the classpath is built on demand. */

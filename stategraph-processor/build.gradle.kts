@@ -13,6 +13,7 @@ tasks.jar {
 
 dependencies {
     implementation(project(":stategraph-core"))
+    implementation(project(":stategraph-codegen"))
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
 
