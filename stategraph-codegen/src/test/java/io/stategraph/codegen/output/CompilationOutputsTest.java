@@ -41,6 +41,8 @@ class CompilationOutputsTest {
     private static final String CARRIER = "io.stategraph.generated.bootstrap.GraphCompilation_0123456789abcdef";
     private static final String CARRIER_SOURCE =
             "io/stategraph/generated/bootstrap/GraphCompilation_0123456789abcdef.java";
+    private static final String CARRIER_BINARY =
+            "io/stategraph/generated/bootstrap/GraphCompilation_0123456789abcdef.class";
     private static final String PUBLISHED = "META-INF/stategraph/exports.json";
     private static final String PENDING = "META-INF/stategraph/pending-exports.json";
     private static final String INVENTORY = "owned-outputs.json";
@@ -180,11 +182,9 @@ class CompilationOutputsTest {
         assertEquals(new TreeSet<>(List.of("fx/DocsGraph.class", "fx/DocsGraph$Row.class", "fx/Docs_.class")),
                 new TreeSet<>(owned.binaries()));
         assertEquals(List.of(PUBLISHED), owned.resources());
-        assertEquals(List.of("io/stategraph/generated/bootstrap/GraphCompilation_0123456789abcdef.class"),
-                owned.excludedBinaries());
+        assertEquals(List.of(CARRIER_BINARY), owned.excludedBinaries());
 
-        assertFalse(Files.exists(classesOutput.resolve(
-                "io/stategraph/generated/bootstrap/GraphCompilation_0123456789abcdef.class")));
+        assertFalse(Files.exists(classesOutput.resolve(CARRIER_BINARY)));
         assertFalse(Files.exists(classesOutput.resolve("io/stategraph")));
         assertTrue(Files.isRegularFile(classesOutput.resolve("fx/Manual.class")));
         assertArrayEquals(index, Files.readAllBytes(classesOutput.resolve(PUBLISHED)));
@@ -192,6 +192,45 @@ class CompilationOutputsTest {
         assertFalse(Files.exists(workDirectory.resolve(PENDING_INVENTORY)));
         assertEquals(List.of("annotation-manifest.json", INVENTORY, "processor-inventory.json"),
                 sorted(names(workDirectory)));
+    }
+
+    @Test
+    void refusesAClassOutputThatCarriesNoBinaryOfItsOwnCarrier() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileOwnedAndManualSources(List.of("-g:none"));
+        byte[] index = writeProvisionalIndex();
+        writeProcessorInventory(List.of("fx.Docs_"));
+
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> CompilationOutputs.complete(request()));
+
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().contains(CARRIER), failure.getMessage());
+        assertTrue(failure.getMessage().contains("-g:none"), failure.getMessage());
+        assertFalse(Files.exists(classesOutput.resolve(PUBLISHED)));
+        assertFalse(Files.exists(workDirectory.resolve(INVENTORY)));
+        assertTrue(Files.isRegularFile(workDirectory.resolve(PENDING_INVENTORY)));
+        assertTrue(Files.isRegularFile(classesOutput.resolve(CARRIER_BINARY)));
+        assertTrue(Files.isRegularFile(classesOutput.resolve("fx/DocsGraph.class")));
+        assertTrue(Files.isRegularFile(classesOutput.resolve("fx/Manual.class")));
+        assertArrayEquals(index, Files.readAllBytes(classesOutput.resolve(PENDING)));
+    }
+
+    @Test
+    void retiresTheClassFilesAnInterruptedCompilationLeftBehind() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileOwnedAndManualSources();
+        byte[] manualBytes = Files.readAllBytes(classesOutput.resolve("fx/Manual.class"));
+
+        CompilationOutputs.prepare(request());
+
+        assertFalse(Files.exists(classesOutput.resolve(CARRIER_BINARY)), "the carrier of an interrupted cycle");
+        assertFalse(Files.exists(classesOutput.resolve("io/stategraph")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph$Row.class")));
+        assertArrayEquals(manualBytes, Files.readAllBytes(classesOutput.resolve("fx/Manual.class")));
     }
 
     /** The request every test runs against: five roots that share no parent but the temporary file system. */
@@ -211,6 +250,11 @@ class CompilationOutputsTest {
 
     /** Compiles the two owned units and one unowned type into the class output, as javac would. */
     private void compileOwnedAndManualSources() {
+        compileOwnedAndManualSources(List.of());
+    }
+
+    /** The same, under {@code options} of the build's own choosing, such as a debug setting. */
+    private void compileOwnedAndManualSources(List<String> options) {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("fx.DocsGraph", """
                 package fx;
@@ -235,7 +279,7 @@ class CompilationOutputsTest {
                 """);
         List<Path> processorFiles = SourceFiles.write(processorSourcesOutput, generated);
         SourceFiles.Compilation compilation = SourceFiles.compileStrict(
-                Stream.concat(files.stream(), processorFiles.stream()).toList(), classesOutput);
+                Stream.concat(files.stream(), processorFiles.stream()).toList(), classesOutput, options);
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
     }
 

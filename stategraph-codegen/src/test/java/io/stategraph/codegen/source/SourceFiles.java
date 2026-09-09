@@ -82,9 +82,20 @@ public final class SourceFiles {
      * {@code -proc:none -Xlint:all,-serial -Werror}, and returns what javac reported.
      */
     public static Compilation compileStrict(List<Path> files, Path classes) {
+        return compileStrict(files, classes, List.of());
+    }
+
+    /**
+     * The same, with {@code extra} appended, so a test can compile a fixture under a debug setting of its own,
+     * for example {@code -g:none}, which drops the attributes a class output is normally read back through.
+     */
+    public static Compilation compileStrict(List<Path> files, Path classes, List<String> extra) {
         try {
             Files.createDirectories(classes);
-            return run(files, classes, List.of("-proc:none", "-Xlint:all,-serial", "-Werror", "--release", "21"));
+            List<String> options =
+                new ArrayList<>(List.of("-proc:none", "-Xlint:all,-serial", "-Werror", "--release", "21"));
+            options.addAll(extra);
+            return run(files, classes, options);
         } catch (IOException failure) {
             throw new UncheckedIOException(failure);
         }

@@ -36,6 +36,12 @@ import java.util.stream.Stream;
  * carrier out of the jar by deleting its exact binaries, promotes the provisional index to
  * {@code META-INF/stategraph/exports.json} byte for byte and seals
  * {@code <workDirectory>/owned-outputs.json} by atomic replacement.</p>
+ *
+ * <p>That enumeration reads the {@code SourceFile} attribute of each class file, so a class output compiled
+ * without it — {@code -g:none} — would look empty. Since every generation emits a carrier, a class output that
+ * yields no carrier binary is refused with {@code SG602} rather than sealed: publishing an inventory that
+ * claims the compilation produced nothing would put the carrier in the jar and leave every stale binary behind,
+ * silently.</p>
  */
 public final class CompilationOutputs {
 
@@ -54,10 +60,15 @@ public final class CompilationOutputs {
     /**
      * Retires everything a previous cycle owned and invalidates the published index, before javac runs.
      *
+     * <p>When a pending inventory is already there, the cycle it belongs to was interrupted: javac may have
+     * written class files for its units that no inventory could list, since only {@code complete} enumerates
+     * them. Those are retired too, by asking {@link OwnedClassFiles} which binaries belong to the units that
+     * generation owned; a class file the enumeration does not attribute to one of them is never touched.</p>
+     *
      * @throws CodegenException {@code SG602} if the generator wrote no manifest for this compilation, or
      *     {@code SG603} if an inventory names a path outside the root it belongs to
-     * @throws IOException if an inventory cannot be read, the pending inventory cannot be written or an output
-     *     cannot be removed
+     * @throws IOException if an inventory cannot be read, a class file cannot be read, the pending inventory
+     *     cannot be written or an output cannot be removed
      */
     public static void prepare(GenerationRequest request) throws IOException {
         Objects.requireNonNull(request, "request");
@@ -66,15 +77,17 @@ public final class CompilationOutputs {
         Path classes = root(request.classesOutput());
         Path processorSources = root(request.processorSourcesOutput());
 
+        Path pendingInventory = work.resolve(PENDING_INVENTORY);
+        boolean interrupted = Files.isRegularFile(pendingInventory);
         List<OwnedOutputs> previous = new ArrayList<>();
         previous.addAll(readInventory(work.resolve(INVENTORY), classes, processorSources));
-        previous.addAll(readInventory(work.resolve(PENDING_INVENTORY), classes, processorSources));
+        previous.addAll(readInventory(pendingInventory, classes, processorSources));
         OwnedOutputs retiring = new OwnedOutputs(SCHEMA_VERSION,
             union(previous.stream().map(OwnedOutputs::sources).toList(), manifest.ownedSources()),
             union(previous.stream().map(OwnedOutputs::binaries).toList(), List.of()),
             union(previous.stream().map(OwnedOutputs::resources).toList(), List.of()),
             union(previous.stream().map(OwnedOutputs::excludedBinaries).toList(), List.of()));
-        ManifestCodec.writeOwned(work.resolve(PENDING_INVENTORY), retiring);
+        ManifestCodec.writeOwned(pendingInventory, retiring);
 
         Set<String> generated = Set.copyOf(manifest.ownedSources());
         List<Path> retired = new ArrayList<>();
@@ -94,6 +107,9 @@ public final class CompilationOutputs {
         }
         retired.add(resolve(classes, PUBLISHED_INDEX));
         retired.add(resolve(classes, PENDING_INDEX));
+        if (interrupted) {
+            retired.addAll(OwnedClassFiles.enumerate(classes, ownedTypes(retiring)));
+        }
         delete(retired, List.of(classes, processorSources));
     }
 
@@ -101,7 +117,8 @@ public final class CompilationOutputs {
      * Publishes what javac accepted: the index, the inventory of the outputs it produced, and no carrier.
      *
      * @throws CodegenException {@code SG602} if this compilation was never prepared, carries no provisional
-     *     index or no processor inventory, or {@code SG603} if a path of the new inventory escapes its root
+     *     index, no processor inventory or no class file for its carrier, or {@code SG603} if a path of the new
+     *     inventory escapes its root
      * @throws IOException if a class file cannot be read or an output cannot be written
      */
     public static void complete(GenerationRequest request) throws IOException {
@@ -147,6 +164,13 @@ public final class CompilationOutputs {
             }
         }
         List<Path> carrierBinaries = OwnedClassFiles.enumerate(classes, carrier);
+        if (carrierBinaries.isEmpty()) {
+            throw new CodegenException(UNUSABLE, "cannot complete the compilation of "
+                + request.compilationId() + ": no class file in " + classes + " belongs to the carrier "
+                + String.join(", ", carrier) + ", which every compilation of this generator produces."
+                + " StateGraph links a binary to the unit that declared it through the SourceFile attribute"
+                + " of the class file, which javac omits under -g:none");
+        }
         List<Path> binaries = new ArrayList<>(OwnedClassFiles.enumerate(classes, owned));
         binaries.removeAll(carrierBinaries);
 
@@ -233,6 +257,36 @@ public final class CompilationOutputs {
             files.add(type.replace('.', '/') + ".java");
         }
         return List.copyOf(files);
+    }
+
+    /**
+     * The top-level types a generation owns, as far as its inventory can say: the sources it generated, and the
+     * types the binaries it already listed belong to. These are candidates only — {@link OwnedClassFiles}
+     * decides which class files really belong to them by reading the class files themselves.
+     */
+    private static Set<String> ownedTypes(OwnedOutputs inventory) {
+        Set<String> types = new TreeSet<>();
+        for (String source : inventory.sources()) {
+            types.add(typeName(source));
+        }
+        for (String binary : inventory.binaries()) {
+            types.addAll(declaringTypes(binary));
+        }
+        for (String excluded : inventory.excludedBinaries()) {
+            types.addAll(declaringTypes(excluded));
+        }
+        return types;
+    }
+
+    /**
+     * The types a class file path could have been compiled from: the name it spells, and — since {@code $}
+     * separates a nested class from its outer one but is also legal in a top-level name — the part before its
+     * first {@code $}.
+     */
+    private static List<String> declaringTypes(String binary) {
+        String name = binary.substring(0, binary.length() - ".class".length()).replace('/', '.');
+        int nested = name.indexOf('$');
+        return nested < 0 ? List.of(name) : List.of(name, name.substring(0, nested));
     }
 
     /** The canonical name of the type a source path relative to its source root declares. */
