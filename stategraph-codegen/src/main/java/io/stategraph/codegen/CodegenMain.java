@@ -83,8 +83,21 @@ public final class CodegenMain {
         }
     }
 
-    /** The cause of a failure as a build should read it: the SG code when the generator assigned one. */
-    private static String describe(Throwable failure) {
+    /**
+     * The failure as a build should read it: the SG code when the generator assigned one, followed by every
+     * cause underneath it, since the outermost message alone usually says what the tool was doing and not what
+     * went wrong.
+     */
+    static String describe(Throwable failure) {
+        StringBuilder description = new StringBuilder(headline(failure));
+        for (Throwable cause = failure.getCause(); cause != null; cause = cause.getCause()) {
+            description.append(": ").append(headline(cause));
+        }
+        return description.toString();
+    }
+
+    /** One link of the chain: the SG code when the generator assigned one, the type otherwise. */
+    private static String headline(Throwable failure) {
         if (failure instanceof CodegenException diagnosed) {
             return "[" + diagnosed.code() + "] " + diagnosed.getMessage();
         }

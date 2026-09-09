@@ -131,6 +131,25 @@ class CompilationOutputsTest {
         assertTrue(failure.getMessage().contains("../outside.class"), failure.getMessage());
     }
 
+    /**
+     * A blank entry resolves to the output root itself, so accepting one would hand the whole class output to
+     * the step that deletes what the previous cycle owned.
+     */
+    @Test
+    void refusesABlankInventoryPath() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(1,
+                List.of(), List.of(""), List.of(), List.of()));
+        Path kept = write(classesOutput.resolve("fx/Kept.class"), new byte[] {1});
+
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("claims ''"), failure.getMessage());
+        assertTrue(Files.exists(kept), failure.getMessage());
+    }
+
     @Test
     void refusesToCompleteACompilationThatWasNeverPrepared() throws IOException {
         writeManifest(List.of(CARRIER_SOURCE));

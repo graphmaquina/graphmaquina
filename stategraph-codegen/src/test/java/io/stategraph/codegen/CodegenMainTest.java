@@ -114,6 +114,21 @@ class CodegenMainTest {
         assertTrue(invocation.errors().contains("SG602"), invocation.errors());
     }
 
+    /**
+     * A wrapped failure says what the tool was doing in its own message and what went wrong in its cause, so
+     * the line the build prints carries the whole chain and not only the outermost sentence.
+     */
+    @Test
+    void describesEveryCauseOfAWrappedFailure() {
+        String described = CodegenMain.describe(new UncheckedIOException("cannot read the original sources",
+                new IOException("classes/fx is a directory",
+                        new CodegenException("SG603", "the inventory claims a file it does not own"))));
+
+        assertEquals("java.io.UncheckedIOException: cannot read the original sources"
+                + ": java.io.IOException: classes/fx is a directory"
+                + ": [SG603] the inventory claims a file it does not own", described);
+    }
+
     /** Writes the fixture and the request file the tool reads, and returns the path of that file. */
     private Path request() throws IOException {
         SourceFiles.write(directory.resolve("originals"), ORIGINALS);

@@ -226,14 +226,17 @@ public final class CompilationOutputs {
     }
 
     /**
-     * Refuses an inventory path that is absolute or that lands outside {@code root} once resolved.
+     * Refuses an inventory path that is blank, that is absolute or that lands outside {@code root} once
+     * resolved. A blank entry resolves to the root itself, which would hand the whole output directory to a
+     * step that only ever deletes the files one compilation owns.
      *
      * @throws CodegenException {@code SG603} naming the entry, since an inventory may only claim files the
      *     compilation itself produced under its own output roots
      */
     private static void requireInside(List<String> entries, Path root, String inventory) {
         for (String entry : entries) {
-            if (Path.of(entry).isAbsolute() || !resolve(root, entry).normalize().startsWith(root)) {
+            if (entry.isBlank() || Path.of(entry).isAbsolute()
+                    || !resolve(root, entry).normalize().startsWith(root)) {
                 throw new CodegenException(COLLISION, "the inventory " + inventory + " claims '" + entry
                     + "', which is not a file under " + root);
             }

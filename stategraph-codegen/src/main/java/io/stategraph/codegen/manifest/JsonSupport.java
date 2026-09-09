@@ -11,6 +11,7 @@ import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
 import io.stategraph.codegen.CodegenException;
 import java.io.IOException;
+import java.io.Writer;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -36,7 +37,12 @@ final class JsonSupport {
 
     /** Opens a UTF-8, LF-terminated, two-space-indented writer for {@code path}. */
     static JsonWriter newWriter(Path path) throws IOException {
-        JsonWriter writer = new JsonWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8));
+        return newWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8));
+    }
+
+    /** The same writer over {@code out}, for a document that is assembled before it is written. */
+    static JsonWriter newWriter(Writer out) {
+        JsonWriter writer = new JsonWriter(out);
         writer.setStrictness(Strictness.STRICT);
         writer.setIndent("  ");
         return writer;

@@ -11,6 +11,7 @@ import io.stategraph.processor.model.RuleKind;
 import io.stategraph.processor.model.RuleModel;
 import io.stategraph.processor.model.WatchModel;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -134,7 +135,7 @@ final class TypedWatchReader {
                 usable.add(name);
             }
         }
-        return new Peers(mirror, Map.copyOf(declared), Set.copyOf(usable));
+        return new Peers(mirror, Collections.unmodifiableMap(declared), Collections.unmodifiableSet(usable));
     }
 
     /**

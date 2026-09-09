@@ -8,12 +8,11 @@ import io.stategraph.codegen.model.GraphDescriptor;
 import io.stategraph.codegen.model.SymbolDescriptor;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
-import java.util.TreeSet;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
@@ -42,7 +41,6 @@ final class ExportIndexWriter {
 
     private static final String PENDING = "META-INF/stategraph/pending-exports.json";
     private static final String FAILED = "SG599";
-    private static final int SCHEMA_VERSION = 1;
 
     private final ProcessingEnvironment environment;
     private final Diagnostics diagnostics;
@@ -107,26 +105,18 @@ final class ExportIndexWriter {
     }
 
     /**
-     * The qualified names of every source the processor generated, sorted, at the path the manifest names.
-     * The build reads it to know which outputs of the compilation this processor owns; the names are Java
-     * qualified names, so nothing in them needs escaping.
+     * The qualified names of every source the processor generated, at the path the manifest names. The build
+     * reads it to know which outputs of the compilation this processor owns, and the codec writes it, so the
+     * format has exactly one definition.
      */
     private void writeInventory(String inventory, Set<String> generatedQualifiedNames) {
-        StringBuilder json = new StringBuilder("{\n  \"schemaVersion\": ").append(SCHEMA_VERSION)
-                .append(",\n  \"generatedTypes\": [");
-        String separator = "\n    ";
-        for (String name : new TreeSet<>(generatedQualifiedNames)) {
-            json.append(separator).append('"').append(name).append('"');
-            separator = ",\n    ";
-        }
-        json.append(generatedQualifiedNames.isEmpty() ? "]\n}\n" : "\n  ]\n}\n");
         try {
             Path file = Path.of(inventory);
             Path parent = file.getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
             }
-            Files.writeString(file, json.toString(), StandardCharsets.UTF_8);
+            ManifestCodec.writeProcessorInventory(file, List.copyOf(generatedQualifiedNames));
         } catch (IOException | InvalidPathException failure) {
             diagnostics.error(FAILED, "could not write the processor inventory " + inventory + ": "
                     + failure.getMessage());

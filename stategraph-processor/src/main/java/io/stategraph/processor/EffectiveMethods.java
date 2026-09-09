@@ -9,6 +9,7 @@ import io.stategraph.processor.model.Binding;
 import java.lang.annotation.Annotation;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -149,6 +150,6 @@ final class EffectiveMethods {
         roles.put(GraphGuard.class, SymbolKind.GUARD);
         roles.put(GraphHook.class, SymbolKind.HOOK);
         roles.put(GraphCondition.class, SymbolKind.CONDITION);
-        return Map.copyOf(roles);
+        return Collections.unmodifiableMap(roles);
     }
 }

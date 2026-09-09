@@ -34,6 +34,7 @@ import java.lang.annotation.Annotation;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -143,7 +144,7 @@ final class ManifestRegistry {
         for (ExportIndex dependency : manifest.dependencies()) {
             types.addAll(dependency.annotationTypes());
         }
-        return Set.copyOf(types);
+        return Collections.unmodifiableSet(types);
     }
 
     /**
@@ -165,6 +166,6 @@ final class ManifestRegistry {
         for (Class<? extends Annotation> type : types) {
             names.add(type.getCanonicalName());
         }
-        return Set.copyOf(names);
+        return Collections.unmodifiableSet(names);
     }
 }

@@ -5,6 +5,9 @@ import com.google.gson.stream.JsonWriter;
 import io.stategraph.codegen.CodegenException;
 import io.stategraph.codegen.GenerationRequest;
 import java.io.IOException;
+import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
@@ -119,7 +122,7 @@ import java.util.List;
  * {@link io.stategraph.codegen.output.CompilationOutputs}, which knows each root and reports a path that
  * escapes one as {@code SG603} instead of accepting a file it does not own.
  *
- * <h2>Processor inventory JSON (readProcessorInventory)</h2>
+ * <h2>Processor inventory JSON (readProcessorInventory/writeProcessorInventory)</h2>
  *
  * <pre>{@code
  * {
@@ -295,6 +298,27 @@ public final class ManifestCodec {
         JsonObject object = JsonSupport.readObject(path);
         JsonSupport.requireSupportedSchema(JsonSupport.requireInt(object, "schemaVersion", path), path);
         return JsonSupport.sortedCopy(JsonSupport.requireStringArray(object, "generatedTypes", path));
+    }
+
+    /**
+     * Writes the qualified names of every source the annotation processor generated, sorted, to {@code path}.
+     *
+     * <p>The processor calls this instead of encoding the document itself, so that this class stays the only
+     * place that knows the format. The document ends with a newline, which the manifests above do not: that is
+     * the shape this inventory has always been written and read back in.</p>
+     *
+     * @throws IOException if {@code path} cannot be written
+     */
+    public static void writeProcessorInventory(Path path, List<String> generatedTypes) throws IOException {
+        StringWriter document = new StringWriter();
+        try (JsonWriter writer = JsonSupport.newWriter(document)) {
+            writer.beginObject();
+            writer.name("schemaVersion").value(JsonSupport.SCHEMA_VERSION);
+            writer.name("generatedTypes");
+            JsonSupport.writeStringArray(writer, JsonSupport.sortedCopy(generatedTypes));
+            writer.endObject();
+        }
+        Files.writeString(path, document.toString() + "\n", StandardCharsets.UTF_8);
     }
 
     private static ExportIndex readExportIndex(JsonObject object, Path file) {
