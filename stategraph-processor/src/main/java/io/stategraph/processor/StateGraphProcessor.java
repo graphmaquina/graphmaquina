@@ -2,6 +2,7 @@ package io.stategraph.processor;
 
 import io.stategraph.annotation.StateGraph;
 import io.stategraph.annotation.StateGraphs;
+import io.stategraph.processor.gen.BoundInvocation;
 import io.stategraph.processor.gen.MachineGenerator;
 import io.stategraph.processor.gen.SetGenerator;
 import io.stategraph.processor.model.MachineModel;
@@ -29,7 +30,11 @@ public final class StateGraphProcessor extends AbstractProcessor {
 
     private ManifestRegistry manifests = ManifestRegistry.unloaded();
     private boolean reportedManifest;
+    private boolean validatedExports;
+    private boolean validExports = true;
     private Diagnostics diagnostics;
+    private ExportValidator exports;
+    private BoundInvocation invocations;
     private MachineModelBuilder machines;
     private SetModelBuilder sets;
 
@@ -54,6 +59,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
         manifests = ManifestRegistry.load(env);
         diagnostics = new Diagnostics(env.getMessager());
         Signatures signatures = new Signatures(env.getElementUtils(), env.getTypeUtils());
+        exports = new ExportValidator(signatures, new EffectiveMethods(signatures), diagnostics);
+        invocations = new BoundInvocation(env.getElementUtils(), env.getTypeUtils());
         machines = new MachineModelBuilder(new Annotations(env.getElementUtils()), signatures, new Accessors(signatures),
                 new Bindings(signatures, diagnostics), diagnostics);
         sets = new SetModelBuilder(new Annotations(env.getElementUtils()), signatures, diagnostics);
@@ -62,6 +69,9 @@ public final class StateGraphProcessor extends AbstractProcessor {
     @Override
     public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
         reportManifestFailure();
+        if (!validateExports()) {
+            return true;
+        }
         Map<String, MachineModel> models = new LinkedHashMap<>();
         Set<String> failed = new HashSet<>();
         for (Element element : round.getElementsAnnotatedWith(StateGraph.class)) {
@@ -85,6 +95,19 @@ public final class StateGraphProcessor extends AbstractProcessor {
         manifests.failure().ifPresent(reason -> diagnostics.error("SG602", reason));
     }
 
+    /**
+     * Whether the members this compilation exports hold, checked once against javac's own declarations. A
+     * graph built on an export that does not hold would only repeat, at every use, what its declaration
+     * already reported.
+     */
+    private boolean validateExports() {
+        if (!validatedExports) {
+            validatedExports = true;
+            validExports = manifests.manifest().map(exports::validate).orElse(true);
+        }
+        return validExports;
+    }
+
     /** A machine's model, built once per round; a machine from the classpath is built on demand. */
     private Optional<MachineModel> resolve(TypeElement type, RoundEnvironment round, Map<String, MachineModel> models, Set<String> failed) {
         String name = type.getQualifiedName().toString();
@@ -99,7 +122,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
             models.put(name, model.get());
             // A machine from the classpath already carries its companion in its own jar.
             if (round.getRootElements().contains(type)) {
-                write(MachineGenerator.qualifiedName(model.get()), MachineGenerator.generate(model.get()), type);
+                write(MachineGenerator.qualifiedName(model.get()), MachineGenerator.generate(model.get(), invocations), type);
             }
         } else {
             failed.add(name);

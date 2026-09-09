@@ -47,7 +47,7 @@ public final class MachineGenerator {
         return model.packageName() + "." + model.facadeName() + "_";
     }
 
-    public static String generate(MachineModel model) {
+    public static String generate(MachineModel model, BoundInvocation invocations) {
         Names names = new Names(model.packageName(), types(model));
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
         String s = names.of(model.types().statesElement().getQualifiedName().toString());
@@ -78,7 +78,7 @@ public final class MachineGenerator {
         out.line("this.stateMachine = " + objects + ".requireNonNull(stateMachine, \"stateMachine\");");
         out.close();
         out.blank();
-        graph(model, names, parameters, out);
+        graph(model, names, parameters, invocations, out);
         for (OperationModel operation : model.operations()) {
             out.blank();
             out.line("@Override");
@@ -105,7 +105,8 @@ public final class MachineGenerator {
         return out.toString();
     }
 
-    private static void graph(MachineModel model, Names names, Map<String, String> parameters, SourceWriter out) {
+    private static void graph(MachineModel model, Names names, Map<String, String> parameters, BoundInvocation invocations,
+                              SourceWriter out) {
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
         String s = names.of(model.types().statesElement().getQualifiedName().toString());
         String objects = names.of(OBJECTS);
@@ -139,14 +140,14 @@ public final class MachineGenerator {
                 Optional<CellModel> cell = cellOf(model, from, to);
                 Optional<ForbidModel> forbid = forbidOf(model, from, to);
                 if (cell.isPresent()) {
-                    emitCell(model, names, parameters, cell.get(), to, out);
+                    emitCell(model, names, parameters, invocations, cell.get(), to, out);
                 } else if (forbid.isPresent()) {
                     out.line(".to(" + s + "." + to + ").forbid(" + quote(forbid.get().reason()) + ")");
                 }
             }
             out.line(".stay()");
             Optional<WatchModel> watch = watchOf(model, from);
-            watch.ifPresent((WatchModel found) -> emitWatch(model, names, parameters, found, out));
+            watch.ifPresent((WatchModel found) -> emitWatch(model, names, parameters, invocations, found, out));
             out.line(".forbidOthers(" + quote(rowReason(model, from)) + ")");
             out.outdent();
         }
@@ -155,13 +156,16 @@ public final class MachineGenerator {
         out.close();
     }
 
-    private static void emitCell(MachineModel model, Names names, Map<String, String> parameters, CellModel cell, String to, SourceWriter out) {
+    private static void emitCell(MachineModel model, Names names, Map<String, String> parameters, BoundInvocation invocations,
+                                 CellModel cell, String to, SourceWriter out) {
         String s = names.of(model.types().statesElement().getQualifiedName().toString());
+        List<String> context = List.of(lambdaParameter("context", parameters));
+        List<String> entity = List.of(entityParameter(model, parameters));
         StringBuilder line = new StringBuilder(".to(" + s + "." + to + ")");
         if (cell.kind() == EdgeKind.ACTION) {
             Binding action = cell.action().orElseThrow();
             line.append(action.async() ? ".asyncAction(" : ".action(").append(quote(cell.name())).append(", ")
-                    .append(reference(action, parameters, names)).append(')');
+                    .append(lambda(action, context, parameters, names, invocations)).append(')');
             cell.timeout().ifPresent((Duration timeout) -> line.append(".timeout(").append(names.of(DURATION))
                     .append(".parse(\"").append(timeout).append("\"))"));
         } else {
@@ -169,18 +173,19 @@ public final class MachineGenerator {
         }
         for (Binding guard : cell.guards()) {
             line.append(guard.async() ? ".asyncGuard(" : ".guard(").append(quote(guard.methodName())).append(", ")
-                    .append(reference(guard, parameters, names)).append(')');
+                    .append(lambda(guard, context, parameters, names, invocations)).append(')');
         }
         cell.onFailure().ifPresent((String state) -> line.append(".onFailure(").append(s).append('.').append(state).append(')'));
         for (TypeMirror type : cell.failsOn()) {
             line.append(".failsOn(").append(type).append(".class)");
         }
         cell.afterCommit().ifPresent((Binding hook) -> line.append(".afterCommit(").append(quote(hook.methodName())).append(", ")
-                .append(reference(hook, parameters, names)).append(')'));
+                .append(lambda(hook, entity, parameters, names, invocations)).append(')'));
         out.line(line.toString());
     }
 
-    private static void emitWatch(MachineModel model, Names names, Map<String, String> parameters, WatchModel watch, SourceWriter out) {
+    private static void emitWatch(MachineModel model, Names names, Map<String, String> parameters, BoundInvocation invocations,
+                                  WatchModel watch, SourceWriter out) {
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
         String s = names.of(model.types().statesElement().getQualifiedName().toString());
         String p = names.of(watch.peer().entityElement().getQualifiedName().toString());
@@ -196,7 +201,8 @@ public final class MachineGenerator {
         for (RuleModel rule : watch.rules()) {
             String condition = switch (rule.kind()) {
                 case CONDITION -> quote(rule.condition().orElseThrow().methodName()) + ", "
-                        + reference(rule.condition().orElseThrow(), parameters, names);
+                        + lambda(rule.condition().orElseThrow(), List.of(entity, lambdaParameter("peers", parameters),
+                                lambdaParameter("view", parameters)), parameters, names, invocations);
                 case ALL_IN -> names.of(WATCH_CONDITION) + ".allIn(" + q + "." + rule.argument() + ")";
                 case ANY_IN -> names.of(WATCH_CONDITION) + ".anyIn(" + q + "." + rule.argument() + ")";
                 case NONE_IN -> names.of(WATCH_CONDITION) + ".noneIn(" + q + "." + rule.argument() + ")";
@@ -324,12 +330,18 @@ public final class MachineGenerator {
         return names;
     }
 
-    /** {@code owner::method} for static members, {@code parameter::method} for instance members. */
-    static String reference(Binding binding, Map<String, String> parameters, Names names) {
-        if (binding.isStatic()) {
-            return names.of(binding.owner().getQualifiedName().toString()) + "::" + binding.methodName();
-        }
-        return parameters.get(binding.owner().getQualifiedName().toString()) + "::" + binding.methodName();
+    /**
+     * The lambda that hands the arguments of the SPI's own functional interface to the exact method the binding
+     * selected: {@code owner} is the class for a static member and the injected parameter for an instance one.
+     * A lambda, rather than a method reference, because only a call can name the parameter types that keep the
+     * selected overload when the host declares another one that would also fit.
+     */
+    static String lambda(Binding binding, List<String> arguments, Map<String, String> parameters, Names names,
+                         BoundInvocation invocations) {
+        String receiver = binding.isStatic()
+                ? names.of(binding.owner().getQualifiedName().toString())
+                : parameters.get(binding.owner().getQualifiedName().toString());
+        return "(" + String.join(", ", arguments) + ") -> " + invocations.emit(binding, receiver, arguments);
     }
 
     /** The decapitalised entity name, suffixed with {@code Entity} when a dependency parameter or the companion itself already claims it. */
@@ -338,9 +350,15 @@ public final class MachineGenerator {
         return parameters.containsValue(name) || RESERVED.contains(name) ? name + "Entity" : name;
     }
 
-    /** A lambda parameter of {@code graph(...)} may not shadow one of its own parameters. */
+    /** A lambda parameter of {@code graph(...)} may not shadow one of its own parameters, nor a reserved name. */
     private static String lambdaParameter(String name, Map<String, String> parameters) {
-        return parameters.containsValue(name) ? name + "Peer" : name;
+        String unique = name;
+        int suffix = 1;
+        while (parameters.containsValue(unique) || RESERVED.contains(unique)) {
+            suffix++;
+            unique = name + suffix;
+        }
+        return unique;
     }
 
     static String decapitalize(String name) {

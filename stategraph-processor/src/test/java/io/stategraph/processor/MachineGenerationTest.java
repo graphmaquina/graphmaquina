@@ -28,11 +28,11 @@ class MachineGenerationTest {
         String source = result.generated("fx.Docs_");
         assertTrue(source.contains("public final class Docs_ implements Docs"), source);
         assertTrue(source.contains("public static GraphDefinition<Doc, DocStatus> graph(DocActions docActions)"), source);
-        assertTrue(source.contains(".to(DocStatus.PUBLISHED).action(\"publish\", docActions::publish)"), source);
-        assertTrue(source.contains(".guard(\"approved\", docActions::approved)"), source);
+        assertTrue(source.contains(".to(DocStatus.PUBLISHED).action(\"publish\", (context) -> docActions.publish(context))"), source);
+        assertTrue(source.contains(".guard(\"approved\", (context) -> docActions.approved(context))"), source);
         assertTrue(source.contains(".onFailure(DocStatus.DRAFT)"), source);
-        assertTrue(source.contains(".afterCommit(\"notify\", docActions::notify)"), source);
-        assertTrue(source.contains(".asyncAction(\"archive\", docActions::archiveAsync)"), source);
+        assertTrue(source.contains(".afterCommit(\"notify\", (doc) -> docActions.notify(doc))"), source);
+        assertTrue(source.contains(".asyncAction(\"archive\", (context) -> docActions.archiveAsync(context))"), source);
         assertTrue(source.contains(".timeout(Duration.parse(\"PT2S\"))"), source);
         assertTrue(source.contains(".forbidOthers(\"ARCHIVED is final\")"), source);
         assertTrue(source.contains("return stateMachine.transitionTo(doc, DocStatus.REVIEW);"), source);
@@ -46,7 +46,7 @@ class MachineGenerationTest {
                 Fixtures.DOCS_BODY.replace("guards = \"approved\"", "guards = \"ready\"")));
         assertTrue(result.success(), result.describe());
         String source = result.generated("fx.Docs_");
-        assertTrue(source.contains(".guard(\"ready\", DocActions::ready)"), source);
+        assertTrue(source.contains(".guard(\"ready\", (context) -> DocActions.ready(context))"), source);
         assertTrue(source.contains(".to(DocStatus.ARCHIVED).forbid(\"never\")"), source);
         assertTrue(source.contains(".watches(MachineKey.of(Page.class, PageStatus.class), (Doc doc) -> doc.getPages(), (Page page) -> page.doc())"), source);
         assertTrue(source.contains(".when(WatchCondition.allIn(PageStatus.DONE)).goTo(DocStatus.PUBLISHED)"), source);

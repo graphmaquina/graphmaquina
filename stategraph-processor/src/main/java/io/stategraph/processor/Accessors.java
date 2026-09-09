@@ -1,11 +1,17 @@
 package io.stategraph.processor;
 
+import io.stategraph.annotation.internal.SymbolKind;
+import io.stategraph.processor.model.Binding;
+import io.stategraph.processor.model.Property;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeKind;
 import javax.lang.model.type.TypeMirror;
 import lombok.RequiredArgsConstructor;
@@ -17,8 +23,7 @@ final class Accessors {
     private final Signatures signatures;
 
     Optional<ExecutableElement> getter(TypeElement owner, String property) {
-        String capitalized = capitalize(property);
-        for (String name : new String[] {property, "get" + capitalized, "is" + capitalized}) {
+        for (String name : readerNames(property)) {
             for (Element member : signatures.elements().getAllMembers(owner)) {
                 if (member.getKind() == ElementKind.METHOD && member.getSimpleName().contentEquals(name)) {
                     ExecutableElement method = (ExecutableElement) member;
@@ -32,7 +37,7 @@ final class Accessors {
     }
 
     Optional<ExecutableElement> setter(TypeElement owner, String property, TypeMirror parameter) {
-        for (String name : new String[] {"set" + capitalize(property), property}) {
+        for (String name : writerNames(property)) {
             for (Element member : signatures.elements().getAllMembers(owner)) {
                 if (member.getKind() == ElementKind.METHOD && member.getSimpleName().contentEquals(name)) {
                     ExecutableElement method = (ExecutableElement) member;
@@ -44,6 +49,42 @@ final class Accessors {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * Every public instance method {@code owner} has under {@code name} with {@code arity} parameters,
+     * inherited ones included. Which of them suits a use is decided on its signature as a member of the owner,
+     * never on the order they are found in.
+     */
+    List<ExecutableElement> methods(DeclaredType owner, String name, int arity) {
+        List<ExecutableElement> found = new ArrayList<>();
+        for (Element member : signatures.elements().getAllMembers((TypeElement) owner.asElement())) {
+            if (member.getKind() == ElementKind.METHOD && member.getSimpleName().contentEquals(name)) {
+                ExecutableElement method = (ExecutableElement) member;
+                if (isPublicInstance(method) && method.getParameters().size() == arity) {
+                    found.add(method);
+                }
+            }
+        }
+        return found;
+    }
+
+    /** The property whose accessor is {@code method}, read as a member of {@code owner}. */
+    Property property(DeclaredType owner, ExecutableElement method) {
+        return new Property(method.getSimpleName().toString(),
+                new Binding((TypeElement) owner.asElement(), method, signatures.asMemberOf(owner, method),
+                        SymbolKind.PROPERTY, List.of(), false, false));
+    }
+
+    /** The names a reader of {@code property} may have, in the order they are tried. */
+    static List<String> readerNames(String property) {
+        String capitalized = capitalize(property);
+        return List.of(property, "get" + capitalized, "is" + capitalized);
+    }
+
+    /** The names a writer of {@code property} may have, in the order they are tried. */
+    static List<String> writerNames(String property) {
+        return List.of("set" + capitalize(property), property);
     }
 
     static boolean isPublicInstance(ExecutableElement method) {

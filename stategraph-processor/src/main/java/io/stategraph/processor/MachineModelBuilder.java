@@ -82,7 +82,7 @@ final class MachineModelBuilder {
         String stateProperty = annotations.string(graph, "state");
         Optional<ExecutableElement> getter = accessors.getter(types.entityElement(), stateProperty);
         if (getter.isPresent() && signatures.same(getter.get().getReturnType(), types.states())) {
-            stateGetter = Optional.of(new Property(getter.get().getSimpleName().toString()));
+            stateGetter = Optional.of(accessors.property(types.entity(), getter.get()));
         } else {
             diagnostics.error("SG503", types.entityName() + " has no public state getter for property '" + stateProperty + "': expected "
                     + stateProperty + "() or get" + Accessors.capitalize(stateProperty) + "() returning " + types.statesName(),
@@ -90,7 +90,7 @@ final class MachineModelBuilder {
         }
         Optional<ExecutableElement> setter = accessors.setter(types.entityElement(), stateProperty, types.states());
         if (setter.isPresent()) {
-            stateSetter = Optional.of(new Property(setter.get().getSimpleName().toString()));
+            stateSetter = Optional.of(accessors.property(types.entity(), setter.get()));
         } else {
             diagnostics.error("SG503", types.entityName() + " has no public state setter for property '" + stateProperty + "': expected set"
                     + Accessors.capitalize(stateProperty) + "(" + types.statesName() + ") or " + stateProperty + "(" + types.statesName() + ")",
@@ -98,7 +98,7 @@ final class MachineModelBuilder {
         }
         String idProperty = annotations.string(graph, "id");
         Optional<ExecutableElement> id = accessors.getter(types.entityElement(), idProperty);
-        Optional<Property> idGetter = id.map((ExecutableElement method) -> new Property(method.getSimpleName().toString()));
+        Optional<Property> idGetter = id.map((ExecutableElement method) -> accessors.property(types.entity(), method));
         if (idGetter.isEmpty()) {
             diagnostics.error("SG503", types.entityName() + " has no public identity getter for property '" + idProperty + "': expected "
                     + idProperty + "() or get" + Accessors.capitalize(idProperty) + "()", type, graph, annotations.value(graph, "id"));
@@ -278,7 +278,7 @@ final class MachineModelBuilder {
             TypeMirror collectionOfPeers = signatures.declared("java.util.Collection", signatures.extendsWildcard(peer.get().entity()));
             Optional<Property> peers = Optional.empty();
             if (peersGetter.isPresent() && signatures.assignable(peersGetter.get().getReturnType(), collectionOfPeers)) {
-                peers = Optional.of(new Property(peersGetter.get().getSimpleName().toString()));
+                peers = Optional.of(accessors.property(types.entity(), peersGetter.get()));
             } else {
                 diagnostics.error("SG503", types.entityName() + " has no public getter for property '" + peersName + "' returning Collection<? extends "
                         + peer.get().entityName() + ">", type, watch, annotations.value(watch, "peers"));
@@ -290,10 +290,10 @@ final class MachineModelBuilder {
             if (ownerGetter.isPresent()) {
                 TypeMirror returned = ownerGetter.get().getReturnType();
                 if (signatures.same(returned, signatures.declared("java.util.Optional", types.entity()))) {
-                    owner = Optional.of(new Property(ownerGetter.get().getSimpleName().toString()));
+                    owner = Optional.of(accessors.property(peer.get().entity(), ownerGetter.get()));
                     ownerIsOptional = true;
                 } else if (signatures.assignable(returned, types.entity())) {
-                    owner = Optional.of(new Property(ownerGetter.get().getSimpleName().toString()));
+                    owner = Optional.of(accessors.property(peer.get().entity(), ownerGetter.get()));
                 }
             }
             if (owner.isEmpty()) {

@@ -1,5 +1,6 @@
 package io.stategraph.processor;
 
+import io.stategraph.annotation.internal.SymbolKind;
 import io.stategraph.processor.model.Binding;
 import io.stategraph.processor.model.MachineTypes;
 import java.util.ArrayList;
@@ -24,6 +25,14 @@ final class Bindings {
 
     /** What the method is used for; it fixes the expected signature. */
     enum Role { ACTION, GUARD, HOOK, CONDITION }
+
+    private static final String TRANSITION_CONTEXT = "io.stategraph.api.TransitionContext";
+    private static final String GUARD_CONTEXT = "io.stategraph.api.GuardContext";
+    private static final String ACTION_OUTCOME = "io.stategraph.api.ActionOutcome";
+    private static final String GUARD_RESULT = "io.stategraph.api.GuardResult";
+    private static final String PEER_VIEW = "io.stategraph.api.PeerView";
+    private static final String COLLECTION = "java.util.Collection";
+    private static final String COMPLETION_STAGE = "java.util.concurrent.CompletionStage";
 
     private final Signatures signatures;
     private final Diagnostics diagnostics;
@@ -55,7 +64,7 @@ final class Bindings {
         }
         List<ExecutableElement> fitting = new ArrayList<>();
         for (ExecutableElement candidate : named) {
-            if (fits(candidate, role, machine, peer)) {
+            if (fits(parameterTypes(candidate), candidate.getReturnType(), role, machine, peer)) {
                 fitting.add(candidate);
             }
         }
@@ -73,44 +82,71 @@ final class Bindings {
             diagnostics.error("SG505", owner.getSimpleName() + "." + name + " must be public", element, mirror, anchor);
             return Optional.empty();
         }
-        return Optional.of(new Binding(owner, method, method.getModifiers().contains(Modifier.STATIC), isAsync(method, role)));
+        return Optional.of(new Binding(owner, method, signatures.asMemberOf(declared, method), kind(role),
+                arguments(role, machine, peer), method.getModifiers().contains(Modifier.STATIC),
+                isAsync(method.getReturnType(), role)));
     }
 
-    private boolean fits(ExecutableElement method, Role role, MachineTypes machine, Optional<MachineTypes> peer) {
-        List<TypeMirror> types = new ArrayList<>();
-        for (Element parameter : method.getParameters()) {
-            types.add(parameter.asType());
-        }
-        TypeMirror returned = method.getReturnType();
+    /**
+     * Whether a method taking {@code parameters} and returning {@code returned} is usable as {@code role} of
+     * {@code machine}. The types are the ones the method has where it is called, so a contract of a generic
+     * base is judged with the host's own entity and states.
+     */
+    boolean fits(List<? extends TypeMirror> parameters, TypeMirror returned, Role role, MachineTypes machine, Optional<MachineTypes> peer) {
         return switch (role) {
-            case ACTION -> types.size() == 1
-                    && signatures.same(types.get(0), signatures.declared("io.stategraph.api.TransitionContext", machine.entity(), machine.states()))
-                    && (signatures.same(returned, signatures.declared("io.stategraph.api.ActionOutcome"))
-                        || signatures.assignable(returned, signatures.declared("java.util.concurrent.CompletionStage",
-                                signatures.declared("io.stategraph.api.ActionOutcome"))));
-            case GUARD -> types.size() == 1
-                    && signatures.same(types.get(0), signatures.declared("io.stategraph.api.GuardContext", machine.entity(), machine.states()))
-                    && (signatures.same(returned, signatures.declared("io.stategraph.api.GuardResult"))
-                        || signatures.assignable(returned, signatures.declared("java.util.concurrent.CompletionStage",
-                                signatures.declared("io.stategraph.api.GuardResult"))));
-            case HOOK -> types.size() == 1 && signatures.same(types.get(0), machine.entity()) && returned.getKind() == TypeKind.VOID;
-            case CONDITION -> peer.isPresent() && types.size() == 3
-                    && signatures.same(types.get(0), machine.entity())
-                    && signatures.assignable(signatures.declared("java.util.Collection", signatures.extendsWildcard(peer.get().entity())), types.get(1))
-                    && signatures.same(types.get(2), signatures.declared("io.stategraph.api.PeerView", peer.get().entity(), peer.get().states()))
+            case ACTION -> parameters.size() == 1
+                    && signatures.same(parameters.get(0), signatures.declared(TRANSITION_CONTEXT, machine.entity(), machine.states()))
+                    && (signatures.same(returned, signatures.declared(ACTION_OUTCOME))
+                        || signatures.assignable(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(ACTION_OUTCOME))));
+            case GUARD -> parameters.size() == 1
+                    && signatures.same(parameters.get(0), signatures.declared(GUARD_CONTEXT, machine.entity(), machine.states()))
+                    && (signatures.same(returned, signatures.declared(GUARD_RESULT))
+                        || signatures.assignable(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(GUARD_RESULT))));
+            case HOOK -> parameters.size() == 1 && signatures.same(parameters.get(0), machine.entity()) && returned.getKind() == TypeKind.VOID;
+            case CONDITION -> peer.isPresent() && parameters.size() == 3
+                    && signatures.same(parameters.get(0), machine.entity())
+                    && signatures.assignable(signatures.declared(COLLECTION, signatures.extendsWildcard(peer.get().entity())), parameters.get(1))
+                    && signatures.same(parameters.get(2), signatures.declared(PEER_VIEW, peer.get().entity(), peer.get().states()))
                     && returned.getKind() == TypeKind.BOOLEAN;
         };
     }
 
-    private boolean isAsync(ExecutableElement method, Role role) {
+    /**
+     * The static types of the arguments the generated code passes to a {@code role} of {@code machine}: the
+     * parameters of the SPI's own functional interface, which the emitter compares the selected method's
+     * parameters against.
+     */
+    List<TypeMirror> arguments(Role role, MachineTypes machine, Optional<MachineTypes> peer) {
+        return switch (role) {
+            case ACTION -> List.of(signatures.declared(TRANSITION_CONTEXT, machine.entity(), machine.states()));
+            case GUARD -> List.of(signatures.declared(GUARD_CONTEXT, machine.entity(), machine.states()));
+            case HOOK -> List.of(machine.entity());
+            case CONDITION -> peer.<List<TypeMirror>>map((MachineTypes found) -> List.of(
+                    machine.entity(),
+                    signatures.declared(COLLECTION, signatures.extendsWildcard(found.entity())),
+                    signatures.declared(PEER_VIEW, found.entity(), found.states()))).orElseGet(List::of);
+        };
+    }
+
+    /** Whether the call is asynchronous, which only an action or a guard can be. */
+    boolean isAsync(TypeMirror returned, Role role) {
         if (role != Role.ACTION && role != Role.GUARD) {
             return false;
         }
-        return signatures.erasureIs(method.getReturnType(), "java.util.concurrent.CompletionStage")
-                || signatures.subtype(method.getReturnType(), "java.util.concurrent.CompletionStage");
+        return signatures.erasureIs(returned, COMPLETION_STAGE) || signatures.subtype(returned, COMPLETION_STAGE);
     }
 
-    private static String expected(String name, Role role, MachineTypes machine, Optional<MachineTypes> peer) {
+    /** The exported category a role is served by; one symbol may export several of them. */
+    static SymbolKind kind(Role role) {
+        return switch (role) {
+            case ACTION -> SymbolKind.ACTION;
+            case GUARD -> SymbolKind.GUARD;
+            case HOOK -> SymbolKind.HOOK;
+            case CONDITION -> SymbolKind.CONDITION;
+        };
+    }
+
+    static String expected(String name, Role role, MachineTypes machine, Optional<MachineTypes> peer) {
         String e = machine.entityName();
         String s = machine.statesName();
         return switch (role) {
@@ -122,5 +158,13 @@ final class Bindings {
             case CONDITION -> "boolean " + name + "(" + e + ", Collection<? extends " + peer.map(MachineTypes::entityName).orElse("P") + ">, PeerView<"
                     + peer.map(MachineTypes::entityName).orElse("P") + ", " + peer.map(MachineTypes::statesName).orElse("Q") + ">)";
         };
+    }
+
+    private static List<TypeMirror> parameterTypes(ExecutableElement method) {
+        List<TypeMirror> types = new ArrayList<>();
+        for (Element parameter : method.getParameters()) {
+            types.add(parameter.asType());
+        }
+        return types;
     }
 }
