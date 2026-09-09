@@ -1,5 +1,6 @@
 package io.stategraph.maven;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -46,10 +47,12 @@ public final class MavenFixture {
 
     private final Path directory;
     private final Path settings;
+    private final String artifactId;
 
-    private MavenFixture(Path directory, Path settings) {
+    private MavenFixture(Path directory, Path settings, String artifactId) {
         this.directory = directory;
         this.settings = settings;
+        this.artifactId = artifactId;
     }
 
     /**
@@ -63,6 +66,29 @@ public final class MavenFixture {
      * @throws IOException if the project cannot be written
      */
     public static MavenFixture basic(Path directory, Path repository) throws IOException {
+        MavenFixture fixture = write(directory, "fixture project ñ", "/it/basic/pom.xml", "fixture",
+                repository);
+        fixture.writeSources(domainSources());
+        return fixture;
+    }
+
+    /**
+     * Writes a second project that depends on the installed jar of {@link #basic} and on nothing else of it:
+     * no source of the producer is on its source path, so everything its generation resolves comes from the
+     * index the producer published inside that jar.
+     *
+     * @param directory the temporary directory to materialize the project under
+     * @param repository the file Maven repository the StateGraph artifacts were published to
+     * @return a fixture bound to the written project
+     * @throws IOException if the project cannot be written
+     */
+    public static MavenFixture consumer(Path directory, Path repository) throws IOException {
+        return write(directory, "consumer project ñ", "/it/consumer/pom.xml", "consumer", repository);
+    }
+
+    /** Materializes one project: its POM from the test resources and the settings file of every build. */
+    private static MavenFixture write(Path directory, String name, String pom, String artifactId,
+            Path repository) throws IOException {
         if (!Files.isDirectory(repository)) {
             throw new IllegalStateException("the fixture repository " + repository + " does not exist; run"
                     + " ./gradlew :stategraph-maven-plugin:publishMavenPublicationToAdapterTestsRepository"
@@ -70,20 +96,18 @@ public final class MavenFixture {
                     + " :stategraph-codegen:publishMavenPublicationToAdapterTestsRepository"
                     + " :stategraph-processor:publishMavenPublicationToAdapterTestsRepository first");
         }
-        Path project = Files.createDirectories(directory.resolve("fixture project ñ"));
-        Files.writeString(project.resolve("pom.xml"), template(), StandardCharsets.UTF_8);
+        Path project = Files.createDirectories(directory.resolve(name));
+        Files.writeString(project.resolve("pom.xml"), template(pom), StandardCharsets.UTF_8);
         Path settings = project.resolve("settings.xml");
         Files.writeString(settings, settings(repository), StandardCharsets.UTF_8);
-        MavenFixture fixture = new MavenFixture(project, settings);
-        fixture.writeSources(domainSources());
-        return fixture;
+        return new MavenFixture(project, settings, artifactId);
     }
 
-    /** The POM of the consumer project, read from the test resources rather than duplicated here. */
-    private static String template() throws IOException {
-        try (InputStream stream = MavenFixture.class.getResourceAsStream("/it/basic/pom.xml")) {
+    /** One POM of the consumer projects, read from the test resources rather than duplicated here. */
+    private static String template(String resource) throws IOException {
+        try (InputStream stream = MavenFixture.class.getResourceAsStream(resource)) {
             if (stream == null) {
-                throw new IllegalStateException("the fixture POM /it/basic/pom.xml is not on the test classpath");
+                throw new IllegalStateException("the fixture POM " + resource + " is not on the test classpath");
             }
             return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
         }
@@ -190,28 +214,7 @@ public final class MavenFixture {
                     }
                 }
                 """);
-        sources.put("fx.Orders", """
-                package fx;
-
-                import io.stategraph.annotation.GenerateGraphApi;
-                import io.stategraph.api.Machine;
-                import io.stategraph.api.Outcome;
-
-                import static fx.Status.DONE;
-                import static fx.Status.NEW;
-
-                /** The machine of the fixture. */
-                @GenerateGraphApi
-                @OrdersGraph.Definition(initial = NEW, terminals = DONE,
-                    state = OrderRefs.Status.class, id = OrderRefs.Id.class)
-                @OrdersGraph.Row(state = NEW, otherwise = "a new order is approved")
-                @OrdersGraph.Row(state = DONE, otherwise = "a finished order does not move")
-                public interface Orders extends Machine<Order, Status> {
-
-                    @OrdersGraph.Action(from = NEW, to = DONE, action = ActionsRefs.Approve.class)
-                    Outcome<Order, Status> approve(Order order);
-                }
-                """);
+        sources.put("fx.Orders", orders("Orders", "Approve", "approve"));
         sources.put("fx.Unrelated", """
                 package fx;
 
@@ -226,6 +229,39 @@ public final class MavenFixture {
     }
 
     /**
+     * One facade declaration of the shared domain, so a test can rename the machine or the action it binds.
+     *
+     * @param facade the simple name of the machine interface
+     * @param symbol the simple name of the generated action symbol the operation binds
+     * @param operation the name of the facade's operation
+     * @return the source of the facade
+     */
+    public static String orders(String facade, String symbol, String operation) {
+        return """
+                package fx;
+
+                import io.stategraph.annotation.GenerateGraphApi;
+                import io.stategraph.api.Machine;
+                import io.stategraph.api.Outcome;
+
+                import static fx.Status.DONE;
+                import static fx.Status.NEW;
+
+                /** The machine of the fixture. */
+                @GenerateGraphApi
+                @%1$sGraph.Definition(initial = NEW, terminals = DONE,
+                    state = OrderRefs.Status.class, id = OrderRefs.Id.class)
+                @%1$sGraph.Row(state = NEW, otherwise = "a new order is approved")
+                @%1$sGraph.Row(state = DONE, otherwise = "a finished order does not move")
+                public interface %1$s extends Machine<Order, Status> {
+
+                    @%1$sGraph.Action(from = NEW, to = DONE, action = ActionsRefs.%2$s.class)
+                    Outcome<Order, Status> %3$s(Order order);
+                }
+                """.formatted(facade, symbol, operation);
+    }
+
+    /**
      * Writes {@code sources} under {@code src/main/java}, one file per qualified name, replacing whatever the
      * main source root held before, which is what editing a source tree does.
      *
@@ -237,10 +273,43 @@ public final class MavenFixture {
         deleteRecursively(root);
         Files.createDirectories(root);
         for (Map.Entry<String, String> source : sources.entrySet()) {
-            Path file = root.resolve(source.getKey().replace('.', '/') + ".java");
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, source.getValue(), StandardCharsets.UTF_8);
+            write(root, source.getKey(), source.getValue());
         }
+    }
+
+    /**
+     * Writes one compilation unit under {@code src/test/java}.
+     *
+     * @param qualifiedName the qualified name of the type
+     * @param content the source text
+     * @throws IOException if the source cannot be written
+     */
+    public void writeTestSource(String qualifiedName, String content) throws IOException {
+        write(Files.createDirectories(directory.resolve("src/test/java")), qualifiedName, content);
+    }
+
+    private static void write(Path root, String qualifiedName, String content) throws IOException {
+        Path file = root.resolve(qualifiedName.replace('.', '/') + ".java");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, content, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Replaces one literal of the project's POM, so a test can build the same project with a compiler that is
+     * configured differently.
+     *
+     * @param literal the text to replace, which must occur exactly once
+     * @param replacement the text to write in its place
+     * @throws IOException if the POM cannot be rewritten
+     */
+    public void editPom(String literal, String replacement) throws IOException {
+        Path pom = directory.resolve("pom.xml");
+        String current = Files.readString(pom, StandardCharsets.UTF_8);
+        int first = current.indexOf(literal);
+        if (first < 0 || current.indexOf(literal, first + literal.length()) >= 0) {
+            throw new IllegalStateException("the fixture POM does not carry '" + literal + "' exactly once");
+        }
+        Files.writeString(pom, current.replace(literal, replacement), StandardCharsets.UTF_8);
     }
 
     /**
@@ -352,13 +421,21 @@ public final class MavenFixture {
     }
 
     /**
-     * Whether the jar carries the compilation carrier, which belongs to the build and must never be published.
+     * Whether the jar carries a binary the sealed inventory of the main compilation excluded from publication,
+     * which is the compilation carrier every generation produces.
      *
-     * @return {@code true} if a carrier class reached the jar
+     * @return {@code true} if one of the excluded binaries reached the jar
      */
     public boolean jarContainsGraphCompilationCarrier() {
-        for (String entry : jarEntries()) {
-            if (entry.startsWith(CARRIER_PACKAGE + "/") && entry.endsWith(".class")) {
+        JsonArray excluded = readJson(directory.resolve("target/stategraph/main/owned-outputs.json"))
+                .getAsJsonArray("excludedBinaries");
+        if (excluded.isEmpty()) {
+            throw new IllegalStateException("the sealed inventory excluded no binary, so this fixture cannot"
+                    + " tell whether the carrier reached the jar");
+        }
+        List<String> entries = jarEntries();
+        for (JsonElement binary : excluded) {
+            if (entries.contains(binary.getAsString())) {
                 return true;
             }
         }
@@ -371,7 +448,22 @@ public final class MavenFixture {
      * @return the exported names, in the order the index declares them
      */
     public List<String> localExports() {
-        JsonObject model = readJarJson(EXPORTS).getAsJsonObject("model");
+        return exports(readJarJson(EXPORTS));
+    }
+
+    /**
+     * The names the index at {@code relativePath} exports, for the compilations that publish no jar.
+     *
+     * @param relativePath a path relative to the project directory
+     * @return the exported names, in the order the index declares them
+     */
+    public List<String> localExportsOf(String relativePath) {
+        return exports(readJson(directory.resolve(relativePath)));
+    }
+
+    /** The facades and symbols of one published index, in the order it declares them. */
+    private static List<String> exports(JsonObject index) {
+        JsonObject model = index.getAsJsonObject("model");
         List<String> exports = new ArrayList<>();
         for (JsonElement graph : model.getAsJsonArray("graphs")) {
             exports.add(graph.getAsJsonObject().get("facade").getAsString());
@@ -380,6 +472,18 @@ public final class MavenFixture {
             exports.add(symbol.getAsJsonObject().get("qualifiedName").getAsString());
         }
         return List.copyOf(exports);
+    }
+
+    /**
+     * The value of one string member of the request the goals of {@code sourceSet} wrote.
+     *
+     * @param sourceSet the name of the source set, {@code main} or {@code test}
+     * @param member the name of the member
+     * @return the value the plugin encoded
+     */
+    public String requestValue(String sourceSet, String member) {
+        return readJson(directory.resolve("target/stategraph/" + sourceSet + "/request.json"))
+                .get(member).getAsString();
     }
 
     /**
@@ -424,9 +528,18 @@ public final class MavenFixture {
         }
     }
 
+    /** Reads one file of the project as a JSON object. */
+    private static JsonObject readJson(Path file) {
+        try (Reader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            return JsonParser.parseReader(reader).getAsJsonObject();
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
+    }
+
     /** The single jar the fixture's {@code package} phase produced. */
     private Path jar() {
-        return directory.resolve("target/fixture-1.0.0.jar");
+        return directory.resolve("target/" + artifactId + "-1.0.0.jar");
     }
 
     /** Removes {@code root} and everything below it, deepest entry first; an absent root is nothing to do. */

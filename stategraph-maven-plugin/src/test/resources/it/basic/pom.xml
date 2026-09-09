@@ -3,8 +3,11 @@
   The consumer project every Maven integration test builds: the shared adapter domain, Lombok before the
   StateGraph annotation processor, and the strict compiler options of this repository.
 
-  The StateGraph plugin is declared here without executions on purpose: this task only proves that the goal
-  the published artifact carries can be invoked. Task 12.2 adds the six lifecycle executions.
+  This is the supported consumer configuration, and it is the one Task 13 applies to the payments demo. The six
+  executions are required: a goal's default phase does not activate it because the plugin appears in a POM. The
+  compiler goals of the packaging keep their place in the execution plan whatever order the plugins are declared
+  in, so `complete` runs after `compiler:compile` and `complete-test` after `compiler:testCompile`; declaring
+  maven-compiler-plugin first makes that order visible in the POM as well.
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -38,11 +41,6 @@
 
   <build>
     <plugins>
-      <plugin>
-        <groupId>io.stategraph</groupId>
-        <artifactId>stategraph-maven-plugin</artifactId>
-        <version>${stategraph.version}</version>
-      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
@@ -84,6 +82,43 @@
                 <arg>-Werror</arg>
               </compilerArgs>
             </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>io.stategraph</groupId>
+        <artifactId>stategraph-maven-plugin</artifactId>
+        <version>${stategraph.version}</version>
+        <executions>
+          <execution>
+            <id>sg-generate</id>
+            <phase>generate-sources</phase>
+            <goals><goal>generate</goal></goals>
+          </execution>
+          <execution>
+            <id>sg-prepare</id>
+            <phase>process-sources</phase>
+            <goals><goal>prepare</goal></goals>
+          </execution>
+          <execution>
+            <id>sg-complete</id>
+            <phase>compile</phase>
+            <goals><goal>complete</goal></goals>
+          </execution>
+          <execution>
+            <id>sg-generate-test</id>
+            <phase>generate-test-sources</phase>
+            <goals><goal>generate-test</goal></goals>
+          </execution>
+          <execution>
+            <id>sg-prepare-test</id>
+            <phase>process-test-sources</phase>
+            <goals><goal>prepare-test</goal></goals>
+          </execution>
+          <execution>
+            <id>sg-complete-test</id>
+            <phase>test-compile</phase>
+            <goals><goal>complete-test</goal></goals>
           </execution>
         </executions>
       </plugin>

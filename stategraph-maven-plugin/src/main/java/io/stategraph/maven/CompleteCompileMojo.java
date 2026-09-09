@@ -11,6 +11,6 @@ public final class CompleteCompileMojo extends StateGraphMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        run("complete-compile", mainRequest());
+        complete(mainRequest());
     }
 }

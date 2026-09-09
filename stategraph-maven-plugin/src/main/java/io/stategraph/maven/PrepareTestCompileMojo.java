@@ -9,6 +9,6 @@ public final class PrepareTestCompileMojo extends StateGraphMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        run("prepare-compile", testRequest());
+        prepare(CompilerExecution.TEST, testRequest());
     }
 }

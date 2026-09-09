@@ -84,6 +84,10 @@
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
         </requirement>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManagerPrivate</role>
+          <field-name>toolchainManagerPrivate</field-name>
+        </requirement>
       </requirements>
     </mojo>
     <mojo>
@@ -150,6 +154,10 @@
         <requirement>
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
+        </requirement>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManagerPrivate</role>
+          <field-name>toolchainManagerPrivate</field-name>
         </requirement>
       </requirements>
     </mojo>
@@ -218,6 +226,10 @@
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
         </requirement>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManagerPrivate</role>
+          <field-name>toolchainManagerPrivate</field-name>
+        </requirement>
       </requirements>
     </mojo>
     <mojo>
@@ -284,6 +296,10 @@
         <requirement>
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
+        </requirement>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManagerPrivate</role>
+          <field-name>toolchainManagerPrivate</field-name>
         </requirement>
       </requirements>
     </mojo>
@@ -352,6 +368,10 @@
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
         </requirement>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManagerPrivate</role>
+          <field-name>toolchainManagerPrivate</field-name>
+        </requirement>
       </requirements>
     </mojo>
     <mojo>
@@ -418,6 +438,10 @@
         <requirement>
           <role>org.apache.maven.toolchain.ToolchainManager</role>
           <field-name>toolchainManager</field-name>
+        </requirement>
+        <requirement>
+          <role>org.apache.maven.toolchain.ToolchainManagerPrivate</role>
+          <field-name>toolchainManagerPrivate</field-name>
         </requirement>
       </requirements>
     </mojo>

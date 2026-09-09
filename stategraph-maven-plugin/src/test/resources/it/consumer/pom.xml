@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The downstream project of the Maven integration tests: it depends on the jar the basic fixture installed and
+  on no source of it, so everything its generation resolves comes from the index that jar publishes. Its build
+  configuration is the same supported one, which is the point: a consumer of a StateGraph library configures
+  nothing more than a producer does.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>cx.build</groupId>
+  <artifactId>consumer</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <stategraph.version>0.3.0-SNAPSHOT</stategraph.version>
+    <lombok.version>1.18.48</lombok.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>fx.build</groupId>
+      <artifactId>fixture</artifactId>
+      <version>1.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>io.stategraph</groupId>
+      <artifactId>stategraph-core</artifactId>
+      <version>${stategraph.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+      <version>${lombok.version}</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.15.0</version>
+        <configuration>
+          <release>21</release>
+          <useIncrementalCompilation>true</useIncrementalCompilation>
+          <annotationProcessorPaths>
+            <!-- Lombok first: the processor reads the accessors Lombok generates on Order. -->
+            <path>
+              <groupId>org.projectlombok</groupId>
+              <artifactId>lombok</artifactId>
+              <version>${lombok.version}</version>
+            </path>
+            <path>
+              <groupId>io.stategraph</groupId>
+              <artifactId>stategraph-processor</artifactId>
+              <version>${stategraph.version}</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+        <executions>
+          <execution>
+            <id>default-compile</id>
+            <configuration>
+              <compilerArgs>
+                <arg>-Astategraph.annotationManifest=${project.build.directory}/stategraph/main/annotation-manifest.json</arg>
+                <arg>-Xlint:all,-serial</arg>
+                <arg>-Werror</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+          <execution>
+            <id>default-testCompile</id>
+            <configuration>
+              <compilerArgs>
+                <arg>-Astategraph.annotationManifest=${project.build.directory}/stategraph/test/annotation-manifest.json</arg>
+                <arg>-Xlint:all,-serial</arg>
+                <arg>-Werror</arg>
+              </compilerArgs>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>io.stategraph</groupId>
+        <artifactId>stategraph-maven-plugin</artifactId>
+        <version>${stategraph.version}</version>
+        <executions>
+          <execution>
+            <id>sg-generate</id>
+            <phase>generate-sources</phase>
+            <goals><goal>generate</goal></goals>
+          </execution>
+          <execution>
+            <id>sg-prepare</id>
+            <phase>process-sources</phase>
+            <goals><goal>prepare</goal></goals>
+          </execution>
+          <execution>
+            <id>sg-complete</id>
+            <phase>compile</phase>
+            <goals><goal>complete</goal></goals>
+          </execution>
+          <execution>
+            <id>sg-generate-test</id>
+            <phase>generate-test-sources</phase>
+            <goals><goal>generate-test</goal></goals>
+          </execution>
+          <execution>
+            <id>sg-prepare-test</id>
+            <phase>process-test-sources</phase>
+            <goals><goal>prepare-test</goal></goals>
+          </execution>
+          <execution>
+            <id>sg-complete-test</id>
+            <phase>test-compile</phase>
+            <goals><goal>complete-test</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

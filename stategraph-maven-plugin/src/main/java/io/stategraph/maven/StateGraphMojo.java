@@ -8,6 +8,7 @@ import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
 import org.apache.maven.toolchain.Toolchain;
 import org.apache.maven.toolchain.ToolchainManager;
+import org.apache.maven.toolchain.ToolchainManagerPrivate;
 
 import java.io.File;
 import java.io.IOException;
@@ -15,6 +16,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -73,6 +75,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /** The selected {@code jdk} toolchain of the build, injected as a descriptor requirement. */
     private ToolchainManager toolchainManager;
 
+    /** Resolves the {@code jdk} toolchains a compiler execution selects; injected as a requirement. */
+    private ToolchainManagerPrivate toolchainManagerPrivate;
+
     /**
      * The project this goal runs for.
      *
@@ -129,6 +134,77 @@ public abstract class StateGraphMojo extends AbstractMojo {
     }
 
     /**
+     * Refuses to generate for a compilation the compiler is not going to run the way this request describes:
+     * under another JDK, under a release the generated vocabulary does not compile with, over another
+     * annotation manifest, or writing the sources of the annotation processor somewhere this plugin does not
+     * own. Nothing has been written when this fails.
+     *
+     * @param execution the compiler execution this generation belongs to
+     * @param request the request the generator is about to run over
+     * @throws MojoExecutionException naming both sides of the disagreement and the configuration that fixes it
+     */
+    protected final void verifyCompiler(CompilerExecution execution, Request request)
+            throws MojoExecutionException {
+        CompilerConfiguration compiler = CompilerConfiguration.of(project, execution);
+        compiler.requireAgreementWith(javaExecutable(), toolchainManagerPrivate, session);
+        compiler.requireManifestArgument(request);
+        compiler.requireProcessorSourcesOutput(request);
+    }
+
+    /**
+     * Retires everything the previous cycle of this compilation owned and leaves the compiler no choice but to
+     * run again.
+     *
+     * <p>The newest output of the previous compilation is read before the retirement, because the retirement is
+     * what removes it; the carrier the generation of this cycle emitted is dated past it afterwards, so the
+     * incremental compiler cannot mistake a compilation whose binaries have just been deleted for one that is
+     * up to date. A build that switched this compilation off is refused before the first deletion.</p>
+     *
+     * @param execution the compiler execution this preparation belongs to
+     * @param request the request the generation of this cycle wrote
+     * @throws MojoExecutionException if the compilation is skipped, the generator failed, or the carrier of
+     *     this generation cannot be found or dated
+     */
+    protected final void prepare(CompilerExecution execution, Request request) throws MojoExecutionException {
+        CompilerConfiguration.of(project, execution).requireNotSkipped(project, session);
+        Path sourcesOutput = Path.of(request.sourcesOutput());
+        try {
+            FileTime newest = CarrierTimestamp.newestOutput(Path.of(request.classesOutput()));
+            run("prepare-compile", request);
+            if (CarrierTimestamp.refresh(sourcesOutput, newest).isEmpty()) {
+                throw new MojoExecutionException("the generation of " + request.compilationId()
+                    + " left no compilation carrier under " + sourcesOutput + ", so the compiler could read"
+                    + " the outputs this preparation retired as up to date; run the generator again");
+            }
+        } catch (IOException failure) {
+            throw new MojoExecutionException("cannot date the compilation carrier of "
+                + request.compilationId() + " under " + sourcesOutput + " past the outputs of the previous"
+                + " compilation", failure);
+        }
+    }
+
+    /**
+     * Publishes what javac accepted and seals the inventory of this compilation.
+     *
+     * <p>Maven runs this after the compiler goal bound to the same phase and stops the build at the first
+     * failure, so a compilation javac rejected never reaches this step. A compilation javac never ran at all —
+     * one whose sources the compiler found up to date — leaves no provisional index behind, and completing
+     * without one would be completing a compilation that did not happen: the step says so and does nothing.</p>
+     *
+     * @param request the request the generation of this cycle wrote
+     * @throws MojoExecutionException if the generator failed
+     */
+    protected final void complete(Request request) throws MojoExecutionException {
+        Path pendingIndex = request.pendingIndexFile();
+        if (!Files.isRegularFile(pendingIndex)) {
+            getLog().info("StateGraph completes nothing for " + request.compilationId() + ": there is no "
+                + pendingIndex + ", so javac did not compile this source set in this build");
+            return;
+        }
+        run("complete-compile", request);
+    }
+
+    /**
      * Writes {@code request} into its own work directory and runs {@code operation} of the generator over it.
      *
      * @param operation one of {@code generate}, {@code prepare-compile} and {@code complete-compile}
@@ -172,6 +248,12 @@ public abstract class StateGraphMojo extends AbstractMojo {
                 throw new MojoExecutionException("the StateGraph generator failed with status " + status
                     + " running '" + operation + "' for " + requestFile
                     + (diagnostics.isEmpty() ? "" : System.lineSeparator() + diagnostics));
+            }
+            if (!diagnostics.isEmpty()) {
+                // The operation completed, so this is not a failure; it is still the only place the generator
+                // has to report something a build should look at, and a silent error stream loses it.
+                getLog().warn("the StateGraph generator reported while running '" + operation + "': "
+                    + diagnostics);
             }
         } catch (IOException failure) {
             throw new MojoExecutionException("cannot run the StateGraph generator: "
@@ -405,6 +487,12 @@ public abstract class StateGraphMojo extends AbstractMojo {
             String sourcesOutput, String processorSourcesOutput, String classesOutput, String workDirectory,
             String compilationId) {
 
+        /** The file name the generator writes the manifest of a compilation under, in its work directory. */
+        private static final String MANIFEST = "annotation-manifest.json";
+
+        /** The index the annotation processor publishes for a compilation javac has not yet accepted. */
+        private static final String PENDING_INDEX = "META-INF/stategraph/pending-exports.json";
+
         /** Copies the two lists, so a request never reflects a later change of the collection it was built from. */
         public Request {
             Objects.requireNonNull(projectDirectory, "projectDirectory");
@@ -415,6 +503,24 @@ public abstract class StateGraphMojo extends AbstractMojo {
             Objects.requireNonNull(classesOutput, "classesOutput");
             Objects.requireNonNull(workDirectory, "workDirectory");
             Objects.requireNonNull(compilationId, "compilationId");
+        }
+
+        /**
+         * The manifest of this compilation, which the generator writes and the annotation processor reads.
+         *
+         * @return the absolute path of the annotation manifest
+         */
+        public Path manifestFile() {
+            return Path.of(workDirectory).toAbsolutePath().normalize().resolve(MANIFEST);
+        }
+
+        /**
+         * The provisional index of this compilation, which exists only between javac and completion.
+         *
+         * @return the absolute path of the provisional index
+         */
+        public Path pendingIndexFile() {
+            return Path.of(classesOutput).toAbsolutePath().normalize().resolve(PENDING_INDEX);
         }
     }
 }

@@ -11,6 +11,7 @@ public final class GenerateTestMojo extends StateGraphMojo {
     @Override
     public void execute() throws MojoExecutionException {
         Request request = testRequest();
+        verifyCompiler(CompilerExecution.TEST, request);
         run("generate", request);
         project().addTestCompileSourceRoot(request.sourcesOutput());
     }
