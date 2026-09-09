@@ -28,6 +28,67 @@ find no manifest and refuse the compilation with SG602.
 Only `stategraph-core` is a dependency of the application. The generator and the processor are build-time only
 and never reach the runtime classpath.
 
+## Where the artifacts come from
+
+**Nothing is published to a public repository yet.** Every consumer has to install `0.3.0-SNAPSHOT` locally
+first and then point its build at wherever it was installed; without that, the plugin id and the dependencies
+below are unresolvable.
+
+Publish from a checkout of this repository:
+
+```bash
+./gradlew :stategraph-core:publishToMavenLocal :stategraph-codegen:publishToMavenLocal \
+          :stategraph-processor:publishToMavenLocal :stategraph-maven-plugin:publishToMavenLocal
+./gradlew -p stategraph-gradle-plugin publishToMavenLocal      # the plugin jar and its marker
+```
+
+The second command is a separate invocation because the Gradle adapter is an included build. It installs both
+`io.stategraph:stategraph-gradle-plugin` and the marker `io.stategraph:io.stategraph.gradle.plugin`, which is
+what `plugins { id("io.stategraph") version … }` resolves. Replace `publishToMavenLocal` with
+`publishAllPublicationsTo<Name>Repository` to publish to a file or internal repository instead.
+
+**Gradle** does not read the local Maven repository unless it is declared, and the plugin marker is resolved
+through `pluginManagement`, so a consumer's `settings.gradle.kts` needs both halves:
+
+```kotlin
+pluginManagement {
+    repositories {
+        mavenLocal()          // or maven { url = uri("file:///…/adapter-test-repository") }
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
+}
+```
+
+**Maven** consults the local repository first, so artifacts installed with `publishToMavenLocal` need no
+declaration at all. A file or internal repository does need one — either in the POM:
+
+```xml
+<repositories>
+  <repository>
+    <id>stategraph-local</id>
+    <url>file:///…/adapter-test-repository</url>
+    <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
+  </repository>
+</repositories>
+<pluginRepositories>
+  <pluginRepository>
+    <id>stategraph-local</id>
+    <url>file:///…/adapter-test-repository</url>
+    <snapshots><enabled>true</enabled><updatePolicy>always</updatePolicy></snapshots>
+  </pluginRepository>
+</pluginRepositories>
+```
+
+or, without touching the POM, in an active profile of a `settings.xml` passed with `mvn -s`. Both halves are
+needed: `<repositories>` for `stategraph-core`, `<pluginRepositories>` for `stategraph-maven-plugin`.
+
 ## Gradle
 
 ```kotlin
@@ -50,8 +111,9 @@ dependencies {
 }
 ```
 
-That is the whole consumer-side configuration. The plugin does not apply the `java` plugin; it reacts to it,
-so `java` (or any plugin that applies it) must be applied too.
+That is the whole consumer-side build script, on top of the repositories the previous section declares. The
+plugin does not apply the `java` plugin; it reacts to it, so `java` (or any plugin that applies it) must be
+applied too.
 
 ### Which source sets take part
 
@@ -134,6 +196,9 @@ against the sibling project instead of a published artifact.
 ## Maven
 
 Two plugins are required, and neither works without the other.
+
+The repositories of the previous section are assumed; `stategraph-core` and `stategraph-maven-plugin` must be
+resolvable, which for a locally installed snapshot means nothing further to declare.
 
 ```xml
 <properties>

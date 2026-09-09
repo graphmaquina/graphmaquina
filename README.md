@@ -98,6 +98,12 @@ re-evaluates the order when its items move.
 generator has written it, so a build must run the generator, then javac with the annotation processor, then the
 completion step that publishes the index of what javac accepted. Both build adapters do exactly that.
 
+Nothing is published to a public repository yet, so install the artifacts locally first —
+`./gradlew :stategraph-core:publishToMavenLocal :stategraph-codegen:publishToMavenLocal
+:stategraph-processor:publishToMavenLocal :stategraph-maven-plugin:publishToMavenLocal` and
+`./gradlew -p stategraph-gradle-plugin publishToMavenLocal` for the plugin and its marker — and declare
+`mavenLocal()` in both `pluginManagement` and the dependency repositories of the consuming build.
+
 Gradle:
 
 ```kotlin
