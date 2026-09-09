@@ -75,7 +75,14 @@ final class ClasspathDeclarations implements AutoCloseable {
             fileManager.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
             JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnostics,
                     List.of("-proc:none", "--release", "21"), null, List.of(probe()));
-            task.analyze();
+            try {
+                task.analyze();
+            } finally {
+                // A broken classpath entry makes javac fail on top of its own diagnostic; report the
+                // diagnostic, which names the entry and the cause, rather than the failure it cascades into.
+                SourceDeclarations.requireNoErrors("the classpath headers cannot be read", diagnostics,
+                        Optional.empty());
+            }
             return new ClasspathDeclarations(fileManager, task.getElements(),
                     Trees.instance(task).getSourcePositions());
         } catch (IOException failure) {

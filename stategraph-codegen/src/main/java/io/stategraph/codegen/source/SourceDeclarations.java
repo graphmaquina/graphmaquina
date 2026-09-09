@@ -22,6 +22,7 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.WildcardTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
+import io.stategraph.codegen.CodegenException;
 import io.stategraph.codegen.model.SourceLocation;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -49,6 +50,8 @@ import javax.tools.ToolProvider;
  */
 public final class SourceDeclarations {
 
+    private static final String UNRESOLVED = "SG601";
+
     private SourceDeclarations() {
     }
 
@@ -70,13 +73,58 @@ public final class SourceDeclarations {
             JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnostics,
                     List.of("-proc:none", "--release", "21"), null,
                     fileManager.getJavaFileObjectsFromPaths(files));
-            for (CompilationUnitTree tree : task.parse()) {
-                units.add(new SourceUnit(tree, fileOrigin(project, tree)));
+            try {
+                for (CompilationUnitTree tree : task.parse()) {
+                    units.add(new SourceUnit(tree, fileOrigin(project, tree)));
+                }
+            } finally {
+                // javac's own error is the one the user can act on, so it replaces whatever parsing threw.
+                requireNoErrors("the original sources cannot be read", diagnostics, Optional.of(project));
             }
         } catch (IOException failure) {
             throw new UncheckedIOException("cannot read the original sources under " + project, failure);
         }
         return List.copyOf(units);
+    }
+
+    /**
+     * Fails when javac reported an error for one run, naming the file, the position and the javac message.
+     * A tooling failure stops the task: a truncated tree is never read as if it were a valid declaration.
+     * Only the first error is described, followed by the number of further errors of the same run.
+     *
+     * @param project the directory diagnostics are anchored against, empty when the run has no original
+     *     sources of its own
+     */
+    static void requireNoErrors(String what, DiagnosticCollector<JavaFileObject> diagnostics,
+            Optional<Path> project) {
+        List<Diagnostic<? extends JavaFileObject>> errors = diagnostics.getDiagnostics().stream()
+                .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
+                .toList();
+        if (errors.isEmpty()) {
+            return;
+        }
+        Diagnostic<? extends JavaFileObject> first = errors.get(0);
+        Optional<SourceLocation> location = location(first, project);
+        StringBuilder message = new StringBuilder(what).append(": ")
+                .append(location.map(anchor -> anchor.path() + ':' + anchor.line() + ": ").orElse(""))
+                .append(first.getMessage(Locale.ROOT));
+        if (errors.size() > 1) {
+            message.append(" (and ").append(errors.size() - 1).append(" further javac error")
+                    .append(errors.size() == 2 ? "" : "s").append(')');
+        }
+        String reported = message.toString();
+        throw location.map(anchor -> new CodegenException(UNRESOLVED, reported, anchor))
+                .orElseGet(() -> new CodegenException(UNRESOLVED, reported));
+    }
+
+    private static Optional<SourceLocation> location(Diagnostic<? extends JavaFileObject> diagnostic,
+            Optional<Path> project) {
+        JavaFileObject source = diagnostic.getSource();
+        if (source == null || project.isEmpty() || !"file".equals(source.toUri().getScheme())) {
+            return Optional.empty();
+        }
+        return Optional.of(new SourceLocation(relative(project.get(), Path.of(source.toUri())),
+                Math.max(diagnostic.getLineNumber(), 1L), Math.max(diagnostic.getColumnNumber(), 1L)));
     }
 
     /** Reads every type declaration of {@code unit}, nested declarations included, in declaration order. */
@@ -348,7 +396,12 @@ public final class SourceDeclarations {
     }
 
     private static SourceLocation fileOrigin(Path project, CompilationUnitTree tree) {
-        Path file = Path.of(tree.getSourceFile().toUri()).toAbsolutePath().normalize();
-        return new SourceLocation(project.toAbsolutePath().normalize().relativize(file).toString(), 1L, 1L);
+        return new SourceLocation(relative(project, Path.of(tree.getSourceFile().toUri())), 1L, 1L);
+    }
+
+    private static String relative(Path project, Path file) {
+        return project.toAbsolutePath().normalize()
+                .relativize(file.toAbsolutePath().normalize())
+                .toString();
     }
 }

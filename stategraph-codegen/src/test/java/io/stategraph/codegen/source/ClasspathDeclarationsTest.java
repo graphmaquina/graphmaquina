@@ -1,9 +1,15 @@
 package io.stategraph.codegen.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.stategraph.codegen.CodegenException;
 import io.stategraph.codegen.model.GraphDescriptor;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -86,6 +92,26 @@ class ClasspathDeclarationsTest {
                                             Optional.empty()))),
                             environment).render());
         }
+    }
+
+    @Test
+    void failsWithJavacsOwnErrorWhenAClasspathEntryCannotBeRead() {
+        Path corrupt = directory.resolve("corrupt.jar");
+        try {
+            Files.writeString(corrupt, "this is not a jar", StandardCharsets.UTF_8);
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
+
+        CodegenException failure = assertThrows(CodegenException.class,
+                () -> ClasspathDeclarations.open(List.of(corrupt)).close());
+
+        assertEquals("SG601", failure.code());
+        assertTrue(failure.getMessage().startsWith("the classpath headers cannot be read: "),
+                failure.getMessage());
+        assertTrue(failure.getMessage().contains("corrupt.jar"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("zip END header not found"), failure.getMessage());
+        assertEquals(Optional.empty(), failure.location());
     }
 
     private static TypeHeader.Member member(TypeHeader header, String name) {

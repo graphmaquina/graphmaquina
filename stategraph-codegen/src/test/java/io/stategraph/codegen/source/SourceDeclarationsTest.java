@@ -1,9 +1,11 @@
 package io.stategraph.codegen.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.sun.source.tree.ClassTree;
+import io.stategraph.codegen.CodegenException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +41,28 @@ class SourceDeclarationsTest {
         assertEquals(Path.of("fx", "Orders.java").toString(), units.get(0).origin().path());
         assertEquals(1, units.get(0).tree().getTypeDecls().size());
         assertEquals("Orders", ((ClassTree) units.get(0).tree().getTypeDecls().get(0)).getSimpleName().toString());
+    }
+
+    @Test
+    void failsWithJavacsOwnErrorInsteadOfReadingATruncatedTree() {
+        Map<String, String> sources = Map.of(
+                "fx.Orders", """
+                    package fx;
+                    public interface Orders extends Base<Order, Status> {
+                        void broken(
+                    }
+                    """);
+        List<Path> files = SourceFiles.write(directory, sources);
+
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> SourceDeclarations.parse(directory, files));
+
+        assertEquals("SG601", failure.code());
+        assertEquals("the original sources cannot be read: " + Path.of("fx", "Orders.java")
+                + ":4: illegal start of type", failure.getMessage());
+        assertEquals(Path.of("fx", "Orders.java").toString(), failure.location().orElseThrow().path());
+        assertEquals(4L, failure.location().orElseThrow().line());
+        assertEquals(1L, failure.location().orElseThrow().column());
     }
 
     @Test
