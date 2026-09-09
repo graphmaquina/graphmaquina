@@ -8,8 +8,8 @@ A machine is one annotated interface. Every cell of its matrix is either declare
 declarations into a typed vocabulary, an annotation processor turns the interface into a facade, and the
 runtime executes the transitions.
 
-**Version: `0.3.0-SNAPSHOT`.** In 0.3 the declarations are typed: no state, method or property is written as a
-string any more. If you are coming from 0.2, read
+**Version: `1.0.0`, on Maven Central under `io.github.graphmaquina`.** The declarations are typed: no state,
+method or property is written as a string. If you are coming from 0.2, read
 [docs/typed-annotations-migration.md](docs/typed-annotations-migration.md).
 
 ## Modules
@@ -98,25 +98,24 @@ re-evaluates the order when its items move.
 generator has written it, so a build must run the generator, then javac with the annotation processor, then the
 completion step that publishes the index of what javac accepted. Both build adapters do exactly that.
 
-Nothing is published to a public repository yet, so install the artifacts locally first —
-`./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-codegen:publishToMavenLocal
-:graphmaquina-processor:publishToMavenLocal :graphmaquina-maven-plugin:publishToMavenLocal` and
-`./gradlew -p graphmaquina-gradle-plugin publishToMavenLocal` for the plugin and its marker — and declare
-`mavenLocal()` in both `pluginManagement` and the dependency repositories of the consuming build.
+Every artifact is on Maven Central, so `mavenCentral()` in the consuming build's dependency repositories
+covers the runtime, the generator and the processor. The Gradle plugin is published to Central rather than
+to the Gradle Plugin Portal, so declare `mavenCentral()` inside `pluginManagement { repositories { … } }`
+too, otherwise the `plugins {}` block cannot resolve it.
 
 Gradle:
 
 ```kotlin
 plugins {
     java
-    id("io.github.graphmaquina") version "0.3.0-SNAPSHOT"
+    id("io.github.graphmaquina") version "1.0.0"
 }
 
 dependencies {
-    implementation("io.github.graphmaquina:graphmaquina-core:0.3.0-SNAPSHOT")
+    implementation("io.github.graphmaquina:graphmaquina-core:1.0.0")
     compileOnly("org.projectlombok:lombok:1.18.48")
     annotationProcessor("org.projectlombok:lombok:1.18.48")           // Lombok first
-    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:0.3.0-SNAPSHOT")
+    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.0")
 }
 ```
 

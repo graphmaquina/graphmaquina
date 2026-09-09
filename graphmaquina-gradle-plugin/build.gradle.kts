@@ -1,9 +1,10 @@
 plugins {
     `java-gradle-plugin`
     `maven-publish`
+    signing
 }
 group = "io.github.graphmaquina"
-version = "0.3.0-SNAPSHOT"
+version = "1.0.0"
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(21) }
     // Central rejects a release without a sources and a javadoc jar beside the binary.
@@ -30,6 +31,17 @@ dependencies {
     testImplementation("com.google.code.gson:gson:2.13.2")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
+signing {
+    // Same environment-driven key as the root build's convention plugin; this build cannot see that plugin.
+    val key = providers.environmentVariable("SIGNING_KEY").orNull
+    val password = providers.environmentVariable("SIGNING_PASSWORD").orNull
+    isRequired = key != null
+    if (key != null) {
+        useInMemoryPgpKeys(key, password)
+        sign(publishing.publications)
+    }
+}
+
 publishing {
     // This is a separate included build, so it does not see the root build's convention plugin: the
     // POM metadata Central requires is repeated here rather than shared.
@@ -63,6 +75,11 @@ publishing {
         maven {
             name = "adapterTests"
             url = layout.projectDirectory.dir("../build/adapter-test-repository").asFile.toURI()
+        }
+        // The staging directory the sibling modules also publish into, so one bundle carries every artifact.
+        maven {
+            name = "centralStaging"
+            url = layout.projectDirectory.dir("../build/central-staging").asFile.toURI()
         }
     }
 }

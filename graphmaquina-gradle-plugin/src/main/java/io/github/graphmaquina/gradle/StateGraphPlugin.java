@@ -77,7 +77,7 @@ public final class StateGraphPlugin implements Plugin<Project> {
      * than read from a packaged resource because TestKit's {@code withPluginClasspath()} loads plugin classes from
      * a classes directory, not a jar, so {@code Package.getImplementationVersion()} would return {@code null} there.
      */
-    private static final String PLUGIN_VERSION = "0.3.0-SNAPSHOT";
+    private static final String PLUGIN_VERSION = "1.0.0";
 
     /** The file the compilation lifecycle seals once javac succeeded, registered as a compilation output. */
     private static final String SEALED_INVENTORY = "owned-outputs.json";

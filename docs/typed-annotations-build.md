@@ -19,20 +19,20 @@ find no manifest and refuse the compilation with SG602.
 
 | Artifact | Coordinates | Role |
 | --- | --- | --- |
-| Runtime and annotations | `io.github.graphmaquina:graphmaquina-core:0.3.0-SNAPSHOT` | the engine, the markers, the symbol categories |
-| Generator | `io.github.graphmaquina:graphmaquina-codegen:0.3.0-SNAPSHOT` | pre-javac generation, run as a separate process by the adapters |
-| Annotation processor | `io.github.graphmaquina:graphmaquina-processor:0.3.0-SNAPSHOT` | runs inside javac, emits the facades and publishes the index |
-| Gradle adapter | plugin id `io.github.graphmaquina`, version `0.3.0-SNAPSHOT` | the Gradle build integration |
-| Maven adapter | `io.github.graphmaquina:graphmaquina-maven-plugin:0.3.0-SNAPSHOT` | the Maven build integration |
+| Runtime and annotations | `io.github.graphmaquina:graphmaquina-core:1.0.0` | the engine, the markers, the symbol categories |
+| Generator | `io.github.graphmaquina:graphmaquina-codegen:1.0.0` | pre-javac generation, run as a separate process by the adapters |
+| Annotation processor | `io.github.graphmaquina:graphmaquina-processor:1.0.0` | runs inside javac, emits the facades and publishes the index |
+| Gradle adapter | plugin id `io.github.graphmaquina`, version `1.0.0` | the Gradle build integration |
+| Maven adapter | `io.github.graphmaquina:graphmaquina-maven-plugin:1.0.0` | the Maven build integration |
 
 Only `graphmaquina-core` is a dependency of the application. The generator and the processor are build-time only
 and never reach the runtime classpath.
 
 ## Where the artifacts come from
 
-**Nothing is published to a public repository yet.** Every consumer has to install `0.3.0-SNAPSHOT` locally
-first and then point its build at wherever it was installed; without that, the plugin id and the dependencies
-below are unresolvable.
+**Everything below is on Maven Central under `io.github.graphmaquina`.** `mavenCentral()` in the dependency
+repositories resolves the runtime, the generator and the processor; the Gradle plugin is published there too
+rather than to the Gradle Plugin Portal, so `pluginManagement` needs `mavenCentral()` as well.
 
 Publish from a checkout of this repository:
 
@@ -94,7 +94,7 @@ needed: `<repositories>` for `graphmaquina-core`, `<pluginRepositories>` for `gr
 ```kotlin
 plugins {
     java
-    id("io.github.graphmaquina") version "0.3.0-SNAPSHOT"
+    id("io.github.graphmaquina") version "1.0.0"
 }
 
 java {
@@ -102,12 +102,12 @@ java {
 }
 
 dependencies {
-    implementation("io.github.graphmaquina:graphmaquina-core:0.3.0-SNAPSHOT")
+    implementation("io.github.graphmaquina:graphmaquina-core:1.0.0")
 
     compileOnly("org.projectlombok:lombok:1.18.48")
     // Lombok first: the StateGraph processor reads the accessors Lombok generates on the entities.
     annotationProcessor("org.projectlombok:lombok:1.18.48")
-    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:0.3.0-SNAPSHOT")
+    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.0")
 }
 ```
 
@@ -196,7 +196,7 @@ The `graphmaquinaGenerator` configuration carries the generator's classpath. By 
 plugin's own version, so nothing needs to be declared. Two cases where it does:
 
 ```kotlin
-graphmaquina { generatorVersion = "0.3.0-SNAPSHOT" }        // a generator other than the plugin's own version
+graphmaquina { generatorVersion = "1.0.0" }        // a generator other than the plugin's own version
 dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) }  // inside this repository
 ```
 
@@ -213,7 +213,7 @@ resolvable, which for a locally installed snapshot means nothing further to decl
 ```xml
 <properties>
   <java.version>21</java.version>
-  <graphmaquina.version>0.3.0-SNAPSHOT</graphmaquina.version>
+  <graphmaquina.version>1.0.0</graphmaquina.version>
 </properties>
 
 <dependencies>

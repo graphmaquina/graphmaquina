@@ -29,7 +29,7 @@ elements with the peer's enum, so a state of another machine does not compile.
 ### 1. Move the build to 0.3
 
 Generation is mandatory and runs before javac. Set up the Gradle plugin or the six Maven goals first, as
-`typed-annotations-build.md` describes, and raise every StateGraph dependency to `0.3.0-SNAPSHOT`. Until the
+`typed-annotations-build.md` describes, and raise every StateGraph dependency to `1.0.0`. Until the
 build is right, everything else fails with SG602 (no manifest) rather than with a migration error.
 
 ### 2. Mark the members the graphs reference
