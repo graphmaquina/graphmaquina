@@ -4,7 +4,12 @@ plugins {
 }
 group = "io.github.graphmaquina"
 version = "0.3.0-SNAPSHOT"
-java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+    // Central rejects a release without a sources and a javadoc jar beside the binary.
+    withSourcesJar()
+    withJavadocJar()
+}
 tasks.withType<JavaCompile>().configureEach {
     options.release = 21
     options.compilerArgs.addAll(listOf("-Xlint:all,-serial", "-Werror"))
@@ -26,6 +31,32 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 publishing {
+    // This is a separate included build, so it does not see the root build's convention plugin: the
+    // POM metadata Central requires is repeated here rather than shared.
+    publications.withType<MavenPublication>().configureEach {
+        pom {
+            description = "Gradle plugin that generates the typed graph API before javac and runs the verified compilation lifecycle around it"
+            url = "https://github.com/graphmaquina/graphmaquina"
+            licenses {
+                license {
+                    name = "The Apache License, Version 2.0"
+                    url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                }
+            }
+            developers {
+                developer {
+                    id = "0xhug0"
+                    name = "Hugo Gonzalez"
+                    url = "https://github.com/graphmaquina"
+                }
+            }
+            scm {
+                connection = "scm:git:https://github.com/graphmaquina/graphmaquina.git"
+                developerConnection = "scm:git:ssh://git@github.com/graphmaquina/graphmaquina.git"
+                url = "https://github.com/graphmaquina/graphmaquina"
+            }
+        }
+    }
     // The same file repository the sibling projects publish core, codegen and the processor to, so a fixture
     // build can resolve the plugin and its marker the way any consumer resolves them from a repository.
     repositories {

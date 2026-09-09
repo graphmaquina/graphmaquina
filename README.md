@@ -143,3 +143,11 @@ execution. Both setups, the requirements they enforce and their troubleshooting 
 The Gradle adapter is an included build (`pluginManagement { includeBuild("graphmaquina-gradle-plugin") }`), so
 `graphmaquina-example` applies `id("io.github.graphmaquina")` without a version and points the `graphmaquinaGenerator`
 configuration at the sibling `graphmaquina-codegen` project. Java 21 is required.
+
+## License
+
+Apache License 2.0. The full terms are in [LICENSE](LICENSE), and the attribution notice is in
+[NOTICE](NOTICE).
+
+The code this project's generator and annotation processor emit into a consuming project belongs to that
+project. It is your output, not a derivative of this library, and this License does not reach it.

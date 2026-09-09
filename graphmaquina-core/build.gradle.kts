@@ -3,10 +3,6 @@ plugins {
     `maven-publish`
 }
 
-java {
-    withSourcesJar()
-}
-
 tasks.jar {
     manifest { attributes("Automatic-Module-Name" to "io.github.graphmaquina.core") }
 }
