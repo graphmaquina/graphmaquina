@@ -1,8 +1,7 @@
 # Building with the typed graph API
 
-The typed API, introduced in StateGraph 0.3, replaces the string-based `@StateGraph` declarations of v0.2 with a vocabulary that is
-**generated before javac runs**. A machine no longer names its states, methods and properties as text: it
-references generated annotations and generated symbol classes, and javac checks every one of them.
+GraphMaquina uses a typed vocabulary that is **generated before javac runs**. A machine references
+generated annotations, enum constants and generated symbol classes; javac checks their types.
 
 That has one consequence the build must respect: **generation is mandatory and it happens before compilation**.
 `graphmaquina-codegen` reads the sources, writes the typed vocabulary and an annotation manifest; javac then
@@ -25,11 +24,9 @@ find no manifest and refuse the compilation with SG602.
 | Gradle adapter | plugin id `io.github.graphmaquina`, version `1.0.1-SNAPSHOT` | the Gradle build integration |
 | Maven adapter | `io.github.graphmaquina:graphmaquina-maven-plugin:1.0.1-SNAPSHOT` | the Maven build integration |
 
-Keep the runtime, generator, processor and adapter at the same `1.0.1-SNAPSHOT` version. The processor now
-emits `<Machine>Runtime` and `<Set>Runtime`; `Graph` and `Refs` retain their roles. Generated types normalize
-underscores and nesting dots to PascalCase, preserving internal case and acronyms. Update source references,
-regenerate and recompile affected modules; previously compiled `1.0.0` JARs do not gain the new names.
-See the [Runtime migration](typed-annotations-migration.md#current-migration-generated-runtime-names).
+Keep the runtime, generator, processor and adapter at the same `1.0.1-SNAPSHOT` version. The processor
+emits `<Machine>Runtime` and `<Set>Runtime`. Generated types normalize underscores and nesting dots to
+PascalCase, preserving internal case and acronyms. See the [generated naming reference](../README.md#generated-names).
 
 Only `graphmaquina-core` is a dependency of the application. The generator and the processor are build-time only
 and never reach the runtime classpath.
@@ -134,7 +131,7 @@ dependencies {
     implementation("io.github.graphmaquina:graphmaquina-core:1.0.1-SNAPSHOT")
 
     compileOnly("org.projectlombok:lombok:1.18.48")
-    // Lombok first: the StateGraph processor reads the accessors Lombok generates on the entities.
+    // Lombok first: the GraphMaquina processor reads the accessors Lombok generates on the entities.
     annotationProcessor("org.projectlombok:lombok:1.18.48")
     annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT")
 }
@@ -266,7 +263,7 @@ resolvable, which for a locally installed snapshot means nothing further to decl
       <artifactId>maven-compiler-plugin</artifactId>
       <configuration>
         <annotationProcessorPaths>
-          <!-- Lombok first: the StateGraph processor reads the accessors Lombok generates. -->
+          <!-- Lombok first: the GraphMaquina processor reads the accessors Lombok generates. -->
           <path>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -389,7 +386,7 @@ to change:
   `<jdkToolchain>` that selects a different `java`, is refused.
 - **No skipped compilation.** `<skipMain>`, `<skip>`, `maven.main.skip` and `maven.test.skip` are refused:
   the build would retire everything the previous compilation published and compile nothing to replace it.
-- **The processor's own generated-sources directory left where StateGraph owns it.** A configured
+- **The processor's own generated-sources directory left where GraphMaquina owns it.** A configured
   `<generatedSourcesDirectory>` / `<generatedTestSourcesDirectory>` must match the request's.
 
 ## Troubleshooting
@@ -400,13 +397,13 @@ to change:
 | `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
 | `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host). The message names the type and the declaration. |
 | `SG603` | generated names collide after PascalCase normalization, such as `id` / `_id`. The diagnostic names both source declarations; rename the conflict and its references, then regenerate. |
-| `SG609` | a v0.2 string-based declaration is still there. See `typed-annotations-migration.md`. |
+| `SG609` | unsupported string-based declaration. Use `@GenerateGraphApi` and the [generated typed annotations](../README.md#annotation-and-binding-reference). |
 | `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
 | "the StateGraph generator needs a Java 21 toolchain or later" | raise the Gradle toolchain to 21+, or point Maven's `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
 | "…is not on the `<annotationProcessorPaths>` …" | the processor is missing from the compiler's processor path; declare it after Lombok. |
 | "…switches annotation processing off…" | remove `proc=none` / `-proc:none`. |
 | "…reads the annotation manifest X, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. |
-| "…switches the main compilation off…" | drop `maven.main.skip` / `maven.test.skip` / `<skipMain>`, or drop the StateGraph plugin from that build. |
+| "…switches the main compilation off…" | drop `maven.main.skip` / `maven.test.skip` / `<skipMain>`, or drop the GraphMaquina plugin from that build. |
 | `complete` fails naming `pending-exports.json` | javac ran but published no index: the processor was not on the path for that compilation. |
 | `[INFO] StateGraph completes nothing for <id>` | javac did not run at all in this invocation (for example `mvn generate-sources`). Nothing was retired; this is a no-op, not an error. |
 

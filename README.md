@@ -16,9 +16,6 @@ snapshot repository. The immutable `1.0.0` artifacts retain their original gener
 provide this new API. The source repository remains private. Published Maven Central artifacts, including
 source JARs, remain public.
 
-The project was previously named StateGraph. Some public Java names, such as `@StateGraphs`, and Gradle task
-names retain `StateGraph`; use the exact names documented here.
-
 This README is the developer guide for the current implementation. Complete, runnable files are provided in
 the quickstart. Later examples are identified as extensions or fragments of the repository's shop example.
 
@@ -47,7 +44,6 @@ the quickstart. Later examples are identified as extensions or fragments of the 
 - [Multiple modules and published JARs](#multiple-modules-and-published-jars)
 - [Programmatic DSL](#programmatic-dsl)
 - [Diagnostics and troubleshooting](#diagnostics-and-troubleshooting)
-- [Migration from StateGraph](#migration-from-stategraph)
 - [Known limitations](#known-limitations)
 - [Build, verify and release this repository](#build-verify-and-release-this-repository)
 - [Further reference](#further-reference)
@@ -103,17 +99,15 @@ Application imports begin with `io.github.graphmaquina`.
 
 GraphMaquina `1.0.0` is available from Maven Central. The namespace `io.github.graphmaquina` is verified.
 The release contains the runtime, generator, processor, Maven plugin, Gradle plugin and Gradle plugin marker.
-The following evidence is from the **2026-09-09 verification of published `1.0.0`**, not a verification
-result for `1.0.1-SNAPSHOT` or the revised quickstart below.
+The examples in this guide target `1.0.1-SNAPSHOT`; install that version locally before following them.
 
-| Check | Verified result |
+| Check | Current development result |
 | --- | --- |
-| Public availability | All six publication POMs return HTTP 200 from Maven Central. |
-| Binary integrity | All five downloaded JARs match the SHA-256 hashes of the verified release bundle. |
-| Release signatures | All 26 detached signatures were verified with the public key retrieved from the keyserver. |
-| Automated library/build suites | 444 tests, with no failures, errors or skipped tests in the release verification run. |
-| Published-release quickstart | The `1.0.0` quickstart at release verification compiled and ran with Gradle using Central without `mavenLocal()`, and with Maven using an initially empty local repository. Both reported `All ticket scenarios passed.` |
+| Automated library/build suites | 459 tests, with no failures, errors or skipped tests. |
+| README quickstart | Compiled and ran with Gradle and Maven against `1.0.1-SNAPSHOT`, with strict lint. Both reported `All ticket scenarios passed.` |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
+
+See the [verification record](docs/runtime-naming-verification.md) for the tested build and commands.
 
 Browse the [published artifacts](https://repo.maven.apache.org/maven2/io/github/graphmaquina/) or the
 [core release on Maven Central](https://central.sonatype.com/artifact/io.github.graphmaquina/graphmaquina-core/1.0.0).
@@ -287,7 +281,7 @@ graphmaquina {
 ```
 
 An explicit dependency on `graphmaquinaGenerator` replaces the default dependency. The repository example uses
-this to run the sibling codegen project. Version mixing is not a migration mechanism.
+this to run the sibling codegen project. Use matching versions for every GraphMaquina artifact.
 
 ## Configure Maven
 
@@ -753,7 +747,6 @@ Original Java declarations and invocation names remain unchanged. If normalizati
 fails with `SG603` naming both sources: `id` / `_id` and `authorize` / `Authorize` conflict within one references
 container. A conflict with the container itself also fails; there are no underscore escapes or opaque suffixes.
 Names that cannot produce a valid nonempty Java identifier are rejected.
-See [symbol naming](docs/typed-annotations-migration.md#7-how-generated-symbols-are-named).
 
 A generated symbol is a compile-time reference. It is not an action instance, a dependency-injection bean or
 a reflective lookup. The facade calls the selected declaration directly, preserving the marked overload.
@@ -1458,7 +1451,7 @@ compilations. Keep watched owner and peer declarations in the same compilation u
 
 The typed annotation API is the main application workflow. The core artifact also includes a Java DSL under
 `io.github.graphmaquina.dsl`, which constructs a `GraphDefinition` at runtime. Its graph validation happens
-when `build()` runs, rather than during javac. The DSL's class name remains `StateGraph`.
+when `build()` runs, rather than during javac. The DSL entry point is `StateGraph.define(key)`.
 
 The following complete utility can be added to the ticket quickstart package. It creates an alternative
 programmatic definition using the same entity, without using its generated facade:
@@ -1573,7 +1566,7 @@ symbol category may be an ordinary javac error rather than an `SG` diagnostic.
 | `SG606` | Graph or watch vocabulary belongs to another machine/pair. |
 | `SG607` | Too many values in an optional singleton element. |
 | `SG608` | Invalid, duplicated or unused peer, or a watched peer outside this compilation. |
-| `SG609` | Legacy string-based graph declaration. Migrate to generated typed vocabulary. |
+| `SG609` | Unsupported string-based graph declaration. Use `@GenerateGraphApi` and the generated typed annotations. |
 
 ### Runtime exceptions
 
@@ -1618,41 +1611,6 @@ For a reproducible issue, include JDK/build-tool versions, relevant build config
 binding declarations, the full diagnostic and whether the problem occurs on a clean build. Report issues at
 [GitHub Issues](https://github.com/graphmaquina/graphmaquina/issues).
 
-## Migration from StateGraph
-
-This branch introduces source-incompatible generated naming in `1.0.1-SNAPSHOT`. Future publications will
-remain in the `1.0.x` patch series by project policy; that numbering does not imply source or binary
-compatibility for generated API renames. Published `1.0.0` is immutable and keeps its old API.
-
-To migrate from `1.0.0`, update references such as `Tickets_` → `TicketsRuntime`, `TicketMachines_` →
-`TicketMachinesRuntime` and `ShopMachines_` → `ShopMachinesRuntime`, along with normalized `Refs` names.
-Use matching `1.0.1-SNAPSHOT` runtime, generator, processor and adapter versions, regenerate and recompile
-all affected application and library modules. Existing `1.0.0` binaries do not acquire `Runtime` classes
-by upgrading the runtime dependency. The build lifecycle retires owned obsolete generated sources and
-bytecode; resolve `SG603` collisions in handwritten declarations before recompiling.
-
-For earlier StateGraph consumers, also update build coordinates and source imports:
-
-| Old naming / declaration | Current form |
-| --- | --- |
-| `stategraph-*` modules | `graphmaquina-*` artifacts under `io.github.graphmaquina` |
-| Old package prefix | `io.github.graphmaquina` |
-| String-based `@StateGraph` | `@GenerateGraphApi` plus `@<Machine>Graph.Definition` |
-| `action = "charge"`, `by = Host.class` | `action = HostRefs.Charge.class` with `@GraphAction` on the method |
-| String guard or hook names | Marked, generated `Refs` class literals |
-| String state names | Actual enum constants |
-| Implicit state/id properties | Explicit `state` and `id` property symbols |
-| String watch property names | Property symbols and generated owner/peer vocabulary |
-| ISO-8601 annotation timeout string | `@Timeout(seconds = ..., nanos = ...)` |
-
-Legacy annotation classes remain in the source tree for diagnostics, but declarations using them are rejected
-with `SG609`; they are not a compatibility mode. Do not rename retained Java API names such as `Machines`,
-`Machine`, `@StateGraphs` or `io.github.graphmaquina.dsl.StateGraph` by guesswork.
-
-The [detailed migration guide](docs/typed-annotations-migration.md) preserves the historical v0.2 → typed-v0.3
-transition, with before/after declarations, and explains the current Runtime naming migration. This README
-describes the development `1.0.1-SNAPSHOT` coordinates and workflow.
-
 ## Known limitations
 
 | Area | Current status |
@@ -1664,8 +1622,8 @@ describes the development `1.0.1-SNAPSHOT` coordinates and workflow.
 | Async timeout | Stops waiting; does not terminate synchronous code or cancel a user's running stage. |
 | Public compatibility matrix | Java 21 is the baseline; no claim of verification across all newer JDKs or Gradle versions. |
 
-See [the audit verification record](docs/audit-fixes-verification.md) for tested guarantees and remaining
-acceptance gaps. Historical design documents are not evidence that a deferred feature is implemented.
+See [the verification record](docs/runtime-naming-verification.md) for tested guarantees and remaining
+acceptance gaps.
 
 ## Build, verify and release this repository
 
@@ -1688,10 +1646,8 @@ The combined `test` command explicitly includes that suite. Its plugin is a sepa
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-The [2026-09-09 audit](docs/audit-fixes-verification.md) for `1.0.0` recorded **444 tests with no failures,
-errors or skipped tests** across the six suites. That is a dated verification result, not a promise that every future checkout
-has the same count. The [Runtime naming verification](docs/runtime-naming-verification.md) for
-`1.0.1-SNAPSHOT` records **459 passing tests** and both README quickstarts executed with strict lint.
+The [verification record](docs/runtime-naming-verification.md) for `1.0.1-SNAPSHOT` records **459 passing
+tests** across six suites and both README quickstarts executed with strict lint.
 Test reports are under each module's `build/reports/tests/test`.
 
 ### Prepare a Maven Central bundle
@@ -1743,14 +1699,10 @@ Do not publish a bundle signed with a temporary test key. See the
 | Reference | What to use it for |
 | --- | --- |
 | [Build integration guide](docs/typed-annotations-build.md) | Adapter lifecycle, toolchain checks, paths and repository configuration |
-| [Typed annotation migration](docs/typed-annotations-migration.md) | Historical string-to-symbol migration and naming rules |
 | [Shop source](graphmaquina-example/src/main/java/io/github/graphmaquina/example) | Complete two-machine domain with async payment, guards, cascades and watches |
 | [Shop tests](graphmaquina-example/src/test/java/io/github/graphmaquina/example) | Executable behavior and expected diagrams |
 | [Public API source](graphmaquina-core/src/main/java/io/github/graphmaquina/api) | Exact signatures and outcome types |
 | [Programmatic DSL source](graphmaquina-core/src/main/java/io/github/graphmaquina/dsl) | Lower-level builder stages |
-| [Audit of 64 decisions](docs/audit-64-decisions.md) | Decision-by-decision implementation evidence and limitations |
-| [Audit fixes and verification](docs/audit-fixes-verification.md) | Regression fixes, test totals and release-bundle checks |
-| [Historical acceptance record](docs/typed-annotations-verification.md) | Earlier acceptance runs, clearly distinguished from current audit results |
 
 ## License
 
