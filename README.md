@@ -22,6 +22,7 @@ the quickstart. Later examples are identified as extensions or fragments of the 
 ## Contents
 
 - [What GraphMaquina provides](#what-graphmaquina-provides)
+- [Visual guide](#visual-guide)
 - [Requirements and artifacts](#requirements-and-artifacts)
 - [How your flow annotations are generated](#how-your-flow-annotations-are-generated)
 - [Publication and verification status](#publication-and-verification-status)
@@ -72,6 +73,24 @@ The build and runtime have separate jobs:
 
 ![Build pipeline: declare Java entities and machines, generate vocabulary and a manifest, compile and validate facades, then publish accepted exports. At runtime the application uses the typed facade and core.](docs/images/build-pipeline.svg)
 
+## Visual guide
+
+Follow the pictures for an overview, then use the linked sections for declarations, commands and complete
+examples. Each illustration is an SVG: open it to inspect labels at full size.
+
+| Question | Diagram | Read next |
+| --- | --- | --- |
+| How can my source use annotations that do not exist yet? | [Source → vocabulary → compilation](docs/images/annotation-bootstrap.svg) | [First generation](#how-your-flow-annotations-are-generated) |
+| Which transitions are permitted? | [Complete transition matrix](docs/images/transition-matrix.svg) | [Matrix rules](#understand-the-transition-matrix) |
+| Why did an operation apply, reject or fail? | [Operation decision flow](docs/images/operation-decisions.svg) | [Outcomes](#handle-transition-outcomes) |
+| Which thread waits for my service? | [Direct call and async submission](docs/images/async-execution.svg) | [Calling styles](#choose-the-calling-style) |
+| How much time is left for an action? | [Root and action deadline timeline](docs/images/async-deadlines.svg) | [Deadline rules](#deadline-rules) |
+| What happens if the service finishes too late? | [Timeout and late completion](docs/images/async-late-completion.svg) | [Cancellation](#timeout-cancellation-and-late-completion) |
+| What can I safely use in a callback? | [Context and thread boundary](docs/images/async-context-boundary.svg) | [Context ownership](#contexts-and-completion-callbacks) |
+| Does a completed future mean the operation succeeded? | [Future result branches](docs/images/async-future-results.svg) | [Result handling](#read-the-future-and-domain-result) |
+| Do both machines commit together? | [Cascade versus watch](docs/images/cascade-vs-watch.svg) | [Machine coordination](#read-peers-and-cascade-transitions) |
+| When do hooks and reactions run? | [Commit lifecycle](docs/images/commit-lifecycle.svg) | [Commit and hooks](#commit-hooks-and-listeners) |
+
 ## Requirements and artifacts
 
 - **JDK 21 or later**, including `javac`, for generation and compilation. Use Java 21 as the baseline unless
@@ -110,21 +129,7 @@ There are three distinct kinds of API:
 | `TicketsGraph.Definition`, `TicketsGraph.Action`, `TicketsGraph.Move`, `TicketRefs`, `TicketActionsRefs` | The pre-compilation generator, from your declarations | After the generation task/phase, before application compilation |
 | `TicketsRuntime`, `TicketMachinesRuntime` | The annotation processor, from the validated flow | During application compilation |
 
-```mermaid
-flowchart LR
-    source["Your .java files<br/>Tickets + Ticket + TicketStatus + marked members"]
-    generator["1. Read source syntax<br/>No application compilation"]
-    vocabulary["TicketsGraph.java<br/>TicketRefs.java + TicketActionsRefs.java"]
-    compiler["2. Compile sources together<br/>Validate the declared flow"]
-    runtime["Compiled application<br/>Generated Runtime implementations"]
-    source --> generator --> vocabulary --> compiler --> runtime
-    source --> compiler
-    style source fill:#15263e,color:#f2f6fc,stroke:#7aafff
-    style generator fill:#15263e,color:#f2f6fc,stroke:#c3a2ff
-    style vocabulary fill:#15263e,color:#f2f6fc,stroke:#c3a2ff
-    style compiler fill:#15263e,color:#f2f6fc,stroke:#55e0c0
-    style runtime fill:#15263e,color:#f2f6fc,stroke:#55e0c0
-```
+![Original Java declarations enter a syntax-only generator, which emits typed vocabulary. javac then compiles original source and generated annotations together and produces Runtime implementations.](docs/images/annotation-bootstrap.svg)
 
 **The generator creates the annotation types; you choose the flow by using those annotations.** It does not
 infer transitions from action method bodies. For example, `Machine<Ticket, TicketStatus>` tells it that the
@@ -227,6 +232,7 @@ The examples in this guide target `1.0.1-SNAPSHOT`; install that version locally
 | --- | --- |
 | Automated library/build suites | 459 tests, with no failures, errors or skipped tests. |
 | README quickstart | Compiled and ran with Gradle and Maven against `1.0.1-SNAPSHOT`, with strict lint. Both reported `All ticket scenarios passed.` |
+| Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. See [async guide verification](docs/async-guide-verification.md). |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
 
 See the [verification record](docs/runtime-naming-verification.md) for the tested build and commands.
@@ -1003,6 +1009,8 @@ The full action implementation is in
 
 ## Handle transition outcomes
 
+![Follow the requested cell through stay, forbid, guards, action success and handled failure to its outcome. Technical exceptions and post-commit failures are separate paths.](docs/images/operation-decisions.svg)
+
 `Outcome<E, S>` is a sealed interface. Use its variants to distinguish business results:
 
 | Variant | State changes? | Useful fields |
@@ -1042,78 +1050,449 @@ retrying: after-commit failures occur after state was already written.
 - An abort journal uses `ActionRecord` and `ActionStatus` (`RUNNING`, `OK`, `FAILED`, `THREW`) to report actions
   that actually ran. A journal is execution evidence, not an undo log for external side effects.
 - A watch produces `Reaction.Done`, carrying its own outcome, or `Reaction.Aborted`, carrying its exception.
-  Inspect reactions even when the root operation succeeded.
+  Inspect reactions even when the root operation succeeded. `Reaction.Aborted` can also report a hook/listener
+  failure after the reaction itself committed; it is not proof that the reaction left state unchanged.
 
 ## Asynchronous work and timeouts
 
-An asynchronous action has the same context as a synchronous one but returns a `CompletionStage<ActionOutcome>`.
-An asynchronous guard returns `CompletionStage<GuardResult>`. The shop's payment action demonstrates a real
-asynchronous service boundary through its `PaymentGateway` interface.
+GraphMaquina supports asynchronous actions and guards while keeping each transition's execution and commit
+ordered. There are **two independent decisions**: whether a binding returns a stage, and whether the caller
+submits the whole operation through `machine.async(...)`.
 
-This method belongs to the shop's `OrderActions`, whose `gateway` is a constructor dependency:
+Use this section as a practical sequence:
+
+- [Choose the calling style](#choose-the-calling-style).
+- [Build a runnable async ticket](#runnable-async-ticket-example).
+- [Read the future and domain result](#read-the-future-and-domain-result).
+- [Configure deadlines](#deadline-rules).
+- [Handle timeout and cancellation](#timeout-cancellation-and-late-completion).
+- [Use contexts safely](#contexts-and-completion-callbacks).
+- [Manage executors and machine lifetime](#executors-and-machine-lifetime).
+- [Test async behavior](#test-async-behavior).
+
+### Choose the calling style
+
+| Action/guard implementation | How you invoke the machine | What the caller experiences |
+| --- | --- | --- |
+| Returns `ActionOutcome` / `GuardResult` | `tickets.complete(ticket)` | Executes inline and returns an `Outcome` |
+| Returns `CompletionStage<ActionOutcome>` / `CompletionStage<GuardResult>` | `tickets.complete(ticket)` | Invokes the binding inline, waits for its stage, then returns an `Outcome` |
+| Either kind of binding | `tickets.async(() -> tickets.complete(ticket))` | Submits the whole operation to the configured executor and returns `CompletableFuture<Outcome<...>>` |
+
+With the default executor, the last form runs the operation on a virtual thread, allowing the calling thread
+to continue. A custom executor determines its own scheduling; a direct executor can execute inline.
+
+![Direct invocation waits on the caller thread; machine.async uses the default virtual-thread executor to run the operation while the caller receives a future. Both paths wait for the action stage before committing.](docs/images/async-execution.svg)
+
+Returning a stage does not change the generated operation's return type: the facade still returns
+`Outcome<E, S>`. The outer `CompletableFuture` comes from `machine.async(...)`. Calling `join()` immediately
+on that future blocks the caller again; at an asynchronous application boundary, compose and return the
+future instead of joining it on an event-loop thread.
+
+Guards execute in order. Each async guard is awaited before the next guard or action runs. A guard rejection
+stops the edge. The action method itself runs on the operation thread up to the point where it returns its
+stage. Any blocking I/O performed **before** that return still blocks the operation thread. Use a service API
+that returns promptly, or an application-managed executor for genuinely blocking service code.
+
+### Runnable async ticket example
+
+This example adds an asynchronous eligibility check and approval service to the ticket domain. Reuse
+`Ticket.java` and `TicketStatus.java` from the [quickstart](#quickstart-a-complete-ticket-machine), with the
+same Gradle or Maven configuration and `1.0.1-SNAPSHOT` dependencies. Add the following five files under
+`src/main/java/com/example/tickets/`. They can coexist with the synchronous quickstart.
+
+The service contract returns stages; the example implementation controls their completion explicitly so
+there is no external server, `Thread.sleep`, or scheduling guesswork.
+
+#### TicketReviewService.java
 
 ```java
-@GraphAction
-public CompletionStage<ActionOutcome> charge(TransitionContext<Order, OrderStatus> ctx) {
-    ctx.entity().countAttempt();
-    return gateway.chargeAsync(ctx.entity()).thenApply((Charge charge) ->
-            charge.declined() ? ActionOutcome.failed("declined: " + charge.code()) : ActionOutcome.ok());
+package com.example.tickets;
+
+import java.util.concurrent.CompletionStage;
+
+public interface TicketReviewService {
+    CompletionStage<Boolean> canStart(String ticketId);
+    CompletionStage<Boolean> approved(String ticketId);
 }
 ```
 
-The callback converts the service result to a domain outcome. Context `peer`, `cascade`, `cascadeAll` and
-context-derived peer views are confined to the thread executing the original action or guard, even while
-the stage is pending. Do not call them from a `thenApplyAsync` callback or another completion thread; the
-runtime detects this with `java.lang.WrongThreadException`. Capture any required immutable input before
-starting the asynchronous work. Context lifetime and application entity thread safety are separate constraints.
-
-There are two different choices:
-
-1. **Async work inside an operation:** an action or guard returns a stage. Calling the facade operation
-   normally still blocks while the engine waits for that stage.
-2. **Move the whole operation off the caller thread:** use `machine.async(() -> machine.operation(entity))`.
-
-For example, with an existing `ShopMachines shop` and `Order order`:
+#### AsyncTicketActions.java
 
 ```java
-CompletableFuture<Outcome<Order, OrderStatus>> pending =
-        shop.orders().async(() -> shop.orders().pay(order));
+package com.example.tickets;
 
-pending.thenAccept(outcome -> System.out.println(outcome.current()));
+import io.github.graphmaquina.annotation.GraphAction;
+import io.github.graphmaquina.annotation.GraphGuard;
+import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.TransitionContext;
+import java.util.Objects;
+import java.util.concurrent.CompletionStage;
+
+public final class AsyncTicketActions {
+    private final TicketReviewService reviews;
+
+    public AsyncTicketActions(TicketReviewService reviews) {
+        this.reviews = Objects.requireNonNull(reviews);
+    }
+
+    @GraphGuard
+    public CompletionStage<GuardResult> canStart(GuardContext<Ticket, TicketStatus> ctx) {
+        String ticketId = ctx.entity().getId();
+        return reviews.canStart(ticketId).thenApply(allowed -> allowed
+                ? GuardResult.pass()
+                : GuardResult.reject("ticket is not eligible"));
+    }
+
+    @GraphAction
+    public CompletionStage<ActionOutcome> complete(TransitionContext<Ticket, TicketStatus> ctx) {
+        String ticketId = ctx.entity().getId();
+        return reviews.approved(ticketId).thenApply(approved -> approved
+                ? ActionOutcome.ok()
+                : ActionOutcome.failed("approval was declined"));
+    }
+}
 ```
 
-Import `java.util.concurrent.CompletableFuture`. Keep the machine set alive until submitted work completes.
-`async` does not make concurrent changes to the same entity safe.
+Both methods capture the immutable identifier before calling the service. Their callbacks only translate a
+service value; they do not use the transaction context or mutate the entity. Approval comes from the service
+in this example, rather than the quickstart entity's `approved` field.
+
+#### AsyncTickets.java
+
+```java
+package com.example.tickets;
+
+import static com.example.tickets.TicketStatus.DONE;
+import static com.example.tickets.TicketStatus.FAILED;
+import static com.example.tickets.TicketStatus.IN_PROGRESS;
+import static com.example.tickets.TicketStatus.OPEN;
+
+import io.github.graphmaquina.annotation.GenerateGraphApi;
+import io.github.graphmaquina.annotation.Timeout;
+import io.github.graphmaquina.api.Machine;
+import io.github.graphmaquina.api.Outcome;
+import java.io.IOException;
+
+@GenerateGraphApi
+@AsyncTicketsGraph.Definition(initial = OPEN, terminals = {DONE, FAILED},
+        state = TicketRefs.Status.class, id = TicketRefs.Id.class)
+@AsyncTicketsGraph.Row(state = OPEN, otherwise = "start the ticket first")
+@AsyncTicketsGraph.Row(state = IN_PROGRESS, otherwise = "complete or fail the ticket")
+@AsyncTicketsGraph.Cell(from = IN_PROGRESS, to = FAILED)
+public interface AsyncTickets extends Machine<Ticket, TicketStatus> {
+    @AsyncTicketsGraph.Move(from = OPEN, to = IN_PROGRESS,
+            guards = AsyncTicketActionsRefs.CanStart.class)
+    Outcome<Ticket, TicketStatus> start(Ticket ticket);
+
+    @AsyncTicketsGraph.Action(from = IN_PROGRESS, to = DONE,
+            action = AsyncTicketActionsRefs.Complete.class,
+            onFailure = FAILED,
+            failsOn = IOException.class,
+            timeout = @Timeout(seconds = 2))
+    Outcome<Ticket, TicketStatus> complete(Ticket ticket);
+}
+```
+
+`canStart` uses the machine's root wait deadline. The `complete` action additionally has a two-second wait
+limit. A service result of `false` becomes a handled failure; a stage completed exceptionally with
+`IOException` also uses the declared `IN_PROGRESS → FAILED` route. A guard exception or an action wait timeout
+is a technical abort, even though the action declares `onFailure`.
+
+#### AsyncTicketMachines.java
+
+```java
+package com.example.tickets;
+
+import io.github.graphmaquina.annotation.StateGraphs;
+import io.github.graphmaquina.api.Machines;
+
+@StateGraphs
+public interface AsyncTicketMachines extends Machines {
+    AsyncTickets tickets();
+}
+```
+
+#### AsyncApp.java
+
+```java
+package com.example.tickets;
+
+import io.github.graphmaquina.api.Outcome;
+import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionStage;
+
+public final class AsyncApp {
+    private AsyncApp() { }
+
+    public static void main(String[] args) {
+        CompletableFuture<Boolean> approval = new CompletableFuture<>();
+        TicketReviewService reviews = new TicketReviewService() {
+            @Override
+            public CompletionStage<Boolean> canStart(String ticketId) {
+                return CompletableFuture.completedFuture(true);
+            }
+
+            @Override
+            public CompletionStage<Boolean> approved(String ticketId) {
+                return approval;
+            }
+        };
+
+        try (AsyncTicketMachines machines = AsyncTicketMachinesRuntime.builder(
+                Duration.ofSeconds(5), new AsyncTicketActions(reviews)).build()) {
+            AsyncTickets tickets = machines.tickets();
+            Ticket ticket = new Ticket("T-ASYNC", "Review the documentation", true);
+
+            Outcome<Ticket, TicketStatus> started =
+                    tickets.async(() -> tickets.start(ticket)).join();
+            if (!(started instanceof Outcome.Applied<?, ?>)) {
+                throw new IllegalStateException("start was not applied: " + started);
+            }
+
+            CompletableFuture<Outcome<Ticket, TicketStatus>> pending =
+                    tickets.async(() -> tickets.complete(ticket));
+            System.out.println("Caller can do other work while approval is pending.");
+
+            // In a real service, its client completes this stage when the response arrives.
+            approval.complete(true);
+
+            Outcome<Ticket, TicketStatus> completed = pending.join();
+            if (!(completed instanceof Outcome.Applied<?, ?>)
+                    || ticket.getStatus() != TicketStatus.DONE) {
+                throw new IllegalStateException("completion was not applied: " + completed);
+            }
+            System.out.println("Async ticket -> " + ticket.getStatus());
+        }
+    }
+}
+```
+
+This command-line demonstration deliberately joins before exiting so the machine set remains alive for all
+submitted work. In Gradle, change the existing `application.mainClass` to `"com.example.tickets.AsyncApp"`,
+then run `./gradlew clean run`. In Maven:
+
+```bash
+mvn clean compile
+java -cp "target/classes:$HOME/.m2/repository/io/github/graphmaquina/graphmaquina-core/1.0.1-SNAPSHOT/graphmaquina-core-1.0.1-SNAPSHOT.jar" \
+     com.example.tickets.AsyncApp
+```
+
+Expected application output:
+
+```text
+Caller can do other work while approval is pending.
+Async ticket -> DONE
+```
+
+To explore another branch, complete `approval` with `false` instead of `true`: the operation then returns
+`Outcome.Failed` and the ticket becomes `FAILED`, so update the demonstration's success assertion accordingly.
+Use `approval.completeExceptionally(new java.io.IOException("service unavailable"))` to exercise `failsOn`.
+An unexpected exception, such as `IllegalStateException`, completes the operation future exceptionally.
+
+### Read the future and domain result
+
+There are two layers of result. A future that completes normally does not imply `Outcome.Applied`:
+`Rejected`, `Ignored` and a handled `Failed` are normal values too.
+
+![The operation future branches into normal completion carrying Applied, Failed, Rejected or Ignored, and exceptional completion carrying a technical or post-commit failure. Watch reactions must also be inspected.](docs/images/async-future-results.svg)
+
+With the `tickets` and `ticket` from the example, this fragment observes completion without joining:
+
+```java
+CompletableFuture<Outcome<Ticket, TicketStatus>> pending =
+        tickets.async(() -> tickets.complete(ticket));
+
+CompletableFuture<Void> observed = pending.thenAccept(outcome -> {
+    switch (outcome) {
+        case Outcome.Applied<Ticket, TicketStatus> applied ->
+                System.out.println("Completed: " + applied.to());
+        case Outcome.Failed<Ticket, TicketStatus> failed ->
+                System.out.println("Handled decline: " + failed.reason());
+        case Outcome.Rejected<Ticket, TicketStatus> rejected ->
+                System.out.println("Not allowed: " + rejected.reason());
+        case Outcome.Ignored<Ticket, TicketStatus> ignored ->
+                System.out.println("Unchanged: " + ignored.current());
+    }
+});
+
+observed.whenComplete((unused, error) -> {
+    if (error != null) {
+        System.err.println("Operation or observer failed: " + error);
+    }
+});
+```
+
+Keep or return the relevant future to the caller. `join()` wraps an exceptional completion in
+`CompletionException`; `get()` uses `ExecutionException` and can be interrupted. If the outer future itself
+is cancelled, either method can throw `CancellationException` directly. Inspect the underlying
+cause before deciding whether to retry. `AfterCommitException` may mean the requested state was already
+written; an exceptional future is not proof that nothing happened. A callback you attach can also fail
+independently of the machine operation.
+
+Avoid a blanket `exceptionally(error -> ActionOutcome.failed(...))` inside an action unless every covered
+exception truly means a business decline. It would also turn unexpected service/programming errors into a
+normal failure route. Return `ActionOutcome.failed(reason)` for known business failure and use specific
+`failsOn` types when the graph is intended to handle those action exceptions.
 
 ### Deadline rules
 
-A generated set containing asynchronous bindings requires a default `Duration` as the first builder argument.
-For the shop:
+A generated set with declared async actions or guards requires a positive default `Duration` as the first
+builder argument. The runnable example uses five seconds. An optional per-machine override changes the
+budget installed on that asynchronous machine:
 
 ```java
-ShopMachines shop = ShopMachinesRuntime.builder(
-        Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
-        .asyncTimeout(Orders.class, Duration.ofSeconds(8))
+AsyncTicketMachines machines = AsyncTicketMachinesRuntime.builder(
+        Duration.ofSeconds(10), new AsyncTicketActions(reviews))
+        .asyncTimeout(AsyncTickets.class, Duration.ofSeconds(8))
         .build();
 ```
 
-The per-machine override is accepted only for an asynchronous machine in that set. Durations must be positive.
-For synchronous-only sets, such as `TicketMachines`, the builder has no timeout argument.
+Close `machines` when its work is finished. The override is accepted only for an asynchronous machine in the
+set. A synchronous-only set such as `TicketMachines` has no timeout builder argument, even when you use its
+`async(...)` method to submit a synchronous operation.
 
-The root timeout establishes a deadline shared by nested work. An action-specific
-`@Timeout(seconds = 5)` can shorten the wait for that action; it cannot extend the root deadline. Async guards
-use the root deadline. Synchronous code runs inline; these timeouts do not preempt a blocking synchronous call.
+| Setting | When its clock starts | What it bounds |
+| --- | --- | --- |
+| Set default or per-machine `asyncTimeout` | When a root operation begins execution, after executor queueing | Pending async waits in that root and its nested cascades |
+| Action `@Timeout` | After the action method returns its stage | That action's pending wait, capped by the root's remaining deadline |
+| Async guard | Uses the existing root deadline | That guard's pending wait; an action's `@Timeout` does not cover its guards |
+| Service/client timeout | Defined by your service client | The service request according to that client's cancellation/timeout contract |
 
-The set default is installed only on machines with declared asynchronous bindings. A synchronous-only root
-does not acquire a deadline merely because it cascades into an asynchronous peer, and the peer's machine-level
-timeout does not replace that root's deadline. In that arrangement, use a timeout on the peer's asynchronous
-action to bound that action's wait; async guards still need a bounded root. Do not assume the set's `Duration`
-is a universal deadline for every cascade originating in the set.
+![An eight-second root budget starts with root execution. If an action returns its stage at second four, a five-second action timeout still allows only four seconds of waiting; a two-second action timeout allows two seconds.](docs/images/async-deadlines.svg)
 
-On timeout or interruption, waiting aborts and the context becomes invalid. The library leaves the user's
-stage running; it does not cancel a remote request. Do not retain contexts for use after the operation ends.
-A late callback can still perform its own external side effects, so service cancellation and idempotency need
-an application-level design.
+The effective action wait deadline is the earlier of the root deadline and the action-specific deadline.
+If guards and other synchronous work have already consumed four seconds of an eight-second root budget, an
+async action with `@Timeout(seconds = 5)` cannot get five additional seconds. The diagram illustrates this
+with a stage returned at second four.
+
+These settings are **wait budgets, not a hard end-to-end execution timeout**. They do not preempt synchronous
+code, including blocking work inside a method that eventually returns a stage. The action-specific clock is
+calculated after that return. A stage already completed when inspected can succeed even with zero remaining
+wait time. There is no deadline check that interrupts setters, after-commit hooks or listeners.
+
+Cascades share the root's unit of work and deadline; entering a peer does not restart its machine-level
+budget. Set defaults are installed only on machines with declared async bindings. A synchronous-only root
+that cascades to an async peer therefore has no root deadline supplied just by the set default. A timeout on
+the peer action can still bound its wait, but an async guard on that path has no finite root budget. Choose
+the entry point and timeout configuration deliberately when mixing synchronous and asynchronous machines.
+
+Watch reactions are different: they execute after the triggering commit and start separate root
+transactions with their own deadlines. The original operation waits for synchronous watch dispatch before
+returning; its root wait budget does not impose one global deadline on the entire reaction chain.
+
+### Timeout, cancellation and late completion
+
+On an engine wait timeout, the operation throws `TransitionAbortedException`, pending graph-state changes
+are discarded, and transaction-aware context operations become invalid. Through `machine.async`, that
+exception completes the operation future exceptionally. The declared `onFailure` route is not used for this
+timeout. The user's stage and the underlying service request are left running.
+
+![After an engine wait times out, graph state does not commit. The user stage and external service can finish later, but that completion does not resume the aborted graph transaction.](docs/images/async-late-completion.svg)
+
+Three different objects can be involved:
+
+| What you stop or time out | Consequence |
+| --- | --- |
+| GraphMaquina's wait on an action or guard | Technical abort; no pending graph-state commit; the library does not cancel the user stage |
+| The action's own stage is cancelled by its owner | Cancellation is treated as a technical action failure, not a handled business result |
+| The outer operation future is cancelled or given a caller timeout | No cancellation link stops the running operation; do not assume it prevented commit |
+
+In particular, `pending.cancel(true)`, `pending.orTimeout(...)` or a timed `pending.get(...)` is not a
+transaction rollback API. The operation may already be running, may continue running and may commit after
+the caller stops waiting. Interrupting an operation thread while it is waiting causes a technical abort,
+but GraphMaquina still does not cancel the foreign stage.
+
+A late remote success can mean “the service processed the request, but the graph did not commit”. Use a
+stable request/idempotency key and a service-level deadline where needed. Reconcile uncertain remote results
+before retrying an external side effect. GraphMaquina neither rolls back arbitrary field mutations made by
+actions nor reverses HTTP calls, payments, messages or database writes performed outside its state setters.
+
+### Contexts and completion callbacks
+
+Capture the data required by the service while the action or guard is running. Prefer immutable values, as
+`AsyncTicketActions` does with `String ticketId`, over passing a mutable entity or live context to a callback.
+
+![Transaction-aware context operations belong to the original operation thread and live transaction. Service callbacks receive immutable data and translate results without using peer views or cascades.](docs/images/async-context-boundary.svg)
+
+`ctx.peer(...)`, `ctx.cascade(...)`, `ctx.cascadeAll(...)` and context-derived peer views require both the
+original operation thread and a live transaction. A wrong thread produces `WrongThreadException`; use after
+invalidation produces `StaleContextException`. After the root commits or aborts, its transaction-aware
+context is invalidated before post-commit hooks run.
+
+Neither `thenApply` nor `thenApplyAsync` promises to run on that original operation thread. Even a callback
+without the `Async` suffix may run on the service's completion thread. Do not hide a cascade in one of these
+callbacks. Read peers or stage required cascades while on the operation thread; after an external result, a
+separate facade invocation is a new transaction, not a continuation of the original unit of work.
+
+The context's simple entity/from/to/depth getters do not enforce these lifetime/thread checks. That does not
+make the entity immutable or safe for concurrent access. Do not mutate the state property in an action or a
+late callback; GraphMaquina owns graph-state writes during commit.
+
+### Executors and machine lifetime
+
+Each machine uses a virtual-thread-per-task executor by default. `machine.async(supplier)` submits the whole
+supplier to that executor. It does not automatically create one transaction spanning several operations
+inside the supplier: each facade operation starts its own root. Use `cascade` inside an action when multiple
+machines must share one graph transaction.
+
+A set can use an application-owned executor instead. For this example, import
+`java.util.concurrent.Executors` and `java.util.concurrent.ExecutorService`:
+
+```java
+try (ExecutorService operations = Executors.newVirtualThreadPerTaskExecutor();
+     AsyncTicketMachines machines = AsyncTicketMachinesRuntime.builder(
+             Duration.ofSeconds(5), new AsyncTicketActions(reviews))
+             .asyncExecutor(operations)
+             .build()) {
+    Outcome<Ticket, TicketStatus> started = machines.tickets()
+            .async(() -> machines.tickets().start(ticket)).join();
+    System.out.println(started.current());
+}
+```
+
+The example waits before closing. The executor is closed by the application's try-with-resources statement,
+not by the machine set. With the defaults, closing a set closes its owned executors and waits for their
+submitted work. With a custom executor, the caller owns shutdown and must keep the machines and any service
+dependencies alive until operations finish. Closing the registry is not a general cancellation barrier for
+synchronous calls or work submitted through a still-running custom executor. A rejected submission yields an
+exceptionally completed future.
+
+Avoid using the same small fixed executor for operation workers **and** service completions scheduled by
+those operations. If every worker is blocked waiting for a service stage whose completion is queued behind
+those workers, the executor can be starved. Keep service execution independent or provision an execution
+model that does not block the resources its completions need. A custom direct executor such as `Runnable::run`
+runs inline and removes the offloading behavior shown for the default executor.
+
+Multiple virtual threads do not serialize access to a shared entity. Two concurrent operations on the same
+ticket need an application-level concurrency policy. The commit precheck detects some state conflicts; it
+is not a lock or a compare-and-set transaction with your database. See [concurrency](#concurrency-identity-and-persistence).
+
+### Test async behavior
+
+Use controllable futures rather than timing guesses. For each case below, build a fresh set and entity,
+complete the service future deliberately, then inspect both the outcome/exception and the entity state.
+For the action/`approved` cases, first let `start` succeed so the ticket begins that check in `IN_PROGRESS`;
+a fresh ticket starts in `OPEN`, where calling `complete` directly is forbidden.
+
+| Case | Service behavior | Expected observation |
+| --- | --- | --- |
+| Async guard passes | `canStart` completes `true` | `start` returns `Applied`; state is `IN_PROGRESS` |
+| Async guard rejects | `canStart` completes `false` | `start` returns `Rejected`; state stays `OPEN` |
+| Action succeeds | `approved` completes `true` | `complete` returns `Applied`; state is `DONE` |
+| Business decline | `approved` completes `false` | `complete` returns `Failed`; state is `FAILED` |
+| Declared action exception | Stage fails with `IOException` | Declared failure route commits `FAILED` |
+| Unexpected action exception | Stage fails with `IllegalStateException` | Technical abort; state remains `IN_PROGRESS` |
+| Pending action exceeds wait budget | Leave its stage incomplete | `TransitionAbortedException`; state remains `IN_PROGRESS`; service stage is not cancelled |
+| Service finishes after wait timeout | Complete that same stage later | No late graph-state commit |
+| Guard stage throws | Fail `canStart` exceptionally | Technical abort; state stays `OPEN`; action is not called |
+
+Also cover hook/listener failures and concurrent-entity policy in the application. The repository's
+[async runtime tests](graphmaquina-core/src/test/java/io/github/graphmaquina/runtime/AsyncTest.java) and
+[context lifetime tests](graphmaquina-core/src/test/java/io/github/graphmaquina/runtime/SingleMachineTest.java)
+provide focused examples of deadline and ownership behavior.
 
 ## Build and manage machine sets
 
@@ -1150,6 +1529,8 @@ For dependency injection, register the generated set as an application-managed c
 shutdown. There is no required Spring dependency or GraphMaquina-specific container integration.
 
 ## Read peers and cascade transitions
+
+![A cascade shares the root unit of work and deadline before commit. A watch reacts after peer commit in a new transaction and cannot undo that peer commit.](docs/images/cascade-vs-watch.svg)
 
 Register interacting machines in the same set. Inside a guard or action, use the peer's **facade class** so
 Java infers its entity and enum types:
@@ -1327,7 +1708,7 @@ when the unit of work aborts.
 Use a `@GraphHook` when code must run after GraphMaquina has written state. The quickstart prints the completed
 ticket from such a hook. The shop notifies its carrier after the shipping edge commits.
 
-Hooks run synchronously on the operation's thread. A hook exception becomes `AfterCommitException`:
+Hooks run synchronously on the operation's thread. A hook runtime exception becomes `AfterCommitException`:
 **the state is already committed**. The exception stops the remaining normal post-commit sequence, so do not
 assume later hooks, watch dispatch or listener notification ran. Make externally visible notifications
 idempotent and choose durable delivery separately if your application needs it.
@@ -1352,7 +1733,7 @@ own calls; do not recursively emit them again from the parent's `reactions()` li
 arrive before the triggering root's notification. Technical aborts that never produce an outcome do not
 become listener outcome events.
 
-Listener exceptions also surface as `AfterCommitException`. For an ignored or rejected outcome, no state
+Listener runtime exceptions also surface as `AfterCommitException`. For an ignored or rejected outcome, no state
 change occurred; for an applied or handled-failure outcome, state has already committed. A listener exception
 must not be interpreted as proof that an operation never happened.
 

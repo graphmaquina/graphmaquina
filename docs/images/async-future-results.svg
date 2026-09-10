@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="860" viewBox="0 0 1440 860" role="img" aria-labelledby="title desc">
+<title id="title">Read both the future and the domain outcome</title><desc id="desc">The outer CompletableFuture may complete normally with Applied, Ignored, Rejected or Failed. Technical exceptions complete it exceptionally. AfterCommitException may indicate state has changed; reactions must also be inspected.</desc>
+<defs>
+  <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
+</defs>
+<rect x="0" y="0" width="1440" height="860" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="860" rx="24" fill="url(#grid)" />
+<text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / ASYNC / RESULT HANDLING</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">A successful future can contain a rejected operation.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Completion status and domain outcome answer different questions.</text>
+<rect x="422" y="207" width="596" height="123" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="422" y="225" width="4" height="87" rx="2" fill="#7aafff" />
+<text x="446" y="251" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">CompletableFuture&lt;Outcome&lt;...&gt;&gt;</text>
+<text x="446" y="291" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Observe the future, then inspect its value</text>
+<path d="M 720 330 V 385 H 364 V 420" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 364 396 L 364 420" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 357 410 L 364 420 L 371 410" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 720 385 H 1080 V 420" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1080 396 L 1080 420" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1073 410 L 1080 420 L 1087 410" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="52" y="420" width="624" height="265" rx="20" fill="#131f32" stroke="#55e0c0" stroke-width="2" />
+<rect x="764" y="420" width="624" height="265" rx="20" fill="#131f32" stroke="#ff8998" stroke-width="2" />
+<text x="82" y="465" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="700" fill="#55e0c0" text-anchor="start">NORMAL COMPLETION</text>
+<text x="82" y="510" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Applied → requested edge committed</text>
+<text x="82" y="553" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Failed → declared failure route committed</text>
+<text x="82" y="596" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Rejected → operation was denied</text>
+<text x="82" y="639" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Ignored → no transition needed</text>
+<text x="794" y="465" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="700" fill="#ff8998" text-anchor="start">EXCEPTIONAL COMPLETION</text>
+<text x="794" y="510" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#f2f6fc" text-anchor="start">Guard/action error or wait timeout</text>
+<text x="794" y="553" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#f2f6fc" text-anchor="start">Commit precheck or setter failure</text>
+<text x="794" y="596" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#f2f6fc" text-anchor="start">Hook/listener failure after the operation</text>
+<text x="794" y="639" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#f2f6fc" text-anchor="start">Executor refused the submitted task</text>
+<text x="78" y="748" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Inspect reactions too: a peer commit can succeed while its owner watch reports Reaction.Aborted.</text>
+<path d="M 52 796 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="831" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">Do not convert every exception into a business decline or blindly retry after a post-commit failure.</text>
+</svg>

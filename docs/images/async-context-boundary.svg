@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="810" viewBox="0 0 1440 810" role="img" aria-labelledby="title desc">
+<title id="title">Safe context use across async callbacks</title><desc id="desc">Read transaction-aware peers and stage cascades only on the operation thread while its transaction is alive. Capture immutable inputs before starting async service work. Completion callbacks translate values rather than using the live transaction context.</desc>
+<defs>
+  <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
+</defs>
+<rect x="0" y="0" width="1440" height="810" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="810" rx="24" fill="url(#grid)" />
+<text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / ASYNC / CONTEXT</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">Pass data across threads, not the live transaction.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A normal thenApply callback has no guaranteed affinity to the operation thread.</text>
+<rect x="52" y="212" width="612" height="363" rx="20" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="80" y="257" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#7aafff" text-anchor="start">OPERATION THREAD</text>
+<text x="80" y="308" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Read the entity identifier</text>
+<text x="80" y="357" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Read peer states through ctx.peer(...)</text>
+<text x="80" y="406" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Stage ctx.cascade(...) if needed</text>
+<text x="80" y="455" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Build an immutable service request</text>
+<text x="80" y="536" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#a9b8ce" text-anchor="start">These transaction operations require a live context.</text>
+<rect x="779" y="212" width="609" height="363" rx="20" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="807" y="257" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#c3a2ff" text-anchor="start">SERVICE COMPLETION CALLBACK</text>
+<text x="807" y="308" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Receive the service response</text>
+<text x="807" y="357" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Map it to ActionOutcome or GuardResult</text>
+<text x="807" y="406" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Return the value to the engine</text>
+<text x="807" y="502" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="600" fill="#ff8998" text-anchor="start">No ctx.peer / cascade / cascadeAll here.</text>
+<text x="807" y="536" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#ff8998" text-anchor="start">No retained PeerView for another thread.</text>
+<path d="M 664 389 L 779 389" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 769 382 L 779 389 L 769 396" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="721" y="349" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="600" fill="#55e0c0" text-anchor="middle">immutable</text>
+<text x="721" y="374" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="600" fill="#55e0c0" text-anchor="middle">input</text>
+<rect x="52" y="620" width="1336" height="90" rx="16" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="658" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="600" fill="#ffc77a" text-anchor="start">Wrong thread → WrongThreadException  ·  Ended transaction → StaleContextException</text>
+<text x="78" y="694" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#a9b8ce" text-anchor="start">These checks protect transaction-aware operations. Entity getters do not make mutable data thread-safe.</text>
+<path d="M 52 746 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="781" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">After the stage resolves, the engine continues its operation on the original operation thread.</text>
+</svg>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="850" viewBox="0 0 1440 850" role="img" aria-labelledby="title desc">
+<title id="title">How a machine generates its own annotations</title><desc id="desc">The generator parses the original Java source, creates typed annotations, then javac compiles original and generated sources together. No precompiled machine is needed.</desc>
+<defs>
+  <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
+</defs>
+<rect x="0" y="0" width="1440" height="850" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="850" rx="24" fill="url(#grid)" />
+<text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / FIRST BUILD</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">Source first. Annotations next. Compile together.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Reading Java syntax does not require the generated annotation classes to exist.</text>
+<rect x="52" y="216" width="385" height="215" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="52" y="234" width="4" height="179" rx="2" fill="#7aafff" />
+<text x="76" y="260" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#7aafff" text-anchor="start">01 / SOURCE</text>
+<text x="76" y="298" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">You write Java</text>
+<text x="76" y="338" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">@GenerateGraphApi</text>
+<text x="76" y="369" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Tickets extends</text>
+<text x="76" y="400" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Machine&lt;Ticket, TicketStatus&gt;</text>
+<rect x="528" y="216" width="365" height="215" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="528" y="234" width="4" height="179" rx="2" fill="#c3a2ff" />
+<text x="552" y="260" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#c3a2ff" text-anchor="start">02 / GENERATE</text>
+<text x="552" y="298" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Read declarations</text>
+<text x="552" y="338" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Machine name + type arguments</text>
+<text x="552" y="369" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">State enum + marked members</text>
+<text x="552" y="400" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">No application compilation</text>
+<rect x="984" y="216" width="404" height="215" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="984" y="234" width="4" height="179" rx="2" fill="#c3a2ff" />
+<text x="1008" y="260" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#c3a2ff" text-anchor="start">03 / GENERATED SOURCE</text>
+<text x="1008" y="298" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Typed vocabulary</text>
+<text x="1008" y="338" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">TicketsGraph.java</text>
+<text x="1008" y="369" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">TicketRefs.java</text>
+<text x="1008" y="400" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">TicketActionsRefs.java</text>
+<path d="M 437 322 L 528 322" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 518 315 L 528 322 L 518 329" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 893 322 L 984 322" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 974 315 L 984 322 L 974 329" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 244 431 V 566 H 516" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 480 566 L 516 566" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 506 559 L 516 566 L 506 573" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="76" y="510" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#7aafff" text-anchor="start">Original source</text>
+<path d="M 1186 431 V 566 H 916" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 950 566 L 916 566" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 926 559 L 916 566 L 926 573" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="516" y="492" width="400" height="166" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="516" y="510" width="4" height="130" rx="2" fill="#55e0c0" />
+<text x="540" y="536" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Compile together</text>
+<text x="540" y="576" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Validate the flow and bindings</text>
+<text x="540" y="607" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Generate Runtime implementations</text>
+<rect x="52" y="699" width="1336" height="62" rx="12" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="739" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="600" fill="#f2f6fc" text-anchor="start">Start with a minimal interface, or write the complete flow before the first build.</text>
+<path d="M 52 786 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="821" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">Generation-only: ./gradlew generateStateGraphApi  ·  mvn generate-sources</text>
+</svg>

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="980" viewBox="0 0 1440 980" role="img" aria-labelledby="title desc">
+<title id="title">Cascade and watch have different transaction boundaries</title><desc id="desc">A cascade runs during an action and stages changes in the same unit of work with the root deadline. A watch runs after a peer commit, starts a separate root transaction with a new deadline, and cannot undo that peer commit.</desc>
+<defs>
+  <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
+</defs>
+<rect x="0" y="0" width="1440" height="980" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="980" rx="24" fill="url(#grid)" />
+<text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / MACHINE COORDINATION</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">Cascade together. React after commit.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Both coordinate machines; they have different commit and deadline boundaries.</text>
+<rect x="52" y="210" width="638" height="581" rx="20" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="728" y="210" width="660" height="581" rx="20" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="80" y="256" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="700" fill="#7aafff" text-anchor="start">CASCADE / SHARED TRANSACTION</text>
+<rect x="96" y="294" width="547" height="111" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="96" y="312" width="4" height="75" rx="2" fill="#7aafff" />
+<text x="120" y="338" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Root action calls ctx.cascade(...)</text>
+<text x="120" y="378" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Nested peer operation runs inline</text>
+<path d="M 370 405 L 370 443" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 363 433 L 370 443 L 377 433" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="96" y="443" width="547" height="111" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="96" y="461" width="4" height="75" rx="2" fill="#c3a2ff" />
+<text x="120" y="487" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Stage root + peer state changes</text>
+<text x="120" y="527" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Same unit of work; same root deadline</text>
+<path d="M 370 554 L 370 592" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 363 582 L 370 592 L 377 582" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="96" y="592" width="547" height="111" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="96" y="610" width="4" height="75" rx="2" fill="#55e0c0" />
+<text x="120" y="636" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Precheck, then commit together</text>
+<text x="120" y="676" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Pre-commit abort discards pending graph writes</text>
+<text x="98" y="755" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#ffc77a" text-anchor="start">External side effects are not rolled back.</text>
+<text x="756" y="256" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="700" fill="#c3a2ff" text-anchor="start">WATCH / NEW TRANSACTION</text>
+<rect x="773" y="294" width="570" height="111" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="773" y="312" width="4" height="75" rx="2" fill="#55e0c0" />
+<text x="797" y="338" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Peer commits its state</text>
+<text x="797" y="378" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Peer state is already written</text>
+<path d="M 1058 405 L 1058 443" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1051 433 L 1058 443 L 1065 433" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="773" y="443" width="570" height="111" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="773" y="461" width="4" height="75" rx="2" fill="#c3a2ff" />
+<text x="797" y="487" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">First matching owner watch rule</text>
+<text x="797" y="527" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Starts a new root with its own deadline</text>
+<path d="M 1058 554 L 1058 592" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1051 582 L 1058 592 L 1065 582" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="773" y="592" width="570" height="111" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="773" y="610" width="4" height="75" rx="2" fill="#7aafff" />
+<text x="797" y="636" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Run owner edge and report reaction</text>
+<text x="797" y="676" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Reaction.Done or Reaction.Aborted</text>
+<text x="775" y="755" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#ffc77a" text-anchor="start">Owner failure does not undo the peer commit.</text>
+<rect x="52" y="828" width="1336" height="65" rx="16" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="870" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="600" fill="#f2f6fc" text-anchor="start">Watch reactions run before the original call returns; they are not a background event queue.</text>
+<path d="M 52 916 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="951" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">Commit setters must not throw. A reaction can commit and then report Aborted if its hook/listener fails.</text>
+</svg>

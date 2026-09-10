@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="950" viewBox="0 0 1440 950" role="img" aria-labelledby="title desc">
+<title id="title">Root and action wait deadlines</title><desc id="desc">An eight-second root budget is shared with cascades. An action returning its stage at second four with a five-second edge timeout can only wait until second eight. A two-second edge timeout ends that wait at second six. These deadlines do not preempt synchronous code or bound post-commit work.</desc>
+<defs>
+  <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
+</defs>
+<rect x="0" y="0" width="1440" height="950" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="950" rx="24" fill="url(#grid)" />
+<text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / ASYNC / WAIT BUDGETS</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">One root budget. Shorter action waits when needed.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Example times are illustrative. Deadlines govern waiting for pending stages.</text>
+<path d="M 314 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="314" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">0s</text>
+<path d="M 414 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="414" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">1s</text>
+<path d="M 514 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="514" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">2s</text>
+<path d="M 614 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="614" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">3s</text>
+<path d="M 714 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="714" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">4s</text>
+<path d="M 814 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="814" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">5s</text>
+<path d="M 914 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="914" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">6s</text>
+<path d="M 1014 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="1014" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">7s</text>
+<path d="M 1114 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="1114" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">8s</text>
+<path d="M 1214 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="1214" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">9s</text>
+<path d="M 1314 237 V 587" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="1314" y="221" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="middle">10s</text>
+<text x="70" y="287" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="600" fill="#7aafff" text-anchor="start">Root budget</text>
+<rect x="314" y="255" width="800" height="50" rx="10" fill="#7aafff" />
+<text x="714" y="287" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="650" fill="#0b1220" text-anchor="middle">8 seconds from root execution</text>
+<text x="70" y="381" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="600" fill="#a9b8ce" text-anchor="start">Before stage return</text>
+<rect x="314" y="346" width="300" height="52" rx="10" fill="#131f32" stroke="#c3a2ff" stroke-width="2" />
+<text x="464.0" y="378" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#c3a2ff" text-anchor="middle">guards / other work</text>
+<rect x="614" y="346" width="100" height="52" rx="10" fill="#131f32" stroke="#ffc77a" stroke-width="2" />
+<text x="664.0" y="378" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="600" fill="#ffc77a" text-anchor="middle">action</text>
+<text x="726" y="334" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#ffc77a" text-anchor="start">stage returned at 4s</text>
+<text x="70" y="473" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="600" fill="#c3a2ff" text-anchor="start">@Timeout: 5s</text>
+<rect x="714" y="439" width="400" height="52" rx="10" fill="#c3a2ff" />
+<text x="914" y="472" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="650" fill="#0b1220" text-anchor="middle">wait at most 4s</text>
+<path d="M 1114 465 H 1214" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="9 8"/>
+<text x="1164.0" y="501" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#ff8998" text-anchor="middle">9s is too late</text>
+<text x="70" y="559" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="600" fill="#55e0c0" text-anchor="start">@Timeout: 2s</text>
+<rect x="714" y="525" width="200" height="52" rx="10" fill="#55e0c0" />
+<text x="814" y="558" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="650" fill="#0b1220" text-anchor="middle">wait at most 2s</text>
+<path d="M 1114 235 V 595" fill="none" stroke="#7aafff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="52" y="643" width="1336" height="95" rx="16" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="684" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="600" fill="#f2f6fc" text-anchor="start">effective wait deadline = min(root deadline, stage-return time + action timeout)</text>
+<text x="78" y="718" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Async guards use the root deadline. Nested cascades reuse it; they do not restart the budget.</text>
+<text x="78" y="789" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Queue time is before the root starts. Blocking code before the stage returns is not preempted.</text>
+<text x="78" y="821" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">A completed stage may be accepted at zero remaining time; commit and hooks have no hard deadline.</text>
+<path d="M 52 886 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="921" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">Set default → root machine override → optional shorter action wait. This is not an end-to-end request timeout.</text>
+</svg>
