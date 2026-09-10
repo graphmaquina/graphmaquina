@@ -1636,6 +1636,21 @@ can use an empty password. Then run:
 ./gradlew --no-daemon centralBundle
 ```
 
+Maintainers using 1Password CLI can inject both secrets for this command without copying them into the
+checkout or shell history. Replace `<vault>` and `<item>` with the vault and signing item's names or IDs;
+the item must have a `private_key` field containing the armored secret key and a `password` field:
+
+```bash
+SIGNING_KEY='op://<vault>/<item>/private_key' \
+SIGNING_PASSWORD='op://<vault>/<item>/password' \
+op run -- ./gradlew --no-daemon --no-configuration-cache centralBundle
+```
+
+The `op://` values are references, not credentials. `op run` resolves them into the child process's
+environment and masks secrets in its output. Keep the private key, passphrase and revocation certificate
+in the vault. Only distribute the public key. See [release signing](docs/release-signing.md) for the
+public fingerprint, key retrieval and verification commands.
+
 The task stages five binary publications and the Gradle plugin marker, validates required artifacts and POM
 metadata, checks signature files and checksums, then produces:
 
