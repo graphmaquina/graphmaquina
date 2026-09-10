@@ -2209,11 +2209,13 @@ private release key and `SIGNING_PASSWORD` with its passphrase, then run:
 Without `-PgraphmaquinaVersion`, that stages the most recent tag's version, which is already published; pass
 the flag to stage a different one. Maintainers using 1Password CLI can inject both secrets for this command
 without copying them into the checkout or shell history. Replace `<vault>` and `<item>` with the vault and
-signing item's names or IDs; the item must have a `private_key` field containing the armored secret key and a
-`password` field:
+signing item's names or IDs; the item must have a `Private PGP key` field containing the armored secret key
+and a `password` field. 1Password shows that field under two names, the id `private_key` and the label
+`Private PGP key`; they are one field, and these examples address it by its label, as `scripts/release.sh`
+does:
 
 ```bash
-SIGNING_KEY='op://<vault>/<item>/private_key' \
+SIGNING_KEY='op://<vault>/<item>/Private PGP key' \
 SIGNING_PASSWORD='op://<vault>/<item>/password' \
 op run -- ./gradlew --no-daemon --no-configuration-cache centralBundle
 ```

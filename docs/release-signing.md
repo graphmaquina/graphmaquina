@@ -41,13 +41,15 @@ be ignored.
 ## Sign using 1Password CLI
 
 The build reads `SIGNING_KEY` and `SIGNING_PASSWORD`. The first is an ASCII-armored private key, not a path.
-The signing item has `private_key` and `password` fields. Replace the placeholders with your vault and item
-names or IDs after signing in to 1Password CLI:
+The signing item has `Private PGP key` and `password` fields. 1Password shows the first under two names, the
+id `private_key` and the label `Private PGP key`; they are one field, and the commands below address it by
+its label, as `scripts/release.sh` does. Replace the placeholders with your vault and item names or IDs
+after signing in to 1Password CLI:
 
 ```bash
 ./gradlew --no-daemon test :graphmaquina-gradle-plugin:test
 
-SIGNING_KEY='op://<vault>/<item>/private_key' \
+SIGNING_KEY='op://<vault>/<item>/Private PGP key' \
 SIGNING_PASSWORD='op://<vault>/<item>/password' \
 op run -- ./gradlew --no-daemon --no-configuration-cache centralBundle
 ```
@@ -61,7 +63,7 @@ confirm the artifacts can be resolved from Maven Central.
 For key recovery, import the encrypted backup directly from 1Password without writing it into the checkout:
 
 ```bash
-op read 'op://<vault>/<item>/private_key' | gpg --import
+op read 'op://<vault>/<item>/Private PGP key' | gpg --import
 ```
 
 Keep the revocation certificate available in the vault for a lost or compromised key. Do not import or
