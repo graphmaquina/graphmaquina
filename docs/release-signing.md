@@ -43,8 +43,7 @@ be ignored.
 The build reads `SIGNING_KEY` and `SIGNING_PASSWORD`. The first is an ASCII-armored private key, not a path.
 The signing item has `Private PGP key` and `password` fields. 1Password shows the first under two names, the
 id `private_key` and the label `Private PGP key`; they are one field, and the commands below address it by
-its label, as `scripts/release.sh` does. Replace the placeholders with your vault and item names or IDs
-after signing in to 1Password CLI:
+its label. Replace the placeholders with your vault and item names or IDs after signing in to 1Password CLI:
 
 ```bash
 ./gradlew --no-daemon test :graphmaquina-gradle-plugin:test

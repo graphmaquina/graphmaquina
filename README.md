@@ -234,10 +234,8 @@ plugin, Gradle plugin and Gradle plugin marker.
 | --- | --- |
 | Automated library/build suites | 459 tests, with no failures, errors or skipped tests. |
 | README quickstart | Compiled and ran with Gradle and Maven against the released artifacts, with strict lint. Both reported `All ticket scenarios passed.` |
-| Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. See [async guide verification](docs/async-guide-verification.md). |
+| Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
-
-See the [verification record](docs/runtime-naming-verification.md) for the tested build and commands.
 
 Browse the [published artifacts](https://repo.maven.apache.org/maven2/io/github/graphmaquina/) or the
 [core artifact on Maven Central](https://central.sonatype.com/artifact/io.github.graphmaquina/graphmaquina-core).
@@ -2112,9 +2110,6 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 | Async timeout | Stops waiting; does not terminate synchronous code or cancel a user's running stage. |
 | Public compatibility matrix | Java 21 is the baseline; no claim of verification across all newer JDKs or Gradle versions. |
 
-See [the verification record](docs/runtime-naming-verification.md) for tested guarantees and remaining
-acceptance gaps.
-
 ## Build, verify and release this repository
 
 These commands run from the GraphMaquina checkout, not the ticket application's directory:
@@ -2136,28 +2131,13 @@ The combined `test` command explicitly includes that suite. Its plugin is a sepa
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-The [verification record](docs/runtime-naming-verification.md) records 459 passing tests across six suites
-and both README quickstarts executed with strict lint.
+The full suite is 459 tests across six suites, with both README quickstarts executed with strict lint.
 Test reports are under each module's `build/reports/tests/test`.
 
 ### Release to Maven Central
 
 Releasing is a maintainer operation. The version comes from git tags, so a release creates a tag and edits no
 file. Releases stay in the `1.0.x` patch series, and a published version can never be replaced or deleted.
-
-`scripts/release.sh` runs the sequence end to end: the preflight checks (a clean `main` in sync with
-`origin`, the tools it needs, and the next patch version free both as a tag and on Central), the test suites,
-the signed bundle and its validation, one confirmation prompt from a real terminal, the upload through the
-Central Portal API, the wait for `PUBLISHED`, then the tag and a GitHub release with generated notes and the
-bundle attached. The script reads the signing key, its passphrase and the Portal token from 1Password, so `op`
-has to be available alongside `git`, `gh`, `curl` and `mvn`.
-
-```bash
-./scripts/release.sh                  # publish the next patch version
-./scripts/release.sh --validate-only  # validate the bundle on Central without publishing
-```
-
-`--validate-only` stops once Central has validated the deployment and publishes nothing.
 
 To build and check a bundle without publishing it, configure `SIGNING_KEY` with the project's ASCII-armored
 private release key and `SIGNING_PASSWORD` with its passphrase, then run:
@@ -2171,8 +2151,7 @@ the flag to stage a different one. Maintainers using 1Password CLI can inject bo
 without copying them into the checkout or shell history. Replace `<vault>` and `<item>` with the vault and
 signing item's names or IDs; the item must have a `Private PGP key` field containing the armored secret key
 and a `password` field. 1Password shows that field under two names, the id `private_key` and the label
-`Private PGP key`; they are one field, and these examples address it by its label, as `scripts/release.sh`
-does:
+`Private PGP key`; they are one field, and these examples address it by its label:
 
 ```bash
 SIGNING_KEY='op://<vault>/<item>/Private PGP key' \

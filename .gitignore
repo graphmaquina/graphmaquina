@@ -7,3 +7,10 @@ build/
 !gradle/wrapper/gradle-wrapper.jar
 
 .worktrees/
+
+# Internal design, planning and verification records
+docs/*-verification.md
+docs/audit-64-decisions.md
+
+# Release and docs tooling
+scripts/
