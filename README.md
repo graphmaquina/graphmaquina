@@ -9,10 +9,13 @@ GraphMaquina combines a pre-compilation code generator, a javac annotation proce
 Your application calls a generated, typed facade. Actions, guards, hooks, properties and watched states are
 bound through Java symbols rather than string names.
 
-**Current repository version: `1.0.0`. Maven coordinates: `io.github.graphmaquina`.** Maven Central publication
-is pending; use the local installation workflow below until publication is confirmed. The project was
-previously named StateGraph. Some public Java names, such as `@StateGraphs`, and Gradle task names retain
-`StateGraph`; use the exact names documented here.
+**Current release: `1.0.0`, published to Maven Central under `io.github.graphmaquina`.**
+Use the Gradle or Maven configuration below; cloning this repository and installing artifacts locally are
+not required to consume the release. The source repository is temporarily private while maintainer testing
+continues. Published Maven Central artifacts, including source JARs, remain public.
+
+The project was previously named StateGraph. Some public Java names, such as `@StateGraphs`, and Gradle task
+names retain `StateGraph`; use the exact names documented here.
 
 This README is the developer guide for the current implementation. Complete, runnable files are provided in
 the quickstart. Later examples are identified as extensions or fragments of the repository's shop example.
@@ -21,6 +24,7 @@ the quickstart. Later examples are identified as extensions or fragments of the 
 
 - [What GraphMaquina provides](#what-graphmaquina-provides)
 - [Requirements and artifacts](#requirements-and-artifacts)
+- [Publication and verification status](#publication-and-verification-status)
 - [Install the library locally](#install-the-library-locally)
 - [Configure Gradle](#configure-gradle)
 - [Configure Maven](#configure-maven)
@@ -93,10 +97,42 @@ The build and runtime have separate jobs:
 The generator and processor are build-time tools. Do not add them as application runtime dependencies.
 Application imports begin with `io.github.graphmaquina`.
 
+## Publication and verification status
+
+GraphMaquina `1.0.0` is available from Maven Central. The namespace `io.github.graphmaquina` is verified.
+The release contains the runtime, generator, processor, Maven plugin, Gradle plugin and Gradle plugin marker.
+
+| Check | Verified result |
+| --- | --- |
+| Public availability | All six publication POMs return HTTP 200 from Maven Central. |
+| Binary integrity | All five downloaded JARs match the SHA-256 hashes of the verified release bundle. |
+| Release signatures | All 26 detached signatures were verified with the public key retrieved from the keyserver. |
+| Automated library/build suites | 444 tests, with no failures, errors or skipped tests in the release verification run. |
+| Published-release quickstart | The examples below compile and run with Gradle using Central without `mavenLocal()`, and with Maven using an initially empty local repository. Both report `All ticket scenarios passed.` |
+| Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
+
+Browse the [published artifacts](https://repo.maven.apache.org/maven2/io/github/graphmaquina/) or the
+[core release on Maven Central](https://central.sonatype.com/artifact/io.github.graphmaquina/graphmaquina-core/1.0.0).
+MVNRepository is an independent index; appearing in its search results is not required for Maven or Gradle
+resolution. Sonatype does not control its update schedule; see the
+[official explanation](https://central.sonatype.org/faq/mvnrepository/).
+
+The signing identity is `Hugo G <60438622+0xhug0@users.noreply.github.com>`. The public fingerprint is:
+
+```text
+851F 7594 9D70 884A C95A AB56 455A D78F 0EC0 B9F1
+```
+
+This fingerprint and the public key allow consumers to verify signatures; they do not permit signing a
+release. Private signing material is stored in 1Password. See [release signing](docs/release-signing.md)
+for verification commands and maintainer setup. Publishing a release does not resolve the
+[known limitations](#known-limitations).
+
 ## Install the library locally
 
-Until the artifacts are published to Central, install them from this repository. Run these commands in a
-checkout of GraphMaquina:
+Local installation is optional and intended for testing changes to GraphMaquina itself. Released consumers
+can skip to [Configure Gradle](#configure-gradle) or [Configure Maven](#configure-maven). While the repository
+is private, cloning requires authorized GitHub access. Run these commands in a checkout of GraphMaquina:
 
 ```bash
 git clone https://github.com/graphmaquina/graphmaquina.git
@@ -118,8 +154,10 @@ included build. Both are needed for `id("io.github.graphmaquina") version "1.0.0
 On Windows, use `gradlew.bat` and the line-continuation syntax of your shell. The multi-line shell examples in
 this guide use a POSIX shell.
 
-Maven reads the local Maven repository by default. Gradle requires `mavenLocal()` in both its plugin and
-dependency repository configuration. For an internal repository, configure both kinds of repository as well;
+Maven reads the local Maven repository by default. To test locally installed builds with Gradle, add
+`mavenLocal()` before `mavenCentral()` in both `pluginManagement.repositories` and the dependency repository
+configuration. Remove it when verifying the public release so a local build cannot shadow that release.
+For an internal repository, configure both kinds of repository as well;
 see [the repository configuration reference](docs/typed-annotations-build.md#where-the-artifacts-come-from).
 
 ## Configure Gradle
@@ -132,7 +170,6 @@ separate application directory, `tickets-demo`, and put these files at its root.
 ```kotlin
 pluginManagement {
     repositories {
-        mavenLocal()
         mavenCentral()
         gradlePluginPortal()
     }
@@ -140,7 +177,6 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
-        mavenLocal()
         mavenCentral()
     }
 }
@@ -148,8 +184,9 @@ dependencyResolutionManagement {
 rootProject.name = "tickets-demo"
 ```
 
-After Central publication is confirmed, you can remove `mavenLocal()` when consuming public releases. Keep
-`mavenCentral()` inside `pluginManagement.repositories`: the plugin marker is intended for Central too.
+Keep `mavenCentral()` inside both repository blocks: the plugin implementation and marker are published to
+Central, along with the runtime and build tools. `gradlePluginPortal()` is included for other plugins; this
+guide does not require a separate GraphMaquina publication to the Gradle Plugin Portal.
 
 ### build.gradle.kts
 
@@ -363,8 +400,8 @@ mvn --version
 mvn clean verify
 ```
 
-To run the quickstart after a local installation of the library, use the compiled application classes and
-core JAR on the classpath:
+To run the quickstart after Maven has resolved the library and compiled the application, use the compiled
+application classes and core JAR on the classpath:
 
 ```bash
 java -cp "target/classes:$HOME/.m2/repository/io/github/graphmaquina/graphmaquina-core/1.0.0/graphmaquina-core-1.0.0.jar" \
@@ -1554,7 +1591,7 @@ application's own API contract.
 | Symptom | Remedy |
 | --- | --- |
 | `TicketsGraph` / `TicketRefs` cannot be found | Run generation before javac; check processor participation and original source roots. |
-| Gradle plugin cannot resolve | Publish the implementation **and marker** locally, and configure `pluginManagement.repositories`. |
+| Gradle plugin cannot resolve | Add `mavenCentral()` to `pluginManagement.repositories`. For local development builds, publish the implementation **and marker** locally and add `mavenLocal()` there too. |
 | Core resolves but Maven plugin does not | Configure `<pluginRepositories>` as well as `<repositories>` for an internal repository. |
 | Processor reports no manifest | Use the Gradle plugin or add Maven's per-execution manifest arguments and six goals. |
 | A Lombok accessor is missing | Put Lombok first on the processor path, or provide a public handwritten accessor. |
@@ -1595,7 +1632,6 @@ transition, with before/after declarations. This README describes the current `1
 
 | Area | Current status |
 | --- | --- |
-| Maven Central | Publication is pending. Local signed-bundle validation does not establish public availability. |
 | Watches between JARs/modules | Unsupported: both machines must be generated in one compilation. External peers fail with `SG608`; [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1). |
 | IDE acceptance | Generated-root build integration is automated; manual IntelliJ navigation, editor completion and rename/regeneration checks remain pending. |
 | External payments demo | Its strict-lint acceptance is still partial; it is outside this repository's library test totals. |
@@ -1628,9 +1664,11 @@ has the same count. Test reports are under each module's `build/reports/tests/te
 
 ### Prepare a Maven Central bundle
 
-Release preparation is a maintainer operation. Configure `SIGNING_KEY` with the project's ASCII-armored private
-release key and `SIGNING_PASSWORD` with its passphrase through your release environment. An unencrypted key
-can use an empty password. Then run:
+Release preparation is a maintainer operation. Version `1.0.0` is already published and cannot be replaced
+or deleted from Maven Central. For a new release, update the version consistently in the convention plugin
+and the separate Gradle plugin build before creating a bundle. Configure `SIGNING_KEY` with the project's
+ASCII-armored private release key and `SIGNING_PASSWORD` with its passphrase through your release
+environment. Then run:
 
 ```bash
 ./gradlew --no-daemon centralBundle

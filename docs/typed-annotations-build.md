@@ -46,11 +46,12 @@ key remain external requirements; these local structural checks do not replace P
 
 ## Where the artifacts come from
 
-**The coordinates below target Maven Central under `io.github.graphmaquina`; publication is pending.**
-Install the artifacts locally first. After publication is confirmed, `mavenCentral()` resolves the runtime,
-generator and processor, and must also be added to `pluginManagement.repositories` for the Gradle plugin.
+**Version `1.0.0` is published to Maven Central under `io.github.graphmaquina`.**
+`mavenCentral()` resolves the runtime, generator and processor, and must also be added to
+`pluginManagement.repositories` for the Gradle plugin implementation and marker. Local installation below is
+optional, for development builds. See the [README](../README.md#configure-gradle) for release-only configuration.
 
-Publish from a checkout of this repository:
+To test local changes, publish from an authorized checkout of this repository:
 
 ```bash
 ./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-codegen:publishToMavenLocal \
@@ -69,7 +70,8 @@ through `pluginManagement`, so a consumer's `settings.gradle.kts` needs both hal
 ```kotlin
 pluginManagement {
     repositories {
-        mavenLocal()          // or maven { url = uri("file:///…/adapter-test-repository") }
+        mavenLocal()          // development builds only; omit for public release verification
+        mavenCentral()
         gradlePluginPortal()
     }
 }
