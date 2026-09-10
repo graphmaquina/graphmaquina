@@ -4,7 +4,14 @@ plugins {
     signing
 }
 group = "io.github.graphmaquina"
-version = "1.0.1-SNAPSHOT"
+// Same resolution as the root build's convention plugin; this build is separate and cannot see buildSrc,
+// so the six lines are repeated here for the same reason the POM metadata below is.
+version = providers.gradleProperty("graphmaquinaVersion").orElse(
+    providers.exec {
+        commandLine("git", "describe", "--tags", "--abbrev=0")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.map { it.trim().removePrefix("v").ifEmpty { "0.0.0-dev" } }
+).get()
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(21) }
     // Central rejects a release without a sources and a javadoc jar beside the binary.
