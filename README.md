@@ -17,6 +17,10 @@ The current release is the one the badge above reports, published to Maven Centr
 The source repository remains private. Published Maven Central artifacts, including source JARs,
 remain public.
 
+The generated `Runtime` names below arrived after the first release. While the badge still reports that
+release, the published artifacts emit the earlier names, so following the examples needs a
+[local install](#install-the-library-locally).
+
 This README is the developer guide for the current implementation. The quickstart has complete, runnable
 files. Later examples are extensions or fragments of the repository's shop example.
 
@@ -235,7 +239,7 @@ plugin, Gradle plugin and Gradle plugin marker.
 | Check | Current development result |
 | --- | --- |
 | Automated library/build suites | 459 tests, with no failures, errors or skipped tests. |
-| README quickstart | Compiled and ran with Gradle and Maven, with strict lint. Both reported `All ticket scenarios passed.` |
+| README quickstart | Compiled and ran with Gradle and Maven against a local install, with strict lint. Both reported `All ticket scenarios passed.` |
 | Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. See [async guide verification](docs/async-guide-verification.md). |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
 
@@ -260,9 +264,10 @@ for verification commands and maintainer setup. Publishing a release does not re
 
 ## Install the library locally
 
-The examples resolve GraphMaquina from Maven Central, so following them needs no local installation. Install
-locally only to try changes that are not released yet. Cloning the private repository requires authorized
-GitHub access. Run these commands in the checkout:
+Install locally to follow the examples while the published artifacts emit generated names older than the
+ones the examples use, and to try any other change a release has not shipped yet; otherwise the examples
+resolve from Maven Central and need no local installation. Cloning the private repository requires
+authorized GitHub access. Run these commands in the checkout:
 
 ```bash
 git clone https://github.com/graphmaquina/graphmaquina.git
