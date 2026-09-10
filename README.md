@@ -23,6 +23,7 @@ the quickstart. Later examples are identified as extensions or fragments of the 
 
 - [What GraphMaquina provides](#what-graphmaquina-provides)
 - [Requirements and artifacts](#requirements-and-artifacts)
+- [How your flow annotations are generated](#how-your-flow-annotations-are-generated)
 - [Publication and verification status](#publication-and-verification-status)
 - [Install the library locally](#install-the-library-locally)
 - [Configure Gradle](#configure-gradle)
@@ -94,6 +95,127 @@ The build and runtime have separate jobs:
 
 The generator and processor are build-time tools. Do not add them as application runtime dependencies.
 Application imports begin with `io.github.graphmaquina`.
+
+## How your flow annotations are generated
+
+**You write the machine interface; GraphMaquina generates its annotation types before compiling your
+application.** `TicketsGraph` is generated from the name and type parameters of `Tickets`. You do not need
+an already compiled `Tickets` class or an existing `TicketsGraph` to start.
+
+There are three distinct kinds of API:
+
+| API | Who supplies it? | When is it available? |
+| --- | --- | --- |
+| `@GenerateGraphApi`, `@GraphProperty`, `@GraphAction`, `@GraphGuard`, `@StateGraphs`, `Machine` | The `graphmaquina-core` dependency | As soon as dependencies resolve |
+| `TicketsGraph.Definition`, `TicketsGraph.Action`, `TicketsGraph.Move`, `TicketRefs`, `TicketActionsRefs` | The pre-compilation generator, from your declarations | After the generation task/phase, before application compilation |
+| `TicketsRuntime`, `TicketMachinesRuntime` | The annotation processor, from the validated flow | During application compilation |
+
+```mermaid
+flowchart LR
+    source["Your .java files<br/>Tickets + Ticket + TicketStatus + marked members"]
+    generator["1. Read source syntax<br/>No application compilation"]
+    vocabulary["TicketsGraph.java<br/>TicketRefs.java + TicketActionsRefs.java"]
+    compiler["2. Compile sources together<br/>Validate the declared flow"]
+    runtime["Compiled application<br/>Generated Runtime implementations"]
+    source --> generator --> vocabulary --> compiler --> runtime
+    source --> compiler
+    style source fill:#15263e,color:#f2f6fc,stroke:#7aafff
+    style generator fill:#15263e,color:#f2f6fc,stroke:#c3a2ff
+    style vocabulary fill:#15263e,color:#f2f6fc,stroke:#c3a2ff
+    style compiler fill:#15263e,color:#f2f6fc,stroke:#55e0c0
+    style runtime fill:#15263e,color:#f2f6fc,stroke:#55e0c0
+```
+
+**The generator creates the annotation types; you choose the flow by using those annotations.** It does not
+infer transitions from action method bodies. For example, `Machine<Ticket, TicketStatus>` tells it that the
+`initial`, `from` and `to` elements must use `TicketStatus`. Your `@TicketsGraph.Action(from = ..., to = ...)`
+declaration then specifies an actual transition.
+
+### Start with a minimal machine
+
+First configure the [Gradle plugin](#configure-gradle) or the [Maven lifecycle](#configure-maven), including
+the annotation processor, and install the snapshot as described below. Create `TicketStatus`, `Ticket` and
+`TicketActions` from the [quickstart](#quickstart-a-complete-ticket-machine). Then create
+`src/main/java/com/example/tickets/Tickets.java` with this initial content:
+
+```java
+package com.example.tickets;
+
+import io.github.graphmaquina.annotation.GenerateGraphApi;
+import io.github.graphmaquina.api.Machine;
+
+@GenerateGraphApi
+public interface Tickets extends Machine<Ticket, TicketStatus> {
+}
+```
+
+This is enough to **generate the annotation vocabulary**. It is not yet a complete, valid flow: the definition,
+rows and operations are added in the next step. The entity and state enum must be resolvable, and source files
+must contain valid Java syntax.
+
+From the application directory, run just generation with your chosen build tool:
+
+```bash
+# Gradle: generate vocabulary without compiling the application
+./gradlew generateStateGraphApi
+
+# Maven: execute the configured generate-sources phase without compiling the application
+mvn generate-sources
+```
+
+With the quickstart's marked entity and action members, these files now exist in the same Java package as
+their handwritten declarations:
+
+| File | Gradle | Maven |
+| --- | --- | --- |
+| `TicketsGraph.java` | `build/generated/sources/graphmaquina/main/com/example/tickets/` | `target/generated-sources/graphmaquina/com/example/tickets/` |
+| `TicketRefs.java` | Same directory | Same directory |
+| `TicketActionsRefs.java` | Same directory | Same directory |
+
+`TicketsGraph.java` contains the nested annotations `Definition`, `Row`, `Action`, `Move`, `Cell` and `Forbid`
+(and containers for repeatable annotations). `TicketRefs` contains symbols for `@GraphProperty` members;
+`TicketActionsRefs` contains symbols for marked actions, guards and hooks. Generation alone does not produce
+`TicketsRuntime` or `TicketMachinesRuntime`.
+
+Refresh the IDE's build model if needed. You can now replace the minimal `Tickets.java` with the
+[complete flow declaration](#ticketsjava), using `@TicketsGraph.Definition`, `@TicketsGraph.Move` and
+`@TicketsGraph.Action`. Add `TicketMachines.java` and `App.java` from the quickstart, then build and run:
+
+```bash
+# Gradle: generation, compilation and execution
+./gradlew run
+
+# Maven: generation and compilation; then use the quickstart's Java command to run App
+mvn compile
+```
+
+During this build, the processor validates the flow and generates the `Runtime` implementations. javac also
+compiles those generated implementations and application code that references them in the same invocation.
+
+### You can also write the complete flow immediately
+
+The initial generation-only step is optional: it is useful when you want the generated annotations available
+in the editor before writing the flow. You may instead create **all six complete quickstart files at once**,
+including references to `TicketsGraph`, `TicketRefs` and `TicketMachinesRuntime`, and run the normal build.
+
+This works on a clean checkout because reading Java syntax and checking Java types are separate operations:
+
+1. The generator reads the original `.java` files as syntax. It uses the library markers, machine type
+   parameters and marked members to create the vocabulary. References to the not-yet-generated annotations
+   do not require those annotation classes to exist at this stage.
+2. The build adapter adds the generated source directory to the compilation and supplies the generated
+   manifest to the processor.
+3. javac type-checks the handwritten sources **together with** the generated vocabulary. The processor
+   validates your graph and emits its implementations. Compilation errors are reported at this stage if
+   the flow or its bindings are invalid.
+
+There is no requirement for a failed first compilation, placeholder annotations, or a previously built JAR
+of your own machine. The build generates from source before attempting application compilation. After changing
+machine names, state enums or exported members, run the same build again to regenerate the API.
+
+An editor may underline missing generated types before the first generation. Use the commands above and
+[refresh the generated roots](#ide-workflow); plain `javac` or an IDE build that bypasses the configured adapter
+does not perform the required pre-generation step.
 
 ## Publication and verification status
 
@@ -448,7 +570,9 @@ See the [Maven adapter reference](docs/typed-annotations-build.md#maven) for too
 ## Quickstart: a complete ticket machine
 
 Create the following six files under `src/main/java/com/example/tickets/`. They are shared by the Gradle and
-Maven configurations above and require no Lombok, framework or external service.
+Maven configurations above and require no Lombok, framework or external service. You can write all six files
+before the first build; [the generation walkthrough](#how-your-flow-annotations-are-generated) explains why
+the references to generated annotations are valid in this workflow.
 
 The workflow is `OPEN → IN_PROGRESS → DONE`, with a handled completion failure leading to `FAILED`.
 
@@ -571,7 +695,9 @@ public interface Tickets extends Machine<Ticket, TicketStatus> {
 ```
 
 `TicketsGraph`, `TicketRefs` and `TicketActionsRefs` do not exist in handwritten source. The generator writes
-them before javac compiles this interface. Do not create placeholder versions of these classes.
+them before javac compiles this interface, using `@GenerateGraphApi`, `Machine<Ticket, TicketStatus>` and the
+marked members. See [the first-generation walkthrough](#how-your-flow-annotations-are-generated) for the
+minimal-interface and complete-source workflows. Do not create placeholder versions of these classes.
 
 ### TicketMachines.java
 
@@ -1384,7 +1510,9 @@ exist before javac can type-check that source:
 generate -> prepare-compile -> javac (Lombok if used, then GraphMaquina) -> complete-compile
 ```
 
-The generator parses declarations and emits vocabulary plus a manifest. The processor verifies that the manifest
+The source-reading step uses `JavacTask.parse()` with annotation processing disabled; it does not type-check
+the original application or require its generated annotation classes. It resolves the headers and exported
+members needed for generation, then emits vocabulary plus a manifest. The processor verifies that the manifest
 matches the declarations javac accepted, resolves bindings, checks the graph and emits facades. Completion
 publishes the validated export index and records ownership of generated outputs.
 
@@ -1415,7 +1543,9 @@ support are separate; unchanged builds can still skip work.
 ### IDE workflow
 
 1. Import the project through its Gradle or Maven model, using the intended Java 21 JDK.
-2. Run `./gradlew compileJava` or `mvn compile` once to create vocabulary and facades.
+2. For a minimal machine still being written, run `./gradlew generateStateGraphApi` or `mvn generate-sources`
+   to create vocabulary first. Once the flow is complete, run `./gradlew compileJava` or `mvn compile` to
+   validate it and create runtime implementations.
 3. Refresh the build model so generated source roots are visible.
 4. After renaming graph declarations or bindings, run the normal build to regenerate references and retire old
    outputs. Fix handwritten references to the renamed symbols as required by javac.

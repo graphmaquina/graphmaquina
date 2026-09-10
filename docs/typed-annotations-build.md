@@ -31,6 +31,11 @@ PascalCase, preserving internal case and acronyms. See the [generated naming ref
 Only `graphmaquina-core` is a dependency of the application. The generator and the processor are build-time only
 and never reach the runtime classpath.
 
+For the first machine, follow the [annotation generation walkthrough](../README.md#how-your-flow-annotations-are-generated).
+It shows how to generate vocabulary from a minimal interface before writing the flow, or build complete
+sources that already reference generated annotations. The generator reads source syntax before javac
+type-checks the application; no previously compiled machine is required.
+
 ## Preparing a Central release
 
 The development version is `1.0.1-SNAPSHOT`, not a new published release. Version `1.0.0` on Central is
