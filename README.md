@@ -421,7 +421,7 @@ The plugin resolves the generator version matching its own version. Advanced ove
 
 ```kotlin
 graphmaquina {
-    generatorVersion.set("x.y.z")
+    generatorVersion.set("x.y.z")  // the version the badge at the top reports
 }
 ```
 
@@ -2187,10 +2187,17 @@ file. Releases stay in the `1.0.x` patch series, and a published version can nev
 
 `scripts/release.sh` runs the sequence end to end: the preflight checks (a clean `main` in sync with
 `origin`, the tools it needs, and the next patch version free both as a tag and on Central), the test suites,
-the signed bundle and its validation, one confirmation prompt, the upload through the Central Portal API, the
-wait for `PUBLISHED`, then the tag and a GitHub release with generated notes. `--validate-only` stops once
-Central has validated the deployment and publishes nothing. The script reads the signing key, its passphrase
-and the Portal token from 1Password, so `op` has to be available alongside `git`, `gh`, `curl` and `mvn`.
+the signed bundle and its validation, one confirmation prompt from a real terminal, the upload through the
+Central Portal API, the wait for `PUBLISHED`, then the tag and a GitHub release with generated notes and the
+bundle attached. The script reads the signing key, its passphrase and the Portal token from 1Password, so `op`
+has to be available alongside `git`, `gh`, `curl` and `mvn`.
+
+```bash
+./scripts/release.sh                  # publish the next patch version
+./scripts/release.sh --validate-only  # validate the bundle on Central without publishing
+```
+
+`--validate-only` stops once Central has validated the deployment and publishes nothing.
 
 To build and check a bundle without publishing it, configure `SIGNING_KEY` with the project's ASCII-armored
 private release key and `SIGNING_PASSWORD` with its passphrase, then run:

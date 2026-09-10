@@ -130,6 +130,8 @@ declaration at all. A file or internal repository does need one — either in th
 
 or, without touching the POM, in an active profile of a `settings.xml` passed with `mvn -s`. Both halves are
 needed: `<repositories>` for `graphmaquina-core`, `<pluginRepositories>` for `graphmaquina-maven-plugin`.
+A republished release number must be deleted from the local `~/.m2` repository first — `updatePolicy` governs
+snapshot lookups, and Maven keeps serving whatever release artifact it already resolved there regardless of it.
 
 ## Gradle
 
@@ -240,6 +242,7 @@ The `graphmaquinaGenerator` configuration carries the generator's classpath. By 
 plugin's own version, so nothing needs to be declared. Two cases where it does:
 
 ```kotlin
+// x.y.z is the version the badge in the README reports.
 graphmaquina { generatorVersion = "x.y.z" } // explicit override; keep all components aligned
 dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) }  // inside this repository
 ```
