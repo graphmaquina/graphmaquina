@@ -18,15 +18,17 @@ find no manifest and refuse the compilation with SG602.
 
 | Artifact | Coordinates | Role |
 | --- | --- | --- |
-| Runtime and annotations | `io.github.graphmaquina:graphmaquina-core:1.0.1-SNAPSHOT` | the engine, the markers, the symbol categories |
-| Generator | `io.github.graphmaquina:graphmaquina-codegen:1.0.1-SNAPSHOT` | pre-javac generation, run as a separate process by the adapters |
-| Annotation processor | `io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT` | runs inside javac, emits the facades and publishes the index |
-| Gradle adapter | plugin id `io.github.graphmaquina`, version `1.0.1-SNAPSHOT` | the Gradle build integration |
-| Maven adapter | `io.github.graphmaquina:graphmaquina-maven-plugin:1.0.1-SNAPSHOT` | the Maven build integration |
+| Runtime and annotations | `io.github.graphmaquina:graphmaquina-core` | the engine, the markers, the symbol categories |
+| Generator | `io.github.graphmaquina:graphmaquina-codegen` | pre-javac generation, run as a separate process by the adapters |
+| Annotation processor | `io.github.graphmaquina:graphmaquina-processor` | runs inside javac, emits the facades and publishes the index |
+| Gradle adapter | plugin id `io.github.graphmaquina` | the Gradle build integration |
+| Maven adapter | `io.github.graphmaquina:graphmaquina-maven-plugin` | the Maven build integration |
 
-Keep the runtime, generator, processor and adapter at the same `1.0.1-SNAPSHOT` version. The processor
-emits `<Machine>Runtime` and `<Set>Runtime`. Generated types normalize underscores and nesting dots to
-PascalCase, preserving internal case and acronyms. See the [generated naming reference](../README.md#generated-names).
+Keep the runtime, generator, processor and adapter at the same version: the one the badge in the
+[README](../README.md) reports, set once as the `graphmaquinaVersion` Gradle property or the
+`graphmaquina.version` Maven property. The processor emits `<Machine>Runtime` and `<Set>Runtime`. Generated
+types normalize underscores and nesting dots to PascalCase, preserving internal case and acronyms.
+See the [generated naming reference](../README.md#generated-names).
 
 Only `graphmaquina-core` is a dependency of the application. The generator and the processor are build-time only
 and never reach the runtime classpath.
@@ -38,9 +40,11 @@ type-checks the application; no previously compiled machine is required.
 
 ## Preparing a Central release
 
-The development version is `1.0.1-SNAPSHOT`, not a new published release. Version `1.0.0` on Central is
-immutable; future publications use fresh `1.0.x` patch versions. Before preparing a release bundle,
-set the same release version in the convention plugin and separate Gradle plugin build.
+The version comes from git tags: both builds read `-PgraphmaquinaVersion` when a release passes it and
+otherwise derive it from the most recent tag, so no file in the repository states a release version. A
+published version is immutable; future publications use fresh `1.0.x` patch versions. `scripts/release.sh`
+runs a complete release, the steps below among them; the [README](../README.md#release-to-maven-central)
+describes it.
 
 Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD` to its passphrase, then run:
 
@@ -52,17 +56,18 @@ This stages the four library/Maven publications plus the Gradle plugin and its m
 expected artifacts, POM metadata, signature files and MD5/SHA-1 checksums. Central staging refuses to run
 without `SIGNING_KEY`; local and adapter-test repositories still support unsigned development builds.
 The ZIP contains only the current release's expected files, excluding repository metadata and older releases.
-Only after the command succeeds, use `build/graphmaquina-central-bundle.zip` for a manual Central Portal upload.
-Nothing uploads automatically. Portal validation, namespace ownership and availability of the public signing
-key remain external requirements; these local structural checks do not replace Portal validation.
+The command uploads nothing: only once it succeeds is `build/graphmaquina-central-bundle.zip` ready to go to
+Central Portal, through the release script or by hand. Portal validation, namespace ownership and availability
+of the public signing key remain external requirements; these local structural checks do not replace Portal
+validation.
 
 ## Where the artifacts come from
 
-**Version `1.0.0` is published to Maven Central under `io.github.graphmaquina`; this branch targets unpublished
-`1.0.1-SNAPSHOT`.** The examples here require local installation or a configured internal snapshot repository
-for all components, including the Gradle implementation and marker. The private source repository requires
-authorized access; published `1.0.0` artifacts remain public and retain their original generated API.
-See the [README](../README.md#configure-gradle) for a complete snapshot consumer configuration.
+GraphMaquina is published to Maven Central under `io.github.graphmaquina`, which is all a consumer needs.
+The rest of this section covers the other two cases: testing a build that is not released yet, and serving
+every component, including the Gradle implementation and its marker, from an internal repository. The source
+repository is private and requires authorized access; the published artifacts are public.
+See the [README](../README.md#configure-gradle) for a complete consumer configuration.
 
 To test local changes, publish from an authorized checkout of this repository:
 
@@ -87,6 +92,9 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+    plugins {
+        id("io.github.graphmaquina") version providers.gradleProperty("graphmaquinaVersion").get()
+    }
 }
 
 dependencyResolutionManagement {
@@ -96,6 +104,9 @@ dependencyResolutionManagement {
     }
 }
 ```
+
+A `plugins` block in a build script cannot interpolate a version, so the plugin request declares it here,
+from the `graphmaquinaVersion` property the consumer sets in `gradle.properties`.
 
 **Maven** consults the local repository first, so artifacts installed with `publishToMavenLocal` need no
 declaration at all. A file or internal repository does need one — either in the POM:
@@ -125,7 +136,7 @@ needed: `<repositories>` for `graphmaquina-core`, `<pluginRepositories>` for `gr
 ```kotlin
 plugins {
     java
-    id("io.github.graphmaquina") version "1.0.1-SNAPSHOT"
+    id("io.github.graphmaquina")
 }
 
 java {
@@ -133,12 +144,13 @@ java {
 }
 
 dependencies {
-    implementation("io.github.graphmaquina:graphmaquina-core:1.0.1-SNAPSHOT")
+    val graphmaquinaVersion: String = providers.gradleProperty("graphmaquinaVersion").get()
+    implementation("io.github.graphmaquina:graphmaquina-core:$graphmaquinaVersion")
 
     compileOnly("org.projectlombok:lombok:1.18.48")
     // Lombok first: the GraphMaquina processor reads the accessors Lombok generates on the entities.
     annotationProcessor("org.projectlombok:lombok:1.18.48")
-    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT")
+    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:$graphmaquinaVersion")
 }
 ```
 
@@ -228,7 +240,7 @@ The `graphmaquinaGenerator` configuration carries the generator's classpath. By 
 plugin's own version, so nothing needs to be declared. Two cases where it does:
 
 ```kotlin
-graphmaquina { generatorVersion = "1.0.1-SNAPSHOT" } // explicit override; keep all components aligned
+graphmaquina { generatorVersion = "x.y.z" } // explicit override; keep all components aligned
 dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) }  // inside this repository
 ```
 
@@ -240,12 +252,13 @@ against the sibling project instead of a published artifact.
 Two plugins are required, and neither works without the other.
 
 The repositories of the previous section are assumed; `graphmaquina-core` and `graphmaquina-maven-plugin` must be
-resolvable, which for a locally installed snapshot means nothing further to declare.
+resolvable, which for Central or a locally installed build means nothing further to declare.
 
 ```xml
 <properties>
   <java.version>21</java.version>
-  <graphmaquina.version>1.0.1-SNAPSHOT</graphmaquina.version>
+  <!-- the version the badge in the README reports -->
+  <graphmaquina.version>x.y.z</graphmaquina.version>
 </properties>
 
 <dependencies>

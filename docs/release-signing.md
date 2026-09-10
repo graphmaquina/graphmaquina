@@ -26,11 +26,11 @@ gpg --fingerprint 851F75949D70884AC95AAB56455AD78F0EC0B9F1
 Download an artifact and its adjacent `.asc` signature from Maven Central, then verify both together:
 
 ```bash
-curl --fail --remote-name \
-  https://repo.maven.apache.org/maven2/io/github/graphmaquina/graphmaquina-core/1.0.0/graphmaquina-core-1.0.0.jar
-curl --fail --remote-name \
-  https://repo.maven.apache.org/maven2/io/github/graphmaquina/graphmaquina-core/1.0.0/graphmaquina-core-1.0.0.jar.asc
-gpg --verify graphmaquina-core-1.0.0.jar.asc graphmaquina-core-1.0.0.jar
+VERSION=1.0.0   # the version you are verifying
+BASE=https://repo.maven.apache.org/maven2/io/github/graphmaquina/graphmaquina-core/$VERSION
+curl --fail --remote-name "$BASE/graphmaquina-core-$VERSION.jar"
+curl --fail --remote-name "$BASE/graphmaquina-core-$VERSION.jar.asc"
+gpg --verify "graphmaquina-core-$VERSION.jar.asc" "graphmaquina-core-$VERSION.jar"
 ```
 
 These download commands require the release to be publicly available. Verify the reported full fingerprint

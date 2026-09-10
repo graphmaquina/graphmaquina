@@ -1,5 +1,7 @@
 # GraphMaquina
 
+[![Maven Central](https://img.shields.io/maven-central/v/io.github.graphmaquina/graphmaquina-core)](https://central.sonatype.com/artifact/io.github.graphmaquina/graphmaquina-core)
+
 ![GraphMaquina: typed graphs and predictable transitions, illustrated by a ticket moving from OPEN through IN_PROGRESS to DONE or FAILED.](docs/images/graphmaquina-overview.svg)
 
 Typed, graph-based state machines for Java 21. Declare the transitions your domain allows, give every
@@ -9,12 +11,11 @@ GraphMaquina combines a pre-compilation code generator, a javac annotation proce
 Your application calls a generated, typed facade. Actions, guards, hooks, properties and watched states are
 bound through Java symbols rather than string names.
 
-Published release: `1.0.0`, available from Maven Central under `io.github.graphmaquina`.
-This branch and the examples below target unpublished `1.0.1-SNAPSHOT`. They use the new generated
-`Runtime` names and require [local installation](#install-the-library-locally) or a configured internal
-snapshot repository. The immutable `1.0.0` artifacts retain their original generated names; they do not
-provide this new API. The source repository remains private. Published Maven Central artifacts, including
-source JARs, remain public.
+The current release is the one the badge above reports, published to Maven Central under
+`io.github.graphmaquina`. The examples below do not repeat that number: they read it from a
+`graphmaquinaVersion` Gradle property or a `graphmaquina.version` Maven property, set once per build.
+The source repository remains private. Published Maven Central artifacts, including source JARs,
+remain public.
 
 This README is the developer guide for the current implementation. The quickstart has complete, runnable
 files. Later examples are extensions or fragments of the repository's shop example.
@@ -105,12 +106,15 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 
 | Module | Coordinates / plugin ID | Add it to |
 | --- | --- | --- |
-| Runtime and public annotations | `io.github.graphmaquina:graphmaquina-core:1.0.1-SNAPSHOT` | Application dependencies |
-| Pre-compilation generator | `io.github.graphmaquina:graphmaquina-codegen:1.0.1-SNAPSHOT` | Build tooling; resolved by the adapter |
-| Annotation processor | `io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT` | javac annotation-processor path |
-| Gradle plugin | `io.github.graphmaquina`, version `1.0.1-SNAPSHOT` | Gradle `plugins` block |
-| Maven plugin | `io.github.graphmaquina:graphmaquina-maven-plugin:1.0.1-SNAPSHOT` | Maven build plugins |
+| Runtime and public annotations | `io.github.graphmaquina:graphmaquina-core` | Application dependencies |
+| Pre-compilation generator | `io.github.graphmaquina:graphmaquina-codegen` | Build tooling; resolved by the adapter |
+| Annotation processor | `io.github.graphmaquina:graphmaquina-processor` | javac annotation-processor path |
+| Gradle plugin | plugin ID `io.github.graphmaquina` | Gradle `plugins` block |
+| Maven plugin | `io.github.graphmaquina:graphmaquina-maven-plugin` | Maven build plugins |
 | Reference application | `graphmaquina-example` | Source and tests in this repository; not an application dependency |
+
+Every coordinate takes the version the badge at the top reports, set once as the `graphmaquinaVersion` Gradle
+property or the `graphmaquina.version` Maven property; the examples below read it from there.
 
 The generator and processor are build-time tools. Do not add them as application runtime dependencies.
 Application imports begin with `io.github.graphmaquina`.
@@ -139,8 +143,8 @@ declaration then specifies an actual transition.
 ### Start with a minimal machine
 
 First configure the [Gradle plugin](#configure-gradle) or the [Maven lifecycle](#configure-maven), including
-the annotation processor, and install the snapshot as described below. Create `TicketStatus`, `Ticket` and
-`TicketActions` from the [quickstart](#quickstart-a-complete-ticket-machine). Then create
+the annotation processor. Create `TicketStatus`, `Ticket` and `TicketActions` from the
+[quickstart](#quickstart-a-complete-ticket-machine). Then create
 `src/main/java/com/example/tickets/Tickets.java` with this initial content:
 
 ```java
@@ -224,21 +228,21 @@ does not perform the required pre-generation step.
 
 ## Publication and verification status
 
-GraphMaquina `1.0.0` is available from Maven Central. The namespace `io.github.graphmaquina` is verified.
-The release contains the runtime, generator, processor, Maven plugin, Gradle plugin and Gradle plugin marker.
-The examples in this guide target `1.0.1-SNAPSHOT`; install that version locally before following them.
+GraphMaquina is available from Maven Central and the badge at the top reports the current release. The
+namespace `io.github.graphmaquina` is verified. A release contains the runtime, generator, processor, Maven
+plugin, Gradle plugin and Gradle plugin marker.
 
 | Check | Current development result |
 | --- | --- |
 | Automated library/build suites | 459 tests, with no failures, errors or skipped tests. |
-| README quickstart | Compiled and ran with Gradle and Maven against `1.0.1-SNAPSHOT`, with strict lint. Both reported `All ticket scenarios passed.` |
+| README quickstart | Compiled and ran with Gradle and Maven, with strict lint. Both reported `All ticket scenarios passed.` |
 | Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. See [async guide verification](docs/async-guide-verification.md). |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
 
 See the [verification record](docs/runtime-naming-verification.md) for the tested build and commands.
 
 Browse the [published artifacts](https://repo.maven.apache.org/maven2/io/github/graphmaquina/) or the
-[core release on Maven Central](https://central.sonatype.com/artifact/io.github.graphmaquina/graphmaquina-core/1.0.0).
+[core artifact on Maven Central](https://central.sonatype.com/artifact/io.github.graphmaquina/graphmaquina-core).
 MVNRepository is an independent index; appearing in its search results is not required for Maven or Gradle
 resolution. Sonatype does not control its update schedule; see the
 [official explanation](https://central.sonatype.org/faq/mvnrepository/).
@@ -256,10 +260,9 @@ for verification commands and maintainer setup. Publishing a release does not re
 
 ## Install the library locally
 
-Install this branch locally before running the `1.0.1-SNAPSHOT` examples, unless your build already resolves
-that version from an internal snapshot repository. Consumers of published `1.0.0` need no local installation,
-but must use its original generated API. Cloning the private repository requires authorized GitHub access.
-Run these commands in a checkout of this branch:
+The examples resolve GraphMaquina from Maven Central, so following them needs no local installation. Install
+locally only to try changes that are not released yet. Cloning the private repository requires authorized
+GitHub access. Run these commands in the checkout:
 
 ```bash
 git clone https://github.com/graphmaquina/graphmaquina.git
@@ -276,15 +279,16 @@ java -version
 ```
 
 The last command publishes both the Gradle plugin implementation and its plugin marker from the separate
-included build. Both are needed for `id("io.github.graphmaquina") version "1.0.1-SNAPSHOT"` to resolve.
+included build. Both are needed for `id("io.github.graphmaquina")` to resolve.
 
 On Windows, use `gradlew.bat` and the line-continuation syntax of your shell. The multi-line shell examples in
 this guide use a POSIX shell.
 
-Maven reads the local Maven repository by default. To test locally installed builds with Gradle, add
-`mavenLocal()` before `mavenCentral()` in both `pluginManagement.repositories` and the dependency repository
-configuration. Remove it when verifying the public release so a local build cannot shadow that release.
-For an internal repository, configure both kinds of repository as well;
+A local install carries the version of the most recent tag, so it can shadow the released artifacts with that
+same number. Maven reads the local Maven repository by default. To test locally installed builds with Gradle,
+add `mavenLocal()` before `mavenCentral()` in both `pluginManagement.repositories` and the dependency
+repository configuration, and remove it again when verifying a public release. For an internal repository,
+configure both kinds of repository as well;
 see [the repository configuration reference](docs/typed-annotations-build.md#where-the-artifacts-come-from).
 
 ## Configure Gradle
@@ -292,20 +296,30 @@ see [the repository configuration reference](docs/typed-annotations-build.md#whe
 The following files build and run the [ticket quickstart](#quickstart-a-complete-ticket-machine). Create a
 separate application directory, `tickets-demo`, and put these files at its root.
 
+### gradle.properties
+
+```properties
+graphmaquinaVersion=x.y.z
+```
+
+Use the version the badge at the top reports. The two scripts below read it from here, so no coordinate
+repeats it.
+
 ### settings.gradle.kts
 
 ```kotlin
 pluginManagement {
     repositories {
-        mavenLocal() // locally installed 1.0.1-SNAPSHOT
         mavenCentral()
         gradlePluginPortal()
+    }
+    plugins {
+        id("io.github.graphmaquina") version providers.gradleProperty("graphmaquinaVersion").get()
     }
 }
 
 dependencyResolutionManagement {
     repositories {
-        mavenLocal() // locally installed 1.0.1-SNAPSHOT
         mavenCentral()
     }
 }
@@ -313,10 +327,9 @@ dependencyResolutionManagement {
 rootProject.name = "tickets-demo"
 ```
 
-Both repository blocks need `mavenLocal()` for this branch's locally installed snapshot, or the URL of your
-internal snapshot repository. Keep `mavenCentral()` for released dependencies; it serves GraphMaquina
-`1.0.0`, not this snapshot. `gradlePluginPortal()` is included for other plugins; this guide does not require
-a separate GraphMaquina publication to the Gradle Plugin Portal.
+A `plugins` block in a build script cannot interpolate a version, so the plugin request carries it here and
+the build script applies the plugin by ID alone. `gradlePluginPortal()` is included for other plugins; this
+guide does not require a separate GraphMaquina publication to the Gradle Plugin Portal.
 
 ### build.gradle.kts
 
@@ -324,7 +337,7 @@ a separate GraphMaquina publication to the Gradle Plugin Portal.
 plugins {
     java
     application
-    id("io.github.graphmaquina") version "1.0.1-SNAPSHOT"
+    id("io.github.graphmaquina")
 }
 
 group = "com.example"
@@ -337,8 +350,9 @@ java {
 }
 
 dependencies {
-    implementation("io.github.graphmaquina:graphmaquina-core:1.0.1-SNAPSHOT")
-    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT")
+    val graphmaquinaVersion: String = providers.gradleProperty("graphmaquinaVersion").get()
+    implementation("io.github.graphmaquina:graphmaquina-core:$graphmaquinaVersion")
+    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:$graphmaquinaVersion")
 }
 
 application {
@@ -371,7 +385,7 @@ Add these dependency declarations before the GraphMaquina processor declaration:
 ```kotlin
 compileOnly("org.projectlombok:lombok:1.18.48")
 annotationProcessor("org.projectlombok:lombok:1.18.48")
-annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT")
+annotationProcessor("io.github.graphmaquina:graphmaquina-processor:$graphmaquinaVersion")
 ```
 
 Do not duplicate the GraphMaquina entry already present in the build. Lombok supplies accessors; it does not
@@ -383,12 +397,10 @@ Generation participates in a source set only when that source set declares the G
 uses `annotationProcessor`; test uses `testAnnotationProcessor`. Tests that only call already generated main
 facades normally do not need their own processor.
 
-For graph declarations under `src/test/java`, add:
+For graph declarations under `src/test/java`, add to the same `dependencies` block:
 
 ```kotlin
-dependencies {
-    testAnnotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT")
-}
+testAnnotationProcessor("io.github.graphmaquina:graphmaquina-processor:$graphmaquinaVersion")
 ```
 
 If test entities use Lombok, add its test compile-only and annotation-processor dependencies, preserving order.
@@ -404,7 +416,7 @@ The plugin resolves the generator version matching its own version. Advanced ove
 
 ```kotlin
 graphmaquina {
-    generatorVersion.set("1.0.1-SNAPSHOT")
+    generatorVersion.set("x.y.z")
 }
 ```
 
@@ -415,8 +427,9 @@ this to run the sibling codegen project. Use matching versions for every GraphMa
 
 This is a complete alternative build for the same ticket source files. Save it as `pom.xml` in
 `tickets-demo`. It includes all six lifecycle executions and distinct main/test manifest arguments.
-Install `1.0.1-SNAPSHOT` locally first, or configure both dependency and plugin repositories for your
-internal snapshot repository as shown in [the build guide](docs/typed-annotations-build.md#where-the-artifacts-come-from).
+Maven resolves every GraphMaquina artifact from Central, at the single version the `graphmaquina.version`
+property sets. For an internal repository, configure both dependency and plugin repositories as shown in
+[the build guide](docs/typed-annotations-build.md#where-the-artifacts-come-from).
 
 ### pom.xml
 
@@ -433,7 +446,8 @@ internal snapshot repository as shown in [the build guide](docs/typed-annotation
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
-    <graphmaquina.version>1.0.1-SNAPSHOT</graphmaquina.version>
+    <!-- the version the badge at the top of this README reports -->
+    <graphmaquina.version>x.y.z</graphmaquina.version>
   </properties>
 
   <dependencies>
@@ -532,16 +546,16 @@ mvn --version
 mvn clean verify
 ```
 
-To run the quickstart after Maven has resolved the library and compiled the application, use the compiled
-application classes and core JAR on the classpath:
+To run the quickstart after Maven has resolved the library and compiled the application, let Maven write the
+dependency classpath and put the compiled classes in front of it:
 
 ```bash
-java -cp "target/classes:$HOME/.m2/repository/io/github/graphmaquina/graphmaquina-core/1.0.1-SNAPSHOT/graphmaquina-core-1.0.1-SNAPSHOT.jar" \
-     com.example.tickets.App
+mvn -q dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
+java -cp "target/classes:$(cat target/classpath.txt)" com.example.tickets.App
 ```
 
-This command assumes Maven's default local repository. Adjust the path if your settings use another location;
-on Windows, use `;` as the Java classpath separator.
+The generated file holds absolute paths into your local repository, wherever that is; on Windows, use `;` as
+the Java classpath separator.
 
 For Lombok, add `org.projectlombok:lombok:1.18.48` as a `provided` dependency and place its `<path>` before the
 GraphMaquina processor's `<path>`. Unlike a Spring Boot parent, this standalone POM does not supply dependency
@@ -1097,7 +1111,7 @@ that returns promptly, or an application-managed executor for genuinely blocking
 
 This example adds an asynchronous eligibility check and approval service to the ticket domain. Reuse
 `Ticket.java` and `TicketStatus.java` from the [quickstart](#quickstart-a-complete-ticket-machine), with the
-same Gradle or Maven configuration and `1.0.1-SNAPSHOT` dependencies. Add the following five files under
+same Gradle or Maven configuration and dependencies. Add the following five files under
 `src/main/java/com/example/tickets/`. They can coexist with the synchronous quickstart.
 
 The service contract returns stages; the example implementation controls their completion explicitly so
@@ -1276,8 +1290,8 @@ then run `./gradlew clean run`. In Maven:
 
 ```bash
 mvn clean compile
-java -cp "target/classes:$HOME/.m2/repository/io/github/graphmaquina/graphmaquina-core/1.0.1-SNAPSHOT/graphmaquina-core-1.0.1-SNAPSHOT.jar" \
-     com.example.tickets.AsyncApp
+mvn -q dependency:build-classpath -Dmdep.outputFile=target/classpath.txt
+java -cp "target/classes:$(cat target/classpath.txt)" com.example.tickets.AsyncApp
 ```
 
 Expected application output:
@@ -2157,27 +2171,34 @@ The combined `test` command explicitly includes that suite. Its plugin is a sepa
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-The [verification record](docs/runtime-naming-verification.md) for `1.0.1-SNAPSHOT` records 459 passing
-tests across six suites and both README quickstarts executed with strict lint.
+The [verification record](docs/runtime-naming-verification.md) records 459 passing tests across six suites
+and both README quickstarts executed with strict lint.
 Test reports are under each module's `build/reports/tests/test`.
 
-### Prepare a Maven Central bundle
+### Release to Maven Central
 
-Release preparation is a maintainer operation. Version `1.0.0` is already published and cannot be replaced
-or deleted from Maven Central. Development is `1.0.1-SNAPSHOT`; all future publications stay in the `1.0.x`
-patch series. A new release must use a fresh patch version, consistently set in the convention plugin,
-the separate Gradle plugin build, `StateGraphPlugin.PLUGIN_VERSION`, and adapter fixture version constants
-before creating a bundle. This branch does not publish a new release.
-Configure `SIGNING_KEY` with the project's ASCII-armored private release key and `SIGNING_PASSWORD` with
-its passphrase through your release environment. Then run:
+Releasing is a maintainer operation. The version comes from git tags, so a release creates a tag and edits no
+file. Releases stay in the `1.0.x` patch series, and a published version can never be replaced or deleted.
+
+`scripts/release.sh` runs the sequence end to end: the preflight checks (a clean `main` in sync with
+`origin`, the tools it needs, and the next patch version free both as a tag and on Central), the test suites,
+the signed bundle and its validation, one confirmation prompt, the upload through the Central Portal API, the
+wait for `PUBLISHED`, then the tag and a GitHub release with generated notes. `--validate-only` stops once
+Central has validated the deployment and publishes nothing. The script reads the signing key, its passphrase
+and the Portal token from 1Password, so `op` has to be available alongside `git`, `gh`, `curl` and `mvn`.
+
+To build and check a bundle without publishing it, configure `SIGNING_KEY` with the project's ASCII-armored
+private release key and `SIGNING_PASSWORD` with its passphrase, then run:
 
 ```bash
 ./gradlew --no-daemon centralBundle
 ```
 
-Maintainers using 1Password CLI can inject both secrets for this command without copying them into the
-checkout or shell history. Replace `<vault>` and `<item>` with the vault and signing item's names or IDs;
-the item must have a `private_key` field containing the armored secret key and a `password` field:
+Without `-PgraphmaquinaVersion`, that stages the most recent tag's version, which is already published; pass
+the flag to stage a different one. Maintainers using 1Password CLI can inject both secrets for this command
+without copying them into the checkout or shell history. Replace `<vault>` and `<item>` with the vault and
+signing item's names or IDs; the item must have a `private_key` field containing the armored secret key and a
+`password` field:
 
 ```bash
 SIGNING_KEY='op://<vault>/<item>/private_key' \
@@ -2197,10 +2218,10 @@ metadata, checks signature files and checksums, then produces:
 build/graphmaquina-central-bundle.zip
 ```
 
-Central staging requires the signing key; development installation to Maven local does not. The task uploads
-nothing automatically. Upload the prepared bundle through Central Portal with the authorized namespace and
-release credentials. Portal validation and public availability remain separate steps. The local structural
-validator does not replace cryptographic signature verification or Portal checks.
+Central staging requires the signing key; development installation to Maven local does not. The task itself
+uploads nothing: the release script does that, or a maintainer can upload the ZIP through Central Portal with
+the authorized namespace and release credentials. Portal validation and public availability remain separate
+steps. The local structural validator does not replace cryptographic signature verification or Portal checks.
 
 Do not publish a bundle signed with a temporary test key. See the
 [release preparation reference](docs/typed-annotations-build.md#preparing-a-central-release) for details.
