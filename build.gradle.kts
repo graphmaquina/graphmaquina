@@ -6,7 +6,9 @@ val centralModules = listOf("graphmaquina-core", "graphmaquina-codegen", "graphm
     "graphmaquina-maven-plugin", "graphmaquina-gradle-plugin")
 val centralArtifacts = providers.provider {
     val release = project(":graphmaquina-core").version.toString()
-    check(!release.endsWith("-SNAPSHOT")) { "Central releases cannot be snapshots" }
+    check(!release.endsWith("-SNAPSHOT") && release != "0.0.0-dev") {
+        "Central releases need a resolved version, got '$release'. Create a tag or pass -PgraphmaquinaVersion."
+    }
     centralModules.flatMap { module ->
         listOf(".pom", ".jar", "-sources.jar", "-javadoc.jar", ".module").map { suffix ->
             "io/github/graphmaquina/$module/$release/$module-$release$suffix"

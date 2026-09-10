@@ -1,7 +1,14 @@
 plugins { `java-library` }
 
 group = "io.github.graphmaquina"
-version = "1.0.1-SNAPSHOT"
+// The version is never written into the repository: a release passes -PgraphmaquinaVersion and development
+// derives it from the most recent tag. A checkout without .git or without tags builds as 0.0.0-dev.
+version = providers.gradleProperty("graphmaquinaVersion").orElse(
+    providers.exec {
+        commandLine("git", "describe", "--tags", "--abbrev=0")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.map { it.trim().removePrefix("v").ifEmpty { "0.0.0-dev" } }
+).get()
 
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(21) }
