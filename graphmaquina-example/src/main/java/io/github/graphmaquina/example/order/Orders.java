@@ -16,7 +16,7 @@ import io.github.graphmaquina.example.item.ItemStatus;
 import io.github.graphmaquina.example.item.Items;
 import java.io.IOException;
 
-/** The order machine: five states, twenty-five cells, all declared here. The processor generates Orders_. */
+/** The order machine: five states, twenty-five cells, all declared here. The processor generates OrdersRuntime. */
 @GenerateGraphApi
 @GraphPeers(Items.class)
 @OrdersGraph.Definition(initial = NEW, terminals = {SHIPPED, CANCELLED}, allowsCycle = PAYMENT_DECLINED,

@@ -60,7 +60,7 @@ class ExactInvocationTest {
         assertTrue(result.success(), result.describe());
         Class<?> hostClass = result.load("fx.DocActions");
         Object host = hostClass.getConstructor().newInstance();
-        Class<?> companion = result.load("fx.Library_");
+        Class<?> companion = result.load("fx.LibraryRuntime");
         List<Method> builders = builders(companion);
         assertEquals(1, builders.size(), () -> builders.toString());
         assertEquals(List.of(hostClass), Arrays.asList(builders.get(0).getParameterTypes()));

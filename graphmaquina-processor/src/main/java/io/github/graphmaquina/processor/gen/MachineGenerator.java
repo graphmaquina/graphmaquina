@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor.gen;
 
+import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.api.EdgeKind;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.CellModel;
@@ -21,7 +22,7 @@ import java.util.Set;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
 
-/** Emits {@code <Interface>_}: the graph factory built with the SPI DSL, and the facade that implements the interface. */
+/** Emits {@code <Interface>Runtime}: the graph factory built with the SPI DSL, and the facade that implements the interface. */
 public final class MachineGenerator {
 
     private static final String GRAPH_DEFINITION = "io.github.graphmaquina.api.GraphDefinition";
@@ -44,7 +45,7 @@ public final class MachineGenerator {
     private MachineGenerator() { }
 
     public static String qualifiedName(MachineModel model) {
-        return model.packageName() + "." + model.facadeName() + "_";
+        return SymbolNames.qualified(model.packageName(), SymbolNames.runtimeName(model.facadeName()));
     }
 
     public static String generate(MachineModel model, BoundInvocation invocations) {
@@ -52,7 +53,7 @@ public final class MachineGenerator {
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
         String s = names.of(model.types().statesElement().getQualifiedName().toString());
         String facade = model.facadeName();
-        String companion = facade + "_";
+        String companion = SymbolNames.runtimeName(facade);
         String key = names.of(MACHINE_KEY);
         String outcome = names.of(OUTCOME);
         String objects = names.of(OBJECTS);

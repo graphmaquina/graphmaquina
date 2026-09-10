@@ -73,8 +73,8 @@ publishing {
 }
 
 val clearFixtureReleases = tasks.register<Delete>("clearFixtureReleases") {
-    // Fixtures consume the release GAV 1.0.0. Maven never refreshes an already cached release jar, even
-    // when this checkout republishes it, so retain external dependencies but discard our own cached jars.
+    // Retain external dependencies but discard cached GraphMaquina artifacts so each test run consumes
+    // this checkout's freshly staged publications, whether the development GAV is a release or snapshot.
     delete(layout.buildDirectory.dir("maven-fixture-repo/io/github/graphmaquina"))
 }
 

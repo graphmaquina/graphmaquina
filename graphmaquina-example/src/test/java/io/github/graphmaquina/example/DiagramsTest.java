@@ -3,9 +3,9 @@ package io.github.graphmaquina.example;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.graphmaquina.example.item.ItemActions;
-import io.github.graphmaquina.example.item.Items_;
+import io.github.graphmaquina.example.item.ItemsRuntime;
 import io.github.graphmaquina.example.order.OrderActions;
-import io.github.graphmaquina.example.order.Orders_;
+import io.github.graphmaquina.example.order.OrdersRuntime;
 import io.github.graphmaquina.export.GraphView;
 import io.github.graphmaquina.export.MermaidExporter;
 import java.io.IOException;
@@ -23,12 +23,12 @@ class DiagramsTest {
 
     @Test
     void orderDiagramMatchesGolden() throws IOException {
-        String rendered = MermaidExporter.render(GraphView.of(Orders_.graph(new OrderActions(new FakeGateway(), new FakeCarrier()))));
+        String rendered = MermaidExporter.render(GraphView.of(OrdersRuntime.graph(new OrderActions(new FakeGateway(), new FakeCarrier()))));
         assertEquals(golden("order.mmd"), rendered);
     }
 
     @Test
     void itemDiagramMatchesGolden() throws IOException {
-        assertEquals(golden("item.mmd"), MermaidExporter.render(GraphView.of(Items_.graph(new ItemActions()))));
+        assertEquals(golden("item.mmd"), MermaidExporter.render(GraphView.of(ItemsRuntime.graph(new ItemActions()))));
     }
 }

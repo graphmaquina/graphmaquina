@@ -26,7 +26,7 @@ class TypedWatchTest {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.watching());
 
         assertTrue(result.success(), result.describe());
-        String companion = result.generated("fx.Docs_");
+        String companion = result.generated("fx.DocsRuntime");
         assertTrue(companion.contains(".watches(MachineKey.of(Page.class, PageStatus.class),"
                 + " (Doc doc) -> doc.pages(), (Page page) -> page.doc())"), companion);
         int condition = companion.indexOf(".when(\"ready\", (doc, peers, view) -> docActions.ready(");

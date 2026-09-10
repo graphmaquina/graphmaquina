@@ -1,17 +1,30 @@
 package io.github.graphmaquina.codegen.emit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.Test;
 
 class SymbolNamesTest {
+    @Test
+    void normalizesWordSeparatorsAndPreservesExistingCase() {
+        assertEquals("OuterInner", SymbolNames.hostName("Outer.Inner"));
+        assertEquals("HTTPActions", SymbolNames.hostName("HTTP_actions"));
+        assertEquals("Id", SymbolNames.typeName("Host", "_id"));
+        assertEquals("HasTitle", SymbolNames.typeName("Host", "has_title"));
+        assertEquals("URL", SymbolNames.typeName("Host", "URL"));
+        assertEquals("Authorize", SymbolNames.typeName("Host", "Authorize"));
+        assertEquals("HostRefs", SymbolNames.typeName("Host", "hostRefs"));
+        assertEquals("TicketsRuntime", SymbolNames.runtimeName("Tickets"));
+        assertEquals("OuterHTTPActionsRuntime", SymbolNames.runtimeName("Outer.HTTP_actions"));
+        assertEquals("OuterInnerRefs", SymbolNames.containerName("Outer.Inner"));
+    }
 
     @Test
-    void symbolSpellingIsInjectiveAndIndependentOfOtherMembers() {
-        assertEquals("Authorize", SymbolNames.typeName("PaymentActions", "authorize"));
-        assertEquals("_Authorize", SymbolNames.typeName("PaymentActions", "Authorize"));
-        assertEquals("__authorize", SymbolNames.typeName("PaymentActions", "_authorize"));
-        assertEquals("_sg_PaymentActionsRefs",
-            SymbolNames.typeName("PaymentActions", "paymentActionsRefs"));
+    void rejectsNamesThatCannotNormalizeToJavaIdentifiers() {
+        for (String name : new String[] {"", "___", "_1id", "bad-name"}) {
+            assertThrows(IllegalArgumentException.class, () -> SymbolNames.hostName(name), name);
+            assertThrows(IllegalArgumentException.class, () -> SymbolNames.typeName("Host", name), name);
+        }
     }
 }

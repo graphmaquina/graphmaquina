@@ -1,4 +1,42 @@
-# Migrating from v0.2 to the typed graph API (v0.3)
+# Migrating the typed graph API
+
+## Current migration: generated Runtime names
+
+This branch targets **unpublished `1.0.1-SNAPSHOT`**. Published `1.0.0` remains immutable and publicly
+available on Maven Central; the source repository remains private. Install this branch locally or configure
+an internal snapshot repository as described in [the build guide](typed-annotations-build.md).
+
+The generated API changes require source changes and recompilation, even though project policy keeps all
+future publications in the `1.0.x` patch series. Patch numbering does not promise compatibility for these
+renames.
+
+| Previous generated name | Current generated name |
+| --- | --- |
+| `Tickets_` | `TicketsRuntime` |
+| `TicketMachines_` | `TicketMachinesRuntime` |
+| `ShopMachines_` | `ShopMachinesRuntime` |
+| `Outer_InnerRefs` for host `Outer.Inner` | `OuterInnerRefs` |
+| `__id` for member `_id` | `Id` |
+| `Has_title` for member `has_title` | `HasTitle` |
+| `_URL` for member `URL` | `URL` |
+
+`Graph` and `Refs` retain their roles. Existing internal case and uppercase acronyms are preserved.
+Update imports, class literals, builder calls and other references to changed generated names, then regenerate
+and recompile all affected application and library modules with matching runtime, generator, processor and
+adapter versions. The normal build lifecycle retires obsolete sources and bytecode that it owns. It does not
+rename handwritten declarations. Existing `1.0.0` binaries do not acquire `Runtime` classes by upgrading only
+the runtime dependency.
+
+Normalization can merge names: `id` and `_id`, or `authorize` and `Authorize`, cannot coexist in the same
+references container. Generation rejects the conflict with `SG603`, naming both source declarations.
+Rename a conflicting declaration and its references before recompiling. No underscore escape or opaque
+suffix is added automatically. See [the naming rules](#7-how-generated-symbols-are-named).
+
+## Historical migration: v0.2 to typed v0.3
+
+The before/after declarations and v0.2/v0.3 labels below record the original typed-annotation migration;
+they are not current artifact versions. Build coordinates and naming guidance have been updated for
+`1.0.1-SNAPSHOT`. Dated audits and design records elsewhere retain their historical claims.
 
 In v0.2 a machine named its states, methods and properties as strings. In v0.3 it references **generated
 annotations and generated symbol classes**, so javac checks every reference and the IDE resolves it. Only two
@@ -26,11 +64,12 @@ elements with the peer's enum, so a state of another machine does not compile.
 
 ## Step by step
 
-### 1. Move the build to 0.3
+### 1. Configure the typed build
 
 Generation is mandatory and runs before javac. Set up the Gradle plugin or the six Maven goals first, as
-`typed-annotations-build.md` describes, and raise every StateGraph dependency to `1.0.0`. Until the
-build is right, everything else fails with SG602 (no manifest) rather than with a migration error.
+`typed-annotations-build.md` describes, and align every GraphMaquina dependency and build adapter at
+`1.0.1-SNAPSHOT`. Until the build is right, everything else fails with SG602 (no manifest) rather than with
+a migration error.
 
 ### 2. Mark the members the graphs reference
 
@@ -238,14 +277,20 @@ first rule that holds wins.
 Given a host `Order` in package `p`, its symbols live in `p.OrderRefs`, one nested final class per exported
 member, named after the member:
 
-- a name starting with a lower-case letter is upper-cased: `charge` → `Charge`, `items` → `Items`;
-- any other first character is prefixed with `_`: `URL` → `_URL`, `_id` → `__id`;
-- the one name that would collide with the container itself is prefixed with `_sg_`;
-- a nested host joins its enclosing names with `_`: `Outer.Inner` exports through `Outer_InnerRefs`.
+- each word starts with an uppercase letter: `charge` → `Charge`, `items` → `Items`;
+- underscores separate words: `_id` → `Id`, `has_title` → `HasTitle`;
+- existing internal case and acronyms are retained: `hasTitle` → `HasTitle`, `URL` → `URL`;
+- enclosing names concatenate without separators: `Outer.Inner` exports through `OuterInnerRefs`.
 
-The mapping is injective, so two members never share a symbol. Overloads share one logical member only when
-they are the same member; a marked overload and an unmarked one are different members, and the generated call
-runs exactly the marked one.
+The same normalization applies to generated type names, including graph/watch vocabulary, runtime companions
+and the internal compilation carrier. Generated types contain no underscores. A name that cannot produce a
+valid nonempty Java identifier is rejected. A collision between normalized outputs, exports or a member and
+its container fails with `SG603`; diagnostics identify both conflicting source declarations. For example,
+`id` / `_id` and `authorize` / `Authorize` collide within one references container. The generator does not
+invent escape prefixes or disambiguating suffixes.
+
+Original Java declarations and invocation names do not change. A marked overload and an unmarked one are
+different members, and the generated call runs exactly the marked one.
 
 ### 8. Build and read the diagnostics
 
@@ -253,7 +298,7 @@ runs exactly the marked one.
 | --- | --- |
 | SG601 | Bootstrap: a required type is unresolved, ambiguous or contradictory |
 | SG602 | Manifest absent, incompatible or stale |
-| SG603 | Output or export collision |
+| SG603 | Output or export collision, including normalized names; identifies both conflicting sources |
 | SG604 | Invalid, contradictory or undeclared export or role |
 | SG605 | A symbol with no valid original member, or the wrong host |
 | SG606 | Vocabulary of another machine or of another pair |
@@ -269,8 +314,8 @@ category is refused by javac itself and is not wrapped in an SG code.
 
 ## What does not change
 
-- The facades: the operations, `definition`, `allowedFrom`, `reevaluate` and `async`; `<Interface>_` and
-  `<Set>_`, their builders and the direct calls they emit.
+- The facade operations: `definition`, `allowedFrom`, `reevaluate` and `async`, the builders and their
+  direct calls. The generated classes now use `<Interface>Runtime` and `<Set>Runtime`.
 - The labels of the diagrams: an action's label is still the operation's name, or the chosen method in an
   internal cell; guards, hooks and conditions keep their original method names, never the symbol class names.
 - The runtime: symbols are compile-time references. They create no instance, no bean and no reflective call,

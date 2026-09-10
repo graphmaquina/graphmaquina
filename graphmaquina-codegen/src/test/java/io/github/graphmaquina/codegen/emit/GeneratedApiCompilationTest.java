@@ -3,6 +3,9 @@ package io.github.graphmaquina.codegen.emit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import io.github.graphmaquina.codegen.CodegenException;
 
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
@@ -119,14 +122,14 @@ class GeneratedApiCompilationTest {
         List<String> names = emitted.stream().map(GeneratedSource::qualifiedName).toList();
         assertEquals(List.of("fx.DocsGraph", "fx.DocActionsRefs", "fx.DocRefs"), names.subList(0, 3));
         assertTrue(names.get(3).matches(
-                "io\\.github\\.graphmaquina\\.generated\\.bootstrap\\.GraphCompilation_[0-9a-f]{16}"), names.get(3));
+                "io\\.github\\.graphmaquina\\.generated\\.bootstrap\\.GraphCompilation[0-9a-f]{16}"), names.get(3));
         assertEquals(4, names.size(), names.toString());
 
         String vocabulary = content(emitted, "fx.DocsGraph");
         assertTrue(vocabulary.contains("fx.DocStatus initial();"), vocabulary);
         assertTrue(vocabulary.contains("Class<? extends ActionSymbol> action();"), vocabulary);
         assertTrue(content(emitted, "fx.DocActionsRefs").contains("public static final class Publish "
-                + "implements ActionSymbol {"), content(emitted, "fx.DocActionsRefs"));
+                + "implements io.github.graphmaquina.symbol.ActionSymbol {"), content(emitted, "fx.DocActionsRefs"));
 
         SourceFiles.Compilation compilation = compile(emitted, USAGE);
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
@@ -222,6 +225,109 @@ class GeneratedApiCompilationTest {
         SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, directory.resolve("classes"));
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
         assertEquals(List.of(), compilation.messages());
+    }
+
+    @Test
+    void compilesNormalizedNestedHostsAndMembersWithoutChangingTheirMetadata() {
+        Map<String, String> originals = Map.of("fx.Outer_Host", """
+            package fx;
+            import io.github.graphmaquina.annotation.*;
+            import io.github.graphmaquina.api.Machine;
+            public class Outer_Host {
+                public enum Status { NEW, DONE }
+                public static class Entity {
+                    @GraphProperty public String _id;
+                    @GraphProperty public Status current_state;
+                }
+                public static class HTTP_actions {
+                    @GraphAction public void Process(Entity entity) {}
+                    @GraphGuard public boolean has_title(Entity entity) { return true; }
+                }
+                @GenerateGraphApi
+                public interface Ticket_machine extends Machine<Entity, Status> {}
+            }
+            """);
+        Path root = directory.resolve("sources");
+        List<Path> files = new ArrayList<>(SourceFiles.write(root, originals));
+        GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(root),
+            SourceFiles.classpath(), directory.resolve("generated"), directory.resolve("processor-generated"),
+            directory.resolve("classes"), directory.resolve("work"), "normalized"));
+        List<GeneratedSource> emitted = ApiEmitter.emit(model, "normalized");
+        assertTrue(emitted.stream().allMatch(source -> !source.qualifiedName().contains("_")));
+        assertTrue(model.symbols().stream().allMatch(symbol -> !symbol.qualifiedName().contains("_")));
+        assertEquals(emitted, ApiEmitter.emit(model, "normalized"));
+        assertTrue(content(emitted, "fx.OuterHostHTTPActionsRefs").contains("member = \"has_title\""));
+        files.addAll(write(directory.resolve("generated"), emitted));
+        files.addAll(SourceFiles.write(directory.resolve("usage"), Map.of("fx.Usage", """
+            package fx;
+            @OuterHostTicketMachineGraph.Definition(initial = Outer_Host.Status.NEW,
+                id = OuterHostEntityRefs.Id.class, state = OuterHostEntityRefs.CurrentState.class)
+            @OuterHostTicketMachineGraph.Cell(from = Outer_Host.Status.NEW, to = Outer_Host.Status.DONE,
+                action = OuterHostHTTPActionsRefs.Process.class,
+                guards = OuterHostHTTPActionsRefs.HasTitle.class)
+            public interface Usage {}
+            """)));
+        SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, directory.resolve("classes"));
+        assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+    }
+
+    @Test
+    void compilesSymbolsWhoseNamesShadowTheGeneratorMetadataAndCategoryTypes() {
+        Map<String, String> originals = Map.of("fx.Actions", """
+            package fx;
+            import io.github.graphmaquina.annotation.*;
+            public class Actions {
+                @GraphAction public void ActionSymbol() {}
+                @GraphGuard public boolean GuardSymbol() { return true; }
+                @GraphHook public void HookSymbol() {}
+                @GraphCondition public boolean ConditionSymbol() { return true; }
+                @GraphProperty public String PropertySymbol;
+                @GraphAction public void GeneratedSymbol() {}
+                @GraphAction public void SymbolKind() {}
+            }
+            """);
+        Path root = directory.resolve("sources");
+        List<Path> files = new ArrayList<>(SourceFiles.write(root, originals));
+        GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(root),
+            SourceFiles.classpath(), directory.resolve("generated"), directory.resolve("processor-generated"),
+            directory.resolve("classes"), directory.resolve("work"), "shadowed-imports"));
+        List<GeneratedSource> emitted = ApiEmitter.emit(model, "shadowed-imports");
+        assertEquals(List.of("ActionSymbol", "ConditionSymbol", "GeneratedSymbol", "GuardSymbol", "HookSymbol",
+            "PropertySymbol", "SymbolKind"), model.symbols().stream().map(symbol -> symbol.member()).toList());
+        files.addAll(write(directory.resolve("generated"), emitted));
+        files.addAll(SourceFiles.write(directory.resolve("usage"), Map.of("fx.Usage", """
+            package fx;
+            public class Usage {
+                Class<? extends io.github.graphmaquina.symbol.ActionSymbol> action = ActionsRefs.ActionSymbol.class;
+                Class<? extends io.github.graphmaquina.symbol.ActionSymbol> metadata = ActionsRefs.GeneratedSymbol.class;
+                Class<? extends io.github.graphmaquina.symbol.ActionSymbol> kind = ActionsRefs.SymbolKind.class;
+                Class<? extends io.github.graphmaquina.symbol.GuardSymbol> guard = ActionsRefs.GuardSymbol.class;
+                Class<? extends io.github.graphmaquina.symbol.HookSymbol> hook = ActionsRefs.HookSymbol.class;
+                Class<? extends io.github.graphmaquina.symbol.ConditionSymbol> condition = ActionsRefs.ConditionSymbol.class;
+                Class<? extends io.github.graphmaquina.symbol.PropertySymbol> property = ActionsRefs.PropertySymbol.class;
+            }
+            """)));
+        SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, directory.resolve("classes"));
+        assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+    }
+
+    @Test
+    void rejectsInvalidNormalizedMachineNamesWithTheirSourceLocation() {
+        Path root = directory.resolve("sources");
+        SourceFiles.write(root, Map.of("fx._1machine", """
+            package fx;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.api.Machine;
+            @GenerateGraphApi
+            public interface _1machine extends Machine<String, Thread.State> {}
+            """));
+        GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(root),
+            SourceFiles.classpath(), directory.resolve("generated"), directory.resolve("processor-generated"),
+            directory.resolve("classes"), directory.resolve("work"), "invalid"));
+        CodegenException failure = assertThrows(CodegenException.class, () -> ApiEmitter.emit(model, "invalid"));
+        assertEquals("SG603", failure.code());
+        assertEquals("sources/fx/_1machine.java", failure.location().orElseThrow().path());
+        assertTrue(failure.getMessage().contains("_1machine"), failure.getMessage());
     }
 
     @Test

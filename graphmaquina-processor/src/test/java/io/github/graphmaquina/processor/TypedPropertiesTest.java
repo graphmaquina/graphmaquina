@@ -27,7 +27,7 @@ class TypedPropertiesTest {
     @Test
     void resolvesAMarkedGetterByItsOwnDeclaration() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs._URL", Use.ID, "fx.Doc/fx.DocStatus");
+        TypedProcessors.Resolving.property("fx.DocRefs.URL", Use.ID, "fx.Doc/fx.DocStatus");
 
         Compilation.Result result = resolve(entity("""
                 package fx;
@@ -38,7 +38,7 @@ class TypedPropertiesTest {
                 """));
 
         assertTrue(result.success(), result.describe());
-        assertEquals("getURL(): java.lang.String", answer(result, "fx.DocRefs._URL", Use.ID));
+        assertEquals("getURL(): java.lang.String", answer(result, "fx.DocRefs.URL", Use.ID));
     }
 
     @Test

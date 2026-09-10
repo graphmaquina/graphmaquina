@@ -67,9 +67,9 @@ class PublishedGraphsTest {
                 {
                   "schemaVersion": 1,
                   "generatedTypes": [
-                    "fx.Docs_",
-                    "fx.Library_",
-                    "fx.Pages_"
+                    "fx.DocsRuntime",
+                    "fx.LibraryRuntime",
+                    "fx.PagesRuntime"
                   ]
                 }
                 """, Files.readString(Path.of(manifest.processorInventory()), StandardCharsets.UTF_8));
@@ -101,8 +101,8 @@ class PublishedGraphsTest {
                 StateGraphProcessor.class.getName() + ',' + ManifestProcessors.Recording.class.getName()));
 
         assertTrue(result.success(), result.describe());
-        assertTrue(result.hasGenerated("cons.Archives_"), result::describe);
-        assertTrue(result.hasGenerated("cons.Shelf_"), result::describe);
+        assertTrue(result.hasGenerated("cons.ArchivesRuntime"), result::describe);
+        assertTrue(result.hasGenerated("cons.ShelfRuntime"), result::describe);
         assertTrue(ManifestProcessors.Recording.claimed().containsAll(
                 List.of("prod.BillsGraph.Definition", "prod.BillsGraph.Action", "cons.ArchivesGraph.Definition")),
                 () -> ManifestProcessors.Recording.claimed().toString());

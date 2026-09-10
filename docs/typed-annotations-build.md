@@ -1,6 +1,6 @@
-# Building with the typed graph API (v0.3)
+# Building with the typed graph API
 
-StateGraph 0.3 replaces the string-based `@StateGraph` declarations of v0.2 with a vocabulary that is
+The typed API, introduced in StateGraph 0.3, replaces the string-based `@StateGraph` declarations of v0.2 with a vocabulary that is
 **generated before javac runs**. A machine no longer names its states, methods and properties as text: it
 references generated annotations and generated symbol classes, and javac checks every one of them.
 
@@ -19,16 +19,26 @@ find no manifest and refuse the compilation with SG602.
 
 | Artifact | Coordinates | Role |
 | --- | --- | --- |
-| Runtime and annotations | `io.github.graphmaquina:graphmaquina-core:1.0.0` | the engine, the markers, the symbol categories |
-| Generator | `io.github.graphmaquina:graphmaquina-codegen:1.0.0` | pre-javac generation, run as a separate process by the adapters |
-| Annotation processor | `io.github.graphmaquina:graphmaquina-processor:1.0.0` | runs inside javac, emits the facades and publishes the index |
-| Gradle adapter | plugin id `io.github.graphmaquina`, version `1.0.0` | the Gradle build integration |
-| Maven adapter | `io.github.graphmaquina:graphmaquina-maven-plugin:1.0.0` | the Maven build integration |
+| Runtime and annotations | `io.github.graphmaquina:graphmaquina-core:1.0.1-SNAPSHOT` | the engine, the markers, the symbol categories |
+| Generator | `io.github.graphmaquina:graphmaquina-codegen:1.0.1-SNAPSHOT` | pre-javac generation, run as a separate process by the adapters |
+| Annotation processor | `io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT` | runs inside javac, emits the facades and publishes the index |
+| Gradle adapter | plugin id `io.github.graphmaquina`, version `1.0.1-SNAPSHOT` | the Gradle build integration |
+| Maven adapter | `io.github.graphmaquina:graphmaquina-maven-plugin:1.0.1-SNAPSHOT` | the Maven build integration |
+
+Keep the runtime, generator, processor and adapter at the same `1.0.1-SNAPSHOT` version. The processor now
+emits `<Machine>Runtime` and `<Set>Runtime`; `Graph` and `Refs` retain their roles. Generated types normalize
+underscores and nesting dots to PascalCase, preserving internal case and acronyms. Update source references,
+regenerate and recompile affected modules; previously compiled `1.0.0` JARs do not gain the new names.
+See the [Runtime migration](typed-annotations-migration.md#current-migration-generated-runtime-names).
 
 Only `graphmaquina-core` is a dependency of the application. The generator and the processor are build-time only
 and never reach the runtime classpath.
 
 ## Preparing a Central release
+
+The development version is `1.0.1-SNAPSHOT`, not a new published release. Version `1.0.0` on Central is
+immutable; future publications use fresh `1.0.x` patch versions. Before preparing a release bundle,
+set the same release version in the convention plugin and separate Gradle plugin build.
 
 Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD` to its passphrase, then run:
 
@@ -46,10 +56,11 @@ key remain external requirements; these local structural checks do not replace P
 
 ## Where the artifacts come from
 
-**Version `1.0.0` is published to Maven Central under `io.github.graphmaquina`.**
-`mavenCentral()` resolves the runtime, generator and processor, and must also be added to
-`pluginManagement.repositories` for the Gradle plugin implementation and marker. Local installation below is
-optional, for development builds. See the [README](../README.md#configure-gradle) for release-only configuration.
+**Version `1.0.0` is published to Maven Central under `io.github.graphmaquina`; this branch targets unpublished
+`1.0.1-SNAPSHOT`.** The examples here require local installation or a configured internal snapshot repository
+for all components, including the Gradle implementation and marker. The private source repository requires
+authorized access; published `1.0.0` artifacts remain public and retain their original generated API.
+See the [README](../README.md#configure-gradle) for a complete snapshot consumer configuration.
 
 To test local changes, publish from an authorized checkout of this repository:
 
@@ -112,7 +123,7 @@ needed: `<repositories>` for `graphmaquina-core`, `<pluginRepositories>` for `gr
 ```kotlin
 plugins {
     java
-    id("io.github.graphmaquina") version "1.0.0"
+    id("io.github.graphmaquina") version "1.0.1-SNAPSHOT"
 }
 
 java {
@@ -120,12 +131,12 @@ java {
 }
 
 dependencies {
-    implementation("io.github.graphmaquina:graphmaquina-core:1.0.0")
+    implementation("io.github.graphmaquina:graphmaquina-core:1.0.1-SNAPSHOT")
 
     compileOnly("org.projectlombok:lombok:1.18.48")
     // Lombok first: the StateGraph processor reads the accessors Lombok generates on the entities.
     annotationProcessor("org.projectlombok:lombok:1.18.48")
-    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.0")
+    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT")
 }
 ```
 
@@ -215,7 +226,7 @@ The `graphmaquinaGenerator` configuration carries the generator's classpath. By 
 plugin's own version, so nothing needs to be declared. Two cases where it does:
 
 ```kotlin
-graphmaquina { generatorVersion = "1.0.0" }        // a generator other than the plugin's own version
+graphmaquina { generatorVersion = "1.0.1-SNAPSHOT" } // explicit override; keep all components aligned
 dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) }  // inside this repository
 ```
 
@@ -232,7 +243,7 @@ resolvable, which for a locally installed snapshot means nothing further to decl
 ```xml
 <properties>
   <java.version>21</java.version>
-  <graphmaquina.version>1.0.0</graphmaquina.version>
+  <graphmaquina.version>1.0.1-SNAPSHOT</graphmaquina.version>
 </properties>
 
 <dependencies>
@@ -388,6 +399,7 @@ to change:
 | `SG602` "…names no manifest at all" | javac ran without `-Agraphmaquina.annotationManifest=…`. In Maven, add the argument to that execution; in Gradle, the source set is not participating — declare `graphmaquina-processor` in its annotation-processor configuration. |
 | `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
 | `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host). The message names the type and the declaration. |
+| `SG603` | generated names collide after PascalCase normalization, such as `id` / `_id`. The diagnostic names both source declarations; rename the conflict and its references, then regenerate. |
 | `SG609` | a v0.2 string-based declaration is still there. See `typed-annotations-migration.md`. |
 | `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
 | "the StateGraph generator needs a Java 21 toolchain or later" | raise the Gradle toolchain to 21+, or point Maven's `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |

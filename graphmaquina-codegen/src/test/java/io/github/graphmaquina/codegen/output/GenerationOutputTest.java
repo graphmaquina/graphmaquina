@@ -12,6 +12,7 @@ import io.github.graphmaquina.codegen.StateGraphCodegen;
 import io.github.graphmaquina.codegen.ToolVersion;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
+import io.github.graphmaquina.codegen.manifest.OwnedOutputs;
 import io.github.graphmaquina.codegen.source.SourceFiles;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -91,7 +92,7 @@ class GenerationOutputTest {
                 manifest.processorInventory());
         assertTrue(manifest.ownedSources().contains("fx/DocsGraph.java"), manifest.ownedSources().toString());
         assertTrue(manifest.ownedSources().stream().anyMatch(
-                owned -> owned.startsWith("io/github/graphmaquina/generated/bootstrap/GraphCompilation_")),
+                owned -> owned.startsWith("io/github/graphmaquina/generated/bootstrap/GraphCompilation")),
                 manifest.ownedSources().toString());
         assertTrue(manifest.local().annotationTypes().contains("fx.DocsGraph.Rows"),
                 manifest.local().annotationTypes().toString());
@@ -129,6 +130,62 @@ class GenerationOutputTest {
         assertEquals(originalBefore, Files.readString(original, StandardCharsets.UTF_8));
         assertFalse(ManifestCodec.readCompile(request().workDirectory().resolve("annotation-manifest.json"))
                 .ownedSources().contains("fx/DocActionsRefs.java"));
+    }
+
+    @Test
+    void replacesPriorSpellingSourcesAndBytecodeUsingOnlyTheirInventories() throws IOException {
+        SourceFiles.write(sources(), Map.of("fx.Outer", """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphProperty;
+            public class Outer {
+                public static class Inner { @GraphProperty public String _id; }
+            }
+            """));
+        GenerationResult initial = StateGraphCodegen.generate(request());
+        CompileManifest current = ManifestCodec.readCompile(initial.annotationManifest());
+        String carrier = current.ownedSources().stream().filter(path -> path.contains("GraphCompilation"))
+            .findFirst().orElseThrow();
+        String oldCarrier = carrier.replace("GraphCompilation", "GraphCompilation_");
+        String oldCarrierType = oldCarrier.substring(oldCarrier.lastIndexOf('/') + 1).replace(".java", "");
+        for (Path generated : initial.generatedSources()) {
+            Files.delete(generated);
+        }
+        List<Path> oldFiles = SourceFiles.write(output(), Map.of(
+            "fx.Outer_InnerRefs", """
+                package fx;
+                public final class Outer_InnerRefs { public static final class __id {} }
+                """,
+            "io.github.graphmaquina.generated.bootstrap." + oldCarrierType,
+            "package io.github.graphmaquina.generated.bootstrap; public final class " + oldCarrierType + " {}",
+            "fx.Outer_InnerRefsManual", "package fx; public final class Outer_InnerRefsManual {}"));
+        SourceFiles.Compilation compiled = SourceFiles.compileStrict(oldFiles, request().classesOutput());
+        assertTrue(compiled.success(), () -> String.valueOf(compiled.messages()));
+        ManifestCodec.writeCompile(initial.annotationManifest(), new CompileManifest(current.schemaVersion(),
+            "1.0.0", current.local(), current.dependencies(), current.processorInventory(),
+            List.of("fx/Outer_InnerRefs.java", oldCarrier)));
+        ManifestCodec.writeOwned(request().workDirectory().resolve("owned-outputs.json"), new OwnedOutputs(1,
+            List.of("fx/Outer_InnerRefs.java", oldCarrier),
+            List.of("fx/Outer_InnerRefs.class", "fx/Outer_InnerRefs$__id.class"), List.of(),
+            List.of(oldCarrier.replace(".java", ".class"))));
+        Path manualSource = output().resolve("fx/Outer_InnerRefsManual.java");
+        Path manualClass = request().classesOutput().resolve("fx/Outer_InnerRefsManual.class");
+        String manualBefore = Files.readString(manualSource);
+        byte[] classBefore = Files.readAllBytes(manualClass);
+        String originalBefore = Files.readString(sources().resolve("fx/Outer.java"));
+
+        StateGraphCodegen.generate(request());
+        CompilationOutputs.prepare(request());
+
+        assertTrue(Files.isRegularFile(output().resolve("fx/OuterInnerRefs.java")));
+        assertTrue(Files.isRegularFile(output().resolve(carrier)));
+        assertFalse(Files.exists(output().resolve("fx/Outer_InnerRefs.java")));
+        assertFalse(Files.exists(output().resolve(oldCarrier)));
+        assertFalse(Files.exists(request().classesOutput().resolve("fx/Outer_InnerRefs.class")));
+        assertFalse(Files.exists(request().classesOutput().resolve("fx/Outer_InnerRefs$__id.class")));
+        assertFalse(Files.exists(request().classesOutput().resolve(oldCarrier.replace(".java", ".class"))));
+        assertEquals(manualBefore, Files.readString(manualSource));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(classBefore, Files.readAllBytes(manualClass));
+        assertEquals(originalBefore, Files.readString(sources().resolve("fx/Outer.java")));
     }
 
     @Test

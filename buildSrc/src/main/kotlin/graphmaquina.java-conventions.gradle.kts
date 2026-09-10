@@ -1,7 +1,7 @@
 plugins { `java-library` }
 
 group = "io.github.graphmaquina"
-version = "1.0.0"
+version = "1.0.1-SNAPSHOT"
 
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(21) }

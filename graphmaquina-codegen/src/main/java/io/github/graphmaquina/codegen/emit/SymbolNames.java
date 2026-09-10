@@ -33,34 +33,48 @@ public final class SymbolNames {
         return packageName.isEmpty() ? simpleName : packageName + '.' + simpleName;
     }
 
-    /**
-     * Returns the name a host's symbols are grouped under. {@code hostName} is the host's canonical name
-     * without its package, so a nested host joins its enclosing simple names with {@code _} and
-     * {@code Outer.Inner} becomes {@code Outer_Inner}. This is the name to pass as {@code hostSimpleName}.
-     */
+    /** Normalizes the host's name within its package, including any enclosing types, to PascalCase. */
     public static String hostName(String hostName) {
-        return hostName.replace('.', '_');
+        return normalize(hostName);
     }
 
-    /**
-     * Returns the simple name of the generated references container of {@code hostName}, the host's canonical
-     * name without its package. The container is a top-level type in the host's own package, so
-     * {@code Outer.Inner} is exported through {@code Outer_InnerRefs}.
-     */
+    /** The top-level references container for a host's name within its package. */
     public static String containerName(String hostName) {
         return hostName(hostName) + "Refs";
     }
 
+    /** The implementation type for a machine or set's name within its package. */
+    public static String runtimeName(String nameWithinPackage) {
+        return hostName(nameWithinPackage) + "Runtime";
+    }
+
     /**
-     * Returns the generated type name for {@code memberName} declared on {@code hostSimpleName}. The mapping is
-     * injective: a lower-case first letter is upper-cased, any other first letter (including an already
-     * upper-case one or an underscore) is prefixed with {@code _}, and the one name that would otherwise collide
-     * with the host's own generated references type ({@code <hostSimpleName>Refs}) is prefixed with {@code _sg_}.
+     * Normalizes a member name to PascalCase without inventing collision escapes. The declaration collector
+     * rejects members that normalize to the same symbol or to their references container.
      */
     public static String typeName(String hostSimpleName, String memberName) {
-        String candidate = memberName.charAt(0) >= 'a' && memberName.charAt(0) <= 'z'
-            ? Character.toUpperCase(memberName.charAt(0)) + memberName.substring(1)
-            : "_" + memberName;
-        return candidate.equals(hostSimpleName + "Refs") ? "_sg_" + candidate : candidate;
+        return normalize(memberName);
+    }
+
+    private static String normalize(String name) {
+        StringBuilder result = new StringBuilder();
+        boolean wordStart = true;
+        for (int offset = 0; offset < name.length();) {
+            int codePoint = name.codePointAt(offset);
+            offset += Character.charCount(codePoint);
+            if (codePoint == '_' || codePoint == '.') {
+                wordStart = true;
+            } else {
+                result.appendCodePoint(wordStart ? Character.toUpperCase(codePoint) : codePoint);
+                wordStart = false;
+            }
+        }
+        String normalized = result.toString();
+        if (!javax.lang.model.SourceVersion.isIdentifier(normalized)
+                || javax.lang.model.SourceVersion.isKeyword(normalized)) {
+            throw new IllegalArgumentException("the name '" + name
+                + "' does not normalize to a valid nonempty Java type identifier: '" + normalized + "'");
+        }
+        return normalized;
     }
 }

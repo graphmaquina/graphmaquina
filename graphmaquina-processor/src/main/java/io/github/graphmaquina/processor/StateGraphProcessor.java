@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.StateGraphs;
+import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
 import io.github.graphmaquina.processor.gen.BoundInvocation;
@@ -22,6 +23,7 @@ import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 
 /**
@@ -50,6 +52,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private Set<String> failed;
     private Set<String> generated;
     private Set<String> verified;
+    private final Map<String, TypeElement> runtimeOrigins = new LinkedHashMap<>();
 
     @Override
     public Set<String> getSupportedOptions() {
@@ -102,7 +105,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     @Override
     public boolean process(Set<? extends TypeElement> annotationTypes, RoundEnvironment round) {
         reportManifestFailure();
-        if (!validateExports()) {
+        if (!validateExports() || !validateRuntimeNames(round)) {
             return true;
         }
         failed.addAll(legacy.report(round));
@@ -118,6 +121,44 @@ public final class StateGraphProcessor extends AbstractProcessor {
         }
         publish(round);
         return true;
+    }
+
+    /** Reserve normalized runtime names before emitting any source in this round. */
+    private boolean validateRuntimeNames(RoundEnvironment round) {
+        Set<Element> declarations = new LinkedHashSet<>(round.getElementsAnnotatedWith(GenerateGraphApi.class));
+        declarations.addAll(round.getElementsAnnotatedWith(StateGraphs.class));
+        boolean valid = true;
+        for (Element declaration : declarations) {
+            TypeElement type = (TypeElement) declaration;
+            if (type.getNestingKind() != NestingKind.TOP_LEVEL) {
+                continue; // The model builder reports unsupported nested declarations as SG502.
+            }
+            String name;
+            try {
+                name = SymbolNames.qualified(processingEnv.getElementUtils().getPackageOf(type)
+                        .getQualifiedName().toString(), SymbolNames.runtimeName(type.getSimpleName().toString()));
+            } catch (IllegalArgumentException failure) {
+                diagnostics.error("SG603", failure.getMessage(), type);
+                valid = false;
+                continue;
+            }
+            TypeElement previous = runtimeOrigins.putIfAbsent(name, type);
+            if (previous != null) {
+                if (!previous.getQualifiedName().contentEquals(type.getQualifiedName())) {
+                    diagnostics.error("SG603", "the generated runtime " + name + " is claimed by both "
+                            + previous.getQualifiedName() + " and " + type.getQualifiedName(), type);
+                    valid = false;
+                }
+                continue;
+            }
+            TypeElement existing = processingEnv.getElementUtils().getTypeElement(name);
+            if (existing != null) {
+                diagnostics.error("SG603", "the generated runtime " + name + " for " + type.getQualifiedName()
+                        + " conflicts with existing type " + existing.getQualifiedName(), type);
+                valid = false;
+            }
+        }
+        return valid;
     }
 
     /** A manifest the registry refused is reported once: init has no round to anchor a diagnostic at. */

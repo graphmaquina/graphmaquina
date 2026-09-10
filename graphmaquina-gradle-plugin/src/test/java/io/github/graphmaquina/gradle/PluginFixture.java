@@ -36,7 +36,7 @@ import java.util.zip.ZipOutputStream;
 public final class PluginFixture {
 
     /** The version every StateGraph artifact of the fixture repository is published under. */
-    private static final String VERSION = "1.0.0";
+    private static final String VERSION = "1.0.1-SNAPSHOT";
 
     /** The Lombok version the entity's accessors are generated with; declared before the StateGraph processor. */
     private static final String LOMBOK = "1.18.48";

@@ -96,6 +96,28 @@ public final class ExportDeclarations {
         for (Map.Entry<String, Declaration> property : properties.entrySet()) {
             exported.add(property(host, property.getKey(), property.getValue()));
         }
+        if (exported.isEmpty()) {
+            return exported;
+        }
+        Map<String, SymbolDescriptor> names = new LinkedHashMap<>();
+        String container = container(host);
+        String simpleContainer = container.substring(container.lastIndexOf('.') + 1);
+        for (SymbolDescriptor symbol : exported) {
+            String simpleName = symbol.qualifiedName().substring(symbol.qualifiedName().lastIndexOf('.') + 1);
+            if (simpleName.equals(simpleContainer)) {
+                throw new CodegenException(COLLISION, "the member " + symbol.member() + " of "
+                    + host.canonicalName() + " at " + at(symbol.origin()) + " normalizes to its own references "
+                    + "container " + container + " generated for " + host.canonicalName() + " at "
+                    + at(origin(host)), symbol.origin());
+            }
+            SymbolDescriptor previous = names.putIfAbsent(symbol.qualifiedName(), symbol);
+            if (previous != null) {
+                throw new CodegenException(COLLISION, "the generated symbol " + symbol.qualifiedName()
+                    + " is claimed by " + previous.host() + '#' + previous.member() + " at "
+                    + at(previous.origin()) + " and " + symbol.host() + '#' + symbol.member() + " at "
+                    + at(symbol.origin()), symbol.origin());
+            }
+        }
         return exported;
     }
 
@@ -178,7 +200,7 @@ public final class ExportDeclarations {
             candidates.add(candidate(index, host, declaration));
             kinds.add(declaration.role());
         }
-        return new SymbolDescriptor(qualifiedName(host, member), host.canonicalName(), member, kinds,
+        return new SymbolDescriptor(qualifiedName(host, member, candidates.get(0).origin()), host.canonicalName(), member, kinds,
                 candidates, Optional.empty(), candidates.get(0).origin());
     }
 
@@ -208,7 +230,7 @@ public final class ExportDeclarations {
      */
     private static SymbolDescriptor property(TypeHeader host, String logicalName, Declaration declaration) {
         SourceLocation origin = declaration.member().origin().orElseGet(() -> origin(host));
-        return new SymbolDescriptor(qualifiedName(host, logicalName), host.canonicalName(), logicalName,
+        return new SymbolDescriptor(qualifiedName(host, logicalName, origin), host.canonicalName(), logicalName,
                 Set.of(SymbolKind.PROPERTY), List.of(),
                 Optional.of(new PropertyDescriptor(declaration.declaring().canonicalName(), logicalName,
                         declaration.member().name(), isGetter(declaration), origin)),
@@ -225,16 +247,26 @@ public final class ExportDeclarations {
         return declaration.member().kind() == ElementKind.METHOD;
     }
 
-    private static String qualifiedName(TypeHeader host, String member) {
-        return container(host) + '.'
-                + SymbolNames.typeName(SymbolNames.hostName(hostName(host)), member);
+    private static String qualifiedName(TypeHeader host, String member, SourceLocation memberOrigin) {
+        String container = container(host);
+        try {
+            return container + '.' + SymbolNames.typeName(SymbolNames.hostName(hostName(host)), member);
+        } catch (IllegalArgumentException invalid) {
+            throw new CodegenException(COLLISION, "the member " + member + " of " + host.canonicalName()
+                + ": " + invalid.getMessage(), memberOrigin);
+        }
     }
 
     /** The canonical name of the references container of {@code host}, a top-level type of its package. */
     private static String container(TypeHeader host) {
         String packageName = host.scope().packageName();
-        String container = SymbolNames.containerName(hostName(host));
-        return packageName.isEmpty() ? container : packageName + '.' + container;
+        try {
+            String container = SymbolNames.containerName(hostName(host));
+            return SymbolNames.qualified(packageName, container);
+        } catch (IllegalArgumentException invalid) {
+            throw new CodegenException(COLLISION, "the host " + host.canonicalName() + ": "
+                + invalid.getMessage(), origin(host));
+        }
     }
 
     /** The canonical name of {@code host} without its package, which for a nested host is still dotted. */

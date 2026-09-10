@@ -4,7 +4,7 @@ plugins {
     signing
 }
 group = "io.github.graphmaquina"
-version = "1.0.0"
+version = "1.0.1-SNAPSHOT"
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(21) }
     // Central rejects a release without a sources and a javadoc jar beside the binary.

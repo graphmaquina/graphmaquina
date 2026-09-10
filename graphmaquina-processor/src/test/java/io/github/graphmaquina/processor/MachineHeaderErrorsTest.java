@@ -56,8 +56,8 @@ class MachineHeaderErrorsTest {
                 + Fixtures.DOCS_BODY.replace("@DocsGraph.", "@Holder_DocsGraph.") + "}\n}\n");
         Compilation.Result result = Compilation.compileTyped(nested);
         assertTrue(result.hasError("SG502"), result.describe());
-        assertFalse(result.hasGenerated("fx.Holder.Docs_"), result.describe());
-        assertFalse(result.hasGenerated("fx.Docs_"), result.describe());
+        assertFalse(result.hasGenerated("fx.Holder.DocsRuntime"), result.describe());
+        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 
     /** A property symbol exists, but the accessors it names cannot read or write what the use requires. */

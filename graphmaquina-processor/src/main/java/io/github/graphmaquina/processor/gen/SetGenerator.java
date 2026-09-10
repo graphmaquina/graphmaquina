@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor.gen;
 
+import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.processor.model.MachineAccessor;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.SetModel;
@@ -10,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.lang.model.element.TypeElement;
 
-/** Emits {@code <Set>_}: a builder that assembles the registry from the machines' companions and hands out the facades. */
+/** Emits {@code <Set>Runtime}: a builder that assembles the registry from the machines' companions and hands out the facades. */
 public final class SetGenerator {
 
     private static final String MACHINE = "io.github.graphmaquina.api.Machine";
@@ -30,12 +31,12 @@ public final class SetGenerator {
     private SetGenerator() { }
 
     public static String qualifiedName(SetModel model) {
-        return model.packageName() + "." + model.setName() + "_";
+        return SymbolNames.qualified(model.packageName(), SymbolNames.runtimeName(model.setName()));
     }
 
     public static String generate(SetModel model) {
         String set = model.setName();
-        String companion = set + "_";
+        String companion = SymbolNames.runtimeName(set);
         boolean async = model.hasAsync();
         Names names = new Names(model.packageName(), types(model));
         Map<String, String> parameterNames = MachineGenerator.parameterNames(model.dependencies(), reserved(model));
@@ -185,7 +186,7 @@ public final class SetGenerator {
         out.line("maxCascadeDepth.ifPresent(registry::maxCascadeDepth);");
         out.line("maxWatchChain.ifPresent(registry::maxWatchChain);");
         out.line("listener.ifPresent(registry::listener);");
-        out.line("return new " + set + "_(registry.build());");
+        out.line("return new " + SymbolNames.runtimeName(set) + "(registry.build());");
         out.close();
         out.close();
     }

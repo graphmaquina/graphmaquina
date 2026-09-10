@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.emit;
 
+import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import java.util.List;
@@ -34,8 +35,17 @@ final class MachineVocabularyEmitter {
 
     /** The canonical name of the vocabulary class generated for {@code graph}, in the facade's own package. */
     static String vocabularyName(GraphDescriptor graph) {
-        return SymbolNames.qualified(graph.packageName(),
-            SymbolNames.hostName(SymbolNames.nameWithin(graph.packageName(), graph.facade())) + "Graph");
+        return SymbolNames.qualified(graph.packageName(), hostName(graph) + "Graph");
+    }
+
+    /** The normalized host name, with invalid spellings anchored to their machine declaration. */
+    static String hostName(GraphDescriptor graph) {
+        try {
+            return SymbolNames.hostName(SymbolNames.nameWithin(graph.packageName(), graph.facade()));
+        } catch (IllegalArgumentException invalid) {
+            throw new CodegenException("SG603", "the machine " + graph.facade() + ": "
+                + invalid.getMessage(), graph.origin());
+        }
     }
 
     /** The canonical names of every annotation the vocabulary of {@code graph} declares, in declaration order. */

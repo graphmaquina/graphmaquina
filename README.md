@@ -9,10 +9,12 @@ GraphMaquina combines a pre-compilation code generator, a javac annotation proce
 Your application calls a generated, typed facade. Actions, guards, hooks, properties and watched states are
 bound through Java symbols rather than string names.
 
-**Current release: `1.0.0`, published to Maven Central under `io.github.graphmaquina`.**
-Use the Gradle or Maven configuration below; cloning this repository and installing artifacts locally are
-not required to consume the release. The source repository is temporarily private while maintainer testing
-continues. Published Maven Central artifacts, including source JARs, remain public.
+**Published release: `1.0.0`, available from Maven Central under `io.github.graphmaquina`.**
+**This branch and the examples below target unpublished `1.0.1-SNAPSHOT`.** They use the new generated
+`Runtime` names and require [local installation](#install-the-library-locally) or a configured internal
+snapshot repository. The immutable `1.0.0` artifacts retain their original generated names; they do not
+provide this new API. The source repository remains private. Published Maven Central artifacts, including
+source JARs, remain public.
 
 The project was previously named StateGraph. Some public Java names, such as `@StateGraphs`, and Gradle task
 names retain `StateGraph`; use the exact names documented here.
@@ -87,11 +89,11 @@ The build and runtime have separate jobs:
 
 | Module | Coordinates / plugin ID | Add it to |
 | --- | --- | --- |
-| Runtime and public annotations | `io.github.graphmaquina:graphmaquina-core:1.0.0` | Application dependencies |
-| Pre-compilation generator | `io.github.graphmaquina:graphmaquina-codegen:1.0.0` | Build tooling; resolved by the adapter |
-| Annotation processor | `io.github.graphmaquina:graphmaquina-processor:1.0.0` | javac annotation-processor path |
-| Gradle plugin | `io.github.graphmaquina`, version `1.0.0` | Gradle `plugins` block |
-| Maven plugin | `io.github.graphmaquina:graphmaquina-maven-plugin:1.0.0` | Maven build plugins |
+| Runtime and public annotations | `io.github.graphmaquina:graphmaquina-core:1.0.1-SNAPSHOT` | Application dependencies |
+| Pre-compilation generator | `io.github.graphmaquina:graphmaquina-codegen:1.0.1-SNAPSHOT` | Build tooling; resolved by the adapter |
+| Annotation processor | `io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT` | javac annotation-processor path |
+| Gradle plugin | `io.github.graphmaquina`, version `1.0.1-SNAPSHOT` | Gradle `plugins` block |
+| Maven plugin | `io.github.graphmaquina:graphmaquina-maven-plugin:1.0.1-SNAPSHOT` | Maven build plugins |
 | Reference application | `graphmaquina-example` | Source and tests in this repository; not an application dependency |
 
 The generator and processor are build-time tools. Do not add them as application runtime dependencies.
@@ -101,6 +103,8 @@ Application imports begin with `io.github.graphmaquina`.
 
 GraphMaquina `1.0.0` is available from Maven Central. The namespace `io.github.graphmaquina` is verified.
 The release contains the runtime, generator, processor, Maven plugin, Gradle plugin and Gradle plugin marker.
+The following evidence is from the **2026-09-09 verification of published `1.0.0`**, not a verification
+result for `1.0.1-SNAPSHOT` or the revised quickstart below.
 
 | Check | Verified result |
 | --- | --- |
@@ -108,7 +112,7 @@ The release contains the runtime, generator, processor, Maven plugin, Gradle plu
 | Binary integrity | All five downloaded JARs match the SHA-256 hashes of the verified release bundle. |
 | Release signatures | All 26 detached signatures were verified with the public key retrieved from the keyserver. |
 | Automated library/build suites | 444 tests, with no failures, errors or skipped tests in the release verification run. |
-| Published-release quickstart | The examples below compile and run with Gradle using Central without `mavenLocal()`, and with Maven using an initially empty local repository. Both report `All ticket scenarios passed.` |
+| Published-release quickstart | The `1.0.0` quickstart at release verification compiled and ran with Gradle using Central without `mavenLocal()`, and with Maven using an initially empty local repository. Both reported `All ticket scenarios passed.` |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
 
 Browse the [published artifacts](https://repo.maven.apache.org/maven2/io/github/graphmaquina/) or the
@@ -130,9 +134,10 @@ for verification commands and maintainer setup. Publishing a release does not re
 
 ## Install the library locally
 
-Local installation is optional and intended for testing changes to GraphMaquina itself. Released consumers
-can skip to [Configure Gradle](#configure-gradle) or [Configure Maven](#configure-maven). While the repository
-is private, cloning requires authorized GitHub access. Run these commands in a checkout of GraphMaquina:
+Install this branch locally before running the `1.0.1-SNAPSHOT` examples, unless your build already resolves
+that version from an internal snapshot repository. Consumers of published `1.0.0` need no local installation,
+but must use its original generated API. Cloning the private repository requires authorized GitHub access.
+Run these commands in a checkout of this branch:
 
 ```bash
 git clone https://github.com/graphmaquina/graphmaquina.git
@@ -149,7 +154,7 @@ java -version
 ```
 
 The last command publishes both the Gradle plugin implementation and its plugin marker from the separate
-included build. Both are needed for `id("io.github.graphmaquina") version "1.0.0"` to resolve.
+included build. Both are needed for `id("io.github.graphmaquina") version "1.0.1-SNAPSHOT"` to resolve.
 
 On Windows, use `gradlew.bat` and the line-continuation syntax of your shell. The multi-line shell examples in
 this guide use a POSIX shell.
@@ -170,6 +175,7 @@ separate application directory, `tickets-demo`, and put these files at its root.
 ```kotlin
 pluginManagement {
     repositories {
+        mavenLocal() // locally installed 1.0.1-SNAPSHOT
         mavenCentral()
         gradlePluginPortal()
     }
@@ -177,6 +183,7 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
+        mavenLocal() // locally installed 1.0.1-SNAPSHOT
         mavenCentral()
     }
 }
@@ -184,9 +191,10 @@ dependencyResolutionManagement {
 rootProject.name = "tickets-demo"
 ```
 
-Keep `mavenCentral()` inside both repository blocks: the plugin implementation and marker are published to
-Central, along with the runtime and build tools. `gradlePluginPortal()` is included for other plugins; this
-guide does not require a separate GraphMaquina publication to the Gradle Plugin Portal.
+Both repository blocks need `mavenLocal()` for this branch's locally installed snapshot, or the URL of your
+internal snapshot repository. Keep `mavenCentral()` for released dependencies; it serves GraphMaquina
+`1.0.0`, not this snapshot. `gradlePluginPortal()` is included for other plugins; this guide does not require
+a separate GraphMaquina publication to the Gradle Plugin Portal.
 
 ### build.gradle.kts
 
@@ -194,7 +202,7 @@ guide does not require a separate GraphMaquina publication to the Gradle Plugin 
 plugins {
     java
     application
-    id("io.github.graphmaquina") version "1.0.0"
+    id("io.github.graphmaquina") version "1.0.1-SNAPSHOT"
 }
 
 group = "com.example"
@@ -207,8 +215,8 @@ java {
 }
 
 dependencies {
-    implementation("io.github.graphmaquina:graphmaquina-core:1.0.0")
-    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.0")
+    implementation("io.github.graphmaquina:graphmaquina-core:1.0.1-SNAPSHOT")
+    annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT")
 }
 
 application {
@@ -241,7 +249,7 @@ Add these dependency declarations **before** the GraphMaquina processor declarat
 ```kotlin
 compileOnly("org.projectlombok:lombok:1.18.48")
 annotationProcessor("org.projectlombok:lombok:1.18.48")
-annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.0")
+annotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT")
 ```
 
 Do not duplicate the GraphMaquina entry already present in the build. Lombok supplies accessors; it does not
@@ -257,7 +265,7 @@ For graph declarations under `src/test/java`, add:
 
 ```kotlin
 dependencies {
-    testAnnotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.0")
+    testAnnotationProcessor("io.github.graphmaquina:graphmaquina-processor:1.0.1-SNAPSHOT")
 }
 ```
 
@@ -274,7 +282,7 @@ The plugin resolves the generator version matching its own version. Advanced ove
 
 ```kotlin
 graphmaquina {
-    generatorVersion.set("1.0.0")
+    generatorVersion.set("1.0.1-SNAPSHOT")
 }
 ```
 
@@ -285,6 +293,8 @@ this to run the sibling codegen project. Version mixing is not a migration mecha
 
 This is a complete alternative build for the same ticket source files. Save it as `pom.xml` in
 `tickets-demo`. It includes **all six lifecycle executions** and distinct main/test manifest arguments.
+Install `1.0.1-SNAPSHOT` locally first, or configure both dependency and plugin repositories for your
+internal snapshot repository as shown in [the build guide](docs/typed-annotations-build.md#where-the-artifacts-come-from).
 
 ### pom.xml
 
@@ -301,7 +311,7 @@ This is a complete alternative build for the same ticket source files. Save it a
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
-    <graphmaquina.version>1.0.0</graphmaquina.version>
+    <graphmaquina.version>1.0.1-SNAPSHOT</graphmaquina.version>
   </properties>
 
   <dependencies>
@@ -404,7 +414,7 @@ To run the quickstart after Maven has resolved the library and compiled the appl
 application classes and core JAR on the classpath:
 
 ```bash
-java -cp "target/classes:$HOME/.m2/repository/io/github/graphmaquina/graphmaquina-core/1.0.0/graphmaquina-core-1.0.0.jar" \
+java -cp "target/classes:$HOME/.m2/repository/io/github/graphmaquina/graphmaquina-core/1.0.1-SNAPSHOT/graphmaquina-core-1.0.1-SNAPSHOT.jar" \
      com.example.tickets.App
 ```
 
@@ -583,8 +593,8 @@ public interface TicketMachines extends Machines {
 }
 ```
 
-The processor generates `Tickets_` and `TicketMachines_`. The set owns the runtime machines and closes their
-default executors together.
+The processor generates `TicketsRuntime` and `TicketMachinesRuntime`. The set owns the runtime machines
+and closes their default executors together.
 
 ### App.java
 
@@ -597,7 +607,7 @@ public final class App {
     private App() { }
 
     public static void main(String[] args) {
-        try (TicketMachines machines = TicketMachines_.builder(new TicketActions()).build()) {
+        try (TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions()).build()) {
             Tickets tickets = machines.tickets();
 
             Ticket accepted = new Ticket("T-1", "Document the workflow", true);
@@ -733,13 +743,16 @@ symbol from the graph declaration.
 | Property `Ticket.status` | `TicketRefs.Status.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch` and `OrdersItems.When`, in the owner's package |
-| Machine `Tickets` | `Tickets_`, including `KEY`, graph construction and facade implementation |
-| Set `TicketMachines` | `TicketMachines_`, including the generated builder |
+| Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction and facade implementation |
+| Set `TicketMachines` | `TicketMachinesRuntime`, including the generated builder |
 
-These are conventional examples. A leading lowercase letter becomes uppercase (`charge` → `Charge`);
-other leading characters get an underscore (`URL` → `_URL`, `_id` → `__id`). A name colliding with its own
-container gets an `_sg_` prefix, and nested hosts join enclosing names with underscores (`Outer.Inner` →
-`Outer_InnerRefs`). Use the generated source or IDE completion instead of guessing escaped spellings.
+Generated type names use PascalCase with no underscores. Underscores and nesting dots separate words:
+`_id` → `Id`, `has_title` → `HasTitle`, and `Outer.Inner` → `OuterInnerRefs`. Existing internal case and
+uppercase acronyms are preserved: `hasTitle` → `HasTitle`, `URL` → `URL`. `Graph` and `Refs` retain their roles.
+Original Java declarations and invocation names remain unchanged. If normalization merges two names, generation
+fails with `SG603` naming both sources: `id` / `_id` and `authorize` / `Authorize` conflict within one references
+container. A conflict with the container itself also fails; there are no underscore escapes or opaque suffixes.
+Names that cannot produce a valid nonempty Java identifier are rejected.
 See [symbol naming](docs/typed-annotations-migration.md#7-how-generated-symbols-are-named).
 
 A generated symbol is a compile-time reference. It is not an action instance, a dependency-injection bean or
@@ -959,7 +972,7 @@ A generated set containing asynchronous bindings requires a default `Duration` a
 For the shop:
 
 ```java
-ShopMachines shop = ShopMachines_.builder(
+ShopMachines shop = ShopMachinesRuntime.builder(
         Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
         .asyncTimeout(Orders.class, Duration.ofSeconds(8))
         .build();
@@ -1138,7 +1151,7 @@ Replace the built-in rule with
 With this replacement in the reference shop, the generated builder becomes:
 
 ```java
-ShopMachines shop = ShopMachines_.builder(
+ShopMachines shop = ShopMachinesRuntime.builder(
         Duration.ofSeconds(10), new OrderConditions(), new OrderActions(gateway, carrier), new ItemActions())
         .build();
 ```
@@ -1208,7 +1221,7 @@ writes its final destination once, while hooks still follow committed hop order.
 A listener receives each completed outcome, including ignored and rejected operations. With the ticket set:
 
 ```java
-TicketMachines machines = TicketMachines_.builder(new TicketActions())
+TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
         .listener((key, outcome) -> System.out.println(
                 key.entity().getSimpleName() + ": " + outcome.getClass().getSimpleName()
                         + " -> " + outcome.current()))
@@ -1294,7 +1307,7 @@ This is a fragment: put the imports at file scope and the statements inside a me
 `TRANSITABLE`, showing action and move edges; `FULL` includes stay and forbid cells. Export does not run
 transitions or evaluate guards.
 
-You can also build a definition directly through `Tickets_.graph(new TicketActions())` without constructing a
+You can also build a definition directly through `TicketsRuntime.graph(new TicketActions())` without constructing a
 running set.
 
 [The illustrated ticket workflow](docs/images/ticket-workflow.svg) summarizes the moving edges and failure
@@ -1339,7 +1352,7 @@ import org.junit.jupiter.api.Test;
 class TicketsTest {
     @Test
     void aDomainFailureCommitsItsDeclaredFailureState() {
-        try (TicketMachines machines = TicketMachines_.builder(new TicketActions()).build()) {
+        try (TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions()).build()) {
             Ticket ticket = new Ticket("T-5", "Declined approval", false);
             assertInstanceOf(Outcome.Applied.class, machines.tickets().start(ticket));
             Outcome<Ticket, TicketStatus> result = machines.tickets().complete(ticket);
@@ -1554,7 +1567,7 @@ symbol category may be an ordinary javac error rather than an `SG` diagnostic.
 | --- | --- |
 | `SG601` | Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. Check source and dependency types. |
 | `SG602` | Manifest/index is missing, incompatible or stale. Run the full generation/compilation lifecycle with aligned versions. |
-| `SG603` | Generated output or export collision. Remove the naming conflict; do not overwrite an unowned file. |
+| `SG603` | Generated output or export collision, including names that normalize to the same PascalCase spelling. The diagnostic names both conflicting sources; rename a declaration and its references. |
 | `SG604` | Invalid or contradictory export/role. Check markers and exported signatures. |
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |
 | `SG606` | Graph or watch vocabulary belongs to another machine/pair. |
@@ -1607,7 +1620,18 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 
 ## Migration from StateGraph
 
-For existing consumers, update both build coordinates and source imports:
+This branch introduces source-incompatible generated naming in `1.0.1-SNAPSHOT`. Future publications will
+remain in the `1.0.x` patch series by project policy; that numbering does not imply source or binary
+compatibility for generated API renames. Published `1.0.0` is immutable and keeps its old API.
+
+To migrate from `1.0.0`, update references such as `Tickets_` → `TicketsRuntime`, `TicketMachines_` →
+`TicketMachinesRuntime` and `ShopMachines_` → `ShopMachinesRuntime`, along with normalized `Refs` names.
+Use matching `1.0.1-SNAPSHOT` runtime, generator, processor and adapter versions, regenerate and recompile
+all affected application and library modules. Existing `1.0.0` binaries do not acquire `Runtime` classes
+by upgrading the runtime dependency. The build lifecycle retires owned obsolete generated sources and
+bytecode; resolve `SG603` collisions in handwritten declarations before recompiling.
+
+For earlier StateGraph consumers, also update build coordinates and source imports:
 
 | Old naming / declaration | Current form |
 | --- | --- |
@@ -1626,7 +1650,8 @@ with `SG609`; they are not a compatibility mode. Do not rename retained Java API
 `Machine`, `@StateGraphs` or `io.github.graphmaquina.dsl.StateGraph` by guesswork.
 
 The [detailed migration guide](docs/typed-annotations-migration.md) preserves the historical v0.2 → typed-v0.3
-transition, with before/after declarations. This README describes the current `1.0.0` coordinates and workflow.
+transition, with before/after declarations, and explains the current Runtime naming migration. This README
+describes the development `1.0.1-SNAPSHOT` coordinates and workflow.
 
 ## Known limitations
 
@@ -1648,27 +1673,36 @@ These commands run from the **GraphMaquina checkout**, not the ticket applicatio
 
 ```bash
 ./gradlew --no-daemon build
+./gradlew :graphmaquina-core:publishMavenPublicationToAdapterTestsRepository \
+          :graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository \
+          :graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository
 ./gradlew --no-daemon test :graphmaquina-gradle-plugin:test
 ./gradlew :graphmaquina-example:test
 ./gradlew :graphmaquina-codegen:test :graphmaquina-processor:test
 ./gradlew :graphmaquina-maven-plugin:test
 ```
 
-The second command explicitly includes the Gradle adapter's TestKit suite. Its plugin is a separate included
+Stage the sibling artifacts before running the Gradle adapter's TestKit suite, especially in a fresh checkout
+or after changing versions. This uses a file repository under `build/adapter-test-repository`.
+The combined `test` command explicitly includes that suite. Its plugin is a separate included
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-The [2026-09-09 audit](docs/audit-fixes-verification.md) recorded **444 tests with no failures, errors or skipped
-tests** across the six suites. That is a dated verification result, not a promise that every future checkout
-has the same count. Test reports are under each module's `build/reports/tests/test`.
+The [2026-09-09 audit](docs/audit-fixes-verification.md) for `1.0.0` recorded **444 tests with no failures,
+errors or skipped tests** across the six suites. That is a dated verification result, not a promise that every future checkout
+has the same count. The [Runtime naming verification](docs/runtime-naming-verification.md) for
+`1.0.1-SNAPSHOT` records **459 passing tests** and both README quickstarts executed with strict lint.
+Test reports are under each module's `build/reports/tests/test`.
 
 ### Prepare a Maven Central bundle
 
 Release preparation is a maintainer operation. Version `1.0.0` is already published and cannot be replaced
-or deleted from Maven Central. For a new release, update the version consistently in the convention plugin
-and the separate Gradle plugin build before creating a bundle. Configure `SIGNING_KEY` with the project's
-ASCII-armored private release key and `SIGNING_PASSWORD` with its passphrase through your release
-environment. Then run:
+or deleted from Maven Central. Development is `1.0.1-SNAPSHOT`; all future publications stay in the `1.0.x`
+patch series. A new release must use a fresh patch version, consistently set in the convention plugin,
+the separate Gradle plugin build, `StateGraphPlugin.PLUGIN_VERSION`, and adapter fixture version constants
+before creating a bundle. This branch does not publish a new release.
+Configure `SIGNING_KEY` with the project's ASCII-armored private release key and `SIGNING_PASSWORD` with
+its passphrase through your release environment. Then run:
 
 ```bash
 ./gradlew --no-daemon centralBundle

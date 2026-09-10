@@ -3,6 +3,7 @@ package io.github.graphmaquina.codegen.source;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.CodegenException;
@@ -252,7 +253,7 @@ class ExportDeclarationsTest {
                     }
                     """));
 
-        assertEquals(List.of("fx.OrderRefs._URL"),
+        assertEquals(List.of("fx.OrderRefs.URL"),
                 symbols.stream().map(SymbolDescriptor::qualifiedName).toList());
         SymbolDescriptor url = symbols.get(0);
         assertEquals("URL", url.member());
@@ -392,10 +393,99 @@ class ExportDeclarationsTest {
                     """)));
 
         assertEquals("SG603", failure.code());
-        assertEquals("the references container fx.Outer_InnerRefs is generated for both fx.Outer.Inner at "
+        assertEquals("the references container fx.OuterInnerRefs is generated for both fx.Outer.Inner at "
                 + Path.of("fx", "Outer.java") + ":4 and fx.Outer_Inner at "
                 + Path.of("fx", "Outer_Inner.java") + ":3", failure.getMessage());
         assertEquals(Path.of("fx", "Outer.java").toString(), failure.location().orElseThrow().path());
+    }
+
+    @Test
+    void rejectsAFlatHostThatNormalizesToTheSameNameAsANestedHost() {
+        CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of(
+            "fx.Outer", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                public class Outer {
+                    public static class Inner { @GraphAction public void run() {} }
+                }
+                """,
+            "fx.OuterInner", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                public class OuterInner { @GraphAction public void run() {} }
+                """)));
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("fx.Outer.Inner"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("fx.OuterInner"), failure.getMessage());
+        assertEquals("fx/Outer.java", failure.location().orElseThrow().path());
+    }
+
+    @Test
+    void rejectsNormalizedMemberCollisionsAtTheirDeclarations() {
+        for (String[] names : List.of(new String[] {"id", "_id"},
+                new String[] {"charge", "Charge"})) {
+            CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of(
+                "fx.Host", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphAction;
+                    public class Host {
+                        @GraphAction public void %s() {}
+                        @GraphAction public void %s() {}
+                    }
+                    """.formatted(names[0], names[1]))));
+            assertEquals("SG603", failure.code());
+            assertTrue(failure.getMessage().contains(names[0]), failure.getMessage());
+            assertTrue(failure.getMessage().contains(names[1]), failure.getMessage());
+            assertTrue(failure.getMessage().contains("Host.java:4"), failure.getMessage());
+            assertTrue(failure.getMessage().contains("Host.java:5"), failure.getMessage());
+            assertEquals(5L, failure.location().orElseThrow().line());
+        }
+    }
+
+    @Test
+    void rejectsAMemberThatNormalizesToItsOwnContainer() {
+        CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of(
+            "fx.Host", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                public class Host {
+                    @GraphAction public void host_refs() {}
+                }
+                """)));
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("HostRefs"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("host_refs"), failure.getMessage());
+        assertEquals(4L, failure.location().orElseThrow().line());
+    }
+
+    @Test
+    void doesNotNormalizeTypesThatExportNothing() {
+        assertEquals(List.of(), collect(Map.of("fx.___", "package fx; public class ___ {}")));
+    }
+
+    @Test
+    void rejectsInvalidNormalizedMembersAndHostsWithSourceDiagnostics() {
+        for (String member : List.of("___", "_1id")) {
+            CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of(
+                "fx.Host", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphAction;
+                    public class Host {
+                        @GraphAction public void %s() {}
+                    }
+                    """.formatted(member))));
+            assertEquals("SG603", failure.code());
+            assertEquals(4L, failure.location().orElseThrow().line());
+            assertTrue(failure.getMessage().contains(member), failure.getMessage());
+        }
+        CodegenException hostFailure = assertThrows(CodegenException.class, () -> collect(Map.of(
+            "fx.___", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                public class ___ { @GraphAction public void run() {} }
+                """)));
+        assertEquals("SG603", hostFailure.code());
+        assertEquals(3L, hostFailure.location().orElseThrow().line());
     }
 
     @Test

@@ -167,7 +167,7 @@ class WatchVocabularyTest {
 
         assertEquals(1, emitted.size(), () -> String.valueOf(emitted));
         GeneratedSource carrier = emitted.get(0);
-        assertTrue(carrier.qualifiedName().startsWith("io.github.graphmaquina.generated.bootstrap.GraphCompilation_"),
+        assertTrue(carrier.qualifiedName().startsWith("io.github.graphmaquina.generated.bootstrap.GraphCompilation"),
                 carrier.qualifiedName());
         assertTrue(carrier.content().contains("@GraphCompilation(\"io.github.graphmaquina:empty:main\")"),
                 carrier.content());

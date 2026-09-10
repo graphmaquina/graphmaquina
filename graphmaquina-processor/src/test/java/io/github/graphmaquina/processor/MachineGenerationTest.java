@@ -26,9 +26,9 @@ class MachineGenerationTest {
     void generatesTheCompanionWithGraphFacadeAndKey() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.validDocs());
         assertTrue(result.success(), result.describe());
-        assertTrue(result.hasGenerated("fx.Docs_"), result.describe());
-        String source = result.generated("fx.Docs_");
-        assertTrue(source.contains("public final class Docs_ implements Docs"), source);
+        assertTrue(result.hasGenerated("fx.DocsRuntime"), result.describe());
+        String source = result.generated("fx.DocsRuntime");
+        assertTrue(source.contains("public final class DocsRuntime implements Docs"), source);
         assertTrue(source.contains("public static GraphDefinition<Doc, DocStatus> graph(DocActions docActions)"), source);
         assertTrue(source.contains(".to(DocStatus.PUBLISHED).action(\"publish\", (context) -> docActions.publish(context))"), source);
         assertTrue(source.contains(".guard(\"approved\", (context) -> docActions.approved(context))"), source);
@@ -48,12 +48,12 @@ class MachineGenerationTest {
                         + "@DocsGraph.Forbid(from = DRAFT, to = ARCHIVED, reason = \"never\")\n",
                 Fixtures.DOCS_BODY.replace("guards = DocActionsRefs.Approved.class", "guards = DocActionsRefs.Ready.class")));
         assertTrue(result.success(), result.describe());
-        String source = result.generated("fx.Docs_");
+        String source = result.generated("fx.DocsRuntime");
         assertTrue(source.contains(".guard(\"ready\", (context) -> DocActions.ready(context))"), source);
         assertTrue(source.contains(".to(DocStatus.ARCHIVED).forbid(\"never\")"), source);
         assertTrue(source.contains(".watches(MachineKey.of(Page.class, PageStatus.class), (Doc doc) -> doc.getPages(), (Page page) -> page.doc())"), source);
         assertTrue(source.contains(".when(WatchCondition.allIn(PageStatus.DONE)).goTo(DocStatus.PUBLISHED)"), source);
-        assertTrue(result.hasGenerated("fx.Pages_"), result.describe());
+        assertTrue(result.hasGenerated("fx.PagesRuntime"), result.describe());
     }
 
     @Test
@@ -62,7 +62,7 @@ class MachineGenerationTest {
             Compilation.Result result = Compilation.compileTyped(watched(entity));
 
             assertTrue(result.success(), result.describe());
-            String source = result.generated("fx.Mains_");
+            String source = result.generated("fx.MainsRuntime");
             assertTrue(source.contains(".when(\"ready\", (" + parameters(entity) + ") -> rules.ready("
                     + parameters(entity) + ")).goTo(MainStatus.CLOSED)"), source);
         }
@@ -172,7 +172,7 @@ class MachineGenerationTest {
         assertTrue(result.success(), result.describe());
         Class<?> docActions = result.load("fx.DocActions");
         Object actions = docActions.getConstructor().newInstance();
-        Class<?> companion = result.load("fx.Docs_");
+        Class<?> companion = result.load("fx.DocsRuntime");
         Method graph = companion.getMethod("graph", docActions);
         @SuppressWarnings("unchecked")
         GraphDefinition<Object, ?> definition = (GraphDefinition<Object, ?>) graph.invoke(null, actions);

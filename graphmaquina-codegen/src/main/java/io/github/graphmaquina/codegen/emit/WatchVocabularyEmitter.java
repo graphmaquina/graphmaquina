@@ -30,8 +30,7 @@ final class WatchVocabularyEmitter {
 
     /** The canonical name of the watch vocabulary of {@code owner} over {@code peer}, in the owner's package. */
     static String vocabularyName(GraphDescriptor owner, GraphDescriptor peer) {
-        String simpleName = SymbolNames.hostName(SymbolNames.nameWithin(owner.packageName(), owner.facade()))
-            + SymbolNames.hostName(SymbolNames.nameWithin(peer.packageName(), peer.facade()));
+        String simpleName = MachineVocabularyEmitter.hostName(owner) + MachineVocabularyEmitter.hostName(peer);
         return SymbolNames.qualified(owner.packageName(), simpleName);
     }
 

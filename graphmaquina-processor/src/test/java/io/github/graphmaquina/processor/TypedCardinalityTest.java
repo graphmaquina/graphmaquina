@@ -25,11 +25,11 @@ class TypedCardinalityTest {
     void readsNoneOneAndRefusesTwoFailureTargets() {
         Compilation.Result none = Compilation.compileTyped(TypedFixtures.graph(HEADER, publish("")));
         assertTrue(none.success(), none.describe());
-        assertFalse(none.generated("fx.Docs_").contains(".onFailure("), none.generated("fx.Docs_"));
+        assertFalse(none.generated("fx.DocsRuntime").contains(".onFailure("), none.generated("fx.DocsRuntime"));
 
         Compilation.Result one = Compilation.compileTyped(TypedFixtures.graph(HEADER, publish(", onFailure = DRAFT")));
         assertTrue(one.success(), one.describe());
-        assertTrue(one.generated("fx.Docs_").contains(".onFailure(DocStatus.DRAFT)"), one.generated("fx.Docs_"));
+        assertTrue(one.generated("fx.DocsRuntime").contains(".onFailure(DocStatus.DRAFT)"), one.generated("fx.DocsRuntime"));
 
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 publish(", onFailure = {DRAFT, REVIEW}")));
@@ -41,12 +41,12 @@ class TypedCardinalityTest {
     void readsNoneOneAndRefusesTwoCommitHooks() {
         Compilation.Result none = Compilation.compileTyped(TypedFixtures.graph(HEADER, publish("")));
         assertTrue(none.success(), none.describe());
-        assertFalse(none.generated("fx.Docs_").contains(".afterCommit("), none.generated("fx.Docs_"));
+        assertFalse(none.generated("fx.DocsRuntime").contains(".afterCommit("), none.generated("fx.DocsRuntime"));
 
         Compilation.Result one = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 publish(", afterCommit = DocActionsRefs.Notified.class")));
         assertTrue(one.success(), one.describe());
-        assertTrue(one.generated("fx.Docs_").contains(".afterCommit(\"notified\""), one.generated("fx.Docs_"));
+        assertTrue(one.generated("fx.DocsRuntime").contains(".afterCommit(\"notified\""), one.generated("fx.DocsRuntime"));
 
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 publish(", afterCommit = {DocActionsRefs.Notified.class, DocActionsRefs.Notified.class}")));
@@ -58,12 +58,12 @@ class TypedCardinalityTest {
     void readsNoneOneAndRefusesTwoTimeouts() {
         Compilation.Result none = Compilation.compileTyped(TypedFixtures.graph(HEADER, archive("")));
         assertTrue(none.success(), none.describe());
-        assertFalse(none.generated("fx.Docs_").contains(".timeout("), none.generated("fx.Docs_"));
+        assertFalse(none.generated("fx.DocsRuntime").contains(".timeout("), none.generated("fx.DocsRuntime"));
 
         Compilation.Result one = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 archive(", timeout = @Timeout(seconds = 2)")));
         assertTrue(one.success(), one.describe());
-        assertTrue(one.generated("fx.Docs_").contains(".timeout(Duration.parse(\"PT2S\"))"), one.generated("fx.Docs_"));
+        assertTrue(one.generated("fx.DocsRuntime").contains(".timeout(Duration.parse(\"PT2S\"))"), one.generated("fx.DocsRuntime"));
 
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 archive(", timeout = {@Timeout(seconds = 1), @Timeout(seconds = 2)}")));
@@ -75,12 +75,12 @@ class TypedCardinalityTest {
     void readsNoneOneAndRefusesTwoActionsOfACell() {
         Compilation.Result none = Compilation.compileTyped(TypedFixtures.graph(HEADER, publish("")));
         assertTrue(none.success(), none.describe());
-        assertTrue(none.generated("fx.Docs_").contains(".to(DocStatus.DRAFT).move()"), none.generated("fx.Docs_"));
+        assertTrue(none.generated("fx.DocsRuntime").contains(".to(DocStatus.DRAFT).move()"), none.generated("fx.DocsRuntime"));
 
         Compilation.Result one = Compilation.compileTyped(TypedFixtures.graph(
                 HEADER.replace("to = DRAFT)", "to = DRAFT, action = DocActionsRefs.Publish.class)"), publish("")));
         assertTrue(one.success(), one.describe());
-        assertTrue(one.generated("fx.Docs_").contains(".to(DocStatus.DRAFT).action(\"publish\""), one.generated("fx.Docs_"));
+        assertTrue(one.generated("fx.DocsRuntime").contains(".to(DocStatus.DRAFT).action(\"publish\""), one.generated("fx.DocsRuntime"));
 
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(
                 HEADER.replace("to = DRAFT)",

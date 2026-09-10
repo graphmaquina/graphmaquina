@@ -62,7 +62,7 @@ class StateGraphPluginFunctionalTest {
 
     /**
      * The published artifacts are enough on their own: a build that declares {@code id("io.github.graphmaquina") version
-     * "1.0.0"} resolves the plugin marker and the plugin jar from the repository, with nothing injected
+     * "1.0.1-SNAPSHOT"} resolves the plugin marker and the plugin jar from the repository, with nothing injected
      * by TestKit, and produces the same jar — typed vocabulary, published index, no compilation carrier.
      *
      * <p>{@code --refresh-dependencies} is deliberate: the plugin is republished under the same snapshot version
@@ -79,7 +79,7 @@ class StateGraphPluginFunctionalTest {
         assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
         assertTrue(fixture.jarContains("fx/OrderRefs$Status.class"));
         assertTrue(fixture.jarContains("fx/ActionsRefs$Approve.class"));
-        assertTrue(fixture.jarContains("fx/Orders_.class"));
+        assertTrue(fixture.jarContains("fx/OrdersRuntime.class"));
         assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
                 fixture.localExports());
         assertFalse(fixture.jarContainsGraphCompilationCarrier());
@@ -142,7 +142,7 @@ class StateGraphPluginFunctionalTest {
         assertTrue(fixture.localExports().isEmpty());
         assertFalse(fixture.jarContains("fx/OrdersGraph.class"));
         assertFalse(fixture.jarContains("fx/ActionsRefs$Approve.class"));
-        assertFalse(fixture.jarContains("fx/Orders_.class"));
+        assertFalse(fixture.jarContains("fx/OrdersRuntime.class"));
         assertTrue(fixture.jarContains("fx/Unrelated.class"));
     }
 
@@ -156,17 +156,17 @@ class StateGraphPluginFunctionalTest {
         fixture.run("jar");
         assertTrue(fixture.jarContains("fx/ActionsRefs$Approve.class"));
         assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
-        assertTrue(fixture.jarContains("fx/Orders_.class"));
+        assertTrue(fixture.jarContains("fx/OrdersRuntime.class"));
 
         fixture.writeSources(renamed());
         fixture.run("jar");
 
         assertFalse(fixture.jarContains("fx/ActionsRefs$Approve.class"));
         assertFalse(fixture.jarContains("fx/OrdersGraph.class"));
-        assertFalse(fixture.jarContains("fx/Orders_.class"));
+        assertFalse(fixture.jarContains("fx/OrdersRuntime.class"));
         assertTrue(fixture.jarContains("fx/ActionsRefs$Accept.class"));
         assertTrue(fixture.jarContains("fx/RequestsGraph.class"));
-        assertTrue(fixture.jarContains("fx/Requests_.class"));
+        assertTrue(fixture.jarContains("fx/RequestsRuntime.class"));
         assertTrue(fixture.jarContains("fx/Unrelated.class"));
         assertEquals(List.of("fx.Requests", "fx.ActionsRefs.Accept", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
                 fixture.localExports());

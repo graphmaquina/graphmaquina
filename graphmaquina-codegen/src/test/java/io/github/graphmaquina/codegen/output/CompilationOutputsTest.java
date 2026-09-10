@@ -38,11 +38,11 @@ import org.junit.jupiter.api.io.TempDir;
  */
 class CompilationOutputsTest {
 
-    private static final String CARRIER = "io.github.graphmaquina.generated.bootstrap.GraphCompilation_0123456789abcdef";
+    private static final String CARRIER = "io.github.graphmaquina.generated.bootstrap.GraphCompilation0123456789abcdef";
     private static final String CARRIER_SOURCE =
-            "io/github/graphmaquina/generated/bootstrap/GraphCompilation_0123456789abcdef.java";
+            "io/github/graphmaquina/generated/bootstrap/GraphCompilation0123456789abcdef.java";
     private static final String CARRIER_BINARY =
-            "io/github/graphmaquina/generated/bootstrap/GraphCompilation_0123456789abcdef.class";
+            "io/github/graphmaquina/generated/bootstrap/GraphCompilation0123456789abcdef.class";
     private static final String PUBLISHED = "META-INF/graphmaquina/exports.json";
     private static final String PENDING = "META-INF/graphmaquina/pending-exports.json";
     private static final String INVENTORY = "owned-outputs.json";
@@ -297,8 +297,8 @@ class CompilationOutputsTest {
                 """);
         sources.put(CARRIER, """
                 package io.github.graphmaquina.generated.bootstrap;
-                public final class GraphCompilation_0123456789abcdef {
-                    private GraphCompilation_0123456789abcdef() { }
+                public final class GraphCompilation0123456789abcdef {
+                    private GraphCompilation0123456789abcdef() { }
                 }
                 """);
         sources.put("fx.Manual", """

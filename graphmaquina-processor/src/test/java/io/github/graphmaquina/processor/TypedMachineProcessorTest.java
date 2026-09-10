@@ -39,8 +39,8 @@ class TypedMachineProcessorTest {
     void compilesTypedMachineAndPreservesFacade() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.minimal());
         assertTrue(result.success(), result.describe());
-        assertTrue(result.hasGenerated("fx.Docs_"));
-        String companion = result.generated("fx.Docs_");
+        assertTrue(result.hasGenerated("fx.DocsRuntime"));
+        String companion = result.generated("fx.DocsRuntime");
         assertTrue(companion.contains("public Outcome<Doc, DocStatus> publish(Doc doc)"), companion);
         assertFalse(companion.contains("public Outcome<Doc, DocStatus> transitionTo("), companion);
         assertTrue(companion.contains(".action(\"publish\", (context) -> docActions.publish(context))"), companion);
@@ -132,7 +132,7 @@ class TypedMachineProcessorTest {
                 """, OPERATIONS));
 
         assertTrue(result.success(), result.describe());
-        assertTrue(result.generated("fx.Docs_").contains(".to(DocStatus.DRAFT).move()"), result.generated("fx.Docs_"));
+        assertTrue(result.generated("fx.DocsRuntime").contains(".to(DocStatus.DRAFT).move()"), result.generated("fx.DocsRuntime"));
     }
 
     @Test
@@ -146,7 +146,7 @@ class TypedMachineProcessorTest {
                 """));
 
         assertTrue(result.success(), result.describe());
-        String companion = result.generated("fx.Docs_");
+        String companion = result.generated("fx.DocsRuntime");
         assertTrue(companion.contains(".guard(\"approved\", (context) -> docActions.approved(context))"), companion);
         assertTrue(companion.contains(".afterCommit(\"notified\", (doc) -> docActions.notified(doc))"), companion);
     }

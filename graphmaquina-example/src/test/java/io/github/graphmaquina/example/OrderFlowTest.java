@@ -32,7 +32,7 @@ class OrderFlowTest {
     final FakeGateway gateway = new FakeGateway();
     final FakeCarrier carrier = new FakeCarrier();
     final List<String> outcomes = new ArrayList<>();
-    final ShopMachines shop = ShopMachines_.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
+    final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
             .listener((MachineKey<?, ?> key, Outcome<?, ?> outcome) ->
                     outcomes.add(key.entity().getSimpleName() + ":" + outcome.getClass().getSimpleName()))
             .build();

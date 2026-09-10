@@ -79,7 +79,7 @@ class LegacyAnnotationsTest {
         assertTrue(reported.contains("@GenerateGraphApi"), reported);
         assertTrue(reported.contains("DocsGraph.Definition"), reported);
         assertTrue(reported.contains("Refs"), reported);
-        assertFalse(result.hasGenerated("fx.Docs_"), result.describe());
+        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 
     @Test
@@ -108,7 +108,7 @@ class LegacyAnnotationsTest {
 
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG609"), result.describe());
-        assertFalse(result.hasGenerated("fx.Docs_"), result.describe());
+        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 
     @Test
@@ -147,6 +147,6 @@ class LegacyAnnotationsTest {
 
         assertFalse(result.success(), result.describe());
         assertEquals(4, result.countError("SG609"), result.describe());
-        assertFalse(result.hasGenerated("fx.Pages_"), result.describe());
+        assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());
     }
 }

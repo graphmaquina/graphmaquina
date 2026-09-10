@@ -44,7 +44,7 @@ class SetErrorsTest {
                 """);
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.hasError("SG502"), result.describe());
-        assertFalse(result.hasGenerated("fx.Library_"), result.describe());
+        assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
     }
 
     @Test

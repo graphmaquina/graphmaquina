@@ -25,8 +25,8 @@ class TypedTimeoutTest {
                 archive(", timeout = @Timeout(nanos = 1)")));
 
         assertTrue(result.success(), result.describe());
-        assertTrue(result.generated("fx.Docs_").contains(".timeout(Duration.parse(\"PT0.000000001S\"))"),
-                result.generated("fx.Docs_"));
+        assertTrue(result.generated("fx.DocsRuntime").contains(".timeout(Duration.parse(\"PT0.000000001S\"))"),
+                result.generated("fx.DocsRuntime"));
     }
 
     @Test
@@ -35,8 +35,8 @@ class TypedTimeoutTest {
                 archive(", timeout = @Timeout(seconds = Long.MAX_VALUE, nanos = 999999999)")));
 
         assertTrue(result.success(), result.describe());
-        assertTrue(result.generated("fx.Docs_").contains(".timeout(Duration.parse(\"PT2562047788015215H30M7.999999999S\"))"),
-                result.generated("fx.Docs_"));
+        assertTrue(result.generated("fx.DocsRuntime").contains(".timeout(Duration.parse(\"PT2562047788015215H30M7.999999999S\"))"),
+                result.generated("fx.DocsRuntime"));
     }
 
     @Test

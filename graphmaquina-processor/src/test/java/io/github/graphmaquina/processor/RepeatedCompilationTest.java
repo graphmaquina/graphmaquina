@@ -1,6 +1,7 @@
 package io.github.graphmaquina.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import javax.tools.ToolProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -53,7 +55,7 @@ class RepeatedCompilationTest {
         assertTrue(exists(request, "fx/DocRefs$Id.class"));
         assertTrue(exists(request, "fx/DocActionsRefs$Publish.class"));
         assertTrue(exists(request, "fx/DocsGraph.class"));
-        assertTrue(exists(request, "fx/Docs_.class"));
+        assertTrue(exists(request, "fx/DocsRuntime.class"));
         assertTrue(symbols(request).contains("fx.DocRefs.Id"), () -> symbols(request).toString());
 
         Compilation.Result renamed = Compilation.compilePrepared(Compilation.prepare(project, renamed()));
@@ -74,7 +76,7 @@ class RepeatedCompilationTest {
         assertEquals(List.of(), classFiles(request, "fx/DocRefs"));
         assertEquals(List.of(), classFiles(request, "fx/DocActionsRefs"));
         assertEquals(List.of(), classFiles(request, "fx/DocsGraph"));
-        assertEquals(List.of(), classFiles(request, "fx/Docs_"));
+        assertEquals(List.of(), classFiles(request, "fx/DocsRuntime"));
         assertEquals(List.of(), classFiles(request, CARRIER_PACKAGE));
         assertTrue(exists(request, "fx/Unrelated.class"));
 
@@ -84,6 +86,49 @@ class RepeatedCompilationTest {
         assertEquals(List.of(PUBLISHED), owned.resources());
         assertEquals(1, owned.excludedBinaries().size(), owned.excludedBinaries().toString());
         assertFalse(Files.exists(request.workDirectory().resolve("owned-outputs.pending.json")));
+    }
+
+    @Test
+    void upgradesInventoriedUnderscoreRuntimesWithoutDeletingHandwrittenNeighbors() throws IOException {
+        Map<String, String> sources = TypedFixtures.minimal();
+        sources.put("fx.Library", """
+                package fx;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                @StateGraphs public interface Library extends Machines { Docs docs(); }
+                """);
+        Compilation.Prepared prepared = Compilation.prepare(project, sources);
+        GenerationRequest request = prepared.request();
+        Path output = request.processorSourcesOutput().resolve("fx");
+        Files.createDirectories(output);
+        Path oldMachine = Files.writeString(output.resolve("Docs_.java"),
+                "package fx; public final class Docs_ {}");
+        Path oldSet = Files.writeString(output.resolve("Library_.java"),
+                "package fx; public final class Library_ { public static final class Builder {} }");
+        Path manual = Files.writeString(output.resolve("Docs_Helper.java"),
+                "package fx; public final class Docs_Helper {}");
+        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
+                "-proc:none", "--release", "21", "-d", request.classesOutput().toString(),
+                oldMachine.toString(), oldSet.toString(), manual.toString()));
+        Path manualBinary = request.classesOutput().resolve("fx/Docs_Helper.class");
+        byte[] manualBefore = Files.readAllBytes(manualBinary);
+        ManifestCodec.writeOwned(request.workDirectory().resolve("owned-outputs.json"), new OwnedOutputs(1,
+                List.of("fx/Docs_.java", "fx/Library_.java"),
+                List.of("fx/Docs_.class", "fx/Library_.class", "fx/Library_$Builder.class"),
+                List.of(), List.of()));
+
+        Compilation.Result upgraded = Compilation.compilePrepared(prepared);
+
+        assertTrue(upgraded.success(), upgraded.describe());
+        assertTrue(upgraded.hasGenerated("fx.DocsRuntime"), upgraded.describe());
+        assertTrue(upgraded.hasGenerated("fx.LibraryRuntime"), upgraded.describe());
+        assertFalse(Files.exists(oldMachine));
+        assertFalse(Files.exists(oldSet));
+        assertFalse(exists(request, "fx/Docs_.class"));
+        assertFalse(exists(request, "fx/Library_.class"));
+        assertFalse(exists(request, "fx/Library_$Builder.class"));
+        assertTrue(Files.exists(manual));
+        assertArrayEquals(manualBefore, Files.readAllBytes(manualBinary));
     }
 
     @Test

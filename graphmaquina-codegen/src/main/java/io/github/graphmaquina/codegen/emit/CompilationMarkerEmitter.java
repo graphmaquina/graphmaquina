@@ -26,7 +26,7 @@ final class CompilationMarkerEmitter {
 
     /** The canonical name of the carrier of {@code compilationId}. */
     static String carrierName(String compilationId) {
-        return PACKAGE + ".GraphCompilation_" + digest(compilationId);
+        return PACKAGE + ".GraphCompilation" + digest(compilationId);
     }
 
     /** The compilation unit carrying {@code compilationId}. */

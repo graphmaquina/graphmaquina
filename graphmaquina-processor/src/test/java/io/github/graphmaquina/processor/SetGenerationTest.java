@@ -28,9 +28,9 @@ class SetGenerationTest {
         Compilation.Result async = Compilation.compileTyped(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertTrue(async.success(), async.describe());
-        String source = async.generated("fx.Library_");
+        String source = async.generated("fx.LibraryRuntime");
         assertTrue(source.contains("public static Builder builder(Duration asyncTimeout, DocActions docActions)"), source);
-        assertTrue(source.contains("public final class Library_ implements Library"), source);
+        assertTrue(source.contains("public final class LibraryRuntime implements Library"), source);
         assertTrue(source.contains(".as(Docs.class)"), source);
         assertTrue(source.contains(".as(Pages.class)"), source);
 
@@ -39,8 +39,8 @@ class SetGenerationTest {
                 Fixtures.DOCS_BODY.replace(Fixtures.ASYNC_ARCHIVE, "action = DocActionsRefs.Publish.class"),
                 Fixtures.LIBRARY));
         assertTrue(sync.success(), sync.describe());
-        assertTrue(sync.generated("fx.Library_").contains("public static Builder builder(DocActions docActions)"),
-                sync.generated("fx.Library_"));
+        assertTrue(sync.generated("fx.LibraryRuntime").contains("public static Builder builder(DocActions docActions)"),
+                sync.generated("fx.LibraryRuntime"));
     }
 
     @Test
@@ -50,7 +50,7 @@ class SetGenerationTest {
         assertTrue(result.success(), result.describe());
         Class<?> docActions = result.load("fx.DocActions");
         Object actions = docActions.getConstructor().newInstance();
-        Class<?> companion = result.load("fx.Library_");
+        Class<?> companion = result.load("fx.LibraryRuntime");
         Object builder = companion.getMethod("builder", Duration.class, docActions).invoke(null, Duration.ofSeconds(5), actions);
         List<String> seen = new ArrayList<>();
         TransitionListener listener = (MachineKey<?, ?> key, Outcome<?, ?> outcome) ->
@@ -88,7 +88,7 @@ class SetGenerationTest {
         assertTrue(result.success(), result.describe());
         Class<?> docActions = result.load("fx.DocActions");
         Object actions = docActions.getConstructor().newInstance();
-        Object builder = result.load("fx.Library_").getMethod("builder", Duration.class, docActions).invoke(null, Duration.ofSeconds(5), actions);
+        Object builder = result.load("fx.LibraryRuntime").getMethod("builder", Duration.class, docActions).invoke(null, Duration.ofSeconds(5), actions);
         Method override = builder.getClass().getMethod("asyncTimeout", Class.class, Duration.class);
         override.invoke(builder, result.load("fx.Docs"), Duration.ofSeconds(1));
         InvocationTargetException error = assertThrows(InvocationTargetException.class,
@@ -145,9 +145,9 @@ class SetGenerationTest {
                 """);
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
-        assertTrue(result.hasGenerated("a.Things_"), result.describe());
-        assertTrue(result.hasGenerated("b.Things_"), result.describe());
-        assertTrue(result.hasGenerated("fx.Both_"), result.describe());
+        assertTrue(result.hasGenerated("a.ThingsRuntime"), result.describe());
+        assertTrue(result.hasGenerated("b.ThingsRuntime"), result.describe());
+        assertTrue(result.hasGenerated("fx.BothRuntime"), result.describe());
     }
 
     @Test
@@ -174,8 +174,8 @@ class SetGenerationTest {
                 Fixtures.DOCS_HEADER.replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \"")
                         + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertFalse(result.success());
-        assertFalse(result.hasGenerated("fx.Library_"));
-        assertFalse(result.hasGenerated("fx.Docs_"));
-        assertTrue(result.hasGenerated("fx.Pages_"));
+        assertFalse(result.hasGenerated("fx.LibraryRuntime"));
+        assertFalse(result.hasGenerated("fx.DocsRuntime"));
+        assertTrue(result.hasGenerated("fx.PagesRuntime"));
     }
 }

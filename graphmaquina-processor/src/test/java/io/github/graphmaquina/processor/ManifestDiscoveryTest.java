@@ -141,7 +141,7 @@ class ManifestDiscoveryTest {
         assertEquals(1, result.countError("SG602"), result.describe());
         assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG602]")
                 && error.contains(ManifestRegistry.OPTION)), result::describe);
-        assertFalse(result.hasGenerated("fx.Docs_"), result.describe());
+        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
 
         ManifestProcessors.Recording.reset();
         ManifestProcessors.Other.reset();
