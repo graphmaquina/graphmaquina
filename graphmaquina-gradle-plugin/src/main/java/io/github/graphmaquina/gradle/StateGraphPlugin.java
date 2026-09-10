@@ -23,8 +23,11 @@ import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
@@ -72,12 +75,34 @@ public final class StateGraphPlugin implements Plugin<Project> {
     /** The two of them, as the coordinates the participation switch is looked up by. */
     private static final String PROCESSOR_COORDINATES = PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT;
 
+    /** The resource {@code processResources} filters this plugin's own version into. */
+    private static final String VERSION_RESOURCE = "version.properties";
+
     /**
-     * The plugin's own version, used as the default {@code graphmaquina-codegen} version. Kept as a constant rather
-     * than read from a packaged resource because TestKit's {@code withPluginClasspath()} loads plugin classes from
-     * a classes directory, not a jar, so {@code Package.getImplementationVersion()} would return {@code null} there.
+     * The plugin's own version, used as the default {@code graphmaquina-codegen} version. It is read from a
+     * filtered resource rather than from the jar manifest: TestKit's {@code withPluginClasspath()} loads the
+     * plugin from {@code build/classes/java/main} and {@code build/resources/main}, so
+     * {@code Package.getImplementationVersion()} returns {@code null} there while the resource is present in
+     * both a jar and a classes directory.
+     *
+     * @return the version this plugin was built at
      */
-    private static final String PLUGIN_VERSION = "1.0.1-SNAPSHOT";
+    static String pluginVersion() {
+        Properties properties = new Properties();
+        try (InputStream stream = StateGraphPlugin.class.getResourceAsStream(VERSION_RESOURCE)) {
+            if (stream == null) {
+                throw new IllegalStateException(VERSION_RESOURCE + " is missing from the plugin classpath");
+            }
+            properties.load(stream);
+        } catch (IOException cause) {
+            throw new IllegalStateException("Cannot read " + VERSION_RESOURCE, cause);
+        }
+        String version = properties.getProperty("version");
+        if (version == null || version.isBlank()) {
+            throw new IllegalStateException(VERSION_RESOURCE + " declares no version");
+        }
+        return version;
+    }
 
     /** The file the compilation lifecycle seals once javac succeeded, registered as a compilation output. */
     private static final String SEALED_INVENTORY = "owned-outputs.json";
@@ -95,7 +120,7 @@ public final class StateGraphPlugin implements Plugin<Project> {
 
     private void configure(Project project) {
         StateGraphExtension extension = project.getExtensions().create("graphmaquina", StateGraphExtension.class);
-        extension.getGeneratorVersion().convention(PLUGIN_VERSION);
+        extension.getGeneratorVersion().convention(pluginVersion());
 
         project.getConfigurations().register(GENERATOR_CONFIGURATION_NAME, configuration -> {
             configuration.setCanBeResolved(true);

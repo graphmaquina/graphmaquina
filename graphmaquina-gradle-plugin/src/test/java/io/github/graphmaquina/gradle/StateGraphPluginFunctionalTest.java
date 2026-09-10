@@ -61,9 +61,9 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * The published artifacts are enough on their own: a build that declares {@code id("io.github.graphmaquina") version
-     * "1.0.1-SNAPSHOT"} resolves the plugin marker and the plugin jar from the repository, with nothing injected
-     * by TestKit, and produces the same jar — typed vocabulary, published index, no compilation carrier.
+     * The published artifacts are enough on their own: a build that declares {@code id("io.github.graphmaquina")}
+     * with an explicit version resolves the plugin marker and the plugin jar from the repository, with nothing
+     * injected by TestKit, and produces the same jar — typed vocabulary, published index, no compilation carrier.
      *
      * <p>{@code --refresh-dependencies} is deliberate: the plugin is republished under the same snapshot version
      * before every run, and without it Gradle may keep serving a snapshot it cached earlier.</p>

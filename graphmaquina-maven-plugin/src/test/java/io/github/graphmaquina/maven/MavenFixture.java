@@ -103,14 +103,28 @@ public final class MavenFixture {
         return new MavenFixture(project, settings, artifactId);
     }
 
-    /** One POM of the consumer projects, read from the test resources rather than duplicated here. */
+    /**
+     * One POM of the consumer projects, read from the test resources rather than duplicated here.
+     * {@code @GRAPHMAQUINA_VERSION@} is the only token replaced, with the version this build resolved.
+     */
     private static String template(String resource) throws IOException {
         try (InputStream stream = MavenFixture.class.getResourceAsStream(resource)) {
             if (stream == null) {
                 throw new IllegalStateException("the fixture POM " + resource + " is not on the test classpath");
             }
-            return new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            return new String(stream.readAllBytes(), StandardCharsets.UTF_8)
+                    .replace("@GRAPHMAQUINA_VERSION@", graphmaquinaVersion());
         }
+    }
+
+    /** The version every StateGraph artifact of the fixture repository is published under. */
+    private static String graphmaquinaVersion() {
+        String configured = System.getProperty("graphmaquina.version");
+        if (configured == null) {
+            throw new IllegalStateException("graphmaquina.version is not set; these tests must run through the"
+                    + " Gradle test task, which points it at the version this build resolved");
+        }
+        return configured;
     }
 
     /**

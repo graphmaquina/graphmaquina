@@ -36,7 +36,7 @@ import java.util.zip.ZipOutputStream;
 public final class PluginFixture {
 
     /** The version every StateGraph artifact of the fixture repository is published under. */
-    private static final String VERSION = "1.0.1-SNAPSHOT";
+    private static final String VERSION = requireProperty("graphmaquina.version");
 
     /** The Lombok version the entity's accessors are generated with; declared before the StateGraph processor. */
     private static final String LOMBOK = "1.18.48";
@@ -727,5 +727,19 @@ public final class PluginFixture {
                 Files.deleteIfExists(entry);
             }
         }
+    }
+
+    /**
+     * The named system property, which the build always sets for this test JVM.
+     *
+     * @param name the property name
+     * @return its value
+     */
+    private static String requireProperty(String name) {
+        String value = System.getProperty(name);
+        if (value == null || value.isBlank()) {
+            throw new IllegalStateException("The build must set the system property " + name);
+        }
+        return value;
     }
 }

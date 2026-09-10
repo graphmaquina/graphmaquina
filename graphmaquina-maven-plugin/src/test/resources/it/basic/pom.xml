@@ -21,7 +21,7 @@
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-    <graphmaquina.version>1.0.1-SNAPSHOT</graphmaquina.version>
+    <graphmaquina.version>@GRAPHMAQUINA_VERSION@</graphmaquina.version>
     <lombok.version>1.18.48</lombok.version>
   </properties>
 

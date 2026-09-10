@@ -31,6 +31,13 @@ gradlePlugin {
         }
     }
 }
+// The plugin reports the version it was built at; `filter` replaces that one token and nothing else.
+tasks.processResources {
+    inputs.property("graphmaquinaVersion", project.version.toString())
+    filesMatching("io/github/graphmaquina/gradle/version.properties") {
+        filter { line -> line.replace("@GRAPHMAQUINA_VERSION@", project.version.toString()) }
+    }
+}
 dependencies {
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
@@ -112,4 +119,6 @@ tasks.test {
         "graphmaquina.fixtureRepository",
         layout.projectDirectory.dir("../build/adapter-test-repository").asFile.absolutePath
     )
+    // The fixture publishes and resolves every StateGraph artifact at the version this build resolved.
+    systemProperty("graphmaquina.version", project.version.toString())
 }

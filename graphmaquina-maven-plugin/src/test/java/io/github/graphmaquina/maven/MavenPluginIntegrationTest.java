@@ -38,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class MavenPluginIntegrationTest {
 
     /** The version every StateGraph artifact of the fixture repository is published under. */
-    private static final String VERSION = "1.0.1-SNAPSHOT";
+    private static final String VERSION = requireProperty("graphmaquina.version");
 
     /** Where the published plugin lives inside the fixture repository. */
     private static final String MODULE = "io/github/graphmaquina/graphmaquina-maven-plugin/" + VERSION;
@@ -62,7 +62,7 @@ class MavenPluginIntegrationTest {
     void publishedArtifactContainsAnExecutableDescriptor() throws IOException {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
         MavenResult result = fixture.run(
-                "io.github.graphmaquina:graphmaquina-maven-plugin:1.0.1-SNAPSHOT:generate");
+                "io.github.graphmaquina:graphmaquina-maven-plugin:" + VERSION + ":generate");
         assertEquals(0, result.exitCode(), result.output());
         assertTrue(fixture.exists("target/graphmaquina/main/annotation-manifest.json"));
         assertTrue(fixture.generatedSourcesContainGraphCompilation());

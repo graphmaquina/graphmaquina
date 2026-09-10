@@ -96,6 +96,8 @@ tasks.test {
         "graphmaquina.fixtureRepository",
         rootProject.layout.buildDirectory.dir("adapter-test-repository").get().asFile.absolutePath
     )
+    // The fixture publishes and resolves every StateGraph artifact at the version this build resolved.
+    systemProperty("graphmaquina.version", project.version.toString())
     // One local repository for every fixture build, inside this module's build directory: the developer's
     // ~/.m2 is never read or written by these tests.
     systemProperty(
