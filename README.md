@@ -2,22 +2,22 @@
 
 ![GraphMaquina: typed graphs and predictable transitions, illustrated by a ticket moving from OPEN through IN_PROGRESS to DONE or FAILED.](docs/images/graphmaquina-overview.svg)
 
-**Typed, graph-based state machines for Java 21.** Declare the transitions your domain allows, give every
+Typed, graph-based state machines for Java 21. Declare the transitions your domain allows, give every
 forbidden transition a reason, and let the build validate the complete graph before the application runs.
 
 GraphMaquina combines a pre-compilation code generator, a javac annotation processor and an in-process runtime.
 Your application calls a generated, typed facade. Actions, guards, hooks, properties and watched states are
 bound through Java symbols rather than string names.
 
-**Published release: `1.0.0`, available from Maven Central under `io.github.graphmaquina`.**
-**This branch and the examples below target unpublished `1.0.1-SNAPSHOT`.** They use the new generated
+Published release: `1.0.0`, available from Maven Central under `io.github.graphmaquina`.
+This branch and the examples below target unpublished `1.0.1-SNAPSHOT`. They use the new generated
 `Runtime` names and require [local installation](#install-the-library-locally) or a configured internal
 snapshot repository. The immutable `1.0.0` artifacts retain their original generated names; they do not
 provide this new API. The source repository remains private. Published Maven Central artifacts, including
 source JARs, remain public.
 
-This README is the developer guide for the current implementation. Complete, runnable files are provided in
-the quickstart. Later examples are identified as extensions or fragments of the repository's shop example.
+This README is the developer guide for the current implementation. The quickstart has complete, runnable
+files. Later examples are extensions or fragments of the repository's shop example.
 
 ## Contents
 
@@ -93,15 +93,15 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 
 ## Requirements and artifacts
 
-- **JDK 21 or later**, including `javac`, for generation and compilation. Use Java 21 as the baseline unless
+- JDK 21 or later, including `javac`, for generation and compilation. Use Java 21 as the baseline unless
   your application deliberately targets a newer release.
-- The repository uses **Gradle 9.2.1** through its wrapper. This is the verified Gradle version; the project
+- The repository uses Gradle 9.2.1 through its wrapper. This is the verified Gradle version; the project
   does not declare a broader tested compatibility matrix.
 - Maven consumers need Maven and a Java 21 JDK. The complete configuration below uses
-  **maven-compiler-plugin 3.15.0**, matching the repository's integration fixtures.
-- **Lombok is optional for consumer entities and action classes.** The quickstart uses handwritten accessors.
+  maven-compiler-plugin 3.15.0, matching the repository's integration fixtures.
+- Lombok is optional for consumer entities and action classes. The quickstart uses handwritten accessors.
   If you use Lombok, place its annotation processor before GraphMaquina's.
-- Keep the runtime, generator, processor and adapter on the **same GraphMaquina version**.
+- Keep the runtime, generator, processor and adapter on the same GraphMaquina version.
 
 | Module | Coordinates / plugin ID | Add it to |
 | --- | --- | --- |
@@ -117,11 +117,11 @@ Application imports begin with `io.github.graphmaquina`.
 
 ## How your flow annotations are generated
 
-**You write the machine interface; GraphMaquina generates its annotation types before compiling your
-application.** `TicketsGraph` is generated from the name and type parameters of `Tickets`. You do not need
-an already compiled `Tickets` class or an existing `TicketsGraph` to start.
+You write the machine interface; GraphMaquina generates its annotation types before compiling your
+application. The generator writes `TicketsGraph` from the name and type parameters of `Tickets`. You do not
+need an already compiled `Tickets` class or an existing `TicketsGraph` to start.
 
-There are three distinct kinds of API:
+There are three kinds of API:
 
 | API | Who supplies it? | When is it available? |
 | --- | --- | --- |
@@ -131,7 +131,7 @@ There are three distinct kinds of API:
 
 ![Original Java declarations enter a syntax-only generator, which emits typed vocabulary. javac then compiles original source and generated annotations together and produces Runtime implementations.](docs/images/annotation-bootstrap.svg)
 
-**The generator creates the annotation types; you choose the flow by using those annotations.** It does not
+The generator creates the annotation types; you choose the flow by using those annotations. It does not
 infer transitions from action method bodies. For example, `Machine<Ticket, TicketStatus>` tells it that the
 `initial`, `from` and `to` elements must use `TicketStatus`. Your `@TicketsGraph.Action(from = ..., to = ...)`
 declaration then specifies an actual transition.
@@ -154,7 +154,7 @@ public interface Tickets extends Machine<Ticket, TicketStatus> {
 }
 ```
 
-This is enough to **generate the annotation vocabulary**. It is not yet a complete, valid flow: the definition,
+This is enough to generate the annotation vocabulary. It is not yet a complete, valid flow: the definition,
 rows and operations are added in the next step. The entity and state enum must be resolvable, and source files
 must contain valid Java syntax.
 
@@ -200,7 +200,7 @@ compiles those generated implementations and application code that references th
 ### You can also write the complete flow immediately
 
 The initial generation-only step is optional: it is useful when you want the generated annotations available
-in the editor before writing the flow. You may instead create **all six complete quickstart files at once**,
+in the editor before writing the flow. You may instead create all six complete quickstart files at once,
 including references to `TicketsGraph`, `TicketRefs` and `TicketMachinesRuntime`, and run the normal build.
 
 This works on a clean checkout because reading Java syntax and checking Java types are separate operations:
@@ -210,13 +210,13 @@ This works on a clean checkout because reading Java syntax and checking Java typ
    do not require those annotation classes to exist at this stage.
 2. The build adapter adds the generated source directory to the compilation and supplies the generated
    manifest to the processor.
-3. javac type-checks the handwritten sources **together with** the generated vocabulary. The processor
+3. javac type-checks the handwritten sources together with the generated vocabulary. The processor
    validates your graph and emits its implementations. Compilation errors are reported at this stage if
    the flow or its bindings are invalid.
 
-There is no requirement for a failed first compilation, placeholder annotations, or a previously built JAR
-of your own machine. The build generates from source before attempting application compilation. After changing
-machine names, state enums or exported members, run the same build again to regenerate the API.
+The build generates from source before attempting application compilation. A clean checkout does not need a
+first compilation that fails, placeholder annotations, or a previously built JAR of your own machine. After
+changing machine names, state enums or exported members, run the same build again to regenerate the API.
 
 An editor may underline missing generated types before the first generation. Use the commands above and
 [refresh the generated roots](#ide-workflow); plain `javac` or an IDE build that bypasses the configured adapter
@@ -366,7 +366,7 @@ gradle wrapper --gradle-version 9.2.1
 
 ### Add Lombok when you need it
 
-Add these dependency declarations **before** the GraphMaquina processor declaration:
+Add these dependency declarations before the GraphMaquina processor declaration:
 
 ```kotlin
 compileOnly("org.projectlombok:lombok:1.18.48")
@@ -414,7 +414,7 @@ this to run the sibling codegen project. Use matching versions for every GraphMa
 ## Configure Maven
 
 This is a complete alternative build for the same ticket source files. Save it as `pom.xml` in
-`tickets-demo`. It includes **all six lifecycle executions** and distinct main/test manifest arguments.
+`tickets-demo`. It includes all six lifecycle executions and distinct main/test manifest arguments.
 Install `1.0.1-SNAPSHOT` locally first, or configure both dependency and plugin repositories for your
 internal snapshot repository as shown in [the build guide](docs/typed-annotations-build.md#where-the-artifacts-come-from).
 
@@ -798,8 +798,8 @@ requested destination. The ticket example resolves to this matrix:
 
 Every nonterminal state must have a `@<Machine>Graph.Row` with a nonblank `otherwise` reason. That reason closes
 its undeclared off-diagonal cells. Declared actions, moves, internal cells and explicit forbids take their
-respective cells; a row default does not override them. Terminal rows are closed automatically, but can declare
-an explicit row to customize their reasons.
+respective cells; a row default does not override them. Terminal states are closed automatically, but you can
+declare an explicit row to customize their reasons.
 
 Use `@<Machine>Graph.Forbid(from = ..., to = ..., reason = "...")` for a particular forbidden cell whose
 explanation differs from the row default. Two explicit declarations cannot claim the same cell.
@@ -811,7 +811,7 @@ explanation differs from the row default. Two explicit declarations cannot claim
 - The diagonal is `STAY`. An action or move cannot declare the same state in `from` and `to`.
 - Every cycle must intersect at least one state listed in `allowsCycle`. An allowance for a state that is not
   part of any cycle is rejected too.
-- An `onFailure` destination must have a separately declared action or move from the **original source state**.
+- An `onFailure` destination must have a separately declared action or move from the original source state.
 - Every watch destination must also be an action or move from the watched state. A terminal cannot watch.
 
 For example, the shop permits `NEW → PAYMENT_DECLINED → NEW` by declaring
@@ -837,7 +837,7 @@ cascades and watches. Omitting its `action` makes it a move. A typed facade inte
 `transitionTo`: application entry points are the operations you declared, plus `reevaluate`.
 
 `allowedFrom(state)` returns graph destinations with action or move cells, including internal cells. It does
-**not** run guards or predict whether a particular entity will succeed.
+not run guards or predict whether a particular entity will succeed.
 
 ## Annotation and binding reference
 
@@ -900,13 +900,13 @@ Rows, internal cells and forbids are repeatable. `from` must contain at least on
 in declaration order. `failsOn` takes exception class literals.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
-`onFailure`, `timeout`, `afterCommit`, `Cell.action` and custom `When.condition` accept **zero or one** value.
+`onFailure`, `timeout`, `afterCommit`, `Cell.action` and custom `When.condition` accept zero or one value.
 Use the single-value syntax, for example `onFailure = FAILED`, or omit the element. Multiple values are `SG607`.
 
 ### Properties and accessors
 
 For a field marked `@GraphProperty`, the processor looks for public instance readers in this order:
-`property()`, `getProperty()`, `isProperty()`. State writers are searched as `setProperty(value)` and then
+`property()`, `getProperty()`, `isProperty()`. It searches for state writers as `setProperty(value)` and then
 `property(value)`. A field marker does not grant access to the field and does not generate an accessor.
 
 A marker on a getter selects that getter directly. Its logical property name follows JavaBeans
@@ -961,7 +961,7 @@ The ticket quickstart shows a synchronous action and guard. Actions receive `Tra
 Guards receive `GuardContext<E, S>`, which exposes the entity, source, target and read-only peer access.
 It has no cascade API. Return `GuardResult.pass()` or `GuardResult.reject("reason")`; do not return null.
 A rejecting guard stops the transition before its action runs. Guard code should be free of mutations and
-external side effects, because a guard is a decision rather than a commit step.
+external side effects.
 
 ### Domain failures
 
@@ -1056,10 +1056,10 @@ retrying: after-commit failures occur after state was already written.
 ## Asynchronous work and timeouts
 
 GraphMaquina supports asynchronous actions and guards while keeping each transition's execution and commit
-ordered. There are **two independent decisions**: whether a binding returns a stage, and whether the caller
+ordered. There are two independent decisions: whether a binding returns a stage, and whether the caller
 submits the whole operation through `machine.async(...)`.
 
-Use this section as a practical sequence:
+Read the subsections in this order:
 
 - [Choose the calling style](#choose-the-calling-style).
 - [Build a runnable async ticket](#runnable-async-ticket-example).
@@ -1090,7 +1090,7 @@ future instead of joining it on an event-loop thread.
 
 Guards execute in order. Each async guard is awaited before the next guard or action runs. A guard rejection
 stops the edge. The action method itself runs on the operation thread up to the point where it returns its
-stage. Any blocking I/O performed **before** that return still blocks the operation thread. Use a service API
+stage. Any blocking I/O performed before that return still blocks the operation thread. Use a service API
 that returns promptly, or an application-managed executor for genuinely blocking service code.
 
 ### Runnable async ticket example
@@ -1195,7 +1195,7 @@ public interface AsyncTickets extends Machine<Ticket, TicketStatus> {
 }
 ```
 
-`canStart` uses the machine's root wait deadline. The `complete` action additionally has a two-second wait
+`canStart` uses the machine's root wait deadline. The `complete` action also has a two-second wait
 limit. A service result of `false` becomes a handled failure; a stage completed exceptionally with
 `IOException` also uses the declared `IN_PROGRESS → FAILED` route. A guard exception or an action wait timeout
 is a technical abort, even though the action declares `onFailure`.
@@ -1368,7 +1368,7 @@ If guards and other synchronous work have already consumed four seconds of an ei
 async action with `@Timeout(seconds = 5)` cannot get five additional seconds. The diagram illustrates this
 with a stage returned at second four.
 
-These settings are **wait budgets, not a hard end-to-end execution timeout**. They do not preempt synchronous
+These settings are wait budgets, not a hard end-to-end execution timeout. They do not preempt synchronous
 code, including blocking work inside a method that eventually returns a stage. The action-specific clock is
 calculated after that return. A stage already completed when inspected can succeed even with zero remaining
 wait time. There is no deadline check that interrupts setters, after-commit hooks or listeners.
@@ -1392,7 +1392,7 @@ timeout. The user's stage and the underlying service request are left running.
 
 ![After an engine wait times out, graph state does not commit. The user stage and external service can finish later, but that completion does not resume the aborted graph transaction.](docs/images/async-late-completion.svg)
 
-Three different objects can be involved:
+Three objects can be involved:
 
 | What you stop or time out | Consequence |
 | --- | --- |
@@ -1405,7 +1405,7 @@ transaction rollback API. The operation may already be running, may continue run
 the caller stops waiting. Interrupting an operation thread while it is waiting causes a technical abort,
 but GraphMaquina still does not cancel the foreign stage.
 
-A late remote success can mean “the service processed the request, but the graph did not commit”. Use a
+A late remote success can mean "the service processed the request, but the graph did not commit". Use a
 stable request/idempotency key and a service-level deadline where needed. Reconcile uncertain remote results
 before retrying an external side effect. GraphMaquina neither rolls back arbitrary field mutations made by
 actions nor reverses HTTP calls, payments, messages or database writes performed outside its state setters.
@@ -1460,7 +1460,7 @@ dependencies alive until operations finish. Closing the registry is not a genera
 synchronous calls or work submitted through a still-running custom executor. A rejected submission yields an
 exceptionally completed future.
 
-Avoid using the same small fixed executor for operation workers **and** service completions scheduled by
+Avoid using the same small fixed executor for operation workers and service completions scheduled by
 those operations. If every worker is blocked waiting for a service stage whose completion is queued behind
 those workers, the executor can be starved. Keep service execution independent or provision an execution
 model that does not block the resources its completions need. A custom direct executor such as `Runnable::run`
@@ -1532,7 +1532,7 @@ shutdown. There is no required Spring dependency or GraphMaquina-specific contai
 
 ![A cascade shares the root unit of work and deadline before commit. A watch reacts after peer commit in a new transaction and cannot undo that peer commit.](docs/images/cascade-vs-watch.svg)
 
-Register interacting machines in the same set. Inside a guard or action, use the peer's **facade class** so
+Register interacting machines in the same set. Inside a guard or action, use the peer's facade class so
 Java infers its entity and enum types:
 
 ```java
@@ -1585,7 +1585,7 @@ An engine failure poisons the unit of work; catching it in your action does not 
 commit. Use `ctx.cascade` instead of calling another facade operation from inside an action: nested facade
 entry points violate the runtime's reentrancy rules.
 
-`@GraphPeers` is for generating **watch** vocabulary. A runtime peer read or cascade alone does not require an
+`@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.
 
 ## Watch other machines
@@ -1614,7 +1614,7 @@ action and hook.
 
 ### Ordered rules
 
-A watch has one or more rules, and the **first matching rule wins**. Each rule uses exactly one of:
+A watch has one or more rules, and the first matching rule wins. Each rule uses exactly one of:
 
 | Rule element | Condition |
 | --- | --- |
@@ -1666,8 +1666,8 @@ pairs that are actually watched; duplicate or unused `@GraphPeers` entries are e
 
 After a root commit, the runtime finds watched owners from peers whose final state differs from their
 original state. Intermediate hops that return a peer to its original state do not trigger dispatch. It reevaluates an owner only if it
-is currently in the watched state and deduplicates owners within that dispatch. Each reaction is a **new root
-transaction**. A reaction failure does not roll back the peer commit that triggered it.
+is currently in the watched state and deduplicates owners within that dispatch. Each reaction is a new root
+transaction. A reaction failure does not roll back the peer commit that triggered it.
 
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
@@ -1680,7 +1680,7 @@ No watch or no matching rule produces `Outcome.Ignored`. A matching rule can sti
 edge's guards. Rules are not polled on a timer, and creating or paying an owner does not automatically mean all
 of its existing peers changed state.
 
-**Cross-JAR watches are not supported yet.** The owner and peer APIs must be generated in the same compilation.
+Cross-JAR watches are not supported yet. The owner and peer APIs must be generated in the same compilation.
 A peer in another module or dependency JAR is rejected with `SG608`. Track the enhancement in
 [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1).
 
@@ -1709,7 +1709,7 @@ Use a `@GraphHook` when code must run after GraphMaquina has written state. The 
 ticket from such a hook. The shop notifies its carrier after the shipping edge commits.
 
 Hooks run synchronously on the operation's thread. A hook runtime exception becomes `AfterCommitException`:
-**the state is already committed**. The exception stops the remaining normal post-commit sequence, so do not
+the state is already committed. The exception stops the remaining normal post-commit sequence, so do not
 assume later hooks, watch dispatch or listener notification ran. Make externally visible notifications
 idempotent and choose durable delivery separately if your application needs it.
 
@@ -1769,7 +1769,7 @@ Create the set once at the lifecycle scope appropriate for your application and 
 existing repositories and services. Retrieve entities, invoke the facade, inspect the outcome and persist using
 your application's transaction boundary.
 
-**GraphMaquina's after-commit means its in-memory state commit.** It does not mean a surrounding database
+GraphMaquina's after-commit means its in-memory state commit. It does not mean a surrounding database
 transaction committed. If a message must follow a durable database commit, use your persistence framework's
 transaction-completion facility or a transactional outbox rather than assuming the graph hook provides that
 guarantee.
@@ -1884,7 +1884,7 @@ that your action performs the correct domain operation.
 
 ## Generation lifecycle and IDE setup
 
-GraphMaquina uses **pre-compilation generation**, because the annotations and symbols used by your source must
+GraphMaquina uses pre-compilation generation, because the annotations and symbols used by your source must
 exist before javac can type-check that source:
 
 ```text
@@ -1952,9 +1952,9 @@ For a multi-module build:
 3. Package the generated classes and export index together. Avoid assembly steps that silently drop or
    overwrite `META-INF/graphmaquina` metadata.
 4. Regenerate and recompile consumers after changing a producer's exported API. A stale or missing index is a
-   build error, not a reason to fall back to string bindings.
+   build error.
 
-Support for published symbols and sets does **not** imply support for a watch whose pair spans separate
+Support for published symbols and sets does not imply support for a watch whose pair spans separate
 compilations. Keep watched owner and peer declarations in the same compilation until
 [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1) is implemented.
 
@@ -2108,7 +2108,7 @@ application's own API contract.
 | Symptom | Remedy |
 | --- | --- |
 | `TicketsGraph` / `TicketRefs` cannot be found | Run generation before javac; check processor participation and original source roots. |
-| Gradle plugin cannot resolve | Add `mavenCentral()` to `pluginManagement.repositories`. For local development builds, publish the implementation **and marker** locally and add `mavenLocal()` there too. |
+| Gradle plugin cannot resolve | Add `mavenCentral()` to `pluginManagement.repositories`. For local development builds, publish the implementation and marker locally and add `mavenLocal()` there too. |
 | Core resolves but Maven plugin does not | Configure `<pluginRepositories>` as well as `<repositories>` for an internal repository. |
 | Processor reports no manifest | Use the Gradle plugin or add Maven's per-execution manifest arguments and six goals. |
 | A Lombok accessor is missing | Put Lombok first on the processor path, or provide a public handwritten accessor. |
@@ -2138,7 +2138,7 @@ acceptance gaps.
 
 ## Build, verify and release this repository
 
-These commands run from the **GraphMaquina checkout**, not the ticket application's directory:
+These commands run from the GraphMaquina checkout, not the ticket application's directory:
 
 ```bash
 ./gradlew --no-daemon build
@@ -2157,8 +2157,8 @@ The combined `test` command explicitly includes that suite. Its plugin is a sepa
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-The [verification record](docs/runtime-naming-verification.md) for `1.0.1-SNAPSHOT` records **459 passing
-tests** across six suites and both README quickstarts executed with strict lint.
+The [verification record](docs/runtime-naming-verification.md) for `1.0.1-SNAPSHOT` records 459 passing
+tests across six suites and both README quickstarts executed with strict lint.
 Test reports are under each module's `build/reports/tests/test`.
 
 ### Prepare a Maven Central bundle
