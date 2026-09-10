@@ -65,8 +65,8 @@ class StateGraphPluginFunctionalTest {
      * with an explicit version resolves the plugin marker and the plugin jar from the repository, with nothing
      * injected by TestKit, and produces the same jar — typed vocabulary, published index, no compilation carrier.
      *
-     * <p>{@code --refresh-dependencies} is deliberate: the plugin is republished under the same snapshot version
-     * before every run, and without it Gradle may keep serving a snapshot it cached earlier.</p>
+     * <p>{@code --refresh-dependencies} is deliberate: the plugin is republished under the same version
+     * before every run, and without it Gradle may keep serving a build it cached earlier.</p>
      */
     @Test
     void publishedPluginMarkerResolves() throws IOException {
