@@ -14,12 +14,7 @@ bound through Java symbols rather than string names.
 The current release is the one the badge above reports, published to Maven Central under
 `io.github.graphmaquina`. The examples below do not repeat that number: they read it from a
 `graphmaquinaVersion` Gradle property or a `graphmaquina.version` Maven property, set once per build.
-The source repository remains private. Published Maven Central artifacts, including source JARs,
-remain public.
-
-The generated `Runtime` names below arrived after the first release. While the badge still reports that
-release, the published artifacts emit the earlier names, so following the examples needs a
-[local install](#install-the-library-locally).
+Everything in this guide resolves from Maven Central: following it needs no build of this repository.
 
 This README is the developer guide for the current implementation. The quickstart has complete, runnable
 files. Later examples are extensions or fragments of the repository's shop example.
@@ -31,7 +26,6 @@ files. Later examples are extensions or fragments of the repository's shop examp
 - [Requirements and artifacts](#requirements-and-artifacts)
 - [How your flow annotations are generated](#how-your-flow-annotations-are-generated)
 - [Publication and verification status](#publication-and-verification-status)
-- [Install the library locally](#install-the-library-locally)
 - [Configure Gradle](#configure-gradle)
 - [Configure Maven](#configure-maven)
 - [Quickstart: a complete ticket machine](#quickstart-a-complete-ticket-machine)
@@ -239,7 +233,7 @@ plugin, Gradle plugin and Gradle plugin marker.
 | Check | Current development result |
 | --- | --- |
 | Automated library/build suites | 459 tests, with no failures, errors or skipped tests. |
-| README quickstart | Compiled and ran with Gradle and Maven against a local install, with strict lint. Both reported `All ticket scenarios passed.` |
+| README quickstart | Compiled and ran with Gradle and Maven against the released artifacts, with strict lint. Both reported `All ticket scenarios passed.` |
 | Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. See [async guide verification](docs/async-guide-verification.md). |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
 
@@ -261,40 +255,6 @@ This fingerprint and the public key allow consumers to verify signatures; they d
 release. Private signing material is stored in 1Password. See [release signing](docs/release-signing.md)
 for verification commands and maintainer setup. Publishing a release does not resolve the
 [known limitations](#known-limitations).
-
-## Install the library locally
-
-Install locally to follow the examples while the published artifacts emit generated names older than the
-ones the examples use, and to try any other change a release has not shipped yet; otherwise the examples
-resolve from Maven Central and need no local installation. Cloning the private repository requires
-authorized GitHub access. Run these commands in the checkout:
-
-```bash
-git clone https://github.com/graphmaquina/graphmaquina.git
-cd graphmaquina
-java -version
-./gradlew --version
-
-./gradlew :graphmaquina-core:publishToMavenLocal \
-          :graphmaquina-codegen:publishToMavenLocal \
-          :graphmaquina-processor:publishToMavenLocal \
-          :graphmaquina-maven-plugin:publishToMavenLocal
-
-./gradlew -p graphmaquina-gradle-plugin publishToMavenLocal
-```
-
-The last command publishes both the Gradle plugin implementation and its plugin marker from the separate
-included build. Both are needed for `id("io.github.graphmaquina")` to resolve.
-
-On Windows, use `gradlew.bat` and the line-continuation syntax of your shell. The multi-line shell examples in
-this guide use a POSIX shell.
-
-A local install carries the version of the most recent tag, so it can shadow the released artifacts with that
-same number. Maven reads the local Maven repository by default. To test locally installed builds with Gradle,
-add `mavenLocal()` before `mavenCentral()` in both `pluginManagement.repositories` and the dependency
-repository configuration, and remove it again when verifying a public release. For an internal repository,
-configure both kinds of repository as well;
-see [the repository configuration reference](docs/typed-annotations-build.md#where-the-artifacts-come-from).
 
 ## Configure Gradle
 
@@ -2127,7 +2087,7 @@ application's own API contract.
 | Symptom | Remedy |
 | --- | --- |
 | `TicketsGraph` / `TicketRefs` cannot be found | Run generation before javac; check processor participation and original source roots. |
-| Gradle plugin cannot resolve | Add `mavenCentral()` to `pluginManagement.repositories`. For local development builds, publish the implementation and marker locally and add `mavenLocal()` there too. |
+| Gradle plugin cannot resolve | Add `mavenCentral()` to `pluginManagement.repositories`. |
 | Core resolves but Maven plugin does not | Configure `<pluginRepositories>` as well as `<repositories>` for an internal repository. |
 | Processor reports no manifest | Use the Gradle plugin or add Maven's per-execution manifest arguments and six goals. |
 | A Lombok accessor is missing | Put Lombok first on the processor path, or provide a public handwritten accessor. |
@@ -2232,10 +2192,10 @@ metadata, checks signature files and checksums, then produces:
 build/graphmaquina-central-bundle.zip
 ```
 
-Central staging requires the signing key; development installation to Maven local does not. The task itself
-uploads nothing: the release script does that, or a maintainer can upload the ZIP through Central Portal with
-the authorized namespace and release credentials. Portal validation and public availability remain separate
-steps. The local structural validator does not replace cryptographic signature verification or Portal checks.
+Central staging requires the signing key. The task itself uploads nothing: the release script does that, or a
+maintainer can upload the ZIP through Central Portal with the authorized namespace and release credentials.
+Portal validation and public availability remain separate steps. The local structural validator does not
+replace cryptographic signature verification or Portal checks.
 
 Do not publish a bundle signed with a temporary test key. See the
 [release preparation reference](docs/typed-annotations-build.md#preparing-a-central-release) for details.
