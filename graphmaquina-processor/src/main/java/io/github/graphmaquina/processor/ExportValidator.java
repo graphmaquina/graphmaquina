@@ -34,6 +34,7 @@ final class ExportValidator {
 
     private static final String INVALID = "SG604";
     private static final String TRANSITION_CONTEXT = "io.github.graphmaquina.api.TransitionContext";
+    private static final String COMMIT_CONTEXT = "io.github.graphmaquina.api.CommitContext";
     private static final String GUARD_CONTEXT = "io.github.graphmaquina.api.GuardContext";
     private static final String ACTION_OUTCOME = "io.github.graphmaquina.api.ActionOutcome";
     private static final String GUARD_RESULT = "io.github.graphmaquina.api.GuardResult";
@@ -182,7 +183,9 @@ final class ExportValidator {
             case GUARD -> parameters.size() == 1
                     && signatures.erasureIs(parameters.get(0).asType(), GUARD_CONTEXT)
                     && result(returned, GUARD_RESULT);
-            case HOOK -> parameters.size() == 1 && returned.getKind() == TypeKind.VOID;
+            case HOOK -> (parameters.size() == 1 || parameters.size() == 2
+                    && signatures.erasureIs(parameters.get(1).asType(), COMMIT_CONTEXT))
+                    && returned.getKind() == TypeKind.VOID;
             case CONDITION -> parameters.size() == 3 && returned.getKind() == TypeKind.BOOLEAN
                     && signatures.erasureAssignable(signatures.declared(COLLECTION), parameters.get(1).asType())
                     && signatures.erasureIs(parameters.get(2).asType(), PEER_VIEW);
@@ -216,7 +219,7 @@ final class ExportValidator {
         return switch (role) {
             case ACTION -> "ActionOutcome or CompletionStage<ActionOutcome> from one TransitionContext";
             case GUARD -> "GuardResult or CompletionStage<GuardResult> from one GuardContext";
-            case HOOK -> "void from the entity alone";
+            case HOOK -> "void from the entity alone or the entity and a CommitContext";
             case CONDITION -> "boolean from the entity, a supertype of Collection and a PeerView";
             case PROPERTY -> "a field or a getter";
         };

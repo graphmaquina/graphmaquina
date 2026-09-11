@@ -19,7 +19,7 @@ final class GraphAssembler {
 
     private GraphAssembler() { }
 
-    static <E, S extends Enum<S>> Assembly<E, S> assemble(MachineKey<E, S> key, S[] states, int initialDeclarations,
+    static <E, S extends Enum<S>> Assembly<E, S> assemble(MachineKey<E, S> key, S[] states, int initialDeclarations, Set<S> terminals,
                                                           Map<CellKey<S>, EdgeDraft<E, S>> cells,
                                                           Map<S, String> rowForbids,
                                                           Map<S, WatchDraft<E, S, ?, ?>> watches,
@@ -36,7 +36,7 @@ final class GraphAssembler {
                 continue;
             }
             declared.add(entry.getKey());
-            Optional<EdgeSpec<E, S>> spec = entry.getValue().toSpec(problems);
+            Optional<EdgeSpec<E, S>> spec = entry.getValue().toSpec(problems, terminals);
             if (spec.isPresent()) {
                 specs.put(entry.getKey(), spec.get());
             }

@@ -181,7 +181,8 @@ public final class MachineGenerator {
             line.append(".failsOn(").append(type).append(".class)");
         }
         cell.afterCommit().ifPresent((Binding hook) -> line.append(".afterCommit(").append(quote(hook.methodName())).append(", ")
-                .append(lambda(hook, entity, parameters, names, invocations)).append(')'));
+                .append(lambda(hook, hook.arguments().size() == 1 ? entity : hookParameters(entity.get(0), parameters),
+                        parameters, names, invocations)).append(')'));
         out.line(line.toString());
     }
 
@@ -364,6 +365,11 @@ public final class MachineGenerator {
     private static List<String> conditionParameters(String entity, Map<String, String> parameters) {
         Set<String> taken = taken(parameters);
         return List.of(unique(entity, taken), unique("peers", taken), unique("view", taken));
+    }
+
+    private static List<String> hookParameters(String entity, Map<String, String> parameters) {
+        Set<String> taken = taken(parameters);
+        return List.of(unique(entity, taken), unique("commit", taken));
     }
 
     /** The names {@code graph(...)} already declares, which no lambda parameter of its body may shadow. */

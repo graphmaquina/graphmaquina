@@ -23,6 +23,7 @@ final class Bindings {
     enum Role { ACTION, GUARD, HOOK, CONDITION }
 
     private static final String TRANSITION_CONTEXT = "io.github.graphmaquina.api.TransitionContext";
+    private static final String COMMIT_CONTEXT = "io.github.graphmaquina.api.CommitContext";
     private static final String GUARD_CONTEXT = "io.github.graphmaquina.api.GuardContext";
     private static final String ACTION_OUTCOME = "io.github.graphmaquina.api.ActionOutcome";
     private static final String GUARD_RESULT = "io.github.graphmaquina.api.GuardResult";
@@ -47,7 +48,9 @@ final class Bindings {
                     && signatures.same(parameters.get(0), signatures.declared(GUARD_CONTEXT, machine.entity(), machine.states()))
                     && (signatures.same(returned, signatures.declared(GUARD_RESULT))
                         || signatures.assignable(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(GUARD_RESULT))));
-            case HOOK -> parameters.size() == 1 && signatures.same(parameters.get(0), machine.entity()) && returned.getKind() == TypeKind.VOID;
+            case HOOK -> (parameters.size() == 1 || parameters.size() == 2
+                    && signatures.same(parameters.get(1), signatures.declared(COMMIT_CONTEXT, machine.states())))
+                    && signatures.same(parameters.get(0), machine.entity()) && returned.getKind() == TypeKind.VOID;
             case CONDITION -> peer.isPresent() && parameters.size() == 3
                     && signatures.same(parameters.get(0), machine.entity())
                     && signatures.assignable(signatures.declared(COLLECTION, signatures.extendsWildcard(peer.get().entity())), parameters.get(1))
@@ -61,11 +64,12 @@ final class Bindings {
      * parameters of the SPI's own functional interface, which the emitter compares the selected method's
      * parameters against.
      */
-    List<TypeMirror> arguments(Role role, MachineTypes machine, Optional<MachineTypes> peer) {
+    List<TypeMirror> arguments(Role role, MachineTypes machine, Optional<MachineTypes> peer, int arity) {
         return switch (role) {
             case ACTION -> List.of(signatures.declared(TRANSITION_CONTEXT, machine.entity(), machine.states()));
             case GUARD -> List.of(signatures.declared(GUARD_CONTEXT, machine.entity(), machine.states()));
-            case HOOK -> List.of(machine.entity());
+            case HOOK -> arity == 1 ? List.of(machine.entity())
+                    : List.of(machine.entity(), signatures.declared(COMMIT_CONTEXT, machine.states()));
             case CONDITION -> peer.<List<TypeMirror>>map((MachineTypes found) -> List.of(
                     machine.entity(),
                     signatures.declared(COLLECTION, signatures.extendsWildcard(found.entity())),
@@ -99,7 +103,7 @@ final class Bindings {
                     + "(TransitionContext<" + e + ", " + s + ">)";
             case GUARD -> "GuardResult " + name + "(GuardContext<" + e + ", " + s + ">) or CompletionStage<GuardResult> " + name
                     + "(GuardContext<" + e + ", " + s + ">)";
-            case HOOK -> "void " + name + "(" + e + ")";
+            case HOOK -> "void " + name + "(" + e + ") or void " + name + "(" + e + ", CommitContext<" + s + ">)";
             case CONDITION -> "boolean " + name + "(" + e + ", Collection<? extends " + peer.map(MachineTypes::entityName).orElse("P") + ">, PeerView<"
                     + peer.map(MachineTypes::entityName).orElse("P") + ", " + peer.map(MachineTypes::statesName).orElse("Q") + ">)";
         };

@@ -911,7 +911,7 @@ Public methods must match the role where the graph uses them. `E/S` refer to the
 | `@GraphAction`, async | `CompletionStage<ActionOutcome> method(TransitionContext<E, S> ctx)` |
 | `@GraphGuard` | `GuardResult method(GuardContext<E, S> ctx)` |
 | `@GraphGuard`, async | `CompletionStage<GuardResult> method(GuardContext<E, S> ctx)` |
-| `@GraphHook` | `void method(E entity)` |
+| `@GraphHook` | `void method(E entity)` or `void method(E entity, CommitContext<S> context)` |
 | `@GraphCondition` | `boolean method(E owner, Collection<? extends P> peers, PeerView<P, Q> view)` |
 
 Static bindings are called statically. Instance bindings become constructor/builder dependencies. For example,
@@ -1692,6 +1692,30 @@ idempotent and choose durable delivery separately if your application needs it.
 
 A hook sees the entity's committed final state. When a cascade stages multiple hops for one entity, the setter
 writes its final destination once, while hooks still follow committed hop order.
+
+For the source, destination, cell kind and terminality of that particular hop, add a `CommitContext<S>`
+parameter. The original entity-only signature remains supported:
+
+```java
+import io.github.graphmaquina.api.CommitContext;
+
+@GraphHook
+public void completed(Ticket ticket, CommitContext<TicketStatus> commit) {
+    System.out.println(commit.from() + " -> " + commit.to() + " (" + commit.kind() + ")");
+    if (commit.isTerminal()) {
+        System.out.println("Workflow closed: " + ticket);
+    }
+}
+```
+
+`isTerminal()` describes the hop's destination and comes from `Definition.terminals` (or the DSL's
+`terminal(...)` declarations). There is no need for a second terminal flag on the state enum. The context
+is immutable and can be retained; it has no transaction operations. In a multi-hop cascade, `commit.to()`
+can differ from the entity's final state. Hooks on handled failure routes receive the route cell's context.
+
+The DSL accepts the same two forms through `afterCommit("completed", actions::completed)` or a lambda
+`afterCommit("completed", (entity, commit) -> ...)`. An annotated context must use the machine's exact state
+type. Other parameter shapes, non-void returns and ambiguous symbols with both signatures marked are rejected.
 
 ### Listeners
 

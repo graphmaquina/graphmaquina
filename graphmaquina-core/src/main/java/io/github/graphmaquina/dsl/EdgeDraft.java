@@ -3,11 +3,11 @@ package io.github.graphmaquina.dsl;
 import io.github.graphmaquina.api.ActionRef;
 import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.AsyncTransitionGuard;
+import io.github.graphmaquina.api.CommitContext;
 import io.github.graphmaquina.api.EdgeKind;
 import io.github.graphmaquina.api.EdgeSpec;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardRef;
-import io.github.graphmaquina.api.HookRef;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionGuard;
@@ -20,6 +20,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import lombok.AccessLevel;
@@ -43,7 +44,7 @@ final class EdgeDraft<E, S extends Enum<S>>
     private Optional<S> onFailure = Optional.empty();
     private final List<Class<? extends Throwable>> failsOn = new ArrayList<>();
     private Optional<Duration> timeout = Optional.empty();
-    private Optional<HookRef<E>> afterCommit = Optional.empty();
+    private Optional<HookDraft<E, S>> afterCommit = Optional.empty();
 
     S from() { return from; }
 
@@ -137,10 +138,19 @@ final class EdgeDraft<E, S extends Enum<S>>
 
     @Override
     public EdgeDraft<E, S> afterCommit(@NonNull String name, @NonNull Consumer<? super E> hook) {
+        return afterCommit(new HookDraft<>(name, context -> hook));
+    }
+
+    @Override
+    public EdgeDraft<E, S> afterCommit(@NonNull String name, @NonNull BiConsumer<? super E, ? super CommitContext<S>> hook) {
+        return afterCommit(new HookDraft<>(name, context -> entity -> hook.accept(entity, context)));
+    }
+
+    private EdgeDraft<E, S> afterCommit(HookDraft<E, S> hook) {
         if (afterCommit.isPresent()) {
             throw new IllegalStateException(from + " → " + to + " already declares afterCommit(" + afterCommit.get().name() + ")");
         }
-        afterCommit = Optional.of(new HookRef<>(name, hook));
+        afterCommit = Optional.of(hook);
         return this;
     }
 
@@ -177,7 +187,7 @@ final class EdgeDraft<E, S extends Enum<S>>
     // Assembly
 
     /** Turns the draft into a cell, or records the problems and returns empty. */
-    Optional<EdgeSpec<E, S>> toSpec(Problems problems) {
+    Optional<EdgeSpec<E, S>> toSpec(Problems problems, Set<S> terminals) {
         EdgeKind resolvedKind = kind.orElseThrow();
         String where = from + " → " + to;
         boolean valid = true;
@@ -228,7 +238,8 @@ final class EdgeDraft<E, S extends Enum<S>>
         if (!valid) {
             return Optional.empty();
         }
-        return Optional.of(new EdgeSpec<>(from, to, resolvedKind, reason, actionRef, guardRefs, onFailure, failsOn, timeout, afterCommit));
+        return Optional.of(new EdgeSpec<>(from, to, resolvedKind, reason, actionRef, guardRefs, onFailure, failsOn, timeout,
+                afterCommit.map(hook -> hook.toRef(new CommitContext<>(from, to, resolvedKind, terminals.contains(to))))));
     }
 
     private static boolean isForbiddenFailsOn(Class<? extends Throwable> type) {
