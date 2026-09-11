@@ -5,6 +5,7 @@ import io.github.graphmaquina.annotation.GraphGuard;
 import io.github.graphmaquina.annotation.GraphHook;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.CascadePolicy;
+import io.github.graphmaquina.api.CommitContext;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.TransitionContext;
@@ -54,10 +55,10 @@ public final class OrderActions {
                 : GuardResult.reject("there are unpacked items");
     }
 
-    /** After-commit hook of ship: the carrier hears about it once SHIPPED is written. */
+    /** After-commit hook of ship: the carrier hears about it once SHIPPED is written, and whether that closes the order. */
     @GraphHook
-    public void notifyCarrier(Order order) {
-        carrier.shipped(order);
+    public void notifyCarrier(Order order, CommitContext<OrderStatus> commit) {
+        carrier.shipped(order, commit.isTerminal());
     }
 
     /** Single gate for cancellation: the cascade to items lives in one place. */

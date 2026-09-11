@@ -26,5 +26,5 @@ public interface AsyncActionEdge<E, S extends Enum<S>> extends ActionEdge<E, S> 
 
     @Override AsyncActionEdge<E, S> afterCommit(String name, Consumer<? super E> hook);
 
-    @Override AsyncActionEdge<E, S> afterCommit(String name, BiConsumer<? super E, ? super CommitContext<S>> hook);
+    @Override AsyncActionEdge<E, S> afterCommitWith(String name, BiConsumer<? super E, ? super CommitContext<S>> hook);
 }

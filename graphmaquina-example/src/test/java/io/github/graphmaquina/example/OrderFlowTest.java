@@ -72,7 +72,7 @@ class OrderFlowTest {
         Outcome.Applied<?, ?> reaction = assertInstanceOf(Outcome.Applied.class, shipped.outcome());
         assertEquals(OrderStatus.SHIPPED, reaction.to());
         assertEquals(OrderStatus.SHIPPED, order.status());
-        assertEquals(List.of("o1:SHIPPED"), carrier.notified);
+        assertEquals(List.of("o1:SHIPPED:closed"), carrier.notified);
         assertEquals(List.of("Order:Applied", "Order:Ignored", "Item:Applied", "Order:Ignored", "Item:Applied", "Order:Ignored", "Item:Applied",
                         "Order:Applied", "Item:Applied"),
                 outcomes);

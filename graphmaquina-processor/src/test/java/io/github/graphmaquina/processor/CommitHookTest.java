@@ -10,37 +10,52 @@ import org.junit.jupiter.api.Test;
 
 class CommitHookTest {
 
+    private static final String CONTEXTUAL = "Doc doc, CommitContext<DocStatus> context";
+
     @Test
     void generatedHooksReceiveEachCommittedCellAndItsGraphTerminality() throws Exception {
-        Compilation.Result result = Compilation.compileTyped(fixture("CommitContext<DocStatus> context", """
+        Compilation.Result result = Compilation.compileTyped(fixture(CONTEXTUAL, """
                 calls.add(context.from() + ":" + context.to() + ":" + context.kind()
                         + ":" + context.isTerminal() + ":" + doc.status());
                 """));
 
         assertTrue(result.success(), result.describe());
-        assertEquals("[DRAFT:REVIEW:MOVE:false:REVIEW, REVIEW:PUBLISHED:ACTION:true:PUBLISHED]",
-                result.load("fx.Probe").getMethod("run").invoke(null));
+        assertEquals("[DRAFT:REVIEW:MOVE:false:REVIEW, REVIEW:PUBLISHED:ACTION:true:PUBLISHED]", run(result));
     }
 
     @Test
     void preservesTheEntityOnlySignature() throws Exception {
-        Map<String, String> sources = fixture("CommitContext<DocStatus> context", "calls.add(doc.status().toString());");
-        sources.put("fx.DocActions", sources.get("fx.DocActions").replace(", CommitContext<DocStatus> context", ""));
+        Compilation.Result result = Compilation.compileTyped(fixture("Doc doc", "calls.add(doc.status().toString());"));
+        assertTrue(result.success(), result.describe());
+        String runtime = result.generated("fx.DocsRuntime");
+        assertTrue(runtime.contains(".afterCommit(\"notified\", (doc) -> docActions.notified(doc))"), runtime);
+        assertEquals("[REVIEW, PUBLISHED]", run(result));
+    }
+
+    @Test
+    void deliversTheContextAfterAnAsynchronousActionCellCommits() throws Exception {
+        Map<String, String> sources = fixture(CONTEXTUAL, "calls.add(context.to() + \":\" + context.kind() + \":\" + context.isTerminal());");
+        sources.put("fx.DocActions", edit(sources.get("fx.DocActions"),
+                "public ActionOutcome publish(TransitionContext<Doc, DocStatus> context) { return ActionOutcome.ok(); }",
+                "public java.util.concurrent.CompletionStage<ActionOutcome> publish(TransitionContext<Doc, DocStatus> context) {"
+                        + " return java.util.concurrent.CompletableFuture.completedFuture(ActionOutcome.ok()); }"));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
-        assertEquals("[REVIEW, PUBLISHED]", result.load("fx.Probe").getMethod("run").invoke(null));
+        String runtime = result.generated("fx.DocsRuntime");
+        assertTrue(runtime.contains(".asyncAction(\"publish\""), runtime);
+        assertEquals("[REVIEW:MOVE:false, PUBLISHED:ACTION:true]", run(result));
     }
 
     @Test
     void rejectsAnUnrelatedSecondParameterAtExport() {
-        Compilation.Result result = Compilation.compileTyped(fixture("String context", ""));
+        Compilation.Result result = Compilation.compileTyped(fixture("Doc doc, String context", ""));
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG604"), result.describe());
     }
 
     @Test
     void rejectsAContextForAnotherStateEnumAtBinding() {
-        Map<String, String> sources = fixture("CommitContext<OtherStatus> context", "");
+        Map<String, String> sources = fixture("Doc doc, CommitContext<OtherStatus> context", "");
         sources.put("fx.OtherStatus", "package fx; public enum OtherStatus { OPEN, CLOSED }");
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success(), result.describe());
@@ -49,9 +64,8 @@ class CommitHookTest {
 
     @Test
     void rejectsAnAmbiguousFamilyWithBothMarkedSignatures() {
-        Map<String, String> sources = fixture("CommitContext<DocStatus> context", "");
-        sources.put("fx.DocActions", sources.get("fx.DocActions").replace(
-                "public final class DocActions {", """
+        Map<String, String> sources = fixture(CONTEXTUAL, "");
+        sources.put("fx.DocActions", edit(sources.get("fx.DocActions"), "public final class DocActions {", """
                 public final class DocActions {
                     @GraphHook public void notified(Doc doc) { }
                 """));
@@ -62,11 +76,12 @@ class CommitHookTest {
 
     @Test
     void resolvesAnInheritedGenericHookAgainstItsConcreteHost() throws Exception {
-        Map<String, String> sources = fixture("CommitContext<DocStatus> context", "calls.add(context.to().name());");
-        String base = sources.get("fx.DocActions")
-                .replace("public final class DocActions {", "public class BaseActions<E, S extends Enum<S>> {")
-                .replace("TransitionContext<Doc, DocStatus>", "TransitionContext<E, S>")
-                .replace("Doc doc", "E doc").replace("CommitContext<DocStatus>", "CommitContext<S>");
+        Map<String, String> sources = fixture(CONTEXTUAL, "calls.add(context.to().name());");
+        String base = sources.get("fx.DocActions");
+        base = edit(base, "public final class DocActions {", "public class BaseActions<E, S extends Enum<S>> {");
+        base = edit(base, "TransitionContext<Doc, DocStatus>", "TransitionContext<E, S>");
+        base = edit(base, "Doc doc", "E doc");
+        base = edit(base, "CommitContext<DocStatus>", "CommitContext<S>");
         sources.put("fx.BaseActions", base);
         sources.put("fx.DocActions", """
                 package fx;
@@ -75,35 +90,38 @@ class CommitHookTest {
                 """);
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
-        assertEquals("[REVIEW, PUBLISHED]", result.load("fx.Probe").getMethod("run").invoke(null));
+        assertEquals("[REVIEW, PUBLISHED]", run(result));
     }
 
     @Test
     void invokesAStaticHook() throws Exception {
-        Map<String, String> sources = fixture("CommitContext<DocStatus> context", "calls.add(context.to().name());");
-        sources.put("fx.DocActions", sources.get("fx.DocActions")
-                .replace("public final List", "public static final List")
-                .replace("public void notified", "public static void notified"));
-        sources.put("fx.Probe", sources.get("fx.Probe").replace("actions.calls", "DocActions.calls"));
+        Map<String, String> sources = fixture(CONTEXTUAL, "calls.add(context.to().name());");
+        String host = sources.get("fx.DocActions");
+        host = edit(host, "public final List", "public static final List");
+        host = edit(host, "public void notified", "public static void notified");
+        sources.put("fx.DocActions", host);
+        sources.put("fx.Probe", edit(sources.get("fx.Probe"), "actions.calls", "DocActions.calls"));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
-        assertEquals("[REVIEW, PUBLISHED]", result.load("fx.Probe").getMethod("run").invoke(null));
+        assertEquals("[REVIEW, PUBLISHED]", run(result));
     }
 
     @Test
     void disambiguatesTheEntityAndContextLambdaParameterNames() throws Exception {
         Map<String, String> sources = new LinkedHashMap<>();
-        fixture("CommitContext<DocStatus> context", "calls.add(context.to().name());")
-                .forEach((name, source) -> sources.put(name.replace("Doc", "Commit"), source.replace("Doc", "Commit")));
+        fixture(CONTEXTUAL, "calls.add(context.to().name());")
+                .forEach((String name, String source) -> sources.put(name.replace("Doc", "Commit"), source.replace("Doc", "Commit")));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
-        assertEquals("[REVIEW, PUBLISHED]", result.load("fx.Probe").getMethod("run").invoke(null));
+        String runtime = result.generated("fx.CommitsRuntime");
+        assertTrue(runtime.contains(".afterCommitWith(\"notified\", (commit, commit2) -> commitActions.notified(commit, commit2))"), runtime);
+        assertEquals("[REVIEW, PUBLISHED]", run(result));
     }
 
     @Test
     void rejectsRawAndWildcardContextsAtBinding() {
-        for (String parameter : new String[] {"CommitContext context", "CommitContext<?> context"}) {
-            Compilation.Result result = Compilation.compileTyped(fixture(parameter, ""));
+        for (String parameters : new String[] {"Doc doc, CommitContext context", "Doc doc, CommitContext<?> context"}) {
+            Compilation.Result result = Compilation.compileTyped(fixture(parameters, ""));
             assertFalse(result.success(), result.describe());
             assertTrue(result.hasError("SG505"), result.describe());
         }
@@ -111,17 +129,27 @@ class CommitHookTest {
 
     @Test
     void rejectsNonVoidAndExtraParametersAtExport() {
-        Map<String, String> nonVoid = fixture("CommitContext<DocStatus> context", "return true;");
-        nonVoid.put("fx.DocActions", nonVoid.get("fx.DocActions").replace("void notified", "boolean notified"));
+        Map<String, String> nonVoid = fixture(CONTEXTUAL, "return true;");
+        nonVoid.put("fx.DocActions", edit(nonVoid.get("fx.DocActions"), "void notified", "boolean notified"));
         Compilation.Result returned = Compilation.compileTyped(nonVoid);
         assertFalse(returned.success(), returned.describe());
         assertTrue(returned.hasError("SG604"), returned.describe());
-        Compilation.Result extra = Compilation.compileTyped(fixture("CommitContext<DocStatus> context, String extra", ""));
+        Compilation.Result extra = Compilation.compileTyped(fixture(CONTEXTUAL + ", String extra", ""));
         assertFalse(extra.success(), extra.describe());
         assertTrue(extra.hasError("SG604"), extra.describe());
     }
 
-    private static Map<String, String> fixture(String parameter, String body) {
+    private static String run(Compilation.Result result) throws Exception {
+        return (String) result.load("fx.Probe").getMethod("run").invoke(null);
+    }
+
+    /** Rewrites a fixture source and fails when the text to replace is no longer there, instead of silently testing something else. */
+    private static String edit(String source, String target, String replacement) {
+        assertTrue(source.contains(target), "fixture no longer contains: " + target);
+        return source.replace(target, replacement);
+    }
+
+    private static Map<String, String> fixture(String parameters, String body) {
         Map<String, String> sources = TypedFixtures.graph("""
                 @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
                     state = DocRefs.Status.class, id = DocRefs.Id.class)
@@ -145,20 +173,20 @@ class CommitHookTest {
                 import java.util.List;
                 public final class DocActions {
                     public final List<String> calls = new ArrayList<>();
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> context) {
-                        return ActionOutcome.ok();
-                    }
-                    @GraphHook public void notified(Doc doc, %s) { %s }
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> context) { return ActionOutcome.ok(); }
+                    @GraphHook public void notified(%s) { %s }
                 }
-                """.formatted(parameter, body));
+                """.formatted(parameters, body));
         sources.put("fx.Probe", """
                 package fx;
+                import io.github.graphmaquina.api.StateMachine;
                 import io.github.graphmaquina.runtime.StateMachines;
+                import java.time.Duration;
                 public final class Probe {
                     public static String run() {
                         DocActions actions = new DocActions();
-                        var machine = StateMachines.from(DocsRuntime.graph(actions))
-                                .state(Doc::status, Doc::status).build();
+                        StateMachine<Doc, DocStatus> machine = StateMachines.from(DocsRuntime.graph(actions))
+                                .state(Doc::status, Doc::status).asyncTimeout(Duration.ofSeconds(5)).build();
                         Doc doc = new Doc();
                         machine.transitionTo(doc, DocStatus.REVIEW);
                         machine.transitionTo(doc, DocStatus.PUBLISHED);

@@ -191,9 +191,11 @@ public final class TypedProcessors {
 
         /** The names the generated lambda gives its parameters, one per argument the call passes. */
         private static List<String> lambdaParameters(Binding binding) {
-            return binding.arguments().size() == 3
-                    ? List.of("entity", "peers", "view")
-                    : List.of(binding.role() == SymbolKind.HOOK ? "entity" : "context");
+            return switch (binding.arguments().size()) {
+                case 3 -> List.of("entity", "peers", "view");
+                case 2 -> List.of("entity", "commit");
+                default -> List.of(binding.role() == SymbolKind.HOOK ? "entity" : "context");
+            };
         }
 
         /** The host that owns the call, the declaration it selected and the signature that declaration has here. */

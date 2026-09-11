@@ -183,8 +183,8 @@ final class ExportValidator {
             case GUARD -> parameters.size() == 1
                     && signatures.erasureIs(parameters.get(0).asType(), GUARD_CONTEXT)
                     && result(returned, GUARD_RESULT);
-            case HOOK -> (parameters.size() == 1 || parameters.size() == 2
-                    && signatures.erasureIs(parameters.get(1).asType(), COMMIT_CONTEXT))
+            case HOOK -> (parameters.size() == 1 || (parameters.size() == 2
+                    && signatures.erasureIs(parameters.get(1).asType(), COMMIT_CONTEXT)))
                     && returned.getKind() == TypeKind.VOID;
             case CONDITION -> parameters.size() == 3 && returned.getKind() == TypeKind.BOOLEAN
                     && signatures.erasureAssignable(signatures.declared(COLLECTION), parameters.get(1).asType())

@@ -25,6 +25,6 @@ public interface ActionEdge<E, S extends Enum<S>> extends RowBuilder<E, S> {
     /** Post-commit hook of this cell. At most one per cell. */
     ActionEdge<E, S> afterCommit(String name, Consumer<? super E> hook);
 
-    /** Post-commit hook with the committed cell's metadata and graph-derived terminality. */
-    ActionEdge<E, S> afterCommit(String name, BiConsumer<? super E, ? super CommitContext<S>> hook);
+    /** Post-commit hook with the committed cell's metadata and graph-derived terminality. Counts as the cell's single hook. */
+    ActionEdge<E, S> afterCommitWith(String name, BiConsumer<? super E, ? super CommitContext<S>> hook);
 }

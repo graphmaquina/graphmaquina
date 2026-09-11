@@ -142,7 +142,7 @@ final class EdgeDraft<E, S extends Enum<S>>
     }
 
     @Override
-    public EdgeDraft<E, S> afterCommit(@NonNull String name, @NonNull BiConsumer<? super E, ? super CommitContext<S>> hook) {
+    public EdgeDraft<E, S> afterCommitWith(@NonNull String name, @NonNull BiConsumer<? super E, ? super CommitContext<S>> hook) {
         return afterCommit(new HookDraft<>(name, context -> entity -> hook.accept(entity, context)));
     }
 

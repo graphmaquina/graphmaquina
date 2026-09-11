@@ -48,8 +48,8 @@ final class Bindings {
                     && signatures.same(parameters.get(0), signatures.declared(GUARD_CONTEXT, machine.entity(), machine.states()))
                     && (signatures.same(returned, signatures.declared(GUARD_RESULT))
                         || signatures.assignable(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(GUARD_RESULT))));
-            case HOOK -> (parameters.size() == 1 || parameters.size() == 2
-                    && signatures.same(parameters.get(1), signatures.declared(COMMIT_CONTEXT, machine.states())))
+            case HOOK -> (parameters.size() == 1 || (parameters.size() == 2
+                    && signatures.same(parameters.get(1), signatures.declared(COMMIT_CONTEXT, machine.states()))))
                     && signatures.same(parameters.get(0), machine.entity()) && returned.getKind() == TypeKind.VOID;
             case CONDITION -> peer.isPresent() && parameters.size() == 3
                     && signatures.same(parameters.get(0), machine.entity())
@@ -62,7 +62,8 @@ final class Bindings {
     /**
      * The static types of the arguments the generated code passes to a {@code role} of {@code machine}: the
      * parameters of the SPI's own functional interface, which the emitter compares the selected method's
-     * parameters against.
+     * parameters against. For a hook, {@code arity} is the selected method's parameter count and picks the
+     * entity-only or the entity-plus-context form.
      */
     List<TypeMirror> arguments(Role role, MachineTypes machine, Optional<MachineTypes> peer, int arity) {
         return switch (role) {

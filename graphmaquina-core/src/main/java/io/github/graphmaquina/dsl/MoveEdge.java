@@ -20,6 +20,6 @@ public interface MoveEdge<E, S extends Enum<S>> extends RowBuilder<E, S> {
     /** Post-commit hook of this cell. At most one per cell. */
     MoveEdge<E, S> afterCommit(String name, Consumer<? super E> hook);
 
-    /** Post-commit hook with the committed cell's metadata and graph-derived terminality. */
-    MoveEdge<E, S> afterCommit(String name, BiConsumer<? super E, ? super CommitContext<S>> hook);
+    /** Post-commit hook with the committed cell's metadata and graph-derived terminality. Counts as the cell's single hook. */
+    MoveEdge<E, S> afterCommitWith(String name, BiConsumer<? super E, ? super CommitContext<S>> hook);
 }
