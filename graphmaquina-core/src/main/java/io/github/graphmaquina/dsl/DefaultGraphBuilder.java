@@ -97,7 +97,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>> implements GraphBuilder<E,
             throw new IllegalStateException("build() was already called on the graph " + key);
         }
         built = true;
-        Assembly<E, S> assembly = GraphAssembler.assemble(key, states, initialDeclarations, cells, rowForbids, watches, problems);
+        Assembly<E, S> assembly = GraphAssembler.assemble(key, states, initialDeclarations, terminals, cells, rowForbids, watches, problems);
         GraphValidator.validate(key, states, initial, terminals, cycleAllowed, assembly, problems);
         if (!problems.isEmpty()) {
             throw new InvalidGraphException(key, problems.sorted());

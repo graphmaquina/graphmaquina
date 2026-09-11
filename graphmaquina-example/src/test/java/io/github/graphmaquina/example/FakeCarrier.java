@@ -12,8 +12,8 @@ final class FakeCarrier implements Carrier {
     final List<String> notified = new ArrayList<>();
 
     @Override
-    public void shipped(Order order) {
+    public void shipped(Order order, boolean orderClosed) {
         OrderStatus status = order.status();
-        notified.add(order.id() + ":" + status);
+        notified.add(order.id() + ":" + status + (orderClosed ? ":closed" : ""));
     }
 }

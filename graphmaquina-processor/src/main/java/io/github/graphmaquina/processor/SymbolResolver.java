@@ -104,7 +104,7 @@ final class SymbolResolver {
         }
         Binding chosen = fitting.get(0);
         return Optional.of(new Binding(chosen.owner(), chosen.method(), chosen.effectiveType(), kind,
-                bindings.arguments(role, machine, peer), chosen.isStatic(), chosen.async()));
+                bindings.arguments(role, machine, peer, chosen.effectiveType().getParameterTypes().size()), chosen.isStatic(), chosen.async()));
     }
 
     /**

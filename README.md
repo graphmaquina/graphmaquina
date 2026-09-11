@@ -233,7 +233,7 @@ plugin, Gradle plugin and Gradle plugin marker.
 
 | Check | Current development result |
 | --- | --- |
-| Automated library/build suites | 459 tests, with no failures, errors or skipped tests. |
+| Automated library/build suites | 479 tests, with no failures, errors or skipped tests. |
 | README quickstart | Compiled and ran with Gradle and Maven against the released artifacts, with strict lint. Both reported `All ticket scenarios passed.` |
 | Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
@@ -912,7 +912,7 @@ Public methods must match the role where the graph uses them. `E/S` refer to the
 | `@GraphAction`, async | `CompletionStage<ActionOutcome> method(TransitionContext<E, S> ctx)` |
 | `@GraphGuard` | `GuardResult method(GuardContext<E, S> ctx)` |
 | `@GraphGuard`, async | `CompletionStage<GuardResult> method(GuardContext<E, S> ctx)` |
-| `@GraphHook` | `void method(E entity)` |
+| `@GraphHook` | `void method(E entity)` or `void method(E entity, CommitContext<S> context)` |
 | `@GraphCondition` | `boolean method(E owner, Collection<? extends P> peers, PeerView<P, Q> view)` |
 
 Static bindings are called statically. Instance bindings become constructor/builder dependencies. For example,
@@ -1694,6 +1694,31 @@ idempotent and choose durable delivery separately if your application needs it.
 A hook sees the entity's committed final state. When a cascade stages multiple hops for one entity, the setter
 writes its final destination once, while hooks still follow committed hop order.
 
+For the source, destination, cell kind and terminality of that particular hop, add a `CommitContext<S>`
+parameter. The original entity-only signature remains supported:
+
+```java
+import io.github.graphmaquina.api.CommitContext;
+
+@GraphHook
+public void completed(Ticket ticket, CommitContext<TicketStatus> commit) {
+    System.out.println(commit.from() + " -> " + commit.to() + " (" + commit.kind() + ")");
+    if (commit.isTerminal()) {
+        System.out.println("Workflow closed: " + ticket);
+    }
+}
+```
+
+`isTerminal()` describes the hop's destination and comes from `Definition.terminals` (or the DSL's
+`terminal(...)` declarations). There is no need for a second terminal flag on the state enum. The context
+is immutable and can be retained; it has no transaction operations. In a multi-hop cascade, `commit.to()`
+can differ from the entity's final state. Hooks on handled failure routes receive the route cell's context.
+
+The DSL takes the entity-only form through `afterCommit("completed", actions::completed)` and the contextual
+one through `afterCommitWith("completed", (entity, commit) -> ...)`; a cell declares at most one hook. An
+annotated context must use the machine's exact state type. Other parameter shapes, non-void returns and
+ambiguous symbols with both signatures marked are rejected.
+
 ### Listeners
 
 A listener receives each completed outcome, including ignored and rejected operations. With the ticket set:
@@ -2000,10 +2025,10 @@ Unlike the typed annotation vocabulary, the DSL declares diagonal `.stay()` cell
 runtime functions directly, so this alternative does not need generated action symbols. It deliberately omits
 the quickstart's title guard and completion hook; add them through the DSL when that behavior is required.
 
-Other DSL stages support named guards, async guards, async actions, `failsOn`, `afterCommit`, watches and cycle
-allowances. A low-level `StateMachine` exposes `transitionTo` and `async().transitionTo`; a generated application
-facade intentionally presents the domain operations instead. Keep registry lifetime explicit to close owned
-executors.
+Other DSL stages support named guards, async guards, async actions, `failsOn`, `afterCommit`, `afterCommitWith`,
+watches and cycle allowances. A low-level `StateMachine` exposes `transitionTo` and `async().transitionTo`; a
+generated application facade intentionally presents the domain operations instead. Keep registry lifetime
+explicit to close owned executors.
 
 ## Diagnostics and troubleshooting
 
@@ -2132,7 +2157,7 @@ The combined `test` command explicitly includes that suite. Its plugin is a sepa
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-The full suite is 459 tests across six suites, with both README quickstarts executed with strict lint.
+The full suite is 479 tests across six suites, with both README quickstarts executed with strict lint.
 Test reports are under each module's `build/reports/tests/test`.
 
 ### Release to Maven Central

@@ -180,8 +180,12 @@ public final class MachineGenerator {
         for (TypeMirror type : cell.failsOn()) {
             line.append(".failsOn(").append(type).append(".class)");
         }
-        cell.afterCommit().ifPresent((Binding hook) -> line.append(".afterCommit(").append(quote(hook.methodName())).append(", ")
-                .append(lambda(hook, entity, parameters, names, invocations)).append(')'));
+        cell.afterCommit().ifPresent((Binding hook) -> {
+            boolean contextual = hook.arguments().size() == 2;
+            line.append(contextual ? ".afterCommitWith(" : ".afterCommit(").append(quote(hook.methodName())).append(", ")
+                    .append(lambda(hook, contextual ? hookParameters(entity.get(0), parameters) : entity, parameters, names, invocations))
+                    .append(')');
+        });
         out.line(line.toString());
     }
 
@@ -364,6 +368,15 @@ public final class MachineGenerator {
     private static List<String> conditionParameters(String entity, Map<String, String> parameters) {
         Set<String> taken = taken(parameters);
         return List.of(unique(entity, taken), unique("peers", taken), unique("view", taken));
+    }
+
+    /**
+     * Names of a contextual hook lambda's parameters, distinct from each other and from the enclosing method's,
+     * because an entity type named {@code Commit} would otherwise give the lambda two parameters of one name.
+     */
+    private static List<String> hookParameters(String entity, Map<String, String> parameters) {
+        Set<String> taken = taken(parameters);
+        return List.of(unique(entity, taken), unique("commit", taken));
     }
 
     /** The names {@code graph(...)} already declares, which no lambda parameter of its body may shadow. */
