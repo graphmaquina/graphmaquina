@@ -47,6 +47,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 - [Diagnostics and troubleshooting](#diagnostics-and-troubleshooting)
 - [Known limitations](#known-limitations)
 - [Build, verify and release this repository](#build-verify-and-release-this-repository)
+- [Component benchmarks](benchmarks/README.md)
 - [Further reference](#further-reference)
 - [License](#license)
 
