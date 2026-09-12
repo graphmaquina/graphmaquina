@@ -12,7 +12,8 @@ import java.util.Set;
 /**
  * Chainable, typed assertion over a {@link GraphDefinition}. Every expectation reads the definition's
  * declared structure, so a graph whose actions, guards or hooks would fail if invoked can be inspected
- * without running any of them. {@link #edge(Enum, Enum)} narrows to a single cell of the matrix.
+ * without running any of them. {@link #edge(Enum, Enum)} narrows to a single cell of the matrix,
+ * {@link #watch(Enum)} to the watch declared on a state, and {@link #topology()} to the reachability graph.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
@@ -109,6 +110,34 @@ public final class GraphAssert<E, S extends Enum<S>> {
         requireDeclaredState(actual, from, "from");
         requireDeclaredState(actual, to, "to");
         return new EdgeAssert<>(context, actual.edge(from, to));
+    }
+
+    /**
+     * Narrows to the watch declared on {@code state}, which must belong to the definition's own state
+     * enum. A state that declares no watch — like a definition under test that is itself null — yields a
+     * view without a subject, and the first expectation on it reports that as an assertion failure.
+     */
+    public WatchAssert<E, S> watch(S state) {
+        Objects.requireNonNull(state, "state");
+        String context = context() + " watch " + state.name();
+        if (actual == null) {
+            return new WatchAssert<>(context, null);
+        }
+        requireDeclaredState(actual, state, "state");
+        return new WatchAssert<>(context, actual.watch(state).orElse(null));
+    }
+
+    /**
+     * Narrows to the reachability graph: every state is a node and only the cells that move — ACTION and
+     * MOVE — are edges. When the definition under test is null so is the graph, and the first expectation
+     * on the returned view reports that as an assertion failure.
+     */
+    public TopologyAssert<S> topology() {
+        String context = context() + " topology";
+        if (actual == null) {
+            return new TopologyAssert<>(context, null);
+        }
+        return new TopologyAssert<>(context, actual.graph());
     }
 
     private String context() {
