@@ -1,0 +1,7 @@
+stateDiagram-v2
+    [*] --> NEW
+    NEW --> READY : prepare [async] [if first, second]
+    NEW --> FAILED : [failure of prepare]
+    READY --> DONE
+    DONE --> [*]
+    FAILED --> [*]
