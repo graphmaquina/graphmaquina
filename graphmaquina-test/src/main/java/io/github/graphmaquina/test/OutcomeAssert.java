@@ -17,6 +17,10 @@ public final class OutcomeAssert<E, S extends Enum<S>> extends BaseOutcomeAssert
         super("outcome", actual);
     }
 
+    OutcomeAssert(String context, Outcome<E, S> actual) {
+        super(context, actual);
+    }
+
     public static <E, S extends Enum<S>> OutcomeAssert<E, S> assertThat(Outcome<E, S> actual) {
         return new OutcomeAssert<>(actual);
     }
