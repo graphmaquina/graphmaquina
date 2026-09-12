@@ -68,7 +68,9 @@ class GoldenStoreTest {
             assertEquals("golden/x.mmd", error.context());
             assertEquals("content", error.property());
             assertEquals("matching golden", error.expected());
-            assertEquals("<a\nb\n|a\nc\n>" + REGENERATE, error.actual());
+            assertEquals("<a\nb\n|a\nc\n>", error.actual());
+            assertEquals("golden/x.mmd: content expected <matching golden> but was <<a\nb\n|a\nc\n>>"
+                    + REGENERATE, error.getMessage());
         }
     }
 
@@ -106,7 +108,7 @@ class GoldenStoreTest {
         try (URLClassLoader loader = loader(root)) {
             GraphAssertionError error = assertThrows(GraphAssertionError.class,
                     () -> GoldenStore.assertMatches("x.mmd", "a\n", GoldenOptions.readOnly(loader), DIFF));
-            assertEquals("<a \n|a\n>" + REGENERATE, error.actual());
+            assertEquals("<a \n|a\n>", error.actual());
         }
     }
 
@@ -202,7 +204,7 @@ class GoldenStoreTest {
         try (URLClassLoader loader = new URLClassLoader(new URL[] {archive.toUri().toURL()}, null)) {
             GoldenOptions options = GoldenOptions.readOnly(loader);
             GoldenStore.assertMatches("golden/x.mmd", "a\nb\n", options, DIFF);
-            assertEquals("<a\nb\n|a\nc\n>" + REGENERATE, assertThrows(GraphAssertionError.class,
+            assertEquals("<a\nb\n|a\nc\n>", assertThrows(GraphAssertionError.class,
                     () -> GoldenStore.assertMatches("golden/x.mmd", "a\nc\n", options, DIFF)).actual());
         }
     }

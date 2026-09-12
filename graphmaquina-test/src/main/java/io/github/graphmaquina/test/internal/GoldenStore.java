@@ -15,7 +15,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Objects;
-import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.BiFunction;
 
 /**
@@ -64,7 +64,7 @@ public final class GoldenStore {
             return;
         }
         throw new GraphAssertionError(resource, "content", "matching golden",
-                diff.apply(expected, produced) + "\n" + updateHint("regenerate it"));
+                diff.apply(expected, produced), updateHint("regenerate it"));
     }
 
     private static String read(String resource, GoldenOptions options) {
@@ -80,7 +80,10 @@ public final class GoldenStore {
         }
     }
 
-    /** How to turn update mode on, named by both read failures so a consumer never has to look it up. */
+    /**
+     * How to turn update mode on, named by both read failures so a consumer never has to look it up. A
+     * mismatch carries it in the message alone, so {@code actual()} stays the difference and nothing else.
+     */
     private static String updateHint(String purpose) {
         return "run with -D" + GoldenOptions.UPDATE_PROPERTY + "=true -D" + GoldenOptions.ROOT_PROPERTY
                 + "=<source root> to " + purpose;
@@ -139,7 +142,9 @@ public final class GoldenStore {
         Files.createDirectories(target.getParent());
         // Not createTempFile: on POSIX it creates the file owner-only and the move preserves that, so every
         // regenerated golden would land at 0600 instead of the permissions a newly written file gets.
-        Path temporary = target.resolveSibling(target.getFileName() + "." + UUID.randomUUID() + ".tmp");
+        Path temporary = target.resolveSibling(target.getFileName() + "."
+                + Long.toUnsignedString(ThreadLocalRandom.current().nextLong(), Character.MAX_RADIX)
+                + ".tmp");
         try {
             Files.writeString(temporary, actual, StandardCharsets.UTF_8);
             try {

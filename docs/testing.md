@@ -355,12 +355,14 @@ try (registry; action) {
 }
 ```
 
-Declare the registry first and the fixture second, as that test does. Try-with-resources closes in reverse
-declaration order, so the fixture is closed first, which is what `ControlledAsyncAction` asks for: closing
-cancels the invocations it is still holding, and a worker parked inside the action is released before the
-registry waits for it. Declared the other way round, a test that fails before answering an invocation makes
-the registry wait out the machine's whole `asyncTimeout` — once per unanswered invocation — before the
-fixture ever gets to cancel it.
+List the registry first and the fixture second inside the try-with-resources header, as that sample does.
+The fixture is still constructed first — the graph is built from it, so it exists before the registry does —
+and only the order inside the header decides how the two are closed. Try-with-resources closes in reverse
+order, so the fixture is closed first, which is what `ControlledAsyncAction` asks for: closing cancels the
+invocations it is still holding, and a worker parked inside the action is released before the registry waits
+for it. Listed the other way round, a test that fails before answering an invocation makes the registry wait
+out the machine's whole `asyncTimeout` — once per unanswered invocation — before the fixture ever gets to
+cancel it.
 
 The machine that holds an async cell must declare `asyncTimeout(...)`, as any async machine does. That
 deadline is the engine's; the budgets above are the test's, and the two are unrelated — see
@@ -399,8 +401,9 @@ void orderContractMatchesSnapshot() {
 ```
 
 A mismatch reports the lines that changed, or for a snapshot the field paths that differ — not both files in
-full, and every read failure ends with the flags that rewrite the file. In read mode a stored snapshot of an
-unknown version or a broken format is reported as the fixture problem it is instead of being compared. An
+full, and both it and a missing golden end with the flags that rewrite the file. In read mode a stored
+snapshot of an unknown version or a broken format is reported as the fixture problem it is instead of being
+compared, and carries no such flags. An
 update run never reads the stored text as a snapshot: it replaces the file with a snapshot of the current
 version, so an unreadable one is overwritten rather than reported, and the review of the rewritten file is
 what checks the change.

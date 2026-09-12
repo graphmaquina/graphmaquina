@@ -124,7 +124,7 @@ class GraphGoldensTest {
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> GraphGoldens.assertMatches(SnapshotGraphs.minimalGraph(), RESOURCE,
                         Detail.TRANSITABLE, READ_ONLY));
-        assertEquals("""
+        String difference = """
                 @@ -1,7 +1,4 @@
                  stateDiagram-v2
                 -    [*] --> NEW
@@ -136,7 +136,10 @@ class GraphGoldensTest {
                 +    [*] --> OPEN
                 +    OPEN --> CLOSED
                 +    CLOSED --> [*]
-                """ + REGENERATE, error.actual());
+                """;
+        assertEquals(difference, error.actual());
+        assertEquals(RESOURCE + ": content expected <matching golden> but was <" + difference + ">"
+                + REGENERATE, error.getMessage());
     }
 
     @Test

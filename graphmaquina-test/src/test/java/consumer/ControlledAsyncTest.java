@@ -50,8 +50,11 @@ class ControlledAsyncTest {
 
     // --- the premise of this task: the test decides when the action answers ----------------------------
 
-    // The fixture is closed twice on purpose — once here and once by the try-with-resources — so the test
-    // also covers that closing is idempotent; -Xlint:try flags exactly that shape.
+    // This test alone lists the fixture before the registry, the reverse of the order docs/testing.md
+    // recommends, because it closes the fixture twice on purpose — once in the finally block and once by the
+    // try-with-resources — so it also covers that closing is idempotent; -Xlint:try flags exactly that shape.
+    // The finally block closes the fixture while the registry is still open, so the header's order costs this
+    // test nothing. Every other test lists the registry first, so that the fixture is the one closed first.
     @SuppressWarnings("try")
     @Test
     void testControlsWhenTheActionCompletes() {

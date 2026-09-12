@@ -66,8 +66,10 @@ class GraphSnapshotsTest {
         assertEquals(RESOURCE, error.context());
         assertEquals("content", error.property());
         assertEquals("matching golden", error.expected());
-        assertEquals("/cells/NEW/READY/timeout: expected \"PT1S\" but was \"PT30S\"\n" + REGENERATE,
-                error.actual());
+        assertEquals("/cells/NEW/READY/timeout: expected \"PT1S\" but was \"PT30S\"\n", error.actual());
+        assertEquals(RESOURCE + ": content expected <matching golden> but was "
+                + "</cells/NEW/READY/timeout: expected \"PT1S\" but was \"PT30S\"\n>" + REGENERATE,
+                error.getMessage());
     }
 
     /**
@@ -88,7 +90,7 @@ class GraphSnapshotsTest {
         try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {
             GraphAssertionError error = assertThrows(GraphAssertionError.class,
                     () -> GraphSnapshots.assertMatches(graph, RESOURCE, GoldenOptions.readOnly(loader)));
-            assertEquals("""
+            String difference = """
                     @@ -73,8 +73,8 @@
                      /cells/READY/READY/guards/count\t0
                      /cells/READY/READY/kind\tSTAY
@@ -99,7 +101,10 @@ class GraphSnapshotsTest {
                      /machine/entity\tio.github.graphmaquina.test.fixtures.TestDomain$Entity
                      /machine/states\tio.github.graphmaquina.test.fixtures.TestDomain$State
                      /states/0\tNEW
-                    """ + REGENERATE, error.actual());
+                    """;
+            assertEquals(difference, error.actual());
+            assertEquals(RESOURCE + ": content expected <matching golden> but was <" + difference + ">"
+                    + REGENERATE, error.getMessage());
         }
     }
 

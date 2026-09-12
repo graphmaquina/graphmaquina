@@ -237,7 +237,7 @@ describes.
 
 | Check | Current development result |
 | --- | --- |
-| Automated library/build suites | 1029 tests, with no failures, errors or skipped tests. |
+| Automated library/build suites | 1029 tests across the seven `test` suites, and 1014 under `./gradlew build`, with no failures, errors or skipped tests. |
 | README quickstart | Compiled and ran with Gradle and Maven against the released artifacts, with strict lint. Both reported `All ticket scenarios passed.` |
 | Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
@@ -1838,7 +1838,20 @@ Test through generated facades using real entities and deterministic action depe
 [OrderFlowTest](graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java)
 shows JUnit tests for payment, retries, cascades, watches and journals.
 
-For a Gradle application using JUnit, add:
+The test below reads its outcome with `graphmaquina-test`, the module that holds the typed assertions. It
+ships with the next release, so Maven Central does not carry it yet and the quickstart's `mavenCentral()`
+cannot resolve it. Install it first from a GraphMaquina checkout, passing the version this build already
+sets in `gradle.properties`:
+
+```bash
+./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-test:publishToMavenLocal \
+          -PgraphmaquinaVersion=x.y.z
+```
+
+Then add `mavenLocal()` above `mavenCentral()` in the `dependencyResolutionManagement` block of
+[settings.gradle.kts](#settingsgradlekts), so both modules resolve from there: the testing module's POM pins
+`graphmaquina-core` at its own version, which Central does not carry for an unreleased one. For a Gradle
+application using JUnit, add:
 
 ```kotlin
 dependencies {
@@ -1852,11 +1865,6 @@ tasks.test {
     useJUnitPlatform()
 }
 ```
-
-`graphmaquina-test` holds the typed assertions the test below reads with. It ships with the next release, so
-until then publish it from a checkout as
-[typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots) describes; an
-outcome can also be read with plain `instanceof` and accessors if you would rather not add the dependency.
 
 Create `src/test/java/com/example/tickets/TicketsTest.java`:
 
@@ -1882,10 +1890,15 @@ class TicketsTest {
 ```
 
 `isFailed()` narrows the outcome and fails with the kind it actually got; `movedTo` reads the failure route
-the outcome recorded, and `hasEntityState` reads the entity itself. Run `./gradlew test`. This test consumes
-generated main code; it does not declare test graphs and needs no `testAnnotationProcessor`. In Maven, add
-JUnit and a compatible test runner through your application's usual test configuration; preserve the graph
-generation lifecycle for any test graphs.
+the outcome recorded, and `hasEntityState` reads the entity itself — the same three run against the example's
+own machines in
+[OrderFlowTest](graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java). Run
+`./gradlew test`. This test consumes generated main code; it does not declare test graphs and needs no
+`testAnnotationProcessor`. In Maven, add JUnit and a compatible test runner through your application's usual
+test configuration, together with the test-scoped `graphmaquina-test` dependency shown under
+[typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots); the local
+install above writes into the `~/.m2` repository Maven already reads, so it needs no repository entry.
+Preserve the graph generation lifecycle for any test graphs.
 
 ### Typed assertions, probes and graph snapshots
 
@@ -2218,9 +2231,11 @@ The combined `test` command explicitly includes that suite. Its plugin is a sepa
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-The full suite is 1029 tests across seven suites — graphmaquina-test 541, core 189, processor 141, codegen
-98, maven-plugin 24, gradle-plugin 19 and example 17 — with both README quickstarts executed with strict
-lint.
+Together those commands run 1029 tests across seven suites — graphmaquina-test 541, core 189, processor 141,
+codegen 98, maven-plugin 24, gradle-plugin 19 and example 17 — with both README quickstarts executed with
+strict lint. The first of them, `./gradlew build`, runs 1014 of that set on its own: the Gradle adapter's 19
+belong to a separate included build it never reaches, and it adds the 4 cases of the published-artifact smoke
+test, which `tasks.test` excludes and `tasks.check` puts back.
 Test reports are under each module's `build/reports/tests/test`.
 
 ### Release to Maven Central
