@@ -69,4 +69,9 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>>
     public TransitionRecordsAssert records() {
         return TransitionRecordsAssert.assertThat(failed.records());
     }
+
+    /** The watch re-evaluations this commit triggered; the failure route is a commit, so it triggers them too. */
+    public ReactionsAssert reactions() {
+        return ReactionsAssert.assertThat(failed.reactions());
+    }
 }

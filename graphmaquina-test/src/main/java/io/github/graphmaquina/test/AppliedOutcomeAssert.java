@@ -38,4 +38,9 @@ public final class AppliedOutcomeAssert<E, S extends Enum<S>>
     public TransitionRecordsAssert records() {
         return TransitionRecordsAssert.assertThat(applied.records());
     }
+
+    /** The watch re-evaluations this commit triggered; one that failed is reported here, never propagated. */
+    public ReactionsAssert reactions() {
+        return ReactionsAssert.assertThat(applied.reactions());
+    }
 }
