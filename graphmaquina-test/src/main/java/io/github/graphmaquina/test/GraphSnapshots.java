@@ -15,9 +15,10 @@ import java.util.Objects;
  * everything the definition carries — timeouts, failure routes, guard modes, hooks — so a change no diagram
  * would reveal still breaks the build, and it fails with the paths that differ rather than with two files.
  *
- * <p>A stored snapshot of an unknown version or a broken format is a fixture problem, not a mismatch: it is
- * reported as such and never silently rewritten. Update mode does not read the old text as a snapshot; it
- * replaces it with the current version.
+ * <p>In read mode a stored snapshot of an unknown version or a broken format is a fixture problem, not a
+ * mismatch: it is reported as such rather than compared. Update mode never reads the old text as a snapshot
+ * at all — it replaces the file with a snapshot of the current version, whatever was there before — so an
+ * unreadable snapshot an update run meets is rewritten rather than reported.
  *
  * <p>The comparison is over the stored text, while the report is over the fields, so a golden that carries
  * the very same fields in another line order differs without any field differing. That case falls back to

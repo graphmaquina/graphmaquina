@@ -9,7 +9,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 
 /**
@@ -22,11 +21,17 @@ import java.util.function.BiConsumer;
  * those numbers: that call throws the given exception instance and never reaches the wrapped setter, so the
  * entity keeps the state it had and the engine reports it as pending. A call is recorded as soon as it is
  * entered, as {@link WriteStatus#RUNNING}, and that same record is settled to {@code RETURNED} or
- * {@code THREW} when the call leaves; so {@link #writes()} is complete and in entry order at every instant,
- * and a call still inside a blocked setter is listed in its own place rather than missing from the list.
+ * {@code THREW} when the call leaves; taking the number and recording the call happen together, so a call
+ * never has a number the list does not yet carry. That is what lets a test thread read {@link #writes()}
+ * while the engine writes: the list is complete and in entry order at every instant, and a call still
+ * inside a blocked setter is listed in its own place rather than missing from the list.
  *
  * <p>The wrapped setter is invoked outside every lock this class takes, so a setter that blocks holds up
  * nothing but its own caller. Configuration is meant to finish before the probe reaches a machine.
+ *
+ * <p>Call ordinals here count from 1, as {@link #failOnCall} does; the positions of {@link #writes()} and
+ * of {@link CallTrace}'s events count from 0. Both numbers are consumer-visible and they do not share a
+ * base.
  *
  * @param <E> the entity type of the machine whose setter is wrapped
  * @param <S> the state enum of that machine
@@ -36,7 +41,8 @@ public final class StateWriteProbe<E, S extends Enum<S>> implements BiConsumer<E
     private final BiConsumer<? super E, ? super S> delegate;
     private final Map<Integer, RuntimeException> failures = new ConcurrentHashMap<>();
     private final NavigableMap<Integer, StateWrite<E, S>> recorded = new ConcurrentSkipListMap<>();
-    private final AtomicInteger entered = new AtomicInteger();
+    private final Object entry = new Object();
+    private int entered;
 
     private StateWriteProbe(BiConsumer<? super E, ? super S> delegate) {
         this.delegate = delegate;
@@ -85,8 +91,11 @@ public final class StateWriteProbe<E, S extends Enum<S>> implements BiConsumer<E
     public void accept(E entity, S requested) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(requested, "requested");
-        int ordinal = entered.incrementAndGet();
-        recorded.put(ordinal, new StateWrite<>(entity, requested, WriteStatus.RUNNING, Optional.empty()));
+        int ordinal;
+        synchronized (entry) {
+            ordinal = ++entered;
+            recorded.put(ordinal, new StateWrite<>(entity, requested, WriteStatus.RUNNING, Optional.empty()));
+        }
         RuntimeException armed = failures.get(ordinal);
         WriteStatus status = WriteStatus.THREW;
         RuntimeException thrown = null;

@@ -11,6 +11,10 @@ import java.util.Objects;
  * hands it out from {@code calls()}; only the probe appends to it. Recording is safe from several threads,
  * and every list this class returns is an immutable copy taken when it was asked for.
  *
+ * <p>The positions of that list count from 0. The call ordinal the owning probe names when it runs out of
+ * scripted responses counts from 1, as {@link StateWriteProbe#failOnCall} does, so the same invocation is
+ * position 1 here and call 2 there.
+ *
  * @param <C> what the owning probe records per call: an {@link ActionCall}, a {@link GuardCall} or, for a
  *        hook, the entity it was handed
  */

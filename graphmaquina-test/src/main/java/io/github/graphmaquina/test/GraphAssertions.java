@@ -15,12 +15,13 @@ import java.util.function.Function;
  * <p>Every overload keeps the entity and state types of its subject, which is what makes a chain typed:
  * the state enum of the machine under test is the only one the compiler accepts anywhere along it.
  *
- * <p>Two shapes are deliberately absent. Lists of transition records and of reactions would need two
- * overloads with the same erasure, so they keep their own factories,
- * {@link TransitionRecordsAssert#assertThat(java.util.List)} and
- * {@link ReactionsAssert#assertThat(java.util.List)}. Probes, snapshots, goldens and bounded waits are not
- * subjects to assert over but tools to build one, and stay where they are — {@link AsyncAssertions},
- * {@link GraphSnapshots}, {@link GraphGoldens} and the {@code probe} package.
+ * <p>Three shapes are deliberately absent. A list of transition records, a list of reactions and a journal
+ * of action records all erase to the same parameter, so one facade cannot carry all three; every one of them
+ * keeps its own factory, {@link TransitionRecordsAssert#assertThat(java.util.List)},
+ * {@link ReactionsAssert#assertThat(java.util.List)} and {@link JournalAssert#assertThat(java.util.List)}.
+ * Probes, snapshots, goldens and bounded waits are not subjects to assert over but tools to build one, and
+ * stay where they are — {@link AsyncAssertions}, {@link GraphSnapshots}, {@link GraphGoldens} and the
+ * {@code probe} package.
  */
 public final class GraphAssertions {
 

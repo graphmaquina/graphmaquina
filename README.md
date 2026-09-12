@@ -108,6 +108,7 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 | Runtime and public annotations | `io.github.graphmaquina:graphmaquina-core` | Application dependencies |
 | Pre-compilation generator | `io.github.graphmaquina:graphmaquina-codegen` | Build tooling; resolved by the adapter |
 | Annotation processor | `io.github.graphmaquina:graphmaquina-processor` | javac annotation-processor path |
+| Typed testing assertions and probes | `io.github.graphmaquina:graphmaquina-test` | Test dependencies; ships with the next release |
 | Gradle plugin | plugin ID `io.github.graphmaquina` | Gradle `plugins` block |
 | Maven plugin | `io.github.graphmaquina:graphmaquina-maven-plugin` | Maven build plugins |
 | Reference application | `graphmaquina-example` | Source and tests in this repository; not an application dependency |
@@ -228,12 +229,15 @@ does not perform the required pre-generation step.
 ## Publication and verification status
 
 GraphMaquina is available from Maven Central and the badge at the top reports the current release. The
-namespace `io.github.graphmaquina` is verified. A release contains the runtime, generator, processor, Maven
-plugin, Gradle plugin and Gradle plugin marker.
+namespace `io.github.graphmaquina` is verified. A release contains the runtime, generator, processor, testing
+module, Maven plugin, Gradle plugin and Gradle plugin marker. `graphmaquina-test` joins that publication with
+the next release; the release the badge reports does not carry it yet, so until then it is built from a
+checkout as [typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots)
+describes.
 
 | Check | Current development result |
 | --- | --- |
-| Automated library/build suites | 479 tests, with no failures, errors or skipped tests. |
+| Automated library/build suites | 1029 tests, with no failures, errors or skipped tests. |
 | README quickstart | Compiled and ran with Gradle and Maven against the released artifacts, with strict lint. Both reported `All ticket scenarios passed.` |
 | Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
@@ -1841,6 +1845,7 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("io.github.graphmaquina:graphmaquina-test:$graphmaquinaVersion")
 }
 
 tasks.test {
@@ -1848,15 +1853,18 @@ tasks.test {
 }
 ```
 
+`graphmaquina-test` holds the typed assertions the test below reads with. It ships with the next release, so
+until then publish it from a checkout as
+[typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots) describes; an
+outcome can also be read with plain `instanceof` and accessors if you would rather not add the dependency.
+
 Create `src/test/java/com/example/tickets/TicketsTest.java`:
 
 ```java
 package com.example.tickets;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static io.github.graphmaquina.test.GraphAssertions.assertThat;
 
-import io.github.graphmaquina.api.Outcome;
 import org.junit.jupiter.api.Test;
 
 class TicketsTest {
@@ -1864,19 +1872,20 @@ class TicketsTest {
     void aDomainFailureCommitsItsDeclaredFailureState() {
         try (TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions()).build()) {
             Ticket ticket = new Ticket("T-5", "Declined approval", false);
-            assertInstanceOf(Outcome.Applied.class, machines.tickets().start(ticket));
-            Outcome<Ticket, TicketStatus> result = machines.tickets().complete(ticket);
-            assertInstanceOf(Outcome.Failed.class, result);
-            assertEquals(TicketStatus.FAILED, result.current());
-            assertEquals(TicketStatus.FAILED, ticket.getStatus());
+            assertThat(machines.tickets().start(ticket)).isApplied();
+            assertThat(machines.tickets().complete(ticket)).isFailed()
+                    .movedTo(TicketStatus.FAILED)
+                    .hasEntityState(Ticket::getStatus, TicketStatus.FAILED);
         }
     }
 }
 ```
 
-Run `./gradlew test`. This test consumes generated main code; it does not declare test graphs and needs no
-`testAnnotationProcessor`. In Maven, add JUnit and a compatible test runner through your application's usual
-test configuration; preserve the graph generation lifecycle for any test graphs.
+`isFailed()` narrows the outcome and fails with the kind it actually got; `movedTo` reads the failure route
+the outcome recorded, and `hasEntityState` reads the entity itself. Run `./gradlew test`. This test consumes
+generated main code; it does not declare test graphs and needs no `testAnnotationProcessor`. In Maven, add
+JUnit and a compatible test runner through your application's usual test configuration; preserve the graph
+generation lifecycle for any test graphs.
 
 ### Typed assertions, probes and graph snapshots
 
@@ -2209,7 +2218,9 @@ The combined `test` command explicitly includes that suite. Its plugin is a sepa
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-The full suite is 479 tests across six suites, with both README quickstarts executed with strict lint.
+The full suite is 1029 tests across seven suites — graphmaquina-test 541, core 189, processor 141, codegen
+98, maven-plugin 24, gradle-plugin 19 and example 17 — with both README quickstarts executed with strict
+lint.
 Test reports are under each module's `build/reports/tests/test`.
 
 ### Release to Maven Central
@@ -2242,7 +2253,7 @@ environment and masks secrets in its output. Keep the private key, passphrase an
 in the vault. Only distribute the public key. See [release signing](docs/release-signing.md) for the
 public fingerprint, key retrieval and verification commands.
 
-The task stages five binary publications and the Gradle plugin marker, validates required artifacts and POM
+The task stages six binary publications and the Gradle plugin marker, validates required artifacts and POM
 metadata, checks signature files and checksums, then produces:
 
 ```text

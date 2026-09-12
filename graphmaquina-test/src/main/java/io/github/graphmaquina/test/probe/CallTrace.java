@@ -15,6 +15,11 @@ import java.util.Objects;
  * whether its scripted response then returned, failed or threw, and whether or not the transition went on to
  * commit; it is not a record of successful work. Recording is safe from several threads and numbers the entries
  * in the order the trace received them.
+ *
+ * <p>Those numbers count from 0, like the positions of {@link #events()} and of every list a probe hands
+ * out. The call ordinals of the scripted half count from 1 instead: the ordinal
+ * {@link StateWriteProbe#failOnCall} arms, and the one a probe names when it runs out of scripted
+ * responses. Both bases are consumer-visible and neither follows the other.
  */
 public final class CallTrace {
 

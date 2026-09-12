@@ -15,6 +15,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.BiFunction;
 
 /**
@@ -25,8 +26,10 @@ import java.util.function.BiFunction;
  *
  * <p>A write goes to a temporary file in the target directory and is then moved over the target, atomically
  * where the file system supports it, so a reader never sees a half-written golden and no global lock is
- * needed. Two expectations that name the same resource still race with each other: give every expectation
- * a resource of its own.
+ * needed. That temporary file is created like any other new file, so a regenerated golden carries the
+ * permissions the platform gives a file the build writes rather than an owner-only temporary's. Two
+ * expectations that name the same resource still race with each other: give every expectation a resource
+ * of its own.
  */
 public final class GoldenStore {
 
@@ -60,21 +63,27 @@ public final class GoldenStore {
         if (expected.equals(produced)) {
             return;
         }
-        throw new GraphAssertionError(resource, "content", "matching golden", diff.apply(expected, produced));
+        throw new GraphAssertionError(resource, "content", "matching golden",
+                diff.apply(expected, produced) + "\n" + updateHint("regenerate it"));
     }
 
     private static String read(String resource, GoldenOptions options) {
         try (InputStream stream = options.loader().getResourceAsStream(resource)) {
             if (stream == null) {
                 throw new GraphAssertionError(resource, "content", "an existing golden resource",
-                        "missing; run with -D" + GoldenOptions.UPDATE_PROPERTY + "=true -D"
-                                + GoldenOptions.ROOT_PROPERTY + "=<source root> to write it");
+                        "missing; " + updateHint("write it"));
             }
             return decode(resource, stream.readAllBytes());
         } catch (IOException failure) {
             throw new IllegalStateException("the golden resource <" + resource + "> could not be read",
                     failure);
         }
+    }
+
+    /** How to turn update mode on, named by both read failures so a consumer never has to look it up. */
+    private static String updateHint(String purpose) {
+        return "run with -D" + GoldenOptions.UPDATE_PROPERTY + "=true -D" + GoldenOptions.ROOT_PROPERTY
+                + "=<source root> to " + purpose;
     }
 
     private static String decode(String resource, byte[] bytes) {
@@ -128,7 +137,9 @@ public final class GoldenStore {
 
     private static void write(Path target, String actual) throws IOException {
         Files.createDirectories(target.getParent());
-        Path temporary = Files.createTempFile(target.getParent(), ".graphmaquina-", ".tmp");
+        // Not createTempFile: on POSIX it creates the file owner-only and the move preserves that, so every
+        // regenerated golden would land at 0600 instead of the permissions a newly written file gets.
+        Path temporary = target.resolveSibling(target.getFileName() + "." + UUID.randomUUID() + ".tmp");
         try {
             Files.writeString(temporary, actual, StandardCharsets.UTF_8);
             try {

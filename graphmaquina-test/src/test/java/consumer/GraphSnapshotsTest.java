@@ -47,6 +47,10 @@ class GraphSnapshotsTest {
     private static final GoldenOptions READ_ONLY =
             GoldenOptions.readOnly(GraphSnapshotsTest.class.getClassLoader());
 
+    /** Every mismatch names how to regenerate the golden, after the difference it reports. */
+    private static final String REGENERATE = "\nrun with -D" + GoldenOptions.UPDATE_PROPERTY + "=true -D"
+            + GoldenOptions.ROOT_PROPERTY + "=<source root> to regenerate it";
+
     // --- the premise of this task: a difference no diagram would show --------------------------------
 
     @Test
@@ -62,7 +66,8 @@ class GraphSnapshotsTest {
         assertEquals(RESOURCE, error.context());
         assertEquals("content", error.property());
         assertEquals("matching golden", error.expected());
-        assertEquals("/cells/NEW/READY/timeout: expected \"PT1S\" but was \"PT30S\"\n", error.actual());
+        assertEquals("/cells/NEW/READY/timeout: expected \"PT1S\" but was \"PT30S\"\n" + REGENERATE,
+                error.actual());
     }
 
     /**
@@ -94,7 +99,7 @@ class GraphSnapshotsTest {
                      /machine/entity\tio.github.graphmaquina.test.fixtures.TestDomain$Entity
                      /machine/states\tio.github.graphmaquina.test.fixtures.TestDomain$State
                      /states/0\tNEW
-                    """, error.actual());
+                    """ + REGENERATE, error.actual());
         }
     }
 

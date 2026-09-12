@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.internal.GoldenStore;
@@ -18,6 +19,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFileAttributeView;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -41,6 +43,8 @@ class GoldenStoreTest {
 
     private static final BiFunction<String, String, String> DIFF =
             (expected, actual) -> "<" + expected + "|" + actual + ">";
+    private static final String REGENERATE = "\nrun with -D" + GoldenOptions.UPDATE_PROPERTY + "=true -D"
+            + GoldenOptions.ROOT_PROPERTY + "=<source root> to regenerate it";
 
     // --- the premise of this task: read, fail with a diff, and update --------------------------------
 
@@ -64,7 +68,7 @@ class GoldenStoreTest {
             assertEquals("golden/x.mmd", error.context());
             assertEquals("content", error.property());
             assertEquals("matching golden", error.expected());
-            assertEquals("<a\nb\n|a\nc\n>", error.actual());
+            assertEquals("<a\nb\n|a\nc\n>" + REGENERATE, error.actual());
         }
     }
 
@@ -102,7 +106,7 @@ class GoldenStoreTest {
         try (URLClassLoader loader = loader(root)) {
             GraphAssertionError error = assertThrows(GraphAssertionError.class,
                     () -> GoldenStore.assertMatches("x.mmd", "a\n", GoldenOptions.readOnly(loader), DIFF));
-            assertEquals("<a \n|a\n>", error.actual());
+            assertEquals("<a \n|a\n>" + REGENERATE, error.actual());
         }
     }
 
@@ -198,7 +202,7 @@ class GoldenStoreTest {
         try (URLClassLoader loader = new URLClassLoader(new URL[] {archive.toUri().toURL()}, null)) {
             GoldenOptions options = GoldenOptions.readOnly(loader);
             GoldenStore.assertMatches("golden/x.mmd", "a\nb\n", options, DIFF);
-            assertEquals("<a\nb\n|a\nc\n>", assertThrows(GraphAssertionError.class,
+            assertEquals("<a\nb\n|a\nc\n>" + REGENERATE, assertThrows(GraphAssertionError.class,
                     () -> GoldenStore.assertMatches("golden/x.mmd", "a\nc\n", options, DIFF)).actual());
         }
     }
@@ -235,6 +239,25 @@ class GoldenStoreTest {
             restore(GoldenOptions.UPDATE_PROPERTY, previousUpdate);
             restore(GoldenOptions.ROOT_PROPERTY, previousRoot);
         }
+    }
+
+    /**
+     * A golden is a source file the build rewrites, so it must end up with the permissions a newly written
+     * file gets — not the owner-only ones a temporary file is created with and a move would preserve.
+     */
+    @Test
+    void aWrittenGoldenCarriesThePermissionsOfANewlyWrittenFile(@TempDir Path root) throws Exception {
+        assumeTrue(Files.getFileAttributeView(root, PosixFileAttributeView.class) != null,
+                "the file system carries no POSIX permissions");
+        Files.writeString(root.resolve("reference.mmd"), "a\n", StandardCharsets.UTF_8);
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            GoldenStore.assertMatches("golden/x.mmd", "a\n",
+                    GoldenOptions.updating(loader, root, written::add), DIFF);
+        }
+        assertEquals(List.of(root.resolve("golden/x.mmd")), written);
+        assertEquals(Files.getPosixFilePermissions(root.resolve("reference.mmd")),
+                Files.getPosixFilePermissions(root.resolve("golden/x.mmd")));
     }
 
     // --- names that must never reach the file system ------------------------------------------------

@@ -43,6 +43,10 @@ class GraphGoldensTest {
     private static final GoldenOptions READ_ONLY =
             GoldenOptions.readOnly(GraphGoldensTest.class.getClassLoader());
 
+    /** Every mismatch names how to regenerate the golden, after the difference it reports. */
+    private static final String REGENERATE = "\nrun with -D" + GoldenOptions.UPDATE_PROPERTY + "=true -D"
+            + GoldenOptions.ROOT_PROPERTY + "=<source root> to regenerate it";
+
     // --- the premise of this task: write once, then read what was written ----------------------------
 
     @Test
@@ -132,7 +136,7 @@ class GraphGoldensTest {
                 +    [*] --> OPEN
                 +    OPEN --> CLOSED
                 +    CLOSED --> [*]
-                """, error.actual());
+                """ + REGENERATE, error.actual());
     }
 
     @Test

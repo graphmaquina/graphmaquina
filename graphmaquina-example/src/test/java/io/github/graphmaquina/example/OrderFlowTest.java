@@ -79,7 +79,7 @@ class OrderFlowTest {
     @Test
     void threeDeclinesExhaustTheRetryBudget() {
         Order order = new Order("o1");
-        Item item = new Item("i1", Optional.of(order));
+        new Item("i1", Optional.of(order));
         gateway.decline("51").decline("51").decline("05");
 
         for (int attempt = 1; attempt <= 3; attempt++) {
@@ -92,7 +92,7 @@ class OrderFlowTest {
         assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudgetLeft");
         assertThat(orders.cancel(order)).isApplied()
                 .hasEntityState(Order::status, OrderStatus.CANCELLED);
-        assertThat(item, Item::status).isIn(ItemStatus.CANCELLED);
+        assertThat(order.items().get(0), Item::status).isIn(ItemStatus.CANCELLED);
     }
 
     @Test

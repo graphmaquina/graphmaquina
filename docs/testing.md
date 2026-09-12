@@ -317,27 +317,50 @@ A `ControlledAsyncAction` or `ControlledAsyncGuard` is declared on the cell in p
 callback. The test resumes when the engine has entered it, and the engine resumes when the test answers that
 very invocation, so an asynchronous transition is asserted without a single sleep. `awaitInvocation` and
 `AsyncAssertions.await` each take a budget that belongs to the test. The fixture is `AutoCloseable`; closing
-is idempotent, cancels the stages it created itself and rejects any invocation that arrives afterwards. From
-[ControlledAsyncTest](../graphmaquina-test/src/test/java/consumer/ControlledAsyncTest.java):
+is idempotent, cancels the stages it created itself and rejects any invocation that arrives afterwards.
+Concurrent invocations are independent: each arrives with its own handle and is answered on its own. From
+[ControlledAsyncTest](../graphmaquina-test/src/test/java/consumer/ControlledAsyncTest.java), where
+`GENEROUS` is that test's own two-second budget:
 
 ```java
-try (ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.<Entity, State>create();
-     MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(2), action))) {
-    Entity entity = new Entity("e", State.NEW);
-    CompletableFuture<Outcome<Entity, State>> result =
-            registry.of(KEY).async().transitionTo(entity, State.READY);
-    try {
-        PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call =
-                action.awaitInvocation(Duration.ofSeconds(2));
-        assertEquals(State.NEW, entity.state());
-        assertFalse(result.isDone());
-        assertTrue(call.complete(ActionOutcome.ok()));
-        AsyncAssertions.await(result, Duration.ofSeconds(2)).isApplied().movedTo(State.READY);
-    } finally {
-        action.close();
-    }
+ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(5), action));
+try (registry; action) {
+    Entity first = new Entity("first", State.NEW);
+    Entity second = new Entity("second", State.NEW);
+    CompletableFuture<Outcome<Entity, State>> firstResult =
+            registry.of(KEY).async().transitionTo(first, State.READY);
+    CompletableFuture<Outcome<Entity, State>> secondResult =
+            registry.of(KEY).async().transitionTo(second, State.READY);
+    PendingInvocation<ActionCall<Entity, State>, ActionOutcome> one =
+            action.awaitInvocation(GENEROUS);
+    PendingInvocation<ActionCall<Entity, State>, ActionOutcome> other =
+            action.awaitInvocation(GENEROUS);
+    assertNotSame(one, other);
+    assertNotSame(one.call().entity(), other.call().entity());
+    assertEquals(2, action.invocations().size());
+
+    PendingInvocation<ActionCall<Entity, State>, ActionOutcome> firstCall =
+            one.call().entity() == first ? one : other;
+    PendingInvocation<ActionCall<Entity, State>, ActionOutcome> secondCall =
+            firstCall == one ? other : one;
+    assertTrue(firstCall.complete(ActionOutcome.ok()));
+    AsyncAssertions.await(firstResult, GENEROUS).isApplied().hasEntitySameAs(first);
+    assertFalse(secondCall.isDone());
+    assertFalse(secondResult.isDone());
+    assertEquals(State.NEW, second.state());
+
+    assertTrue(secondCall.complete(ActionOutcome.ok()));
+    AsyncAssertions.await(secondResult, GENEROUS).isApplied().hasEntitySameAs(second);
 }
 ```
+
+Declare the registry first and the fixture second, as that test does. Try-with-resources closes in reverse
+declaration order, so the fixture is closed first, which is what `ControlledAsyncAction` asks for: closing
+cancels the invocations it is still holding, and a worker parked inside the action is released before the
+registry waits for it. Declared the other way round, a test that fails before answering an invocation makes
+the registry wait out the machine's whole `asyncTimeout` — once per unanswered invocation — before the
+fixture ever gets to cancel it.
 
 The machine that holds an async cell must declare `asyncTimeout(...)`, as any async machine does. That
 deadline is the engine's; the budgets above are the test's, and the two are unrelated — see
@@ -376,8 +399,11 @@ void orderContractMatchesSnapshot() {
 ```
 
 A mismatch reports the lines that changed, or for a snapshot the field paths that differ — not both files in
-full. A stored snapshot of an unknown version or a broken format is reported as such and is never silently
-rewritten.
+full, and every read failure ends with the flags that rewrite the file. In read mode a stored snapshot of an
+unknown version or a broken format is reported as the fixture problem it is instead of being compared. An
+update run never reads the stored text as a snapshot: it replaces the file with a snapshot of the current
+version, so an unreadable one is overwritten rather than reported, and the review of the rewritten file is
+what checks the change.
 
 ### Reading and updating
 
@@ -469,6 +495,10 @@ A test that needs no properties at all can pass options explicitly —
   shortest path from a node to itself is the single-node walk `[x]`. The expectation that answers "can this
   state come back to itself" is `hasReachableExactly`, because `reachableFrom` excludes the origin unless a
   cycle leads back to it.
+- **Call ordinals count from 1; list positions count from 0.** `StateWriteProbe.failOnCall(2, ...)` arms the
+  second write, and a probe that runs out of scripted answers names the call the same way. The lists are
+  plain lists: `writes()`, `calls().snapshot()` and `CallTrace.events()` are indexed from 0, and
+  `TraceEvent.sequence()` starts at 0 too. So the write `failOnCall(2, ...)` arms is `writes().get(1)`.
 - **`assertCount` returns different things in the two places it appears.** `ProbeCalls.assertCount(int)`
   returns `void`: a probe's calls are the end of a chain. `StateWriteProbe.assertCount(int)` returns the
   probe, so writes keep chaining. This is deliberate in both cases, not an oversight in one.
