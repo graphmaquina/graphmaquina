@@ -30,7 +30,11 @@ public final class ProbeCalls<C> {
         }
     }
 
-    /** Expects exactly this many invocations, raising {@link GraphAssertionError} otherwise. */
+    /**
+     * Expects exactly this many invocations, raising {@link GraphAssertionError} otherwise. It returns
+     * nothing on purpose: a probe's calls end a chain. The state setter's counterpart,
+     * {@link StateWriteProbe#assertCount(int)}, returns its probe instead, because writes do keep chaining.
+     */
     public void assertCount(int expected) {
         List<C> recorded = snapshot();
         if (recorded.size() != expected) {

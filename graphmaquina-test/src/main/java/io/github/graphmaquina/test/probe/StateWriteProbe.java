@@ -69,7 +69,10 @@ public final class StateWriteProbe<E, S extends Enum<S>> implements BiConsumer<E
         return List.copyOf(recorded.values());
     }
 
-    /** Expects exactly this many calls, raising {@link GraphAssertionError} otherwise. */
+    /**
+     * Expects exactly this many calls, raising {@link GraphAssertionError} otherwise, and returns the probe
+     * so writes keep chaining. {@link ProbeCalls#assertCount(int)} deliberately returns nothing instead.
+     */
     public StateWriteProbe<E, S> assertCount(int expected) {
         List<StateWrite<E, S>> writes = writes();
         if (writes.size() != expected) {

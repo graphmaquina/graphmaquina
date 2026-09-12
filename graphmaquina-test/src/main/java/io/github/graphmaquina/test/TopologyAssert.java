@@ -83,7 +83,12 @@ public final class TopologyAssert<S extends Enum<S>> {
         return this;
     }
 
-    /** The exact negation of {@link #hasShortestPath}, so it never holds for {@code from == to}. */
+    /**
+     * The exact negation of {@link #hasShortestPath}, so it never holds for {@code from == to}: the graph's
+     * shortest walk from a node to itself is the single node. Whether a state can come back to itself is
+     * answered by {@link #hasReachableExactly}, whose reachable set excludes the origin unless a cycle
+     * leads back to it.
+     */
     public TopologyAssert<S> hasNoPath(S from, S to) {
         Objects.requireNonNull(from, "from");
         Objects.requireNonNull(to, "to");

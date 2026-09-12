@@ -1813,6 +1813,13 @@ transitions or evaluate guards.
 You can also build a definition directly through `TicketsRuntime.graph(new TicketActions())` without constructing a
 running set.
 
+A diagram is not the whole definition: the Mermaid label carries the action name, whether it is async, the
+guard names, the failure route and the watch rules, and it carries no timeout, no `failsOn` and no
+after-commit hook. To keep a graph under review, pin both — the rendered diagram against a `.mmd` resource
+and the complete structure against a `.graph` resource — with `GraphGoldens` and `GraphSnapshots` from
+[graphmaquina-test](#test-your-machines). The [testing guide](docs/testing.md#goldens-and-structural-snapshots)
+has the Gradle and Maven configuration and the update commands.
+
 [The illustrated ticket workflow](docs/images/ticket-workflow.svg) summarizes the moving edges and failure
 route. The exporter produces its own labels from the definition. The repository keeps exact expected exports in
 [the example's golden diagrams](graphmaquina-example/src/test/resources/golden).
@@ -1870,6 +1877,51 @@ class TicketsTest {
 Run `./gradlew test`. This test consumes generated main code; it does not declare test graphs and needs no
 `testAnnotationProcessor`. In Maven, add JUnit and a compatible test runner through your application's usual
 test configuration; preserve the graph generation lifecycle for any test graphs.
+
+### Typed assertions, probes and graph snapshots
+
+`graphmaquina-test` is a test-scoped module that asserts over the runtime's own values — definitions, cells,
+outcomes, transition records, reactions and engine exceptions — and reports every unmet expectation as a
+`GraphAssertionError` carrying the context, the property, the expected value and the actual one. It imposes
+no test framework: nothing in its API mentions JUnit or AssertJ, so it works under the runner your project
+already uses.
+
+It is a module of the **next** release. The release the badge at the top reports does not contain it yet, so
+until then build it from a GraphMaquina checkout with
+`./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-test:publishToMavenLocal -PgraphmaquinaVersion=<version>`
+and resolve it from `mavenLocal()` — its POM pins `graphmaquina-core` at the same version, which Maven
+Central does not carry for an unreleased one. The coordinates take the same version variable as every other
+module:
+
+```kotlin
+dependencies {
+    testImplementation("io.github.graphmaquina:graphmaquina-test:$graphmaquinaVersion")
+}
+```
+
+```xml
+<dependency>
+  <groupId>io.github.graphmaquina</groupId>
+  <artifactId>graphmaquina-test</artifactId>
+  <version>${graphmaquina.version}</version>
+  <scope>test</scope>
+</dependency>
+```
+
+One static import of `io.github.graphmaquina.test.GraphAssertions.assertThat` reaches the view for every
+subject a test holds, and the chain keeps the entity and state types of that subject:
+
+```java
+assertThat(orders.pay(order)).isApplied().movedTo(OrderStatus.PAID)
+        .hasEntityState(Order::status, OrderStatus.PAID);
+```
+
+Beyond assertions it carries scripted probes for guards, actions, hooks and the state setter, fixtures that
+let a test decide when an asynchronous callback answers, a listener recorder, entity-state snapshots, and
+golden comparison for both the rendered diagram and the complete structure of a graph. The
+[testing guide](docs/testing.md) covers installation, what each entry point checks, what each check does not
+prove, and the golden update procedure for Gradle and Maven. Every sample in it is copied from a test that
+runs in this repository.
 
 Useful behavior to cover in your own domain:
 
