@@ -3,16 +3,18 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.error.CascadeException;
 import io.github.graphmaquina.error.CommitFailedException;
+import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Objects;
 
 /**
  * Chainable assertion over a throwable the engine raised, and the entry point to the views that know what
- * each phase carries. The four narrowing methods keep the phases apart: an abort discarded the unit of work
- * and nothing moved, a commit failure got partway through writing, and an after-commit failure arrived once
- * every state was already written. A subject of the wrong phase — or no subject at all — fails there, so a
- * narrowed view always has one.
+ * each phase carries. Four narrowing methods keep the transition phases apart: an abort discarded the unit
+ * of work and nothing moved, a commit failure got partway through writing, and an after-commit failure
+ * arrived once every state was already written. A fifth, {@link #isInvalidGraph()}, narrows to the one
+ * failure that is not a transition at all. A subject of the wrong kind — or no subject at all — fails
+ * there, so a narrowed view always has one.
  */
 public final class TransitionFailureAssert extends BaseFailureAssert<TransitionFailureAssert> {
 
@@ -66,6 +68,16 @@ public final class TransitionFailureAssert extends BaseFailureAssert<TransitionF
 
     public AfterCommitAssert isAfterCommit() {
         return new AfterCommitAssert("after-commit failure", narrow(AfterCommitException.class));
+    }
+
+    /**
+     * A graph the DSL refused to build, read from here by its problem codes. This is the typed route for a
+     * subject held as a {@link Throwable} — what {@link #captureFailure} returns — where overload selection
+     * would otherwise send a consumer to a cast and a {@link ClassCastException} rather than to an
+     * inspectable failure.
+     */
+    public InvalidGraphAssert isInvalidGraph() {
+        return InvalidGraphAssert.assertThat(narrow(InvalidGraphException.class));
     }
 
     private <T extends Throwable> T narrow(Class<T> kind) {

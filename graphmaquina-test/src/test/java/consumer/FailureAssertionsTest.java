@@ -114,6 +114,9 @@ class FailureAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> TransitionFailureAssert.assertThat(commit).isAfterCommit()),
                 "failure", "type", AfterCommitException.class, commit);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(commit).isInvalidGraph()),
+                "failure", "type", InvalidGraphException.class, commit);
         TransitionAbortedException abort = new TransitionAbortedException(details(), "no");
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> TransitionFailureAssert.assertThat(abort).isCommitFailure()),
@@ -375,6 +378,20 @@ class FailureAssertionsTest {
                 "invalid graph", "problem count", 2, 1);
     }
 
+    /**
+     * The route a consumer without JUnit has: {@code captureFailure} hands back a {@link Throwable}, which
+     * binds to the failure view, so the DSL view is reached by narrowing rather than by a cast.
+     */
+    @Test
+    void anInvalidGraphCapturedAsAThrowableIsReachedByNarrowing() {
+        Throwable failure = TransitionFailureAssert.captureFailure(
+                () -> StateGraph.define(LABELS).initial(LabelStatus.BLANK).build());
+        TransitionFailureAssert.assertThat(failure).isInvalidGraph().hasCodesExactly("SG101");
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(failure).isInvalidGraph().hasCodesExactly("SG201")),
+                "invalid graph", "codes", List.of("SG201"), List.of("SG101"));
+    }
+
     @Test
     void everyProblemIsReportedWithItsOwnCodeInOrder() {
         InvalidGraphException both = assertThrows(InvalidGraphException.class,
@@ -415,6 +432,13 @@ class FailureAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> TransitionFailureAssert.assertThat(null).isAfterCommit()),
                 "failure", "type", AfterCommitException.class, null);
+    }
+
+    @Test
+    void nullSubjectFailsIsInvalidGraph() {
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(null).isInvalidGraph()),
+                "failure", "type", InvalidGraphException.class, null);
     }
 
     @Test
