@@ -64,4 +64,9 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>>
         Checks.equal(context, "cause", none, failed.cause());
         return this;
     }
+
+    /** The hops this transaction committed, the failure route included, since a failed outcome still commits. */
+    public TransitionRecordsAssert records() {
+        return TransitionRecordsAssert.assertThat(failed.records());
+    }
 }

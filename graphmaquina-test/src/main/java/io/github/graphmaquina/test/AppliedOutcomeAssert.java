@@ -33,4 +33,9 @@ public final class AppliedOutcomeAssert<E, S extends Enum<S>>
         Checks.equal(context, "moved to", expected, applied.to());
         return this;
     }
+
+    /** The hops this transaction committed, which may belong to several machines when it cascaded. */
+    public TransitionRecordsAssert records() {
+        return TransitionRecordsAssert.assertThat(applied.records());
+    }
 }
