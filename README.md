@@ -237,8 +237,8 @@ describes.
 
 | Check | Current development result |
 | --- | --- |
-| Automated library/build suites | 1034 tests across the seven `test` suites, and 1020 under `./gradlew build`, with no failures, errors or skipped tests. |
-| README quickstart | Compiled and ran with Gradle and Maven against the released artifacts, with strict lint. Both reported `All ticket scenarios passed.` |
+| Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). |
+| README quickstart | [ReadmeQuickstartTest](graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java) compiles the literal Gradle and Ticket sources with strict lint, runs `App` and checks `TicketsTest` against locally staged Maven artifacts. This JUnit consumer check covers local Gradle, not Maven execution or released artifacts. |
 | Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
 
@@ -317,8 +317,9 @@ java {
     }
 }
 
+val graphmaquinaVersion: String = providers.gradleProperty("graphmaquinaVersion").get()
+
 dependencies {
-    val graphmaquinaVersion: String = providers.gradleProperty("graphmaquinaVersion").get()
     implementation("io.github.graphmaquina:graphmaquina-core:$graphmaquinaVersion")
     annotationProcessor("io.github.graphmaquina:graphmaquina-processor:$graphmaquinaVersion")
 }
@@ -1906,11 +1907,13 @@ class TicketsTest {
 ```
 
 `isFailed()` narrows the outcome and fails with the kind it actually got; `movedTo` reads the failure route
-the outcome recorded, and `hasEntityState` reads the entity itself — the same three run against the example's
-own machines in
-[OrderFlowTest](graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java). Run
-`./gradlew test`. This test consumes generated main code; it does not declare test graphs and needs no
-`testAnnotationProcessor`. In Maven, add JUnit and a compatible test runner through your application's usual
+the outcome recorded, and `hasEntityState` reads the entity itself. Run `./gradlew test` in your application.
+The repository's [ReadmeQuickstartTest](graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java)
+extracts these literal Gradle blocks and Ticket Java files, generates and compiles the main sources, runs
+`App`, and verifies this named JUnit test and its result counts in an external Gradle consumer using locally
+staged artifacts. This verifies the local Gradle workflow; it does not execute this JUnit sample through
+Maven or against released artifacts. This test consumes generated main code; it does not declare test graphs
+and needs no `testAnnotationProcessor`. In Maven, add JUnit and a compatible test runner through your application's usual
 test configuration, together with the test-scoped `graphmaquina-test` dependency shown under
 [typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots); the local
 install above writes into the `~/.m2` repository Maven already reads, so it needs no repository entry.
@@ -2238,6 +2241,7 @@ These commands run from the GraphMaquina checkout, not the ticket application's 
           :graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository \
           :graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository
 ./gradlew --no-daemon test :graphmaquina-gradle-plugin:test
+./gradlew --no-daemon :graphmaquina-test:publishedArtifactTest --offline
 ./gradlew :graphmaquina-example:test
 ./gradlew :graphmaquina-codegen:test :graphmaquina-processor:test
 ./gradlew :graphmaquina-maven-plugin:test
@@ -2249,12 +2253,16 @@ The combined `test` command explicitly includes that suite. Its plugin is a sepa
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-Together those commands run 1034 tests across seven suites — graphmaquina-test 541, core 194, processor 141,
-codegen 98, maven-plugin 24, gradle-plugin 19 and example 17 — with both README quickstarts executed with
-strict lint. The first of them, `./gradlew build`, runs 1020 tests on its own: the Gradle adapter's 19
-belong to a separate included build it never reaches, and it adds the 5 cases of the published-artifact smoke
-test, which `tasks.test` excludes and `tasks.check` puts back.
-Test reports are under each module's `build/reports/tests/test`.
+`./gradlew test` runs the ordinary suites for core, processor, codegen, example, Maven adapter and testing
+support. In `graphmaquina-test`, it excludes `PublishedArtifactSmokeTest` and `ReadmeQuickstartTest`.
+`./gradlew build` reaches both through `check` → `:graphmaquina-test:publishedArtifactTest`, which stages
+core, testing support, generator, processor, Gradle plugin and its marker into the local file repository.
+The published-artifact task also runs independently with the command above. Its external README consumer
+resolves dependencies offline, so third-party dependencies must already be cached.
+
+The included Gradle adapter's suite requires the explicit `:graphmaquina-gradle-plugin:test` command;
+`build` does not run it. Ordinary test reports are under each module's `build/reports/tests/test`, and the
+artifact smoke reports are under `graphmaquina-test/build/reports/tests/publishedArtifactTest`.
 
 ### Release to Maven Central
 
