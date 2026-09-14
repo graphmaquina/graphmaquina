@@ -63,7 +63,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 | Coordinated state changes | Cascades share a unit of work; entity state setters run after the root transition succeeds or selects a handled failure route. |
 | Declared watches | After a peer commits, a matching owner can be reevaluated using ordered rules. |
 | Inspectable execution | Outcomes carry transition records and watch reactions; technical aborts carry diagnostic details where applicable. |
-| Graph inspection | Render the complete matrix or export a deterministic Mermaid state diagram. |
+| Graph inspection | Render the complete matrix or export a deterministic Graphviz state diagram. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
 a durable job queue, HTTP endpoints or distributed transactions. See [persistence and concurrency](#concurrency-identity-and-persistence)
@@ -1794,21 +1794,37 @@ System.out.println(tickets.allowedFrom(TicketStatus.OPEN));
 `definition().edge(from, to)` exposes the resolved cell, and `definition().graph()` exposes the graph of
 moving edges. `initial()`, `terminals()`, `watch(state)` and `hasAsync()` are also available.
 
-To export Mermaid from an existing ticket facade:
+To export [Graphviz DOT](https://graphviz.org/doc/info/lang.html) from an existing ticket facade:
 
 ```java
 import io.github.graphmaquina.export.Detail;
 import io.github.graphmaquina.export.GraphView;
-import io.github.graphmaquina.export.MermaidExporter;
+import io.github.graphmaquina.export.GraphvizExporter;
 
-String diagram = MermaidExporter.render(GraphView.of(tickets.definition()));
-String fullDiagram = MermaidExporter.render(GraphView.of(tickets.definition()), Detail.FULL);
+String diagram = GraphvizExporter.render(GraphView.of(tickets.definition()));
+String fullDiagram = GraphvizExporter.render(GraphView.of(tickets.definition()), Detail.FULL);
 System.out.println(diagram);
 ```
 
 This is a fragment: put the imports at file scope and the statements inside a method. The default detail is
 `TRANSITABLE`, showing action and move edges; `FULL` includes stay and forbid cells. Export does not run
 transitions or evaluate guards.
+
+The export is deterministic DOT text with LF line endings. The initial state has an incoming arrow from
+a point, terminal states have double outlines, and watches appear as notes connected by dashed lines.
+State names and labels are escaped, and all known states remain visible even when edges are filtered.
+
+Save the result as UTF-8 in `tickets.dot`, then use an installed [Graphviz](https://graphviz.org/download/)
+to render an image:
+
+```sh
+dot -Tsvg tickets.dot -o tickets.svg
+dot -Tpng tickets.dot -o tickets.png
+```
+
+The Java exporter needs no external library or native executable. Image rendering is a separate step.
+Consumers of the previous diagram exporter must update their imports and calls to `GraphvizExporter`,
+use `.dot` files, and render them with Graphviz; the previous exporter API has been removed.
 
 You can also build a definition directly through `TicketsRuntime.graph(new TicketActions())` without constructing a
 running set.
@@ -1817,7 +1833,7 @@ running set.
 route. The exporter produces its own labels from the definition. The repository keeps exact expected exports in
 [the example's golden diagrams](graphmaquina-example/src/test/resources/golden).
 
-The illustrations in this guide are maintained separately from the Mermaid exporter. Their accessible SVG
+The illustrations in this guide are maintained separately from the Graphviz exporter. Their accessible SVG
 sources and regeneration instructions are in [docs/images](docs/images/README.md).
 
 ## Test your machines

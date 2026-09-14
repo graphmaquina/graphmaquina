@@ -1,0 +1,18 @@
+digraph "Order/OrderStatus" {
+    rankdir=LR;
+    initial [shape=point, label=""];
+    n0 [label="NEW", shape=ellipse];
+    n1 [label="PAID", shape=ellipse];
+    n2 [label="PAYMENT_DECLINED", shape=ellipse];
+    n3 [label="SHIPPED", shape=doublecircle];
+    n4 [label="CANCELLED", shape=doublecircle];
+    initial -> n0;
+    n0 -> n1 [label="pay [async] [if retryBudgetLeft]"];
+    n0 -> n2 [label="[failure of pay]"];
+    n0 -> n4 [label="cancel"];
+    n1 -> n3 [label="ship [if allItemsPacked] [watches Item: allIn PACKED]"];
+    n2 -> n0 [label="[if retryBudgetLeft]"];
+    n2 -> n4 [label="cancel"];
+    watch0 [shape=note, label="watches Item"];
+    n1 -> watch0 [style=dashed, arrowhead=none];
+}

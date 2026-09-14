@@ -1,8 +1,0 @@
-stateDiagram-v2
-    [*] --> PENDING
-    PENDING --> PACKING
-    PENDING --> CANCELLED
-    PACKING --> PACKED : pack
-    PACKING --> CANCELLED
-    PACKED --> [*]
-    CANCELLED --> [*]
