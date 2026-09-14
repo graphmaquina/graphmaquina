@@ -872,7 +872,7 @@ In this table, `S` is the machine's state enum and `P` is a property symbol clas
 
 | Annotation | Required elements | Optional elements |
 | --- | --- | --- |
-| `Definition` | `initial: S`, `state: P`, `id: P` | `terminals: S[]`, `allowsCycle: S[]` |
+| `Definition` | `initial: S`, `state: P`, `id: P` | `terminals: S[]`, `allowsCycle: S[]`, `afterCommit: HookSymbol` |
 | `Row` | `state: S`, `otherwise: String` | None |
 | `Action` | `from: S[]`, `to: S`, `action: ActionSymbol` | `guards`, `onFailure`, `failsOn`, `timeout`, `afterCommit` |
 | `Move` | `from: S[]`, `to: S` | `guards`, `afterCommit` |
@@ -1724,6 +1724,16 @@ one through `afterCommitWith("completed", (entity, commit) -> ...)`; a cell decl
 annotated context must use the machine's exact state type. Other parameter shapes, non-void returns and
 ambiguous symbols with both signatures marked are rejected.
 
+Declare `afterCommit` on `Definition` to supply a default hook for every `Action`, `Move` and internal `Cell`
+in that machine. An edge's explicit hook replaces the default; the two are not composed. Omitting the edge
+element, or setting it to `{}`, inherits the default. `Definition.afterCommit` also accepts zero or one value;
+multiple values are `SG607`.
+
+The default applies to committed ACTION/MOVE hops, including failure-route cells and transitions triggered by
+watches. STAY, FORBID, rejected or ignored calls, and convergent cascade records do not run it. A failure
+route uses its own effective hook, not the hook of the action that failed. Hooks still run per committed hop,
+so one entity can reach the default more than once in a cascade.
+
 ### Listeners
 
 A listener receives each completed outcome, including ignored and rejected operations. With the ticket set:
@@ -1785,6 +1795,46 @@ guarantee.
 Executor-based calls do not automatically propagate thread-local transactions, security contexts or ORM
 sessions. Arrange those boundaries on the execution thread. Async action callbacks must not use an entity or
 persistence context concurrently without the application's own coordination.
+
+A single `Definition.afterCommit` declaration covers every committed hop of the machine:
+
+```java
+@GenerateGraphApi
+@DocumentsGraph.Definition(initial = DRAFT, terminals = ARCHIVED,
+        state = DocumentRefs.Status.class, id = DocumentRefs.Id.class,
+        afterCommit = DocumentPersistenceRefs.Save.class)
+@DocumentsGraph.Row(state = DRAFT, otherwise = "publish before archiving")
+@DocumentsGraph.Row(state = PUBLISHED, otherwise = "archive next")
+public interface Documents extends Machine<Document, DocumentStatus> {
+    @DocumentsGraph.Move(from = DRAFT, to = PUBLISHED)
+    Outcome<Document, DocumentStatus> publish(Document document);
+
+    @DocumentsGraph.Move(from = PUBLISHED, to = ARCHIVED)
+    Outcome<Document, DocumentStatus> archive(Document document);
+}
+
+public final class DocumentPersistence {
+    private final java.util.function.Consumer<Document> save;
+
+    public DocumentPersistence(java.util.function.Consumer<Document> save) {
+        this.save = java.util.Objects.requireNonNull(save);
+    }
+
+    @GraphHook
+    public void save(Document document) {
+        save.accept(document);
+    }
+}
+```
+
+`Documents`, `Document`, `DocumentStatus` and `DocumentPersistence` are public types and belong in separate
+files, each with the usual annotation and API imports and `import static ...DocumentStatus.*` for the state
+constants. `Document` exports `id` and `status` the same way described under Properties and accessors.
+
+Inject `DocumentPersistence` through the generated set builder, providing your repository's save operation. If
+an edge declares a replacement hook, that hook must call the shared persistence method too when the application
+requires every transition to be saved. This hook runs after GraphMaquina's in-memory commit; the application's
+database transaction still controls durable commit and rollback.
 
 ## Inspect graphs and export diagrams
 
