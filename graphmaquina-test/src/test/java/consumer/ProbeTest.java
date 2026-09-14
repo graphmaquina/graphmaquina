@@ -11,6 +11,7 @@ import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionGuard;
 import io.github.graphmaquina.dsl.StateGraph;
+import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.error.StaleContextException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.runtime.MachineRegistry;
@@ -110,6 +111,39 @@ class ProbeTest {
         trace.assertNamesExactly("first", "prepare");
         hook.calls().assertCount(0);
         assertEquals(State.NEW, entity.state());
+    }
+
+    @Test
+    void anEarlierHookFailureCanLeaveALaterProbeEmptyAfterBothStatesCommit() {
+        Entity root = new Entity("root", State.NEW);
+        Entity child = new Entity("child", State.NEW);
+        IllegalStateException boom = new IllegalStateException("first hook failed");
+        HookProbe<Entity> later = HookProbe.<Entity>create("hook", CallTrace.create()).otherwiseSucceed();
+        GraphDefinition<Entity, State> graph = StateGraph.define(TestDomain.KEY).initial(State.NEW)
+                .terminal(State.READY).terminal(State.DONE).terminal(State.FAILED)
+                .from(State.NEW).to(State.READY).action("prepare", context -> {
+                    if (context.entity() == root) {
+                        context.cascade(TestDomain.KEY, child, State.READY);
+                    }
+                    return ActionOutcome.ok();
+                }).afterCommit("hook", entity -> {
+                    if (entity == root) {
+                        throw boom;
+                    }
+                    later.accept(entity);
+                }).to(State.DONE).move().to(State.FAILED).move().stay().forbidOthers("x")
+                .from(State.READY).stay().forbidOthers("x")
+                .from(State.DONE).stay().forbidOthers("x")
+                .from(State.FAILED).stay().forbidOthers("x").build();
+
+        try (MachineRegistry registry = TestDomain.registry(graph)) {
+            AfterCommitException failure = assertThrows(AfterCommitException.class,
+                    () -> registry.of(TestDomain.KEY).transitionTo(root, State.READY));
+            assertSame(boom, failure.getCause());
+        }
+        assertEquals(State.READY, root.state());
+        assertEquals(State.READY, child.state());
+        later.calls().assertCount(0);
     }
 
     // --- scripting ------------------------------------------------------------------------------------

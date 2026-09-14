@@ -13,8 +13,8 @@ import java.util.function.Supplier;
  * — which holds the entities themselves — and in the shared {@link CallTrace}, and a call the script no longer
  * covers raises a {@link GraphAssertionError} naming the probe and the ordinal of the call.
  *
- * <p>The engine runs after-commit hooks only for hops that committed, so the absence of this probe's name from
- * the trace says the hop did not commit, while its presence says only that the hook was entered.
+ * <p>A recorded call proves this probe ran. Its absence alone cannot determine whether the state committed:
+ * state writes happen before after-commit hooks, and an earlier hook can stop subsequent hooks.
  *
  * @param <E> the entity type of the machine the hook belongs to
  */

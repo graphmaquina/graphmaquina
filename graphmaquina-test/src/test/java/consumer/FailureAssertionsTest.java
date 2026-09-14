@@ -511,6 +511,31 @@ class FailureAssertionsTest {
 
     // --- against the real engine -------------------------------------------------------------------
 
+    @Test
+    void aPendingEntityMayHaveBeenMutatedBeforeItsSetterThrew() {
+        Entity entity = new Entity("e", State.NEW);
+        IllegalStateException setterFailure = new IllegalStateException("setter wrote then failed");
+        GraphDefinition<Entity, State> graph = StateGraph.define(TestDomain.KEY).initial(State.NEW)
+                .terminal(State.READY).terminal(State.DONE).terminal(State.FAILED)
+                .from(State.NEW).to(State.READY).move()
+                        .to(State.DONE).move().to(State.FAILED).move().stay().forbidOthers("x")
+                .from(State.READY).stay().forbidOthers("x")
+                .from(State.DONE).stay().forbidOthers("x")
+                .from(State.FAILED).stay().forbidOthers("x").build();
+
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(graph).state(Entity::state, (subject, state) -> {
+                    subject.setState(state);
+                    throw setterFailure;
+                }).identity(Entity::id)).build()) {
+            Throwable failure = TransitionFailureAssert.captureFailure(
+                    () -> registry.of(TestDomain.KEY).transitionTo(entity, State.READY));
+            TransitionFailureAssert.assertThat(failure).isCommitFailure()
+                    .hasAppliedExactly().hasPendingExactly(entity).hasCauseSameAs(setterFailure);
+            assertEquals(State.READY, entity.state());
+        }
+    }
+
     /**
      * Phase 2 writes the parcel and then throws on the label's setter. Nothing is undone, so the parcel is
      * already sent while the label never moved: the view reports exactly that split, and the expectation a

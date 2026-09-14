@@ -10,7 +10,7 @@ public final class CommitFailedException extends StateMachineException {
 
     /** Writes that were made and not undone. */
     private final List<Object> applied;
-    /** Entities that never got written. */
+    /** Remaining planned commit work, including the failing setter when one threw. */
     private final List<Object> pending;
 
     public CommitFailedException(List<?> applied, List<?> pending, String message) {
