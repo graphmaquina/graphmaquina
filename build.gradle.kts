@@ -3,7 +3,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 
 val centralStaging = layout.buildDirectory.dir("central-staging")
 val centralModules = listOf("graphmaquina-core", "graphmaquina-codegen", "graphmaquina-processor",
-    "graphmaquina-maven-plugin", "graphmaquina-gradle-plugin")
+    "graphmaquina-maven-plugin", "graphmaquina-gradle-plugin", "graphmaquina-test")
 val centralArtifacts = providers.provider {
     val release = project(":graphmaquina-core").version.toString()
     check(!release.endsWith("-SNAPSHOT") && release != "0.0.0-dev") {
@@ -25,7 +25,7 @@ val bundlePaths = centralArtifacts.map { artifacts ->
 
 val verifyCentralStaging = tasks.register("verifyCentralStaging") {
     group = "publishing"
-    description = "Stages all six publications and checks their metadata, signatures and checksums"
+    description = "Stages all configured publications and checks their metadata, signatures and checksums"
     dependsOn(centralModules.filter { it != "graphmaquina-gradle-plugin" }.map {
         ":$it:publishAllPublicationsToCentralStagingRepository"
     })

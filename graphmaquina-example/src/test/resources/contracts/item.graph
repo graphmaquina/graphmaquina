@@ -1,0 +1,78 @@
+graphmaquina-snapshot-v1
+/cells/CANCELLED/CANCELLED/failsOn/count	0
+/cells/CANCELLED/CANCELLED/guards/count	0
+/cells/CANCELLED/CANCELLED/kind	STAY
+/cells/CANCELLED/CANCELLED/reason	
+/cells/CANCELLED/PACKED/failsOn/count	0
+/cells/CANCELLED/PACKED/guards/count	0
+/cells/CANCELLED/PACKED/kind	FORBID
+/cells/CANCELLED/PACKED/reason	CANCELLED is final
+/cells/CANCELLED/PACKING/failsOn/count	0
+/cells/CANCELLED/PACKING/guards/count	0
+/cells/CANCELLED/PACKING/kind	FORBID
+/cells/CANCELLED/PACKING/reason	CANCELLED is final
+/cells/CANCELLED/PENDING/failsOn/count	0
+/cells/CANCELLED/PENDING/guards/count	0
+/cells/CANCELLED/PENDING/kind	FORBID
+/cells/CANCELLED/PENDING/reason	CANCELLED is final
+/cells/PACKED/CANCELLED/failsOn/count	0
+/cells/PACKED/CANCELLED/guards/count	0
+/cells/PACKED/CANCELLED/kind	FORBID
+/cells/PACKED/CANCELLED/reason	PACKED is final
+/cells/PACKED/PACKED/failsOn/count	0
+/cells/PACKED/PACKED/guards/count	0
+/cells/PACKED/PACKED/kind	STAY
+/cells/PACKED/PACKED/reason	
+/cells/PACKED/PACKING/failsOn/count	0
+/cells/PACKED/PACKING/guards/count	0
+/cells/PACKED/PACKING/kind	FORBID
+/cells/PACKED/PACKING/reason	PACKED is final
+/cells/PACKED/PENDING/failsOn/count	0
+/cells/PACKED/PENDING/guards/count	0
+/cells/PACKED/PENDING/kind	FORBID
+/cells/PACKED/PENDING/reason	PACKED is final
+/cells/PACKING/CANCELLED/failsOn/count	0
+/cells/PACKING/CANCELLED/guards/count	0
+/cells/PACKING/CANCELLED/kind	MOVE
+/cells/PACKING/CANCELLED/reason	
+/cells/PACKING/PACKED/action/async	false
+/cells/PACKING/PACKED/action/name	pack
+/cells/PACKING/PACKED/failsOn/count	0
+/cells/PACKING/PACKED/guards/count	0
+/cells/PACKING/PACKED/kind	ACTION
+/cells/PACKING/PACKED/reason	
+/cells/PACKING/PACKING/failsOn/count	0
+/cells/PACKING/PACKING/guards/count	0
+/cells/PACKING/PACKING/kind	STAY
+/cells/PACKING/PACKING/reason	
+/cells/PACKING/PENDING/failsOn/count	0
+/cells/PACKING/PENDING/guards/count	0
+/cells/PACKING/PENDING/kind	FORBID
+/cells/PACKING/PENDING/reason	cannot go back to pending
+/cells/PENDING/CANCELLED/failsOn/count	0
+/cells/PENDING/CANCELLED/guards/count	0
+/cells/PENDING/CANCELLED/kind	MOVE
+/cells/PENDING/CANCELLED/reason	
+/cells/PENDING/PACKED/failsOn/count	0
+/cells/PENDING/PACKED/guards/count	0
+/cells/PENDING/PACKED/kind	FORBID
+/cells/PENDING/PACKED/reason	an item is packed by going through PACKING
+/cells/PENDING/PACKING/failsOn/count	0
+/cells/PENDING/PACKING/guards/count	0
+/cells/PENDING/PACKING/kind	MOVE
+/cells/PENDING/PACKING/reason	
+/cells/PENDING/PENDING/failsOn/count	0
+/cells/PENDING/PENDING/guards/count	0
+/cells/PENDING/PENDING/kind	STAY
+/cells/PENDING/PENDING/reason	
+/hasAsync	false
+/initial	PENDING
+/machine/entity	io.github.graphmaquina.example.item.Item
+/machine/states	io.github.graphmaquina.example.item.ItemStatus
+/states/0	PENDING
+/states/1	PACKING
+/states/2	PACKED
+/states/3	CANCELLED
+/states/count	4
+/terminals/CANCELLED	true
+/terminals/PACKED	true

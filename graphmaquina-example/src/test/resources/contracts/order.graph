@@ -1,0 +1,136 @@
+graphmaquina-snapshot-v1
+/cells/CANCELLED/CANCELLED/failsOn/count	0
+/cells/CANCELLED/CANCELLED/guards/count	0
+/cells/CANCELLED/CANCELLED/kind	STAY
+/cells/CANCELLED/CANCELLED/reason	
+/cells/CANCELLED/NEW/failsOn/count	0
+/cells/CANCELLED/NEW/guards/count	0
+/cells/CANCELLED/NEW/kind	FORBID
+/cells/CANCELLED/NEW/reason	cancelled is final
+/cells/CANCELLED/PAID/failsOn/count	0
+/cells/CANCELLED/PAID/guards/count	0
+/cells/CANCELLED/PAID/kind	FORBID
+/cells/CANCELLED/PAID/reason	cancelled is final
+/cells/CANCELLED/PAYMENT_DECLINED/failsOn/count	0
+/cells/CANCELLED/PAYMENT_DECLINED/guards/count	0
+/cells/CANCELLED/PAYMENT_DECLINED/kind	FORBID
+/cells/CANCELLED/PAYMENT_DECLINED/reason	cancelled is final
+/cells/CANCELLED/SHIPPED/failsOn/count	0
+/cells/CANCELLED/SHIPPED/guards/count	0
+/cells/CANCELLED/SHIPPED/kind	FORBID
+/cells/CANCELLED/SHIPPED/reason	cancelled is final
+/cells/NEW/CANCELLED/action/async	false
+/cells/NEW/CANCELLED/action/name	cancel
+/cells/NEW/CANCELLED/failsOn/count	0
+/cells/NEW/CANCELLED/guards/count	0
+/cells/NEW/CANCELLED/kind	ACTION
+/cells/NEW/CANCELLED/reason	
+/cells/NEW/NEW/failsOn/count	0
+/cells/NEW/NEW/guards/count	0
+/cells/NEW/NEW/kind	STAY
+/cells/NEW/NEW/reason	
+/cells/NEW/PAID/action/async	true
+/cells/NEW/PAID/action/name	pay
+/cells/NEW/PAID/failsOn/0	java.io.IOException
+/cells/NEW/PAID/failsOn/count	1
+/cells/NEW/PAID/guards/0/async	false
+/cells/NEW/PAID/guards/0/name	retryBudgetLeft
+/cells/NEW/PAID/guards/count	1
+/cells/NEW/PAID/kind	ACTION
+/cells/NEW/PAID/onFailure	PAYMENT_DECLINED
+/cells/NEW/PAID/reason	
+/cells/NEW/PAID/timeout	PT5S
+/cells/NEW/PAYMENT_DECLINED/failsOn/count	0
+/cells/NEW/PAYMENT_DECLINED/guards/count	0
+/cells/NEW/PAYMENT_DECLINED/kind	MOVE
+/cells/NEW/PAYMENT_DECLINED/reason	
+/cells/NEW/SHIPPED/failsOn/count	0
+/cells/NEW/SHIPPED/guards/count	0
+/cells/NEW/SHIPPED/kind	FORBID
+/cells/NEW/SHIPPED/reason	cannot ship without payment
+/cells/PAID/CANCELLED/failsOn/count	0
+/cells/PAID/CANCELLED/guards/count	0
+/cells/PAID/CANCELLED/kind	FORBID
+/cells/PAID/CANCELLED/reason	money was charged: requires a refund
+/cells/PAID/NEW/failsOn/count	0
+/cells/PAID/NEW/guards/count	0
+/cells/PAID/NEW/kind	FORBID
+/cells/PAID/NEW/reason	money was charged: requires a refund
+/cells/PAID/PAID/failsOn/count	0
+/cells/PAID/PAID/guards/count	0
+/cells/PAID/PAID/kind	STAY
+/cells/PAID/PAID/reason	
+/cells/PAID/PAYMENT_DECLINED/failsOn/count	0
+/cells/PAID/PAYMENT_DECLINED/guards/count	0
+/cells/PAID/PAYMENT_DECLINED/kind	FORBID
+/cells/PAID/PAYMENT_DECLINED/reason	money was charged: requires a refund
+/cells/PAID/SHIPPED/action/async	false
+/cells/PAID/SHIPPED/action/name	ship
+/cells/PAID/SHIPPED/afterCommit	notifyCarrier
+/cells/PAID/SHIPPED/failsOn/count	0
+/cells/PAID/SHIPPED/guards/0/async	false
+/cells/PAID/SHIPPED/guards/0/name	allItemsPacked
+/cells/PAID/SHIPPED/guards/count	1
+/cells/PAID/SHIPPED/kind	ACTION
+/cells/PAID/SHIPPED/reason	
+/cells/PAYMENT_DECLINED/CANCELLED/action/async	false
+/cells/PAYMENT_DECLINED/CANCELLED/action/name	cancel
+/cells/PAYMENT_DECLINED/CANCELLED/failsOn/count	0
+/cells/PAYMENT_DECLINED/CANCELLED/guards/count	0
+/cells/PAYMENT_DECLINED/CANCELLED/kind	ACTION
+/cells/PAYMENT_DECLINED/CANCELLED/reason	
+/cells/PAYMENT_DECLINED/NEW/failsOn/count	0
+/cells/PAYMENT_DECLINED/NEW/guards/0/async	false
+/cells/PAYMENT_DECLINED/NEW/guards/0/name	retryBudgetLeft
+/cells/PAYMENT_DECLINED/NEW/guards/count	1
+/cells/PAYMENT_DECLINED/NEW/kind	MOVE
+/cells/PAYMENT_DECLINED/NEW/reason	
+/cells/PAYMENT_DECLINED/PAID/failsOn/count	0
+/cells/PAYMENT_DECLINED/PAID/guards/count	0
+/cells/PAYMENT_DECLINED/PAID/kind	FORBID
+/cells/PAYMENT_DECLINED/PAID/reason	go back to NEW to retry the charge
+/cells/PAYMENT_DECLINED/PAYMENT_DECLINED/failsOn/count	0
+/cells/PAYMENT_DECLINED/PAYMENT_DECLINED/guards/count	0
+/cells/PAYMENT_DECLINED/PAYMENT_DECLINED/kind	STAY
+/cells/PAYMENT_DECLINED/PAYMENT_DECLINED/reason	
+/cells/PAYMENT_DECLINED/SHIPPED/failsOn/count	0
+/cells/PAYMENT_DECLINED/SHIPPED/guards/count	0
+/cells/PAYMENT_DECLINED/SHIPPED/kind	FORBID
+/cells/PAYMENT_DECLINED/SHIPPED/reason	go back to NEW to retry the charge
+/cells/SHIPPED/CANCELLED/failsOn/count	0
+/cells/SHIPPED/CANCELLED/guards/count	0
+/cells/SHIPPED/CANCELLED/kind	FORBID
+/cells/SHIPPED/CANCELLED/reason	a shipment cannot be undone
+/cells/SHIPPED/NEW/failsOn/count	0
+/cells/SHIPPED/NEW/guards/count	0
+/cells/SHIPPED/NEW/kind	FORBID
+/cells/SHIPPED/NEW/reason	a shipment cannot be undone
+/cells/SHIPPED/PAID/failsOn/count	0
+/cells/SHIPPED/PAID/guards/count	0
+/cells/SHIPPED/PAID/kind	FORBID
+/cells/SHIPPED/PAID/reason	a shipment cannot be undone
+/cells/SHIPPED/PAYMENT_DECLINED/failsOn/count	0
+/cells/SHIPPED/PAYMENT_DECLINED/guards/count	0
+/cells/SHIPPED/PAYMENT_DECLINED/kind	FORBID
+/cells/SHIPPED/PAYMENT_DECLINED/reason	a shipment cannot be undone
+/cells/SHIPPED/SHIPPED/failsOn/count	0
+/cells/SHIPPED/SHIPPED/guards/count	0
+/cells/SHIPPED/SHIPPED/kind	STAY
+/cells/SHIPPED/SHIPPED/reason	
+/hasAsync	true
+/initial	NEW
+/machine/entity	io.github.graphmaquina.example.order.Order
+/machine/states	io.github.graphmaquina.example.order.OrderStatus
+/states/0	NEW
+/states/1	PAID
+/states/2	PAYMENT_DECLINED
+/states/3	SHIPPED
+/states/4	CANCELLED
+/states/count	5
+/terminals/CANCELLED	true
+/terminals/SHIPPED	true
+/watches/PAID/peer/entity	io.github.graphmaquina.example.item.Item
+/watches/PAID/peer/states	io.github.graphmaquina.example.item.ItemStatus
+/watches/PAID/rules/0/condition	allIn PACKED
+/watches/PAID/rules/0/target	SHIPPED
+/watches/PAID/rules/count	1

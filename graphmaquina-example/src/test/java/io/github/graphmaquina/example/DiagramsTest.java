@@ -1,34 +1,36 @@
 package io.github.graphmaquina.example;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
+import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.example.item.Item;
 import io.github.graphmaquina.example.item.ItemActions;
+import io.github.graphmaquina.example.item.ItemStatus;
 import io.github.graphmaquina.example.item.ItemsRuntime;
+import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
+import io.github.graphmaquina.example.order.OrderStatus;
 import io.github.graphmaquina.example.order.OrdersRuntime;
-import io.github.graphmaquina.export.GraphView;
-import io.github.graphmaquina.export.GraphvizExporter;
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
+import io.github.graphmaquina.test.GraphGoldens;
 import org.junit.jupiter.api.Test;
 
+/** Visual DOT output only; GraphContractsTest and OrderFlowTest verify the machines' contracts and behavior. */
 class DiagramsTest {
 
-    private static String golden(String name) throws IOException {
-        try (InputStream in = DiagramsTest.class.getResourceAsStream("/golden/" + name)) {
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        }
+    private static GraphDefinition<Order, OrderStatus> orderGraph() {
+        return OrdersRuntime.graph(new OrderActions(new FakeGateway(), new FakeCarrier()));
+    }
+
+    private static GraphDefinition<Item, ItemStatus> itemGraph() {
+        return ItemsRuntime.graph(new ItemActions());
     }
 
     @Test
-    void orderDiagramMatchesGolden() throws IOException {
-        String rendered = GraphvizExporter.render(GraphView.of(OrdersRuntime.graph(new OrderActions(new FakeGateway(), new FakeCarrier()))));
-        assertEquals(golden("order.dot"), rendered);
+    void orderDiagramMatchesGolden() {
+        GraphGoldens.assertMatches(orderGraph(), "golden/order.dot");
     }
 
     @Test
-    void itemDiagramMatchesGolden() throws IOException {
-        assertEquals(golden("item.dot"), GraphvizExporter.render(GraphView.of(ItemsRuntime.graph(new ItemActions()))));
+    void itemDiagramMatchesGolden() {
+        GraphGoldens.assertMatches(itemGraph(), "golden/item.dot");
     }
+
 }

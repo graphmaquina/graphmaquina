@@ -108,6 +108,7 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 | Runtime and public annotations | `io.github.graphmaquina:graphmaquina-core` | Application dependencies |
 | Pre-compilation generator | `io.github.graphmaquina:graphmaquina-codegen` | Build tooling; resolved by the adapter |
 | Annotation processor | `io.github.graphmaquina:graphmaquina-processor` | javac annotation-processor path |
+| Typed testing assertions and probes | `io.github.graphmaquina:graphmaquina-test` | Test dependencies; ships with the next release |
 | Gradle plugin | plugin ID `io.github.graphmaquina` | Gradle `plugins` block |
 | Maven plugin | `io.github.graphmaquina:graphmaquina-maven-plugin` | Maven build plugins |
 | Reference application | `graphmaquina-example` | Source and tests in this repository; not an application dependency |
@@ -228,13 +229,16 @@ does not perform the required pre-generation step.
 ## Publication and verification status
 
 GraphMaquina is available from Maven Central and the badge at the top reports the current release. The
-namespace `io.github.graphmaquina` is verified. A release contains the runtime, generator, processor, Maven
-plugin, Gradle plugin and Gradle plugin marker.
+namespace `io.github.graphmaquina` is verified. A release contains the runtime, generator, processor, testing
+module, Maven plugin, Gradle plugin and Gradle plugin marker. `graphmaquina-test` joins that publication with
+the next release; the release the badge reports does not carry it yet, so until then it is built from a
+checkout as [typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots)
+describes.
 
 | Check | Current development result |
 | --- | --- |
-| Automated library/build suites | 479 tests, with no failures, errors or skipped tests. |
-| README quickstart | Compiled and ran with Gradle and Maven against the released artifacts, with strict lint. Both reported `All ticket scenarios passed.` |
+| Automated library/build suites | `./gradlew test` runs the root build's ordinary suites; `./gradlew build` also runs `:graphmaquina-test:publishedArtifactTest` through `check`. The included Gradle adapter requires `:graphmaquina-gradle-plugin:test` explicitly. See [verification commands](#build-verify-and-release-this-repository). |
+| README quickstart | [ReadmeQuickstartTest](graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java) compiles the literal Gradle and Ticket sources with strict lint, runs `App` and checks `TicketsTest` against locally staged Maven artifacts. This JUnit consumer check covers local Gradle, not Maven execution or released artifacts. |
 | Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
 
@@ -313,8 +317,9 @@ java {
     }
 }
 
+val graphmaquinaVersion: String = providers.gradleProperty("graphmaquinaVersion").get()
+
 dependencies {
-    val graphmaquinaVersion: String = providers.gradleProperty("graphmaquinaVersion").get()
     implementation("io.github.graphmaquina:graphmaquina-core:$graphmaquinaVersion")
     annotationProcessor("io.github.graphmaquina:graphmaquina-processor:$graphmaquinaVersion")
 }
@@ -1829,6 +1834,13 @@ use `.dot` files, and render them with Graphviz; the previous exporter API has b
 You can also build a definition directly through `TicketsRuntime.graph(new TicketActions())` without constructing a
 running set.
 
+Use typed assertions on `GraphDefinition` and `EdgeSpec`, or `GraphSnapshots` with `.graph` resources,
+for structural contracts. Validate behavior through real operations, outcomes, reactions and observed entity
+states. Neither `definition().render()` nor a graphical export is an oracle for machine logic.
+`GraphGoldens` with `.dot` resources checks visual output only; keep those tests separate from contract and
+behavior tests. The [testing guide](docs/testing.md#goldens-and-structural-snapshots) describes both APIs and
+their Gradle and Maven update configuration.
+
 [The illustrated ticket workflow](docs/images/ticket-workflow.svg) summarizes the moving edges and failure
 route. The exporter produces its own labels from the definition. The repository keeps exact expected exports in
 [the example's golden diagrams](graphmaquina-example/src/test/resources/golden).
@@ -1843,13 +1855,27 @@ Test through generated facades using real entities and deterministic action depe
 [OrderFlowTest](graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java)
 shows JUnit tests for payment, retries, cascades, watches and journals.
 
-For a Gradle application using JUnit, add:
+The test below reads its outcome with `graphmaquina-test`, the module that holds the typed assertions. It
+ships with the next release, so Maven Central does not carry it yet and the quickstart's `mavenCentral()`
+cannot resolve it. Install it first from a GraphMaquina checkout, passing the version this build already
+sets in `gradle.properties`:
+
+```bash
+./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-test:publishToMavenLocal \
+          -PgraphmaquinaVersion=x.y.z
+```
+
+Then add `mavenLocal()` above `mavenCentral()` in the `dependencyResolutionManagement` block of
+[settings.gradle.kts](#settingsgradlekts), so both modules resolve from there: the testing module's POM pins
+`graphmaquina-core` at its own version, which Central does not carry for an unreleased one. For a Gradle
+application using JUnit, add:
 
 ```kotlin
 dependencies {
     testImplementation(platform("org.junit:junit-bom:5.13.4"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+    testImplementation("io.github.graphmaquina:graphmaquina-test:$graphmaquinaVersion")
 }
 
 tasks.test {
@@ -1862,10 +1888,8 @@ Create `src/test/java/com/example/tickets/TicketsTest.java`:
 ```java
 package com.example.tickets;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static io.github.graphmaquina.test.GraphAssertions.assertThat;
 
-import io.github.graphmaquina.api.Outcome;
 import org.junit.jupiter.api.Test;
 
 class TicketsTest {
@@ -1873,19 +1897,72 @@ class TicketsTest {
     void aDomainFailureCommitsItsDeclaredFailureState() {
         try (TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions()).build()) {
             Ticket ticket = new Ticket("T-5", "Declined approval", false);
-            assertInstanceOf(Outcome.Applied.class, machines.tickets().start(ticket));
-            Outcome<Ticket, TicketStatus> result = machines.tickets().complete(ticket);
-            assertInstanceOf(Outcome.Failed.class, result);
-            assertEquals(TicketStatus.FAILED, result.current());
-            assertEquals(TicketStatus.FAILED, ticket.getStatus());
+            assertThat(machines.tickets().start(ticket)).isApplied();
+            assertThat(machines.tickets().complete(ticket)).isFailed()
+                    .movedTo(TicketStatus.FAILED)
+                    .hasEntityState(Ticket::getStatus, TicketStatus.FAILED);
         }
     }
 }
 ```
 
-Run `./gradlew test`. This test consumes generated main code; it does not declare test graphs and needs no
-`testAnnotationProcessor`. In Maven, add JUnit and a compatible test runner through your application's usual
-test configuration; preserve the graph generation lifecycle for any test graphs.
+`isFailed()` narrows the outcome and fails with the kind it actually got; `movedTo` reads the failure route
+the outcome recorded, and `hasEntityState` reads the entity itself. Run `./gradlew test` in your application.
+The repository's [ReadmeQuickstartTest](graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java)
+extracts these literal Gradle blocks and Ticket Java files, generates and compiles the main sources, runs
+`App`, and verifies this named JUnit test and its result counts in an external Gradle consumer using locally
+staged artifacts. This verifies the local Gradle workflow; it does not execute this JUnit sample through
+Maven or against released artifacts. This test consumes generated main code; it does not declare test graphs
+and needs no `testAnnotationProcessor`. In Maven, add JUnit and a compatible test runner through your application's usual
+test configuration, together with the test-scoped `graphmaquina-test` dependency shown under
+[typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots); the local
+install above writes into the `~/.m2` repository Maven already reads, so it needs no repository entry.
+Preserve the graph generation lifecycle for any test graphs.
+
+### Typed assertions, probes and graph snapshots
+
+`graphmaquina-test` is a test-scoped module that asserts over the runtime's own values — definitions, cells,
+outcomes, transition records, reactions and engine exceptions — and reports every unmet expectation as a
+`GraphAssertionError` carrying the context, the property, the expected value and the actual one. It imposes
+no test framework: nothing in its API mentions JUnit or AssertJ, so it works under the runner your project
+already uses.
+
+It is a module of the **next** release. The release the badge at the top reports does not contain it yet, so
+until then build it from a GraphMaquina checkout with
+`./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-test:publishToMavenLocal -PgraphmaquinaVersion=<version>`
+and resolve it from `mavenLocal()` — its POM pins `graphmaquina-core` at the same version, which Maven
+Central does not carry for an unreleased one. The coordinates take the same version variable as every other
+module:
+
+```kotlin
+dependencies {
+    testImplementation("io.github.graphmaquina:graphmaquina-test:$graphmaquinaVersion")
+}
+```
+
+```xml
+<dependency>
+  <groupId>io.github.graphmaquina</groupId>
+  <artifactId>graphmaquina-test</artifactId>
+  <version>${graphmaquina.version}</version>
+  <scope>test</scope>
+</dependency>
+```
+
+One static import of `io.github.graphmaquina.test.GraphAssertions.assertThat` reaches the view for every
+subject a test holds, and the chain keeps the entity and state types of that subject:
+
+```java
+assertThat(orders.pay(order)).isApplied().movedTo(OrderStatus.PAID)
+        .hasEntityState(Order::status, OrderStatus.PAID);
+```
+
+Beyond assertions it carries scripted probes for guards, actions, hooks and the state setter, fixtures that
+let a test decide when an asynchronous callback answers, a listener recorder, entity-state snapshots, and
+golden comparison for both the rendered diagram and the complete structure of a graph. The
+[testing guide](docs/testing.md) covers installation, what each entry point checks, what each check does not
+prove, and the golden update procedure for Gradle and Maven. Every sample in it is copied from a test that
+runs in this repository.
 
 Useful behavior to cover in your own domain:
 
@@ -1896,7 +1973,9 @@ Useful behavior to cover in your own domain:
 - First-match watch order, empty peer collections and aborted reactions.
 - Async timeout behavior and late completions.
 - Hooks and listeners that fail after state has committed.
-- Exact exported diagrams when graph changes require review.
+- Declared graph contracts through typed assertions or structural snapshots.
+
+Visual export tests may separately pin `.dot` goldens when changes to diagram output require review.
 
 A passing runtime test does not replace compile-time graph validation. Conversely, a valid graph does not prove
 that your action performs the correct domain operation.
@@ -2162,6 +2241,7 @@ These commands run from the GraphMaquina checkout, not the ticket application's 
           :graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository \
           :graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository
 ./gradlew --no-daemon test :graphmaquina-gradle-plugin:test
+./gradlew --no-daemon :graphmaquina-test:publishedArtifactTest --offline
 ./gradlew :graphmaquina-example:test
 ./gradlew :graphmaquina-codegen:test :graphmaquina-processor:test
 ./gradlew :graphmaquina-maven-plugin:test
@@ -2173,8 +2253,16 @@ The combined `test` command explicitly includes that suite. Its plugin is a sepa
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-The full suite is 479 tests across six suites, with both README quickstarts executed with strict lint.
-Test reports are under each module's `build/reports/tests/test`.
+`./gradlew test` runs the ordinary suites for core, processor, codegen, example, Maven adapter and testing
+support. In `graphmaquina-test`, it excludes `PublishedArtifactSmokeTest` and `ReadmeQuickstartTest`.
+`./gradlew build` reaches both through `check` → `:graphmaquina-test:publishedArtifactTest`, which stages
+core, testing support, generator, processor, Gradle plugin and its marker into the local file repository.
+The published-artifact task also runs independently with the command above. Its external README consumer
+resolves dependencies offline, so third-party dependencies must already be cached.
+
+The included Gradle adapter's suite requires the explicit `:graphmaquina-gradle-plugin:test` command;
+`build` does not run it. Ordinary test reports are under each module's `build/reports/tests/test`, and the
+artifact smoke reports are under `graphmaquina-test/build/reports/tests/publishedArtifactTest`.
 
 ### Release to Maven Central
 
@@ -2206,7 +2294,7 @@ environment and masks secrets in its output. Keep the private key, passphrase an
 in the vault. Only distribute the public key. See [release signing](docs/release-signing.md) for the
 public fingerprint, key retrieval and verification commands.
 
-The task stages five binary publications and the Gradle plugin marker, validates required artifacts and POM
+The task stages six binary publications and the Gradle plugin marker, validates required artifacts and POM
 metadata, checks signature files and checksums, then produces:
 
 ```text

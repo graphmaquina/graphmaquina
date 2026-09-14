@@ -1,0 +1,12 @@
+digraph "Entity/State" {
+    rankdir=LR;
+    initial [shape=point, label=""];
+    n0 [label="NEW", shape=ellipse];
+    n1 [label="READY", shape=ellipse];
+    n2 [label="DONE", shape=doublecircle];
+    n3 [label="FAILED", shape=doublecircle];
+    initial -> n0;
+    n0 -> n1 [label="prepare [async] [if first, second]"];
+    n0 -> n3 [label="[failure of prepare]"];
+    n1 -> n2;
+}

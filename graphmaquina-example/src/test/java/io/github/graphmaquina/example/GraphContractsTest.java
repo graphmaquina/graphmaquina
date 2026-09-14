@@ -1,0 +1,35 @@
+package io.github.graphmaquina.example;
+
+import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.example.item.Item;
+import io.github.graphmaquina.example.item.ItemActions;
+import io.github.graphmaquina.example.item.ItemStatus;
+import io.github.graphmaquina.example.item.ItemsRuntime;
+import io.github.graphmaquina.example.order.Order;
+import io.github.graphmaquina.example.order.OrderActions;
+import io.github.graphmaquina.example.order.OrderStatus;
+import io.github.graphmaquina.example.order.OrdersRuntime;
+import io.github.graphmaquina.test.GraphSnapshots;
+import org.junit.jupiter.api.Test;
+
+/** Declared metadata of the example machines, independent of graphical exporters. */
+class GraphContractsTest {
+
+    private static GraphDefinition<Order, OrderStatus> orderGraph() {
+        return OrdersRuntime.graph(new OrderActions(new FakeGateway(), new FakeCarrier()));
+    }
+
+    private static GraphDefinition<Item, ItemStatus> itemGraph() {
+        return ItemsRuntime.graph(new ItemActions());
+    }
+
+    @Test
+    void orderContractMatchesSnapshot() {
+        GraphSnapshots.assertMatches(orderGraph(), "contracts/order.graph");
+    }
+
+    @Test
+    void itemContractMatchesSnapshot() {
+        GraphSnapshots.assertMatches(itemGraph(), "contracts/item.graph");
+    }
+}
