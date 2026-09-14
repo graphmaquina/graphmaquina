@@ -97,6 +97,8 @@ final class MachineVocabularyEmitter {
         source.line(state + "[] allowsCycle() default {};");
         source.line("Class<? extends PropertySymbol> state();");
         source.line("Class<? extends PropertySymbol> id();");
+        source.line("/** Default hook for ACTION/MOVE edges; an edge hook replaces it. Empty inherits on an edge. */");
+        source.line("Class<? extends HookSymbol>[] afterCommit() default {};");
         close(source);
     }
 

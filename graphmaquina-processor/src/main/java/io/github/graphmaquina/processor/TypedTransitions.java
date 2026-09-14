@@ -50,9 +50,11 @@ final class TypedTransitions {
     /**
      * The cell {@code mirror} declares on {@code element}, or empty when it has a problem, which was reported.
      * {@code operation} is the name of the method an operation declares it on, and is empty for a {@code Cell}
-     * of the interface itself, whose label is the action it selected.
+     * of the interface itself, whose label is the action it selected. {@code defaultAfterCommit} is the hook
+     * the enclosing machine declares as its default, used when this declaration names none of its own.
      */
-    Optional<CellModel> read(Element element, AnnotationMirror mirror, MachineTypes machine, String operation) {
+    Optional<CellModel> read(Element element, AnnotationMirror mirror, MachineTypes machine,
+            String operation, Optional<Binding> defaultAfterCommit) {
         int before = diagnostics.errors();
         Optional<AnnotationValue> declaredFrom = annotations.find(mirror, "from");
         Optional<AnnotationValue> declaredTo = annotations.find(mirror, "to");
@@ -82,8 +84,8 @@ final class TypedTransitions {
                 : annotations.array(mirror, "failsOn");
         List<TypeMirror> failsOn = classes(failsOnValues);
         structure.checkFailsOn(failsOn, failsOnValues, element, mirror);
-        Optional<Binding> afterCommit = single(element, mirror, "afterCommit")
-                .flatMap((AnnotationValue value) -> resolve(value, Bindings.Role.HOOK, element, mirror, machine));
+        Optional<Binding> afterCommit = afterCommit(element, mirror, machine)
+                .or(() -> defaultAfterCommit);
 
         structure.checkActionRequired(declaredAction.isPresent(), onFailure, failsOn, timeout, "",
                 DiagnosticAnchor.of(element, mirror, declaredTo.get()));
@@ -94,6 +96,12 @@ final class TypedTransitions {
         }
         return Optional.of(new CellModel(from.get(), to.get(), action.isPresent() ? EdgeKind.ACTION : EdgeKind.MOVE,
                 label(action, operation), action, guards, onFailure, failsOn, timeout, afterCommit));
+    }
+
+    /** Resolves the optional hook on a definition or transition at its own declaration. */
+    Optional<Binding> afterCommit(Element element, AnnotationMirror mirror, MachineTypes machine) {
+        return single(element, mirror, "afterCommit")
+                .flatMap((AnnotationValue value) -> resolve(value, Bindings.Role.HOOK, element, mirror, machine));
     }
 
     /**
