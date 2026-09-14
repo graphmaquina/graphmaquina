@@ -15,8 +15,8 @@ import java.util.Optional;
  * Chainable, typed assertion over one cell of a graph's matrix, obtained from
  * {@link GraphAssert#edge(Enum, Enum)}. Every expectation reads a declared field of the
  * {@link EdgeSpec}; none of them runs the cell's action, guards or hook, so a graph whose callbacks
- * would fail if invoked can still be inspected in full. Fields the Mermaid export does not carry —
- * the timeout, the {@code failsOn} classes and the after-commit hook — are checked here and nowhere else.
+ * would fail if invoked can still be inspected in full. Timeout, {@code failsOn} classes and the
+ * after-commit hook are checked directly, independently of any graphical exporter.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine

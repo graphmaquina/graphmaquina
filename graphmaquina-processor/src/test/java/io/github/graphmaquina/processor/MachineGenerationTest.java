@@ -1,21 +1,23 @@
 package io.github.graphmaquina.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.api.EdgeKind;
+import io.github.graphmaquina.api.EdgeSpec;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
-import io.github.graphmaquina.export.GraphView;
-import io.github.graphmaquina.export.MermaidExporter;
 import io.github.graphmaquina.runtime.StateMachines;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
@@ -176,9 +178,7 @@ class MachineGenerationTest {
         Method graph = companion.getMethod("graph", docActions);
         @SuppressWarnings("unchecked")
         GraphDefinition<Object, ?> definition = (GraphDefinition<Object, ?>) graph.invoke(null, actions);
-        String diagram = MermaidExporter.render(GraphView.of(definition));
-        assertTrue(diagram.contains("REVIEW --> PUBLISHED : publish [if approved]"), diagram);
-        assertTrue(diagram.contains("PUBLISHED --> ARCHIVED : archive [async]"), diagram);
+        assertGeneratedCells(definition);
 
         Class<?> docClass = result.load("fx.Doc");
         Object doc = docClass.getConstructor(String.class).newInstance("d1");
@@ -198,6 +198,27 @@ class MachineGenerationTest {
         Object archived = companion.getMethod("archive", docClass).invoke(facade, doc);
         assertInstanceOf(Outcome.Applied.class, archived);
         assertEquals("ARCHIVED", getStatus.invoke(doc).toString());
+    }
+
+    /** Narrows the generated enum through its declared type, without consulting a diagram. */
+    private static <S extends Enum<S>> void assertGeneratedCells(GraphDefinition<Object, S> definition) {
+        Class<S> states = definition.key().states();
+        S draft = Enum.valueOf(states, "DRAFT");
+        S review = Enum.valueOf(states, "REVIEW");
+        S published = Enum.valueOf(states, "PUBLISHED");
+        S archived = Enum.valueOf(states, "ARCHIVED");
+        EdgeSpec<Object, S> publish = definition.edge(review, published);
+        assertEquals(EdgeKind.ACTION, publish.kind());
+        assertEquals("publish", publish.action().orElseThrow().name());
+        assertFalse(publish.isAsync());
+        assertEquals(List.of("approved"), publish.guards().stream().map(guard -> guard.name()).toList());
+        assertEquals(Optional.of(draft), publish.onFailure());
+        assertEquals("notify", publish.afterCommit().orElseThrow().name());
+        EdgeSpec<Object, S> archive = definition.edge(published, archived);
+        assertEquals(EdgeKind.ACTION, archive.kind());
+        assertEquals("archive", archive.action().orElseThrow().name());
+        assertTrue(archive.action().orElseThrow().isAsync());
+        assertEquals(Optional.of(Duration.ofSeconds(2)), archive.timeout());
     }
 
     /** Builds a standalone machine over reflective accessors, with raw state types the test never names. */

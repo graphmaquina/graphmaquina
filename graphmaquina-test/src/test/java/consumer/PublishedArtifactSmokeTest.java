@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.jar.JarOutputStream;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -44,16 +46,62 @@ class PublishedArtifactSmokeTest {
 
     /** The full chain a consumer is promised, written as a consumer writes it and run from the jars. */
     private static final String CONSUMER_SOURCE = """
-            import io.github.graphmaquina.api.Outcome;
-            import io.github.graphmaquina.test.GraphAssertions;
-            import java.time.DayOfWeek;
+            import static io.github.graphmaquina.test.GraphAssertions.assertThat;
+            import io.github.graphmaquina.api.ActionOutcome;
+            import io.github.graphmaquina.api.GraphDefinition;
+            import io.github.graphmaquina.api.MachineKey;
+            import io.github.graphmaquina.api.StateMachine;
+            import io.github.graphmaquina.dsl.StateGraph;
+            import io.github.graphmaquina.runtime.StateMachines;
+            import io.github.graphmaquina.test.GraphSnapshots;
+            import io.github.graphmaquina.test.StateSnapshot;
+            import io.github.graphmaquina.test.snapshot.GoldenOptions;
+            import io.github.graphmaquina.test.snapshot.GraphDiff;
+            import io.github.graphmaquina.test.snapshot.GraphSnapshot;
+            import java.net.URL;
+            import java.net.URLClassLoader;
+            import java.nio.file.Path;
             import java.util.List;
+            import java.util.Optional;
 
             public class PublishedConsumer {
-                public static void main(String[] args) {
-                    Outcome.Applied<String, DayOfWeek> result = new Outcome.Applied<>("entity",
-                            DayOfWeek.MONDAY, DayOfWeek.TUESDAY, List.of(), List.of());
-                    GraphAssertions.assertThat(result).isApplied().movedTo(DayOfWeek.TUESDAY);
+                enum State { NEW, DONE }
+                static final class Entity { State state = State.NEW; }
+                private static final MachineKey<Entity, State> KEY = MachineKey.of(Entity.class, State.class);
+
+                private static GraphDefinition<Entity, State> graph(String action) {
+                    return StateGraph.define(KEY).initial(State.NEW).terminal(State.DONE)
+                            .from(State.NEW).to(State.DONE).action(action, context -> ActionOutcome.ok())
+                            .stay().forbidOthers("finish first")
+                            .from(State.DONE).stay().forbidOthers("done").build();
+                }
+
+                public static void main(String[] args) throws Exception {
+                    GraphDefinition<Entity, State> definition = graph("finish");
+                    assertThat(definition).hasInitial(State.NEW).hasTerminalsExactly(State.DONE)
+                            .edge(State.NEW, State.DONE).isAction().hasActionNamed("finish").hasNoGuards();
+                    GraphSnapshot snapshot = GraphSnapshot.capture(definition);
+                    GraphDiff diff = GraphDiff.compare(snapshot, GraphSnapshot.capture(graph("complete")));
+                    if (!List.of(new GraphDiff.Change("/cells/NEW/DONE/action/name",
+                            Optional.of("finish"), Optional.of("complete"))).equals(diff.changes())) {
+                        throw new AssertionError("the action change must be detected structurally");
+                    }
+                    Path root = Path.of(args[0]);
+                    try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {
+                        GraphSnapshots.assertMatches(definition, "consumer.graph",
+                                GoldenOptions.updating(loader, root, path -> { }));
+                        GraphSnapshots.assertMatches(definition, "consumer.graph", GoldenOptions.readOnly(loader));
+                    }
+                    Entity entity = new Entity();
+                    StateSnapshot before = StateSnapshot.builder().track(KEY, entity, value -> value.state).capture();
+                    StateMachine<Entity, State> machine = StateMachines.from(definition)
+                            .state(value -> value.state, (value, state) -> value.state = state)
+                            .asyncExecutor(Runnable::run).build();
+                    assertThat(machine.transitionTo(entity, State.DONE)).isApplied().movedTo(State.DONE)
+                            .hasEntityState(value -> value.state, State.DONE).records().hasSize(1);
+                    if (before.changes().size() != 1) {
+                        throw new AssertionError("the actual state write must be observed");
+                    }
                     System.out.println("PUBLIC_API_OK");
                 }
             }
@@ -95,13 +143,39 @@ class PublishedArtifactSmokeTest {
     void aConsumerCompilesAndRunsAgainstThePublishedJarsAlone(@TempDir Path workDir)
             throws IOException, InterruptedException {
         String jars = artifact("graphmaquina-core", ".jar") + File.pathSeparator + artifact("graphmaquina-test", ".jar");
+        runConsumer(workDir, jars);
+    }
+
+    @Test
+    void semanticAssertionsRunWithoutAnyGraphicExporter(@TempDir Path workDir)
+            throws IOException, InterruptedException {
+        Path core = workDir.resolve("core-without-exporters.jar");
+        try (JarFile original = new JarFile(artifact("graphmaquina-core", ".jar").toFile());
+                JarOutputStream filtered = new JarOutputStream(Files.newOutputStream(core))) {
+            Enumeration<JarEntry> entries = original.entries();
+            while (entries.hasMoreElements()) {
+                JarEntry entry = entries.nextElement();
+                if (entry.getName().startsWith("io/github/graphmaquina/export/")) {
+                    continue;
+                }
+                filtered.putNextEntry(new JarEntry(entry.getName()));
+                try (InputStream content = original.getInputStream(entry)) {
+                    content.transferTo(filtered);
+                }
+                filtered.closeEntry();
+            }
+        }
+        runConsumer(workDir, core + File.pathSeparator + artifact("graphmaquina-test", ".jar"));
+    }
+
+    private static void runConsumer(Path workDir, String jars) throws IOException, InterruptedException {
         Path classes = Files.createDirectories(workDir.resolve("classes"));
         List<String> diagnostics = compile(workDir, jars, classes);
         assertEquals(List.of(), diagnostics, "the consumer source must compile against the published jars");
 
         Path transcript = workDir.resolve("consumer-output.txt");
         Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-classpath", classes + File.pathSeparator + jars, "PublishedConsumer")
+                "-classpath", classes + File.pathSeparator + jars, "PublishedConsumer", workDir.toString())
                 .redirectErrorStream(true)
                 .redirectOutput(transcript.toFile())
                 .start();

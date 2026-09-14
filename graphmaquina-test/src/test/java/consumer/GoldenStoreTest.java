@@ -51,25 +51,25 @@ class GoldenStoreTest {
     @Test
     void aMatchingResourcePasses(@TempDir Path root) throws Exception {
         Files.createDirectories(root.resolve("golden"));
-        Files.writeString(root.resolve("golden/x.mmd"), "a\nb\n", StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("golden/x.dot"), "a\nb\n", StandardCharsets.UTF_8);
         try (URLClassLoader loader = loader(root)) {
-            GoldenStore.assertMatches("golden/x.mmd", "a\nb\n", GoldenOptions.readOnly(loader), DIFF);
+            GoldenStore.assertMatches("golden/x.dot", "a\nb\n", GoldenOptions.readOnly(loader), DIFF);
         }
     }
 
     @Test
     void aDifferingResourceFailsWithTheRenderedDifference(@TempDir Path root) throws Exception {
         Files.createDirectories(root.resolve("golden"));
-        Files.writeString(root.resolve("golden/x.mmd"), "a\nb\n", StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("golden/x.dot"), "a\nb\n", StandardCharsets.UTF_8);
         try (URLClassLoader loader = loader(root)) {
             GraphAssertionError error = assertThrows(GraphAssertionError.class,
-                    () -> GoldenStore.assertMatches("golden/x.mmd", "a\nc\n",
+                    () -> GoldenStore.assertMatches("golden/x.dot", "a\nc\n",
                             GoldenOptions.readOnly(loader), DIFF));
-            assertEquals("golden/x.mmd", error.context());
+            assertEquals("golden/x.dot", error.context());
             assertEquals("content", error.property());
             assertEquals("matching golden", error.expected());
             assertEquals("<a\nb\n|a\nc\n>", error.actual());
-            assertEquals("golden/x.mmd: content expected <matching golden> but was <<a\nb\n|a\nc\n>>"
+            assertEquals("golden/x.dot: content expected <matching golden> but was <<a\nb\n|a\nc\n>>"
                     + REGENERATE, error.getMessage());
         }
     }
@@ -78,9 +78,9 @@ class GoldenStoreTest {
     void aMissingResourceExplainsHowToTurnOnUpdate(@TempDir Path root) throws Exception {
         try (URLClassLoader loader = loader(root)) {
             GraphAssertionError error = assertThrows(GraphAssertionError.class,
-                    () -> GoldenStore.assertMatches("golden/absent.mmd", "a\n",
+                    () -> GoldenStore.assertMatches("golden/absent.dot", "a\n",
                             GoldenOptions.readOnly(loader), DIFF));
-            assertEquals("golden/absent.mmd", error.context());
+            assertEquals("golden/absent.dot", error.context());
             assertEquals("content", error.property());
             assertEquals("an existing golden resource", error.expected());
             assertTrue(String.valueOf(error.actual()).contains("-D" + GoldenOptions.UPDATE_PROPERTY + "=true"),
@@ -94,20 +94,20 @@ class GoldenStoreTest {
 
     @Test
     void lineTerminatorsAreNormalizedOnBothSides(@TempDir Path root) throws Exception {
-        Files.writeString(root.resolve("x.mmd"), "a\r\nb\r\n", StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("x.dot"), "a\r\nb\r\n", StandardCharsets.UTF_8);
         try (URLClassLoader loader = loader(root)) {
             GoldenOptions options = GoldenOptions.readOnly(loader);
-            GoldenStore.assertMatches("x.mmd", "a\nb\n", options, DIFF);
-            GoldenStore.assertMatches("x.mmd", "a\rb\r", options, DIFF);
+            GoldenStore.assertMatches("x.dot", "a\nb\n", options, DIFF);
+            GoldenStore.assertMatches("x.dot", "a\rb\r", options, DIFF);
         }
     }
 
     @Test
     void blanksInsideALineAreCompared(@TempDir Path root) throws Exception {
-        Files.writeString(root.resolve("x.mmd"), "a \n", StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("x.dot"), "a \n", StandardCharsets.UTF_8);
         try (URLClassLoader loader = loader(root)) {
             GraphAssertionError error = assertThrows(GraphAssertionError.class,
-                    () -> GoldenStore.assertMatches("x.mmd", "a\n", GoldenOptions.readOnly(loader), DIFF));
+                    () -> GoldenStore.assertMatches("x.dot", "a\n", GoldenOptions.readOnly(loader), DIFF));
             assertEquals("<a \n|a\n>", error.actual());
         }
     }
@@ -116,23 +116,23 @@ class GoldenStoreTest {
     void unicodeSurvivesAWriteAndTheReadThatFollows(@TempDir Path root) throws Exception {
         List<Path> written = new ArrayList<>();
         try (URLClassLoader loader = loader(root)) {
-            GoldenStore.assertMatches("golden/x.mmd", "é ☃ \uD83D\uDE80\n",
+            GoldenStore.assertMatches("golden/x.dot", "é ☃ \uD83D\uDE80\n",
                     GoldenOptions.updating(loader, root, written::add), DIFF);
-            assertEquals(List.of(root.resolve("golden/x.mmd")), written);
+            assertEquals(List.of(root.resolve("golden/x.dot")), written);
             assertEquals("é ☃ \uD83D\uDE80\n",
-                    Files.readString(root.resolve("golden/x.mmd"), StandardCharsets.UTF_8));
-            GoldenStore.assertMatches("golden/x.mmd", "é ☃ \uD83D\uDE80\n",
+                    Files.readString(root.resolve("golden/x.dot"), StandardCharsets.UTF_8));
+            GoldenStore.assertMatches("golden/x.dot", "é ☃ \uD83D\uDE80\n",
                     GoldenOptions.readOnly(loader), DIFF);
         }
     }
 
     @Test
     void aResourceThatIsNotUtf8NamesTheResourceAndKeepsTheCause(@TempDir Path root) throws Exception {
-        Files.write(root.resolve("x.mmd"), new byte[] {(byte) 0xC3, (byte) 0x28, (byte) 0x0A});
+        Files.write(root.resolve("x.dot"), new byte[] {(byte) 0xC3, (byte) 0x28, (byte) 0x0A});
         try (URLClassLoader loader = loader(root)) {
             IllegalStateException error = assertThrows(IllegalStateException.class,
-                    () -> GoldenStore.assertMatches("x.mmd", "a\n", GoldenOptions.readOnly(loader), DIFF));
-            assertTrue(error.getMessage().contains("<x.mmd>"), error.getMessage());
+                    () -> GoldenStore.assertMatches("x.dot", "a\n", GoldenOptions.readOnly(loader), DIFF));
+            assertTrue(error.getMessage().contains("<x.dot>"), error.getMessage());
             assertTrue(error.getMessage().contains("UTF-8"), error.getMessage());
             assertInstanceOf(CharacterCodingException.class, error.getCause());
         }
@@ -145,13 +145,13 @@ class GoldenStoreTest {
         List<Path> written = new ArrayList<>();
         try (URLClassLoader loader = loader(root)) {
             GoldenOptions options = GoldenOptions.updating(loader, root, written::add);
-            GoldenStore.assertMatches("deep/nested/x.mmd", "a\n", options, DIFF);
-            assertEquals(List.of(root.resolve("deep/nested/x.mmd")), written);
-            assertEquals("a\n", Files.readString(root.resolve("deep/nested/x.mmd"), StandardCharsets.UTF_8));
-            GoldenStore.assertMatches("deep/nested/x.mmd", "a\n", options, DIFF);
+            GoldenStore.assertMatches("deep/nested/x.dot", "a\n", options, DIFF);
+            assertEquals(List.of(root.resolve("deep/nested/x.dot")), written);
+            assertEquals("a\n", Files.readString(root.resolve("deep/nested/x.dot"), StandardCharsets.UTF_8));
+            GoldenStore.assertMatches("deep/nested/x.dot", "a\n", options, DIFF);
             assertEquals(1, written.size());
             try (Stream<Path> leftovers = Files.list(root.resolve("deep/nested"))) {
-                assertEquals(List.of(root.resolve("deep/nested/x.mmd")), leftovers.toList());
+                assertEquals(List.of(root.resolve("deep/nested/x.dot")), leftovers.toList());
             }
         }
     }
@@ -161,21 +161,21 @@ class GoldenStoreTest {
         List<Path> written = new ArrayList<>();
         try (URLClassLoader loader = loader(root)) {
             GoldenOptions options = GoldenOptions.updating(loader, root, written::add);
-            GoldenStore.assertMatches("x.mmd", "a\n", options, DIFF);
-            GoldenStore.assertMatches("x.mmd", "b\n", options, DIFF);
-            assertEquals(List.of(root.resolve("x.mmd"), root.resolve("x.mmd")), written);
-            assertEquals("b\n", Files.readString(root.resolve("x.mmd"), StandardCharsets.UTF_8));
+            GoldenStore.assertMatches("x.dot", "a\n", options, DIFF);
+            GoldenStore.assertMatches("x.dot", "b\n", options, DIFF);
+            assertEquals(List.of(root.resolve("x.dot"), root.resolve("x.dot")), written);
+            assertEquals("b\n", Files.readString(root.resolve("x.dot"), StandardCharsets.UTF_8));
         }
     }
 
     @Test
     void updateComparesTheSourceFileAndNotTheClassPath(@TempDir Path root) throws Exception {
-        Files.writeString(root.resolve("x.mmd"), "a\n", StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("x.dot"), "a\n", StandardCharsets.UTF_8);
         List<Path> written = new ArrayList<>();
         try (URLClassLoader stale = new URLClassLoader(new URL[0], null)) {
-            GoldenStore.assertMatches("x.mmd", "a\n", GoldenOptions.updating(stale, root, written::add), DIFF);
+            GoldenStore.assertMatches("x.dot", "a\n", GoldenOptions.updating(stale, root, written::add), DIFF);
             assertEquals(List.of(), written);
-            assertEquals("a\n", Files.readString(root.resolve("x.mmd"), StandardCharsets.UTF_8));
+            assertEquals("a\n", Files.readString(root.resolve("x.dot"), StandardCharsets.UTF_8));
         }
     }
 
@@ -185,11 +185,11 @@ class GoldenStoreTest {
         Path spaced = Files.createDirectories(root.resolve("a b"));
         List<Path> written = new ArrayList<>();
         try (URLClassLoader loader = loader(root)) {
-            GoldenStore.assertMatches("golden/x.mmd", "a\n",
+            GoldenStore.assertMatches("golden/x.dot", "a\n",
                     GoldenOptions.updating(loader, spaced, written::add), DIFF);
-            assertEquals(List.of(spaced.resolve("golden/x.mmd")), written);
-            assertEquals("a\n", Files.readString(spaced.resolve("golden/x.mmd"), StandardCharsets.UTF_8));
-            assertFalse(Files.exists(Path.of("golden/x.mmd")));
+            assertEquals(List.of(spaced.resolve("golden/x.dot")), written);
+            assertEquals("a\n", Files.readString(spaced.resolve("golden/x.dot"), StandardCharsets.UTF_8));
+            assertFalse(Files.exists(Path.of("golden/x.dot")));
         }
     }
 
@@ -197,15 +197,15 @@ class GoldenStoreTest {
     void aResourceInsideAJarIsReadLikeAnyOther(@TempDir Path root) throws Exception {
         Path archive = root.resolve("goldens.jar");
         try (JarOutputStream jar = new JarOutputStream(Files.newOutputStream(archive))) {
-            jar.putNextEntry(new JarEntry("golden/x.mmd"));
+            jar.putNextEntry(new JarEntry("golden/x.dot"));
             jar.write("a\nb\n".getBytes(StandardCharsets.UTF_8));
             jar.closeEntry();
         }
         try (URLClassLoader loader = new URLClassLoader(new URL[] {archive.toUri().toURL()}, null)) {
             GoldenOptions options = GoldenOptions.readOnly(loader);
-            GoldenStore.assertMatches("golden/x.mmd", "a\nb\n", options, DIFF);
+            GoldenStore.assertMatches("golden/x.dot", "a\nb\n", options, DIFF);
             assertEquals("<a\nb\n|a\nc\n>", assertThrows(GraphAssertionError.class,
-                    () -> GoldenStore.assertMatches("golden/x.mmd", "a\nc\n", options, DIFF)).actual());
+                    () -> GoldenStore.assertMatches("golden/x.dot", "a\nc\n", options, DIFF)).actual());
         }
     }
 
@@ -214,7 +214,7 @@ class GoldenStoreTest {
         List<Path> written = new ArrayList<>();
         try (URLClassLoader loader = loader(root)) {
             IllegalStateException error = assertThrows(IllegalStateException.class,
-                    () -> GoldenStore.assertMatches("x.mmd", "a\n",
+                    () -> GoldenStore.assertMatches("x.dot", "a\n",
                             GoldenOptions.updating(loader, root.resolve("absent"), written::add), DIFF));
             assertTrue(error.getMessage().contains("is not a directory"), error.getMessage());
         }
@@ -231,7 +231,7 @@ class GoldenStoreTest {
             System.setProperty(GoldenOptions.ROOT_PROPERTY, root.toString());
             GoldenOptions options = GoldenOptions.defaults();
             assertThrows(GraphAssertionError.class,
-                    () -> GoldenStore.assertMatches("golden/never-written.mmd", "a\n", options, DIFF));
+                    () -> GoldenStore.assertMatches("golden/never-written.dot", "a\n", options, DIFF));
             try (Stream<Path> entries = Files.list(root)) {
                 assertEquals(List.of(), entries.toList());
             } catch (java.io.IOException failure) {
@@ -251,31 +251,31 @@ class GoldenStoreTest {
     void aWrittenGoldenCarriesThePermissionsOfANewlyWrittenFile(@TempDir Path root) throws Exception {
         assumeTrue(Files.getFileAttributeView(root, PosixFileAttributeView.class) != null,
                 "the file system carries no POSIX permissions");
-        Files.writeString(root.resolve("reference.mmd"), "a\n", StandardCharsets.UTF_8);
+        Files.writeString(root.resolve("reference.dot"), "a\n", StandardCharsets.UTF_8);
         List<Path> written = new ArrayList<>();
         try (URLClassLoader loader = loader(root)) {
-            GoldenStore.assertMatches("golden/x.mmd", "a\n",
+            GoldenStore.assertMatches("golden/x.dot", "a\n",
                     GoldenOptions.updating(loader, root, written::add), DIFF);
         }
-        assertEquals(List.of(root.resolve("golden/x.mmd")), written);
-        assertEquals(Files.getPosixFilePermissions(root.resolve("reference.mmd")),
-                Files.getPosixFilePermissions(root.resolve("golden/x.mmd")));
+        assertEquals(List.of(root.resolve("golden/x.dot")), written);
+        assertEquals(Files.getPosixFilePermissions(root.resolve("reference.dot")),
+                Files.getPosixFilePermissions(root.resolve("golden/x.dot")));
     }
 
     // --- names that must never reach the file system ------------------------------------------------
 
     @Test
     void aNameThatCouldLeaveTheRootIsRejected() {
-        for (String resource : List.of("", "/golden/x.mmd", "golden\\x.mmd", "golden//x.mmd",
-                "golden/./x.mmd", "golden/../../x.mmd", "C:/golden/x.mmd", "golden/", "..",
-                "golden/" + (char) 0 + "x.mmd")) {
+        for (String resource : List.of("", "/golden/x.dot", "golden\\x.dot", "golden//x.dot",
+                "golden/./x.dot", "golden/../../x.dot", "C:/golden/x.dot", "golden/", "..",
+                "golden/" + (char) 0 + "x.dot")) {
             assertThrows(IllegalArgumentException.class,
                     () -> GoldenStore.assertMatches(resource, "a\n",
                             GoldenOptions.readOnly(GoldenStoreTest.class.getClassLoader()), DIFF),
                     "<" + resource + "> was accepted");
         }
         assertTrue(assertThrows(IllegalArgumentException.class,
-                () -> GoldenStore.assertMatches("golden/../../x.mmd", "a\n",
+                () -> GoldenStore.assertMatches("golden/../../x.dot", "a\n",
                         GoldenOptions.readOnly(GoldenStoreTest.class.getClassLoader()), DIFF))
                 .getMessage().contains("relative segment"));
     }
@@ -286,7 +286,7 @@ class GoldenStoreTest {
         List<Path> written = new ArrayList<>();
         try (URLClassLoader loader = loader(root)) {
             IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                    () -> GoldenStore.assertMatches("away/x.mmd", "a\n",
+                    () -> GoldenStore.assertMatches("away/x.dot", "a\n",
                             GoldenOptions.updating(loader, root, written::add), DIFF));
             assertTrue(error.getMessage().contains("outside the source root"), error.getMessage());
         }
@@ -302,11 +302,11 @@ class GoldenStoreTest {
         assertEquals("resource", assertThrows(NullPointerException.class,
                 () -> GoldenStore.assertMatches(null, "a\n", options, DIFF)).getMessage());
         assertEquals("actual", assertThrows(NullPointerException.class,
-                () -> GoldenStore.assertMatches("x.mmd", null, options, DIFF)).getMessage());
+                () -> GoldenStore.assertMatches("x.dot", null, options, DIFF)).getMessage());
         assertEquals("options", assertThrows(NullPointerException.class,
-                () -> GoldenStore.assertMatches("x.mmd", "a\n", null, DIFF)).getMessage());
+                () -> GoldenStore.assertMatches("x.dot", "a\n", null, DIFF)).getMessage());
         assertEquals("diff", assertThrows(NullPointerException.class,
-                () -> GoldenStore.assertMatches("x.mmd", "a\n", options, null)).getMessage());
+                () -> GoldenStore.assertMatches("x.dot", "a\n", options, null)).getMessage());
         assertEquals("loader", assertThrows(NullPointerException.class,
                 () -> GoldenOptions.readOnly(null)).getMessage());
         assertEquals("sourceRoot", assertThrows(NullPointerException.class,
@@ -419,14 +419,14 @@ class GoldenStoreTest {
             System.setProperty(GoldenOptions.ROOT_PROPERTY, root.toString());
             GoldenOptions options = GoldenOptions.defaults();
             System.setOut(new PrintStream(buffer, true, StandardCharsets.UTF_8));
-            GoldenStore.assertMatches("golden/x.mmd", "a\n", options, DIFF);
-            GoldenStore.assertMatches("golden/x.mmd", "a\n", options, DIFF);
+            GoldenStore.assertMatches("golden/x.dot", "a\n", options, DIFF);
+            GoldenStore.assertMatches("golden/x.dot", "a\n", options, DIFF);
         } finally {
             System.setOut(previousOut);
             restore(GoldenOptions.UPDATE_PROPERTY, previousUpdate);
             restore(GoldenOptions.ROOT_PROPERTY, previousRoot);
         }
-        assertEquals("UPDATED " + root.resolve("golden/x.mmd") + System.lineSeparator(),
+        assertEquals("UPDATED " + root.resolve("golden/x.dot") + System.lineSeparator(),
                 buffer.toString(StandardCharsets.UTF_8));
     }
 

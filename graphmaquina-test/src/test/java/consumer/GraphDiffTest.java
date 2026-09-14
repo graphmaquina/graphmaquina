@@ -27,7 +27,7 @@ class GraphDiffTest {
 
     private static final String CELL = "/cells/NEW/READY";
 
-    // --- the premise of this task: a difference that Mermaid cannot show -----------------------------
+    // --- the premise of this task: a difference that the visual projection cannot show --------------
 
     @Test
     void snapshotDiffIdentifiesTimeoutProperty() {

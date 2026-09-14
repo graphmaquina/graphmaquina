@@ -3,7 +3,7 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.export.Detail;
 import io.github.graphmaquina.export.GraphView;
-import io.github.graphmaquina.export.MermaidExporter;
+import io.github.graphmaquina.export.GraphvizExporter;
 import io.github.graphmaquina.test.internal.Checks;
 import io.github.graphmaquina.test.internal.GoldenStore;
 import io.github.graphmaquina.test.internal.LineDiff;
@@ -11,12 +11,15 @@ import io.github.graphmaquina.test.snapshot.GoldenOptions;
 import java.util.Objects;
 
 /**
- * Compares the Mermaid rendering of a graph against a checked-in golden resource, and rewrites that
+ * Compares the Graphviz DOT rendering of a graph against a checked-in golden resource, and rewrites that
  * resource when the run is in update mode. A mismatch fails with the lines that changed, not with both
  * diagrams in full, so a review reads what moved.
  *
+ * <p>This checks visual output only. Use {@link GraphAssert} and {@link GraphSnapshots} for declared
+ * contracts, and outcomes and observed state for machine behavior. Diagram text is not a semantic oracle.
+ *
  * <p>The default detail is {@link Detail#TRANSITABLE}, the same default
- * {@link MermaidExporter#render(GraphView)} applies, so a golden written by the exporter stays valid here.
+ * {@link GraphvizExporter#render(GraphView)} applies, so a golden written by the exporter stays valid here.
  * The default options come from {@link GoldenOptions#defaults()} and therefore from the system properties;
  * passing options explicitly reads no property at all.
  */
@@ -47,6 +50,6 @@ public final class GraphGoldens {
     }
 
     private static <E, S extends Enum<S>> String render(GraphDefinition<E, S> definition, Detail detail) {
-        return MermaidExporter.render(GraphView.of(definition), detail);
+        return GraphvizExporter.render(GraphView.of(definition), detail);
     }
 }

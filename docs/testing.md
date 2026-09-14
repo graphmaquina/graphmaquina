@@ -121,7 +121,7 @@ void operationsThatDoNotApplyAreRejectedWithTheRowReason() {
 | Guard, action, hook | `GuardProbe`, `ActionProbe`, `HookProbe`, `CallTrace` | scripted answers per call, the calls each probe recorded, and the order callbacks were entered in |
 | State setter | `StateWriteProbe` | every write in entry order with its status, and a failure armed on one call |
 | Async callback | `ControlledAsyncAction`, `ControlledAsyncGuard` | that the engine entered the callback, with the test deciding when and how it answers |
-| Rendered diagram | `GraphGoldens.assertMatches` | the Mermaid text against a checked-in resource |
+| Rendered diagram | `GraphGoldens.assertMatches` | visual DOT output only; not machine logic |
 | Whole definition | `GraphSnapshots.assertMatches` | every field the definition carries against a checked-in resource |
 
 ## Verified samples
@@ -370,28 +370,35 @@ deadline is the engine's; the budgets above are the test's, and the two are unre
 
 ## Goldens and structural snapshots
 
-Two resources pin a graph, and they answer different questions.
+Machine contracts and visual output have separate tests. Do not use a graphical export or
+`definition().render()` to validate machine logic.
 
-- `GraphGoldens.assertMatches(definition, resource)` compares the Mermaid rendering against a checked-in
-  `.mmd` file. Its default detail is `TRANSITABLE`, the same default `MermaidExporter.render(view)` applies,
-  so a golden produced by the exporter stays valid. It pins **what a reader sees**.
-- `GraphSnapshots.assertMatches(definition, resource)` compares a structural snapshot of everything the
-  definition carries against a checked-in `.graph` file: the machine key, the ordered states, the initial
-  state, the terminals, whether the graph is async, every watch with its peer and ordered rules, and every
-  one of the N x N cells with its kind, reason, action name and mode, guard names and modes, failure route,
-  `failsOn` classes, timeout and after-commit hook. It pins **what the diagram leaves out**: the Mermaid
-  label carries no timeout, no `failsOn` and no hook, so those change silently unless the snapshot is
-  compared. The file opens with a version line, and a snapshot of an unknown version is a fixture problem
-  rather than a mismatch.
+- `GraphSnapshots.assertMatches(definition, resource)` compares declared metadata with a checked-in
+  `.graph` file: the machine key, ordered states, initial state, terminals, async mode, watches and ordered
+  rules, and every cell's kind, reason, action and guard names/modes, failure route, `failsOn` classes,
+  timeout and after-commit hook. It reads `GraphDefinition` and `EdgeSpec` directly and does not call an
+  exporter. Use typed graph assertions for focused expectations. Neither approach executes domain logic;
+  test guards, actions, cascades and watches through real operations and assert their outcomes, records,
+  reactions and observed entity states.
+- `GraphGoldens.assertMatches(definition, resource)` compares the Graphviz DOT output with a checked-in
+  `.dot` file. Its default detail is `TRANSITABLE`. This is a visual regression test only: a diagram change
+  must not be the evidence for a change in machine behavior.
+
+The `.graph` resources from before the Graphviz migration remain unchanged. Only visual goldens move from
+the previous format to `.dot`. `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after
+removing every graphic-export class from the core JAR; assertions, state observation and structural
+snapshots must still work.
 
 From [DiagramsTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/DiagramsTest.java):
 
 ```java
 @Test
 void orderDiagramMatchesGolden() {
-    GraphGoldens.assertMatches(orderGraph(), "golden/order.mmd");
+    GraphGoldens.assertMatches(orderGraph(), "golden/order.dot");
 }
 ```
+
+From [GraphContractsTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/GraphContractsTest.java):
 
 ```java
 @Test
@@ -419,7 +426,7 @@ The two directions deliberately resolve differently, and neither can overwrite t
 
 Two system properties select the mode. `graphmaquina.goldens.update` accepts only the exact values `true`
 and `false`; `graphmaquina.goldens.root` names the source root an update writes into and is required when
-update mode is on. The resource string is a class-path-relative path such as `golden/order.mmd`, and update
+update mode is on. The resource string is a class-path-relative path such as `golden/order.dot`, and update
 mode writes it at that same relative path under the root, so pointing the root at `src/test/resources` puts
 the file back where the class path picked it up.
 

@@ -1,0 +1,37 @@
+digraph "Order/OrderStatus" {
+    rankdir=LR;
+    initial [shape=point, label=""];
+    n0 [label="NEW", shape=ellipse];
+    n1 [label="PAID", shape=ellipse];
+    n2 [label="PAYMENT_DECLINED", shape=ellipse];
+    n3 [label="SHIPPED", shape=doublecircle];
+    n4 [label="CANCELLED", shape=doublecircle];
+    initial -> n0;
+    n0 -> n0 [label="stay"];
+    n0 -> n1 [label="ChargeCard [async] [if RetryBudgetLeft]"];
+    n0 -> n2 [label="[failure of ChargeCard]"];
+    n0 -> n3 [label="forbid: cannot ship without payment"];
+    n0 -> n4 [label="CancelOrder"];
+    n1 -> n0 [label="forbid: money was charged: requires a refund"];
+    n1 -> n1 [label="stay"];
+    n1 -> n2 [label="forbid: money was charged: requires a refund"];
+    n1 -> n3 [label="ShipOrder [if AllItemsPacked] [watches Item: allIn PACKED]"];
+    n1 -> n4 [label="forbid: money was charged: requires a refund"];
+    n2 -> n0 [label="[if RetryBudgetLeft]"];
+    n2 -> n1 [label="forbid: go back to NEW to retry the charge"];
+    n2 -> n2 [label="stay"];
+    n2 -> n3 [label="forbid: go back to NEW to retry the charge"];
+    n2 -> n4 [label="CancelOrder"];
+    n3 -> n0 [label="forbid: a shipment cannot be undone"];
+    n3 -> n1 [label="forbid: a shipment cannot be undone"];
+    n3 -> n2 [label="forbid: a shipment cannot be undone"];
+    n3 -> n3 [label="stay"];
+    n3 -> n4 [label="forbid: a shipment cannot be undone"];
+    n4 -> n0 [label="forbid: cancelled is final"];
+    n4 -> n1 [label="forbid: cancelled is final"];
+    n4 -> n2 [label="forbid: cancelled is final"];
+    n4 -> n3 [label="forbid: cancelled is final"];
+    n4 -> n4 [label="stay"];
+    watch0 [shape=note, label="watches Item"];
+    n1 -> watch0 [style=dashed, arrowhead=none];
+}

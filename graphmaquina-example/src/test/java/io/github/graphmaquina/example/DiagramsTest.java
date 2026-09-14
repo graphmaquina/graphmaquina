@@ -10,14 +10,9 @@ import io.github.graphmaquina.example.order.OrderActions;
 import io.github.graphmaquina.example.order.OrderStatus;
 import io.github.graphmaquina.example.order.OrdersRuntime;
 import io.github.graphmaquina.test.GraphGoldens;
-import io.github.graphmaquina.test.GraphSnapshots;
 import org.junit.jupiter.api.Test;
 
-/**
- * Both graphs of the example against their checked-in resources: the diagram a reader sees, and the
- * structure the diagram leaves out. Neither test reads a file itself — {@code graphmaquina-test} resolves
- * the resource, compares it and rewrites it when the build runs with {@code -Dgraphmaquina.goldens.update=true}.
- */
+/** Visual DOT output only; GraphContractsTest and OrderFlowTest verify the machines' contracts and behavior. */
 class DiagramsTest {
 
     private static GraphDefinition<Order, OrderStatus> orderGraph() {
@@ -30,21 +25,12 @@ class DiagramsTest {
 
     @Test
     void orderDiagramMatchesGolden() {
-        GraphGoldens.assertMatches(orderGraph(), "golden/order.mmd");
+        GraphGoldens.assertMatches(orderGraph(), "golden/order.dot");
     }
 
     @Test
     void itemDiagramMatchesGolden() {
-        GraphGoldens.assertMatches(itemGraph(), "golden/item.mmd");
+        GraphGoldens.assertMatches(itemGraph(), "golden/item.dot");
     }
 
-    @Test
-    void orderContractMatchesSnapshot() {
-        GraphSnapshots.assertMatches(orderGraph(), "contracts/order.graph");
-    }
-
-    @Test
-    void itemContractMatchesSnapshot() {
-        GraphSnapshots.assertMatches(itemGraph(), "contracts/item.graph");
-    }
 }

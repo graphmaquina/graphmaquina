@@ -26,14 +26,14 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 
 /**
- * Contract of the Mermaid golden. Update writes the source file, read mode resolves the very same resource
+ * Contract of the Graphviz DOT golden. Update writes the source file, read mode resolves the very same resource
  * through the class loader, and a second update over matching content writes nothing. The checked-in
- * {@code golden/simple.mmd} pins the default detail — the transitable one, which is also what the exporter
+ * {@code golden/simple.dot} pins the default detail — the transitable one, which is also what the exporter
  * defaults to — so the example module's diagrams stay valid, and a mismatch reports the lines that moved.
  */
 class GraphGoldensTest {
 
-    private static final String RESOURCE = "golden/simple.mmd";
+    private static final String RESOURCE = "golden/simple.dot";
 
     /**
      * The negative cases name the checked-in fixtures with content that deliberately does not match, so they
@@ -80,9 +80,9 @@ class GraphGoldensTest {
         assertEquals("content", error.property());
         assertEquals("matching golden", error.expected());
         String diff = String.valueOf(error.actual());
-        assertTrue(diff.contains("+    NEW --> NEW : stay"), diff);
-        assertTrue(diff.contains("+    NEW --> DONE : forbid: prepare first"), diff);
-        assertTrue(diff.contains("+    FAILED --> DONE : forbid: failed is final"), diff);
+        assertTrue(diff.contains("+    n0 -> n0 [label=\"stay\"];"), diff);
+        assertTrue(diff.contains("+    n0 -> n2 [label=\"forbid: prepare first\"];"), diff);
+        assertTrue(diff.contains("+    n3 -> n2 [label=\"forbid: failed is final\"];"), diff);
         assertEquals(13, diff.lines().filter(line -> line.startsWith("+")).count(), diff);
         assertEquals(0, diff.lines().filter(line -> line.startsWith("-")).count(), diff);
     }
@@ -106,8 +106,8 @@ class GraphGoldensTest {
             assertEquals("content", error.property());
             assertEquals("matching golden", error.expected());
             String diff = String.valueOf(error.actual());
-            assertTrue(diff.contains("+    NEW --> NEW : stay"), diff);
-            assertTrue(diff.contains("+    NEW --> DONE : forbid: prepare first"), diff);
+            assertTrue(diff.contains("+    n0 -> n0 [label=\"stay\"];"), diff);
+            assertTrue(diff.contains("+    n0 -> n2 [label=\"forbid: prepare first\"];"), diff);
             assertEquals(13, diff.lines().filter(line -> line.startsWith("+")).count(), diff);
             assertEquals(0, diff.lines().filter(line -> line.startsWith("-")).count(), diff);
         } finally {
@@ -125,17 +125,23 @@ class GraphGoldensTest {
                 () -> GraphGoldens.assertMatches(SnapshotGraphs.minimalGraph(), RESOURCE,
                         Detail.TRANSITABLE, READ_ONLY));
         String difference = """
-                @@ -1,7 +1,4 @@
-                 stateDiagram-v2
-                -    [*] --> NEW
-                -    NEW --> READY : prepare [async] [if first, second]
-                -    NEW --> FAILED : [failure of prepare]
-                -    READY --> DONE
-                -    DONE --> [*]
-                -    FAILED --> [*]
-                +    [*] --> OPEN
-                +    OPEN --> CLOSED
-                +    CLOSED --> [*]
+                @@ -1,12 +1,8 @@
+                -digraph "Entity/State" {
+                +digraph "String/Flow" {
+                     rankdir=LR;
+                     initial [shape=point, label=""];
+                -    n0 [label="NEW", shape=ellipse];
+                -    n1 [label="READY", shape=ellipse];
+                -    n2 [label="DONE", shape=doublecircle];
+                -    n3 [label="FAILED", shape=doublecircle];
+                +    n0 [label="OPEN", shape=ellipse];
+                +    n1 [label="CLOSED", shape=doublecircle];
+                     initial -> n0;
+                -    n0 -> n1 [label="prepare [async] [if first, second]"];
+                -    n0 -> n3 [label="[failure of prepare]"];
+                -    n1 -> n2;
+                +    n0 -> n1;
+                 }
                 """;
         assertEquals(difference, error.actual());
         assertEquals(RESOURCE + ": content expected <matching golden> but was <" + difference + ">"
@@ -146,7 +152,7 @@ class GraphGoldensTest {
     void aResourceThatIsNotOnTheClassPathExplainsUpdate() {
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> GraphGoldens.assertMatches(TestDomain.graph(Duration.ofSeconds(1)),
-                        "golden/absent.mmd", Detail.TRANSITABLE, READ_ONLY));
+                        "golden/absent.dot", Detail.TRANSITABLE, READ_ONLY));
         assertEquals("an existing golden resource", error.expected());
         assertTrue(String.valueOf(error.actual()).contains(GoldenOptions.UPDATE_PROPERTY),
                 String.valueOf(error.actual()));
@@ -194,6 +200,6 @@ class GraphGoldensTest {
         assertEquals("options", assertThrows(NullPointerException.class,
                 () -> GraphGoldens.assertMatches(graph, RESOURCE, Detail.FULL, null)).getMessage());
         assertThrows(IllegalArgumentException.class,
-                () -> GraphGoldens.assertMatches(graph, "../escape.mmd", Detail.FULL, READ_ONLY));
+                () -> GraphGoldens.assertMatches(graph, "../escape.dot", Detail.FULL, READ_ONLY));
     }
 }

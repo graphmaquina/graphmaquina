@@ -63,7 +63,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 | Coordinated state changes | Cascades share a unit of work; entity state setters run after the root transition succeeds or selects a handled failure route. |
 | Declared watches | After a peer commits, a matching owner can be reevaluated using ordered rules. |
 | Inspectable execution | Outcomes carry transition records and watch reactions; technical aborts carry diagnostic details where applicable. |
-| Graph inspection | Render the complete matrix or export a deterministic Mermaid state diagram. |
+| Graph inspection | Render the complete matrix or export a deterministic Graphviz state diagram. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
 a durable job queue, HTTP endpoints or distributed transactions. See [persistence and concurrency](#concurrency-identity-and-persistence)
@@ -237,7 +237,7 @@ describes.
 
 | Check | Current development result |
 | --- | --- |
-| Automated library/build suites | 1029 tests across the seven `test` suites, and 1014 under `./gradlew build`, with no failures, errors or skipped tests. |
+| Automated library/build suites | 1034 tests across the seven `test` suites, and 1020 under `./gradlew build`, with no failures, errors or skipped tests. |
 | README quickstart | Compiled and ran with Gradle and Maven against the released artifacts, with strict lint. Both reported `All ticket scenarios passed.` |
 | Async guide | Complete async example compiled and ran with both build tools; 11 additional behavior checks passed. |
 | Remaining acceptance work | Manual IntelliJ acceptance and full strict-lint acceptance of the external payments demo remain pending. |
@@ -1798,15 +1798,15 @@ System.out.println(tickets.allowedFrom(TicketStatus.OPEN));
 `definition().edge(from, to)` exposes the resolved cell, and `definition().graph()` exposes the graph of
 moving edges. `initial()`, `terminals()`, `watch(state)` and `hasAsync()` are also available.
 
-To export Mermaid from an existing ticket facade:
+To export [Graphviz DOT](https://graphviz.org/doc/info/lang.html) from an existing ticket facade:
 
 ```java
 import io.github.graphmaquina.export.Detail;
 import io.github.graphmaquina.export.GraphView;
-import io.github.graphmaquina.export.MermaidExporter;
+import io.github.graphmaquina.export.GraphvizExporter;
 
-String diagram = MermaidExporter.render(GraphView.of(tickets.definition()));
-String fullDiagram = MermaidExporter.render(GraphView.of(tickets.definition()), Detail.FULL);
+String diagram = GraphvizExporter.render(GraphView.of(tickets.definition()));
+String fullDiagram = GraphvizExporter.render(GraphView.of(tickets.definition()), Detail.FULL);
 System.out.println(diagram);
 ```
 
@@ -1814,21 +1814,37 @@ This is a fragment: put the imports at file scope and the statements inside a me
 `TRANSITABLE`, showing action and move edges; `FULL` includes stay and forbid cells. Export does not run
 transitions or evaluate guards.
 
+The export is deterministic DOT text with LF line endings. The initial state has an incoming arrow from
+a point, terminal states have double outlines, and watches appear as notes connected by dashed lines.
+State names and labels are escaped, and all known states remain visible even when edges are filtered.
+
+Save the result as UTF-8 in `tickets.dot`, then use an installed [Graphviz](https://graphviz.org/download/)
+to render an image:
+
+```sh
+dot -Tsvg tickets.dot -o tickets.svg
+dot -Tpng tickets.dot -o tickets.png
+```
+
+The Java exporter needs no external library or native executable. Image rendering is a separate step.
+Consumers of the previous diagram exporter must update their imports and calls to `GraphvizExporter`,
+use `.dot` files, and render them with Graphviz; the previous exporter API has been removed.
+
 You can also build a definition directly through `TicketsRuntime.graph(new TicketActions())` without constructing a
 running set.
 
-A diagram is not the whole definition: the Mermaid label carries the action name, whether it is async, the
-guard names, the failure route and the watch rules, and it carries no timeout, no `failsOn` and no
-after-commit hook. To keep a graph under review, pin both — the rendered diagram against a `.mmd` resource
-and the complete structure against a `.graph` resource — with `GraphGoldens` and `GraphSnapshots` from
-[graphmaquina-test](#test-your-machines). The [testing guide](docs/testing.md#goldens-and-structural-snapshots)
-has the Gradle and Maven configuration and the update commands.
+Use typed assertions on `GraphDefinition` and `EdgeSpec`, or `GraphSnapshots` with `.graph` resources,
+for structural contracts. Validate behavior through real operations, outcomes, reactions and observed entity
+states. Neither `definition().render()` nor a graphical export is an oracle for machine logic.
+`GraphGoldens` with `.dot` resources checks visual output only; keep those tests separate from contract and
+behavior tests. The [testing guide](docs/testing.md#goldens-and-structural-snapshots) describes both APIs and
+their Gradle and Maven update configuration.
 
 [The illustrated ticket workflow](docs/images/ticket-workflow.svg) summarizes the moving edges and failure
 route. The exporter produces its own labels from the definition. The repository keeps exact expected exports in
 [the example's golden diagrams](graphmaquina-example/src/test/resources/golden).
 
-The illustrations in this guide are maintained separately from the Mermaid exporter. Their accessible SVG
+The illustrations in this guide are maintained separately from the Graphviz exporter. Their accessible SVG
 sources and regeneration instructions are in [docs/images](docs/images/README.md).
 
 ## Test your machines
@@ -1954,7 +1970,9 @@ Useful behavior to cover in your own domain:
 - First-match watch order, empty peer collections and aborted reactions.
 - Async timeout behavior and late completions.
 - Hooks and listeners that fail after state has committed.
-- Exact exported diagrams when graph changes require review.
+- Declared graph contracts through typed assertions or structural snapshots.
+
+Visual export tests may separately pin `.dot` goldens when changes to diagram output require review.
 
 A passing runtime test does not replace compile-time graph validation. Conversely, a valid graph does not prove
 that your action performs the correct domain operation.
@@ -2231,10 +2249,10 @@ The combined `test` command explicitly includes that suite. Its plugin is a sepa
 build, while the Maven adapter's integration suite drives actual Maven builds. Have `mvn` available to run it.
 The example applies the included plugin and uses the sibling generator project.
 
-Together those commands run 1029 tests across seven suites — graphmaquina-test 541, core 189, processor 141,
+Together those commands run 1034 tests across seven suites — graphmaquina-test 541, core 194, processor 141,
 codegen 98, maven-plugin 24, gradle-plugin 19 and example 17 — with both README quickstarts executed with
-strict lint. The first of them, `./gradlew build`, runs 1014 of that set on its own: the Gradle adapter's 19
-belong to a separate included build it never reaches, and it adds the 4 cases of the published-artifact smoke
+strict lint. The first of them, `./gradlew build`, runs 1020 tests on its own: the Gradle adapter's 19
+belong to a separate included build it never reaches, and it adds the 5 cases of the published-artifact smoke
 test, which `tasks.test` excludes and `tasks.check` puts back.
 Test reports are under each module's `build/reports/tests/test`.
 

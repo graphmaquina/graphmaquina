@@ -10,9 +10,6 @@ import io.github.graphmaquina.api.EdgeKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.dsl.StateGraph;
-import io.github.graphmaquina.export.Detail;
-import io.github.graphmaquina.export.GraphView;
-import io.github.graphmaquina.export.MermaidExporter;
 import io.github.graphmaquina.test.EdgeAssert;
 import io.github.graphmaquina.test.GraphAssert;
 import io.github.graphmaquina.test.GraphAssertionError;
@@ -40,26 +37,29 @@ class EdgeAssertionsTest {
     private static final String GRAPH = Entity.class.getName() + "/" + State.class.getName();
     private static final String NEW_READY = GRAPH + " NEW -> READY";
 
-    // --- the premise of this task: fields the diagram does not carry ------------------------------
+    // --- declared metadata is the contract, independent of diagram formats -----------------------
 
     @Test
-    void timeoutIsCheckedEvenWhenTheDiagramIsUnchanged() {
+    void timeoutIsCheckedAgainstTheDeclaredDuration() {
         GraphDefinition<Entity, State> shortGraph = TestDomain.graph(Duration.ofSeconds(1));
         GraphDefinition<Entity, State> longGraph = TestDomain.graph(Duration.ofSeconds(30));
-        assertEquals(MermaidExporter.render(GraphView.of(shortGraph), Detail.FULL),
-                MermaidExporter.render(GraphView.of(longGraph), Detail.FULL));
+        GraphAssert.assertThat(shortGraph).edge(State.NEW, State.READY).hasTimeout(Duration.ofSeconds(1));
+        GraphAssert.assertThat(longGraph).edge(State.NEW, State.READY).hasTimeout(Duration.ofSeconds(30));
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> GraphAssert.assertThat(longGraph).edge(State.NEW, State.READY)
                         .hasTimeout(Duration.ofSeconds(1)));
-        assertEquals("timeout", error.property());
+        assertFailure(error, NEW_READY, "timeout", Optional.of(Duration.ofSeconds(1)),
+                Optional.of(Duration.ofSeconds(30)));
     }
 
     @Test
-    void theHookAndTheFailureClassesAreCheckedThoughTheDiagramDropsThem() {
+    void hookAndFailureClassesAreCheckedAgainstTheirDeclaredMetadata() {
         GraphDefinition<Entity, State> graph = TestDomain.graph(TIMEOUT);
         GraphDefinition<Entity, State> other = graphWithOtherHookAndFailureClass();
-        assertEquals(MermaidExporter.render(GraphView.of(graph), Detail.FULL),
-                MermaidExporter.render(GraphView.of(other), Detail.FULL));
+        GraphAssert.assertThat(graph).edge(State.NEW, State.READY)
+                .hasHookNamed("audit").failsOnExactly(IOException.class);
+        GraphAssert.assertThat(other).edge(State.NEW, State.READY)
+                .hasHookNamed("notify").failsOnExactly(UncheckedIOException.class);
         GraphAssertionError hook = assertThrows(GraphAssertionError.class,
                 () -> GraphAssert.assertThat(other).edge(State.NEW, State.READY).hasHookNamed("audit"));
         assertFailure(hook, NEW_READY, "hook", Optional.of("audit"), Optional.of("notify"));
