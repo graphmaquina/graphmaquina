@@ -18,8 +18,10 @@ import java.util.function.Consumer;
  * An {@link AsyncTransitionGuard} that never answers on its own. It behaves exactly as
  * {@link ControlledAsyncAction} does, with {@link GuardResult} in place of the action outcome and
  * {@link GuardCall} in place of the action call: every invocation parks on a stage of its own until the test
- * answers it, concurrent invocations are independent, a handle is published only once {@link #onCall} has
- * returned, and {@link #close()} is idempotent, cancels this fixture's own pending stages and refuses further
+ * answers it, and concurrent invocations are independent. History records entry before {@link #onCall}; a
+ * handle is published only after that side effect returns successfully, so delivery follows queue publication
+ * order and does not promise callback completion order. A failed side effect remains in history but is not
+ * delivered. {@link #close()} is idempotent, cancels this fixture's own pending stages and refuses further
  * invocations.
  *
  * <p>The engine evaluates the guards of an edge in declaration order and stops at the first rejection, so a
@@ -76,8 +78,9 @@ public final class ControlledAsyncGuard<E, S extends Enum<S>>
     }
 
     /**
-     * Every invocation entered so far, in entry order, answered or not. The list is a copy, and an invocation
-     * read here has already been delivered by {@link #awaitInvocation(Duration)} or is still queued for it.
+     * Every invocation entered so far, in entry order, answered or not. The list is a copy. An invocation read
+     * here may still be running its {@link #onCall} side effect; if that side effect fails, the invocation
+     * remains in this history but is not delivered by {@link #awaitInvocation(Duration)}.
      */
     public List<PendingInvocation<GuardCall<E, S>, GuardResult>> invocations() {
         synchronized (invocations) {

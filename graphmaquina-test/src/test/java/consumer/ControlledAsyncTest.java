@@ -32,7 +32,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
@@ -274,6 +278,74 @@ class ControlledAsyncTest {
     // --- closing the control ---------------------------------------------------------------------------
 
     @Test
+    void cancellationReturnsTrueOnlyToTheWinnerAndRejectsLaterAnswers() {
+        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        MachineRegistry registry = TestDomain.registry(TestDomain.graph(GENEROUS, action));
+        try (registry; action) {
+            Entity entity = new Entity("e", State.NEW);
+            CompletableFuture<Outcome<Entity, State>> result =
+                    registry.of(KEY).async().transitionTo(entity, State.READY);
+            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
+
+            assertTrue(call.cancelStage());
+            assertFalse(call.cancelStage());
+            action.close();
+            assertFalse(call.cancelStage(), "cancellation after fixture close has no new winner");
+            assertTrue(call.isCancelled());
+            assertFalse(call.complete(ActionOutcome.ok()));
+            assertFalse(call.fail(new IllegalStateException("late")));
+            assertTrue(call.isCancelled());
+            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(CancellationException.class);
+            assertEquals(State.NEW, entity.state());
+        }
+    }
+
+    @Test
+    void simultaneousCancellationHasExactlyOneWinner() throws Exception {
+        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        MachineRegistry registry = TestDomain.registry(TestDomain.graph(GENEROUS, action));
+        try (registry; action) {
+            Entity entity = new Entity("e", State.NEW);
+            CompletableFuture<Outcome<Entity, State>> result =
+                    registry.of(KEY).async().transitionTo(entity, State.READY);
+            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch start = new CountDownLatch(1);
+            ExecutorService workers = Executors.newFixedThreadPool(2);
+            try {
+                Future<Boolean> first = workers.submit(() -> {
+                    ready.countDown();
+                    awaitLatch(start, "first cancellation worker did not start");
+                    return call.cancelStage();
+                });
+                Future<Boolean> second = workers.submit(() -> {
+                    ready.countDown();
+                    awaitLatch(start, "second cancellation worker did not start");
+                    return call.cancelStage();
+                });
+                awaitLatch(ready, "cancellation workers did not become ready");
+                start.countDown();
+
+                int winners = (first.get(2, TimeUnit.SECONDS) ? 1 : 0)
+                        + (second.get(2, TimeUnit.SECONDS) ? 1 : 0);
+                assertEquals(1, winners);
+                assertTrue(call.isCancelled());
+                assertFalse(call.complete(ActionOutcome.ok()));
+                assertFalse(call.fail(new IllegalStateException("late")));
+                assertTrue(call.isCancelled());
+                AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(CancellationException.class);
+                assertEquals(State.NEW, entity.state());
+            } finally {
+                start.countDown();
+                workers.shutdownNow();
+                if (!workers.awaitTermination(2, TimeUnit.SECONDS)) {
+                    throw new AssertionError("cancellation workers did not terminate");
+                }
+            }
+        }
+    }
+
+    @Test
     void closingCancelsPendingInvocationsAndIsSafeTwice() {
         ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
         try (MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(30), action))) {
@@ -416,6 +488,48 @@ class ControlledAsyncTest {
         }
     }
 
+    @Test
+    void deliveryFollowsPublicationAfterSuccessfulSideEffectsWhileHistoryKeepsEntryOrder() {
+        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        CountDownLatch firstEntered = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        action.onCall(context -> {
+            if (context.entity().id().equals("first")) {
+                firstEntered.countDown();
+                awaitLatch(releaseFirst, "first side effect was not released");
+            }
+        });
+        MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(30), action));
+        try (registry; action) {
+            Entity first = new Entity("first", State.NEW);
+            Entity second = new Entity("second", State.NEW);
+            CompletableFuture<Outcome<Entity, State>> firstResult =
+                    registry.of(KEY).async().transitionTo(first, State.READY);
+            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> secondCall;
+            try {
+                awaitLatch(firstEntered, "first side effect was not entered");
+                CompletableFuture<Outcome<Entity, State>> secondResult =
+                        registry.of(KEY).async().transitionTo(second, State.READY);
+                secondCall = action.awaitInvocation(GENEROUS);
+
+                assertSame(second, secondCall.call().entity());
+                assertEquals(List.of("first", "second"), action.invocations().stream()
+                        .map(invocation -> invocation.call().entity().id())
+                        .toList());
+                assertTrue(secondCall.complete(ActionOutcome.ok()));
+                AsyncAssertions.await(secondResult, GENEROUS).isApplied().hasEntitySameAs(second);
+            } finally {
+                releaseFirst.countDown();
+            }
+
+            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> firstCall =
+                    action.awaitInvocation(GENEROUS);
+            assertSame(first, firstCall.call().entity());
+            assertTrue(firstCall.complete(ActionOutcome.ok()));
+            AsyncAssertions.await(firstResult, GENEROUS).isApplied().hasEntitySameAs(first);
+        }
+    }
+
     // --- the fixture's own wait is the test's budget, not the machine's --------------------------------
 
     @Test
@@ -517,6 +631,17 @@ class ControlledAsyncTest {
             assertFalse(call.isCancelled());
             AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCauseSameAs(boom);
             assertEquals(State.NEW, entity.state());
+        }
+    }
+
+    private static void awaitLatch(CountDownLatch latch, String timeoutMessage) {
+        try {
+            if (!latch.await(2, TimeUnit.SECONDS)) {
+                throw new AssertionError(timeoutMessage);
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("test thread interrupted while waiting on a latch", interrupted);
         }
     }
 

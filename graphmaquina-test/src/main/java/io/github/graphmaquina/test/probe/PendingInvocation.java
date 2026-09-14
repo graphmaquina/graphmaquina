@@ -1,6 +1,7 @@
 package io.github.graphmaquina.test.probe;
 
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
@@ -42,9 +43,12 @@ public final class PendingInvocation<C, R> {
         return stage.completeExceptionally(failure);
     }
 
-    /** Cancels the fixture's own stage, which is never a stage the test handed in from outside. */
+    /**
+     * Cancels the fixture's own stage, which is never a stage the test handed in from outside. Returns
+     * {@code true} only to the caller that settled the stage; later cancellation attempts return {@code false}.
+     */
     public boolean cancelStage() {
-        return stage.cancel(false);
+        return stage.completeExceptionally(new CancellationException());
     }
 
     public boolean isDone() {

@@ -20,11 +20,12 @@ import java.util.function.Consumer;
  * {@link #awaitInvocation(Duration)}. That is what replaces sleeping — the test resumes exactly when the
  * engine has entered the action, and the engine resumes exactly when the test says so.
  *
- * <p>Concurrent invocations are independent: each gets its own handle and its own stage, and the handles are
- * delivered in the order the invocations were entered. A handle is published only once the {@link #onCall}
- * side effect has returned, so a test that received one also knows that hook is done; if that side effect
- * throws, its exception settles the invocation's stage and is rethrown to the engine rather than leaving a
- * stage nobody will ever answer.
+ * <p>Concurrent invocations are independent: each gets its own handle and its own stage. History records an
+ * invocation when it enters, before the {@link #onCall} side effect runs. A handle is published only after
+ * that side effect returns successfully, so {@link #awaitInvocation(Duration)} observes queue publication
+ * order, which can differ from history entry order. This does not promise callback completion order because
+ * a thread can pause before publishing its handle. If the side effect throws, the invocation remains in
+ * history, but its exception settles the stage and its handle is not delivered.
  *
  * <p>{@link #close()} is idempotent. It cancels the stages of this fixture's own pending invocations — never
  * a stage the test handed in from outside — so a worker blocked inside the action is released before a
@@ -82,8 +83,9 @@ public final class ControlledAsyncAction<E, S extends Enum<S>>
     }
 
     /**
-     * Every invocation entered so far, in entry order, answered or not. The list is a copy, and an invocation
-     * read here has already been delivered by {@link #awaitInvocation(Duration)} or is still queued for it.
+     * Every invocation entered so far, in entry order, answered or not. The list is a copy. An invocation read
+     * here may still be running its {@link #onCall} side effect; if that side effect fails, the invocation
+     * remains in this history but is not delivered by {@link #awaitInvocation(Duration)}.
      */
     public List<PendingInvocation<ActionCall<E, S>, ActionOutcome>> invocations() {
         synchronized (invocations) {
