@@ -27,8 +27,8 @@ public final class LineDiff {
     private LineDiff() { }
 
     public static String render(String expected, String actual) {
-        List<String> left = lines(normalize(Objects.requireNonNull(expected, "expected")));
-        List<String> right = lines(normalize(Objects.requireNonNull(actual, "actual")));
+        List<Line> left = lines(normalize(Objects.requireNonNull(expected, "expected")));
+        List<Line> right = lines(normalize(Objects.requireNonNull(actual, "actual")));
         List<Op> ops = script(left, right);
         List<String> rendered = new ArrayList<>();
         for (int[] hunk : hunks(ops)) {
@@ -38,15 +38,21 @@ public final class LineDiff {
     }
 
     /** Splits on line feeds and marks a missing final feed, so two texts differing only in it still differ. */
-    private static List<String> lines(String text) {
+    private static List<Line> lines(String text) {
         if (text.isEmpty()) {
             return List.of();
         }
-        List<String> lines = new ArrayList<>(Arrays.asList(text.split("\n", -1)));
-        if (lines.get(lines.size() - 1).isEmpty()) {
-            lines.remove(lines.size() - 1);
-        } else {
-            lines.add(NO_NEWLINE);
+        List<String> textLines = new ArrayList<>(Arrays.asList(text.split("\n", -1)));
+        boolean missingFinalFeed = !textLines.get(textLines.size() - 1).isEmpty();
+        if (!missingFinalFeed) {
+            textLines.remove(textLines.size() - 1);
+        }
+        List<Line> lines = new ArrayList<>(textLines.size() + (missingFinalFeed ? 1 : 0));
+        for (String textLine : textLines) {
+            lines.add(new Line(textLine, false));
+        }
+        if (missingFinalFeed) {
+            lines.add(new Line(NO_NEWLINE, true));
         }
         return lines;
     }
@@ -55,7 +61,7 @@ public final class LineDiff {
         return text.replace("\r\n", "\n").replace('\r', '\n');
     }
 
-    private static List<Op> script(List<String> left, List<String> right) {
+    private static List<Op> script(List<Line> left, List<Line> right) {
         int prefix = 0;
         while (prefix < left.size() && prefix < right.size() && left.get(prefix).equals(right.get(prefix))) {
             prefix++;
@@ -79,7 +85,7 @@ public final class LineDiff {
         return ops;
     }
 
-    private static void middle(List<Op> ops, List<String> left, List<String> right, int base) {
+    private static void middle(List<Op> ops, List<Line> left, List<Line> right, int base) {
         int rows = left.size();
         int columns = right.size();
         if ((long) (rows + 1) * (columns + 1) > MAX_CELLS) {
@@ -160,7 +166,7 @@ public final class LineDiff {
                 + " +" + position(first.right(), rightLines) + "," + rightLines + " @@");
         for (int index = start; index <= end; index++) {
             Op op = ops.get(index);
-            rendered.add(op.kind().marker() + op.text());
+            rendered.add(op.kind().marker() + op.line().text());
         }
     }
 
@@ -196,6 +202,8 @@ public final class LineDiff {
         }
     }
 
+    private record Line(String text, boolean diagnostic) { }
+
     /** One line of the edit script with the zero-based position each side stands at when it is emitted. */
-    private record Op(Kind kind, String text, int left, int right) { }
+    private record Op(Kind kind, Line line, int left, int right) { }
 }

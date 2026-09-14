@@ -155,6 +155,27 @@ class LineDiffTest {
     }
 
     @Test
+    void aLiteralMarkerLineDoesNotHideAnExpectedMissingFinalLineFeed() {
+        String literal = "a\n\\ No newline at end of file\n";
+
+        assertFalse(LineDiff.render(literal, "a").isEmpty());
+    }
+
+    @Test
+    void aLiteralMarkerLineDoesNotHideAnActualMissingFinalLineFeed() {
+        String literal = "a\n\\ No newline at end of file\n";
+
+        assertFalse(LineDiff.render("a", literal).isEmpty());
+    }
+
+    @Test
+    void identicalLiteralMarkerLinesRenderNothing() {
+        String literal = "a\n\\ No newline at end of file\n";
+
+        assertEquals("", LineDiff.render(literal, literal));
+    }
+
+    @Test
     void anEmptyTextIsAllAdditions() {
         assertEquals("""
                 @@ -0,0 +1,2 @@
