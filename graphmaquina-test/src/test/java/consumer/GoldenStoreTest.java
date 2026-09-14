@@ -23,6 +23,11 @@ import java.nio.file.attribute.PosixFileAttributeView;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -285,15 +290,110 @@ class GoldenStoreTest {
         Files.createSymbolicLink(root.resolve("away"), outside);
         List<Path> written = new ArrayList<>();
         try (URLClassLoader loader = loader(root)) {
-            IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                    () -> GoldenStore.assertMatches("away/x.dot", "a\n",
-                            GoldenOptions.updating(loader, root, written::add), DIFF));
-            assertTrue(error.getMessage().contains("outside the source root"), error.getMessage());
+            for (String resource : List.of("away/x.dot", "away/missing/nested/x.dot")) {
+                IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                        () -> GoldenStore.assertMatches(resource, "a\n",
+                                GoldenOptions.updating(loader, root, written::add), DIFF));
+                assertTrue(error.getMessage().contains("outside the source root"), error.getMessage());
+            }
         }
         assertEquals(List.of(), written);
         try (Stream<Path> entries = Files.list(outside)) {
             assertEquals(List.of(), entries.toList());
         }
+    }
+
+    @Test
+    void anEscapingParentIsRejectedEvenWhenItsTargetReturnsInsideAndMatches(@TempDir Path temp)
+            throws Exception {
+        Path root = Files.createDirectory(temp.resolve("root"));
+        Path outside = Files.createDirectory(temp.resolve("outside"));
+        Path inside = Files.writeString(root.resolve("inside.dot"), "old\n");
+        Files.createSymbolicLink(root.resolve("away"), outside);
+        Path external = Files.createSymbolicLink(outside.resolve("x.dot"), inside);
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> GoldenStore.assertMatches("away/x.dot", "old\n",
+                            GoldenOptions.updating(loader, root, written::add), DIFF));
+        }
+        assertTrue(Files.isSymbolicLink(external));
+        assertEquals(inside, Files.readSymbolicLink(external));
+        assertEquals("old\n", Files.readString(inside));
+        assertEquals(List.of(), written);
+        try (Stream<Path> entries = Files.list(outside)) {
+            assertEquals(List.of(external), entries.toList());
+        }
+    }
+
+    @Test
+    void aSymbolicLinkThatStaysInsideAllowsNestedUpdates(@TempDir Path root) throws Exception {
+        Path inside = Files.createDirectory(root.resolve("inside"));
+        Path alias = Files.createSymbolicLink(root.resolve("alias"), inside);
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            GoldenOptions update = GoldenOptions.updating(loader, root, written::add);
+            GoldenStore.assertMatches("alias/nested/x.dot", "new\n", update, DIFF);
+            GoldenStore.assertMatches("alias/nested/x.dot", "new\n", update, DIFF);
+            GoldenStore.assertMatches("alias/nested/x.dot", "new\n", GoldenOptions.readOnly(loader), DIFF);
+        }
+        assertTrue(Files.isSymbolicLink(alias));
+        assertEquals("new\n", Files.readString(inside.resolve("nested/x.dot")));
+        assertEquals(List.of(root.resolve("alias/nested/x.dot")), written);
+        try (Stream<Path> entries = Files.list(inside.resolve("nested"))) {
+            assertEquals(List.of(inside.resolve("nested/x.dot")), entries.toList());
+        }
+    }
+
+    @Test
+    void concurrentExplicitOptionsKeepTheirLoadersRootsAndReportersIsolated(@TempDir Path temp)
+            throws Exception {
+        Path firstRoot = Files.createDirectory(temp.resolve("first"));
+        Path secondRoot = Files.createDirectory(temp.resolve("second"));
+        Files.writeString(firstRoot.resolve("x.dot"), "first old\n");
+        Files.writeString(secondRoot.resolve("x.dot"), "second old\n");
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService workers = Executors.newFixedThreadPool(2);
+        try {
+            Future<List<Path>> first = workers.submit(
+                    () -> updateAndReadOwnGolden(firstRoot, "first new\n", ready, start));
+            Future<List<Path>> second = workers.submit(
+                    () -> updateAndReadOwnGolden(secondRoot, "second new\n", ready, start));
+            assertTrue(ready.await(5, TimeUnit.SECONDS), "both workers must reach the start gate");
+            start.countDown();
+            assertEquals(List.of(firstRoot.resolve("x.dot")), first.get(5, TimeUnit.SECONDS));
+            assertEquals(List.of(secondRoot.resolve("x.dot")), second.get(5, TimeUnit.SECONDS));
+        } finally {
+            start.countDown();
+            workers.shutdownNow();
+            assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS), "golden workers must terminate");
+        }
+        assertEquals("first new\n", Files.readString(firstRoot.resolve("x.dot")));
+        assertEquals("second new\n", Files.readString(secondRoot.resolve("x.dot")));
+        for (Path root : List.of(firstRoot, secondRoot)) {
+            try (Stream<Path> entries = Files.list(root)) {
+                assertEquals(List.of(root.resolve("x.dot")), entries.toList());
+            }
+        }
+    }
+
+    private static List<Path> updateAndReadOwnGolden(Path root, String content,
+            CountDownLatch ready, CountDownLatch start) throws Exception {
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            GoldenOptions update = GoldenOptions.updating(loader, root, written::add);
+            GoldenOptions read = GoldenOptions.readOnly(loader);
+            ready.countDown();
+            assertTrue(start.await(5, TimeUnit.SECONDS), "start gate must open");
+            GoldenStore.assertMatches("x.dot", content, update, DIFF);
+            GoldenStore.assertMatches("x.dot", content, read, DIFF);
+            assertThrows(GraphAssertionError.class,
+                    () -> GoldenStore.assertMatches("x.dot", "must not overwrite\n", read, DIFF));
+            assertThrows(GraphAssertionError.class,
+                    () -> GoldenStore.assertMatches("absent.dot", "must not create\n", read, DIFF));
+        }
+        return written;
     }
 
     @Test

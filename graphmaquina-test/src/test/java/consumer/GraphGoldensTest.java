@@ -16,10 +16,12 @@ import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.snapshot.GoldenOptions;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -60,6 +62,30 @@ class GraphGoldensTest {
             GraphGoldens.assertMatches(graph, RESOURCE, Detail.FULL, GoldenOptions.readOnly(loader));
             GraphGoldens.assertMatches(graph, RESOURCE, Detail.FULL, update);
             assertEquals(1, written.size());
+        }
+    }
+
+    @Test
+    void updateRejectsAnEscapingParentEvenWhenTheFinalSymlinkReturnsInside(@TempDir Path temp)
+            throws Exception {
+        Path root = Files.createDirectory(temp.resolve("root"));
+        Path outside = Files.createDirectory(temp.resolve("outside"));
+        Path inside = Files.writeString(root.resolve("inside.dot"), "old\n");
+        Files.createSymbolicLink(root.resolve("away"), outside);
+        Path external = Files.createSymbolicLink(outside.resolve("x.dot"), inside);
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {
+            GoldenOptions update = GoldenOptions.updating(loader, root, written::add);
+            assertThrows(IllegalArgumentException.class,
+                    () -> GraphGoldens.assertMatches(SnapshotGraphs.minimalGraph(), "away/x.dot",
+                            Detail.TRANSITABLE, update));
+        }
+        assertTrue(Files.isSymbolicLink(external));
+        assertEquals(inside, Files.readSymbolicLink(external));
+        assertEquals("old\n", Files.readString(inside));
+        assertEquals(List.of(), written);
+        try (Stream<Path> entries = Files.list(outside)) {
+            assertEquals(List.of(external), entries.toList());
         }
     }
 

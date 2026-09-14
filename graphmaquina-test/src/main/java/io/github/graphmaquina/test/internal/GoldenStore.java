@@ -122,19 +122,19 @@ public final class GoldenStore {
         options.reporter().accept(target);
     }
 
-    /** Rejects a target whose nearest existing ancestor leaves the real source root through a symbolic link. */
+    /** Rejects a target when any existing ancestor leaves the real source root through a symbolic link. */
     private static void requireInside(String resource, Path root, Path target) throws IOException {
         if (!Files.isDirectory(root)) {
             throw new IllegalStateException("the source root <" + root + "> is not a directory");
         }
         Path real = root.toRealPath();
-        Path existing = target;
-        while (existing != null && !Files.exists(existing, LinkOption.NOFOLLOW_LINKS)) {
-            existing = existing.getParent();
-        }
-        if (existing != null && !existing.toRealPath().startsWith(real)) {
-            throw new IllegalArgumentException("the resource <" + resource + "> resolves through <" + existing
-                    + "> outside the source root <" + real + ">");
+        for (Path existing = target; existing != null && existing.startsWith(root);
+                existing = existing.getParent()) {
+            if (Files.exists(existing, LinkOption.NOFOLLOW_LINKS)
+                    && !existing.toRealPath().startsWith(real)) {
+                throw new IllegalArgumentException("the resource <" + resource + "> resolves through <" + existing
+                        + "> outside the source root <" + real + ">");
+            }
         }
     }
 
