@@ -14,9 +14,9 @@ the README also supplies alternative text and keeps the detailed semantics in or
 | [Watch reactions](watch-reactions.svg) | Item commit followed by an independent owner reaction |
 
 The images use native SVG geometry and text, without embedded bitmaps, scripts, external fonts or linked
-resources. They do not change the library's Mermaid exporter.
+resources. They do not change the library's Graphviz exporter.
 
 The palette is shared: blue for movement/build input, teal for success, purple for orchestration, red for
 failure/forbidden cells, and amber for post-commit work or cautions. Labels carry the meaning independently
-of color. These are documentation illustrations; the graph definition and generated Mermaid remain the
-programmatic sources for an application's actual graph.
+of color. These are documentation illustrations. The graph definition is the structural contract for an
+application's actual graph; exported Graphviz DOT is a visual projection of that definition.

@@ -9,7 +9,7 @@ import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.export.GraphView;
-import io.github.graphmaquina.export.MermaidExporter;
+import io.github.graphmaquina.export.GraphvizExporter;
 import io.github.graphmaquina.runtime.StateMachines;
 import java.lang.reflect.Method;
 import java.time.Duration;
@@ -176,9 +176,9 @@ class MachineGenerationTest {
         Method graph = companion.getMethod("graph", docActions);
         @SuppressWarnings("unchecked")
         GraphDefinition<Object, ?> definition = (GraphDefinition<Object, ?>) graph.invoke(null, actions);
-        String diagram = MermaidExporter.render(GraphView.of(definition));
-        assertTrue(diagram.contains("REVIEW --> PUBLISHED : publish [if approved]"), diagram);
-        assertTrue(diagram.contains("PUBLISHED --> ARCHIVED : archive [async]"), diagram);
+        String diagram = GraphvizExporter.render(GraphView.of(definition));
+        assertTrue(diagram.contains("n1 -> n2 [label=\"publish [if approved]\"];"), diagram);
+        assertTrue(diagram.contains("n2 -> n3 [label=\"archive [async]\"];"), diagram);
 
         Class<?> docClass = result.load("fx.Doc");
         Object doc = docClass.getConstructor(String.class).newInstance("d1");
