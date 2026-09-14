@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/** Verifies how Definition's default afterCommit hook is inherited, replaced and validated for actions, moves and cells. */
 class DefaultAfterCommitTest {
     private static final String DEFAULT = ", afterCommit = RecorderRefs.Persist.class";
     private static final String EXPLICIT = ", afterCommit = DocActionsRefs.Notified.class";

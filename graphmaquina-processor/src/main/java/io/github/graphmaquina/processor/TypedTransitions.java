@@ -111,6 +111,8 @@ final class TypedTransitions {
     private Optional<AnnotationValue> single(Element element, AnnotationMirror mirror, String name) {
         Optional<AnnotationValue> declared = annotations.find(mirror, name);
         if (declared.isEmpty()) {
+            // annotations.array(...) throws IllegalArgumentException for a member the annotation type does not declare,
+            // so an older Definition without afterCommit() resolves here to empty instead of crashing the processor.
             return Optional.empty();
         }
         return TypedValues.optional(mirror, name, annotations,

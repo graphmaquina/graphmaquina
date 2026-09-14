@@ -147,7 +147,7 @@ class GeneratedApiCompilationTest {
             usage.replace("afterCommit = fx.DocActionsRefs.Notified.class)",
                 "afterCommit = fx.DocActionsRefs.Publish.class)")));
         assertFalse(invalid.success());
-        assertTrue(invalid.codes().stream().anyMatch(code -> code.startsWith("compiler.err.")));
+        assertTrue(invalid.codes().stream().allMatch(code -> code.startsWith("compiler.err.")));
     }
 
     @Test

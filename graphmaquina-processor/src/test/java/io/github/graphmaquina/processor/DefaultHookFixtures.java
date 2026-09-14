@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor;
 
 import java.util.Map;
 
+/** Source fixtures for the default afterCommit hook tests: a small Docs machine with parameterized hook declarations. */
 final class DefaultHookFixtures {
     private DefaultHookFixtures() { }
 

@@ -1831,10 +1831,11 @@ public final class DocumentPersistence {
 files, each with the usual annotation and API imports and `import static ...DocumentStatus.*` for the state
 constants. `Document` exports `id` and `status` the same way described under Properties and accessors.
 
-Inject `DocumentPersistence` through the generated set builder, providing your repository's save operation. If
-an edge declares a replacement hook, that hook must call the shared persistence method too when the application
-requires every transition to be saved. This hook runs after GraphMaquina's in-memory commit; the application's
-database transaction still controls durable commit and rollback.
+Assemble `Documents` into a `@StateGraphs` set as the quickstart shows, and inject `DocumentPersistence` through
+that set's generated builder, providing your repository's save operation. If an edge declares a replacement hook,
+that hook must call the shared persistence method too when the application requires every transition to be saved.
+This hook runs after GraphMaquina's in-memory commit; the application's database transaction still controls
+durable commit and rollback.
 
 ## Inspect graphs and export diagrams
 
