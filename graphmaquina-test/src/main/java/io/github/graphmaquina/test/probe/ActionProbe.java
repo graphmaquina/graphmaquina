@@ -86,7 +86,7 @@ public final class ActionProbe<E, S extends Enum<S>> implements TransitionAction
     @Override
     public ActionOutcome process(TransitionContext<E, S> context) {
         ActionCall<E, S> call =
-                new ActionCall<>(context.entity(), context.from(), context.to(), context.depth());
+                new ActionCall<>(context.entity(), context.from(), context.to(), context.depth(), context.input());
         calls.record(call);
         trace.record(name, call);
         Supplier<ActionOutcome> response = script.next();

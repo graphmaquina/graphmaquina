@@ -1,22 +1,42 @@
 package io.github.graphmaquina.test.probe;
 
+import io.github.graphmaquina.test.internal.InputTypes;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * What a {@link GuardProbe} recorded about one invocation. A guard decides and does not cascade, so there is no
- * depth to record; as with {@link ActionCall}, the live {@code GuardContext} is not kept.
+ * depth to record; as with {@link ActionCall}, the live {@code GuardContext} is not kept. Input is the
+ * reference read on entry, not a deep copy, and remains readable after the transaction ends.
  *
  * @param entity the entity the guard was asked about
  * @param from the state the entity was in when the guard was entered
  * @param to the state the transition was heading for
+ * @param input the operation argument, or empty when none was provided
  * @param <E> the entity type of the machine
  * @param <S> the state enum of the machine
  */
-public record GuardCall<E, S extends Enum<S>>(E entity, S from, S to) {
+public record GuardCall<E, S extends Enum<S>>(E entity, S from, S to, Optional<?> input) {
 
     public GuardCall {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(from, "from");
         Objects.requireNonNull(to, "to");
+        Objects.requireNonNull(input, "input");
+    }
+
+    /** Creates a call with no operation input, preserving the original constructor. */
+    public GuardCall(E entity, S from, S to) {
+        this(entity, from, to, Optional.empty());
+    }
+
+    /**
+     * Reads the recorded input as a reference type, including a supertype. A null token throws
+     * {@link NullPointerException}, a primitive token throws {@link IllegalArgumentException} even for an
+     * empty input, and an incompatible present value throws {@link ClassCastException}.
+     */
+    public <I> Optional<I> input(Class<I> type) {
+        InputTypes.referenceType(type);
+        return input.map(type::cast);
     }
 }

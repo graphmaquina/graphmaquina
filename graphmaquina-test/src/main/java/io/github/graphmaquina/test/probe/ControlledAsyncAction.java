@@ -96,7 +96,7 @@ public final class ControlledAsyncAction<E, S extends Enum<S>>
     @Override
     public CompletionStage<ActionOutcome> process(TransitionContext<E, S> context) {
         PendingInvocation<ActionCall<E, S>, ActionOutcome> pending = new PendingInvocation<>(
-                new ActionCall<>(context.entity(), context.from(), context.to(), context.depth()));
+                new ActionCall<>(context.entity(), context.from(), context.to(), context.depth(), context.input()));
         synchronized (invocations) {
             if (closed) {
                 throw new IllegalStateException("the controlled action is closed and takes no more invocations");

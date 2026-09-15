@@ -16,6 +16,7 @@ example module is.
 - [Goldens and structural snapshots](#goldens-and-structural-snapshots)
 - [What a check does not prove](#what-a-check-does-not-prove)
 - [Sharp edges](#sharp-edges)
+- [Maintaining test support](#maintaining-test-support)
 
 Every Java sample below is copied verbatim out of a test that runs in this repository. Each section names
 the file it came from.
@@ -311,6 +312,48 @@ assertEquals(List.of(WriteStatus.RETURNED, WriteStatus.THREW),
         writes.writes().stream().map(StateWrite::status).toList());
 ```
 
+### Operation input in recorded calls
+
+`GuardCall` and `ActionCall` capture `Optional<?> input` when the callback is entered. This works with
+`GuardProbe`, `ActionProbe`, `ControlledAsyncGuard` and `ControlledAsyncAction`, including calls in a
+`CallTrace` or a `PendingInvocation`. It stores the argument reference without retaining the live context;
+reading the history after the transaction ends is safe. The payload is not copied: later mutations of a
+mutable argument remain visible, so use an immutable value when the test needs a stable value snapshot.
+
+The [published consumer test](../graphmaquina-test/src/test/java/consumer/PublishedArtifactSmokeTest.java)
+invokes an operation with a string argument named `input`, then checks both recorded calls:
+
+```java
+assertThat(guard.calls().single()).hasInput("approved").hasInputSameAs(input);
+assertThat(action.calls().single()).inputSatisfies(CharSequence.class, value -> {
+    if (value != input) { throw new AssertionError("input identity was lost"); }
+});
+```
+
+`hasInput` compares by equality, `hasInputSameAs` checks identity, and `hasNoInput` requires absence.
+`inputSatisfies` checks presence and assignability before invoking the typed assertion; an absent or wrong
+input produces an inspectable `GraphAssertionError`. Null expected values are programming errors; use
+`hasNoInput()` to check a null operation argument. `CallInputAssert.assertThat(call)` is also available
+without the `GraphAssertions` facade.
+
+The recorded `input(Class)` follows the context contract: empty remains empty, supertypes are supported,
+and incompatible present values throw `ClassCastException`. A null type token throws `NullPointerException`;
+primitive tokens (including `void.class`) throw `IllegalArgumentException`, even for an empty input. Use
+wrapper classes for primitive operation arguments.
+
+Root guards, actions and failure actions record the root input. Cascades, watch reactions and reevaluation
+have their own calls with empty input; a later invocation never reuses a previous input. For a controlled
+async callback, inspect `assertThat(pending.call()).hasInputSameAs(verdict)` before answering it or after
+completion. The same reference remains in `fixture.invocations()` after close.
+
+The original three-argument `GuardCall` and four-argument `ActionCall` constructors remain available and
+create calls with empty input. The records now have an additional component: record patterns must include
+it, and generated equality, hash codes and string representations include it.
+
+Executable examples: [ProbeInputTest](../graphmaquina-test/src/test/java/consumer/ProbeInputTest.java) and
+[CallInputAssertionsTest](../graphmaquina-test/src/test/java/consumer/CallInputAssertionsTest.java). The
+published-artifact consumer also compiles and runs the new API directly from the staged JARs.
+
 ### Controlled asynchronous invocations
 
 A `ControlledAsyncAction` or `ControlledAsyncGuard` is declared on the cell in place of the real async
@@ -527,3 +570,11 @@ A test that needs no properties at all can pass options explicitly —
 - **Assert on the fields, not the type.** A `GraphAssertionError` carries `context()`, `property()`,
   `expected()` and `actual()`. A test that only checks that something was thrown cannot tell a real
   rejection from an incidental failure.
+
+## Maintaining test support
+
+Every GraphMaquina feature or behavior change must provide its counterpart in `graphmaquina-test` in the
+same delivery. Extend the relevant assertions, probes, recorded calls or snapshots so a consuming project
+can verify the new behavior. Include regression coverage and documented consumer usage. When existing
+support already expresses the behavior, demonstrate it with an executable consumer test. Public test APIs
+must also be exercised against the staged artifacts by `:graphmaquina-test:publishedArtifactTest`.

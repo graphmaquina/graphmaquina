@@ -49,11 +49,15 @@ class PublishedArtifactSmokeTest {
             import static io.github.graphmaquina.test.GraphAssertions.assertThat;
             import io.github.graphmaquina.api.ActionOutcome;
             import io.github.graphmaquina.api.GraphDefinition;
+            import io.github.graphmaquina.api.GuardResult;
             import io.github.graphmaquina.api.MachineKey;
             import io.github.graphmaquina.api.StateMachine;
             import io.github.graphmaquina.dsl.StateGraph;
             import io.github.graphmaquina.runtime.StateMachines;
             import io.github.graphmaquina.test.GraphSnapshots;
+            import io.github.graphmaquina.test.probe.ActionProbe;
+            import io.github.graphmaquina.test.probe.GuardProbe;
+            import io.github.graphmaquina.test.probe.CallTrace;
             import io.github.graphmaquina.test.StateSnapshot;
             import io.github.graphmaquina.test.snapshot.GoldenOptions;
             import io.github.graphmaquina.test.snapshot.GraphDiff;
@@ -101,6 +105,26 @@ class PublishedArtifactSmokeTest {
                             .hasEntityState(value -> value.state, State.DONE).records().hasSize(1);
                     if (before.changes().size() != 1) {
                         throw new AssertionError("the actual state write must be observed");
+                    }
+                    CallTrace trace = CallTrace.create();
+                    var guard = GuardProbe.<Entity, State>create("gate", trace).thenReturn(GuardResult.pass());
+                    var action = ActionProbe.<Entity, State>create("finish", trace).thenReturn(ActionOutcome.ok());
+                    var inputGraph = StateGraph.define(KEY).initial(State.NEW).terminal(State.DONE)
+                            .from(State.NEW).to(State.DONE).action("finish", action).guard("gate", guard)
+                            .stay().forbidOthers("finish first")
+                            .from(State.DONE).stay().forbidOthers("done").build();
+                    var inputMachine = StateMachines.from(inputGraph)
+                            .state(value -> value.state, (value, state) -> value.state = state)
+                            .asyncExecutor(Runnable::run).build();
+                    String input = new String("approved");
+                    assertThat(inputMachine.transitionTo(new Entity(), State.DONE, input)).isApplied();
+                    assertThat(guard.calls().single()).hasInput("approved").hasInputSameAs(input);
+                    assertThat(action.calls().single()).inputSatisfies(CharSequence.class, value -> {
+                        if (value != input) { throw new AssertionError("input identity was lost"); }
+                    });
+                    if (guard.calls().single().input(String.class).orElseThrow() != input
+                            || action.calls().single().input(String.class).orElseThrow() != input) {
+                        throw new AssertionError("recorded input was lost");
                     }
                     System.out.println("PUBLIC_API_OK");
                 }
