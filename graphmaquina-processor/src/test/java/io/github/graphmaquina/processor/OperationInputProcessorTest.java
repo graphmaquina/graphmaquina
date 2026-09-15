@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.AnnotatedArrayType;
+import java.lang.reflect.AnnotatedType;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +40,77 @@ class OperationInputProcessorTest {
             assertTrue(generated.contains(
                     "return stateMachine.transitionTo(doc, DocStatus.PUBLISHED, input);"), generated);
         }
+    }
+
+    @Test
+    void preservesEnumValuesInInputTypeAnnotations() throws Exception {
+        Map<String, String> src = annotatedSource("@external.Mark(mode = external.Mode.YES) String");
+        Compilation.Result result = Compilation.compileTyped(src);
+        assertTrue(result.success(), result.describe());
+        AnnotatedType parameter = result.load("fx.DocsRuntime").getMethod("publish", result.load("fx.Doc"), String.class)
+                .getAnnotatedParameterTypes()[1];
+        Object annotation = parameter.getAnnotations()[0];
+        assertEquals("YES", result.load("external.Mark").getMethod("mode").invoke(annotation).toString());
+    }
+
+    @Test
+    void preservesAnnotationsThroughoutNestedInputTypes() {
+        for (String type : List.of("java.util.List<@external.Mark(mode=external.Mode.YES) String>",
+                "java.util.List<@external.Mark(mode=external.Mode.YES) ? extends String>",
+                "java.util.List<? super @external.Mark(mode=external.Mode.YES) String>",
+                "external.Types.@external.Mark(mode=external.Mode.YES) Nested",
+                "external.Box<@external.Mark(mode=external.Mode.YES) String>.Inner<Integer>",
+                "@external.Mark(mode=external.Mode.YES) int",
+                "@external.Mark(mode=external.Mode.YES) String @external.Mark(mode=external.Mode.NO) []")) {
+            Compilation.Result result = Compilation.compileTyped(annotatedSource(type));
+            assertTrue(result.success(), type + "\n" + result.describe());
+        }
+    }
+
+    @Test
+    void preservesArrayAnnotationOrderAndNestedAnnotationValues() throws Exception {
+        Map<String, String> src = annotatedSource("String @external.Mark(mode=external.Mode.YES,"
+                + " modes={external.Mode.NO, external.Mode.YES}, nested=@external.Nested(external.Mode.NO),"
+                + " type=int[].class, text=\"mode=YES\") [] @external.Mark(mode=external.Mode.NO) []");
+        Compilation.Result result = Compilation.compileTyped(src);
+        assertTrue(result.success(), result.describe());
+        AnnotatedArrayType array = (AnnotatedArrayType) result.load("fx.DocsRuntime")
+                .getMethod("publish", result.load("fx.Doc"), String[][].class).getAnnotatedParameterTypes()[1];
+        Class<?> mark = result.load("external.Mark");
+        Object outer = array.getAnnotations()[0];
+        Object inner = array.getAnnotatedGenericComponentType().getAnnotations()[0];
+        assertEquals("YES", mark.getMethod("mode").invoke(outer).toString());
+        assertEquals("NO", mark.getMethod("mode").invoke(inner).toString());
+        Object[] modes = (Object[]) mark.getMethod("modes").invoke(outer);
+        assertEquals(List.of("NO", "YES"), List.of(modes[0].toString(), modes[1].toString()));
+        Object nested = mark.getMethod("nested").invoke(outer);
+        assertEquals("NO", result.load("external.Nested").getMethod("value").invoke(nested).toString());
+        assertEquals(int[].class, mark.getMethod("type").invoke(outer));
+        assertEquals("mode=YES", mark.getMethod("text").invoke(outer));
+    }
+
+    private Map<String, String> annotatedSource(String type) {
+        Map<String, String> src = source("publish(Doc doc, " + type + " value)");
+        src.put("external.Mode", "package external; public enum Mode { YES, NO }");
+        src.put("external.Nested", """
+                package external;
+                @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+                public @interface Nested { Mode value(); }
+                """);
+        src.put("external.Mark", """
+                package external;
+                @java.lang.annotation.Target(java.lang.annotation.ElementType.TYPE_USE)
+                @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.RUNTIME)
+                public @interface Mark {
+                    Mode mode();
+                    Mode[] modes() default {};
+                    Nested nested() default @Nested(Mode.YES);
+                    Class<?> type() default Object.class;
+                    String text() default "";
+                }
+                """);
+        src.put("external.Box", "package external; public class Box<T> { public class Inner<U> {} }");
+        return src;
     }
 
     @Test

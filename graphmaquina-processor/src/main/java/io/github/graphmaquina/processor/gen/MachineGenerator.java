@@ -82,8 +82,8 @@ public final class MachineGenerator {
         graph(model, names, parameters, invocations, out);
         for (OperationModel operation : model.operations()) {
             String input = entity.equals("input") ? "input2" : "input";
-            // type bypasses the resolver on purpose: toString() re-parses nested, wildcard, array, primitive and TYPE_USE-annotated types correctly.
-            String declaration = operation.inputType().map((TypeMirror type) -> ", " + type + " " + input).orElse("");
+            String declaration = operation.inputType().map((TypeMirror type) -> ", " + TypeSource.render(type) + " " + input)
+                    .orElse("");
             String argument = operation.inputType().isPresent() ? ", " + input : "";
             out.blank();
             out.line("@Override");

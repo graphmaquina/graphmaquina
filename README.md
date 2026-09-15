@@ -2251,7 +2251,7 @@ symbol category may be an ordinary javac error rather than an `SG` diagnostic.
 | `SG404` | A watch has no rules. |
 | `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
 | `SG503` | Missing or incompatible public property accessor. |
-| `SG504` | Invalid operation annotation/signature; use one typed action/move and `Outcome<E, S> operation(E)` or `Outcome<E, S> operation(E, I)`. Zero, three or more parameters, a wrong entity or return type, and varargs or a method type parameter are all still rejected. |
+| `SG504` | Invalid operation annotation/signature; use one typed action/move and `Outcome<E, S> operation(E)` or `Outcome<E, S> operation(E, I)`. Zero, three or more parameters and a wrong entity or return type are rejected. Operations with input also reject varargs and method type parameters. |
 | `SG505` | Exported method does not uniquely fit the action, guard, hook or condition role. |
 | `SG506` | A nonterminal state has no closing `Row`. |
 | `SG507` | Invalid transition elements: empty `from`, action-only settings without an action, or timeout on a synchronous action. |
