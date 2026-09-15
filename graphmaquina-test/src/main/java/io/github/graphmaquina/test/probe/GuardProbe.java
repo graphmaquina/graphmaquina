@@ -84,7 +84,7 @@ public final class GuardProbe<E, S extends Enum<S>> implements TransitionGuard<E
 
     @Override
     public GuardResult test(GuardContext<E, S> context) {
-        GuardCall<E, S> call = new GuardCall<>(context.entity(), context.from(), context.to());
+        GuardCall<E, S> call = new GuardCall<>(context.entity(), context.from(), context.to(), context.input());
         calls.record(call);
         trace.record(name, call);
         Supplier<GuardResult> response = script.next();

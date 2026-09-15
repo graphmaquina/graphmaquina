@@ -4,6 +4,7 @@ import static io.github.graphmaquina.fixtures.Keys.ITEMS;
 import static io.github.graphmaquina.fixtures.Keys.ORDERS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -345,5 +346,47 @@ class CascadeTest {
         assertThrows(TransitionAbortedException.class, () -> orders.transitionTo(order, OrderStatus.CANCELLED));
         PoisonedUnitOfWorkException poisoned = assertInstanceOf(PoisonedUnitOfWorkException.class, later.get());
         assertTrue(poisoned.original().getMessage().contains("rejected inside a cascade"));
+    }
+
+    @Test
+    void cascadeDoesNotInheritRootInput() {
+        Object input = new Object();
+        Order order = new Order("o", OrderStatus.PAID);
+        Item item = new Item("i", ItemStatus.PACKING, Optional.empty());
+        packItem.behaviour = (TransitionContext<Item, ItemStatus> ctx) -> {
+            assertTrue(ctx.input().isEmpty());
+            return ActionOutcome.ok();
+        };
+        shipOrder.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+            assertSame(input, ctx.input().orElseThrow());
+            ctx.cascade(ITEMS, item, ItemStatus.PACKED);
+            assertSame(input, ctx.input().orElseThrow());
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry r = registry(8)) {
+            assertInstanceOf(Outcome.Applied.class, r.of(ORDERS).transitionTo(order, OrderStatus.SHIPPED, input));
+        }
+        assertEquals(ItemStatus.PACKED, item.status());
+    }
+
+    @Test
+    void cascadeAllDoesNotInheritRootInput() {
+        for (CascadePolicy policy : CascadePolicy.values()) {
+            Order order = new Order("o", OrderStatus.PAID);
+            List<Item> children = List.of(new Item("a", ItemStatus.PACKING, Optional.empty()),
+                    new Item("b", ItemStatus.PACKING, Optional.empty()));
+            packItem.behaviour = (TransitionContext<Item, ItemStatus> ctx) -> {
+                assertTrue(ctx.input().isEmpty());
+                return ActionOutcome.ok();
+            };
+            shipOrder.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+                ctx.cascadeAll(ITEMS, children, ItemStatus.PACKED, policy);
+                return ActionOutcome.ok();
+            };
+            try (MachineRegistry r = registry(8)) {
+                r.of(ORDERS).transitionTo(order, OrderStatus.SHIPPED, new Object());
+            }
+            assertTrue(children.stream().allMatch((Item item) -> item.status() == ItemStatus.PACKED));
+        }
     }
 }

@@ -42,7 +42,7 @@ class MachineCellErrorsTest {
         assertTrue(body(SUBMIT + "    Outcome<Doc, DocStatus> orphan(Doc doc);\n" + publish("") + ARCHIVE).hasError("SG504"));
         assertTrue(body(SUBMIT + "    @DocsGraph.Move(from = REVIEW, to = PUBLISHED)\n" + publish("") + ARCHIVE).hasError("SG504"));
         assertTrue(body(SUBMIT + "    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)\n"
-                + "    Outcome<Doc, DocStatus> publish(Doc doc, String reason);\n" + ARCHIVE).hasError("SG504"));
+                + "    Outcome<Doc, DocStatus> publish(Doc doc, String reason, String extra);\n" + ARCHIVE).hasError("SG504"));
         assertTrue(body(SUBMIT + "    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)\n"
                 + "    void publish(Doc doc);\n" + ARCHIVE).hasError("SG504"));
         Compilation.Result defaults = body(SUBMIT + publish("") + ARCHIVE

@@ -50,8 +50,13 @@ final class Transaction {
         }
     }
 
-    /** One step: resolve the cell, guards, annotate, execute, failure route. depth 0 is the root. */
+    /** Cascades and reevaluate keep calling this: no per-call input to carry. */
     <E, S extends Enum<S>> StepResult<S> transition(DefaultStateMachine<E, S> machine, E entity, S target, int depth) {
+        return transition(machine, entity, target, depth, null);
+    }
+
+    /** One step: resolve the cell, guards, annotate, execute, failure route. depth 0 is the root. */
+    <E, S extends Enum<S>> StepResult<S> transition(DefaultStateMachine<E, S> machine, E entity, S target, int depth, Object input) {
         EntityRef ref = uow.register(machine.refOf(entity));
         S from = currentState(machine, ref, entity);
         EdgeSpec<E, S> edge = machine.definition().edge(from, target);
@@ -61,7 +66,7 @@ final class Transaction {
         uow.push(ref, target);
         try {
             for (GuardRef<E, S> guard : edge.guards()) {
-                DefaultGuardContext<E, S> guardContext = new DefaultGuardContext<>(this, machine, entity, from, target, depth);
+                DefaultGuardContext<E, S> guardContext = new DefaultGuardContext<>(this, machine, entity, from, target, depth, input);
                 contexts.add(guardContext);
                 GuardResult verdict = evaluateGuard(machine, ref, from, target, depth, guard, guardContext);
                 if (verdict instanceof GuardResult.Reject reject) {
@@ -77,18 +82,19 @@ final class Transaction {
             if (edge.kind() == EdgeKind.MOVE) {
                 return new StepResult.Moved<>(from, target);
             }
-            return runAction(machine, ref, entity, edge, from, target, depth, savepoint);
+            return runAction(machine, ref, entity, edge, from, target, depth, savepoint, input);
         } finally {
             uow.pop();
         }
     }
 
     private <E, S extends Enum<S>> StepResult<S> runAction(DefaultStateMachine<E, S> machine, EntityRef ref, E entity,
-                                                            EdgeSpec<E, S> edge, S from, S target, int depth, int savepoint) {
+                                                            EdgeSpec<E, S> edge, S from, S target, int depth, int savepoint,
+                                                            Object input) {
         ActionRef<E, S> action = edge.action().orElseThrow();
         int journalIndex = uow.appendJournal(
                 new ActionRecord(machine.key(), entity, from, target, action.name(), depth, ActionStatus.RUNNING));
-        DefaultTransitionContext<E, S> ctx = new DefaultTransitionContext<>(this, machine, entity, from, target, depth);
+        DefaultTransitionContext<E, S> ctx = new DefaultTransitionContext<>(this, machine, entity, from, target, depth, input);
         contexts.add(ctx);
         ActionOutcome outcome;
         try {
@@ -97,7 +103,7 @@ final class Transaction {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
             Throwable cause = failure.getCause();
             if (matchesFailsOn(edge, cause)) {
-                return failureRoute(machine, ref, entity, edge, from, target, depth, savepoint, describe(cause), Optional.of(cause));
+                return failureRoute(machine, ref, entity, edge, from, target, depth, savepoint, describe(cause), Optional.of(cause), input);
             }
             throw abort(machine, ref, from, target, Optional.of(action.name()), depth,
                     "the action " + action.name() + " threw " + cause, Optional.of(cause));
@@ -111,7 +117,7 @@ final class Transaction {
         }
         if (outcome instanceof ActionOutcome.Failed failed) {
             uow.journalStatus(journalIndex, ActionStatus.FAILED);
-            return failureRoute(machine, ref, entity, edge, from, target, depth, savepoint, failed.reason(), Optional.empty());
+            return failureRoute(machine, ref, entity, edge, from, target, depth, savepoint, failed.reason(), Optional.empty(), input);
         }
         uow.journalStatus(journalIndex, ActionStatus.OK);
         return new StepResult.Moved<>(from, target);
@@ -225,7 +231,7 @@ final class Transaction {
      */
     private <E, S extends Enum<S>> StepResult<S> failureRoute(DefaultStateMachine<E, S> machine, EntityRef ref, E entity,
                                                                EdgeSpec<E, S> edge, S from, S target, int depth, int savepoint,
-                                                               String reason, Optional<Throwable> cause) {
+                                                               String reason, Optional<Throwable> cause, Object input) {
         uow.rollbackTo(savepoint);
         Optional<String> actionName = edge.action().map(ActionRef::name);
         if (edge.onFailure().isEmpty()) {
@@ -243,7 +249,7 @@ final class Transaction {
             ActionRef<E, S> action = route.action().orElseThrow();
             int journalIndex = uow.appendJournal(
                     new ActionRecord(machine.key(), entity, from, failState, action.name(), depth, ActionStatus.RUNNING));
-            DefaultTransitionContext<E, S> ctx = new DefaultTransitionContext<>(this, machine, entity, from, failState, depth);
+            DefaultTransitionContext<E, S> ctx = new DefaultTransitionContext<>(this, machine, entity, from, failState, depth, input);
             contexts.add(ctx);
             ActionOutcome outcome;
             try {

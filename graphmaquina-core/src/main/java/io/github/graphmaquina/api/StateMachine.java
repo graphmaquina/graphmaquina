@@ -1,5 +1,6 @@
 package io.github.graphmaquina.api;
 
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
@@ -28,4 +29,21 @@ public interface StateMachine<E, S extends Enum<S>> {
 
     /** Runs {@code call} on the machine's executor; implements {@link Machine#async}. Failed future after close(). */
     <T> CompletableFuture<T> supplyAsync(Supplier<T> call);
+
+    /**
+     * Same as the two-argument {@code transitionTo}, carrying a second, operation-specific value that guards and
+     * actions read back through their context's {@code input} accessors. A {@code null} input delegates to that
+     * overload; this default rejects any other value instead of silently dropping it.
+     *
+     * @throws NullPointerException if {@code entity} or {@code target} is null
+     * @throws UnsupportedOperationException if {@code input} is not null and this machine does not support it
+     */
+    default Outcome<E, S> transitionTo(E entity, S target, Object input) {
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(target, "target");
+        if (input == null) {
+            return transitionTo(entity, target);
+        }
+        throw new UnsupportedOperationException("this StateMachine does not support operation input");
+    }
 }

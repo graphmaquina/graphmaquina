@@ -803,7 +803,7 @@ retry is permitted.
 
 ### Operations and internal cells
 
-A public operation has exactly this shape:
+A public operation has this shape:
 
 ```java
 Outcome<Ticket, TicketStatus> complete(Ticket ticket);
@@ -814,6 +814,37 @@ requests that annotation's destination from the entity's current state. The matr
 that current state; `from` declares graph cells, rather than adding a separate imperative precondition inside
 the Java method. Avoid assigning the same target to operations that you expect to mean different things: the
 runtime selects behavior by `(current state, target state)`.
+
+An operation may accept a second argument: `Outcome<Entity, Status> screen(Entity entity, Verdict verdict)`.
+Guards and actions read it through `ctx.input(Verdict.class)`, which returns `Optional<Verdict>`. This lets
+a guard decide from a fact the caller has already obtained without storing a temporary argument on the
+entity or calling a service from the guard. Use an immutable record for related input fields; a Java file
+has only one public top-level type, so it gets its own file:
+
+```java
+// Verdict.java
+public record Verdict(boolean eligible) { }
+```
+
+A declaration like this belongs on the machine interface, beside its other operations — the same place as
+`complete` in this quickstart's `Tickets.java` — and its guard belongs on the bindings host, beside its other
+guards, the same place as `hasTitle` in `TicketActions.java`. The snippet below declares its own screening
+vocabulary rather than the ticket one; adapt the graph annotation and the `Refs` class — following the
+naming rule under [Generated names](#generated-names) — and the states to your own machine:
+
+```java
+@ScreeningGraph.Move(from = NEW, to = SCREENED, guards = RulesRefs.Eligible.class)
+Outcome<Entity, Status> screen(Entity entity, Verdict verdict);
+```
+
+```java
+@GraphGuard
+public static GuardResult eligible(GuardContext<Entity, Status> ctx) {
+    return ctx.input(Verdict.class)
+            .map(verdict -> verdict.eligible() ? GuardResult.pass() : GuardResult.reject("ineligible"))
+            .orElseGet(() -> GuardResult.reject("missing verdict"));
+}
+```
 
 `@Cell` declares an internal transition without adding a facade method. It is useful for failure routes,
 cascades and watches. Omitting its `action` makes it a move. A typed facade intentionally exposes no generic
@@ -940,11 +971,21 @@ The ticket quickstart shows a synchronous action and guard. Actions receive `Tra
 | `peer(...)` | Read another registered machine through a `PeerView` |
 | `cascade(...)` | Request a peer transition within this unit of work |
 | `cascadeAll(...)` | Apply a cascade to a collection using the selected policy |
+| `input()` / `input(Class)` | The operation's second argument, if the caller passed one |
 
-Guards receive `GuardContext<E, S>`, which exposes the entity, source, target and read-only peer access.
-It has no cascade API. Return `GuardResult.pass()` or `GuardResult.reject("reason")`; do not return null.
-A rejecting guard stops the transition before its action runs. Guard code should be free of mutations and
-external side effects.
+Guards receive `GuardContext<E, S>`, which exposes the entity, source, target, read-only peer access and the
+same `input` accessors. It has no cascade API. Return `GuardResult.pass()` or `GuardResult.reject("reason")`;
+do not return null. A rejecting guard stops the transition before its action runs. Guard code should be free
+of mutations and external side effects.
+
+Without an input, or when the caller passes null, the optional is empty. A value of an incompatible class
+throws `ClassCastException`; absence and a wrong type are different conditions. Primitive operation
+arguments are boxed; read them with wrapper tokens such as `Integer.class`. Class tokens cannot validate
+erased generic arguments. Input operations do not support method type parameters or varargs.
+
+The same input reaches the transition's guards, action and handled failure action. Existing cascades and
+watch reactions have no input of their own and receive an empty optional. A shared guard must handle that
+absence. Hooks, listeners and transition records retain their existing contracts.
 
 ### Domain failures
 
@@ -1413,6 +1454,11 @@ separate facade invocation is a new transaction, not a continuation of the origi
 The context's simple entity/from/to/depth getters do not enforce these lifetime/thread checks. That does not
 make the entity immutable or safe for concurrent access. Do not mutate the state property in an action or a
 late callback; GraphMaquina owns graph-state writes during commit.
+
+Both `screen(entity, verdict)` and `machine.async(() -> machine.screen(entity, verdict))` carry the value.
+Input getters are simple data accessors like entity/from/to/depth; the library neither copies nor freezes
+the value. Capture immutable data for asynchronous callbacks. Peer views and cascades still require the
+original execution thread and a live transaction.
 
 ### Executors and machine lifetime
 
@@ -2205,7 +2251,7 @@ symbol category may be an ordinary javac error rather than an `SG` diagnostic.
 | `SG404` | A watch has no rules. |
 | `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
 | `SG503` | Missing or incompatible public property accessor. |
-| `SG504` | Invalid operation annotation/signature; use one typed action/move and `Outcome<E, S> operation(E)`. |
+| `SG504` | Invalid operation annotation/signature; use one typed action/move and `Outcome<E, S> operation(E)` or `Outcome<E, S> operation(E, I)`. Zero, three or more parameters and a wrong entity or return type are rejected. Operations with input also reject varargs and method type parameters. |
 | `SG505` | Exported method does not uniquely fit the action, guard, hook or condition role. |
 | `SG506` | A nonterminal state has no closing `Row`. |
 | `SG507` | Invalid transition elements: empty `from`, action-only settings without an action, or timeout on a synchronous action. |

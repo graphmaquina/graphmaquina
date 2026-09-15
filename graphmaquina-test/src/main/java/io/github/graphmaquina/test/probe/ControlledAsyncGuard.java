@@ -91,7 +91,7 @@ public final class ControlledAsyncGuard<E, S extends Enum<S>>
     @Override
     public CompletionStage<GuardResult> test(GuardContext<E, S> context) {
         PendingInvocation<GuardCall<E, S>, GuardResult> pending =
-                new PendingInvocation<>(new GuardCall<>(context.entity(), context.from(), context.to()));
+                new PendingInvocation<>(new GuardCall<>(context.entity(), context.from(), context.to(), context.input()));
         synchronized (invocations) {
             if (closed) {
                 throw new IllegalStateException("the controlled guard is closed and takes no more invocations");

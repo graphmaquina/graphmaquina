@@ -17,9 +17,14 @@ final class DefaultAsyncStateMachine<E, S extends Enum<S>> implements AsyncState
 
     @Override
     public CompletableFuture<Outcome<E, S>> transitionTo(E entity, S target) {
+        return transitionTo(entity, target, null);
+    }
+
+    @Override
+    public CompletableFuture<Outcome<E, S>> transitionTo(E entity, S target, Object input) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(target, "target");
-        return submit(() -> machine.transitionTo(entity, target));
+        return submit(() -> machine.transitionTo(entity, target, input));
     }
 
     @Override

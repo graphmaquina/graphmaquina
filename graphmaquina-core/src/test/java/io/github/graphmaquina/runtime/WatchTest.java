@@ -9,6 +9,7 @@ import static io.github.graphmaquina.fixtures.Keys.ITEMS;
 import static io.github.graphmaquina.fixtures.Keys.ORDERS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -222,5 +223,26 @@ class WatchTest {
         Reaction.Aborted third = assertInstanceOf(Reaction.Aborted.class, secondOutcome.reactions().get(0));
         assertInstanceOf(WatchChainExceededException.class, third.cause());
         assertEquals(REVIEW, doc.status());
+    }
+
+    @Test
+    void watchRootsHaveNoInput() {
+        Object input = new Object();
+        shipOrder.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+            assertTrue(ctx.input().isEmpty());
+            return ActionOutcome.ok();
+        };
+        Order automatic = new Order("automatic", OrderStatus.PAID);
+        Item child = new Item("child", ItemStatus.PACKING, Optional.of(automatic));
+        packItem.behaviour = (TransitionContext<Item, ItemStatus> ctx) -> {
+            assertSame(input, ctx.input().orElseThrow());
+            return ActionOutcome.ok();
+        };
+        items.transitionTo(child, ItemStatus.PACKED, input);
+        assertEquals(OrderStatus.SHIPPED, automatic.status());
+        Order manual = new Order("manual", OrderStatus.PAID);
+        new Item("packed", ItemStatus.PACKED, Optional.of(manual));
+        assertInstanceOf(Outcome.Applied.class, orders.reevaluate(manual));
+        assertEquals(2, shipOrder.calls.size());
     }
 }

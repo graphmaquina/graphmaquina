@@ -81,11 +81,17 @@ public final class MachineGenerator {
         out.blank();
         graph(model, names, parameters, invocations, out);
         for (OperationModel operation : model.operations()) {
+            String input = entity.equals("input") ? "input2" : "input";
+            String declaration = operation.inputType().map((TypeMirror type) -> ", " + TypeSource.render(type) + " " + input)
+                    .orElse("");
+            String argument = operation.inputType().isPresent() ? ", " + input : "";
             out.blank();
             out.line("@Override");
-            out.open("public " + outcome + "<" + e + ", " + s + "> " + operation.name() + "(" + e + " " + entity + ")");
+            out.open("public " + outcome + "<" + e + ", " + s + "> " + operation.name()
+                    + "(" + e + " " + entity + declaration + ")");
             out.line(objects + ".requireNonNull(" + entity + ", \"" + entity + "\");");
-            out.line("return stateMachine.transitionTo(" + entity + ", " + s + "." + operation.cell().to() + ");");
+            out.line("return stateMachine.transitionTo(" + entity + ", " + s + "."
+                    + operation.cell().to() + argument + ");");
             out.close();
         }
         out.blank();

@@ -9,6 +9,7 @@ import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.error.StaleContextException;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NonNull;
@@ -28,8 +29,14 @@ final class DefaultTransitionContext<E, S extends Enum<S>> implements Transition
     private final S to;
     @Getter
     private final int depth;
+    private final Object operationInput;
     private final Thread owner = Thread.currentThread();
     private boolean stale;
+
+    @Override
+    public Optional<?> input() {
+        return Optional.ofNullable(operationInput);
+    }
 
     @Override
     public <P, Q extends Enum<Q>> PeerView<P, Q> peer(@NonNull MachineKey<P, Q> key) {

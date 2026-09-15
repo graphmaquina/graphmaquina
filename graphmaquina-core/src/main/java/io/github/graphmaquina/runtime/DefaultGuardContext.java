@@ -5,6 +5,7 @@ import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.error.StaleContextException;
+import java.util.Optional;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NonNull;
@@ -23,8 +24,14 @@ final class DefaultGuardContext<E, S extends Enum<S>> implements GuardContext<E,
     @Getter
     private final S to;
     private final int depth;
+    private final Object operationInput;
     private final Thread owner = Thread.currentThread();
     private boolean stale;
+
+    @Override
+    public Optional<?> input() {
+        return Optional.ofNullable(operationInput);
+    }
 
     @Override
     public <P, Q extends Enum<Q>> PeerView<P, Q> peer(@NonNull MachineKey<P, Q> key) {

@@ -5,6 +5,8 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.error.InvalidGraphException;
+import io.github.graphmaquina.test.probe.ActionCall;
+import io.github.graphmaquina.test.probe.GuardCall;
 import java.util.function.Function;
 
 /**
@@ -12,7 +14,7 @@ import java.util.function.Function;
  * the same view its own class exposes. The facade asserts nothing and validates nothing of its own, so a
  * null subject reaches the view untouched and fails, inspectably, on the first expectation called on it.
  *
- * <p>Every overload keeps the entity and state types of its subject, which is what makes a chain typed:
+ * <p>Entity and state views keep the entity and state types of their subjects, which is what makes a chain typed:
  * the state enum of the machine under test is the only one the compiler accepts anywhere along it.
  *
  * <p>Three shapes are deliberately absent. A list of transition records, a list of reactions and a journal
@@ -21,7 +23,7 @@ import java.util.function.Function;
  * {@link ReactionsAssert#assertThat(java.util.List)} and {@link JournalAssert#assertThat(java.util.List)}.
  * Probes, snapshots, goldens and bounded waits are not subjects to assert over but tools to build one, and
  * stay where they are — {@link AsyncAssertions}, {@link GraphSnapshots}, {@link GraphGoldens} and the
- * {@code probe} package.
+ * {@code probe} package. Recorded guard and action calls are subjects for {@link CallInputAssert}.
  */
 public final class GraphAssertions {
 
@@ -41,6 +43,16 @@ public final class GraphAssertions {
 
     public static GuardResultAssert assertThat(GuardResult actual) {
         return GuardResultAssert.assertThat(actual);
+    }
+
+    /** Expectations over the input in a guard's recorded invocation. */
+    public static CallInputAssert assertThat(GuardCall<?, ?> actual) {
+        return CallInputAssert.assertThat(actual);
+    }
+
+    /** Expectations over the input in an action's recorded invocation. */
+    public static CallInputAssert assertThat(ActionCall<?, ?> actual) {
+        return CallInputAssert.assertThat(actual);
     }
 
     /**
