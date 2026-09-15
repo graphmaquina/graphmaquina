@@ -82,6 +82,7 @@ public final class MachineGenerator {
         graph(model, names, parameters, invocations, out);
         for (OperationModel operation : model.operations()) {
             String input = entity.equals("input") ? "input2" : "input";
+            // type bypasses the resolver on purpose: toString() re-parses nested, wildcard, array, primitive and TYPE_USE-annotated types correctly.
             String declaration = operation.inputType().map((TypeMirror type) -> ", " + type + " " + input).orElse("");
             String argument = operation.inputType().isPresent() ? ", " + input : "";
             out.blank();
@@ -89,8 +90,7 @@ public final class MachineGenerator {
             out.open("public " + outcome + "<" + e + ", " + s + "> " + operation.name()
                     + "(" + e + " " + entity + declaration + ")");
             out.line(objects + ".requireNonNull(" + entity + ", \"" + entity + "\");");
-            String receiver = operation.inputType().isPresent() ? "this.stateMachine" : "stateMachine";
-            out.line("return " + receiver + ".transitionTo(" + entity + ", " + s + "."
+            out.line("return stateMachine.transitionTo(" + entity + ", " + s + "."
                     + operation.cell().to() + argument + ");");
             out.close();
         }

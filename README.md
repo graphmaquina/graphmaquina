@@ -829,8 +829,8 @@ public record Verdict(boolean eligible) { }
 A declaration like this belongs on the machine interface, beside its other operations — the same place as
 `complete` in this quickstart's `Tickets.java` — and its guard belongs on the bindings host, beside its other
 guards, the same place as `hasTitle` in `TicketActions.java`. The snippet below declares its own screening
-vocabulary rather than the ticket one; adapt the graph annotation, the states and the `Refs` class to your
-own machine, following the naming rule under [Generated names](#generated-names):
+vocabulary rather than the ticket one; adapt the graph annotation and the `Refs` class — following the
+naming rule under [Generated names](#generated-names) — and the states to your own machine:
 
 ```java
 @ScreeningGraph.Move(from = NEW, to = SCREENED, guards = RulesRefs.Eligible.class)
@@ -971,7 +971,7 @@ The ticket quickstart shows a synchronous action and guard. Actions receive `Tra
 | `peer(...)` | Read another registered machine through a `PeerView` |
 | `cascade(...)` | Request a peer transition within this unit of work |
 | `cascadeAll(...)` | Apply a cascade to a collection using the selected policy |
-| `input(...)` / `input(Class)` | The operation's second argument, if the caller passed one |
+| `input()` / `input(Class)` | The operation's second argument, if the caller passed one |
 
 Guards receive `GuardContext<E, S>`, which exposes the entity, source, target, read-only peer access and the
 same `input` accessors. It has no cascade API. Return `GuardResult.pass()` or `GuardResult.reject("reason")`;
@@ -2251,7 +2251,7 @@ symbol category may be an ordinary javac error rather than an `SG` diagnostic.
 | `SG404` | A watch has no rules. |
 | `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
 | `SG503` | Missing or incompatible public property accessor. |
-| `SG504` | Invalid operation annotation/signature; use one typed action/move and `Outcome<E, S> operation(E)` or `Outcome<E, S> operation(E, I)`. Zero, three or more parameters, a wrong entity or return type, and varargs or a method type parameter on the second parameter are all still rejected. |
+| `SG504` | Invalid operation annotation/signature; use one typed action/move and `Outcome<E, S> operation(E)` or `Outcome<E, S> operation(E, I)`. Zero, three or more parameters, a wrong entity or return type, and varargs or a method type parameter are all still rejected. |
 | `SG505` | Exported method does not uniquely fit the action, guard, hook or condition role. |
 | `SG506` | A nonterminal state has no closing `Row`. |
 | `SG507` | Invalid transition elements: empty `from`, action-only settings without an action, or timeout on a synchronous action. |

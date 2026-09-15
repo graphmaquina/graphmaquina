@@ -28,7 +28,6 @@ final class DefaultGuardContext<E, S extends Enum<S>> implements GuardContext<E,
     private final Thread owner = Thread.currentThread();
     private boolean stale;
 
-    /** The value passed to this operation's call, if any; scoped to this invocation only. */
     @Override
     public Optional<?> input() {
         return Optional.ofNullable(operationInput);

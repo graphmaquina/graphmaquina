@@ -36,7 +36,7 @@ class OperationInputProcessorTest {
             assertTrue(result.success(), type + "\n" + result.describe());
             String generated = result.generated("fx.DocsRuntime");
             assertTrue(generated.contains(
-                    "return this.stateMachine.transitionTo(doc, DocStatus.PUBLISHED, input);"), generated);
+                    "return stateMachine.transitionTo(doc, DocStatus.PUBLISHED, input);"), generated);
         }
     }
 

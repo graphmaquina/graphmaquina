@@ -21,10 +21,10 @@ class OperationInputDefaultsTest {
         public Object entity() { return this; }
         public S from() { return S.OPEN; }
         public S to() { return S.OPEN; }
-        public <P,Q extends Enum<Q>> PeerView<P,Q> peer(MachineKey<P,Q> key) {
+        public <P, Q extends Enum<Q>> PeerView<P, Q> peer(MachineKey<P, Q> key) {
             throw new UnsupportedOperationException();
         }
-        public <P,Q extends Enum<Q>,M extends Machine<P,Q>> PeerView<P,Q> peer(Class<M> type) {
+        public <P, Q extends Enum<Q>, M extends Machine<P, Q>> PeerView<P, Q> peer(Class<M> type) {
             throw new UnsupportedOperationException();
         }
     }
@@ -33,40 +33,40 @@ class OperationInputDefaultsTest {
         public S from() { return S.OPEN; }
         public S to() { return S.OPEN; }
         public int depth() { return 0; }
-        public <P,Q extends Enum<Q>> PeerView<P,Q> peer(MachineKey<P,Q> key) {
+        public <P, Q extends Enum<Q>> PeerView<P, Q> peer(MachineKey<P, Q> key) {
             throw new UnsupportedOperationException();
         }
-        public <P,Q extends Enum<Q>,M extends Machine<P,Q>> PeerView<P,Q> peer(Class<M> type) {
+        public <P, Q extends Enum<Q>, M extends Machine<P, Q>> PeerView<P, Q> peer(Class<M> type) {
             throw new UnsupportedOperationException();
         }
-        public <P,Q extends Enum<Q>> Outcome<P,Q> cascade(MachineKey<P,Q> key, P entity, Q target) {
+        public <P, Q extends Enum<Q>> Outcome<P, Q> cascade(MachineKey<P, Q> key, P entity, Q target) {
             throw new UnsupportedOperationException();
         }
-        public <P,Q extends Enum<Q>,M extends Machine<P,Q>> Outcome<P,Q> cascade(Class<M> type, P entity, Q target) {
+        public <P, Q extends Enum<Q>, M extends Machine<P, Q>> Outcome<P, Q> cascade(Class<M> type, P entity, Q target) {
             throw new UnsupportedOperationException();
         }
-        public <P,Q extends Enum<Q>> List<Outcome<P,Q>> cascadeAll(
-                MachineKey<P,Q> key, Collection<? extends P> entities, Q target, CascadePolicy policy) {
+        public <P, Q extends Enum<Q>> List<Outcome<P, Q>> cascadeAll(
+                MachineKey<P, Q> key, Collection<? extends P> entities, Q target, CascadePolicy policy) {
             throw new UnsupportedOperationException();
         }
-        public <P,Q extends Enum<Q>,M extends Machine<P,Q>> List<Outcome<P,Q>> cascadeAll(
+        public <P, Q extends Enum<Q>, M extends Machine<P, Q>> List<Outcome<P, Q>> cascadeAll(
                 Class<M> type, Collection<? extends P> entities, Q target, CascadePolicy policy) {
             throw new UnsupportedOperationException();
         }
     }
-    static class OldAsync implements AsyncStateMachine<Object,S> {
-        public CompletableFuture<Outcome<Object,S>> transitionTo(Object e, S s) {
+    static class OldAsync implements AsyncStateMachine<Object, S> {
+        public CompletableFuture<Outcome<Object, S>> transitionTo(Object e, S s) {
             return CompletableFuture.completedFuture(new Outcome.Ignored<>(e, s, s));
         }
-        public CompletableFuture<Outcome<Object,S>> reevaluate(Object e) { return transitionTo(e, S.OPEN); }
+        public CompletableFuture<Outcome<Object, S>> reevaluate(Object e) { return transitionTo(e, S.OPEN); }
     }
-    static class OldMachine implements StateMachine<Object,S> {
-        public MachineKey<Object,S> key() { return MachineKey.of(Object.class, S.class); }
-        public GraphDefinition<Object,S> definition() { throw new UnsupportedOperationException(); }
-        public Outcome<Object,S> transitionTo(Object e, S s) { return new Outcome.Ignored<>(e, s, s); }
-        public Outcome<Object,S> reevaluate(Object e) { return transitionTo(e, S.OPEN); }
+    static class OldMachine implements StateMachine<Object, S> {
+        public MachineKey<Object, S> key() { return MachineKey.of(Object.class, S.class); }
+        public GraphDefinition<Object, S> definition() { throw new UnsupportedOperationException(); }
+        public Outcome<Object, S> transitionTo(Object e, S s) { return new Outcome.Ignored<>(e, s, s); }
+        public Outcome<Object, S> reevaluate(Object e) { return transitionTo(e, S.OPEN); }
         public Set<S> allowedFrom(S s) { return Set.of(); }
-        public AsyncStateMachine<Object,S> async() { return new OldAsync(); }
+        public AsyncStateMachine<Object, S> async() { return new OldAsync(); }
         public <T> CompletableFuture<T> supplyAsync(Supplier<T> call) {
             return CompletableFuture.completedFuture(call.get());
         }
@@ -98,7 +98,7 @@ class OperationInputDefaultsTest {
         assertSame(e, machine.transitionTo(e, S.OPEN, null).entity());
         assertSame(e, machine.async().transitionTo(e, S.OPEN, null).join().entity());
         assertThrows(UnsupportedOperationException.class, () -> machine.transitionTo(e, S.OPEN, "value"));
-        CompletableFuture<Outcome<Object,S>> future = machine.async().transitionTo(e, S.OPEN, "value");
+        CompletableFuture<Outcome<Object, S>> future = machine.async().transitionTo(e, S.OPEN, "value");
         assertInstanceOf(UnsupportedOperationException.class,
                 assertThrows(CompletionException.class, future::join).getCause());
     }
