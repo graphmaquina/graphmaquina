@@ -4,6 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -25,6 +28,28 @@ class DefaultAfterCommitTest {
             assertEquals(0, hooks(result, "persist"));
             assertFalse(result.generated("fx.LibraryRuntime").contains("Recorder"));
         }
+    }
+
+    @Test void olderVocabularyWithoutDefaultHookKeepsExistingBehavior() throws IOException {
+        Map<String, String> sources = DefaultHookFixtures.sources("", EXPLICIT);
+        Compilation.Result current = Compilation.compileTyped(sources);
+        assertTrue(current.success(), current::describe);
+        Compilation.Prepared prepared = Compilation.prepare(sources);
+        Path vocabulary = prepared.request().sourcesOutput().resolve("fx/DocsGraph.java");
+        String generated = Files.readString(vocabulary);
+        String member = "Class<? extends HookSymbol>[] afterCommit() default {};";
+        int definition = generated.indexOf("@interface Definition {");
+        assertTrue(definition >= 0, generated);
+        int at = generated.indexOf(member, definition);
+        assertTrue(at >= 0, generated);
+        // Remove only Definition's new element; the per-edge hook elements remain available.
+        Files.writeString(vocabulary, generated.substring(0, at) + generated.substring(at + member.length()));
+
+        Compilation.Result legacy = Compilation.compilePrepared(prepared);
+        assertTrue(legacy.success(), legacy::describe);
+        assertEquals(1, hooks(legacy, "notified"));
+        assertEquals(current.generated("fx.DocsRuntime"), legacy.generated("fx.DocsRuntime"));
+        assertEquals(current.generated("fx.LibraryRuntime"), legacy.generated("fx.LibraryRuntime"));
     }
 
     @Test void defaultReachesActionMoveAndInternalCellAndItsDependency() {
@@ -108,6 +133,21 @@ class DefaultAfterCommitTest {
         assertFalse(result.success());
         assertTrue(result.hasError("SG605"), result::describe);
         assertFalse(result.hasGenerated("fx.DocsRuntime"));
+    }
+
+    @Test void rejectsAmbiguousDefaultOverloadsOnceAtTheDefinition() {
+        Map<String, String> sources = DefaultHookFixtures.sources(DEFAULT, "");
+        sources.compute("fx.Recorder", (key, text) -> text.replace(
+            "@GraphHook public void persist(Doc doc) { }", """
+            @GraphHook public void persist(Doc doc) { }
+            @GraphHook public void persist(Doc doc, io.github.graphmaquina.api.CommitContext<DocStatus> commit) { }
+            """));
+        Compilation.Result result = Compilation.compileTyped(sources);
+        assertFalse(result.success());
+        assertEquals(1, result.countError("SG505"), result::describe);
+        assertEquals(9, result.lineOf("SG505"), result::describe);
+        assertFalse(result.hasGenerated("fx.DocsRuntime"));
+        assertFalse(result.hasGenerated("fx.LibraryRuntime"));
     }
 
     @Test void invalidExplicitHookDoesNotFallBackSilently() {
