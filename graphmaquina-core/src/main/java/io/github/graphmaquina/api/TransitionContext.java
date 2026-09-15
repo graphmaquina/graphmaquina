@@ -2,7 +2,6 @@ package io.github.graphmaquina.api;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 
 /** Mutable context available to a {@link TransitionAction} during a transition, including cascading to peers. */
@@ -48,10 +47,6 @@ public interface TransitionContext<E, S extends Enum<S>> {
      * @throws ClassCastException if an input is present but not assignable to {@code type}
      */
     default <I> Optional<I> input(Class<I> type) {
-        Objects.requireNonNull(type, "type");
-        if (type.isPrimitive()) {
-            throw new IllegalArgumentException("input type must be a reference type; use its wrapper class");
-        }
-        return input().map(type::cast);
+        return InputSupport.cast(type, this::input);
     }
 }
