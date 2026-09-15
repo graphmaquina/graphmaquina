@@ -826,9 +826,11 @@ has only one public top-level type, so it gets its own file:
 public record Verdict(boolean eligible) { }
 ```
 
-The operation joins the machine interface beside the other operations there, for example next to `complete`
-in this quickstart's `Tickets.java`, and the guard joins the bindings host beside the other guards there, for
-example next to `hasTitle` in `TicketActions.java`:
+A declaration like this belongs on the machine interface, beside its other operations — the same place as
+`complete` in this quickstart's `Tickets.java` — and its guard belongs on the bindings host, beside its other
+guards, the same place as `hasTitle` in `TicketActions.java`. The snippet below declares its own screening
+vocabulary rather than the ticket one; adapt the graph annotation, the states and the `Refs` class to your
+own machine, following the naming rule under [Generated names](#generated-names):
 
 ```java
 @ScreeningGraph.Move(from = NEW, to = SCREENED, guards = RulesRefs.Eligible.class)
