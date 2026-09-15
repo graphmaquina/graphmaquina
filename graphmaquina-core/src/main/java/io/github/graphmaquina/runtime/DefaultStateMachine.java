@@ -73,9 +73,14 @@ final class DefaultStateMachine<E, S extends Enum<S>> implements StateMachine<E,
 
     @Override
     public Outcome<E, S> transitionTo(E entity, S target) {
+        return transitionTo(entity, target, null);
+    }
+
+    @Override
+    public Outcome<E, S> transitionTo(E entity, S target, Object input) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(target, "target");
-        return runRoot(entity, (Transaction tx) -> tx.transition(this, entity, target, 0), 0);
+        return runRoot(entity, (Transaction tx) -> tx.transition(this, entity, target, 0, input), 0);
     }
 
     @Override

@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -264,5 +265,36 @@ class AsyncTest {
         long elapsedMillis = (System.nanoTime() - start) / 1_000_000L;
         assertTrue(elapsedMillis < 5_000, "took " + elapsedMillis + " ms");
         assertInstanceOf(TimeoutException.class, error.getCause());
+    }
+
+    @Test
+    void timeoutRetainsOnlyDataAccessAndNextCallGetsNoInput() {
+        AtomicReference<TransitionContext<Order, OrderStatus>> captured = new AtomicReference<>();
+        Object value = new Object();
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+            captured.set(ctx);
+            return new CompletableFuture<>();
+        };
+        try (MachineRegistry r = registry(Duration.ofMillis(200))) {
+            assertThrows(TransitionAbortedException.class,
+                    () -> r.of(ORDERS).transitionTo(new Order("a", OrderStatus.NEW), OrderStatus.PAID, value));
+            assertSame(value, captured.get().input().orElseThrow());
+            assertThrows(StaleContextException.class, () -> captured.get().peer(ITEMS));
+            chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+                assertTrue(ctx.input().isEmpty());
+                return CompletableFuture.completedFuture(ActionOutcome.ok());
+            };
+            r.of(ORDERS).transitionTo(new Order("b", OrderStatus.NEW), OrderStatus.PAID);
+        }
+    }
+
+    @Test
+    void closedAsyncWithInputReturnsFailedFuture() {
+        MachineRegistry r = registry(Duration.ofSeconds(5));
+        StateMachine<Order, OrderStatus> m = r.of(ORDERS);
+        r.close();
+        CompletableFuture<Outcome<Order, OrderStatus>> future =
+                m.async().transitionTo(new Order("a", OrderStatus.NEW), OrderStatus.PAID, new Object());
+        assertInstanceOf(RejectedExecutionException.class, assertThrows(CompletionException.class, future::join).getCause());
     }
 }
