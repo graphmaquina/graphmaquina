@@ -107,6 +107,19 @@ class OperationInputTest {
         }
     }
 
+    @Test void directCallToTheFailStateDoesNotInheritAPastFailuresInput() {
+        AtomicReference<Object> seen = new AtomicReference<>();
+        StateMachine<Entity, S> m = machine((GuardContext<Entity, S> ctx) -> GuardResult.pass(),
+                (TransitionContext<Entity, S> ctx) -> ActionOutcome.failed("declined"),
+                (TransitionContext<Entity, S> ctx) -> { seen.set(ctx.input().orElse(null)); return ActionOutcome.ok(); });
+        Verdict fromAFailure = new Verdict(true);
+        m.transitionTo(new Entity(), S.DONE, fromAFailure);
+        assertSame(fromAFailure, seen.get());
+        Verdict direct = new Verdict(false);
+        m.transitionTo(new Entity(), S.FAILED, direct);
+        assertSame(direct, seen.get());
+    }
+
     @Test void aWrongGuardInputTypeAbortsWithoutCommit() {
         StateMachine<Entity, S> m = machine(
                 (GuardContext<Entity, S> ctx) -> { ctx.input(String.class); return GuardResult.pass(); },
