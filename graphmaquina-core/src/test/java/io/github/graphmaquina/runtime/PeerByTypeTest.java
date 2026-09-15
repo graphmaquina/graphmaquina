@@ -4,6 +4,7 @@ import static io.github.graphmaquina.fixtures.Keys.ORDERS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,6 +27,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -106,6 +108,51 @@ class PeerByTypeTest {
             Item item = new Item("i1", ItemStatus.PENDING, Optional.of(order));
             assertInstanceOf(Outcome.Applied.class, registry.of(ORDERS).transitionTo(order, OrderStatus.CANCELLED));
             assertEquals(ItemStatus.CANCELLED, item.status());
+        }
+    }
+
+    /**
+     * A cascade addressed by facade type starts a step of its own, so the child runs with no input of the call
+     * that cascaded to it, and the parent keeps reading the very value it was given. The child is driven from
+     * PACKING to PACKED, the one cell of its graph that runs an action, so the assertion observes a real action.
+     */
+    @Test
+    void cascadeByClassAndCascadeAllByClassDoNotInheritInput() {
+        for (boolean all : List.of(false, true)) {
+            Object value = new Object();
+            AtomicInteger childCalls = new AtomicInteger();
+            try (MachineRegistry registry = MachineRegistry.builder()
+                    .add(StateMachines.from(OrderGraphs.order(
+                                    (TransitionContext<Order, OrderStatus> ctx) -> CompletableFuture.completedFuture(ActionOutcome.ok()),
+                                    (TransitionContext<Order, OrderStatus> ctx) -> ActionOutcome.ok(),
+                                    (TransitionContext<Order, OrderStatus> ctx) -> {
+                                        assertSame(value, ctx.input().orElseThrow());
+                                        if (all) {
+                                            ctx.cascadeAll(Facades.Items.class, ctx.entity().items(),
+                                                    ItemStatus.PACKED, CascadePolicy.COLLECT);
+                                        } else {
+                                            ctx.cascade(Facades.Items.class, ctx.entity().items().getFirst(), ItemStatus.PACKED);
+                                        }
+                                        assertSame(value, ctx.input().orElseThrow());
+                                        return ActionOutcome.ok();
+                                    },
+                                    (GuardContext<Order, OrderStatus> ctx) -> GuardResult.pass(),
+                                    (GuardContext<Order, OrderStatus> ctx) -> GuardResult.pass()))
+                            .state(Order::status, Order::setStatus).identity(Order::id)
+                            .asyncTimeout(Duration.ofSeconds(5)))
+                    .add(StateMachines.from(OrderGraphs.item((TransitionContext<Item, ItemStatus> ctx) -> {
+                                assertTrue(ctx.input().isEmpty());
+                                childCalls.incrementAndGet();
+                                return ActionOutcome.ok();
+                            })).state(Item::status, Item::setStatus).identity(Item::id).as(Facades.Items.class))
+                    .build()) {
+                Order order = new Order("o", OrderStatus.NEW);
+                Item item = new Item("i", ItemStatus.PACKING, Optional.of(order));
+                assertInstanceOf(Outcome.Applied.class,
+                        registry.of(ORDERS).transitionTo(order, OrderStatus.CANCELLED, value));
+                assertEquals(ItemStatus.PACKED, item.status());
+                assertEquals(1, childCalls.get());
+            }
         }
     }
 

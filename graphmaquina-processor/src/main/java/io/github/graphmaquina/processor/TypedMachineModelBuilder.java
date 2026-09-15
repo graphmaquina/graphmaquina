@@ -212,8 +212,10 @@ final class TypedMachineModelBuilder {
             }
             String name = method.getSimpleName().toString();
             AnnotationMirror mirror = actions.isEmpty() ? moves.get(0) : actions.get(0);
+            Optional<TypeMirror> inputType = method.getParameters().size() == 2
+                    ? Optional.of(method.getParameters().get(1).asType()) : Optional.empty();
             transitions.read(method, mirror, types, name, defaultAfterCommit)
-                    .ifPresent((CellModel cell) -> operations.add(new OperationModel(name, cell)));
+                    .ifPresent((CellModel cell) -> operations.add(new OperationModel(name, cell, inputType)));
         }
         return operations;
     }

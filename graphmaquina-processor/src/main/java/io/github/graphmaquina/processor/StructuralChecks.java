@@ -128,15 +128,25 @@ final class StructuralChecks {
         return true;
     }
 
-    /** SG504 unless the operation is declared as {@code Outcome<E, S> operation(E)}. */
+    /**
+     * SG504 unless the operation is declared as {@code Outcome<E, S> operation(E)} or as
+     * {@code Outcome<E, S> operation(E, I)}, the form that takes the input of one call. The payload type is
+     * whatever javac resolved, so an inaccessible or unknown one is its own diagnostic; an operation that takes
+     * one may not be varargs nor declare type parameters of its own, because neither names a payload type the
+     * facade could declare.
+     */
     boolean checkOperationSignature(ExecutableElement method, MachineTypes types) {
         DeclaredType outcome = signatures.declared("io.github.graphmaquina.api.Outcome", types.entity(), types.states());
-        if (method.getParameters().size() == 1 && signatures.same(method.getParameters().get(0).asType(), types.entity())
+        int arity = method.getParameters().size();
+        boolean supported = arity == 1 || (arity == 2 && !method.isVarArgs()
+                && method.getTypeParameters().isEmpty());
+        if (supported && signatures.same(method.getParameters().get(0).asType(), types.entity())
                 && signatures.same(method.getReturnType(), outcome)) {
             return true;
         }
         diagnostics.error("SG504", "an operation is declared as Outcome<" + types.entityName() + ", " + types.statesName() + "> "
-                + method.getSimpleName() + "(" + types.entityName() + ")", method);
+                + method.getSimpleName() + "(" + types.entityName() + ") or " + method.getSimpleName() + "("
+                + types.entityName() + ", I), without varargs or method type parameters on input operations", method);
         return false;
     }
 
