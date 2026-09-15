@@ -644,6 +644,34 @@ class MavenPluginIntegrationTest {
         assertEquals(List.of("org.apache.maven.toolchain.ToolchainManager"), requirements(descriptor));
     }
 
+    @Test
+    void definitionDefaultHookSurvivesConsumerBuildAndIsRemovedOnEdit() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        Map<String, String> sources = MavenFixture.domainSources();
+        sources.put("fx.Persistence", """
+                package fx;
+
+                public final class Persistence {
+
+                    @io.github.graphmaquina.annotation.GraphHook
+                    public static void save(Order order) { }
+                }
+                """);
+        String original = sources.get("fx.Orders");
+        sources.put("fx.Orders", original.replace("id = OrderRefs.Id.class)",
+                "id = OrderRefs.Id.class, afterCommit = PersistenceRefs.Save.class)"));
+        fixture.writeSources(sources);
+        MavenResult first = fixture.run("package");
+        assertEquals(0, first.exitCode(), first.output());
+        Path runtime = fixture.projectDirectory().resolve("target/generated-sources/annotations/fx/OrdersRuntime.java");
+        assertTrue(Files.readString(runtime).contains(".afterCommit(\"save\""));
+        sources.put("fx.Orders", original);
+        fixture.writeSources(sources);
+        MavenResult second = fixture.run("package");
+        assertEquals(0, second.exitCode(), second.output());
+        assertFalse(Files.readString(runtime).contains(".afterCommit("));
+    }
+
     /** Asserts that a build refused before the preparation left the previous cycle and the jar untouched. */
     private static void assertNothingWasRetiredOrPublished(MavenFixture fixture) {
         assertFalse(fixture.exists("target/graphmaquina/main/owned-outputs.pending.json"));

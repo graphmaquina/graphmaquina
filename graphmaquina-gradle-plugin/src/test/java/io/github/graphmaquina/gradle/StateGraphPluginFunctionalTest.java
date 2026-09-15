@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -370,6 +371,34 @@ class StateGraphPluginFunctionalTest {
                         + "; the daemon runs on " + reported.get("DAEMON_JAVA_HOME"));
         assertEquals("fx.build:fixture:main", fixture.request("main").get("compilationId").getAsString());
         assertTrue(fixture.exists("build/graphmaquina/main/annotation-manifest.json"));
+    }
+
+    @Test
+    void definitionDefaultHookSurvivesConsumerBuildAndIsRemovedOnEdit() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Map<String, String> sources = PluginFixture.domainSources();
+        sources.put("fx.Persistence", """
+                package fx;
+
+                public final class Persistence {
+
+                    @io.github.graphmaquina.annotation.GraphHook
+                    public static void save(Order order) { }
+                }
+                """);
+        String original = sources.get("fx.Orders");
+        sources.put("fx.Orders", original.replace("id = OrderRefs.Id.class)",
+                "id = OrderRefs.Id.class, afterCommit = PersistenceRefs.Save.class)"));
+        fixture.writeSources(sources);
+        fixture.run("jar", "--refresh-dependencies");
+        Path runtime = Path.of(fixture.request("main").get("processorSourcesOutput").getAsString())
+                .resolve("fx/OrdersRuntime.java");
+        assertTrue(Files.readString(runtime).contains(".afterCommit(\"save\""));
+        assertTrue(fixture.jarContains("fx/PersistenceRefs$Save.class"));
+        sources.put("fx.Orders", original);
+        fixture.writeSources(sources);
+        fixture.run("jar");
+        assertFalse(Files.readString(runtime).contains(".afterCommit("));
     }
 
     /** The domain with the action and the facade renamed, so the previous names must be retired. */

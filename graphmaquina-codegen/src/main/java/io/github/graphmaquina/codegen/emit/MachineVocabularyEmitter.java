@@ -90,13 +90,16 @@ final class MachineVocabularyEmitter {
 
     private static void definition(JavaSource source, String machine, String state) {
         describe(source, "Declares the graph of {@link " + machine + "}: its initial state, its terminal states,",
-            "the states a cycle may return to and the properties reading the entity's identity and state.");
+            "the states a cycle may return to, the properties reading the entity's identity and state,",
+            "and the default hook edges inherit unless they declare their own.");
         annotation(source, machine, "DEFINITION", "ElementType.TYPE", null, "Definition");
         source.line(state + " initial();");
         source.line(state + "[] terminals() default {};");
         source.line(state + "[] allowsCycle() default {};");
         source.line("Class<? extends PropertySymbol> state();");
         source.line("Class<? extends PropertySymbol> id();");
+        source.line("/** Default hook for ACTION/MOVE edges; an edge hook replaces it. Empty inherits on an edge. */");
+        source.line("Class<? extends HookSymbol>[] afterCommit() default {};");
         close(source);
     }
 

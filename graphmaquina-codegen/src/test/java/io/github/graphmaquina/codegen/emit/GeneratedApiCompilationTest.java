@@ -137,6 +137,20 @@ class GeneratedApiCompilationTest {
     }
 
     @Test
+    void definitionAcceptsTypedHookAndRejectsActionSymbol() {
+        List<GeneratedSource> emitted = ApiEmitter.emit(model(), "io.github.graphmaquina:test:main");
+        String usage = USAGE.get("use.DocsUsage").replace("id = fx.DocRefs.Id.class)",
+            "id = fx.DocRefs.Id.class, afterCommit = fx.DocActionsRefs.Notified.class)");
+        SourceFiles.Compilation valid = compile(emitted, Map.of("use.DocsUsage", usage));
+        assertTrue(valid.success(), () -> String.valueOf(valid.messages()));
+        SourceFiles.Compilation invalid = compile(emitted, Map.of("use.DocsUsage",
+            usage.replace("afterCommit = fx.DocActionsRefs.Notified.class)",
+                "afterCommit = fx.DocActionsRefs.Publish.class)")));
+        assertFalse(invalid.success());
+        assertTrue(invalid.codes().stream().allMatch(code -> code.startsWith("compiler.err.")));
+    }
+
+    @Test
     void reportsAValueOfAnotherEnumAsAJavacTypeError() {
         List<GeneratedSource> emitted = ApiEmitter.emit(model(), "io.github.graphmaquina:test:main");
         SourceFiles.Compilation compilation = compile(emitted, Map.of(

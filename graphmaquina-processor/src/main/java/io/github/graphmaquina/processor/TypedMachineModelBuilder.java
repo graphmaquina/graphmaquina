@@ -2,6 +2,7 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
+import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.CellModel;
 import io.github.graphmaquina.processor.model.ForbidModel;
 import io.github.graphmaquina.processor.model.MachineModel;
@@ -109,12 +110,13 @@ final class TypedMachineModelBuilder {
                 properties.state(symbol, types, DiagnosticAnchor.of(type, definition, declaredState.get())));
         Optional<Property> id = symbol(declaredId.get()).flatMap((TypeMirror symbol) ->
                 properties.id(symbol, types, DiagnosticAnchor.of(type, definition, declaredId.get())));
+        Optional<Binding> defaultAfterCommit = transitions.afterCommit(type, definition, types);
 
         Set<String> closed = new LinkedHashSet<>();
         List<RowModel> rows = rows(type, types, closed);
         List<ForbidModel> forbids = forbids(type, types);
-        List<CellModel> cells = cells(type, types);
-        List<OperationModel> operations = operations(type, types);
+        List<CellModel> cells = cells(type, types, defaultAfterCommit);
+        List<OperationModel> operations = operations(type, types, defaultAfterCommit);
         List<WatchModel> watched = watches.read(type, types);
         structure.checkDuplicateCells(type, forbids, cells, operations);
         structure.checkRowsClosed(types, closed, terminals.get(), header);
@@ -181,16 +183,18 @@ final class TypedMachineModelBuilder {
     }
 
     /** The transitions the interface declares itself, which no operation of the facade triggers. */
-    private List<CellModel> cells(TypeElement type, MachineTypes types) {
+    private List<CellModel> cells(TypeElement type, MachineTypes types,
+            Optional<Binding> defaultAfterCommit) {
         List<CellModel> cells = new ArrayList<>();
         for (AnnotationMirror cell : own(type, VocabularyKind.CELL, type)) {
-            transitions.read(type, cell, types, "").ifPresent(cells::add);
+            transitions.read(type, cell, types, "", defaultAfterCommit).ifPresent(cells::add);
         }
         return cells;
     }
 
     /** The operations of the facade, each with the cell its own declaration triggers. */
-    private List<OperationModel> operations(TypeElement type, MachineTypes types) {
+    private List<OperationModel> operations(TypeElement type, MachineTypes types,
+            Optional<Binding> defaultAfterCommit) {
         List<OperationModel> operations = new ArrayList<>();
         for (Element member : type.getEnclosedElements()) {
             if (member.getKind() != ElementKind.METHOD) {
@@ -208,7 +212,7 @@ final class TypedMachineModelBuilder {
             }
             String name = method.getSimpleName().toString();
             AnnotationMirror mirror = actions.isEmpty() ? moves.get(0) : actions.get(0);
-            transitions.read(method, mirror, types, name)
+            transitions.read(method, mirror, types, name, defaultAfterCommit)
                     .ifPresent((CellModel cell) -> operations.add(new OperationModel(name, cell)));
         }
         return operations;
