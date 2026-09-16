@@ -34,6 +34,24 @@ publishing {
 // local repository, with the repository and the release passed in as system properties.
 tasks.test { exclude("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class") }
 
+// GraphOnlySurfaceTest certifies that no module ships the retired matrix contract, so it reads the jars, the
+// sources jars and the javadoc jars every module publishes and runs its consumer against them — the compiled
+// classes this task otherwise sees would say nothing about what a release actually contains. It therefore
+// needs the same published repository as `publishedArtifactTest`, staged before the suite starts.
+tasks.test {
+    dependsOn(tasks.named("publishMavenPublicationToAdapterTestsRepository"))
+    dependsOn(listOf("graphmaquina-core", "graphmaquina-codegen", "graphmaquina-processor",
+        "graphmaquina-maven-plugin").map { ":$it:publishMavenPublicationToAdapterTestsRepository" })
+    dependsOn(gradle.includedBuild("graphmaquina-gradle-plugin")
+        .task(":publishAllPublicationsToAdapterTestsRepository"))
+    val repository = rootProject.layout.buildDirectory.dir("adapter-test-repository")
+    val release = project.version.toString()
+    systemProperty("artifactRepository", repository.get().asFile.absolutePath)
+    systemProperty("artifactVersion", release)
+    inputs.property("artifactVersion", release)
+    inputs.dir(repository).withPropertyName("publishedArtifacts")
+}
+
 val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     group = "verification"
     description = "Compiles and runs a consumer against the published jars and POM alone"
