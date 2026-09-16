@@ -4,6 +4,9 @@ import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
 import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
+import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
+import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
+import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static io.github.graphmaquina.fixtures.Keys.ITEMS;
 import static io.github.graphmaquina.fixtures.Keys.ORDERS;
@@ -29,12 +32,15 @@ import io.github.graphmaquina.error.StaleContextException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
+import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.GuardProbe;
 import io.github.graphmaquina.fixtures.Item;
 import io.github.graphmaquina.fixtures.ItemStatus;
+import io.github.graphmaquina.fixtures.ItemTransition;
 import io.github.graphmaquina.fixtures.Order;
 import io.github.graphmaquina.fixtures.OrderGraphs;
 import io.github.graphmaquina.fixtures.OrderStatus;
+import io.github.graphmaquina.fixtures.OrderTransition;
 import io.github.graphmaquina.fixtures.Probe;
 import java.io.IOException;
 import java.time.Duration;
@@ -54,22 +60,23 @@ import org.junit.jupiter.api.Test;
 
 class AsyncTest {
 
-    static final class AsyncProbe implements AsyncTransitionAction<Order, OrderStatus> {
-        Function<TransitionContext<Order, OrderStatus>, CompletionStage<ActionOutcome>> behaviour =
-                (TransitionContext<Order, OrderStatus> ctx) -> CompletableFuture.completedFuture(ActionOutcome.ok());
+    static final class AsyncProbe implements AsyncTransitionAction<Order, OrderStatus, OrderTransition> {
+        Function<TransitionContext<Order, OrderStatus, OrderTransition>, CompletionStage<ActionOutcome>> behaviour =
+                (TransitionContext<Order, OrderStatus, OrderTransition> ctx) ->
+                        CompletableFuture.completedFuture(ActionOutcome.ok());
 
         @Override
-        public CompletionStage<ActionOutcome> process(TransitionContext<Order, OrderStatus> ctx) {
+        public CompletionStage<ActionOutcome> process(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {
             return behaviour.apply(ctx);
         }
     }
 
     final AsyncProbe chargeCard = new AsyncProbe();
-    final Probe<Order, OrderStatus> shipOrder = new Probe<>();
-    final Probe<Order, OrderStatus> cancelOrder = new Probe<>();
-    final GuardProbe<Order, OrderStatus> retryBudget = new GuardProbe<>();
-    final GuardProbe<Order, OrderStatus> allPacked = new GuardProbe<>();
-    final Probe<Item, ItemStatus> packItem = new Probe<>();
+    final Probe<Order, OrderStatus, OrderTransition> shipOrder = new Probe<>();
+    final Probe<Order, OrderStatus, OrderTransition> cancelOrder = new Probe<>();
+    final GuardProbe<Order, OrderStatus, OrderTransition> retryBudget = new GuardProbe<>();
+    final GuardProbe<Order, OrderStatus, OrderTransition> allPacked = new GuardProbe<>();
+    final Probe<Item, ItemStatus, ItemTransition> packItem = new Probe<>();
     final ExecutorService virtual = Executors.newVirtualThreadPerTaskExecutor();
 
     private MachineRegistry registry(Duration asyncTimeout) {
@@ -91,20 +98,22 @@ class AsyncTest {
 
     @Test
     void asyncActionCompletesLaterAndApplies() {
-        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> CompletableFuture.supplyAsync(() -> {
-            sleep(50);
-            return ActionOutcome.ok();
-        }, virtual);
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) ->
+                CompletableFuture.supplyAsync(() -> {
+                    sleep(50);
+                    return ActionOutcome.ok();
+                }, virtual);
         Order order = new Order("o1", OrderStatus.NEW);
-        Outcome<Order, OrderStatus> outcome = registry(Duration.ofSeconds(5)).of(ORDERS).transitionTo(order, OrderStatus.PAID);
+        Outcome<Order, OrderStatus, OrderTransition> outcome =
+                registry(Duration.ofSeconds(5)).of(ORDERS).execute(order, OrderTransition.CHARGE);
         assertInstanceOf(Outcome.Applied.class, outcome);
         assertEquals(OrderStatus.PAID, order.status());
     }
 
     @Test
     void cascadeBeforeReturningTheStageUnderASingleCarrier() {
-        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
-            ctx.cascade(ITEMS, ctx.entity().items().get(0), ItemStatus.PACKING);
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
+            ctx.cascade(ITEMS, ctx.entity().items().get(0), ItemTransition.START_PACKING);
             return CompletableFuture.supplyAsync(() -> {
                 sleep(50);
                 return ActionOutcome.ok();
@@ -112,9 +121,9 @@ class AsyncTest {
         };
         Order order = new Order("o1", OrderStatus.NEW);
         Item item = new Item("i1", ItemStatus.PENDING, Optional.of(order));
-        StateMachine<Order, OrderStatus> orders = registry(Duration.ofSeconds(5)).of(ORDERS);
-        Outcome<Order, OrderStatus> outcome = assertTimeoutPreemptively(Duration.ofSeconds(10),
-                () -> orders.async().transitionTo(order, OrderStatus.PAID).join());
+        StateMachine<Order, OrderStatus, OrderTransition> orders = registry(Duration.ofSeconds(5)).of(ORDERS);
+        Outcome<Order, OrderStatus, OrderTransition> outcome = assertTimeoutPreemptively(Duration.ofSeconds(10),
+                () -> orders.async().execute(order, OrderTransition.CHARGE).join());
         assertInstanceOf(Outcome.Applied.class, outcome);
         assertEquals(OrderStatus.PAID, order.status());
         assertEquals(ItemStatus.PACKING, item.status());
@@ -123,11 +132,12 @@ class AsyncTest {
     @Test
     void stageThatNeverCompletesAbortsAndIsLeftAlive() {
         CompletableFuture<ActionOutcome> never = new CompletableFuture<>();
-        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> never;
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> never;
         Order order = new Order("o1", OrderStatus.NEW);
-        StateMachine<Order, OrderStatus> orders = registry(Duration.ofMillis(300)).of(ORDERS);
+        StateMachine<Order, OrderStatus, OrderTransition> orders = registry(Duration.ofMillis(300)).of(ORDERS);
         long start = System.nanoTime();
-        TransitionAbortedException error = assertThrows(TransitionAbortedException.class, () -> orders.transitionTo(order, OrderStatus.PAID));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> orders.execute(order, OrderTransition.CHARGE));
         long elapsedMillis = (System.nanoTime() - start) / 1_000_000L;
         assertTrue(elapsedMillis < 3_000, "took " + elapsedMillis + " ms");
         assertInstanceOf(TimeoutException.class, error.getCause());
@@ -140,25 +150,30 @@ class AsyncTest {
 
     @Test
     void nestedWrappersAreUnwrappedBeforeFailsOn() {
-        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> CompletableFuture.failedFuture(
-                new CompletionException(new ExecutionException(new IOException("gateway down"))));
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) ->
+                CompletableFuture.failedFuture(new CompletionException(new ExecutionException(new IOException("gateway down"))));
         Order order = new Order("o1", OrderStatus.NEW);
-        Outcome<Order, OrderStatus> outcome = registry(Duration.ofSeconds(5)).of(ORDERS).transitionTo(order, OrderStatus.PAID);
+        Outcome<Order, OrderStatus, OrderTransition> outcome =
+                registry(Duration.ofSeconds(5)).of(ORDERS).execute(order, OrderTransition.CHARGE);
         assertInstanceOf(Outcome.Failed.class, outcome);
-        Outcome.Failed<Order, OrderStatus> failed = (Outcome.Failed<Order, OrderStatus>) outcome;
+        Outcome.Failed<Order, OrderStatus, OrderTransition> failed =
+                (Outcome.Failed<Order, OrderStatus, OrderTransition>) outcome;
         assertInstanceOf(IOException.class, failed.cause().orElseThrow());
+        assertEquals(OrderTransition.DECLINE, failed.failureTransition());
         assertEquals(OrderStatus.PAYMENT_DECLINED, order.status());
     }
 
     @Test
     void aSynchronousThrowBeforeTheStageIsUnwrappedBeforeFailsOn() {
-        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
             throw new CompletionException(new IOException("down"));
         };
         Order order = new Order("o1", OrderStatus.NEW);
-        Outcome<Order, OrderStatus> outcome = registry(Duration.ofSeconds(5)).of(ORDERS).transitionTo(order, OrderStatus.PAID);
+        Outcome<Order, OrderStatus, OrderTransition> outcome =
+                registry(Duration.ofSeconds(5)).of(ORDERS).execute(order, OrderTransition.CHARGE);
         assertInstanceOf(Outcome.Failed.class, outcome);
-        Outcome.Failed<Order, OrderStatus> failed = (Outcome.Failed<Order, OrderStatus>) outcome;
+        Outcome.Failed<Order, OrderStatus, OrderTransition> failed =
+                (Outcome.Failed<Order, OrderStatus, OrderTransition>) outcome;
         assertEquals(OrderStatus.PAYMENT_DECLINED, failed.movedTo());
         assertInstanceOf(IOException.class, failed.cause().orElseThrow());
         assertEquals(OrderStatus.PAYMENT_DECLINED, order.status());
@@ -166,21 +181,21 @@ class AsyncTest {
 
     @Test
     void cancelledStageIsATechnicalFailure() {
-        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
             CompletableFuture<ActionOutcome> cancelled = new CompletableFuture<>();
             cancelled.cancel(true);
             return cancelled;
         };
         Order order = new Order("o1", OrderStatus.NEW);
         TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
-                () -> registry(Duration.ofSeconds(5)).of(ORDERS).transitionTo(order, OrderStatus.PAID));
+                () -> registry(Duration.ofSeconds(5)).of(ORDERS).execute(order, OrderTransition.CHARGE));
         assertInstanceOf(CancellationException.class, error.getCause());
         assertEquals(OrderStatus.NEW, order.status());
     }
 
     @Test
     void usingTheContextFromInsideTheStageIsRejected() {
-        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> CompletableFuture
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> CompletableFuture
                 .supplyAsync(ActionOutcome::ok)
                 .thenApplyAsync((ActionOutcome outcome) -> {
                     ctx.peer(ITEMS);
@@ -188,32 +203,33 @@ class AsyncTest {
                 });
         Order order = new Order("o1", OrderStatus.NEW);
         TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
-                () -> registry(Duration.ofSeconds(5)).of(ORDERS).transitionTo(order, OrderStatus.PAID));
+                () -> registry(Duration.ofSeconds(5)).of(ORDERS).execute(order, OrderTransition.CHARGE));
         assertInstanceOf(WrongThreadException.class, error.getCause());
     }
 
     @Test
     void aLaggingActionFindsAStaleContext() {
-        AtomicReference<TransitionContext<Order, OrderStatus>> captured = new AtomicReference<>();
-        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+        AtomicReference<TransitionContext<Order, OrderStatus, OrderTransition>> captured = new AtomicReference<>();
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
             captured.set(ctx);
             return new CompletableFuture<>();
         };
         Order order = new Order("o1", OrderStatus.NEW);
         assertThrows(TransitionAbortedException.class,
-                () -> registry(Duration.ofMillis(200)).of(ORDERS).transitionTo(order, OrderStatus.PAID));
+                () -> registry(Duration.ofMillis(200)).of(ORDERS).execute(order, OrderTransition.CHARGE));
         assertThrows(StaleContextException.class, () -> captured.get().peer(ITEMS));
     }
 
     @Test
     void asyncFacadeNeverRunsOnTheCallerThread() {
         AtomicReference<Thread> seen = new AtomicReference<>();
-        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
             seen.set(Thread.currentThread());
             return CompletableFuture.completedFuture(ActionOutcome.ok());
         };
         Order order = new Order("o1", OrderStatus.NEW);
-        Outcome<Order, OrderStatus> outcome = registry(Duration.ofSeconds(5)).of(ORDERS).async().transitionTo(order, OrderStatus.PAID).join();
+        Outcome<Order, OrderStatus, OrderTransition> outcome =
+                registry(Duration.ofSeconds(5)).of(ORDERS).async().execute(order, OrderTransition.CHARGE).join();
         assertInstanceOf(Outcome.Applied.class, outcome);
         assertNotSame(Thread.currentThread(), seen.get());
         assertTrue(seen.get().isVirtual());
@@ -222,9 +238,10 @@ class AsyncTest {
     @Test
     void aClosedRegistryFailsFuturesInsteadOfThrowing() {
         MachineRegistry closed = registry(Duration.ofSeconds(5));
-        StateMachine<Order, OrderStatus> orders = closed.of(ORDERS);
+        StateMachine<Order, OrderStatus, OrderTransition> orders = closed.of(ORDERS);
         closed.close();
-        CompletableFuture<Outcome<Order, OrderStatus>> future = orders.async().transitionTo(new Order("o1", OrderStatus.NEW), OrderStatus.PAID);
+        CompletableFuture<Outcome<Order, OrderStatus, OrderTransition>> future =
+                orders.async().execute(new Order("o1", OrderStatus.NEW), OrderTransition.CHARGE);
         assertTrue(future.isCompletedExceptionally());
         CompletionException error = assertThrows(CompletionException.class, future::join);
         assertInstanceOf(RejectedExecutionException.class, error.getCause());
@@ -232,36 +249,41 @@ class AsyncTest {
 
     @Test
     void asyncGuardIsAwaited() {
-        GraphDefinition<Doc, DocStatus> graph = StateGraph.define(DOCS)
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)
                 .initial(DRAFT).terminal(ARCHIVED)
-                .from(DRAFT).to(REVIEW).move()
-                    .asyncGuard("Slow", (GuardContext<Doc, DocStatus> ctx) -> CompletableFuture.supplyAsync(() -> GuardResult.reject("not yet"), virtual))
-                    .stay().forbidOthers("x")
-                .from(REVIEW).to(PUBLISHED).move().stay().forbidOthers("x")
-                .from(PUBLISHED).to(ARCHIVED).move().stay().forbidOthers("x")
-                .from(ARCHIVED).stay().forbidOthers("x")
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .asyncGuard("Slow", (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                            CompletableFuture.supplyAsync(() -> GuardResult.reject("not yet"), virtual))
+                    .endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .build();
-        StateMachine<Doc, DocStatus> docs = StateMachines.from(graph).state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(2)).build();
-        Outcome<Doc, DocStatus> outcome = docs.transitionTo(new Doc("1", DRAFT), REVIEW);
+        StateMachine<Doc, DocStatus, DocTransition> docs = StateMachines.from(graph)
+                .state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(2)).build();
+        Outcome<Doc, DocStatus, DocTransition> outcome = docs.execute(new Doc("1", DRAFT), SUBMIT);
         assertInstanceOf(Outcome.Rejected.class, outcome);
-        Outcome.Rejected<Doc, DocStatus> rejected = (Outcome.Rejected<Doc, DocStatus>) outcome;
+        Outcome.Rejected<Doc, DocStatus, DocTransition> rejected =
+                (Outcome.Rejected<Doc, DocStatus, DocTransition>) outcome;
         assertEquals(Optional.of("Slow"), rejected.guard());
     }
 
     @Test
     void anEdgeTimeoutOnlyShortensTheDeadline() {
-        GraphDefinition<Doc, DocStatus> graph = StateGraph.define(DOCS)
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)
                 .initial(DRAFT).terminal(ARCHIVED)
-                .from(DRAFT).to(REVIEW).asyncAction("Slow", (TransitionContext<Doc, DocStatus> ctx) -> new CompletableFuture<>())
-                                       .timeout(Duration.ofMillis(200))
-                    .stay().forbidOthers("x")
-                .from(REVIEW).to(PUBLISHED).move().stay().forbidOthers("x")
-                .from(PUBLISHED).to(ARCHIVED).move().stay().forbidOthers("x")
-                .from(ARCHIVED).stay().forbidOthers("x")
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .asyncAction("Slow", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> new CompletableFuture<>())
+                    .timeout(Duration.ofMillis(200)).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .build();
-        StateMachine<Doc, DocStatus> docs = StateMachines.from(graph).state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(30)).build();
+        StateMachine<Doc, DocStatus, DocTransition> docs = StateMachines.from(graph)
+                .state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(30)).build();
         long start = System.nanoTime();
-        TransitionAbortedException error = assertThrows(TransitionAbortedException.class, () -> docs.transitionTo(new Doc("1", DRAFT), REVIEW));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> docs.execute(new Doc("1", DRAFT), SUBMIT));
         long elapsedMillis = (System.nanoTime() - start) / 1_000_000L;
         assertTrue(elapsedMillis < 5_000, "took " + elapsedMillis + " ms");
         assertInstanceOf(TimeoutException.class, error.getCause());
@@ -269,32 +291,32 @@ class AsyncTest {
 
     @Test
     void timeoutRetainsOnlyDataAccessAndNextCallGetsNoInput() {
-        AtomicReference<TransitionContext<Order, OrderStatus>> captured = new AtomicReference<>();
+        AtomicReference<TransitionContext<Order, OrderStatus, OrderTransition>> captured = new AtomicReference<>();
         Object value = new Object();
-        chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
             captured.set(ctx);
             return new CompletableFuture<>();
         };
         try (MachineRegistry r = registry(Duration.ofMillis(200))) {
             assertThrows(TransitionAbortedException.class,
-                    () -> r.of(ORDERS).transitionTo(new Order("a", OrderStatus.NEW), OrderStatus.PAID, value));
+                    () -> r.of(ORDERS).execute(new Order("a", OrderStatus.NEW), OrderTransition.CHARGE, value));
             assertSame(value, captured.get().input().orElseThrow());
             assertThrows(StaleContextException.class, () -> captured.get().peer(ITEMS));
-            chargeCard.behaviour = (TransitionContext<Order, OrderStatus> ctx) -> {
+            chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
                 assertTrue(ctx.input().isEmpty());
                 return CompletableFuture.completedFuture(ActionOutcome.ok());
             };
-            r.of(ORDERS).transitionTo(new Order("b", OrderStatus.NEW), OrderStatus.PAID);
+            r.of(ORDERS).execute(new Order("b", OrderStatus.NEW), OrderTransition.CHARGE);
         }
     }
 
     @Test
     void closedAsyncWithInputReturnsFailedFuture() {
         MachineRegistry r = registry(Duration.ofSeconds(5));
-        StateMachine<Order, OrderStatus> m = r.of(ORDERS);
+        StateMachine<Order, OrderStatus, OrderTransition> m = r.of(ORDERS);
         r.close();
-        CompletableFuture<Outcome<Order, OrderStatus>> future =
-                m.async().transitionTo(new Order("a", OrderStatus.NEW), OrderStatus.PAID, new Object());
+        CompletableFuture<Outcome<Order, OrderStatus, OrderTransition>> future =
+                m.async().execute(new Order("a", OrderStatus.NEW), OrderTransition.CHARGE, new Object());
         assertInstanceOf(RejectedExecutionException.class, assertThrows(CompletionException.class, future::join).getCause());
     }
 }

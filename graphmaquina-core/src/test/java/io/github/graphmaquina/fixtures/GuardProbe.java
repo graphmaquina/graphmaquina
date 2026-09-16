@@ -5,13 +5,13 @@ import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.TransitionGuard;
 import java.util.function.Function;
 
-public final class GuardProbe<E, S extends Enum<S>> implements TransitionGuard<E, S> {
+public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implements TransitionGuard<E, S, T> {
 
-    public Function<GuardContext<E, S>, GuardResult> verdict = (GuardContext<E, S> ctx) -> GuardResult.pass();
+    public Function<GuardContext<E, S, T>, GuardResult> verdict = (GuardContext<E, S, T> ctx) -> GuardResult.pass();
     public int calls;
 
     @Override
-    public GuardResult test(GuardContext<E, S> ctx) {
+    public GuardResult test(GuardContext<E, S, T> ctx) {
         calls++;
         return verdict.apply(ctx);
     }
