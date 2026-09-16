@@ -2659,7 +2659,8 @@ artifact smoke reports are under `graphmaquina-test/build/reports/tests/publishe
 ### Release to Maven Central
 
 Releasing is a maintainer operation. The version comes from git tags, so a release creates a tag and edits no
-file. Releases stay in the `1.0.x` patch series, and a published version can never be replaced or deleted.
+file. The next release is `2.0.0`, not another `1.0.x` patch: the graph-only contract is incompatible with
+1.x, so every module moves to that version together. A published version can never be replaced or deleted.
 
 To build and check a bundle without publishing it, configure `SIGNING_KEY` with the project's ASCII-armored
 private release key and `SIGNING_PASSWORD` with its passphrase, then run:

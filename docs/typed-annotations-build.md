@@ -42,7 +42,7 @@ type-checks the application; no previously compiled machine is required.
 
 The version comes from git tags: both builds read `-PgraphmaquinaVersion` when a release passes it and
 otherwise derive it from the most recent tag, so no file in the repository states a release version. A
-published version is immutable; future publications use fresh `1.0.x` patch versions. The
+published version is immutable; the next publication is `2.0.0`, which every module carries at once. The
 [README](../README.md#release-to-maven-central) describes the release, the steps below among them.
 
 Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD` to its passphrase, then run:
