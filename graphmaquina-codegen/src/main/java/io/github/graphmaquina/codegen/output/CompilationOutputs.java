@@ -52,13 +52,17 @@ public final class CompilationOutputs {
     private static final String CARRIER_PACKAGE = "io.github.graphmaquina.generated.bootstrap";
     private static final String UNUSABLE = "SG602";
     private static final String COLLISION = "SG603";
-    private static final int SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 2;
 
     private CompilationOutputs() {
     }
 
     /**
      * Retires everything a previous cycle owned and invalidates the published index, before javac runs.
+     *
+     * <p>An inventory left by a compilation of the retired schema is still read here, and only here: it lists
+     * paths and no graph, so reading it retires exactly the files that compilation owned. Nothing of it is
+     * interpreted as a machine.</p>
      *
      * <p>When a pending inventory is already there, the cycle it belongs to was interrupted: javac may have
      * written class files for its units that no inventory could list, since only {@code complete} enumerates

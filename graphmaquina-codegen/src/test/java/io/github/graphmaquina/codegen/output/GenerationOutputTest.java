@@ -46,6 +46,10 @@ class GenerationOutputTest {
             package fx;
             public enum DocStatus { DRAFT, PUBLISHED }
             """);
+        sources.put("fx.DocTransition", """
+            package fx;
+            public enum DocTransition { SUBMIT, PUBLISH, ARCHIVE }
+            """);
         sources.put("fx.Doc", """
             package fx;
             import io.github.graphmaquina.annotation.GraphProperty;
@@ -59,7 +63,7 @@ class GenerationOutputTest {
             import io.github.graphmaquina.annotation.GenerateGraphApi;
             import io.github.graphmaquina.api.Machine;
             @GenerateGraphApi
-            public interface Docs extends Machine<Doc, DocStatus> {}
+            public interface Docs extends Machine<Doc, DocStatus, DocTransition> {}
             """);
         sources.put("fx.DocActions", """
             package fx;
@@ -84,7 +88,7 @@ class GenerationOutputTest {
                         .filter(name -> name.startsWith("fx")).sorted().toList());
 
         CompileManifest manifest = ManifestCodec.readCompile(result.annotationManifest());
-        assertEquals(1, manifest.schemaVersion());
+        assertEquals(2, manifest.schemaVersion());
         assertEquals(ToolVersion.current(), manifest.toolVersion());
         assertEquals("io.github.graphmaquina:test:main", manifest.local().compilationId());
         assertEquals(List.of(), manifest.dependencies());
@@ -94,7 +98,7 @@ class GenerationOutputTest {
         assertTrue(manifest.ownedSources().stream().anyMatch(
                 owned -> owned.startsWith("io/github/graphmaquina/generated/bootstrap/GraphCompilation")),
                 manifest.ownedSources().toString());
-        assertTrue(manifest.local().annotationTypes().contains("fx.DocsGraph.Rows"),
+        assertTrue(manifest.local().annotationTypes().contains("fx.DocsGraph.Transitions"),
                 manifest.local().annotationTypes().toString());
         assertEquals(published(), manifest.ownedSources().stream().sorted().toList());
     }
@@ -163,7 +167,7 @@ class GenerationOutputTest {
         ManifestCodec.writeCompile(initial.annotationManifest(), new CompileManifest(current.schemaVersion(),
             "1.0.0", current.local(), current.dependencies(), current.processorInventory(),
             List.of("fx/Outer_InnerRefs.java", oldCarrier)));
-        ManifestCodec.writeOwned(request().workDirectory().resolve("owned-outputs.json"), new OwnedOutputs(1,
+        ManifestCodec.writeOwned(request().workDirectory().resolve("owned-outputs.json"), new OwnedOutputs(2,
             List.of("fx/Outer_InnerRefs.java", oldCarrier),
             List.of("fx/Outer_InnerRefs.class", "fx/Outer_InnerRefs$__id.class"), List.of(),
             List.of(oldCarrier.replace(".java", ".class"))));

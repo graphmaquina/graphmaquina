@@ -203,7 +203,7 @@ class CodegenMainTest {
     private byte[] writeProvisionalIndex() throws IOException {
         Path pending = directory.resolve("classes").resolve(PENDING);
         Files.createDirectories(pending.getParent());
-        ManifestCodec.writeExports(pending, new ExportIndex(1, ToolVersion.current(), "fx:test:main",
+        ManifestCodec.writeExports(pending, new ExportIndex(2, ToolVersion.current(), "fx:test:main",
                 new GenerationModel(List.of(), List.of()), List.of()));
         return Files.readAllBytes(pending);
     }
@@ -213,7 +213,7 @@ class CodegenMainTest {
         CompileManifest manifest =
                 ManifestCodec.readCompile(directory.resolve("work/annotation-manifest.json"));
         Files.writeString(Path.of(manifest.processorInventory()),
-                "{\n  \"schemaVersion\": 1,\n  \"generatedTypes\": []\n}\n", StandardCharsets.UTF_8);
+                "{\n  \"schemaVersion\": 2,\n  \"generatedTypes\": []\n}\n", StandardCharsets.UTF_8);
     }
 
     private static List<Path> javaFiles(Path root) {
@@ -235,6 +235,10 @@ class CodegenMainTest {
                 package fx;
                 public enum DocStatus { DRAFT, PUBLISHED }
                 """);
+        sources.put("fx.DocTransition", """
+                package fx;
+                public enum DocTransition { SUBMIT, PUBLISH, ARCHIVE }
+                """);
         sources.put("fx.Doc", """
                 package fx;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -250,7 +254,7 @@ class CodegenMainTest {
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
                 import io.github.graphmaquina.api.Machine;
                 @GenerateGraphApi
-                public interface Docs extends Machine<Doc, DocStatus> {}
+                public interface Docs extends Machine<Doc, DocStatus, DocTransition> {}
                 """);
         sources.put("fx.DocActions", """
                 package fx;

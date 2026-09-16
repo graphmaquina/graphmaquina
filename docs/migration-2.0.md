@@ -68,6 +68,29 @@ to resolve the type instead of compiling against a retired contract. `io.github.
 DSL entry point, keeps its name. `VocabularyKind` now reads `DEFINITION, STATE_POLICY, STATE_POLICIES, TRANSITION,
 TRANSITIONS, REJECT, REJECTS, WATCH, WATCHES, WHEN`.
 
+## Generated vocabulary and build artefacts
+
+The per-machine vocabulary the pre-generator emits into `<Machine>Graph` is renamed with the contract it
+describes. A project that spelled the old annotations does not compile: the nested types no longer exist.
+
+| 1.x generated annotation | 2.0 |
+|---|---|
+| `Row` / `Rows` | `StatePolicy` / `StatePolicies`, unchanged members `state` and `otherwise`. |
+| `Cell` / `Cells` on the type, `Action` and `Move` on a method | One `Transition` / `Transitions`, repeatable on `TYPE` and `METHOD`. It adds `id()` of the machine's transition enum; an absent `action` still means MOVE, so `Move` has no separate annotation. |
+| `Forbid` / `Forbids` with `from` and `to` | `Reject` / `Rejects` with `from` and `transition`. Which operations a `Forbid(from, to)` refused has to be decided by hand: identity is not inferred from a destination. |
+| `Action.onFailure` and `Cell.onFailure` name a state | `Transition.onFailure` names a transition of the same enum as `id`. |
+| A watch rule moves to a state: `When.goTo` | `When.transition` names an edge of the *owner's* transition enum. A constant of the peer's enum no longer compiles. |
+
+`Definition` is unchanged, including `Class<? extends HookSymbol>[] afterCommit() default {}`: omitting it or
+writing `{}` still inherits, and an explicit hook on an edge still replaces it rather than adding to it.
+
+The manifest, the published export index and the compile manifest move to **schema 2**. A `GraphDescriptor`
+carries `transitionType` and `transitions` right after `states`, and both are mandatory. A document of schema 1
+is refused as SG602 with a message that asks for the producer and the consumer to be regenerated and recompiled;
+it is never converted and never read half-way. The single exception is the inventory of owned outputs
+(`owned-outputs.json`), which carries paths and no graph: a previous cycle's inventory is still read, solely so
+the outputs that cycle owned can be deleted. `clean` is always a complete migration path.
+
 ## What did not change
 
 Guard order, timeouts and deadlines, no automatic cancellation of external stages, the UnitOfWork with its poison

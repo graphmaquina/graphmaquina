@@ -19,7 +19,7 @@ import java.util.Objects;
  */
 public final class ManifestAssembler {
 
-    private static final int SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 2;
     private static final String PROCESSOR_INVENTORY = "processor-inventory.json";
 
     private ManifestAssembler() {

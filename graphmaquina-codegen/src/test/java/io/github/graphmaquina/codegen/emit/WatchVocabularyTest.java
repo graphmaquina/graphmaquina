@@ -1,6 +1,7 @@
 package io.github.graphmaquina.codegen.emit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,9 +26,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies the vocabulary emitted for one ordered pair of local machines: the owner's enum and the peer's enum
- * are both used where the specification places them, the watch repeats through its container, every optional
- * array may be omitted, an unknown peer is refused, and an empty model still carries its compilation.
+ * Verifies the vocabulary emitted for one ordered pair of local machines: the owner's enums and the peer's enum
+ * are used where the specification places them, a rule executes a transition of the owner, the watch repeats
+ * through its container, every optional array may be omitted, an unknown peer is refused, and an empty model
+ * still carries its compilation.
  */
 class WatchVocabularyTest {
 
@@ -45,6 +47,14 @@ class WatchVocabularyTest {
         sources.put("fx.PageStatus", """
             package fx;
             public enum PageStatus { OPEN, CLOSED }
+            """);
+        sources.put("fx.DocTransition", """
+            package fx;
+            public enum DocTransition { SUBMIT, PUBLISH, ARCHIVE }
+            """);
+        sources.put("fx.PageTransition", """
+            package fx;
+            public enum PageTransition { OPEN_PAGE, CLOSE_PAGE }
             """);
         sources.put("fx.Doc", """
             package fx;
@@ -78,14 +88,14 @@ class WatchVocabularyTest {
             import io.github.graphmaquina.api.Machine;
             @GenerateGraphApi
             @GraphPeers(Pages.class)
-            public interface Docs extends Machine<Doc, DocStatus> {}
+            public interface Docs extends Machine<Doc, DocStatus, DocTransition> {}
             """);
         sources.put("fx.Pages", """
             package fx;
             import io.github.graphmaquina.annotation.GenerateGraphApi;
             import io.github.graphmaquina.api.Machine;
             @GenerateGraphApi
-            public interface Pages extends Machine<Page, PageStatus> {}
+            public interface Pages extends Machine<Page, PageStatus, PageTransition> {}
             """);
         sources.put("fx.DocConditions", """
             package fx;
@@ -109,8 +119,8 @@ class WatchVocabularyTest {
                 rules = {
                     @fx.DocsPages.When(
                             condition = fx.DocConditionsRefs.EveryPageClosed.class,
-                            goTo = fx.DocStatus.PUBLISHED),
-                    @fx.DocsPages.When(allIn = fx.PageStatus.CLOSED, goTo = fx.DocStatus.PUBLISHED)
+                            transition = fx.DocTransition.PUBLISH),
+                    @fx.DocsPages.When(allIn = fx.PageStatus.CLOSED, transition = fx.DocTransition.PUBLISH)
                 })
         @fx.DocsPages.Watch(
                 state = fx.DocStatus.DRAFT,
@@ -119,7 +129,7 @@ class WatchVocabularyTest {
                 rules = @fx.DocsPages.When(
                         anyIn = {fx.PageStatus.OPEN, fx.PageStatus.CLOSED},
                         noneIn = fx.PageStatus.OPEN,
-                        goTo = fx.DocStatus.REVIEW))
+                        transition = fx.DocTransition.SUBMIT))
         public interface WatchUsage {}
         """);
 
@@ -130,7 +140,7 @@ class WatchVocabularyTest {
         String watch = content(emitted, "fx.DocsPages");
         assertTrue(watch.contains("machine = fx.Docs.class, peer = fx.Pages.class"), watch);
         assertTrue(watch.contains("fx.DocStatus state();"), watch);
-        assertTrue(watch.contains("fx.DocStatus goTo();"), watch);
+        assertTrue(watch.contains("fx.DocTransition transition();"), watch);
         assertTrue(watch.contains("fx.PageStatus[] allIn() default {};"), watch);
         assertTrue(watch.contains("Class<? extends ConditionSymbol>[] condition() default {};"), watch);
         assertTrue(watch.contains("@Repeatable(DocsPages.Watches.class)"), watch);
@@ -139,6 +149,28 @@ class WatchVocabularyTest {
         SourceFiles.Compilation compilation = compile(emitted, USAGE);
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
         assertEquals(List.of(), compilation.messages());
+    }
+
+    /** A rule moves the owner, so only the owner's own identifiers type its {@code transition}. */
+    @Test
+    void refusesATransitionOfThePeerInTheOwnerSlotOfARule() {
+        List<GeneratedSource> emitted = ApiEmitter.emit(model(), "io.github.graphmaquina:test:main");
+
+        SourceFiles.Compilation compilation = compile(emitted, Map.of("use.WrongTransition", """
+            package use;
+            @fx.DocsPages.Watch(
+                    state = fx.DocStatus.REVIEW,
+                    peers = fx.DocRefs.Pages.class,
+                    owner = fx.PageRefs.Doc.class,
+                    rules = @fx.DocsPages.When(
+                            allIn = fx.PageStatus.CLOSED,
+                            transition = fx.PageTransition.CLOSE_PAGE))
+            public interface WrongTransition {}
+            """));
+
+        assertFalse(compilation.success(), () -> String.valueOf(compilation.messages()));
+        assertTrue(compilation.codes().stream().allMatch(code -> code.startsWith("compiler.err.")),
+                () -> String.valueOf(compilation.codes()));
     }
 
     @Test
@@ -151,7 +183,8 @@ class WatchVocabularyTest {
     @Test
     void reportsAPeerThatIsNotALocalMachineAtTheOwnerOrigin() {
         GraphDescriptor owner = new GraphDescriptor("fx.Docs", "fx", "fx.Doc", "fx.DocStatus",
-                List.of("DRAFT"), List.of("other.Bills"), new SourceLocation("fx/Docs.java", 7L, 1L));
+                List.of("DRAFT"), "fx.DocTransition", List.of("SUBMIT"), List.of("other.Bills"),
+                new SourceLocation("fx/Docs.java", 7L, 1L));
         CodegenException failure = assertThrows(CodegenException.class,
                 () -> ApiEmitter.emit(new GenerationModel(List.of(owner), List.of()), "io.github.graphmaquina:test:main"));
 

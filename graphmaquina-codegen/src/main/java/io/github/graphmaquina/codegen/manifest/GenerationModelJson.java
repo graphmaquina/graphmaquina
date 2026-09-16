@@ -21,7 +21,8 @@ import java.util.Set;
 /**
  * Converts {@link GenerationModel} and its parts to and from the JSON shape documented on {@link ManifestCodec}.
  * Identity lists (graphs, symbols, a symbol's candidates, a symbol's kinds) are sorted by name before writing;
- * a graph's declared states and a member's parameter types keep their original, semantically ordered sequence.
+ * a graph's declared states, its declared transition identifiers and a member's parameter types keep their
+ * original, semantically ordered sequence.
  *
  * <p>Package-private: {@link ManifestCodec} is the only public JSON boundary of this package.
  */
@@ -80,6 +81,9 @@ final class GenerationModelJson {
         writer.name("stateType").value(graph.stateType());
         writer.name("states");
         JsonSupport.writeStringArray(writer, graph.states());
+        writer.name("transitionType").value(graph.transitionType());
+        writer.name("transitions");
+        JsonSupport.writeStringArray(writer, graph.transitions());
         writer.name("peers");
         JsonSupport.writeStringArray(writer, JsonSupport.sortedCopy(graph.peers()));
         writer.name("origin");
@@ -93,9 +97,12 @@ final class GenerationModelJson {
         String entityType = JsonSupport.requireString(object, "entityType", file);
         String stateType = JsonSupport.requireString(object, "stateType", file);
         List<String> states = JsonSupport.requireStringArray(object, "states", file);
+        String transitionType = JsonSupport.requireString(object, "transitionType", file);
+        List<String> transitions = JsonSupport.requireStringArray(object, "transitions", file);
         List<String> peers = JsonSupport.requireStringArray(object, "peers", file);
         SourceLocation origin = readOrigin(JsonSupport.requireObject(object, "origin", file), file);
-        return new GraphDescriptor(facade, packageName, entityType, stateType, states, peers, origin);
+        return new GraphDescriptor(facade, packageName, entityType, stateType, states, transitionType,
+            transitions, peers, origin);
     }
 
     private static void writeMember(JsonWriter writer, MemberDescriptor member) throws IOException {

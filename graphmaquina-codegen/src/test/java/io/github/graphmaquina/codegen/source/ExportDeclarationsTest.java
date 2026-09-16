@@ -35,6 +35,8 @@ class ExportDeclarationsTest {
 
     private static final String ORDER = "package fx; public class Order {}";
     private static final String STATUS = "package fx; public enum Status { NEW, DONE }";
+    private static final String TRANSITION =
+            "package fx; public enum DocTransition { SUBMIT, PUBLISH, ARCHIVE }";
 
     @Test
     void exportsInheritedRolesUnderTheConcreteHostAndUnionsOverloadRoles() {
@@ -534,12 +536,13 @@ class ExportDeclarationsTest {
         SourceFiles.write(sources, Map.of(
                 "fx.Order", ORDER,
                 "fx.Status", STATUS,
+                "fx.DocTransition", TRANSITION,
                 "fx.Orders", """
                     package fx;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     import io.github.graphmaquina.api.Machine;
                     @GenerateGraphApi
-                    public interface Orders extends Machine<Order, Status> {}
+                    public interface Orders extends Machine<Order, Status, DocTransition> {}
                     """,
                 "fx.PaymentActions", """
                     package fx;
@@ -559,6 +562,8 @@ class ExportDeclarationsTest {
         assertEquals(List.of("fx.Orders"), model.graphs().stream()
                 .map(GraphDescriptor::facade).toList());
         assertEquals(List.of("NEW", "DONE"), model.graphs().get(0).states());
+        assertEquals("fx.DocTransition", model.graphs().get(0).transitionType());
+        assertEquals(List.of("SUBMIT", "PUBLISH", "ARCHIVE"), model.graphs().get(0).transitions());
         assertEquals(List.of("fx.PaymentActionsRefs.Authorize"), model.symbols().stream()
                 .map(SymbolDescriptor::qualifiedName).toList());
         assertEquals(Path.of("src", "fx", "PaymentActions.java").toString(),

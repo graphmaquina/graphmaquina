@@ -30,9 +30,10 @@ class ClasspathDeclarationsTest {
         try (ClasspathDeclarations declarations = ClasspathDeclarations.open(SourceFiles.classpath())) {
             TypeHeader machine = declarations.find("io.github.graphmaquina.api.Machine").orElseThrow();
             assertEquals(ElementKind.INTERFACE, machine.kind());
-            assertEquals(List.of("E", "S"), machine.typeParameters());
+            assertEquals(List.of("E", "S", "T"), machine.typeParameters());
             assertEquals(Optional.empty(), machine.origin());
-            assertTrue(machine.members().stream().anyMatch(member -> member.name().equals("allowedFrom")));
+            assertTrue(machine.members().stream()
+                    .anyMatch(member -> member.name().equals("transitionsFrom")));
         }
     }
 
@@ -42,17 +43,18 @@ class ClasspathDeclarationsTest {
                 Map.of("fx.Base", """
                     package fx;
                     import io.github.graphmaquina.api.Machine;
-                    public interface Base<T, U extends Enum<U>> extends Machine<T, U> {}
+                    public interface Base<T, U extends Enum<U>, V extends Enum<V>> extends Machine<T, U, V> {}
                     """),
                 directory.resolve("base.jar"));
         List<Path> classpath = new ArrayList<>(SourceFiles.classpath());
         classpath.add(jar);
         try (ClasspathDeclarations declarations = ClasspathDeclarations.open(classpath)) {
             TypeHeader base = declarations.find("fx.Base").orElseThrow();
-            assertEquals(List.of("T", "U"), base.typeParameters());
+            assertEquals(List.of("T", "U", "V"), base.typeParameters());
             assertEquals(List.of(new TypeUse.Declared("io.github.graphmaquina.api.Machine",
                             List.of(new TypeUse.Variable("T", new TypeParameterKey("fx.Base", 0)),
-                                    new TypeUse.Variable("U", new TypeParameterKey("fx.Base", 1))),
+                                    new TypeUse.Variable("U", new TypeParameterKey("fx.Base", 1)),
+                                    new TypeUse.Variable("V", new TypeParameterKey("fx.Base", 2))),
                             Optional.empty())),
                     base.supertypes());
         }
@@ -127,17 +129,18 @@ class ClasspathDeclarationsTest {
                 Map.of("fx.Base", """
                     package fx;
                     import io.github.graphmaquina.api.Machine;
-                    public interface Base<T, U extends Enum<U>> extends Machine<T, U> {}
+                    public interface Base<T, U extends Enum<U>, V extends Enum<V>> extends Machine<T, U, V> {}
                     """),
                 directory.resolve("base.jar"));
         Map<String, String> sources = Map.of(
                 "fx.Status", "package fx; public enum Status { NEW, DONE }",
+                "fx.DocTransition", "package fx; public enum DocTransition { SUBMIT, PUBLISH, ARCHIVE }",
                 "fx.Order", "package fx; public class Order {}",
                 "fx.Orders", """
                     package fx;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     @GenerateGraphApi
-                    public interface Orders extends Base<Order, Status> {}
+                    public interface Orders extends Base<Order, Status, DocTransition> {}
                     """);
         Path project = directory.resolve("project");
         List<Path> files = SourceFiles.write(project, sources);
@@ -146,10 +149,12 @@ class ClasspathDeclarationsTest {
 
         List<SourceUnit> units = SourceDeclarations.parse(project, files);
         try (DeclarationIndex index = DeclarationIndex.open(units, classpath)) {
-            GraphDescriptor graph = MachineHeaders.resolve(index, "fx.Orders");
-            assertEquals("fx.Order", graph.entityType());
-            assertEquals("fx.Status", graph.stateType());
-            assertEquals(List.of("NEW", "DONE"), graph.states());
+            GraphDescriptor descriptor = MachineHeaders.resolve(index, "fx.Orders");
+            assertEquals("fx.Order", descriptor.entityType());
+            assertEquals("fx.Status", descriptor.stateType());
+            assertEquals(List.of("NEW", "DONE"), descriptor.states());
+            assertEquals("fx.DocTransition", descriptor.transitionType());
+            assertEquals(List.of("SUBMIT", "PUBLISH", "ARCHIVE"), descriptor.transitions());
         }
     }
 

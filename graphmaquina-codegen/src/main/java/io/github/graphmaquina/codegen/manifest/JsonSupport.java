@@ -30,7 +30,8 @@ import java.util.List;
 final class JsonSupport {
 
     static final String ERROR_CODE = "SG602";
-    static final int SCHEMA_VERSION = 1;
+    static final int SCHEMA_VERSION = 2;
+    static final int RETIRED_SCHEMA_VERSION = 1;
 
     private JsonSupport() {
     }
@@ -175,10 +176,32 @@ final class JsonSupport {
         return asObject(element, file);
     }
 
+    /**
+     * Accepts only the current schema of a document that carries graphs. Schema 1 is refused before a single
+     * member of its model is read, so a graph written without a transition enum can never be half-interpreted
+     * as one that has it.
+     */
     static void requireSupportedSchema(int schemaVersion, Path file) {
+        if (schemaVersion == RETIRED_SCHEMA_VERSION) {
+            throw new CodegenException(ERROR_CODE, "the semantic schema 1 of " + file
+                + " is the retired format of GraphMaquina 1.x; regenerate and recompile the producer and the"
+                + " consumer with 2.0, which reads schema 2 only and converts nothing");
+        }
         if (schemaVersion != SCHEMA_VERSION) {
             throw new CodegenException(ERROR_CODE,
                 "unsupported schemaVersion " + schemaVersion + " in " + file + "; expected " + SCHEMA_VERSION);
+        }
+    }
+
+    /**
+     * Accepts the current schema and the retired one for an inventory of owned outputs. This is the one narrow
+     * exception to the rule above: an inventory carries paths and no graph, and a previous cycle's inventory is
+     * read solely so the outputs that cycle owned can be deleted, never to be interpreted as a machine.
+     */
+    static void requireOwnershipSchema(int schemaVersion, Path file) {
+        if (schemaVersion != SCHEMA_VERSION && schemaVersion != RETIRED_SCHEMA_VERSION) {
+            throw new CodegenException(ERROR_CODE, "unsupported schemaVersion " + schemaVersion + " in " + file
+                + "; expected " + SCHEMA_VERSION + " or " + RETIRED_SCHEMA_VERSION);
         }
     }
 

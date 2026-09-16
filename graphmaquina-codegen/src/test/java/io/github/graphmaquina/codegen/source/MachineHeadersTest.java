@@ -33,7 +33,10 @@ import javax.tools.ToolProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Verifies that a machine facade is specialized to its entity, state enum, states and peers. */
+/**
+ * Verifies that a machine facade is specialized to its entity, its state enum, its transition enum, the
+ * constants of both and its peers.
+ */
 class MachineHeadersTest {
 
     @TempDir
@@ -42,33 +45,39 @@ class MachineHeadersTest {
     private static final String BASE = """
         package fx;
         import io.github.graphmaquina.api.Machine;
-        public interface Base<T, U extends Enum<U>> extends Machine<T, U> {}
+        public interface Base<T, U extends Enum<U>, V extends Enum<V>> extends Machine<T, U, V> {}
         """;
+
+    private static final String TRANSITION =
+            "package fx; public enum DocTransition { SUBMIT, PUBLISH, ARCHIVE }";
 
     @Test
     void resolvesEntityStateAndConstantsThroughAGenericBase() {
         Map<String, String> sources = Map.of(
                 "fx.Status", "package fx; public enum Status { NEW, DONE }",
+                "fx.DocTransition", TRANSITION,
                 "fx.Order", "package fx; public class Order {}",
                 "fx.Base", BASE,
                 "fx.Orders", """
                     package fx;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     @GenerateGraphApi
-                    public interface Orders extends Base<Order, Status> {
+                    public interface Orders extends Base<Order, Status, DocTransition> {
                         default void probe() { MissingGeneratedType.run(); }
                     }
                     """);
         List<Path> files = SourceFiles.write(directory, sources);
         List<SourceUnit> units = SourceDeclarations.parse(directory, files);
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
-            GraphDescriptor graph = MachineHeaders.resolve(index, "fx.Orders");
-            assertEquals("fx.Order", graph.entityType());
-            assertEquals("fx.Status", graph.stateType());
-            assertEquals(List.of("NEW", "DONE"), graph.states());
-            assertEquals(List.of(), graph.peers());
-            assertEquals(Path.of("fx", "Orders.java").toString(), graph.origin().path());
-            assertEquals(3L, graph.origin().line());
+            GraphDescriptor descriptor = MachineHeaders.resolve(index, "fx.Orders");
+            assertEquals("fx.Order", descriptor.entityType());
+            assertEquals("fx.Status", descriptor.stateType());
+            assertEquals(List.of("NEW", "DONE"), descriptor.states());
+            assertEquals("fx.DocTransition", descriptor.transitionType());
+            assertEquals(List.of("SUBMIT", "PUBLISH", "ARCHIVE"), descriptor.transitions());
+            assertEquals(List.of(), descriptor.peers());
+            assertEquals(Path.of("fx", "Orders.java").toString(), descriptor.origin().path());
+            assertEquals(3L, descriptor.origin().line());
         }
     }
 
@@ -76,16 +85,17 @@ class MachineHeadersTest {
     void resolvesPeersDeclaredAsClassLiterals() {
         Map<String, String> sources = new LinkedHashMap<>(Map.of(
                 "fx.Status", "package fx; public enum Status { NEW, DONE }",
+                "fx.DocTransition", TRANSITION,
                 "fx.Order", "package fx; public class Order {}",
                 "fx.Base", BASE,
-                "fx.Bills", "package fx; public interface Bills extends Base<Order, Status> {}",
+                "fx.Bills", "package fx; public interface Bills extends Base<Order, Status, DocTransition> {}",
                 "fx.Orders", """
                     package fx;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     import io.github.graphmaquina.annotation.GraphPeers;
                     @GenerateGraphApi
                     @GraphPeers({Bills.class})
-                    public interface Orders extends Base<Order, Status> {}
+                    public interface Orders extends Base<Order, Status, DocTransition> {}
                     """));
         List<Path> files = SourceFiles.write(directory, sources);
         List<SourceUnit> units = SourceDeclarations.parse(directory, files);
@@ -98,13 +108,15 @@ class MachineHeadersTest {
     void resolvesThePackageOfAFacadeWhoseSegmentsAreNotAllLowerCase() {
         Map<String, String> sources = Map.of(
                 "com.Acme.docs.Status", "package com.Acme.docs; public enum Status { NEW, DONE }",
+                "com.Acme.docs.DocTransition",
+                    "package com.Acme.docs; public enum DocTransition { SUBMIT, PUBLISH, ARCHIVE }",
                 "com.Acme.docs.Order", "package com.Acme.docs; public class Order {}",
                 "com.Acme.docs.Orders", """
                     package com.Acme.docs;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     import io.github.graphmaquina.api.Machine;
                     @GenerateGraphApi
-                    public interface Orders extends Machine<Order, Status> {}
+                    public interface Orders extends Machine<Order, Status, DocTransition> {}
                     """);
         List<Path> files = SourceFiles.write(directory, sources);
         List<SourceUnit> units = SourceDeclarations.parse(directory, files);
@@ -113,6 +125,7 @@ class MachineHeadersTest {
             assertEquals("com.Acme.docs.Orders", graph.facade());
             assertEquals("com.Acme.docs", graph.packageName());
             assertEquals("com.Acme.docs.Status", graph.stateType());
+            assertEquals("com.Acme.docs.DocTransition", graph.transitionType());
         }
     }
 
@@ -120,9 +133,10 @@ class MachineHeadersTest {
     void resolvesAMarkedFacadeWhoseGeneratedImportsAndAnnotationsDoNotExistYet() {
         Map<String, String> sources = Map.of(
                 "fx.Status", "package fx; public enum Status { NEW, DONE }",
+                "fx.DocTransition", TRANSITION,
                 "fx.Order", "package fx; public class Order {}",
                 "fx.Base", BASE,
-                "fx.Bills", "package fx; public interface Bills extends Base<Order, Status> {}",
+                "fx.Bills", "package fx; public interface Bills extends Base<Order, Status, DocTransition> {}",
                 "fx.Orders", """
                     package fx;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
@@ -133,7 +147,7 @@ class MachineHeadersTest {
                     @GenerateGraphApi
                     @GraphPeers({Bills.class})
                     @Definition(state = PaymentOrderRefs.Status.class, id = PaymentOrderRefs.Id.class)
-                    public interface Orders extends Base<Order, Status> {
+                    public interface Orders extends Base<Order, Status, DocTransition> {
                         default void probe() { MissingGeneratedType.run(Authorize.class); }
                     }
                     """);
@@ -143,6 +157,7 @@ class MachineHeadersTest {
             GraphDescriptor graph = MachineHeaders.resolve(index, "fx.Orders");
             assertEquals("fx.Order", graph.entityType());
             assertEquals("fx.Status", graph.stateType());
+            assertEquals("fx.DocTransition", graph.transitionType());
             assertEquals(List.of("fx.Bills"), graph.peers());
         }
     }
@@ -155,6 +170,7 @@ class MachineHeadersTest {
                     public class Holder {
                         public static class Order {}
                         public enum Status { NEW, DONE }
+                        public enum Id { SUBMIT, PUBLISH, ARCHIVE }
                     }
                     """,
                 "fx.Sub", "package fx; public class Sub extends Holder {}",
@@ -163,18 +179,20 @@ class MachineHeadersTest {
                     package fx;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     @GenerateGraphApi
-                    public interface Orders extends Base<Sub.Order, Sub.Status> {}
+                    public interface Orders extends Base<Sub.Order, Sub.Status, Sub.Id> {}
                     """);
         List<Path> files = SourceFiles.write(directory, sources);
         List<SourceUnit> units = SourceDeclarations.parse(directory, files);
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
-            assertEquals(List.of("fx.Base", "fx.Holder", "fx.Holder.Order", "fx.Holder.Status", "fx.Orders",
-                            "fx.Sub"),
+            assertEquals(List.of("fx.Base", "fx.Holder", "fx.Holder.Id", "fx.Holder.Order", "fx.Holder.Status",
+                            "fx.Orders", "fx.Sub"),
                     index.sourceHeaders().stream().map(TypeHeader::canonicalName).sorted().toList());
             GraphDescriptor graph = MachineHeaders.resolve(index, "fx.Orders");
             assertEquals("fx.Holder.Order", graph.entityType());
             assertEquals("fx.Holder.Status", graph.stateType());
             assertEquals(List.of("NEW", "DONE"), graph.states());
+            assertEquals("fx.Holder.Id", graph.transitionType());
+            assertEquals(List.of("SUBMIT", "PUBLISH", "ARCHIVE"), graph.transitions());
         }
     }
 
@@ -183,6 +201,7 @@ class MachineHeadersTest {
         Map<String, String> sources = Map.of(
                 "a.Status", "package a; public enum Status { NEW }",
                 "b.Status", "package b; public enum Status { DONE }",
+                "fx.DocTransition", TRANSITION,
                 "fx.Order", "package fx; public class Order {}",
                 "fx.Base", BASE,
                 "fx.Orders", """
@@ -191,7 +210,7 @@ class MachineHeadersTest {
                     import b.*;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     @GenerateGraphApi
-                    public interface Orders extends Base<Order, Status> {}
+                    public interface Orders extends Base<Order, Status, DocTransition> {}
                     """);
         List<Path> files = SourceFiles.write(directory, sources);
         List<SourceUnit> units = SourceDeclarations.parse(directory, files);
@@ -208,11 +227,12 @@ class MachineHeadersTest {
     void keepsMethodTypeVariablesOutOfTheClassSubstitutionEnvironment() {
         Map<String, String> sources = Map.of(
                 "fx.Status", "package fx; public enum Status { NEW, DONE }",
+                "fx.DocTransition", TRANSITION,
                 "fx.Order", "package fx; public class Order {}",
                 "fx.Base", """
                     package fx;
                     import io.github.graphmaquina.api.Machine;
-                    public interface Base<T, U extends Enum<U>> extends Machine<T, U> {
+                    public interface Base<T, U extends Enum<U>, V extends Enum<V>> extends Machine<T, U, V> {
                         <T extends Number> T map(T value);
                         T get();
                     }
@@ -221,7 +241,7 @@ class MachineHeadersTest {
                     package fx;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     @GenerateGraphApi
-                    public interface Orders extends Base<Order, Status> {}
+                    public interface Orders extends Base<Order, Status, DocTransition> {}
                     """);
         List<Path> files = SourceFiles.write(directory, sources);
         List<SourceUnit> units = SourceDeclarations.parse(directory, files);
@@ -241,6 +261,7 @@ class MachineHeadersTest {
             GraphDescriptor graph = MachineHeaders.resolve(index, "fx.Orders");
             assertEquals("fx.Order", graph.entityType());
             assertEquals("fx.Status", graph.stateType());
+            assertEquals("fx.DocTransition", graph.transitionType());
         }
     }
 
@@ -249,12 +270,13 @@ class MachineHeadersTest {
         Map<String, String> sources = Map.of(
                 "fx.Order", "package fx; public class Order {}",
                 "fx.Status", "package fx; public class Status {}",
+                "fx.DocTransition", TRANSITION,
                 "fx.Orders", """
                     package fx;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     import io.github.graphmaquina.api.Machine;
                     @GenerateGraphApi
-                    public interface Orders extends Machine<Order, Status> {}
+                    public interface Orders extends Machine<Order, Status, DocTransition> {}
                     """);
         List<Path> files = SourceFiles.write(directory, sources);
         List<SourceUnit> units = SourceDeclarations.parse(directory, files);
@@ -264,6 +286,74 @@ class MachineHeadersTest {
             assertEquals("SG601", failure.code());
             assertEquals("the state type fx.Status of fx.Orders is not an enum", failure.getMessage());
             assertEquals(Path.of("fx", "Orders.java").toString(), failure.location().orElseThrow().path());
+        }
+    }
+
+    @Test
+    void reportsATransitionTypeThatIsNotAnEnum() {
+        Map<String, String> sources = Map.of(
+                "fx.Order", "package fx; public class Order {}",
+                "fx.Status", "package fx; public enum Status { NEW, DONE }",
+                "fx.DocTransition", "package fx; public class DocTransition {}",
+                "fx.Orders", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Orders extends Machine<Order, Status, DocTransition> {}
+                    """);
+        List<Path> files = SourceFiles.write(directory, sources);
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            CodegenException failure =
+                    assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
+            assertEquals("SG601", failure.code());
+            assertEquals("states and transitions require distinct enum types", failure.getMessage());
+            assertEquals(Path.of("fx", "Orders.java").toString(), failure.location().orElseThrow().path());
+        }
+    }
+
+    @Test
+    void reportsAMachineWhoseStatesAndTransitionsAreTheSameEnum() {
+        Map<String, String> sources = Map.of(
+                "fx.Order", "package fx; public class Order {}",
+                "fx.Status", "package fx; public enum Status { NEW, DONE }",
+                "fx.Orders", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Orders extends Machine<Order, Status, Status> {}
+                    """);
+        List<Path> files = SourceFiles.write(directory, sources);
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            CodegenException failure =
+                    assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
+            assertEquals("SG601", failure.code());
+            assertEquals("states and transitions require distinct enum types", failure.getMessage());
+        }
+    }
+
+    @Test
+    void reportsATransitionTypeNoDeclarationResolves() {
+        Map<String, String> sources = Map.of(
+                "fx.Order", "package fx; public class Order {}",
+                "fx.Status", "package fx; public enum Status { NEW, DONE }",
+                "fx.Orders", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Orders extends Machine<Order, Status, DocTransition> {}
+                    """);
+        List<Path> files = SourceFiles.write(directory, sources);
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            CodegenException failure =
+                    assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
+            assertEquals("SG601", failure.code());
+            assertEquals("unresolved transition enum DocTransition", failure.getMessage());
         }
     }
 
@@ -290,19 +380,21 @@ class MachineHeadersTest {
     void agreesWithJavacDirectSupertypesOnTheSameCompilableFixture() {
         Map<String, String> sources = Map.of(
                 "fx.Status", "package fx; public enum Status { NEW, DONE }",
+                "fx.DocTransition", TRANSITION,
                 "fx.Order", "package fx; public class Order {}",
                 "fx.Base", BASE,
                 "fx.Orders", """
                     package fx;
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     @GenerateGraphApi
-                    public interface Orders extends Base<Order, Status> {}
+                    public interface Orders extends Base<Order, Status, DocTransition> {}
                     """);
         List<Path> files = SourceFiles.write(directory, sources);
         List<SourceUnit> units = SourceDeclarations.parse(directory, files);
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
             GraphDescriptor graph = MachineHeaders.resolve(index, "fx.Orders");
-            assertEquals(machineArgumentsAccordingToJavac(files), List.of(graph.entityType(), graph.stateType()));
+            assertEquals(machineArgumentsAccordingToJavac(files),
+                    List.of(graph.entityType(), graph.stateType(), graph.transitionType()));
         }
     }
 
