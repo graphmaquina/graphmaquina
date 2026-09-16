@@ -45,6 +45,10 @@ public final class MavenFixture {
     /** The annotation that carrier holds, which is what makes a generated source the carrier. */
     private static final String CARRIER_MARKER = "@GraphCompilation(";
 
+    /** The nested types of the retired matrix vocabulary; no 2.0 artefact may carry one. */
+    private static final List<String> RETIRED_VOCABULARY =
+            List.of("$Row", "$Cell", "$Forbid", "$Action", "$Move");
+
     private final Path directory;
     private final Path settings;
     private final String artifactId;
@@ -57,8 +61,8 @@ public final class MavenFixture {
 
     /**
      * Writes the consumer project of {@code src/test/resources/it/basic/pom.xml} with the shared adapter domain
-     * — {@code fx.Status}, {@code fx.Order}, {@code fx.Actions}, {@code fx.Orders} and the unmarked
-     * {@code fx.Unrelated} — and the settings file that resolves StateGraph from {@code repository}.
+     * — {@code fx.Status}, {@code fx.Transition}, {@code fx.Order}, {@code fx.Actions}, {@code fx.Orders} and
+     * the unmarked {@code fx.Unrelated} — and the settings file that resolves StateGraph from {@code repository}.
      *
      * @param directory the temporary directory to materialize the project under
      * @param repository the file Maven repository the StateGraph artifacts were published to
@@ -193,6 +197,12 @@ public final class MavenFixture {
                 /** The states an order moves through. */
                 public enum Status { NEW, DONE }
                 """);
+        sources.put("fx.Transition", """
+                package fx;
+
+                /** The identified transitions of the order graph. */
+                public enum Transition { APPROVE }
+                """);
         sources.put("fx.Order", """
                 package fx;
 
@@ -223,7 +233,7 @@ public final class MavenFixture {
                 public final class Actions {
 
                     @GraphAction
-                    public ActionOutcome approve(TransitionContext<Order, Status> context) {
+                    public ActionOutcome approve(TransitionContext<Order, Status, Transition> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -260,17 +270,17 @@ public final class MavenFixture {
 
                 import static fx.Status.DONE;
                 import static fx.Status.NEW;
+                import static fx.Transition.APPROVE;
 
                 /** The machine of the fixture. */
                 @GenerateGraphApi
                 @%1$sGraph.Definition(initial = NEW, terminals = DONE,
                     state = OrderRefs.Status.class, id = OrderRefs.Id.class)
-                @%1$sGraph.Row(state = NEW, otherwise = "a new order is approved")
-                @%1$sGraph.Row(state = DONE, otherwise = "a finished order does not move")
-                public interface %1$s extends Machine<Order, Status> {
+                @%1$sGraph.StatePolicy(state = NEW, otherwise = "a new order is approved")
+                public interface %1$s extends Machine<Order, Status, Transition> {
 
-                    @%1$sGraph.Action(from = NEW, to = DONE, action = ActionsRefs.%2$s.class)
-                    Outcome<Order, Status> %3$s(Order order);
+                    @%1$sGraph.Transition(id = APPROVE, from = NEW, to = DONE, action = ActionsRefs.%2$s.class)
+                    Outcome<Order, Status, Transition> %3$s(Order order);
                 }
                 """.formatted(facade, symbol, operation);
     }
@@ -476,6 +486,47 @@ public final class MavenFixture {
             }
         }
         return false;
+    }
+
+    /**
+     * The entries of the project's jar that declare a nested type of the retired matrix vocabulary, which a
+     * 2.0 artefact never publishes and a downstream project therefore never inherits.
+     *
+     * @return the offending entry names, empty when the jar carries only the graph vocabulary
+     */
+    public List<String> retiredVocabularyEntries() {
+        List<String> found = new ArrayList<>();
+        for (String entry : jarEntries()) {
+            for (String retired : RETIRED_VOCABULARY) {
+                if (entry.contains(retired)) {
+                    found.add(entry);
+                }
+            }
+        }
+        return List.copyOf(found);
+    }
+
+    /**
+     * The identifiers the index published inside the jar records for {@code facade}, each qualified by the
+     * transition enum that types it, so a consumer's peer identifiers can be read back as the producer typed
+     * them.
+     *
+     * @param facade the canonical name of the machine
+     * @return {@code <transitionType>.<id>} for every identifier of that machine, in declaration order
+     */
+    public List<String> transitionsOf(String facade) {
+        for (JsonElement graph : readJarJson(EXPORTS).getAsJsonObject("model").getAsJsonArray("graphs")) {
+            JsonObject object = graph.getAsJsonObject();
+            if (object.get("facade").getAsString().equals(facade)) {
+                List<String> transitions = new ArrayList<>();
+                String type = object.get("transitionType").getAsString();
+                for (JsonElement id : object.getAsJsonArray("transitions")) {
+                    transitions.add(type + '.' + id.getAsString());
+                }
+                return List.copyOf(transitions);
+            }
+        }
+        throw new IllegalStateException("the published index declares no graph for " + facade);
     }
 
     /**

@@ -63,18 +63,31 @@ class CompilationOutputsTest {
     @TempDir
     Path workDirectory;
 
+    /**
+     * The incremental step of the migration: the previous cycle compiled the retired matrix vocabulary and
+     * sealed an inventory of the schema that cycle wrote. That inventory is read here, and only here, for its
+     * paths alone — it carries no graph — so the four nested binaries of that vocabulary are retired before
+     * javac compiles the identified transitions that replace them.
+     *
+     * <p>Two hand-written class files sit in the same output root: one nested in the same outer type, and one
+     * whose plain name a {@code *Row*} pattern would match. Neither is listed, so both stay byte for byte as
+     * they were, which is what deleting from the inventory rather than from a name buys.</p>
+     */
     @Test
     void retiresTheOutputsTheInventoryListsAndLeavesEveryOtherFileAlone() throws IOException {
         writeManifest(List.of(CARRIER_SOURCE));
-        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(1,
                 List.of("fx/Docs_.java"),
-                List.of("fx/OldRefs.class", "fx/OldRefs$Run.class", "fx/Old_.class"),
+                List.of("fx/MachineGraph$Row.class", "fx/MachineGraph$Rows.class",
+                        "fx/MachineGraph$Cell.class", "fx/MachineGraph$Cells.class"),
                 List.of(PUBLISHED), List.of()));
         byte[] manualBytes = {(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE, 0, 0, 0, 65};
-        Path manualClass = write(classesOutput.resolve("fx/OldRefs$Manual.class"), manualBytes);
-        write(classesOutput.resolve("fx/OldRefs.class"), manualBytes);
-        write(classesOutput.resolve("fx/OldRefs$Run.class"), manualBytes);
-        write(classesOutput.resolve("fx/Old_.class"), manualBytes);
+        Path manualClass = write(classesOutput.resolve("fx/MachineGraph$Manual.class"), manualBytes);
+        Path userRowClass = write(classesOutput.resolve("fx/OrderRow.class"), manualBytes);
+        write(classesOutput.resolve("fx/MachineGraph$Row.class"), manualBytes);
+        write(classesOutput.resolve("fx/MachineGraph$Rows.class"), manualBytes);
+        write(classesOutput.resolve("fx/MachineGraph$Cell.class"), manualBytes);
+        write(classesOutput.resolve("fx/MachineGraph$Cells.class"), manualBytes);
         write(classesOutput.resolve(PUBLISHED), "{}".getBytes(StandardCharsets.UTF_8));
         write(classesOutput.resolve(PENDING), "{}".getBytes(StandardCharsets.UTF_8));
         write(processorSourcesOutput.resolve("fx/Docs_.java"), "class Docs_ {}".getBytes(StandardCharsets.UTF_8));
@@ -84,11 +97,13 @@ class CompilationOutputsTest {
         assertFalse(Files.exists(classesOutput.resolve(PUBLISHED)));
         assertFalse(Files.exists(classesOutput.resolve(PENDING)));
         assertFalse(Files.exists(classesOutput.resolve("META-INF")));
-        assertFalse(Files.exists(classesOutput.resolve("fx/OldRefs.class")));
-        assertFalse(Files.exists(classesOutput.resolve("fx/OldRefs$Run.class")));
-        assertFalse(Files.exists(classesOutput.resolve("fx/Old_.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/MachineGraph$Row.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/MachineGraph$Rows.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/MachineGraph$Cell.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/MachineGraph$Cells.class")));
         assertFalse(Files.exists(processorSourcesOutput.resolve("fx/Docs_.java")));
         assertArrayEquals(manualBytes, Files.readAllBytes(manualClass));
+        assertArrayEquals(manualBytes, Files.readAllBytes(userRowClass));
     }
 
     @Test

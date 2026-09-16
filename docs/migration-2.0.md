@@ -91,6 +91,19 @@ it is never converted and never read half-way. The single exception is the inven
 (`owned-outputs.json`), which carries paths and no graph: a previous cycle's inventory is still read, solely so
 the outputs that cycle owned can be deleted. `clean` is always a complete migration path.
 
+### Upgrading a build
+
+Producer and consumer move together. A dependency whose published index was written by another tool version is
+refused with SG602 just as a schema 1 document is, so a build that upgrades one module at a time stops with a
+diagnostic instead of generating against half a graph. Raise the release of `graphmaquina-core`, of the Gradle
+or Maven plugin and of `graphmaquina-processor` on the `annotationProcessorPath` in the same change.
+
+The stale binaries of the retired vocabulary — `<Machine>Graph$Row.class`, `$Rows.class`, `$Cell.class`,
+`$Cells.class` and the rest — are removed by the preparation step of the next build, from the inventory the
+previous cycle sealed and never from a name pattern. A class file that inventory does not list is left exactly
+as it is, whatever it is called, so hand-written classes beside the generated ones survive the upgrade. Deleting
+the build directory reaches the same state.
+
 ## Annotation processor
 
 The processor reads the schema 2 manifest and the vocabulary above, normalises both to the same `MachineOutline`

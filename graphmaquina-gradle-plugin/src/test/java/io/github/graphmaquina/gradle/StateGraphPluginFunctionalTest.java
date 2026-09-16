@@ -81,6 +81,8 @@ class StateGraphPluginFunctionalTest {
         assertTrue(fixture.jarContains("fx/OrderRefs$Status.class"));
         assertTrue(fixture.jarContains("fx/ActionsRefs$Approve.class"));
         assertTrue(fixture.jarContains("fx/OrdersRuntime.class"));
+        assertTrue(fixture.jarContains("fx/OrdersGraph$Transition.class"));
+        assertEquals(List.of(), fixture.retiredVocabularyEntries());
         assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
                 fixture.localExports());
         assertFalse(fixture.jarContainsGraphCompilationCarrier());
@@ -353,6 +355,39 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
+     * A producer of the retired release is refused, never adapted. A dependency publishing a semantic index of
+     * schema 1 fails the generation with {@code SG602} and the demand to regenerate and recompile both sides,
+     * and one published by another tool version fails the same way. Neither run falls back to a partial graph:
+     * the generation stops before the preparation retires anything, so the index and the sealed inventory of
+     * the previous cycle are exactly what they were.
+     */
+    @Test
+    void refusesAProducerOfTheRetiredSchemaOrOfAnotherToolVersion() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.run("classes");
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+
+        fixture.writeDependencyJar("dep:library:main", 1, PluginFixture.version());
+        BuildResult retired = fixture.runFailing("classes", "--stacktrace");
+
+        assertEquals(TaskOutcome.FAILED, retired.task(":generateStateGraphApi").getOutcome());
+        assertTrue(retired.getOutput().contains("[SG602]"), retired::getOutput);
+        assertTrue(retired.getOutput().contains("the semantic schema 1 of"), retired::getOutput);
+        assertTrue(retired.getOutput().contains(
+                "regenerate and recompile the producer and the consumer with 2.0"), retired::getOutput);
+
+        fixture.writeDependencyJar("dep:library:main", 2, "1.9.9-retired");
+        BuildResult mixed = fixture.runFailing("classes", "--stacktrace");
+
+        assertEquals(TaskOutcome.FAILED, mixed.task(":generateStateGraphApi").getOutcome());
+        assertTrue(mixed.getOutput().contains("[SG602]"), mixed::getOutput);
+        assertTrue(mixed.getOutput().contains("was written by tool version 1.9.9-retired"), mixed::getOutput);
+
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /**
      * The generator runs under the launcher the project's Java toolchain selected, not under whatever JVM the
      * Gradle daemon happens to be on: the task's own launcher is the one {@code launcherFor(java.toolchain)}
      * reports, and the process the build started is that very executable.
@@ -416,7 +451,7 @@ class StateGraphPluginFunctionalTest {
                 public final class Actions {
 
                     @GraphAction
-                    public ActionOutcome accept(TransitionContext<Order, Status> context) {
+                    public ActionOutcome accept(TransitionContext<Order, Status, Transition> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -433,6 +468,12 @@ class StateGraphPluginFunctionalTest {
 
                 /** The states a ticket moves through. */
                 public enum Level { OPEN, CLOSED }
+                """);
+        sources.put("fxt.Step", """
+                package fxt;
+
+                /** The identified transitions of the ticket graph. */
+                public enum Step { RESOLVE }
                 """);
         sources.put("fxt.Ticket", """
                 package fxt;
@@ -470,7 +511,7 @@ class StateGraphPluginFunctionalTest {
                 public final class TicketActions {
 
                     @GraphAction
-                    public ActionOutcome resolve(TransitionContext<Ticket, Level> context) {
+                    public ActionOutcome resolve(TransitionContext<Ticket, Level, Step> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -484,18 +525,18 @@ class StateGraphPluginFunctionalTest {
 
                 import static fxt.Level.CLOSED;
                 import static fxt.Level.OPEN;
+                import static fxt.Step.RESOLVE;
 
                 /** The machine of the test source set. */
                 @GenerateGraphApi
                 @TicketsGraph.Definition(initial = OPEN, terminals = CLOSED,
                     state = TicketRefs.Status.class, id = TicketRefs.Id.class)
-                @TicketsGraph.Row(state = OPEN, otherwise = "an open ticket is resolved")
-                @TicketsGraph.Row(state = CLOSED, otherwise = "a closed ticket does not move")
-                public interface Tickets extends Machine<Ticket, Level> {
+                @TicketsGraph.StatePolicy(state = OPEN, otherwise = "an open ticket is resolved")
+                public interface Tickets extends Machine<Ticket, Level, Step> {
 
-                    @TicketsGraph.Action(from = OPEN, to = CLOSED,
+                    @TicketsGraph.Transition(id = RESOLVE, from = OPEN, to = CLOSED,
                         action = TicketActionsRefs.Resolve.class)
-                    Outcome<Ticket, Level> resolve(Ticket ticket);
+                    Outcome<Ticket, Level, Step> resolve(Ticket ticket);
                 }
                 """);
         return sources;
