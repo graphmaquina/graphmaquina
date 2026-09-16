@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Source fixtures written against the typed graph API, one entry per compilation unit. Everything lives in
+ * Source fixtures written against the graph-only API, one entry per compilation unit. Everything lives in
  * package {@code fx}, and no entry names a generated type the pre-javac generator does not produce from these
  * very sources, so the fixture can be prepared and compiled exactly as a consumer build does.
  */
@@ -13,14 +13,18 @@ final class TypedFixtures {
     private TypedFixtures() { }
 
     /**
-     * The smallest complete typed machine: a state enum, an entity exporting its state and its identity, an
-     * action host and the machine that declares the graph with the vocabulary generated for it.
+     * The smallest complete machine: a state enum, a transition enum, an entity exporting its state and its
+     * identity, an action host and the machine that declares the graph with the vocabulary generated for it.
      */
     static Map<String, String> minimal() {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("fx.DocStatus", """
                 package fx;
                 public enum DocStatus { DRAFT, PUBLISHED }
+                """);
+        sources.put("fx.DocTransition", """
+                package fx;
+                public enum DocTransition { PUBLISH }
                 """);
         sources.put("fx.Doc", """
                 package fx;
@@ -38,7 +42,7 @@ final class TypedFixtures {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class DocActions {
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> context) {
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -49,28 +53,33 @@ final class TypedFixtures {
                 import io.github.graphmaquina.api.Outcome;
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
                 import static fx.DocStatus.*;
+                import static fx.DocTransition.*;
                 @GenerateGraphApi
                 @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
                     state = DocRefs.Status.class, id = DocRefs.Id.class)
-                @DocsGraph.Row(state = DRAFT, otherwise = "publish before finishing")
-                @DocsGraph.Row(state = PUBLISHED, otherwise = "publication is final")
-                public interface Docs extends Machine<Doc, DocStatus> {
-                    @DocsGraph.Action(from = DRAFT, to = PUBLISHED, action = DocActionsRefs.Publish.class)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "publish before finishing")
+                public interface Docs extends Machine<Doc, DocStatus, DocTransition> {
+                    @DocsGraph.Transition(id = PUBLISH, from = DRAFT, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 }
                 """);
         return sources;
     }
 
     /**
-     * The domain the structural fixtures vary: three states, the same entity, and one host exporting a
-     * synchronous action, an asynchronous one, a guard and a hook, so a fixture only has to write its facade.
+     * The domain the structural fixtures vary: three states, three identifiers, the same entity, and one host
+     * exporting a synchronous action, an asynchronous one, a guard and a hook, so a fixture only has to write
+     * its facade.
      */
     static Map<String, String> domain() {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("fx.DocStatus", """
                 package fx;
                 public enum DocStatus { DRAFT, REVIEW, PUBLISHED }
+                """);
+        sources.put("fx.DocTransition", """
+                package fx;
+                public enum DocTransition { SUBMIT, PUBLISH, RETURN }
                 """);
         sources.put("fx.Doc", """
                 package fx;
@@ -94,13 +103,13 @@ final class TypedFixtures {
                 import java.util.concurrent.CompletableFuture;
                 import java.util.concurrent.CompletionStage;
                 public final class DocActions {
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> context) {
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
                         return ActionOutcome.ok();
                     }
-                    @GraphAction public CompletionStage<ActionOutcome> archive(TransitionContext<Doc, DocStatus> context) {
+                    @GraphAction public CompletionStage<ActionOutcome> archive(TransitionContext<Doc, DocStatus, DocTransition> context) {
                         return CompletableFuture.completedFuture(ActionOutcome.ok());
                     }
-                    @GraphGuard public GuardResult approved(GuardContext<Doc, DocStatus> context) {
+                    @GraphGuard public GuardResult approved(GuardContext<Doc, DocStatus, DocTransition> context) {
                         return GuardResult.pass();
                     }
                     @GraphHook public void notified(Doc doc) { }
@@ -134,9 +143,17 @@ final class TypedFixtures {
                 package fx;
                 public enum DocStatus { DRAFT, REVIEW, PUBLISHED }
                 """);
+        sources.put("fx.DocTransition", """
+                package fx;
+                public enum DocTransition { SUBMIT, PUBLISH }
+                """);
         sources.put("fx.PageStatus", """
                 package fx;
                 public enum PageStatus { OPEN, DONE }
+                """);
+        sources.put("fx.PageTransition", """
+                package fx;
+                public enum PageTransition { FINISH }
                 """);
         sources.put("fx.Doc", """
                 package fx;
@@ -178,13 +195,14 @@ final class TypedFixtures {
                 import io.github.graphmaquina.api.Machine;
                 import io.github.graphmaquina.api.Outcome;
                 import static fx.PageStatus.*;
+                import static fx.PageTransition.*;
                 @GenerateGraphApi
                 @PagesGraph.Definition(initial = OPEN, terminals = DONE,
                     state = PageRefs.Status.class, id = PageRefs.Id.class)
-                @PagesGraph.Row(state = OPEN, otherwise = "a page is finished")
-                public interface Pages extends Machine<Page, PageStatus> {
-                    @PagesGraph.Move(from = OPEN, to = DONE)
-                    Outcome<Page, PageStatus> finish(Page page);
+                @PagesGraph.StatePolicy(state = OPEN, otherwise = "a page is finished")
+                public interface Pages extends Machine<Page, PageStatus, PageTransition> {
+                    @PagesGraph.Transition(id = FINISH, from = OPEN, to = DONE)
+                    Outcome<Page, PageStatus, PageTransition> finish(Page page);
                 }
                 """);
         sources.put("fx.Docs", watchingDocs(peers, watch));
@@ -208,8 +226,8 @@ final class TypedFixtures {
     static final String WATCH = """
             @DocsPages.Watch(state = REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
                 rules = {
-                    @DocsPages.When(condition = DocActionsRefs.Ready.class, goTo = PUBLISHED),
-                    @DocsPages.When(allIn = PageStatus.DONE, goTo = PUBLISHED)
+                    @DocsPages.When(condition = DocActionsRefs.Ready.class, transition = PUBLISH),
+                    @DocsPages.When(allIn = PageStatus.DONE, transition = PUBLISH)
                 })
             """;
 
@@ -227,17 +245,17 @@ final class TypedFixtures {
             import java.util.Collection;
             %s
                 public String selected = "none";
-                @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> context) {
+                @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
                     return ActionOutcome.ok();
                 }
                 @GraphCondition
                 public boolean ready(Doc doc, Iterable<? extends Page> pages,
-                        PeerView<Page, PageStatus> view) {
+                        PeerView<Page, PageStatus, PageTransition> view) {
                     selected = "marked";
                     return true;
                 }
                 public boolean ready(Doc doc, Collection<? extends Page> pages,
-                        PeerView<Page, PageStatus> view) {
+                        PeerView<Page, PageStatus, PageTransition> view) {
                     selected = "unmarked";
                     return true;
                 }
@@ -253,18 +271,19 @@ final class TypedFixtures {
                 import io.github.graphmaquina.api.Machine;
                 import io.github.graphmaquina.api.Outcome;
                 import static fx.DocStatus.*;
+                import static fx.DocTransition.*;
                 @GenerateGraphApi
                 """ + peers + """
                 @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
                     state = DocRefs.Status.class, id = DocRefs.Id.class)
-                @DocsGraph.Row(state = DRAFT, otherwise = "a draft is sent to review")
-                @DocsGraph.Row(state = REVIEW, otherwise = "the pages decide when a review is published")
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is sent to review")
+                @DocsGraph.StatePolicy(state = REVIEW, otherwise = "the pages decide when a review is published")
                 """ + watch + """
-                public interface Docs extends Machine<Doc, DocStatus> {
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                public interface Docs extends Machine<Doc, DocStatus, DocTransition> {
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 }
                 """;
     }
@@ -277,8 +296,8 @@ final class TypedFixtures {
     }
 
     /**
-     * One typed facade. The states are imported by name so the header reads as the declaration does, and the
-     * vocabulary generated for it is always spelled {@code DocsGraph}.
+     * One facade. The states and the identifiers are imported by name so the header reads as the declaration
+     * does, and the vocabulary generated for it is always spelled {@code DocsGraph}.
      */
     static String docs(String header, String members) {
         return """
@@ -288,7 +307,8 @@ final class TypedFixtures {
                 import io.github.graphmaquina.api.Machine;
                 import io.github.graphmaquina.api.Outcome;
                 import static fx.DocStatus.*;
+                import static fx.DocTransition.*;
                 @GenerateGraphApi
-                """ + header + "public interface Docs extends Machine<Doc, DocStatus> {\n" + members + "}\n";
+                """ + header + "public interface Docs extends Machine<Doc, DocStatus, DocTransition> {\n" + members + "}\n";
     }
 }

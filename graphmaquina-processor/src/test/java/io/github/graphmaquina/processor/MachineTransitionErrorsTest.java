@@ -6,7 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-class MachineCellErrorsTest {
+/** What one transition of a machine must hold: its signature, its elements and the key it claims. */
+class MachineTransitionErrorsTest {
 
     private static Compilation.Result body(String members) {
         return Compilation.compileTyped(Fixtures.withDocs(Fixtures.DOCS_HEADER, members));
@@ -17,36 +18,36 @@ class MachineCellErrorsTest {
     }
 
     static final String SUBMIT = """
-                @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                Outcome<Doc, DocStatus> submit(Doc doc);
+                @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
             """;
 
     static final String ARCHIVE = """
-                @DocsGraph.Action(from = PUBLISHED, to = ARCHIVED, action = DocActionsRefs.ArchiveAsync.class, timeout = @Timeout(seconds = 2))
-                Outcome<Doc, DocStatus> archive(Doc doc);
+                @DocsGraph.Transition(id = ARCHIVE, from = PUBLISHED, to = ARCHIVED, action = DocActionsRefs.ArchiveAsync.class, timeout = @Timeout(seconds = 2))
+                Outcome<Doc, DocStatus, DocTransition> archive(Doc doc);
             """;
 
     private static String publish(String elements) {
-        return "    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class"
-                + elements + ")\n    Outcome<Doc, DocStatus> publish(Doc doc);\n";
+        return "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class"
+                + elements + ")\n    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);\n";
     }
 
-    /** The type-level cell of the header, with {@code elements} appended to it. */
-    private static String cell(String elements) {
-        return Fixtures.DOCS_HEADER.replace("@DocsGraph.Cell(from = REVIEW, to = DRAFT)",
-                "@DocsGraph.Cell(from = REVIEW, to = DRAFT" + elements + ")");
+    /** The type-level transition of the header, with {@code elements} appended to it. */
+    private static String declared(String elements) {
+        return Fixtures.DOCS_HEADER.replace("@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)",
+                "@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT" + elements + ")");
     }
 
     @Test
-    void sg504OperationSignatureAndMissingOrDoubleAnnotation() {
-        assertTrue(body(SUBMIT + "    Outcome<Doc, DocStatus> orphan(Doc doc);\n" + publish("") + ARCHIVE).hasError("SG504"));
-        assertTrue(body(SUBMIT + "    @DocsGraph.Move(from = REVIEW, to = PUBLISHED)\n" + publish("") + ARCHIVE).hasError("SG504"));
-        assertTrue(body(SUBMIT + "    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)\n"
-                + "    Outcome<Doc, DocStatus> publish(Doc doc, String reason, String extra);\n" + ARCHIVE).hasError("SG504"));
-        assertTrue(body(SUBMIT + "    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)\n"
+    void sg504OperationSignatureAndMissingAnnotation() {
+        assertTrue(body(SUBMIT + "    Outcome<Doc, DocStatus, DocTransition> orphan(Doc doc);\n"
+                + publish("") + ARCHIVE).hasError("SG504"));
+        assertTrue(body(SUBMIT + "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)\n"
+                + "    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, String reason, String extra);\n" + ARCHIVE).hasError("SG504"));
+        assertTrue(body(SUBMIT + "    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)\n"
                 + "    void publish(Doc doc);\n" + ARCHIVE).hasError("SG504"));
         Compilation.Result defaults = body(SUBMIT + publish("") + ARCHIVE
-                + "    default Outcome<Doc, DocStatus> publishTwice(Doc doc) { publish(doc); return publish(doc); }\n");
+                + "    default Outcome<Doc, DocStatus, DocTransition> publishTwice(Doc doc) { publish(doc); return publish(doc); }\n");
         assertTrue(defaults.success(), defaults.describe());
     }
 
@@ -70,38 +71,35 @@ class MachineCellErrorsTest {
 
     @Test
     void sg507WhatOnlyAnActionCanUse() {
-        assertTrue(header(cell(", onFailure = REVIEW")).hasError("SG507"));
-        assertTrue(header(cell(", failsOn = java.io.IOException.class")).hasError("SG507"));
-        assertTrue(header(cell(", timeout = @Timeout(seconds = 1)")).hasError("SG507"));
+        assertTrue(header(declared(", onFailure = PUBLISH")).hasError("SG507"));
+        assertTrue(header(declared(", failsOn = java.io.IOException.class")).hasError("SG507"));
+        assertTrue(header(declared(", timeout = @Timeout(seconds = 1)")).hasError("SG507"));
     }
 
     @Test
-    void sg104SelfLoopSg105DuplicateGuardAndSg302ForbiddenFailsOn() {
-        assertTrue(body(SUBMIT + publish("").replace("from = REVIEW", "from = {REVIEW, PUBLISHED}") + ARCHIVE).hasError("SG104"));
+    void sg105DuplicateGuardAndSg302ForbiddenFailsOn() {
         assertTrue(body(SUBMIT + publish(", guards = {DocActionsRefs.Approved.class, DocActionsRefs.Approved.class}")
                 + ARCHIVE).hasError("SG105"));
         assertTrue(body(SUBMIT + publish(", failsOn = RuntimeException.class") + ARCHIVE).hasError("SG302"));
     }
 
     @Test
-    void sg102DuplicateCellAcrossOperationsAndCells() {
-        Compilation.Result result = header(Fixtures.DOCS_HEADER + "@DocsGraph.Cell(from = DRAFT, to = REVIEW)\n");
+    void sg102TheSameKeyClaimedByAnOperationAndByTheInterface() {
+        Compilation.Result result = header(Fixtures.DOCS_HEADER
+                + "@DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)\n");
         assertTrue(result.hasError("SG102"), result.describe());
-        Compilation.Result forbid = header(Fixtures.DOCS_HEADER
-                + "@DocsGraph.Forbid(from = REVIEW, to = DRAFT, reason = \"no\")\n");
-        assertTrue(forbid.hasError("SG102"), forbid.describe());
     }
 
     @Test
-    void staticGuardsSeveralGuardsAndForbidAreAccepted() {
+    void staticGuardsSeveralGuardsAndRejectAreAccepted() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withDocs(
                 Fixtures.DOCS_HEADER
-                        + "@DocsGraph.Forbid(from = DRAFT, to = ARCHIVED, reason = \"a draft is never archived\")\n",
+                        + "@DocsGraph.Reject(from = DRAFT, transition = ARCHIVE, reason = \"a draft is never archived\")\n",
                 SUBMIT + publish(", guards = {DocActionsRefs.Ready.class, DocActionsRefs.Approved.class},"
                         + " failsOn = IOException.class") + ARCHIVE));
         assertTrue(result.success(), result.describe());
-        Compilation.Result guardedMove = body("    @DocsGraph.Move(from = DRAFT, to = REVIEW, guards = DocActionsRefs.Ready.class)\n"
-                + "    Outcome<Doc, DocStatus> submit(Doc doc);\n" + publish("") + ARCHIVE);
+        Compilation.Result guardedMove = body("    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW, guards = DocActionsRefs.Ready.class)\n"
+                + "    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);\n" + publish("") + ARCHIVE);
         assertTrue(guardedMove.success(), guardedMove.describe());
     }
 
@@ -111,7 +109,6 @@ class MachineCellErrorsTest {
                 + publish(", guards = {DocActionsRefs.Approved.class, DocActionsRefs.Approved.class}")
                         .replace("from = REVIEW", "from = {REVIEW, PUBLISHED}")
                 + ARCHIVE);
-        assertEquals(1, result.countError("SG104"), result.describe());
         assertEquals(1, result.countError("SG105"), result.describe());
     }
 }

@@ -1,9 +1,9 @@
 package io.github.graphmaquina.processor;
 
-import io.github.graphmaquina.api.EdgeKind;
+import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.processor.model.Binding;
-import io.github.graphmaquina.processor.model.CellModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
+import io.github.graphmaquina.processor.model.TransitionModel;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -16,17 +16,16 @@ import javax.lang.model.element.Element;
 import javax.lang.model.type.TypeMirror;
 
 /**
- * Normalizes the three vocabulary annotations that declare a transition into the one {@link CellModel} the
- * generators already read.
+ * Normalizes one {@code Transition} of the generated vocabulary into the {@link TransitionModel} the generators
+ * read.
  *
- * <p>An {@code Action} names the action it runs, a {@code Move} declares no action at all, and a {@code Cell}
- * spans both: an absent action makes it a move and a single one makes it an action. Everything else is shared,
- * so each element is read from the mirror that declares it and is simply absent from the kinds that do not,
- * which is what tells a move from an action without asking which annotation was written.</p>
+ * <p>An edge is keyed by its identifier and its origin, so {@code id} is read first and never inferred: neither
+ * the action's name nor the operation's Java name has any part in it. An absent action makes the edge a move
+ * and a single one makes it an action; everything else is shared between the two.</p>
  *
- * <p>Every state is read as the constant it is and checked against the machine's own enum before its name is
- * used, and every symbol is resolved to the method the generated code calls. No name reaches the model without
- * one of those two checks having accepted it first.</p>
+ * <p>Every state and every identifier is read as the constant it is and checked against the machine's own enum
+ * before its name is used, and every symbol is resolved to the method the generated code calls. No name reaches
+ * the model without one of those two checks having accepted it first.</p>
  */
 final class TypedTransitions {
 
@@ -47,29 +46,36 @@ final class TypedTransitions {
         this.diagnostics = diagnostics;
     }
 
+    /** The identifier {@code mirror} declares, or empty when javac could not read it as a constant of {@code machine}. */
+    Optional<String> identifier(AnnotationMirror mirror, MachineTypes machine) {
+        return annotations.find(mirror, "id")
+                .flatMap((AnnotationValue value) -> TypedValues.constantName(value, machine.transitionsElement()));
+    }
+
     /**
-     * The cell {@code mirror} declares on {@code element}, or empty when it has a problem, which was reported.
-     * {@code operation} is the name of the method an operation declares it on, and is empty for a {@code Cell}
-     * of the interface itself, whose label is the action it selected. {@code defaultAfterCommit} is the hook
-     * the enclosing machine declares as its default, used when this declaration names none of its own.
+     * The edge {@code mirror} declares on {@code element}, or empty when it has a problem, which was reported.
+     * {@code operation} is the name of the method an operation declares it on, and is empty for a transition of
+     * the interface itself, whose label is the action it selected. {@code defaultAfterCommit} is the hook the
+     * enclosing machine declares as its default, used when this declaration names none of its own.
      */
-    Optional<CellModel> read(Element element, AnnotationMirror mirror, MachineTypes machine,
+    Optional<TransitionModel> read(Element element, AnnotationMirror mirror, MachineTypes machine,
             String operation, Optional<Binding> defaultAfterCommit) {
         int before = diagnostics.errors();
+        Optional<AnnotationValue> declaredId = annotations.find(mirror, "id");
         Optional<AnnotationValue> declaredFrom = annotations.find(mirror, "from");
         Optional<AnnotationValue> declaredTo = annotations.find(mirror, "to");
-        if (declaredFrom.isEmpty() || declaredTo.isEmpty()) {
+        if (declaredId.isEmpty() || declaredFrom.isEmpty() || declaredTo.isEmpty()) {
             // javac refuses an annotation that omits an element it requires, and leaves that element out.
             return Optional.empty();
         }
+        Optional<String> id = TypedValues.constantName(declaredId.get(), machine.transitionsElement());
         List<AnnotationValue> fromValues = annotations.array(mirror, "from");
         structure.checkFrom(!fromValues.isEmpty(), DiagnosticAnchor.of(element, mirror, declaredFrom.get()));
-        Optional<List<String>> from = TypedValues.stateNames(fromValues, machine.statesElement());
-        Optional<String> to = TypedValues.stateName(declaredTo.get(), machine.statesElement());
-        if (from.isEmpty() || to.isEmpty()) {
+        Optional<List<String>> from = TypedValues.constantNames(fromValues, machine.statesElement());
+        Optional<String> to = TypedValues.constantName(declaredTo.get(), machine.statesElement());
+        if (id.isEmpty() || from.isEmpty() || to.isEmpty()) {
             return Optional.empty();
         }
-        structure.checkDiagonal(from.get(), to.get(), DiagnosticAnchor.of(element, mirror, declaredTo.get()));
 
         Optional<AnnotationValue> declaredAction = single(element, mirror, "action");
         Optional<Binding> action = declaredAction.flatMap((AnnotationValue value) ->
@@ -78,7 +84,7 @@ final class TypedTransitions {
         Optional<AnnotationValue> declaredTimeout = single(element, mirror, "timeout");
         Optional<Duration> timeout = declaredTimeout.flatMap((AnnotationValue value) -> duration(value, element, mirror));
         Optional<String> onFailure = single(element, mirror, "onFailure")
-                .flatMap((AnnotationValue value) -> TypedValues.stateName(value, machine.statesElement()));
+                .flatMap((AnnotationValue value) -> TypedValues.constantName(value, machine.transitionsElement()));
         List<AnnotationValue> failsOnValues = annotations.find(mirror, "failsOn").isEmpty()
                 ? List.of()
                 : annotations.array(mirror, "failsOn");
@@ -94,8 +100,9 @@ final class TypedTransitions {
         if (diagnostics.errors() > before) {
             return Optional.empty();
         }
-        return Optional.of(new CellModel(from.get(), to.get(), action.isPresent() ? EdgeKind.ACTION : EdgeKind.MOVE,
-                label(action, operation), action, guards, onFailure, failsOn, timeout, afterCommit));
+        return Optional.of(new TransitionModel(id.get(), from.get(), to.get(),
+                action.isPresent() ? TransitionKind.ACTION : TransitionKind.MOVE, label(action, operation),
+                action, guards, onFailure, failsOn, timeout, afterCommit));
     }
 
     /** Resolves the optional hook on a definition or transition at its own declaration. */
@@ -106,20 +113,19 @@ final class TypedTransitions {
 
     /**
      * The one value of the element {@code name}, and empty when this annotation does not declare that element
-     * at all, which is how a {@code Move} says it runs no action and a {@code Cell} that it may run one.
+     * at all, which is how an older vocabulary without a default hook resolves here instead of crashing.
      */
     private Optional<AnnotationValue> single(Element element, AnnotationMirror mirror, String name) {
         Optional<AnnotationValue> declared = annotations.find(mirror, name);
         if (declared.isEmpty()) {
-            // annotations.array(...) throws IllegalArgumentException for a member the annotation type does not declare,
-            // so an older Definition without afterCommit() resolves here to empty instead of crashing the processor.
+            // annotations.array(...) throws IllegalArgumentException for a member the annotation type does not declare.
             return Optional.empty();
         }
         return TypedValues.optional(mirror, name, annotations,
                 DiagnosticAnchor.of(element, mirror, declared.get()), diagnostics);
     }
 
-    /** The guards the cell asks, in declaration order; {@code SG105} for one the declaration names twice. */
+    /** The guards the edge asks, in declaration order; {@code SG105} for one the declaration names twice. */
     private List<Binding> guards(Element element, AnnotationMirror mirror, MachineTypes machine) {
         List<Binding> guards = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
@@ -166,7 +172,7 @@ final class TypedTransitions {
         return types;
     }
 
-    /** The label of the cell: the operation's own name, the selected action's for a cell, empty for a move. */
+    /** The label of the edge: the operation's own name, the selected action's for a type-level edge, empty for a move. */
     private static String label(Optional<Binding> action, String operation) {
         if (action.isEmpty()) {
             return "";

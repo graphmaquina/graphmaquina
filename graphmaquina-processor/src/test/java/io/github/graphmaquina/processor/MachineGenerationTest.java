@@ -5,12 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.graphmaquina.api.EdgeKind;
-import io.github.graphmaquina.api.EdgeSpec;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.TransitionKind;
+import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.runtime.StateMachines;
 import java.lang.reflect.Method;
 import java.time.Duration;
@@ -31,30 +31,89 @@ class MachineGenerationTest {
         assertTrue(result.hasGenerated("fx.DocsRuntime"), result.describe());
         String source = result.generated("fx.DocsRuntime");
         assertTrue(source.contains("public final class DocsRuntime implements Docs"), source);
-        assertTrue(source.contains("public static GraphDefinition<Doc, DocStatus> graph(DocActions docActions)"), source);
-        assertTrue(source.contains(".to(DocStatus.PUBLISHED).action(\"publish\", (context) -> docActions.publish(context))"), source);
+        assertTrue(source.contains("MachineKey<Doc, DocStatus, DocTransition> KEY = MachineKey.of(Doc.class,"
+                + " DocStatus.class, DocTransition.class)"), source);
+        assertTrue(source.contains("public static GraphDefinition<Doc, DocStatus, DocTransition> graph(DocActions docActions)"), source);
+        assertTrue(source.contains(".statePolicy(DocStatus.DRAFT, \"a draft is sent to review\")"), source);
+        assertTrue(source.contains(".transition(DocTransition.PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"
+                + ".action(\"publish\", (context) -> docActions.publish(context))"), source);
         assertTrue(source.contains(".guard(\"approved\", (context) -> docActions.approved(context))"), source);
-        assertTrue(source.contains(".onFailure(DocStatus.DRAFT)"), source);
+        assertTrue(source.contains(".onFailure(DocTransition.RETURN)"), source);
         assertTrue(source.contains(".afterCommit(\"notify\", (doc) -> docActions.notify(doc))"), source);
         assertTrue(source.contains(".asyncAction(\"archive\", (context) -> docActions.archiveAsync(context))"), source);
         assertTrue(source.contains(".timeout(Duration.parse(\"PT2S\"))"), source);
-        assertTrue(source.contains(".forbidOthers(\"ARCHIVED is final\")"), source);
-        assertTrue(source.contains("return stateMachine.transitionTo(doc, DocStatus.REVIEW);"), source);
+        assertTrue(source.contains(".endTransition()"), source);
+        assertTrue(source.contains("return stateMachine.execute(doc, DocTransition.SUBMIT);"), source);
         assertTrue(source.contains("@Generated(\"io.github.graphmaquina.processor.StateGraphProcessor\")"), source);
     }
 
+    /**
+     * Two operations reaching the same destination from the same origin. Each one executes its own identifier
+     * and neither is expressed as a destination, so nothing in the companion can substitute one for the other.
+     */
     @Test
-    void staticGuardsNeedNoInstanceAndForbidAndWatchAreEmitted() {
+    void twoOperationsReachingOneDestinationEachExecuteTheirOwnIdentifier() {
+        Compilation.Result result = Compilation.compileTyped(
+                Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY + Fixtures.AUTO_PUBLISH));
+        assertTrue(result.success(), result.describe());
+        String source = result.generated("fx.DocsRuntime");
+
+        assertTrue(source.contains("stateMachine.execute(doc, DocTransition.PUBLISH)"));
+        assertTrue(source.contains("stateMachine.execute(doc, DocTransition.AUTO_PUBLISH)"));
+        assertFalse(source.contains("transitionTo("));
+        assertFalse(source.contains(".forbidOthers("));
+        assertFalse(source.contains(".stay()"));
+
+        assertTrue(source.contains(".transition(DocTransition.AUTO_PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"
+                + ".action(\"autoPublish\", (context) -> docActions.autoPublish(context)).endTransition()"), source);
+    }
+
+    /**
+     * The generated facade dispatches by identity for real: the fixture is loaded through the compilation's own
+     * ClassLoader, and calling {@code autoPublish} runs the action that operation names and not the one the
+     * parallel edge to the same destination names.
+     */
+    @Test
+    void autoPublishRunsItsOwnActionThroughTheGeneratedFacade() throws Exception {
+        Compilation.Result result = Compilation.compileTyped(
+                Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY + Fixtures.AUTO_PUBLISH));
+        assertTrue(result.success(), result.describe());
+        Class<?> docActions = result.load("fx.DocActions");
+        Object actions = docActions.getConstructor().newInstance();
+        Class<?> companion = result.load("fx.DocsRuntime");
+        Method graph = companion.getMethod("graph", docActions);
+        @SuppressWarnings("unchecked")
+        GraphDefinition<Object, ?, ?> definition = (GraphDefinition<Object, ?, ?>) graph.invoke(null, actions);
+
+        Class<?> docClass = result.load("fx.Doc");
+        Object doc = docClass.getConstructor(String.class).newInstance("d1");
+        Method getStatus = docClass.getMethod("getStatus");
+        Method setStatus = docClass.getMethod("setStatus", result.load("fx.DocStatus"));
+        Object facade = companion.getConstructor(StateMachine.class)
+                .newInstance(machine(definition, getStatus, setStatus));
+        assertInstanceOf(Outcome.Applied.class, companion.getMethod("submit", docClass).invoke(facade, doc));
+        assertInstanceOf(Outcome.Applied.class, companion.getMethod("autoPublish", docClass).invoke(facade, doc));
+
+        assertEquals("PUBLISHED", getStatus.invoke(doc).toString());
+        @SuppressWarnings("unchecked")
+        List<String> calls = (List<String>) docActions.getField("calls").get(actions);
+        assertEquals(List.of("autoPublish"), calls);
+    }
+
+    @Test
+    void staticGuardsNeedNoInstanceAndRejectAndWatchAreEmitted() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withPages(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH
-                        + "@DocsGraph.Forbid(from = DRAFT, to = ARCHIVED, reason = \"never\")\n",
+                        + "@DocsGraph.Reject(from = DRAFT, transition = ARCHIVE, reason = \"never\")\n",
                 Fixtures.DOCS_BODY.replace("guards = DocActionsRefs.Approved.class", "guards = DocActionsRefs.Ready.class")));
         assertTrue(result.success(), result.describe());
         String source = result.generated("fx.DocsRuntime");
         assertTrue(source.contains(".guard(\"ready\", (context) -> DocActions.ready(context))"), source);
-        assertTrue(source.contains(".to(DocStatus.ARCHIVED).forbid(\"never\")"), source);
-        assertTrue(source.contains(".watches(MachineKey.of(Page.class, PageStatus.class), (Doc doc) -> doc.getPages(), (Page page) -> page.doc())"), source);
-        assertTrue(source.contains(".when(WatchCondition.allIn(PageStatus.DONE)).goTo(DocStatus.PUBLISHED)"), source);
+        assertTrue(source.contains(".reject(DocStatus.DRAFT, DocTransition.ARCHIVE, \"never\")"), source);
+        assertTrue(source.contains(".watch(DocStatus.REVIEW, MachineKey.of(Page.class, PageStatus.class,"
+                + " PageTransition.class), (Doc doc) -> doc.getPages(), (Page page) -> page.doc())"), source);
+        assertTrue(source.contains(".when(WatchCondition.allIn(PageStatus.DONE)).execute(DocTransition.PUBLISH)"), source);
+        assertTrue(source.contains(".endWatch()"), source);
         assertTrue(result.hasGenerated("fx.PagesRuntime"), result.describe());
     }
 
@@ -66,7 +125,7 @@ class MachineGenerationTest {
             assertTrue(result.success(), result.describe());
             String source = result.generated("fx.MainsRuntime");
             assertTrue(source.contains(".when(\"ready\", (" + parameters(entity) + ") -> rules.ready("
-                    + parameters(entity) + ")).goTo(MainStatus.CLOSED)"), source);
+                    + parameters(entity) + ")).execute(MainTransition.CLOSE)"), source);
         }
     }
 
@@ -89,9 +148,17 @@ class MachineGenerationTest {
                 package fx;
                 public enum MainStatus { OPEN, CLOSED }
                 """);
+        sources.put("fx.MainTransition", """
+                package fx;
+                public enum MainTransition { CLOSE }
+                """);
         sources.put("fx.PartStatus", """
                 package fx;
                 public enum PartStatus { OPEN, DONE }
+                """);
+        sources.put("fx.PartTransition", """
+                package fx;
+                public enum PartTransition { FINISH }
                 """);
         sources.put("fx." + entity, """
                 package fx;
@@ -126,7 +193,8 @@ class MachineGenerationTest {
                 import java.util.Collection;
                 public final class Rules {
                     @GraphCondition
-                    public boolean ready(%s entity, Collection<? extends Part> parts, PeerView<Part, PartStatus> view) {
+                    public boolean ready(%s entity, Collection<? extends Part> parts,
+                            PeerView<Part, PartStatus, PartTransition> view) {
                         return view.allIn(parts, PartStatus.DONE);
                     }
                 }
@@ -138,12 +206,13 @@ class MachineGenerationTest {
                 import io.github.graphmaquina.api.Outcome;
                 import static fx.PartStatus.DONE;
                 import static fx.PartStatus.OPEN;
+                import static fx.PartTransition.FINISH;
                 @GenerateGraphApi
                 @PartsGraph.Definition(initial = OPEN, terminals = DONE, state = PartRefs.Status.class, id = PartRefs.Id.class)
-                @PartsGraph.Row(state = OPEN, otherwise = "a part is finished")
-                public interface Parts extends Machine<Part, PartStatus> {
-                    @PartsGraph.Move(from = OPEN, to = DONE)
-                    Outcome<Part, PartStatus> finish(Part part);
+                @PartsGraph.StatePolicy(state = OPEN, otherwise = "a part is finished")
+                public interface Parts extends Machine<Part, PartStatus, PartTransition> {
+                    @PartsGraph.Transition(id = FINISH, from = OPEN, to = DONE)
+                    Outcome<Part, PartStatus, PartTransition> finish(Part part);
                 }
                 """);
         sources.put("fx.Mains", """
@@ -154,15 +223,16 @@ class MachineGenerationTest {
                 import io.github.graphmaquina.api.Outcome;
                 import static fx.MainStatus.CLOSED;
                 import static fx.MainStatus.OPEN;
+                import static fx.MainTransition.CLOSE;
                 @GenerateGraphApi
                 @GraphPeers(Parts.class)
                 @MainsGraph.Definition(initial = OPEN, terminals = CLOSED, state = %1$sRefs.Status.class, id = %1$sRefs.Id.class)
-                @MainsGraph.Row(state = OPEN, otherwise = "the parts decide")
+                @MainsGraph.StatePolicy(state = OPEN, otherwise = "the parts decide")
                 @MainsParts.Watch(state = OPEN, peers = %1$sRefs.Parts.class, owner = PartRefs.Owner.class,
-                        rules = @MainsParts.When(condition = RulesRefs.Ready.class, goTo = CLOSED))
-                public interface Mains extends Machine<%1$s, MainStatus> {
-                    @MainsGraph.Move(from = OPEN, to = CLOSED)
-                    Outcome<%1$s, MainStatus> close(%1$s entity);
+                        rules = @MainsParts.When(condition = RulesRefs.Ready.class, transition = CLOSE))
+                public interface Mains extends Machine<%1$s, MainStatus, MainTransition> {
+                    @MainsGraph.Transition(id = CLOSE, from = OPEN, to = CLOSED)
+                    Outcome<%1$s, MainStatus, MainTransition> close(%1$s entity);
                 }
                 """.formatted(entity));
         return sources;
@@ -177,14 +247,14 @@ class MachineGenerationTest {
         Class<?> companion = result.load("fx.DocsRuntime");
         Method graph = companion.getMethod("graph", docActions);
         @SuppressWarnings("unchecked")
-        GraphDefinition<Object, ?> definition = (GraphDefinition<Object, ?>) graph.invoke(null, actions);
-        assertGeneratedCells(definition);
+        GraphDefinition<Object, ?, ?> definition = (GraphDefinition<Object, ?, ?>) graph.invoke(null, actions);
+        assertGeneratedTransitions(definition);
 
         Class<?> docClass = result.load("fx.Doc");
         Object doc = docClass.getConstructor(String.class).newInstance("d1");
         Method getStatus = docClass.getMethod("getStatus");
         Method setStatus = docClass.getMethod("setStatus", result.load("fx.DocStatus"));
-        StateMachine<Object, ?> machine = machine(definition, getStatus, setStatus);
+        StateMachine<Object, ?, ?> machine = machine(definition, getStatus, setStatus);
         Object facade = companion.getConstructor(StateMachine.class).newInstance(machine);
         assertInstanceOf(Machine.class, facade);
         Object submitted = companion.getMethod("submit", docClass).invoke(facade, doc);
@@ -200,30 +270,34 @@ class MachineGenerationTest {
         assertEquals("ARCHIVED", getStatus.invoke(doc).toString());
     }
 
-    /** Narrows the generated enum through its declared type, without consulting a diagram. */
-    private static <S extends Enum<S>> void assertGeneratedCells(GraphDefinition<Object, S> definition) {
+    /** Narrows the generated enums through their declared types, without consulting a diagram. */
+    private static <S extends Enum<S>, T extends Enum<T>> void assertGeneratedTransitions(
+            GraphDefinition<Object, S, T> definition) {
         Class<S> states = definition.key().states();
-        S draft = Enum.valueOf(states, "DRAFT");
+        Class<T> catalog = definition.key().transitions();
         S review = Enum.valueOf(states, "REVIEW");
         S published = Enum.valueOf(states, "PUBLISHED");
-        S archived = Enum.valueOf(states, "ARCHIVED");
-        EdgeSpec<Object, S> publish = definition.edge(review, published);
-        assertEquals(EdgeKind.ACTION, publish.kind());
-        assertEquals("publish", publish.action().orElseThrow().name());
-        assertFalse(publish.isAsync());
-        assertEquals(List.of("approved"), publish.guards().stream().map(guard -> guard.name()).toList());
-        assertEquals(Optional.of(draft), publish.onFailure());
-        assertEquals("notify", publish.afterCommit().orElseThrow().name());
-        EdgeSpec<Object, S> archive = definition.edge(published, archived);
-        assertEquals(EdgeKind.ACTION, archive.kind());
-        assertEquals("archive", archive.action().orElseThrow().name());
-        assertTrue(archive.action().orElseThrow().isAsync());
-        assertEquals(Optional.of(Duration.ofSeconds(2)), archive.timeout());
+        T publish = Enum.valueOf(catalog, "PUBLISH");
+        T returned = Enum.valueOf(catalog, "RETURN");
+        T archive = Enum.valueOf(catalog, "ARCHIVE");
+        TransitionSpec<Object, S, T> publishing = definition.findTransition(review, publish).orElseThrow();
+        assertEquals(TransitionKind.ACTION, publishing.kind());
+        assertEquals("publish", publishing.action().orElseThrow().name());
+        assertFalse(publishing.isAsync());
+        assertEquals(List.of("approved"), publishing.guards().stream().map(guard -> guard.name()).toList());
+        assertEquals(Optional.of(returned), publishing.onFailure());
+        assertEquals("notify", publishing.afterCommit().orElseThrow().name());
+        TransitionSpec<Object, S, T> archiving = definition.findTransition(published, archive).orElseThrow();
+        assertEquals(TransitionKind.ACTION, archiving.kind());
+        assertEquals("archive", archiving.action().orElseThrow().name());
+        assertTrue(archiving.action().orElseThrow().isAsync());
+        assertEquals(Optional.of(Duration.ofSeconds(2)), archiving.timeout());
     }
 
     /** Builds a standalone machine over reflective accessors, with raw state types the test never names. */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private static StateMachine<Object, ?> machine(GraphDefinition<Object, ?> definition, Method getStatus, Method setStatus) {
+    private static StateMachine<Object, ?, ?> machine(GraphDefinition<Object, ?, ?> definition, Method getStatus,
+            Method setStatus) {
         Function<Object, Enum> getter = (Object entity) -> {
             try {
                 return (Enum) getStatus.invoke(entity);

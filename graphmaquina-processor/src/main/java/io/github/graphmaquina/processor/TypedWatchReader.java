@@ -35,7 +35,7 @@ import javax.lang.model.type.TypeMirror;
  * <p>The declaration of the pair and its uses must agree in both directions. A peer nothing watches is a
  * declaration that generated vocabulary for nothing, and a peer declared twice generates it twice; both are
  * refused as {@code SG608} rather than silently ignored. What the language itself refuses — a constant of the
- * wrong enum in {@code state}, {@code goTo} or a filter — is left to javac, which has already reported it at
+ * wrong enum in {@code state}, {@code transition} or a filter — is left to javac, which has already reported it at
  * the exact value, and is never wrapped in a diagnostic of this tool.</p>
  *
  * <p>Everything else is resolved through the same resolvers the rest of the typed frontend uses: the peers of
@@ -182,11 +182,12 @@ final class TypedWatchReader {
         Optional<MachineTypes> resolved = structure.machineTypes(peerElement);
         if (resolved.isEmpty()) {
             DiagnosticAnchor.of(facade, watch).report(diagnostics, NOT_A_MACHINE, peerElement.getQualifiedName()
-                    + " must be an interface extending Machine<E, S> with a concrete entity type and an enum state type");
+                    + " must be an interface extending Machine<E, S, T> with a concrete entity type and two"
+                    + " distinct enum types for its states and its transition identifiers");
             return Optional.empty();
         }
         MachineTypes peer = resolved.get();
-        Optional<String> state = TypedValues.stateName(declaredState.get(), machine.statesElement());
+        Optional<String> state = TypedValues.constantName(declaredState.get(), machine.statesElement());
         if (state.isEmpty()) {
             return Optional.empty();
         }
@@ -216,15 +217,15 @@ final class TypedWatchReader {
     }
 
     /**
-     * One rule of a watch: exactly one of the four alternatives, and the state of the machine it moves to.
+     * One rule of a watch: exactly one of the four alternatives, and the transition of the machine it executes.
      * {@code SG508} when none or several are declared, since neither an unconditional rule nor a rule with two
      * meanings is a rule the model can hold.
      */
     private Optional<RuleModel> rule(TypeElement facade, AnnotationMirror rule, MachineTypes machine, MachineTypes peer) {
         int before = diagnostics.errors();
-        Optional<AnnotationValue> declaredGoTo = annotations.find(rule, "goTo");
-        if (declaredGoTo.isEmpty()) {
-            // javac refuses a When that omits the destination it requires, and leaves that element out.
+        Optional<AnnotationValue> declaredTransition = annotations.find(rule, "transition");
+        if (declaredTransition.isEmpty()) {
+            // javac refuses a When that omits the transition it requires, and leaves that element out.
             return Optional.empty();
         }
         List<String> given = new ArrayList<>();
@@ -238,32 +239,32 @@ final class TypedWatchReader {
                     + " condition, allIn, anyIn or noneIn; this one declares " + (given.isEmpty() ? "none" : given));
             return Optional.empty();
         }
-        Optional<String> goTo = TypedValues.stateName(declaredGoTo.get(), machine.statesElement());
+        Optional<String> executed = TypedValues.constantName(declaredTransition.get(), machine.transitionsElement());
         String alternative = given.get(0);
         Optional<AnnotationValue> value = TypedValues.optional(rule, alternative, annotations,
                 DiagnosticAnchor.of(facade, rule), diagnostics);
-        if (goTo.isEmpty() || value.isEmpty()) {
+        if (executed.isEmpty() || value.isEmpty()) {
             return Optional.empty();
         }
         DiagnosticAnchor anchor = DiagnosticAnchor.of(facade, rule, value.get());
         Optional<RuleModel> read = alternative.equals("condition")
-                ? condition(value.get(), goTo.get(), machine, peer, anchor)
-                : filter(value.get(), goTo.get(), alternative, peer);
+                ? condition(value.get(), executed.get(), machine, peer, anchor)
+                : filter(value.get(), executed.get(), alternative, peer);
         return diagnostics.errors() > before ? Optional.empty() : read;
     }
 
     /** A rule that asks a condition, resolved against the machine and the peer the pair names. */
-    private Optional<RuleModel> condition(AnnotationValue value, String goTo, MachineTypes machine, MachineTypes peer,
+    private Optional<RuleModel> condition(AnnotationValue value, String executed, MachineTypes machine, MachineTypes peer,
             DiagnosticAnchor anchor) {
         return symbol(value).flatMap((TypeMirror symbol) ->
                         symbols.resolve(symbol, Bindings.Role.CONDITION, machine, Optional.of(peer), anchor))
-                .map((Binding condition) -> new RuleModel(RuleKind.CONDITION, "", Optional.of(condition), goTo));
+                .map((Binding condition) -> new RuleModel(RuleKind.CONDITION, "", Optional.of(condition), executed));
     }
 
     /** A rule that filters the peers' states; the constant is read against the peer's own enum. */
-    private Optional<RuleModel> filter(AnnotationValue value, String goTo, String alternative, MachineTypes peer) {
-        return TypedValues.stateName(value, peer.statesElement())
-                .map((String argument) -> new RuleModel(kind(alternative), argument, Optional.empty(), goTo));
+    private Optional<RuleModel> filter(AnnotationValue value, String executed, String alternative, MachineTypes peer) {
+        return TypedValues.constantName(value, peer.statesElement())
+                .map((String argument) -> new RuleModel(kind(alternative), argument, Optional.empty(), executed));
     }
 
     /** Whether the owner accessor answers with an {@code Optional}, which decides how the peer is followed back. */

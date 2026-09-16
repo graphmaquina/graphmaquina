@@ -27,10 +27,10 @@ class TypedWatchTest {
 
         assertTrue(result.success(), result.describe());
         String companion = result.generated("fx.DocsRuntime");
-        assertTrue(companion.contains(".watches(MachineKey.of(Page.class, PageStatus.class),"
-                + " (Doc doc) -> doc.pages(), (Page page) -> page.doc())"), companion);
+        assertTrue(companion.contains(".watch(DocStatus.REVIEW, MachineKey.of(Page.class, PageStatus.class,"
+                + " PageTransition.class), (Doc doc) -> doc.pages(), (Page page) -> page.doc())"), companion);
         int condition = companion.indexOf(".when(\"ready\", (doc, peers, view) -> docActions.ready(");
-        int filter = companion.indexOf(".when(WatchCondition.allIn(PageStatus.DONE)).goTo(DocStatus.PUBLISHED)");
+        int filter = companion.indexOf(".when(WatchCondition.allIn(PageStatus.DONE)).execute(DocTransition.PUBLISH)");
         assertTrue(condition > 0 && filter > condition, companion);
     }
 
@@ -38,7 +38,7 @@ class TypedWatchTest {
     void leavesTheStatesOfTheOtherMachineToJavac() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.watching(TypedFixtures.PEERS, """
                 @DocsPages.Watch(state = PageStatus.OPEN, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
-                    rules = @DocsPages.When(allIn = DocStatus.PUBLISHED, goTo = PUBLISHED))
+                    rules = @DocsPages.When(allIn = DocStatus.PUBLISHED, transition = PUBLISH))
                 """));
 
         assertFalse(result.success(), result.describe());
@@ -51,7 +51,7 @@ class TypedWatchTest {
     void reportsAPropertyOfAnotherEntity() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.watching(TypedFixtures.PEERS, """
                 @DocsPages.Watch(state = REVIEW, peers = PageRefs.Doc.class, owner = PageRefs.Doc.class,
-                    rules = @DocsPages.When(allIn = PageStatus.DONE, goTo = PUBLISHED))
+                    rules = @DocsPages.When(allIn = PageStatus.DONE, transition = PUBLISH))
                 """));
 
         assertFalse(result.success(), result.describe());
@@ -64,7 +64,7 @@ class TypedWatchTest {
     void reportsAConditionThatDoesNotFitTheMachineAndItsPeer() {
         Map<String, String> sources = TypedFixtures.watching(TypedFixtures.PEERS, """
                 @DocsPages.Watch(state = REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
-                    rules = @DocsPages.When(condition = DocConditionsRefs.Stale.class, goTo = PUBLISHED))
+                    rules = @DocsPages.When(condition = DocConditionsRefs.Stale.class, transition = PUBLISH))
                 """);
         sources.put("fx.DocConditions", """
                 package fx;
@@ -74,7 +74,7 @@ class TypedWatchTest {
                 public final class DocConditions {
                     @GraphCondition
                     public boolean stale(Page page, Collection<? extends Page> pages,
-                            PeerView<Page, PageStatus> view) {
+                            PeerView<Page, PageStatus, PageTransition> view) {
                         return pages.isEmpty();
                     }
                 }
@@ -85,7 +85,7 @@ class TypedWatchTest {
         assertFalse(result.success(), result.describe());
         assertEquals(1, result.countError("SG505"), result::describe);
         assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG505]")
-                && error.contains("boolean stale(Doc, Collection<? extends Page>, PeerView<Page, PageStatus>)")),
+                && error.contains("boolean stale(Doc, Collection<? extends Page>, PeerView<Page, PageStatus, PageTransition>)")),
                 result::describe);
     }
 
@@ -93,14 +93,14 @@ class TypedWatchTest {
     void reportsARuleWithNoAlternativeAndOneWithTwo() {
         Compilation.Result none = Compilation.compileTyped(TypedFixtures.watching(TypedFixtures.PEERS, """
                 @DocsPages.Watch(state = REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
-                    rules = @DocsPages.When(goTo = PUBLISHED))
+                    rules = @DocsPages.When(transition = PUBLISH))
                 """));
         assertFalse(none.success(), none.describe());
         assertEquals(1, none.countError("SG508"), none::describe);
 
         Compilation.Result two = Compilation.compileTyped(TypedFixtures.watching(TypedFixtures.PEERS, """
                 @DocsPages.Watch(state = REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
-                    rules = @DocsPages.When(allIn = PageStatus.DONE, noneIn = PageStatus.OPEN, goTo = PUBLISHED))
+                    rules = @DocsPages.When(allIn = PageStatus.DONE, noneIn = PageStatus.OPEN, transition = PUBLISH))
                 """));
         assertFalse(two.success(), two.describe());
         assertEquals(1, two.countError("SG508"), two::describe);
@@ -110,7 +110,7 @@ class TypedWatchTest {
     void reportsAnAlternativeDeclaredWithMoreThanOneValue() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.watching(TypedFixtures.PEERS, """
                 @DocsPages.Watch(state = REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
-                    rules = @DocsPages.When(allIn = {PageStatus.DONE, PageStatus.OPEN}, goTo = PUBLISHED))
+                    rules = @DocsPages.When(allIn = {PageStatus.DONE, PageStatus.OPEN}, transition = PUBLISH))
                 """));
 
         assertFalse(result.success(), result.describe());
@@ -133,7 +133,7 @@ class TypedWatchTest {
         Map<String, String> sources = notes(TypedFixtures.watching("@GraphPeers({Pages.class, Notes.class})\n",
                 TypedFixtures.WATCH + """
                 @DocsNotes.Watch(state = REVIEW, peers = DocRefs.Notes.class, owner = NoteRefs.Doc.class,
-                    rules = @DocsNotes.When(allIn = NoteStatus.FILED, goTo = PUBLISHED))
+                    rules = @DocsNotes.When(allIn = NoteStatus.FILED, transition = PUBLISH))
                 """));
 
         Compilation.Result result = Compilation.compileTyped(sources);
@@ -178,6 +178,10 @@ class TypedWatchTest {
                 package fx;
                 public enum NoteStatus { OPEN, FILED }
                 """);
+        extended.put("fx.NoteTransition", """
+                package fx;
+                public enum NoteTransition { FILE }
+                """);
         extended.put("fx.Note", """
                 package fx;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -199,13 +203,14 @@ class TypedWatchTest {
                 import io.github.graphmaquina.api.Machine;
                 import io.github.graphmaquina.api.Outcome;
                 import static fx.NoteStatus.*;
+                import static fx.NoteTransition.*;
                 @GenerateGraphApi
                 @NotesGraph.Definition(initial = OPEN, terminals = FILED,
                     state = NoteRefs.Status.class, id = NoteRefs.Id.class)
-                @NotesGraph.Row(state = OPEN, otherwise = "a note is filed")
-                public interface Notes extends Machine<Note, NoteStatus> {
-                    @NotesGraph.Move(from = OPEN, to = FILED)
-                    Outcome<Note, NoteStatus> file(Note note);
+                @NotesGraph.StatePolicy(state = OPEN, otherwise = "a note is filed")
+                public interface Notes extends Machine<Note, NoteStatus, NoteTransition> {
+                    @NotesGraph.Transition(id = FILE, from = OPEN, to = FILED)
+                    Outcome<Note, NoteStatus, NoteTransition> file(Note note);
                 }
                 """);
         extended.put("fx.Doc", sources.get("fx.Doc").replace("    void attach(Page page)",

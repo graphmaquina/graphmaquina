@@ -4,17 +4,19 @@ import java.util.ArrayList;
 import java.util.List;
 import javax.lang.model.element.TypeElement;
 
-/** Everything the generators need about one @StateGraph interface. */
-public record MachineModel(MachineTypes types, String packageName, String initial, List<String> terminals, List<String> cycleAllowed,
-                           Property stateGetter, Property stateSetter, Property idGetter, List<RowModel> rows, List<ForbidModel> forbids,
-                           List<CellModel> cells, List<OperationModel> operations, List<WatchModel> watches) {
+/** Everything the generators need about one machine declared with the vocabulary generated for it. */
+public record MachineModel(MachineTypes types, String packageName, String initial, List<String> terminals,
+                           List<String> cycleAllowed, Property stateGetter, Property stateSetter, Property idGetter,
+                           List<StatePolicyModel> policies, List<RejectionModel> rejections,
+                           List<TransitionModel> transitions, List<OperationModel> operations,
+                           List<WatchModel> watches) {
 
     public MachineModel {
         terminals = List.copyOf(terminals);
         cycleAllowed = List.copyOf(cycleAllowed);
-        rows = List.copyOf(rows);
-        forbids = List.copyOf(forbids);
-        cells = List.copyOf(cells);
+        policies = List.copyOf(policies);
+        rejections = List.copyOf(rejections);
+        transitions = List.copyOf(transitions);
         operations = List.copyOf(operations);
         watches = List.copyOf(watches);
     }
@@ -23,36 +25,38 @@ public record MachineModel(MachineTypes types, String packageName, String initia
         return types.facade().getSimpleName().toString();
     }
 
-    /** Every ACTION/MOVE cell: internal cells first, then the operations' cells, in declaration order. */
-    public List<CellModel> allCells() {
-        List<CellModel> all = new ArrayList<>(cells);
+    /** Every declared edge: the ones the interface declares itself first, then the operations', in declaration order. */
+    public List<TransitionModel> allTransitions() {
+        List<TransitionModel> all = new ArrayList<>(transitions);
         for (OperationModel operation : operations) {
-            all.add(operation.cell());
+            all.addAll(operation.transitions());
         }
         return all;
     }
 
     public boolean hasAsync() {
-        for (CellModel cell : allCells()) {
-            if (cell.async()) {
+        for (TransitionModel transition : allTransitions()) {
+            if (transition.async()) {
                 return true;
             }
         }
         return false;
     }
 
-    /** by classes with at least one instance member used: internal cells, watches, then operations; first appearance, no repeats. */
+    /** by classes with at least one instance member used: internal edges, watches, then operations; first appearance, no repeats. */
     public List<TypeElement> instanceDependencies() {
         List<TypeElement> owners = new ArrayList<>();
         List<Binding> bindings = new ArrayList<>();
-        for (CellModel cell : cells) {
-            bindings.addAll(cell.bindings());
+        for (TransitionModel transition : transitions) {
+            bindings.addAll(transition.bindings());
         }
         for (WatchModel watch : watches) {
             bindings.addAll(watch.bindings());
         }
         for (OperationModel operation : operations) {
-            bindings.addAll(operation.cell().bindings());
+            for (TransitionModel transition : operation.transitions()) {
+                bindings.addAll(transition.bindings());
+            }
         }
         for (Binding binding : bindings) {
             if (binding.isStatic()) {

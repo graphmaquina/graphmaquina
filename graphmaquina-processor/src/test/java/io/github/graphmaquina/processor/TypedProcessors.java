@@ -174,19 +174,26 @@ public final class TypedProcessors {
             RESOLVED.put(ask.symbol() + ' ' + ask.use(), answer);
         }
 
-        /** The machine {@code description} spells as {@code entity/states}. */
+        /** The machine {@code description} spells as {@code entity/states/transitions}. */
         private MachineTypes machine(String description, Elements elements) {
-            int slash = description.indexOf('/');
-            TypeElement entity = elements.getTypeElement(description.substring(0, slash));
-            TypeElement states = elements.getTypeElement(description.substring(slash + 1));
+            String[] parts = description.split("/");
+            TypeElement entity = elements.getTypeElement(parts[0]);
+            TypeElement states = elements.getTypeElement(parts[1]);
+            TypeElement transitions = elements.getTypeElement(parts[2]);
+            return new MachineTypes(entity, (DeclaredType) entity.asType(), entity,
+                    (DeclaredType) states.asType(), states, constants(states),
+                    (DeclaredType) transitions.asType(), transitions, constants(transitions));
+        }
+
+        /** The constants of an enum, in the order it declares them. */
+        private static List<String> constants(TypeElement type) {
             List<String> constants = new ArrayList<>();
-            for (Element member : states.getEnclosedElements()) {
+            for (Element member : type.getEnclosedElements()) {
                 if (member.getKind() == ElementKind.ENUM_CONSTANT) {
                     constants.add(member.getSimpleName().toString());
                 }
             }
-            return new MachineTypes(entity, (DeclaredType) entity.asType(), entity,
-                    (DeclaredType) states.asType(), states, constants);
+            return constants;
         }
 
         /** The names the generated lambda gives its parameters, one per argument the call passes. */

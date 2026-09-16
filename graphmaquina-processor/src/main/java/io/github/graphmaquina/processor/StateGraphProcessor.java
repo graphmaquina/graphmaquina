@@ -86,7 +86,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
         exports = new ExportValidator(signatures, effective, diagnostics);
         indexes = new ExportIndexWriter(env);
         invocations = new BoundInvocation(env.getElementUtils(), env.getTypeUtils());
-        legacy = new LegacyDeclarations(annotations, diagnostics);
+        legacy = new LegacyDeclarations(diagnostics);
         StructuralChecks structure = new StructuralChecks(signatures, diagnostics);
         sets = new SetModelBuilder(annotations, signatures, diagnostics);
         typed = manifests.manifest().map((CompileManifest manifest) -> {

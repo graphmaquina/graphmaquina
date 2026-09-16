@@ -16,13 +16,15 @@ import org.junit.jupiter.api.Test;
  * refuses with {@code SG504}, and what the generated facade does with the value it receives.
  *
  * <p>Every case runs the two stages of a consumer build over a real fixture, so the type the facade declares
- * is the one javac resolved and the companion is the source the processor actually wrote.</p>
+ * is the one javac resolved and the companion is the source the processor actually wrote. The payload belongs
+ * to the invocation: the identifier an operation executes is the same whether it takes one or not.</p>
  */
 class OperationInputProcessorTest {
 
     /** The minimal fixture, with two payload types to draw from and {@code declaration} as its operation. */
     private Map<String, String> source(String declaration) {
         Map<String, String> src = TypedFixtures.minimal();
+        src.put("fx.DocTransition", "package fx; public enum DocTransition { PUBLISH, AUTO_PUBLISH }");
         src.put("external.Verdict", "package external; public record Verdict(boolean accepted) {} ");
         src.put("external.Types", "package external; public final class Types { public record Nested(int n) {} }");
         src.put("fx.Docs", src.get("fx.Docs").replace("publish(Doc doc)", declaration));
@@ -38,8 +40,92 @@ class OperationInputProcessorTest {
             assertTrue(result.success(), type + "\n" + result.describe());
             String generated = result.generated("fx.DocsRuntime");
             assertTrue(generated.contains(
-                    "return stateMachine.transitionTo(doc, DocStatus.PUBLISHED, input);"), generated);
+                    "return stateMachine.execute(doc, DocTransition.PUBLISH, input);"), generated);
         }
+    }
+
+    /**
+     * Two operations over one pair of states, one with a payload and one without. Each executes its own
+     * identifier, and only the one that declares a payload passes one.
+     */
+    @Test
+    void twoOperationsOverOnePairDifferOnlyByTheirIdentifierAndTheirPayload() {
+        Compilation.Result result = Compilation.compileTyped(twoOperations());
+        assertTrue(result.success(), result.describe());
+        String generated = result.generated("fx.DocsRuntime");
+        assertTrue(generated.contains("return stateMachine.execute(doc, DocTransition.PUBLISH, input);"), generated);
+        assertTrue(generated.contains("return stateMachine.execute(doc, DocTransition.AUTO_PUBLISH);"), generated);
+        assertTrue(generated.contains("public Outcome<Doc, DocStatus, DocTransition> announce(Doc doc)"), generated);
+    }
+
+    /** The compiled consumer runs both operations and reads back what the guard and the action received. */
+    @Test
+    void generatedFacadeCarriesTheInputOfTheInvocationThatDeclaresOne() throws Exception {
+        Compilation.Result result = Compilation.compileTyped(twoOperations());
+        assertTrue(result.success(), result.describe());
+        assertEquals(true, result.load("fx.Consumer").getMethod("check").invoke(null));
+    }
+
+    /** The minimal fixture with {@code publish(Doc, Verdict)} and {@code announce(Doc)} over the same pair. */
+    private Map<String, String> twoOperations() {
+        Map<String, String> src = source("publish(Doc doc, external.Verdict value)");
+        String announce = "    @DocsGraph.Transition(id = AUTO_PUBLISH, from = DRAFT, to = PUBLISHED,"
+                + " action = DocActionsRefs.Publish.class, guards = DocActionsRefs.Eligible.class)\n"
+                + "    Outcome<Doc, DocStatus, DocTransition> announce(Doc doc);\n";
+        src.put("fx.Docs", src.get("fx.Docs")
+                .replace("action = DocActionsRefs.Publish.class)",
+                        "action = DocActionsRefs.Publish.class, guards = DocActionsRefs.Eligible.class)")
+                .replace("    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, external.Verdict value);\n",
+                        "    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, external.Verdict value);\n" + announce));
+        src.put("fx.DocActions", """
+                package fx;
+                import external.Verdict;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.annotation.GraphGuard;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.GuardContext;
+                import io.github.graphmaquina.api.GuardResult;
+                import io.github.graphmaquina.api.TransitionContext;
+                import java.util.Optional;
+                public final class DocActions {
+                    public Object guardSeen;
+                    public Object actionSeen;
+                    @GraphGuard public GuardResult eligible(GuardContext<Doc, DocStatus, DocTransition> ctx) {
+                        Optional<Verdict> value = ctx.input(Verdict.class);
+                        guardSeen = value.orElse(null);
+                        return value.map((Verdict v) -> v.accepted() ? GuardResult.pass() : GuardResult.reject("no"))
+                                .orElseGet(GuardResult::pass);
+                    }
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) {
+                        actionSeen = ctx.input(Verdict.class).orElse(null);
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
+        src.put("fx.Consumer", """
+                package fx;
+                import external.Verdict;
+                import io.github.graphmaquina.api.Outcome;
+                import io.github.graphmaquina.runtime.StateMachines;
+                public final class Consumer {
+                    public static boolean check() {
+                        DocActions actions = new DocActions();
+                        Docs docs = new DocsRuntime(StateMachines.from(DocsRuntime.graph(actions))
+                                .state(Doc::status, Doc::status).build());
+                        Doc plain = new Doc();
+                        if (!(docs.announce(plain) instanceof Outcome.Applied)
+                                || actions.guardSeen != null || actions.actionSeen != null) { return false; }
+                        Verdict value = new Verdict(true);
+                        Doc carried = new Doc();
+                        if (!(docs.publish(carried, value) instanceof Outcome.Applied)
+                                || actions.guardSeen != value || actions.actionSeen != value) { return false; }
+                        Doc denied = new Doc();
+                        return docs.publish(denied, new Verdict(false)) instanceof Outcome.Rejected
+                                && denied.status() == DocStatus.DRAFT;
+                    }
+                }
+                """);
+        return src;
     }
 
     @Test
@@ -124,7 +210,7 @@ class OperationInputProcessorTest {
         }
         Map<String, String> generic = source("publish(Doc doc, I input)");
         generic.put("fx.Docs", generic.get("fx.Docs")
-                .replace("Outcome<Doc, DocStatus> publish", "<I> Outcome<Doc, DocStatus> publish"));
+                .replace("Outcome<Doc, DocStatus, DocTransition> publish", "<I> Outcome<Doc, DocStatus, DocTransition> publish"));
         Compilation.Result result = Compilation.compileTyped(generic);
         assertTrue(result.hasError("SG504"), result.describe());
     }
@@ -138,81 +224,5 @@ class OperationInputProcessorTest {
         Compilation.Result result = Compilation.compileTyped(renamed);
         assertTrue(result.success(), result.describe());
         assertTrue(result.generated("fx.DocsRuntime").contains("external.Verdict input2"));
-    }
-
-    @Test
-    void generatedFacadeCarriesInputToGuardActionAndAsyncSupplier() throws Exception {
-        for (boolean move : List.of(false, true)) {
-            Map<String, String> src = source("publish(Doc doc, external.Verdict value)");
-            src.put("fx.DocActions", """
-                    package fx;
-                    import external.Verdict;
-                    import io.github.graphmaquina.annotation.GraphAction;
-                    import io.github.graphmaquina.annotation.GraphGuard;
-                    import io.github.graphmaquina.api.ActionOutcome;
-                    import io.github.graphmaquina.api.GuardContext;
-                    import io.github.graphmaquina.api.GuardResult;
-                    import io.github.graphmaquina.api.TransitionContext;
-                    import java.util.Optional;
-                    public final class DocActions {
-                        public Object guardSeen;
-                        public Object actionSeen;
-                        @GraphGuard public GuardResult eligible(GuardContext<Doc, DocStatus> ctx) {
-                            Optional<Verdict> value = ctx.input(Verdict.class);
-                            guardSeen = value.orElse(null);
-                            return value.map((Verdict v) -> v.accepted() ? GuardResult.pass() : GuardResult.reject("no"))
-                                    .orElseGet(() -> GuardResult.reject("absent"));
-                        }
-                        @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> ctx) {
-                            actionSeen = ctx.input(Verdict.class).orElseThrow();
-                            return ActionOutcome.ok();
-                        }
-                    }
-                    """);
-            String annotation = move
-                    ? "@DocsGraph.Move(from = DRAFT, to = PUBLISHED, guards = DocActionsRefs.Eligible.class)"
-                    : "@DocsGraph.Action(from = DRAFT, to = PUBLISHED, action = DocActionsRefs.Publish.class,"
-                            + " guards = DocActionsRefs.Eligible.class)";
-            src.put("fx.Docs", src.get("fx.Docs").replace(
-                    "@DocsGraph.Action(from = DRAFT, to = PUBLISHED, action = DocActionsRefs.Publish.class)", annotation));
-            src.put("fx.Consumer", """
-                    package fx;
-                    import external.Verdict;
-                    import io.github.graphmaquina.api.Outcome;
-                    import io.github.graphmaquina.runtime.StateMachines;
-                    import java.util.concurrent.CompletableFuture;
-                    import java.util.concurrent.ExecutorService;
-                    import java.util.concurrent.Executors;
-                    import java.util.concurrent.TimeUnit;
-                    public final class Consumer {
-                        public static boolean check(boolean move) throws Exception {
-                            DocActions actions = new DocActions();
-                            try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-                                Docs docs = new DocsRuntime(StateMachines.from(DocsRuntime.graph(actions))
-                                        .state(Doc::status, Doc::status).asyncExecutor(executor).build());
-                                Verdict value = new Verdict(true);
-                                Doc accepted = new Doc();
-                                Thread caller = Thread.currentThread();
-                                CompletableFuture<Outcome<Doc, DocStatus>> future = docs.async(() -> {
-                                    if (Thread.currentThread() == caller) { throw new AssertionError("caller thread"); }
-                                    return docs.publish(accepted, value);
-                                });
-                                if (!(future.get(5, TimeUnit.SECONDS) instanceof Outcome.Applied)
-                                        || accepted.status() != DocStatus.PUBLISHED || actions.guardSeen != value
-                                        || (move ? actions.actionSeen != null : actions.actionSeen != value)) { return false; }
-                                Doc denied = new Doc();
-                                if (!(docs.publish(denied, new Verdict(false)) instanceof Outcome.Rejected)
-                                        || denied.status() != DocStatus.DRAFT) { return false; }
-                                if (!(docs.publish(new Doc(), null) instanceof Outcome.Rejected)
-                                        || actions.guardSeen != null) { return false; }
-                                return move ? actions.actionSeen == null : actions.actionSeen == value;
-                            }
-                        }
-                    }
-                    """);
-            Compilation.Result result = Compilation.compileTyped(src);
-            assertTrue(result.success(), result.describe());
-            assertEquals(true, result.load("fx.Consumer").getMethod("check", boolean.class).invoke(null, move));
-        }
     }
 }

@@ -27,7 +27,7 @@ class TypedPropertiesTest {
     @Test
     void resolvesAMarkedGetterByItsOwnDeclaration() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs.URL", Use.ID, "fx.Doc/fx.DocStatus");
+        TypedProcessors.Resolving.property("fx.DocRefs.URL", Use.ID, "fx.Doc/fx.DocStatus/fx.DocTransition");
 
         Compilation.Result result = resolve(entity("""
                 package fx;
@@ -44,7 +44,7 @@ class TypedPropertiesTest {
     @Test
     void resolvesAMarkedFieldThroughTheConventionalGetterOfItsExactName() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs.URL", Use.ID, "fx.Doc/fx.DocStatus");
+        TypedProcessors.Resolving.property("fx.DocRefs.URL", Use.ID, "fx.Doc/fx.DocStatus/fx.DocTransition");
 
         Compilation.Result result = resolve(entity("""
                 package fx;
@@ -62,7 +62,7 @@ class TypedPropertiesTest {
     @Test
     void keepsTheFluentGetterAMarkerNames() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus");
+        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus/fx.DocTransition");
 
         Compilation.Result result = resolve(entity("""
                 package fx;
@@ -82,7 +82,7 @@ class TypedPropertiesTest {
     @Test
     void doesNotReplaceTheMarkedGetterWithAConventionalOne() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus");
+        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus/fx.DocTransition");
 
         Compilation.Result result = resolve(entity("""
                 package fx;
@@ -103,7 +103,7 @@ class TypedPropertiesTest {
     @Test
     void readsAnInheritedAccessorInTheContextOfTheEntityAndExportsItOnce() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus");
+        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus/fx.DocTransition");
         Map<String, String> sources = entity("""
                 package fx;
                 import io.github.graphmaquina.annotation.GraphBindings;
@@ -136,7 +136,7 @@ class TypedPropertiesTest {
     @Test
     void prefersTheSetterPrefixAndAcceptsASupertypeParameterAndAFluentReturn() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus");
+        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus/fx.DocTransition");
 
         Compilation.Result result = resolve(entity("""
                 package fx;
@@ -157,7 +157,7 @@ class TypedPropertiesTest {
     @Test
     void refusesAMarkedGetterItCouldNotCallInsteadOfSubstitutingAConventionalOne() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus");
+        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus/fx.DocTransition");
 
         Compilation.Result result = resolve(entity("""
                 package fx;
@@ -179,7 +179,7 @@ class TypedPropertiesTest {
     @Test
     void refusesTwoIncomparableWritersOfTheSameAlternative() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus");
+        TypedProcessors.Resolving.property("fx.DocRefs.Status", Use.STATE, "fx.Doc/fx.DocStatus/fx.DocTransition");
 
         Compilation.Result result = resolve(entity("""
                 package fx;
@@ -219,8 +219,8 @@ class TypedPropertiesTest {
     @Test
     void resolvesThePeersOfAnEntityAndTheOwnerOfAPeer() {
         TypedProcessors.Resolving.reset();
-        TypedProcessors.Resolving.property("fx.DocRefs.Pages", Use.PEERS, "fx.Doc/fx.DocStatus", "fx.Page/fx.PageStatus");
-        TypedProcessors.Resolving.property("fx.PageRefs.Doc", Use.OWNER, "fx.Doc/fx.DocStatus", "fx.Page/fx.PageStatus");
+        TypedProcessors.Resolving.property("fx.DocRefs.Pages", Use.PEERS, "fx.Doc/fx.DocStatus/fx.DocTransition", "fx.Page/fx.PageStatus/fx.PageTransition");
+        TypedProcessors.Resolving.property("fx.PageRefs.Doc", Use.OWNER, "fx.Doc/fx.DocStatus/fx.DocTransition", "fx.Page/fx.PageStatus/fx.PageTransition");
         Map<String, String> sources = entity("""
                 package fx;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -234,6 +234,10 @@ class TypedPropertiesTest {
         sources.put("fx.PageStatus", """
                 package fx;
                 public enum PageStatus { OPEN, DONE }
+                """);
+        sources.put("fx.PageTransition", """
+                package fx;
+                public enum PageTransition { FINISH }
                 """);
         sources.put("fx.Page", """
                 package fx;
@@ -274,6 +278,10 @@ class TypedPropertiesTest {
         sources.put("fx.DocStatus", """
                 package fx;
                 public enum DocStatus { DRAFT, PUBLISHED }
+                """);
+        sources.put("fx.DocTransition", """
+                package fx;
+                public enum DocTransition { PUBLISH }
                 """);
         sources.put("fx.Doc", doc);
         return sources;

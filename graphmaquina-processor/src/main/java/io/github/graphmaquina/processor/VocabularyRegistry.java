@@ -21,8 +21,8 @@ import javax.lang.model.util.Elements;
  *
  * <p>An annotation is recognized by the {@link GeneratedVocabulary} metadata its own annotation type carries and
  * only when the compilation's manifest lists that type, never by its simple name: an application may declare its
- * own {@code Row} and it is not vocabulary. Repeated declarations are read through their container, so a
- * {@code Rows} yields its {@code Row} values in the order the declaration spells them.</p>
+ * own {@code Transition} and it is not vocabulary. Repeated declarations are read through their container, so a
+ * {@code Transitions} yields its {@code Transition} values in the order the declaration spells them.</p>
  */
 final class VocabularyRegistry {
 
@@ -84,9 +84,9 @@ final class VocabularyRegistry {
     /** The container each repeatable kind is held by; a kind that is not repeatable has none. */
     private static Map<VocabularyKind, VocabularyKind> containers() {
         Map<VocabularyKind, VocabularyKind> containers = new EnumMap<>(VocabularyKind.class);
-        containers.put(VocabularyKind.ROW, VocabularyKind.ROWS);
-        containers.put(VocabularyKind.CELL, VocabularyKind.CELLS);
-        containers.put(VocabularyKind.FORBID, VocabularyKind.FORBIDS);
+        containers.put(VocabularyKind.STATE_POLICY, VocabularyKind.STATE_POLICIES);
+        containers.put(VocabularyKind.TRANSITION, VocabularyKind.TRANSITIONS);
+        containers.put(VocabularyKind.REJECT, VocabularyKind.REJECTS);
         containers.put(VocabularyKind.WATCH, VocabularyKind.WATCHES);
         return Map.copyOf(containers);
     }

@@ -15,8 +15,8 @@ class TypedTimeoutTest {
     private static final String HEADER = """
             @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
                 state = DocRefs.Status.class, id = DocRefs.Id.class)
-            @DocsGraph.Row(state = DRAFT, otherwise = "a draft is sent to review")
-            @DocsGraph.Row(state = REVIEW, otherwise = "a review is published")
+            @DocsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is sent to review")
+            @DocsGraph.StatePolicy(state = REVIEW, otherwise = "a review is published")
             """;
 
     @Test
@@ -74,11 +74,11 @@ class TypedTimeoutTest {
     @Test
     void refusesATimeoutOnASynchronousAction() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
                         timeout = @Timeout(seconds = 1))
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
 
         assertFalse(result.success(), result.describe());
@@ -88,10 +88,10 @@ class TypedTimeoutTest {
     /** The operations of the fixture, publishing with the asynchronous action and {@code extra} declared on it. */
     private static String archive(String extra) {
         return """
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Archive.class%s)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Archive.class%s)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """.formatted(extra);
     }
 }

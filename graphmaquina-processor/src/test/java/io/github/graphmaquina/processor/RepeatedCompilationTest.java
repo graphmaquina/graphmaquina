@@ -160,6 +160,10 @@ class RepeatedCompilationTest {
                 package fx;
                 public enum DocStatus { DRAFT, LIVE }
                 """);
+        sources.put("fx.DocTransition", """
+                package fx;
+                public enum DocTransition { RELEASE }
+                """);
         sources.put("fx.Doc", """
                 package fx;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -176,7 +180,7 @@ class RepeatedCompilationTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class DocActions {
-                    @GraphAction public ActionOutcome release(TransitionContext<Doc, DocStatus> context) {
+                    @GraphAction public ActionOutcome release(TransitionContext<Doc, DocStatus, DocTransition> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -187,14 +191,14 @@ class RepeatedCompilationTest {
                 import io.github.graphmaquina.api.Outcome;
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
                 import static fx.DocStatus.*;
+                import static fx.DocTransition.*;
                 @GenerateGraphApi
                 @DocsGraph.Definition(initial = DRAFT, terminals = LIVE,
                     state = DocRefs.Status.class, id = DocRefs.Code.class)
-                @DocsGraph.Row(state = DRAFT, otherwise = "release before finishing")
-                @DocsGraph.Row(state = LIVE, otherwise = "a release is final")
-                public interface Docs extends Machine<Doc, DocStatus> {
-                    @DocsGraph.Action(from = DRAFT, to = LIVE, action = DocActionsRefs.Release.class)
-                    Outcome<Doc, DocStatus> release(Doc doc);
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "release before finishing")
+                public interface Docs extends Machine<Doc, DocStatus, DocTransition> {
+                    @DocsGraph.Transition(id = RELEASE, from = DRAFT, to = LIVE, action = DocActionsRefs.Release.class)
+                    Outcome<Doc, DocStatus, DocTransition> release(Doc doc);
                 }
                 """);
         return sources;

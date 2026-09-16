@@ -91,6 +91,41 @@ it is never converted and never read half-way. The single exception is the inven
 (`owned-outputs.json`), which carries paths and no graph: a previous cycle's inventory is still read, solely so
 the outputs that cycle owned can be deleted. `clean` is always a complete migration path.
 
+## Annotation processor
+
+The processor reads the schema 2 manifest and the vocabulary above, normalises both to the same `MachineOutline`
+the DSL builds, and validates them with `MachineOutlineValidator`. What it generates changed with the contract.
+
+| 1.x generated companion | 2.0 |
+|---|---|
+| `KEY = MachineKey.of(E.class, S.class)` | `KEY = MachineKey.of(E.class, S.class, T.class)`, and every generic of the companion carries the third parameter. |
+| `graph()` builds row by row: `.from(s)`, `.to(s)`, `.stay()`, `.forbidOthers(reason)`. | `graph()` builds edge by edge: `.statePolicy(s, reason)`, `.reject(s, t, reason)` and one `.transition(t, from, to) … .endTransition()` per declared edge, in declaration order. No `.stay()` and no `.forbidOthers(` are emitted, because neither exists. |
+| An operation delegates to `stateMachine.transitionTo(entity, S.TARGET[, input])`. | An operation delegates to `stateMachine.execute(entity, T.ID[, input])`. Two operations reaching the same state never substitute for each other. |
+| A watch is emitted as `.watches(peerKey, peersOf, ownerOf)` with `.when(c).goTo(state)`. | A watch is emitted as `.watch(state, peerKey, peersOf, ownerOf)` with `.when(c).execute(T.ID)` and `.endWatch()`; the peer key carries the peer's transition enum. |
+| The facade implements `allowedFrom(S)` and `<T> CompletableFuture<T> async(Supplier<T>)`. | It implements `Set<T> transitionsFrom(S)` and `<R> CompletableFuture<R> async(Supplier<R>)`. |
+
+### Diagnostics of the processor
+
+| Code | 2.0 |
+|---|---|
+| SG102 | Now keyed by `(from, id)`, plus a state that declares two policies and a state that rejects one identifier twice. It is never raised for two declarations that merely share endpoints. |
+| SG504 | An operation is `Outcome<E, S, T> op(E)` or `op(E, I)` and must carry **at least one** `Transition` of its own vocabulary. The 1.x rule "exactly one of `Action` or `Move`" is gone: a method may open several branches of one identifier. The input restrictions — arity, return type, entity parameter, no generic method, no varargs — are unchanged. |
+| SG506 | Retired from the processor along with the row it closed. A non-terminal state with no outgoing edge is SG202 and a state with no rejection policy is SG701. |
+| SG703 | New. Two annotations of one method name different identifiers, or two methods claim the same identifier. A `TYPE`-level `Transition` may add further branches of an identifier a method owns, as long as their keys are disjoint. |
+| SG609 | The retired annotations are recognised by their qualified names — `io.github.graphmaquina.annotation.StateGraph`, `Row`, `Rows`, `Cell`, `Cells`, `Forbid`, `Forbids`, `Action`, `Move`, `Watch`, `Watches`, `When` — and are reported wherever a compilation still resolves them from an older release. They are not kept loadable for the sake of the diagnostic. |
+
+If a source still *imports* one of those twelve types, javac refuses the import before any processor runs and
+SG609 is never reached. The replacement of each one is the table in *Generated vocabulary and build artefacts*
+above: `Row`→`StatePolicy`, `Cell`/`Action`/`Move`→`Transition`, `Forbid`→`Reject`, and the per-pair
+`Watch`/`Watches`/`When` generated for each `@GraphPeers` declaration. Mark the bound members with
+`@GraphAction`, `@GraphGuard`, `@GraphHook`, `@GraphCondition` or `@GraphProperty`, and name each of them as
+`<Host>Refs.<Member>.class`.
+
+An element a generated annotation requires is still javac's own error, not a diagnostic of this tool. Which
+element that is has changed: `Transition.action` has an empty default, because an absent action means the edge
+is a move, while `Transition.id` is mandatory. A declaration that omits `id` is `is missing a default value for
+the element 'id'`.
+
 ## What did not change
 
 Guard order, timeouts and deadlines, no automatic cancellation of external stages, the UnitOfWork with its poison

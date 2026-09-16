@@ -1,10 +1,5 @@
 package io.github.graphmaquina.processor;
 
-import io.github.graphmaquina.annotation.Action;
-import io.github.graphmaquina.annotation.Cell;
-import io.github.graphmaquina.annotation.Cells;
-import io.github.graphmaquina.annotation.Forbid;
-import io.github.graphmaquina.annotation.Forbids;
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.GraphAction;
 import io.github.graphmaquina.annotation.GraphBindings;
@@ -13,15 +8,8 @@ import io.github.graphmaquina.annotation.GraphGuard;
 import io.github.graphmaquina.annotation.GraphHook;
 import io.github.graphmaquina.annotation.GraphPeers;
 import io.github.graphmaquina.annotation.GraphProperty;
-import io.github.graphmaquina.annotation.Move;
-import io.github.graphmaquina.annotation.Row;
-import io.github.graphmaquina.annotation.Rows;
-import io.github.graphmaquina.annotation.StateGraph;
 import io.github.graphmaquina.annotation.StateGraphs;
 import io.github.graphmaquina.annotation.Timeout;
-import io.github.graphmaquina.annotation.Watch;
-import io.github.graphmaquina.annotation.Watches;
-import io.github.graphmaquina.annotation.When;
 import io.github.graphmaquina.annotation.internal.GeneratedSymbol;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.GraphCompilation;
@@ -149,20 +137,18 @@ final class ManifestRegistry {
 
     /**
      * The annotations this processor owns whatever a compilation generates: every stable marker, the internal
-     * metadata the generator writes, the deprecated v0.2 vocabulary it only claims to report {@code SG609} at,
-     * and the {@code @Generated} it writes itself, so it coexists with other processors instead of claiming a
-     * package.
+     * metadata the generator writes, the retired matrix vocabulary it only claims by name to report
+     * {@code SG609} at, and the {@code @Generated} it writes itself, so it coexists with other processors
+     * instead of claiming a package. The retired names are strings because those types no longer exist here;
+     * only a compilation that still resolves one of them from an older release ever matches.
      */
-    @SuppressWarnings("deprecation")
     private static Set<String> fixed() {
         List<Class<? extends Annotation>> types = List.of(
             GenerateGraphApi.class, GraphPeers.class, GraphAction.class, GraphGuard.class, GraphHook.class,
             GraphCondition.class, GraphProperty.class, GraphBindings.class, Timeout.class,
-            GeneratedVocabulary.class, GeneratedSymbol.class, GraphCompilation.class,
-            StateGraph.class, StateGraphs.class, Row.class, Rows.class, Action.class, Move.class,
-            Cell.class, Cells.class, Forbid.class, Forbids.class, Watch.class, Watches.class, When.class,
+            GeneratedVocabulary.class, GeneratedSymbol.class, GraphCompilation.class, StateGraphs.class,
             Generated.class);
-        Set<String> names = new TreeSet<>();
+        Set<String> names = new TreeSet<>(LegacyDeclarations.retiredAnnotationTypes());
         for (Class<? extends Annotation> type : types) {
             names.add(type.getCanonicalName());
         }

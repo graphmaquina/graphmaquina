@@ -16,9 +16,9 @@ class TypedCardinalityTest {
     private static final String HEADER = """
             @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED, allowsCycle = REVIEW,
                 state = DocRefs.Status.class, id = DocRefs.Id.class)
-            @DocsGraph.Row(state = DRAFT, otherwise = "a draft is sent to review")
-            @DocsGraph.Row(state = REVIEW, otherwise = "a review is published or sent back")
-            @DocsGraph.Cell(from = REVIEW, to = DRAFT)
+            @DocsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is sent to review")
+            @DocsGraph.StatePolicy(state = REVIEW, otherwise = "a review is published or sent back")
+            @DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)
             """;
 
     @Test
@@ -27,12 +27,12 @@ class TypedCardinalityTest {
         assertTrue(none.success(), none.describe());
         assertFalse(none.generated("fx.DocsRuntime").contains(".onFailure("), none.generated("fx.DocsRuntime"));
 
-        Compilation.Result one = Compilation.compileTyped(TypedFixtures.graph(HEADER, publish(", onFailure = DRAFT")));
+        Compilation.Result one = Compilation.compileTyped(TypedFixtures.graph(HEADER, publish(", onFailure = RETURN")));
         assertTrue(one.success(), one.describe());
-        assertTrue(one.generated("fx.DocsRuntime").contains(".onFailure(DocStatus.DRAFT)"), one.generated("fx.DocsRuntime"));
+        assertTrue(one.generated("fx.DocsRuntime").contains(".onFailure(DocTransition.RETURN)"), one.generated("fx.DocsRuntime"));
 
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(HEADER,
-                publish(", onFailure = {DRAFT, REVIEW}")));
+                publish(", onFailure = {RETURN, SUBMIT}")));
         assertFalse(many.success(), many.describe());
         assertTrue(many.hasError("SG607"), many.describe());
     }
@@ -72,15 +72,19 @@ class TypedCardinalityTest {
     }
 
     @Test
-    void readsNoneOneAndRefusesTwoActionsOfACell() {
+    void readsNoneOneAndRefusesTwoActionsOfATransition() {
         Compilation.Result none = Compilation.compileTyped(TypedFixtures.graph(HEADER, publish("")));
         assertTrue(none.success(), none.describe());
-        assertTrue(none.generated("fx.DocsRuntime").contains(".to(DocStatus.DRAFT).move()"), none.generated("fx.DocsRuntime"));
+        assertTrue(none.generated("fx.DocsRuntime").contains(
+                ".transition(DocTransition.RETURN, DocStatus.REVIEW, DocStatus.DRAFT).endTransition()"),
+                none.generated("fx.DocsRuntime"));
 
         Compilation.Result one = Compilation.compileTyped(TypedFixtures.graph(
                 HEADER.replace("to = DRAFT)", "to = DRAFT, action = DocActionsRefs.Publish.class)"), publish("")));
         assertTrue(one.success(), one.describe());
-        assertTrue(one.generated("fx.DocsRuntime").contains(".to(DocStatus.DRAFT).action(\"publish\""), one.generated("fx.DocsRuntime"));
+        assertTrue(one.generated("fx.DocsRuntime").contains(
+                ".transition(DocTransition.RETURN, DocStatus.REVIEW, DocStatus.DRAFT).action(\"publish\""),
+                one.generated("fx.DocsRuntime"));
 
         Compilation.Result many = Compilation.compileTyped(TypedFixtures.graph(
                 HEADER.replace("to = DRAFT)",
@@ -93,20 +97,20 @@ class TypedCardinalityTest {
     /** The operations of the fixture, publishing with the synchronous action and {@code extra} declared on it. */
     private static String publish(String extra) {
         return """
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class%s)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class%s)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """.formatted(extra);
     }
 
     /** The same operations, publishing with the asynchronous action a timeout needs. */
     private static String archive(String extra) {
         return """
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Archive.class%s)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Archive.class%s)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """.formatted(extra);
     }
 }

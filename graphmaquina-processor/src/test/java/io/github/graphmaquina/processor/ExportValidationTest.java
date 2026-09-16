@@ -28,7 +28,7 @@ class ExportValidationTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class Hidden {
-                    @GraphAction private ActionOutcome publish(TransitionContext<Doc, DocStatus> context) {
+                    @GraphAction private ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -46,7 +46,7 @@ class ExportValidationTest {
                 import io.github.graphmaquina.annotation.GraphAction;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class Wrong {
-                    @GraphAction public String publish(TransitionContext<Doc, DocStatus> context) {
+                    @GraphAction public String publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
                         return "no";
                     }
                 }
@@ -64,7 +64,7 @@ class ExportValidationTest {
                 import io.github.graphmaquina.annotation.GraphGuard;
                 import io.github.graphmaquina.api.GuardContext;
                 public final class Voids {
-                    @GraphGuard public void approved(GuardContext<Doc, DocStatus> context) { }
+                    @GraphGuard public void approved(GuardContext<Doc, DocStatus, DocTransition> context) { }
                 }
                 """));
 
@@ -120,11 +120,11 @@ class ExportValidationTest {
                 import io.github.graphmaquina.api.GuardContext;
                 import io.github.graphmaquina.api.GuardResult;
                 import io.github.graphmaquina.api.TransitionContext;
-                public class BaseActions<E, S extends Enum<S>> {
-                    @GraphAction public ActionOutcome publish(TransitionContext<E, S> context) {
+                public class BaseActions<E, S extends Enum<S>, T extends Enum<T>> {
+                    @GraphAction public ActionOutcome publish(TransitionContext<E, S, T> context) {
                         return ActionOutcome.ok();
                     }
-                    @GraphGuard public GuardResult approved(GuardContext<E, S> context) {
+                    @GraphGuard public GuardResult approved(GuardContext<E, S, T> context) {
                         return GuardResult.pass();
                     }
                     @GraphHook public void notified(E entity) { }
@@ -197,7 +197,7 @@ class ExportValidationTest {
             import io.github.graphmaquina.api.ActionOutcome;
             import io.github.graphmaquina.api.TransitionContext;
             public final class Host {
-                @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> context) {
+                @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
                     return ActionOutcome.ok();
                 }
             }
@@ -219,6 +219,10 @@ class ExportValidationTest {
         sources.put("fx.DocStatus", """
                 package fx;
                 public enum DocStatus { DRAFT, PUBLISHED }
+                """);
+        sources.put("fx.DocTransition", """
+                package fx;
+                public enum DocTransition { PUBLISH }
                 """);
         sources.put("fx.Doc", """
                 package fx;
