@@ -1,12 +1,12 @@
 digraph "Entity/State" {
     rankdir=LR;
     initial [shape=point, label=""];
-    n0 [label="NEW", shape=ellipse];
-    n1 [label="READY", shape=ellipse];
-    n2 [label="DONE", shape=doublecircle];
-    n3 [label="FAILED", shape=doublecircle];
+    n0 [label="NEW", shape=ellipse, tooltip="otherwise: prepare first"];
+    n1 [label="READY", shape=ellipse, tooltip="otherwise: finish only"];
+    n2 [label="DONE", shape=doublecircle, tooltip="otherwise: terminal state DONE accepts no transitions"];
+    n3 [label="FAILED", shape=doublecircle, tooltip="otherwise: terminal state FAILED accepts no transitions"];
     initial -> n0;
-    n0 -> n1 [label="prepare [async] [if first, second]"];
-    n0 -> n3 [label="[failure of prepare]"];
-    n1 -> n2;
+    n0 -> n1 [label="PREPARE prepare [async] [if first, second] [onFailure RECOVER]"];
+    n0 -> n3 [label="RECOVER"];
+    n1 -> n2 [label="FINISH"];
 }

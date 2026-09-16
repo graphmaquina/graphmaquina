@@ -126,6 +126,34 @@ element that is has changed: `Transition.action` has an empty default, because a
 is a move, while `Transition.id` is mandatory. A declaration that omits `id` is `is missing a default value for
 the element 'id'`.
 
+## Testing library
+
+`graphmaquina-test` is a published artifact, so every one of these is a source change in a consumer's tests.
+Every generic of the library gains the third parameter: `GraphAssert<E, S, T>`, `OutcomeAssert<E, S, T>`,
+`TransitionRecordAssert<E, S, T>`, `WatchAssert<E, S, T>`, `ActionProbe<E, S, T>`, `GuardProbe<E, S, T>`,
+`ControlledAsyncAction<E, S, T>`, `ControlledAsyncGuard<E, S, T>` and the rest.
+
+| 1.x testing API | 2.0 |
+|---|---|
+| `GraphAssert.edge(from, to)` returns `EdgeAssert<E, S>`. | `GraphAssert.transition(from, id)` returns `TransitionAssert<E, S, T>`. `EdgeAssert` is gone; there is no view keyed by a destination. |
+| `EdgeAssert.isStay()` and `isForbidden()`. | Retired with the kinds. Absence is `GraphAssert.hasNoTransition(from, id)`; a declared self-loop is an ordinary `TransitionAssert` on `(from, id)`. |
+| `EdgeAssert.hasReason(text)` reads the reason of a FORBID cell. | `GraphAssert.policy(state)` returns `StatePolicyAssert<S, T>`, with `hasDefaultReason(text)` and `rejects(id, text)`. A reason belongs to a node, not to a cell. |
+| `EdgeAssert.hasFailureTarget(state)` / `hasNoFailureTarget()`. | `TransitionAssert.hasFailureTransition(id)` / `hasNoFailureTransition()`. |
+| `GraphAssert.hasAllowedTargetsExactly(from, targets…)`. | `GraphAssert.hasTransitionsExactly(from, ids…)`. Two identifiers reaching the same state are two entries, which no set of destinations could express. |
+| `BaseOutcomeAssert.requestedTarget(state)` on every variant. | `requestedTransition(id)` and `hasNoRequestedTransition()`. A rejected outcome has no destination to report and an ignored one has no identifier. `FailedOutcomeAssert` keeps the destination it was heading for as `hasTarget(state)` and adds `hasFailureTransition(id)`. |
+| `RejectedOutcomeAssert.isForbidden()`. | `hasNoTransition()`, which asserts `RejectionKind.NO_TRANSITION`. `isRejectedByGuardNamed(name)` now also asserts `RejectionKind.GUARD`. |
+| `IgnoredOutcomeAssert` carries only the shared expectations. | `hasReason(IgnoreReason)` says whether the state declared no watch or no rule held. |
+| `TransitionRecordAssert.isConvergent()` / `isNotConvergent()`. | Retired with `TransitionRecord.convergent`. A hop is identified by `hasTransition(id)` in addition to its endpoints, and `containsExactly` compares the identifier too. |
+| `JournalAssert.hasEntry(key, entity, from, to, action, depth, status)`. | `hasEntry(key, entity, from, transition, to, action, depth, status)`. |
+| `AbortAssert.at(key, entity, from, to)`. | `at(key, entity, from, transition, to)` for an abort that resolved its edge, and `atUnresolved(key, entity, from, transition)` for one refused before resolving any, which reports no destination. `AfterCommitAssert.at` is unchanged: the exception still names the committed hop by its endpoints. |
+| `WatchRuleExpectation<S>(condition, target)`. | `WatchRuleExpectation<T>(condition, transition)`: a rule names the identifier it executes. |
+| `ActionCall<E, S>(entity, from, to, depth[, input])` and `GuardCall<E, S>(entity, from, to[, input])`. | `ActionCall<E, S, T>(entity, from, transition, to, depth[, input])` and `GuardCall<E, S, T>(entity, from, transition, to[, input])`. The recorded per-invocation input of #5 is unchanged, and `CallInputAssert` is untouched. |
+| `GraphGoldens.assertMatches(definition, resource, Detail, options)`. | `Detail` is gone, so the overloads are `(definition, resource)` and `(definition, resource, options)`. The rendering draws the declared edges only. |
+| Structural snapshots are `graphmaquina-snapshot-v1` with `/cells/<from>/<to>/…`. | `graphmaquina-snapshot-v2` with `/transitions/<from>/<id>/…`, `/policies/<state>/…`, `/catalog/<index>` for the identifier enum and `/machine/transitions`. A watch rule records `/rules/<i>/transition` instead of `/target`. Absence has no path at all. `GraphSnapshot.parse` refuses a v1 document by name and says to regenerate it; it is never converted. |
+
+`GraphSnapshot.capture`, `GraphSnapshot.parse`, `GraphSnapshot.serialize`, `GraphDiff` and the golden store keep
+their signatures and their formats; only the paths inside a snapshot changed.
+
 ## What did not change
 
 Guard order, timeouts and deadlines, no automatic cancellation of external stages, the UnitOfWork with its poison

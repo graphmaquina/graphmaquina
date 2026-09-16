@@ -27,11 +27,11 @@ import java.util.function.BiFunction;
  */
 public final class TransitionRecorder implements TransitionListener {
 
-    private final Optional<BiFunction<MachineKey<?, ?>, Outcome<?, ?>, ?>> projector;
+    private final Optional<BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?>> projector;
     private final List<RecordedTransition> events = new ArrayList<>();
     private long nextSequence;
 
-    private TransitionRecorder(Optional<BiFunction<MachineKey<?, ?>, Outcome<?, ?>, ?>> projector) {
+    private TransitionRecorder(Optional<BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?>> projector) {
         this.projector = projector;
     }
 
@@ -41,13 +41,13 @@ public final class TransitionRecorder implements TransitionListener {
     }
 
     /** The projection runs on the notifying thread and must return a value; a null projection is rejected. */
-    public static TransitionRecorder projecting(BiFunction<MachineKey<?, ?>, Outcome<?, ?>, ?> projector) {
+    public static TransitionRecorder projecting(BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?> projector) {
         Objects.requireNonNull(projector, "projector");
         return new TransitionRecorder(Optional.of(projector));
     }
 
     @Override
-    public void onOutcome(MachineKey<?, ?> key, Outcome<?, ?> outcome) {
+    public void onOutcome(MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(outcome, "outcome");
         Optional<Object> captured =
@@ -74,7 +74,7 @@ public final class TransitionRecorder implements TransitionListener {
      */
     public static TransitionListener compose(TransitionListener... listeners) {
         List<TransitionListener> chain = List.of(listeners);
-        return (MachineKey<?, ?> key, Outcome<?, ?> outcome) -> {
+        return (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> {
             for (TransitionListener listener : chain) {
                 listener.onOutcome(key, outcome);
             }

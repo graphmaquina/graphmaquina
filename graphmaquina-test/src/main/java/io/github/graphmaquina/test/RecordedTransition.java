@@ -16,7 +16,7 @@ import java.util.Optional;
  * @param outcome the outcome the listener was given, exactly as published
  * @param projection the projected value captured when the callback arrived, or empty
  */
-public record RecordedTransition(long sequence, MachineKey<?, ?> key, Outcome<?, ?> outcome,
+public record RecordedTransition(long sequence, MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome,
         Optional<Object> projection) {
 
     public RecordedTransition {

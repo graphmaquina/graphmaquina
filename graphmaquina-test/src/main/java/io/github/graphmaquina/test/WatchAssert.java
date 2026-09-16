@@ -15,37 +15,39 @@ import java.util.Objects;
  *
  * @param <E> entity type of the watching machine
  * @param <S> state enum of the watching machine
+ * @param <T> transition identifier enum of the watching machine
  */
-public final class WatchAssert<E, S extends Enum<S>> {
+public final class WatchAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
-    private final WatchSpec<E, S, ?, ?> actual;
+    private final WatchSpec<E, S, T, ?, ?, ?> actual;
 
-    WatchAssert(String context, WatchSpec<E, S, ?, ?> actual) {
+    WatchAssert(String context, WatchSpec<E, S, T, ?, ?, ?> actual) {
         this.context = context;
         this.actual = actual;
     }
 
-    /** The machine the watch observes, compared as a whole key: both the entity class and the state enum. */
-    public WatchAssert<E, S> hasPeer(MachineKey<?, ?> expected) {
+    /** The machine the watch observes, compared as a whole key: entity class, state enum and identifiers. */
+    public WatchAssert<E, S, T> hasPeer(MachineKey<?, ?, ?> expected) {
         Objects.requireNonNull(expected, "expected");
-        WatchSpec<E, S, ?, ?> spec = Checks.subject(context, "peer", expected, actual);
+        WatchSpec<E, S, T, ?, ?, ?> spec = Checks.subject(context, "peer", expected, actual);
         Checks.equal(context, "peer", expected, spec.peer());
         return this;
     }
 
-    /** Compares condition names and targets in declaration order, keeping repeated rules. */
-    public WatchAssert<E, S> hasRulesExactly(List<WatchRuleExpectation<S>> expected) {
+    /** Compares condition names and executed identifiers in declaration order, keeping repeated rules. */
+    public WatchAssert<E, S, T> hasRulesExactly(List<WatchRuleExpectation<T>> expected) {
         Objects.requireNonNull(expected, "expected");
-        List<WatchRuleExpectation<S>> wanted = List.copyOf(expected);
-        WatchSpec<E, S, ?, ?> spec = Checks.subject(context, "rules", wanted, actual);
+        List<WatchRuleExpectation<T>> wanted = List.copyOf(expected);
+        WatchSpec<E, S, T, ?, ?, ?> spec = Checks.subject(context, "rules", wanted, actual);
         Checks.equal(context, "rules", wanted, rulesOf(spec));
         return this;
     }
 
-    private static <E, S extends Enum<S>> List<WatchRuleExpectation<S>> rulesOf(WatchSpec<E, S, ?, ?> spec) {
+    private static <E, S extends Enum<S>, T extends Enum<T>> List<WatchRuleExpectation<T>> rulesOf(
+            WatchSpec<E, S, T, ?, ?, ?> spec) {
         return spec.rules().stream()
-                .map(rule -> new WatchRuleExpectation<>(rule.condition().name(), rule.target()))
+                .map(rule -> new WatchRuleExpectation<>(rule.condition().name(), rule.transition()))
                 .toList();
     }
 }

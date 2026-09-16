@@ -11,13 +11,14 @@ import io.github.graphmaquina.test.internal.CheckedTypes;
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
+ * @param <T> transition identifier enum of the machine
  */
-public final class DoneReactionAssert<E, S extends Enum<S>> {
+public final class DoneReactionAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
-    private final MachineKey<E, S> key;
+    private final MachineKey<E, S, T> key;
     private final Reaction.Done done;
 
-    DoneReactionAssert(MachineKey<E, S> key, Reaction.Done done) {
+    DoneReactionAssert(MachineKey<E, S, T> key, Reaction.Done done) {
         this.key = key;
         this.done = done;
     }
@@ -27,7 +28,7 @@ public final class DoneReactionAssert<E, S extends Enum<S>> {
      * its outcome untyped, so an outcome that does not belong to that machine is a programming error in the
      * calling test and raises {@link IllegalArgumentException} rather than being cast blindly.
      */
-    public OutcomeAssert<E, S> outcome() {
+    public OutcomeAssert<E, S, T> outcome() {
         return OutcomeAssert.assertThat(CheckedTypes.outcome(key, done.outcome()));
     }
 }

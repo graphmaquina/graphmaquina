@@ -12,24 +12,25 @@ import io.github.graphmaquina.test.internal.Checks;
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
+ * @param <T> transition identifier enum of the machine
  */
-public final class ReactionAssert<E, S extends Enum<S>> {
+public final class ReactionAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
-    private final MachineKey<E, S> key;
+    private final MachineKey<E, S, T> key;
     private final Reaction actual;
 
-    ReactionAssert(String context, MachineKey<E, S> key, Reaction actual) {
+    ReactionAssert(String context, MachineKey<E, S, T> key, Reaction actual) {
         this.context = context;
         this.key = key;
         this.actual = actual;
     }
 
-    public DoneReactionAssert<E, S> isDone() {
+    public DoneReactionAssert<E, S, T> isDone() {
         return new DoneReactionAssert<>(key, (Reaction.Done) narrow("Done"));
     }
 
-    public AbortedReactionAssert<E, S> isAborted() {
+    public AbortedReactionAssert<E, S, T> isAborted() {
         return new AbortedReactionAssert<>(context, (Reaction.Aborted) narrow("Aborted"));
     }
 

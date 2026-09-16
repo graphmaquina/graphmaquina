@@ -9,7 +9,9 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.TransitionAction;
@@ -29,6 +31,7 @@ import io.github.graphmaquina.test.ReactionsAssert;
 import io.github.graphmaquina.test.TypedReactionsAssert;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import java.time.Duration;
@@ -54,7 +57,7 @@ class ReactionAssertionsTest {
         Entity entity = new Entity("e", State.READY);
         Reaction.Aborted aborted =
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("down"));
-        Outcome.Applied<Entity, State> nested = new Outcome.Applied<>(entity, State.NEW, State.READY,
+        Outcome.Applied<Entity, State, Id> nested = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
                 List.of(), List.of(aborted));
         List<Reaction> reactions = List.of(new Reaction.Done(TestDomain.KEY, entity, nested));
         ReactionsAssert.assertThat(reactions).hasNoAborted();
@@ -120,7 +123,8 @@ class ReactionAssertionsTest {
         Entity entity = new Entity("e", State.READY);
         Reaction.Aborted deep =
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("deep"));
-        Outcome.Failed<Entity, State> failed = new Outcome.Failed<>(entity, State.NEW, State.READY,
+        Outcome.Failed<Entity, State, Id> failed = new Outcome.Failed<>(entity, State.NEW, Id.PREPARE,
+                State.READY, Id.RECOVER,
                 State.FAILED, "boom", Optional.empty(), List.of(), List.of(deep));
         ReactionsAssert view = ReactionsAssert.assertThat(List.of(done(entity, failed)));
         assertSame(view, view.hasNoAborted());
@@ -135,9 +139,9 @@ class ReactionAssertionsTest {
         Entity entity = new Entity("e", State.READY);
         Reaction.Aborted deepest =
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("deepest"));
-        Outcome.Applied<Entity, State> grandchild = new Outcome.Applied<>(entity, State.NEW, State.READY,
-                List.of(), List.of(deepest));
-        Outcome.Applied<Entity, State> child = new Outcome.Applied<>(entity, State.NEW, State.READY,
+        Outcome.Applied<Entity, State, Id> grandchild = new Outcome.Applied<>(entity, State.NEW,
+                Id.PREPARE, State.READY, List.of(), List.of(deepest));
+        Outcome.Applied<Entity, State, Id> child = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
                 List.of(), List.of(done(entity, grandchild)));
         assertFailure(assertThrows(GraphAssertionError.class,
                         () -> ReactionsAssert.assertThat(List.of(done(entity, child))).hasNoAbortedRecursively()),
@@ -150,7 +154,7 @@ class ReactionAssertionsTest {
         Entity entity = new Entity("e", State.READY);
         Reaction.Aborted deep =
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("deep"));
-        Outcome.Applied<Entity, State> child = new Outcome.Applied<>(entity, State.NEW, State.READY,
+        Outcome.Applied<Entity, State, Id> child = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
                 List.of(), List.of(deep));
         Reaction.Aborted shallow =
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("shallow"));
@@ -166,9 +170,9 @@ class ReactionAssertionsTest {
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("first"));
         Reaction.Aborted underTheSecond =
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("second"));
-        Outcome.Applied<Entity, State> left = new Outcome.Applied<>(entity, State.NEW, State.READY,
+        Outcome.Applied<Entity, State, Id> left = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
                 List.of(), List.of(underTheFirst));
-        Outcome.Applied<Entity, State> right = new Outcome.Applied<>(entity, State.NEW, State.READY,
+        Outcome.Applied<Entity, State, Id> right = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
                 List.of(), List.of(underTheSecond));
         assertFailure(assertThrows(GraphAssertionError.class, () -> ReactionsAssert
                         .assertThat(List.of(done(entity, left), done(entity, right)))
@@ -180,9 +184,9 @@ class ReactionAssertionsTest {
     void anIgnoredOrRejectedReactionOutcomeCarriesNoDescendants() {
         Entity entity = new Entity("e", State.READY);
         ReactionsAssert view = ReactionsAssert.assertThat(List.of(
-                done(entity, new Outcome.Ignored<>(entity, State.READY, State.DONE)),
-                done(entity, new Outcome.Rejected<>(entity, State.READY, State.NEW, "forbidden",
-                        Optional.empty()))));
+                done(entity, new Outcome.Ignored<>(entity, State.READY, IgnoreReason.NO_WATCH)),
+                done(entity, new Outcome.Rejected<>(entity, State.READY, Id.FINISH, "forbidden",
+                        RejectionKind.NO_TRANSITION, Optional.empty()))));
         assertSame(view, view.hasNoAborted());
         assertSame(view, view.hasNoAbortedRecursively());
     }
@@ -192,7 +196,7 @@ class ReactionAssertionsTest {
         Entity entity = new Entity("e", State.READY);
         Reaction.Aborted deep =
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("deep"));
-        Outcome.Applied<Entity, State> shared = new Outcome.Applied<>(entity, State.NEW, State.READY,
+        Outcome.Applied<Entity, State, Id> shared = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
                 List.of(), List.of(deep));
         assertFailure(assertThrows(GraphAssertionError.class, () -> ReactionsAssert
                         .assertThat(List.of(done(entity, shared), done(entity, shared)))
@@ -226,7 +230,7 @@ class ReactionAssertionsTest {
         Entity twin = new Entity("same-id", State.READY);
         Other other = new Other("o");
         List<Reaction> reactions = List.of(done(entity, applied(entity)),
-                new Reaction.Done(OTHERS, other, new Outcome.Ignored<>(other, Flag.OFF, Flag.ON)));
+                new Reaction.Done(OTHERS, other, new Outcome.Ignored<>(other, Flag.OFF, IgnoreReason.NO_WATCH)));
         ReactionsAssert view = ReactionsAssert.assertThat(reactions);
         view.hasSize(2);
         view.forEntity(TestDomain.KEY, entity).single().isDone().outcome().isApplied().movedTo(State.READY);
@@ -241,7 +245,7 @@ class ReactionAssertionsTest {
         assertEquals(other, twin);
         assertNotSame(other, twin);
         ReactionsAssert view = ReactionsAssert.assertThat(List.of(
-                new Reaction.Done(OTHERS, other, new Outcome.Ignored<>(other, Flag.OFF, Flag.ON))));
+                new Reaction.Done(OTHERS, other, new Outcome.Ignored<>(other, Flag.OFF, IgnoreReason.NO_WATCH))));
         view.forEntity(OTHERS, other).single().isDone().outcome().isIgnored().from(Flag.OFF);
         view.forEntity(OTHERS, twin).hasSize(0);
     }
@@ -250,7 +254,7 @@ class ReactionAssertionsTest {
     void selectionSeparatesTwoMachinesOverTheSameEntityInstance() {
         Entity entity = new Entity("e", State.READY);
         List<Reaction> both = List.of(done(entity, applied(entity)),
-                new Reaction.Done(SHELVES, entity, new Outcome.Ignored<>(entity, Shelf.OUT, Shelf.IN)));
+                new Reaction.Done(SHELVES, entity, new Outcome.Ignored<>(entity, Shelf.OUT, IgnoreReason.NO_WATCH)));
         ReactionsAssert view = ReactionsAssert.assertThat(both);
         view.hasSize(2);
         view.forEntity(TestDomain.KEY, entity).single().isDone().outcome()
@@ -262,7 +266,7 @@ class ReactionAssertionsTest {
     void anEntityWithNoReactionsSelectsAnEmptyViewRatherThanFailing() {
         Entity entity = new Entity("e", State.READY);
         Entity absent = new Entity("absent", State.READY);
-        TypedReactionsAssert<Entity, State> selected = ReactionsAssert
+        TypedReactionsAssert<Entity, State, Id> selected = ReactionsAssert
                 .assertThat(List.of(done(entity, applied(entity)))).forEntity(TestDomain.KEY, absent);
         assertSame(selected, selected.hasSize(0));
         assertFailure(assertThrows(GraphAssertionError.class, selected::single),
@@ -274,14 +278,14 @@ class ReactionAssertionsTest {
         Entity entity = new Entity("e", State.READY);
         Reaction.Aborted aborted =
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("down"));
-        TypedReactionsAssert<Entity, State> selected = ReactionsAssert
+        TypedReactionsAssert<Entity, State, Id> selected = ReactionsAssert
                 .assertThat(List.of(done(entity, applied(entity)), aborted,
-                        done(entity, new Outcome.Ignored<>(entity, State.READY, State.DONE))))
+                        done(entity, new Outcome.Ignored<>(entity, State.READY, IgnoreReason.NO_WATCH))))
                 .forEntity(TestDomain.KEY, entity);
         selected.hasSize(3);
         selected.atIndex(0).isDone().outcome().isApplied().movedTo(State.READY);
         selected.atIndex(1).isAborted().hasCauseSameAs(aborted.cause());
-        selected.atIndex(2).isDone().outcome().isIgnored().requestedTarget(State.DONE);
+        selected.atIndex(2).isDone().outcome().isIgnored().hasReason(IgnoreReason.NO_WATCH);
         assertFailure(assertThrows(GraphAssertionError.class, selected::single),
                 "reactions for " + TestDomain.KEY, "size", 1, 3);
     }
@@ -289,7 +293,7 @@ class ReactionAssertionsTest {
     @Test
     void anIndexBeyondTheSelectionFailsAsAnAssertion() {
         Entity entity = new Entity("e", State.READY);
-        TypedReactionsAssert<Entity, State> selected = ReactionsAssert
+        TypedReactionsAssert<Entity, State, Id> selected = ReactionsAssert
                 .assertThat(List.of(done(entity, applied(entity)))).forEntity(TestDomain.KEY, entity);
         assertFailure(assertThrows(GraphAssertionError.class, () -> selected.atIndex(1)),
                 "reactions for " + TestDomain.KEY, "index 1 present", true, false);
@@ -300,7 +304,7 @@ class ReactionAssertionsTest {
     @Test
     void aNegativeIndexIsAnArgumentError() {
         Entity entity = new Entity("e", State.READY);
-        TypedReactionsAssert<Entity, State> selected = ReactionsAssert
+        TypedReactionsAssert<Entity, State, Id> selected = ReactionsAssert
                 .assertThat(List.of(done(entity, applied(entity)))).forEntity(TestDomain.KEY, entity);
         assertEquals("index must not be negative: -1",
                 assertThrows(IllegalArgumentException.class, () -> selected.atIndex(-1)).getMessage());
@@ -312,10 +316,10 @@ class ReactionAssertionsTest {
     void aReactionIsEitherDoneOrAborted() {
         Entity entity = new Entity("e", State.READY);
         String where = "reactions for " + TestDomain.KEY + "[0]";
-        ReactionAssert<Entity, State> ok = single(done(entity, applied(entity)), entity);
+        ReactionAssert<Entity, State, Id> ok = single(done(entity, applied(entity)), entity);
         assertFailure(assertThrows(GraphAssertionError.class, ok::isAborted),
                 where, "kind", "Aborted", "Done");
-        ReactionAssert<Entity, State> broken = single(
+        ReactionAssert<Entity, State, Id> broken = single(
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("down")), entity);
         assertFailure(assertThrows(GraphAssertionError.class, broken::isDone),
                 where, "kind", "Done", "Aborted");
@@ -326,14 +330,14 @@ class ReactionAssertionsTest {
         Entity entity = new Entity("e", State.READY);
         single(done(entity, applied(entity)), entity).isDone().outcome().isApplied()
                 .movedTo(State.READY).from(State.NEW).hasEntitySameAs(entity);
-        single(done(entity, new Outcome.Ignored<>(entity, State.READY, State.DONE)), entity)
-                .isDone().outcome().isIgnored().requestedTarget(State.DONE).hasRecordedState(State.READY);
-        single(done(entity, new Outcome.Rejected<>(entity, State.READY, State.NEW, "forbidden",
-                Optional.empty())), entity)
-                .isDone().outcome().isRejected().isForbidden().hasReason("forbidden");
-        single(done(entity, new Outcome.Failed<>(entity, State.NEW, State.READY, State.FAILED, "boom",
-                Optional.empty(), List.of(), List.of())), entity)
-                .isDone().outcome().isFailed().movedTo(State.FAILED).requestedTarget(State.READY);
+        single(done(entity, new Outcome.Ignored<>(entity, State.READY, IgnoreReason.NO_WATCH)), entity)
+                .isDone().outcome().isIgnored().hasNoRequestedTransition().hasRecordedState(State.READY);
+        single(done(entity, new Outcome.Rejected<>(entity, State.READY, Id.FINISH, "forbidden",
+                RejectionKind.NO_TRANSITION, Optional.empty())), entity)
+                .isDone().outcome().isRejected().hasNoTransition().hasReason("forbidden");
+        single(done(entity, new Outcome.Failed<>(entity, State.NEW, Id.PREPARE, State.READY, Id.RECOVER,
+                State.FAILED, "boom", Optional.empty(), List.of(), List.of())), entity)
+                .isDone().outcome().isFailed().movedTo(State.FAILED).hasTarget(State.READY);
     }
 
     @Test
@@ -341,7 +345,7 @@ class ReactionAssertionsTest {
         Entity entity = new Entity("e", State.READY);
         IllegalStateException cause = new IllegalStateException("down");
         IllegalStateException twin = new IllegalStateException("down");
-        AbortedReactionAssert<Entity, State> view =
+        AbortedReactionAssert<Entity, State, Id> view =
                 single(new Reaction.Aborted(TestDomain.KEY, entity, cause), entity).isAborted();
         String where = "reactions for " + TestDomain.KEY + "[0]";
         assertSame(view, view.hasCause(IllegalStateException.class));
@@ -370,7 +374,7 @@ class ReactionAssertionsTest {
         EqualCause twin = new EqualCause();
         assertEquals(cause, twin);
         assertNotSame(cause, twin);
-        AbortedReactionAssert<Entity, State> view =
+        AbortedReactionAssert<Entity, State, Id> view =
                 single(new Reaction.Aborted(TestDomain.KEY, entity, cause), entity).isAborted();
         assertSame(view, view.hasCauseSameAs(cause));
         GraphAssertionError error =
@@ -386,7 +390,7 @@ class ReactionAssertionsTest {
         Entity entity = new Entity("e", State.READY);
         AfterCommitException cause = new AfterCommitException(TestDomain.KEY, entity, State.NEW,
                 State.READY, "audit", new IllegalStateException("the hook threw"));
-        AbortedReactionAssert<Entity, State> view =
+        AbortedReactionAssert<Entity, State, Id> view =
                 single(new Reaction.Aborted(TestDomain.KEY, entity, cause), entity).isAborted();
         view.hasCause(AfterCommitException.class).hasCauseSameAs(cause);
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -400,7 +404,8 @@ class ReactionAssertionsTest {
     @Test
     void anOutcomeWhoseEntityDoesNotMatchTheKeyIsNeverCast() {
         Other other = new Other("o");
-        Outcome<Other, Flag> corrupt = new Outcome.Applied<>(other, Flag.OFF, Flag.ON, List.of(), List.of());
+        Outcome<Other, Flag, Switch> corrupt =
+                new Outcome.Applied<>(other, Flag.OFF, Switch.FLIP, Flag.ON, List.of(), List.of());
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> CheckedTypes.outcome(TestDomain.KEY, corrupt));
         assertEquals("outcome does not belong to the machine: entity expected " + Entity.class
@@ -410,8 +415,8 @@ class ReactionAssertionsTest {
     @Test
     void anOutcomeWhoseStatesDoNotMatchTheKeyIsNeverCast() {
         Entity entity = new Entity("e", State.READY);
-        Outcome<Entity, Flag> corrupt =
-                new Outcome.Applied<>(entity, Flag.OFF, Flag.ON, List.of(), List.of());
+        Outcome<Entity, Flag, Switch> corrupt =
+                new Outcome.Applied<>(entity, Flag.OFF, Switch.FLIP, Flag.ON, List.of(), List.of());
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> CheckedTypes.outcome(TestDomain.KEY, corrupt));
         assertEquals("outcome does not belong to the machine: states expected " + State.class
@@ -419,34 +424,35 @@ class ReactionAssertionsTest {
     }
 
     /**
-     * The three states an outcome names can diverge: a rejected one never moved, so its requested target is
-     * neither its origin nor the state it records as current, and a failed one records a third state again.
-     * Only a raw construction can carry a foreign enum in one of them, and each is checked on its own.
+     * A failed outcome names three states that can diverge — its origin, the destination it was heading for
+     * and the route it committed — and every outcome but an ignored one names the identifier it was asked
+     * for. Only a raw construction can carry a foreign enum in one of them, and each is checked on its own.
      */
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
-    void aStateOfAForeignEnumIsNeverCastWhicheverFieldCarriesIt() {
+    void aForeignEnumIsNeverCastWhicheverFieldCarriesIt() {
         Entity entity = new Entity("e", State.READY);
-        Outcome<?, ?> foreignTarget = (Outcome<?, ?>) new Outcome.Rejected(
-                entity, State.NEW, Flag.ON, "forbidden", Optional.empty());
-        assertEquals("outcome does not belong to the machine: states expected " + State.class
-                        + " but was " + List.of(State.NEW, State.NEW, Flag.ON),
-                assertThrows(IllegalArgumentException.class,
-                        () -> CheckedTypes.outcome(TestDomain.KEY, foreignTarget)).getMessage());
-        Outcome<?, ?> foreignRoute = (Outcome<?, ?>) new Outcome.Failed(
-                entity, State.NEW, State.READY, Flag.ON, "boom", Optional.empty(), List.of(), List.of());
+        Outcome<?, ?, ?> foreignRoute = (Outcome<?, ?, ?>) new Outcome.Failed(
+                entity, State.NEW, Id.PREPARE, State.READY, Id.RECOVER, Flag.ON, "boom", Optional.empty(),
+                List.of(), List.of());
         assertEquals("outcome does not belong to the machine: states expected " + State.class
                         + " but was " + List.of(State.NEW, Flag.ON, State.READY),
                 assertThrows(IllegalArgumentException.class,
                         () -> CheckedTypes.outcome(TestDomain.KEY, foreignRoute)).getMessage());
+        Outcome<?, ?, ?> foreignTransition = (Outcome<?, ?, ?>) new Outcome.Rejected(
+                entity, State.NEW, Flag.ON, "forbidden", RejectionKind.NO_TRANSITION, Optional.empty());
+        assertEquals("outcome does not belong to the machine: transitions expected " + Id.class
+                        + " but was " + Optional.of(Flag.ON),
+                assertThrows(IllegalArgumentException.class,
+                        () -> CheckedTypes.outcome(TestDomain.KEY, foreignTransition)).getMessage());
     }
 
     @Test
     void anOutcomeInsideAManuallyBuiltDoneIsCheckedWhenItIsRead() {
         Entity entity = new Entity("e", State.READY);
-        Outcome<Entity, Flag> corrupt =
-                new Outcome.Applied<>(entity, Flag.OFF, Flag.ON, List.of(), List.of());
-        ReactionAssert<Entity, State> view =
+        Outcome<Entity, Flag, Switch> corrupt =
+                new Outcome.Applied<>(entity, Flag.OFF, Switch.FLIP, Flag.ON, List.of(), List.of());
+        ReactionAssert<Entity, State, Id> view =
                 single(new Reaction.Done(TestDomain.KEY, entity, corrupt), entity);
         assertThrows(IllegalArgumentException.class, () -> view.isDone().outcome());
     }
@@ -456,7 +462,7 @@ class ReactionAssertionsTest {
     @Test
     void anAppliedOutcomeExposesItsReactions() {
         Entity entity = new Entity("e", State.READY);
-        Outcome<Entity, State> outcome = new Outcome.Applied<>(entity, State.NEW, State.READY,
+        Outcome<Entity, State, Id> outcome = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
                 List.of(), List.of(done(entity, applied(entity))));
         ReactionsAssert reactions = OutcomeAssert.assertThat(outcome).isApplied().reactions();
         assertSame(reactions, reactions.hasSize(1));
@@ -466,11 +472,11 @@ class ReactionAssertionsTest {
     @Test
     void aFailedOutcomeExposesItsReactions() {
         Entity entity = new Entity("e", State.READY);
-        List<TransitionRecord<?, ?>> records = List.of();
+        List<TransitionRecord<?, ?, ?>> records = List.of();
         Reaction.Aborted aborted =
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("down"));
-        Outcome<Entity, State> outcome = new Outcome.Failed<>(entity, State.NEW, State.READY, State.FAILED,
-                "boom", Optional.empty(), records, List.of(aborted));
+        Outcome<Entity, State, Id> outcome = new Outcome.Failed<>(entity, State.NEW, Id.PREPARE, State.READY,
+                Id.RECOVER, State.FAILED, "boom", Optional.empty(), records, List.of(aborted));
         ReactionsAssert reactions = OutcomeAssert.assertThat(outcome).isFailed().reactions();
         reactions.hasSize(1);
         assertThrows(GraphAssertionError.class, reactions::hasNoAborted);
@@ -481,7 +487,7 @@ class ReactionAssertionsTest {
     @Test
     void anOutcomeWithoutReactionsExposesAnEmptyView() {
         Entity entity = new Entity("e", State.READY);
-        Outcome<Entity, State> outcome = new Outcome.Applied<>(entity, State.NEW, State.READY,
+        Outcome<Entity, State, Id> outcome = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
                 List.of(), List.of());
         OutcomeAssert.assertThat(outcome).isApplied().reactions().isEmpty();
     }
@@ -542,7 +548,7 @@ class ReactionAssertionsTest {
     @Test
     void aNullExpectedCauseIsAnArgumentError() {
         Entity entity = new Entity("e", State.READY);
-        AbortedReactionAssert<Entity, State> view = single(
+        AbortedReactionAssert<Entity, State, Id> view = single(
                 new Reaction.Aborted(TestDomain.KEY, entity, new IllegalStateException("down")), entity)
                 .isAborted();
         assertEquals("expected",
@@ -570,13 +576,13 @@ class ReactionAssertionsTest {
     void aReactionThatAbortsIsReportedOnTheCommitThatTriggeredIt() {
         Shipment shipment = new Shipment("s1", ShipmentStatus.OPEN);
         Parcel parcel = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
-        sendShipment = (TransitionContext<Shipment, ShipmentStatus> ctx) -> {
+        sendShipment = (TransitionContext<Shipment, ShipmentStatus, Sending> ctx) -> {
             throw new IllegalStateException("the carrier is down");
         };
 
         try (MachineRegistry registry = registry()) {
-            Outcome<Parcel, ParcelStatus> outcome =
-                    registry.of(PARCELS).transitionTo(parcel, ParcelStatus.LOADED);
+            Outcome<Parcel, ParcelStatus, Loading> outcome =
+                    registry.of(PARCELS).execute(parcel, Loading.LOAD);
             ReactionsAssert reactions = OutcomeAssert.assertThat(outcome).isApplied()
                     .movedTo(ParcelStatus.LOADED).reactions();
             reactions.hasSize(1);
@@ -595,8 +601,8 @@ class ReactionAssertionsTest {
         Parcel parcel = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
 
         try (MachineRegistry registry = registry()) {
-            Outcome<Parcel, ParcelStatus> outcome =
-                    registry.of(PARCELS).transitionTo(parcel, ParcelStatus.LOADED);
+            Outcome<Parcel, ParcelStatus, Loading> outcome =
+                    registry.of(PARCELS).execute(parcel, Loading.LOAD);
             ReactionsAssert reactions = OutcomeAssert.assertThat(outcome).isApplied().reactions();
             reactions.hasSize(1);
             reactions.forEntity(SHIPMENTS, shipment).hasSize(0);
@@ -613,8 +619,8 @@ class ReactionAssertionsTest {
         new Parcel("p2", ParcelStatus.LOADING, Optional.of(shipment));
 
         try (MachineRegistry registry = registry()) {
-            Outcome<Parcel, ParcelStatus> outcome =
-                    registry.of(PARCELS).transitionTo(first, ParcelStatus.LOADED);
+            Outcome<Parcel, ParcelStatus, Loading> outcome =
+                    registry.of(PARCELS).execute(first, Loading.LOAD);
             ReactionsAssert reactions = OutcomeAssert.assertThat(outcome).isApplied().reactions();
             reactions.hasNoAbortedRecursively();
             reactions.forEntity(SHIPMENTS, shipment).single().isDone().outcome()
@@ -630,8 +636,8 @@ class ReactionAssertionsTest {
         Parcel parcel = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
 
         try (MachineRegistry registry = registry()) {
-            Outcome<Parcel, ParcelStatus> outcome =
-                    registry.of(PARCELS).transitionTo(parcel, ParcelStatus.LOADED);
+            Outcome<Parcel, ParcelStatus, Loading> outcome =
+                    registry.of(PARCELS).execute(parcel, Loading.LOAD);
             ReactionsAssert reactions = OutcomeAssert.assertThat(outcome).isApplied().reactions();
             reactions.hasNoAborted().hasNoAbortedRecursively();
             reactions.forEntity(SHIPMENTS, shipment).single().isDone().outcome()
@@ -644,15 +650,20 @@ class ReactionAssertionsTest {
 
     // --- fixtures --------------------------------------------------------------------------------------
 
-    private static final MachineKey<Other, Flag> OTHERS = MachineKey.of(Other.class, Flag.class);
-    private static final MachineKey<Entity, Shelf> SHELVES = MachineKey.of(Entity.class, Shelf.class);
-    private static final MachineKey<Shipment, ShipmentStatus> SHIPMENTS =
-            MachineKey.of(Shipment.class, ShipmentStatus.class);
-    private static final MachineKey<Parcel, ParcelStatus> PARCELS =
-            MachineKey.of(Parcel.class, ParcelStatus.class);
+    private static final MachineKey<Other, Flag, Switch> OTHERS =
+            MachineKey.of(Other.class, Flag.class, Switch.class);
+    private static final MachineKey<Entity, Shelf, Stow> SHELVES =
+            MachineKey.of(Entity.class, Shelf.class, Stow.class);
+    private static final MachineKey<Shipment, ShipmentStatus, Sending> SHIPMENTS =
+            MachineKey.of(Shipment.class, ShipmentStatus.class, Sending.class);
+    private static final MachineKey<Parcel, ParcelStatus, Loading> PARCELS =
+            MachineKey.of(Parcel.class, ParcelStatus.class, Loading.class);
 
     /** States of {@link Other}, an enum that belongs to no machine the assertions here narrow to. */
     enum Flag { OFF, ON }
+
+    /** Transition identifiers of the machine over {@link Flag}. */
+    enum Switch { FLIP }
 
     /** Entity of a second machine, so a selection has something of another key to skip. */
     record Other(String id) { }
@@ -660,11 +671,20 @@ class ReactionAssertionsTest {
     /** A second state enum of {@link Entity}: one entity class belongs to as many machines as it has states. */
     enum Shelf { OUT, IN }
 
+    /** Transition identifiers of the machine over {@link Shelf}. */
+    enum Stow { PUT_AWAY }
+
     /** States of {@link Shipment}: the machine that watches. */
     enum ShipmentStatus { OPEN, SENT }
 
+    /** Transition identifiers of the shipment machine. */
+    enum Sending { SEND }
+
     /** States of {@link Parcel}: the machine that is watched. */
     enum ParcelStatus { LOADING, LOADED }
+
+    /** Transition identifiers of the parcel machine. */
+    enum Loading { LOAD }
 
     /** Owner entity of the engine cases; its parcels register themselves as they are built. */
     static final class Shipment {
@@ -710,26 +730,25 @@ class ReactionAssertionsTest {
         void setStatus(ParcelStatus status) { this.status = status; }
     }
 
-    private TransitionAction<Shipment, ShipmentStatus> sendShipment =
-            (TransitionContext<Shipment, ShipmentStatus> ctx) -> ActionOutcome.ok();
+    private TransitionAction<Shipment, ShipmentStatus, Sending> sendShipment =
+            (TransitionContext<Shipment, ShipmentStatus, Sending> ctx) -> ActionOutcome.ok();
 
     private MachineRegistry registry() {
-        GraphDefinition<Shipment, ShipmentStatus> shipments = StateGraph.define(SHIPMENTS)
+        GraphDefinition<Shipment, ShipmentStatus, Sending> shipments = StateGraph.define(SHIPMENTS)
                 .initial(ShipmentStatus.OPEN).terminal(ShipmentStatus.SENT)
-                .from(ShipmentStatus.OPEN)
-                    .to(ShipmentStatus.SENT).action("SendShipment",
-                            (TransitionContext<Shipment, ShipmentStatus> ctx) -> sendShipment.process(ctx))
-                    .stay()
-                    .watches(PARCELS, Shipment::parcels, Parcel::shipment)
-                        .when(allIn(ParcelStatus.LOADED)).goTo(ShipmentStatus.SENT)
-                    .forbidOthers("an open shipment only sends")
-                .from(ShipmentStatus.SENT).stay().forbidOthers("sent is final")
+                .statePolicy(ShipmentStatus.OPEN, "an open shipment only sends")
+                .transition(Sending.SEND, ShipmentStatus.OPEN, ShipmentStatus.SENT)
+                    .action("SendShipment",
+                            (TransitionContext<Shipment, ShipmentStatus, Sending> ctx) -> sendShipment.process(ctx))
+                    .endTransition()
+                .watch(ShipmentStatus.OPEN, PARCELS, Shipment::parcels, Parcel::shipment)
+                    .when(allIn(ParcelStatus.LOADED)).execute(Sending.SEND)
+                    .endWatch()
                 .build();
-        GraphDefinition<Parcel, ParcelStatus> parcels = StateGraph.define(PARCELS)
+        GraphDefinition<Parcel, ParcelStatus, Loading> parcels = StateGraph.define(PARCELS)
                 .initial(ParcelStatus.LOADING).terminal(ParcelStatus.LOADED)
-                .from(ParcelStatus.LOADING).to(ParcelStatus.LOADED).move().stay()
-                    .forbidOthers("a loading parcel only loads")
-                .from(ParcelStatus.LOADED).stay().forbidOthers("loaded is final")
+                .statePolicy(ParcelStatus.LOADING, "a loading parcel only loads")
+                .transition(Loading.LOAD, ParcelStatus.LOADING, ParcelStatus.LOADED).endTransition()
                 .build();
         return MachineRegistry.builder()
                 .add(StateMachines.from(shipments)
@@ -761,24 +780,25 @@ class ReactionAssertionsTest {
      * {@code depth} nested outcomes where every level holds the SAME child outcome twice: linear to build
      * and to visit once, and a tree of 2^depth reactions to anything that visits a shared outcome twice.
      */
-    private static Outcome<Entity, State> sharedChain(Entity entity, int depth) {
-        Outcome<Entity, State> level = applied(entity);
+    private static Outcome<Entity, State, Id> sharedChain(Entity entity, int depth) {
+        Outcome<Entity, State, Id> level = applied(entity);
         for (int step = 0; step < depth; step++) {
             Reaction.Done child = done(entity, level);
-            level = new Outcome.Applied<>(entity, State.NEW, State.READY, List.of(), List.of(child, child));
+            level = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(),
+                    List.of(child, child));
         }
         return level;
     }
 
-    private static Outcome.Applied<Entity, State> applied(Entity entity) {
-        return new Outcome.Applied<>(entity, State.NEW, State.READY, List.of(), List.of());
+    private static Outcome.Applied<Entity, State, Id> applied(Entity entity) {
+        return new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(), List.of());
     }
 
-    private static Reaction.Done done(Entity entity, Outcome<?, ?> outcome) {
+    private static Reaction.Done done(Entity entity, Outcome<?, ?, ?> outcome) {
         return new Reaction.Done(TestDomain.KEY, entity, outcome);
     }
 
-    private static ReactionAssert<Entity, State> single(Reaction reaction, Entity entity) {
+    private static ReactionAssert<Entity, State, Id> single(Reaction reaction, Entity entity) {
         return ReactionsAssert.assertThat(List.of(reaction)).forEntity(TestDomain.KEY, entity).single();
     }
 

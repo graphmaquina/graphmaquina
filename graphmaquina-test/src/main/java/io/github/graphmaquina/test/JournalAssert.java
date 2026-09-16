@@ -58,22 +58,24 @@ public final class JournalAssert {
 
     /**
      * Satisfied when some entry matches every argument at once, at any position. The entity is matched by
-     * reference and everything else by value, so an entry that agrees on states, action, depth and status but
-     * belongs to another instance does not satisfy it.
+     * reference and everything else by value, so an entry that agrees on the edge, action, depth and status
+     * but belongs to another instance does not satisfy it. The identifier is part of the match: two edges
+     * that connect the same pair of states under different identifiers are different entries.
      */
-    public <E, S extends Enum<S>> JournalAssert hasEntry(
-            MachineKey<E, S> key, E entity, S from, S to, String action, int depth, ActionStatus status) {
+    public <E, S extends Enum<S>, T extends Enum<T>> JournalAssert hasEntry(MachineKey<E, S, T> key, E entity,
+            S from, T transition, S to, String action, int depth, ActionStatus status) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(transition, "transition");
         Objects.requireNonNull(to, "to");
         Objects.requireNonNull(action, "action");
         Objects.requireNonNull(status, "status");
-        ActionRecord wanted = new ActionRecord(key, entity, from, to, action, depth, status);
+        ActionRecord wanted = new ActionRecord(key, entity, from, transition, to, action, depth, status);
         List<ActionRecord> journal = Checks.subject(CONTEXT, "entry", wanted, actual);
         boolean found = journal.stream().anyMatch(entry -> entry.key().equals(key) && entry.entity() == entity
-                && entry.from() == from && entry.to() == to && entry.action().equals(action)
-                && entry.depth() == depth && entry.status() == status);
+                && entry.from() == from && entry.transition() == transition && entry.to() == to
+                && entry.action().equals(action) && entry.depth() == depth && entry.status() == status);
         if (!found) {
             Checks.fail(CONTEXT, "entry", wanted, journal);
         }

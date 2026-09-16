@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.InvalidGraphException;
@@ -21,6 +22,7 @@ import io.github.graphmaquina.test.OutcomeAssert;
 import io.github.graphmaquina.test.TransitionFailureAssert;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import java.time.Duration;
 import java.util.List;
@@ -35,24 +37,24 @@ import org.junit.jupiter.api.Test;
  */
 class FluentApiTest {
 
-    private static final GraphDefinition<Entity, State> GRAPH = TestDomain.graph(Duration.ofSeconds(1));
+    private static final GraphDefinition<Entity, State, Id> GRAPH = TestDomain.graph(Duration.ofSeconds(1));
 
     @Test
     void facadePreservesFluentTypes() {
         Entity entity = new Entity("e", State.READY);
-        Outcome.Applied<Entity, State> result =
-                new Outcome.Applied<>(entity, State.NEW, State.READY, List.of(), List.of());
+        Outcome.Applied<Entity, State, Id> result =
+                new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(), List.of());
         GraphAssertions.assertThat(result).isApplied().from(State.NEW)
                 .movedTo(State.READY).hasEntityState(Entity::state, State.READY);
         GraphAssertions.assertThat(TestDomain.graph(Duration.ofSeconds(1)))
-                .edge(State.NEW, State.READY).isAction().hasActionNamed("prepare");
+                .transition(State.NEW, Id.PREPARE).isAction().hasActionNamed("prepare");
     }
 
     @Test
     void theOutcomeOverloadAssertsOverTheOutcomeItWasGiven() {
         Entity entity = new Entity("e", State.NEW);
-        Outcome<Entity, State> ignored = new Outcome.Ignored<>(entity, State.NEW, State.NEW);
-        OutcomeAssert<Entity, State> view = GraphAssertions.assertThat(ignored);
+        Outcome<Entity, State, Id> ignored = new Outcome.Ignored<>(entity, State.NEW, IgnoreReason.NO_WATCH);
+        OutcomeAssert<Entity, State, Id> view = GraphAssertions.assertThat(ignored);
         assertSame(view, view.hasEntitySameAs(entity));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.from(State.READY)),
                 "outcome", "from", State.READY, State.NEW);
@@ -60,7 +62,7 @@ class FluentApiTest {
 
     @Test
     void theGraphOverloadAssertsOverTheDefinitionItWasGiven() {
-        GraphAssert<Entity, State> view = GraphAssertions.assertThat(GRAPH);
+        GraphAssert<Entity, State, Id> view = GraphAssertions.assertThat(GRAPH);
         assertSame(view, view.hasInitial(State.NEW));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasInitial(State.DONE)),
                 Entity.class.getName() + "/" + State.class.getName(), "initial", State.DONE, State.NEW);
@@ -95,9 +97,9 @@ class FluentApiTest {
     @Test
     void anInvalidGraphBindsToTheDslView() {
         InvalidGraphException invalid = assertThrows(InvalidGraphException.class,
-                () -> StateGraph.define(TestDomain.KEY).initial(State.NEW).build());
+                () -> StateGraph.define(TestDomain.KEY).build());
         InvalidGraphAssert view = GraphAssertions.assertThat(invalid);
-        assertSame(view, view.hasCodesExactly("SG101"));
+        assertSame(view, view.hasCodesExactly("SG201"));
     }
 
     /**
@@ -108,8 +110,8 @@ class FluentApiTest {
     @Test
     void aCapturedInvalidGraphIsReachedByNarrowingTheFailureView() {
         Throwable failure = GraphAssertions.captureFailure(
-                () -> StateGraph.define(TestDomain.KEY).initial(State.NEW).build());
-        GraphAssertions.assertThat(failure).isInvalidGraph().hasCodesExactly("SG101");
+                () -> StateGraph.define(TestDomain.KEY).build());
+        GraphAssertions.assertThat(failure).isInvalidGraph().hasCodesExactly("SG201");
         IllegalStateException other = new IllegalStateException("boom");
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> GraphAssertions.assertThat(other).isInvalidGraph()),
@@ -152,14 +154,14 @@ class FluentApiTest {
     @Test
     void aNullOutcomeFailsAsAnAssertion() {
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> GraphAssertions.assertThat((Outcome<Entity, State>) null).from(State.NEW)),
+                () -> GraphAssertions.assertThat((Outcome<Entity, State, Id>) null).from(State.NEW)),
                 "outcome", "from", State.NEW, null);
     }
 
     @Test
     void aNullDefinitionFailsAsAnAssertion() {
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> GraphAssertions.assertThat((GraphDefinition<Entity, State>) null).hasInitial(State.NEW)),
+                () -> GraphAssertions.assertThat((GraphDefinition<Entity, State, Id>) null).hasInitial(State.NEW)),
                 "graph", "initial", State.NEW, null);
     }
 

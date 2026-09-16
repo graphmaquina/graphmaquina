@@ -7,7 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.dsl.StateGraph;
@@ -20,6 +22,7 @@ import io.github.graphmaquina.test.IgnoredOutcomeAssert;
 import io.github.graphmaquina.test.OutcomeAssert;
 import io.github.graphmaquina.test.RejectedOutcomeAssert;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -42,7 +45,7 @@ class OutcomeAssertionsTest {
     @Test
     void recordedDestinationAndCurrentEntityStateAreIndependent() {
         Entity entity = new Entity("e", State.READY);
-        Outcome<Entity, State> result = new Outcome.Applied<>(entity, State.NEW,
+        Outcome<Entity, State, Id> result = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE,
                 State.READY, List.of(), List.of());
         entity.setState(State.DONE);
         OutcomeAssert.assertThat(result).isApplied().movedTo(State.READY)
@@ -52,13 +55,13 @@ class OutcomeAssertionsTest {
     }
 
     @Test
-    void rejectionByGuardIsNotForbidden() {
+    void aGuardRejectionIsNotTheAbsenceOfAnEdge() {
         Entity entity = new Entity("e", State.NEW);
-        Outcome<Entity, State> rejected = new Outcome.Rejected<>(entity, State.NEW, State.READY,
-                "not ready", Optional.of("first"));
+        Outcome<Entity, State, Id> rejected = new Outcome.Rejected<>(entity, State.NEW, Id.PREPARE,
+                "not ready", RejectionKind.GUARD, Optional.of("first"));
         OutcomeAssert.assertThat(rejected).isRejected().isRejectedByGuardNamed("first");
         assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(rejected).isRejected().isForbidden());
+                () -> OutcomeAssert.assertThat(rejected).isRejected().hasNoTransition());
     }
 
     // --- variant narrowing -------------------------------------------------------------------------
@@ -76,7 +79,7 @@ class OutcomeAssertionsTest {
     @Test
     void appliedSatisfiesNoOtherVariant() {
         Entity entity = new Entity("e", State.NEW);
-        Outcome<Entity, State> outcome = applied(entity);
+        Outcome<Entity, State, Id> outcome = applied(entity);
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "kind", "Failed", "Applied");
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -88,7 +91,7 @@ class OutcomeAssertionsTest {
     @Test
     void failedSatisfiesNoOtherVariant() {
         Entity entity = new Entity("e", State.NEW);
-        Outcome<Entity, State> outcome = failed(entity, Optional.empty());
+        Outcome<Entity, State, Id> outcome = failed(entity, Optional.empty());
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "kind", "Applied", "Failed");
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -100,7 +103,7 @@ class OutcomeAssertionsTest {
     @Test
     void rejectedSatisfiesNoOtherVariant() {
         Entity entity = new Entity("e", State.NEW);
-        Outcome<Entity, State> outcome = rejected(entity, Optional.empty());
+        Outcome<Entity, State, Id> outcome = rejected(entity, Optional.empty());
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "kind", "Applied", "Rejected");
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -112,7 +115,7 @@ class OutcomeAssertionsTest {
     @Test
     void ignoredSatisfiesNoOtherVariant() {
         Entity entity = new Entity("e", State.NEW);
-        Outcome<Entity, State> outcome = ignored(entity);
+        Outcome<Entity, State, Id> outcome = ignored(entity);
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "kind", "Applied", "Ignored");
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -135,16 +138,26 @@ class OutcomeAssertionsTest {
                 "outcome", "from", State.READY, State.NEW);
     }
 
+    /**
+     * Three variants report the identifier the caller asked for; a reevaluation that selected no edge
+     * reports none, which is a different answer from any identifier at all.
+     */
     @Test
-    void requestedTargetIsTheAttemptedTransitionOnEveryVariant() {
+    void theRequestedIdentifierIsReadFromEveryVariantThatHadOne() {
         Entity entity = new Entity("e", State.NEW);
-        OutcomeAssert.assertThat(applied(entity)).requestedTarget(State.READY);
-        OutcomeAssert.assertThat(failed(entity, Optional.empty())).requestedTarget(State.DONE);
-        OutcomeAssert.assertThat(rejected(entity, Optional.empty())).requestedTarget(State.READY);
-        OutcomeAssert.assertThat(ignored(entity)).requestedTarget(State.READY);
+        OutcomeAssert.assertThat(applied(entity)).requestedTransition(Id.PREPARE);
+        OutcomeAssert.assertThat(failed(entity, Optional.empty())).requestedTransition(Id.PREPARE);
+        OutcomeAssert.assertThat(rejected(entity, Optional.empty())).requestedTransition(Id.PREPARE);
+        OutcomeAssert.assertThat(ignored(entity)).hasNoRequestedTransition();
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(failed(entity, Optional.empty())).requestedTarget(State.FAILED)),
-                "outcome", "requested target", State.FAILED, State.DONE);
+                () -> OutcomeAssert.assertThat(applied(entity)).requestedTransition(Id.FINISH)),
+                "outcome", "requested transition", Optional.of(Id.FINISH), Optional.of(Id.PREPARE));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(ignored(entity)).requestedTransition(Id.PREPARE)),
+                "outcome", "requested transition", Optional.of(Id.PREPARE), Optional.empty());
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(applied(entity)).hasNoRequestedTransition()),
+                "outcome", "requested transition", Optional.empty(), Optional.of(Id.PREPARE));
     }
 
     @Test
@@ -160,18 +173,21 @@ class OutcomeAssertionsTest {
     }
 
     @Test
-    void ignoredKeepsTheOriginEvenWhenAnotherTargetWasRequested() {
+    void ignoredKeepsTheOriginAndSaysWhyNothingWasSelected() {
         Entity entity = new Entity("e", State.NEW);
-        IgnoredOutcomeAssert<Entity, State> view = OutcomeAssert.assertThat(ignored(entity)).isIgnored();
-        assertSame(view, view.requestedTarget(State.READY).hasRecordedState(State.NEW).from(State.NEW));
+        IgnoredOutcomeAssert<Entity, State, Id> view = OutcomeAssert.assertThat(ignored(entity)).isIgnored();
+        assertSame(view, view.hasReason(IgnoreReason.NO_RULE_MATCHED)
+                .hasNoRequestedTransition().hasRecordedState(State.NEW).from(State.NEW));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasRecordedState(State.READY)),
                 "ignored outcome", "recorded state", State.READY, State.NEW);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasReason(IgnoreReason.NO_WATCH)),
+                "ignored outcome", "reason", IgnoreReason.NO_WATCH, IgnoreReason.NO_RULE_MATCHED);
     }
 
     @Test
     void entityStateIsReadOncePerAssertionAndNotAtViewCreation() {
         Entity entity = new Entity("e", State.NEW);
-        OutcomeAssert<Entity, State> view = OutcomeAssert.assertThat(applied(entity));
+        OutcomeAssert<Entity, State, Id> view = OutcomeAssert.assertThat(applied(entity));
         view.hasEntityState(Entity::state, State.NEW);
         entity.setState(State.FAILED);
         view.hasEntityState(Entity::state, State.FAILED);
@@ -203,9 +219,10 @@ class OutcomeAssertionsTest {
 
     @Test
     void aNullExpectedIsAnArgumentErrorEvenWhenTheSubjectIsNull() {
-        Outcome<Entity, State> none = null;
+        Outcome<Entity, State, Id> none = null;
         assertThrows(NullPointerException.class, () -> OutcomeAssert.assertThat(none).from(null));
-        assertThrows(NullPointerException.class, () -> OutcomeAssert.assertThat(none).requestedTarget(null));
+        assertThrows(NullPointerException.class,
+                () -> OutcomeAssert.assertThat(none).requestedTransition(null));
         assertThrows(NullPointerException.class, () -> OutcomeAssert.assertThat(none).hasRecordedState(null));
         assertThrows(NullPointerException.class, () -> OutcomeAssert.assertThat(none).hasEntitySameAs(null));
     }
@@ -216,7 +233,8 @@ class OutcomeAssertionsTest {
         Twin sameValue = new Twin("e");
         assertEquals(entity, sameValue);
         assertNotSame(entity, sameValue);
-        Outcome<Twin, State> outcome = new Outcome.Applied<>(entity, State.NEW, State.READY, List.of(), List.of());
+        Outcome<Twin, State, Id> outcome =
+                new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(), List.of());
         OutcomeAssert.assertThat(outcome).hasEntitySameAs(entity);
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(outcome).hasEntitySameAs(sameValue));
@@ -231,7 +249,7 @@ class OutcomeAssertionsTest {
     @Test
     void appliedMovedToReadsTheCommittedDestination() {
         Entity entity = new Entity("e", State.NEW);
-        AppliedOutcomeAssert<Entity, State> view = OutcomeAssert.assertThat(applied(entity)).isApplied();
+        AppliedOutcomeAssert<Entity, State, Id> view = OutcomeAssert.assertThat(applied(entity)).isApplied();
         assertSame(view, view.movedTo(State.READY));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.movedTo(State.DONE)),
                 "applied outcome", "moved to", State.DONE, State.READY);
@@ -240,21 +258,27 @@ class OutcomeAssertionsTest {
     // --- failed ------------------------------------------------------------------------------------
 
     @Test
-    void failedMovedToIsTheFailureRouteNotTheRequestedTarget() {
+    void failedMovedToIsTheRecoveryRouteNotTheDestinationThatWasAskedFor() {
         Entity entity = new Entity("e", State.NEW);
-        FailedOutcomeAssert<Entity, State> view =
+        FailedOutcomeAssert<Entity, State, Id> view =
                 OutcomeAssert.assertThat(failed(entity, Optional.empty())).isFailed();
-        assertNotEquals(State.DONE, State.FAILED);
-        assertSame(view, view.requestedTarget(State.DONE).movedTo(State.FAILED));
-        assertFailure(assertThrows(GraphAssertionError.class, () -> view.movedTo(State.DONE)),
-                "failed outcome", "moved to", State.DONE, State.FAILED);
+        assertNotEquals(State.READY, State.FAILED);
+        assertSame(view, view.requestedTransition(Id.PREPARE).hasTarget(State.READY)
+                .hasFailureTransition(Id.RECOVER).movedTo(State.FAILED));
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.movedTo(State.READY)),
+                "failed outcome", "moved to", State.READY, State.FAILED);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasTarget(State.FAILED)),
+                "failed outcome", "target", State.FAILED, State.READY);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasFailureTransition(Id.FINISH)),
+                "failed outcome", "failure transition", Id.FINISH, Id.RECOVER);
     }
 
     @Test
     void failedReasonIsComparedByValue() {
         Entity entity = new Entity("e", State.NEW);
-        Outcome<Entity, State> outcome = new Outcome.Failed<>(entity, State.NEW, State.DONE, State.FAILED,
-                new StringBuilder("boom").toString(), Optional.empty(), List.of(), List.of());
+        Outcome<Entity, State, Id> outcome = new Outcome.Failed<>(entity, State.NEW, Id.PREPARE,
+                State.READY, Id.RECOVER, State.FAILED, new StringBuilder("boom").toString(),
+                Optional.empty(), List.of(), List.of());
         OutcomeAssert.assertThat(outcome).isFailed().hasReason("boom");
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(outcome).isFailed().hasReason("other")),
@@ -265,7 +289,7 @@ class OutcomeAssertionsTest {
     void causeIsMatchedByTypeIncludingSubclasses() {
         Entity entity = new Entity("e", State.NEW);
         UncheckedIOException cause = new UncheckedIOException(new IOException("io"));
-        FailedOutcomeAssert<Entity, State> view =
+        FailedOutcomeAssert<Entity, State, Id> view =
                 OutcomeAssert.assertThat(failed(entity, Optional.of(cause))).isFailed();
         assertSame(view, view.hasCause(UncheckedIOException.class));
         assertSame(view, view.hasCause(RuntimeException.class));
@@ -278,7 +302,7 @@ class OutcomeAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         IllegalStateException cause = new IllegalStateException("boom");
         IllegalStateException other = new IllegalStateException("boom");
-        FailedOutcomeAssert<Entity, State> view =
+        FailedOutcomeAssert<Entity, State, Id> view =
                 OutcomeAssert.assertThat(failed(entity, Optional.of(cause))).isFailed();
         assertSame(view, view.hasCauseSameAs(cause));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCauseSameAs(other)),
@@ -292,7 +316,7 @@ class OutcomeAssertionsTest {
         ValueError sameValue = new ValueError();
         assertEquals(cause, sameValue);
         assertNotSame(cause, sameValue);
-        FailedOutcomeAssert<Entity, State> view =
+        FailedOutcomeAssert<Entity, State, Id> view =
                 OutcomeAssert.assertThat(failed(entity, Optional.of(cause))).isFailed();
         assertSame(view, view.hasCauseSameAs(cause));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCauseSameAs(sameValue)),
@@ -303,7 +327,7 @@ class OutcomeAssertionsTest {
     void anAbsentCauseSatisfiesOnlyHasNoCause() {
         Entity entity = new Entity("e", State.NEW);
         IllegalStateException absent = new IllegalStateException("never happened");
-        FailedOutcomeAssert<Entity, State> view =
+        FailedOutcomeAssert<Entity, State, Id> view =
                 OutcomeAssert.assertThat(failed(entity, Optional.empty())).isFailed();
         assertSame(view, view.hasNoCause());
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCause(IllegalStateException.class)),
@@ -324,32 +348,32 @@ class OutcomeAssertionsTest {
     // --- rejected ----------------------------------------------------------------------------------
 
     @Test
-    void aForbiddenCellNamesNoGuard() {
+    void anAbsentEdgeRejectsWithoutNamingAGuard() {
         Entity entity = new Entity("e", State.NEW);
-        RejectedOutcomeAssert<Entity, State> view =
+        RejectedOutcomeAssert<Entity, State, Id> view =
                 OutcomeAssert.assertThat(rejected(entity, Optional.empty())).isRejected();
-        assertSame(view, view.isForbidden());
+        assertSame(view, view.hasNoTransition());
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.isRejectedByGuardNamed("first")),
-                "rejected outcome", "guard", Optional.of("first"), Optional.empty());
+                "rejected outcome", "kind", RejectionKind.GUARD, RejectionKind.NO_TRANSITION);
     }
 
     @Test
     void aGuardRejectionNamesTheGuardThatRejected() {
         Entity entity = new Entity("e", State.NEW);
-        RejectedOutcomeAssert<Entity, State> view =
+        RejectedOutcomeAssert<Entity, State, Id> view =
                 OutcomeAssert.assertThat(rejected(entity, Optional.of("first"))).isRejected();
         assertSame(view, view.isRejectedByGuardNamed("first"));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.isRejectedByGuardNamed("second")),
                 "rejected outcome", "guard", Optional.of("second"), Optional.of("first"));
-        assertFailure(assertThrows(GraphAssertionError.class, view::isForbidden),
-                "rejected outcome", "guard", Optional.empty(), Optional.of("first"));
+        assertFailure(assertThrows(GraphAssertionError.class, view::hasNoTransition),
+                "rejected outcome", "kind", RejectionKind.NO_TRANSITION, RejectionKind.GUARD);
     }
 
     @Test
     void rejectedReasonIsComparedByValue() {
         Entity entity = new Entity("e", State.NEW);
-        Outcome<Entity, State> outcome = new Outcome.Rejected<>(entity, State.NEW, State.READY,
-                new StringBuilder("not ready").toString(), Optional.empty());
+        Outcome<Entity, State, Id> outcome = new Outcome.Rejected<>(entity, State.NEW, Id.PREPARE,
+                new StringBuilder("not ready").toString(), RejectionKind.NO_TRANSITION, Optional.empty());
         OutcomeAssert.assertThat(outcome).isRejected().hasReason("not ready");
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(outcome).isRejected().hasReason("ready")),
@@ -379,22 +403,25 @@ class OutcomeAssertionsTest {
 
     @Test
     void nullSubjectFailsFrom() {
-        Outcome<Entity, State> none = null;
+        Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(none).from(State.NEW)), "outcome", "from", State.NEW, null);
     }
 
     @Test
-    void nullSubjectFailsRequestedTarget() {
-        Outcome<Entity, State> none = null;
+    void nullSubjectFailsRequestedTransition() {
+        Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(none).requestedTarget(State.NEW)),
-                "outcome", "requested target", State.NEW, null);
+                () -> OutcomeAssert.assertThat(none).requestedTransition(Id.PREPARE)),
+                "outcome", "requested transition", Optional.of(Id.PREPARE), null);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(none).hasNoRequestedTransition()),
+                "outcome", "requested transition", Optional.empty(), null);
     }
 
     @Test
     void nullSubjectFailsHasRecordedState() {
-        Outcome<Entity, State> none = null;
+        Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(none).hasRecordedState(State.NEW)),
                 "outcome", "recorded state", State.NEW, null);
@@ -402,7 +429,7 @@ class OutcomeAssertionsTest {
 
     @Test
     void nullSubjectFailsHasEntityState() {
-        Outcome<Entity, State> none = null;
+        Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(none).hasEntityState(Entity::state, State.NEW)),
                 "outcome", "entity state", State.NEW, null);
@@ -410,7 +437,7 @@ class OutcomeAssertionsTest {
 
     @Test
     void nullSubjectFailsHasEntitySameAs() {
-        Outcome<Entity, State> none = null;
+        Outcome<Entity, State, Id> none = null;
         Entity entity = new Entity("e", State.NEW);
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> OutcomeAssert.assertThat(none).hasEntitySameAs(entity)), "outcome", "entity", entity, null);
@@ -418,28 +445,28 @@ class OutcomeAssertionsTest {
 
     @Test
     void nullSubjectFailsIsApplied() {
-        Outcome<Entity, State> none = null;
+        Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class, () -> OutcomeAssert.assertThat(none).isApplied()),
                 "outcome", "kind", "Applied", null);
     }
 
     @Test
     void nullSubjectFailsIsFailed() {
-        Outcome<Entity, State> none = null;
+        Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class, () -> OutcomeAssert.assertThat(none).isFailed()),
                 "outcome", "kind", "Failed", null);
     }
 
     @Test
     void nullSubjectFailsIsRejected() {
-        Outcome<Entity, State> none = null;
+        Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class, () -> OutcomeAssert.assertThat(none).isRejected()),
                 "outcome", "kind", "Rejected", null);
     }
 
     @Test
     void nullSubjectFailsIsIgnored() {
-        Outcome<Entity, State> none = null;
+        Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class, () -> OutcomeAssert.assertThat(none).isIgnored()),
                 "outcome", "kind", "Ignored", null);
     }
@@ -456,33 +483,33 @@ class OutcomeAssertionsTest {
 
     /**
      * Rebuilt inside this module from core's {@code HooksTest.hookMayOpenANewRootTransaction}: the hook
-     * of DRAFT -> REVIEW opens its own transition back to DRAFT, so the applied outcome records REVIEW
+     * of {@code REVIEW} opens its own transition back to DRAFT, so the applied outcome records REVIEW
      * while the entity is read at DRAFT. Nothing here imports core's own test fixtures.
      */
     @Test
     void aHookThatOpensANewRootTransactionLeavesTheEntityBehindTheOutcome() {
-        List<StateMachine<Paper, Docs>> holder = new ArrayList<>();
-        GraphDefinition<Paper, Docs> definition = StateGraph.define(PAPERS)
+        List<StateMachine<Paper, Docs, Step>> holder = new ArrayList<>();
+        GraphDefinition<Paper, Docs, Step> definition = StateGraph.define(PAPERS)
                 .initial(Docs.DRAFT).terminal(Docs.ARCHIVED).allowsCycle(Docs.REVIEW)
-                .from(Docs.DRAFT)
-                    .to(Docs.REVIEW).move()
-                        .afterCommit("onReview", (Paper paper) -> holder.get(0).transitionTo(paper, Docs.DRAFT))
-                    .stay().forbidOthers("draft only reviews")
-                .from(Docs.REVIEW).to(Docs.DRAFT).move().to(Docs.ARCHIVED).move()
-                    .stay().forbidOthers("review returns or archives")
-                .from(Docs.ARCHIVED).stay().forbidOthers("archived is final")
+                .statePolicy(Docs.DRAFT, "draft only reviews")
+                .statePolicy(Docs.REVIEW, "review returns or archives")
+                .transition(Step.REVIEW, Docs.DRAFT, Docs.REVIEW)
+                    .afterCommit("onReview", (Paper paper) -> holder.get(0).execute(paper, Step.RETURN))
+                    .endTransition()
+                .transition(Step.RETURN, Docs.REVIEW, Docs.DRAFT).endTransition()
+                .transition(Step.ARCHIVE, Docs.REVIEW, Docs.ARCHIVED).endTransition()
                 .build();
-        StateMachine<Paper, Docs> machine = StateMachines.from(definition)
+        StateMachine<Paper, Docs, Step> machine = StateMachines.from(definition)
                 .state(Paper::status, Paper::setStatus).build();
         holder.add(machine);
 
         Paper paper = new Paper(Docs.DRAFT);
-        Outcome<Paper, Docs> outcome = machine.transitionTo(paper, Docs.REVIEW);
+        Outcome<Paper, Docs, Step> outcome = machine.execute(paper, Step.REVIEW);
 
         OutcomeAssert.assertThat(outcome).isApplied()
                 .movedTo(Docs.REVIEW)
                 .from(Docs.DRAFT)
-                .requestedTarget(Docs.REVIEW)
+                .requestedTransition(Step.REVIEW)
                 .hasRecordedState(Docs.REVIEW)
                 .hasEntitySameAs(paper)
                 .hasEntityState(Paper::status, Docs.DRAFT);
@@ -493,10 +520,14 @@ class OutcomeAssertionsTest {
 
     // --- fixtures ----------------------------------------------------------------------------------
 
-    private static final MachineKey<Paper, Docs> PAPERS = MachineKey.of(Paper.class, Docs.class);
+    private static final MachineKey<Paper, Docs, Step> PAPERS =
+            MachineKey.of(Paper.class, Docs.class, Step.class);
 
     /** States of {@link Paper}. */
     enum Docs { DRAFT, REVIEW, ARCHIVED }
+
+    /** Transition identifiers of the paper machine. */
+    enum Step { REVIEW, RETURN, ARCHIVE }
 
     /** Entity of the engine case: its state is written by the machine and read back by the assertions. */
     static final class Paper {
@@ -533,21 +564,23 @@ class OutcomeAssertionsTest {
         }
     }
 
-    private static Outcome.Applied<Entity, State> applied(Entity entity) {
-        return new Outcome.Applied<>(entity, State.NEW, State.READY, List.of(), List.of());
+    private static Outcome.Applied<Entity, State, Id> applied(Entity entity) {
+        return new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(), List.of());
     }
 
-    private static Outcome.Failed<Entity, State> failed(Entity entity, Optional<Throwable> cause) {
-        return new Outcome.Failed<>(entity, State.NEW, State.DONE, State.FAILED, "boom", cause,
-                List.of(), List.of());
+    private static Outcome.Failed<Entity, State, Id> failed(Entity entity, Optional<Throwable> cause) {
+        return new Outcome.Failed<>(entity, State.NEW, Id.PREPARE, State.READY, Id.RECOVER, State.FAILED,
+                "boom", cause, List.of(), List.of());
     }
 
-    private static Outcome.Rejected<Entity, State> rejected(Entity entity, Optional<String> guard) {
-        return new Outcome.Rejected<>(entity, State.NEW, State.READY, "not ready", guard);
+    /** An empty guard is the absence of an edge; a named one is a guard that rejected the edge it guards. */
+    private static Outcome.Rejected<Entity, State, Id> rejected(Entity entity, Optional<String> guard) {
+        return new Outcome.Rejected<>(entity, State.NEW, Id.PREPARE, "not ready",
+                guard.isPresent() ? RejectionKind.GUARD : RejectionKind.NO_TRANSITION, guard);
     }
 
-    private static Outcome.Ignored<Entity, State> ignored(Entity entity) {
-        return new Outcome.Ignored<>(entity, State.NEW, State.READY);
+    private static Outcome.Ignored<Entity, State, Id> ignored(Entity entity) {
+        return new Outcome.Ignored<>(entity, State.NEW, IgnoreReason.NO_RULE_MATCHED);
     }
 
     private static void assertFailure(

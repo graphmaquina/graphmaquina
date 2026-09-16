@@ -17,6 +17,7 @@ import io.github.graphmaquina.runtime.StateMachines;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.TransitionFailureAssert;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.probe.StateWrite;
 import io.github.graphmaquina.test.probe.StateWriteProbe;
@@ -41,8 +42,10 @@ import org.junit.jupiter.api.Test;
  */
 class StateWriteProbeTest {
 
-    private static final MachineKey<Order, State> ORDER = MachineKey.of(Order.class, State.class);
-    private static final MachineKey<Item, State> ITEM = MachineKey.of(Item.class, State.class);
+    private static final MachineKey<Order, State, Id> ORDER =
+            MachineKey.of(Order.class, State.class, Id.class);
+    private static final MachineKey<Item, State, Id> ITEM =
+            MachineKey.of(Item.class, State.class, Id.class);
 
     // --- the premise of this task: an armed call never reaches the setter -----------------------------
 
@@ -253,7 +256,7 @@ class StateWriteProbeTest {
                 StateWriteProbe.<Tracked, State>wrapping(Tracked::setState).failOnCall(2, boom);
         Throwable failure = captureFailure(() -> {
             try (MachineRegistry registry = registry(writes, order, first, second)) {
-                registry.of(ORDER).transitionTo(order, State.READY);
+                registry.of(ORDER).execute(order, Id.PREPARE);
             }
         });
         TransitionFailureAssert.assertThat(failure).isCommitFailure()
@@ -278,7 +281,7 @@ class StateWriteProbeTest {
         StateWriteProbe<Tracked, State> writes = StateWriteProbe.<Tracked, State>wrapping(Tracked::setState);
         TransitionAbortedException aborted = assertThrows(TransitionAbortedException.class, () -> {
             try (MachineRegistry registry = registry(writes, order, first, second, context -> { throw boom; })) {
-                registry.of(ORDER).transitionTo(order, State.READY);
+                registry.of(ORDER).execute(order, Id.PREPARE);
             }
         });
         assertSame(boom, aborted.getCause());
@@ -356,14 +359,14 @@ class StateWriteProbeTest {
     private static MachineRegistry registry(BiConsumer<? super Tracked, ? super State> setter, Order order,
             Item first, Item second) {
         return registry(setter, order, first, second, context -> {
-            context.cascade(ITEM, first, State.READY);
-            context.cascade(ITEM, second, State.READY);
+            context.cascade(ITEM, first, Id.PREPARE);
+            context.cascade(ITEM, second, Id.PREPARE);
             return ActionOutcome.ok();
         });
     }
 
     private static MachineRegistry registry(BiConsumer<? super Tracked, ? super State> setter, Order order,
-            Item first, Item second, TransitionAction<Order, State> prepare) {
+            Item first, Item second, TransitionAction<Order, State, Id> prepare) {
         return MachineRegistry.builder()
                 .add(StateMachines.from(orderGraph(prepare))
                         .state(Order::state, setter).identity(Order::id))
@@ -371,24 +374,24 @@ class StateWriteProbeTest {
                 .build();
     }
 
-    private static GraphDefinition<Order, State> orderGraph(TransitionAction<Order, State> prepare) {
+    private static GraphDefinition<Order, State, Id> orderGraph(TransitionAction<Order, State, Id> prepare) {
         return StateGraph.define(ORDER).initial(State.NEW)
-                .terminal(State.READY).terminal(State.DONE).terminal(State.FAILED)
-                .from(State.NEW).to(State.READY).action("prepare", prepare)
-                    .to(State.DONE).move().to(State.FAILED).move().stay().forbidOthers("x")
-                .from(State.READY).stay().forbidOthers("x")
-                .from(State.DONE).stay().forbidOthers("x")
-                .from(State.FAILED).stay().forbidOthers("x").build();
+                .terminal(State.DONE).terminal(State.FAILED)
+                .statePolicy(State.NEW, "x").statePolicy(State.READY, "x")
+                .transition(Id.PREPARE, State.NEW, State.READY).action("prepare", prepare).endTransition()
+                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
+                .transition(Id.FINISH, State.READY, State.DONE).endTransition()
+                .build();
     }
 
-    private static GraphDefinition<Item, State> itemGraph() {
+    private static GraphDefinition<Item, State, Id> itemGraph() {
         return StateGraph.define(ITEM).initial(State.NEW)
-                .terminal(State.READY).terminal(State.DONE).terminal(State.FAILED)
-                .from(State.NEW).to(State.READY).move()
-                    .to(State.DONE).move().to(State.FAILED).move().stay().forbidOthers("x")
-                .from(State.READY).stay().forbidOthers("x")
-                .from(State.DONE).stay().forbidOthers("x")
-                .from(State.FAILED).stay().forbidOthers("x").build();
+                .terminal(State.DONE).terminal(State.FAILED)
+                .statePolicy(State.NEW, "x").statePolicy(State.READY, "x")
+                .transition(Id.PREPARE, State.NEW, State.READY).endTransition()
+                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
+                .transition(Id.FINISH, State.READY, State.DONE).endTransition()
+                .build();
     }
 
     private static void awaitQuietly(CountDownLatch latch) {

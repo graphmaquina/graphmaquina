@@ -12,8 +12,9 @@ import java.util.Objects;
  *
  * @param <E> entity type of the machine the reaction was selected for
  * @param <S> state enum of the machine the reaction was selected for
+ * @param <T> transition identifier enum of that machine
  */
-public final class AbortedReactionAssert<E, S extends Enum<S>> {
+public final class AbortedReactionAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
     private final Reaction.Aborted aborted;
@@ -24,7 +25,7 @@ public final class AbortedReactionAssert<E, S extends Enum<S>> {
     }
 
     /** Satisfied by any cause the type accepts, subclasses included. */
-    public AbortedReactionAssert<E, S> hasCause(Class<? extends Throwable> expected) {
+    public AbortedReactionAssert<E, S, T> hasCause(Class<? extends Throwable> expected) {
         Objects.requireNonNull(expected, "expected");
         RuntimeException cause = aborted.cause();
         if (!expected.isInstance(cause)) {
@@ -34,7 +35,7 @@ public final class AbortedReactionAssert<E, S extends Enum<S>> {
     }
 
     /** Compares by reference, so a distinct throwable of the same type does not satisfy it. */
-    public AbortedReactionAssert<E, S> hasCauseSameAs(Throwable expected) {
+    public AbortedReactionAssert<E, S, T> hasCauseSameAs(Throwable expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.same(context, "cause", expected, aborted.cause());
         return this;

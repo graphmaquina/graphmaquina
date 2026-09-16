@@ -22,6 +22,7 @@ import io.github.graphmaquina.test.AsyncAssertions;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.probe.ActionCall;
 import io.github.graphmaquina.test.probe.ControlledAsyncAction;
@@ -48,7 +49,8 @@ import org.junit.jupiter.api.Test;
  */
 class ControlledAsyncTest {
 
-    private static final MachineKey<Parcel, Status> PARCEL = MachineKey.of(Parcel.class, Status.class);
+    private static final MachineKey<Parcel, Status, Move> PARCEL =
+            MachineKey.of(Parcel.class, Status.class, Move.class);
     private static final Duration BUDGET = Duration.ofMillis(50);
     private static final Duration GENEROUS = Duration.ofSeconds(2);
 
@@ -62,13 +64,13 @@ class ControlledAsyncTest {
     @SuppressWarnings("try")
     @Test
     void testControlsWhenTheActionCompletes() {
-        try (ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.<Entity, State>create();
+        try (ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.<Entity, State, Id>create();
              MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(2), action))) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
             try {
-                PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call =
+                PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> call =
                         action.awaitInvocation(Duration.ofSeconds(2));
                 assertEquals(State.NEW, entity.state());
                 assertFalse(result.isDone());
@@ -82,26 +84,26 @@ class ControlledAsyncTest {
 
     @Test
     void concurrentInvocationsAnswerIndependently() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(5), action));
         try (registry; action) {
             Entity first = new Entity("first", State.NEW);
             Entity second = new Entity("second", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> firstResult =
-                    registry.of(KEY).async().transitionTo(first, State.READY);
-            CompletableFuture<Outcome<Entity, State>> secondResult =
-                    registry.of(KEY).async().transitionTo(second, State.READY);
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> one =
+            CompletableFuture<Outcome<Entity, State, Id>> firstResult =
+                    registry.of(KEY).async().execute(first, Id.PREPARE);
+            CompletableFuture<Outcome<Entity, State, Id>> secondResult =
+                    registry.of(KEY).async().execute(second, Id.PREPARE);
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> one =
                     action.awaitInvocation(GENEROUS);
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> other =
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> other =
                     action.awaitInvocation(GENEROUS);
             assertNotSame(one, other);
             assertNotSame(one.call().entity(), other.call().entity());
             assertEquals(2, action.invocations().size());
 
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> firstCall =
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> firstCall =
                     one.call().entity() == first ? one : other;
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> secondCall =
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> secondCall =
                     firstCall == one ? other : one;
             assertTrue(firstCall.complete(ActionOutcome.ok()));
             AsyncAssertions.await(firstResult, GENEROUS).isApplied().hasEntitySameAs(first);
@@ -116,14 +118,14 @@ class ControlledAsyncTest {
 
     @Test
     void invocationsAreListedInEntryOrderAndTheListIsACopy() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(5), action));
         try (registry; action) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
-            List<PendingInvocation<ActionCall<Entity, State>, ActionOutcome>> recorded = action.invocations();
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
+            List<PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome>> recorded = action.invocations();
             assertEquals(List.of(call), recorded);
             assertSame(entity, call.call().entity());
             assertEquals(State.NEW, call.call().from());
@@ -134,8 +136,8 @@ class ControlledAsyncTest {
             AsyncAssertions.await(result, GENEROUS).isApplied().movedTo(State.READY);
 
             Entity later = new Entity("later", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> second =
-                    registry.of(KEY).async().transitionTo(later, State.READY);
+            CompletableFuture<Outcome<Entity, State, Id>> second =
+                    registry.of(KEY).async().execute(later, Id.PREPARE);
             assertTrue(action.awaitInvocation(GENEROUS).complete(ActionOutcome.ok()));
             AsyncAssertions.await(second, GENEROUS).isApplied().hasEntitySameAs(later);
             assertEquals(2, action.invocations().size());
@@ -147,15 +149,15 @@ class ControlledAsyncTest {
 
     @Test
     void anEngineTimeoutAbortsAndLeavesTheActionStagePending() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(BUDGET, action));
         try (registry; action) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
             AsyncAssertions.awaitFailure(result, GENEROUS).isAbort()
-                    .at(KEY, entity, State.NEW, State.READY)
+                    .at(KEY, entity, State.NEW, Id.PREPARE, State.READY)
                     .hasActionNamed("prepare")
                     .hasCause(TimeoutException.class);
             assertFalse(call.isDone());
@@ -168,16 +170,16 @@ class ControlledAsyncTest {
 
     @Test
     void anAsyncGuardRejectionLeavesTheActionUnreached() {
-        ControlledAsyncGuard<Parcel, Status> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status> send = ControlledAsyncAction.create();
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
+        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
         CompletableFuture<String> seen = new CompletableFuture<>();
         gate.onCall(context -> seen.complete(context.entity().id() + ":" + context.to()));
         MachineRegistry registry = gatedRegistry(gate, send);
         try (registry; gate; send) {
             Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status>> result =
-                    registry.of(PARCEL).async().transitionTo(parcel, Status.SENT);
-            PendingInvocation<GuardCall<Parcel, Status>, GuardResult> call = gate.awaitInvocation(GENEROUS);
+            CompletableFuture<Outcome<Parcel, Status, Move>> result =
+                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
+            PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> call = gate.awaitInvocation(GENEROUS);
             assertEquals("p:SENT", seen.getNow(null));
             assertEquals(List.of(call), gate.invocations());
             assertSame(parcel, call.call().entity());
@@ -195,22 +197,22 @@ class ControlledAsyncTest {
 
     @Test
     void guardInvocationsAreListedInEntryOrderAndTheListIsACopy() {
-        ControlledAsyncGuard<Parcel, Status> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status> send = ControlledAsyncAction.create();
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
+        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
         MachineRegistry registry = gatedRegistry(gate, send);
         try (registry; gate; send) {
             Parcel first = new Parcel("first", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status>> firstResult =
-                    registry.of(PARCEL).async().transitionTo(first, Status.SENT);
-            PendingInvocation<GuardCall<Parcel, Status>, GuardResult> call = gate.awaitInvocation(GENEROUS);
-            List<PendingInvocation<GuardCall<Parcel, Status>, GuardResult>> recorded = gate.invocations();
+            CompletableFuture<Outcome<Parcel, Status, Move>> firstResult =
+                    registry.of(PARCEL).async().execute(first, Move.SEND);
+            PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> call = gate.awaitInvocation(GENEROUS);
+            List<PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult>> recorded = gate.invocations();
             assertEquals(List.of(call), recorded);
             assertTrue(call.complete(GuardResult.reject("closed for the day")));
             AsyncAssertions.await(firstResult, GENEROUS).isRejected().hasReason("closed for the day");
 
             Parcel later = new Parcel("later", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status>> secondResult =
-                    registry.of(PARCEL).async().transitionTo(later, Status.SENT);
+            CompletableFuture<Outcome<Parcel, Status, Move>> secondResult =
+                    registry.of(PARCEL).async().execute(later, Move.SEND);
             assertTrue(gate.awaitInvocation(GENEROUS).complete(GuardResult.reject("still closed")));
             AsyncAssertions.await(secondResult, GENEROUS).isRejected().hasReason("still closed");
             assertEquals(2, gate.invocations().size());
@@ -220,14 +222,14 @@ class ControlledAsyncTest {
 
     @Test
     void closingTheGuardFixtureCancelsItsPendingInvocations() {
-        ControlledAsyncGuard<Parcel, Status> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status> send = ControlledAsyncAction.create();
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
+        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
         MachineRegistry registry = gatedRegistry(gate, send);
         try (registry; send) {
             Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status>> result =
-                    registry.of(PARCEL).async().transitionTo(parcel, Status.SENT);
-            PendingInvocation<GuardCall<Parcel, Status>, GuardResult> call = gate.awaitInvocation(GENEROUS);
+            CompletableFuture<Outcome<Parcel, Status, Move>> result =
+                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
+            PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> call = gate.awaitInvocation(GENEROUS);
             gate.close();
             gate.close();
             assertTrue(call.isCancelled());
@@ -239,14 +241,14 @@ class ControlledAsyncTest {
 
     @Test
     void aClosedGuardFixtureRefusesFurtherInvocations() {
-        ControlledAsyncGuard<Parcel, Status> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status> send = ControlledAsyncAction.create();
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
+        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
         gate.close();
         MachineRegistry registry = gatedRegistry(gate, send);
         try (registry; send) {
             Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status>> result =
-                    registry.of(PARCEL).async().transitionTo(parcel, Status.SENT);
+            CompletableFuture<Outcome<Parcel, Status, Move>> result =
+                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
             AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(IllegalStateException.class);
             assertEquals(List.of(), gate.invocations());
             assertEquals(Status.NEW, parcel.status());
@@ -256,18 +258,18 @@ class ControlledAsyncTest {
     @Test
     void aGuardSideEffectThatThrowsSettlesItsOwnInvocation() {
         IllegalStateException boom = new IllegalStateException("gate hook down");
-        ControlledAsyncGuard<Parcel, Status> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status> send = ControlledAsyncAction.create();
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
+        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
         gate.onCall(context -> {
             throw boom;
         });
         MachineRegistry registry = gatedRegistry(gate, send);
         try (registry; gate; send) {
             Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status>> result =
-                    registry.of(PARCEL).async().transitionTo(parcel, Status.SENT);
+            CompletableFuture<Outcome<Parcel, Status, Move>> result =
+                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
             AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCauseSameAs(boom);
-            List<PendingInvocation<GuardCall<Parcel, Status>, GuardResult>> recorded = gate.invocations();
+            List<PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult>> recorded = gate.invocations();
             assertEquals(1, recorded.size());
             assertTrue(recorded.get(0).isDone());
             assertFalse(recorded.get(0).complete(GuardResult.pass()));
@@ -279,13 +281,13 @@ class ControlledAsyncTest {
 
     @Test
     void cancellationReturnsTrueOnlyToTheWinnerAndRejectsLaterAnswers() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(GENEROUS, action));
         try (registry; action) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
 
             assertTrue(call.cancelStage());
             assertFalse(call.cancelStage());
@@ -302,13 +304,13 @@ class ControlledAsyncTest {
 
     @Test
     void simultaneousCancellationHasExactlyOneWinner() throws Exception {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(GENEROUS, action));
         try (registry; action) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
             CountDownLatch ready = new CountDownLatch(2);
             CountDownLatch start = new CountDownLatch(1);
             ExecutorService workers = Executors.newFixedThreadPool(2);
@@ -347,12 +349,12 @@ class ControlledAsyncTest {
 
     @Test
     void closingCancelsPendingInvocationsAndIsSafeTwice() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         try (MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(30), action))) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
             action.close();
             action.close();
             assertTrue(call.isDone());
@@ -365,13 +367,13 @@ class ControlledAsyncTest {
 
     @Test
     void aClosedFixtureRefusesFurtherInvocations() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         action.close();
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(GENEROUS, action));
         try (registry; action) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
             AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(IllegalStateException.class);
             assertEquals(List.of(), action.invocations());
             assertEquals(State.NEW, entity.state());
@@ -383,17 +385,17 @@ class ControlledAsyncTest {
     @Test
     void anOnCallThatThrowsSettlesItsOwnInvocationAndPublishesNoHandle() {
         IllegalStateException boom = new IllegalStateException("hook down");
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.<Entity, State>create()
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.<Entity, State, Id>create()
                 .onCall(context -> {
                     throw boom;
                 });
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(GENEROUS, action));
         try (registry; action) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
             AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCauseSameAs(boom);
-            List<PendingInvocation<ActionCall<Entity, State>, ActionOutcome>> recorded = action.invocations();
+            List<PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome>> recorded = action.invocations();
             assertEquals(1, recorded.size());
             assertTrue(recorded.get(0).isDone());
             assertFalse(recorded.get(0).complete(ActionOutcome.ok()));
@@ -409,19 +411,19 @@ class ControlledAsyncTest {
     @Test
     void anOnCallThatThrowsAnErrorSettlesItsOwnInvocationAndPublishesNoHandle() {
         AssertionError boom = new AssertionError("hook assertion failed");
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.<Entity, State>create()
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.<Entity, State, Id>create()
                 .onCall(context -> {
                     throw boom;
                 });
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(GENEROUS, action));
         try (registry; action) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
             ExecutionException raised =
                     assertThrows(ExecutionException.class, () -> result.get(2, TimeUnit.SECONDS));
             assertSame(boom, raised.getCause());
-            List<PendingInvocation<ActionCall<Entity, State>, ActionOutcome>> recorded = action.invocations();
+            List<PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome>> recorded = action.invocations();
             assertEquals(1, recorded.size());
             assertTrue(recorded.get(0).isDone(), "the stage of a hook that threw an Error is settled");
             assertFalse(recorded.get(0).complete(ActionOutcome.ok()));
@@ -435,20 +437,20 @@ class ControlledAsyncTest {
     @Test
     void aGuardSideEffectThatThrowsAnErrorSettlesItsOwnInvocation() {
         AssertionError boom = new AssertionError("gate assertion failed");
-        ControlledAsyncGuard<Parcel, Status> gate = ControlledAsyncGuard.create();
-        ControlledAsyncAction<Parcel, Status> send = ControlledAsyncAction.create();
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
+        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
         gate.onCall(context -> {
             throw boom;
         });
         MachineRegistry registry = gatedRegistry(gate, send);
         try (registry; gate; send) {
             Parcel parcel = new Parcel("p", Status.NEW);
-            CompletableFuture<Outcome<Parcel, Status>> result =
-                    registry.of(PARCEL).async().transitionTo(parcel, Status.SENT);
+            CompletableFuture<Outcome<Parcel, Status, Move>> result =
+                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
             ExecutionException raised =
                     assertThrows(ExecutionException.class, () -> result.get(2, TimeUnit.SECONDS));
             assertSame(boom, raised.getCause());
-            List<PendingInvocation<GuardCall<Parcel, Status>, GuardResult>> recorded = gate.invocations();
+            List<PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult>> recorded = gate.invocations();
             assertEquals(1, recorded.size());
             assertTrue(recorded.get(0).isDone(), "the stage of a hook that threw an Error is settled");
             assertFalse(recorded.get(0).complete(GuardResult.pass()));
@@ -462,7 +464,7 @@ class ControlledAsyncTest {
 
     @Test
     void aHandleIsPublishedOnlyOnceTheSideEffectHasReturned() throws Exception {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         CompletableFuture<Void> release = new CompletableFuture<>();
         CompletableFuture<String> seen = new CompletableFuture<>();
         action.onCall(context -> {
@@ -472,8 +474,8 @@ class ControlledAsyncTest {
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(30), action));
         try (registry; action) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
             try {
                 assertEquals("e:NEW>READY", seen.get(2, TimeUnit.SECONDS),
                         "the side effect reads the live context");
@@ -482,7 +484,7 @@ class ControlledAsyncTest {
             } finally {
                 release.complete(null);
             }
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
             assertTrue(call.complete(ActionOutcome.ok()));
             AsyncAssertions.await(result, GENEROUS).isApplied().movedTo(State.READY);
         }
@@ -490,7 +492,7 @@ class ControlledAsyncTest {
 
     @Test
     void deliveryFollowsPublicationAfterSuccessfulSideEffectsWhileHistoryKeepsEntryOrder() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         CountDownLatch firstEntered = new CountDownLatch(1);
         CountDownLatch releaseFirst = new CountDownLatch(1);
         action.onCall(context -> {
@@ -503,13 +505,13 @@ class ControlledAsyncTest {
         try (registry; action) {
             Entity first = new Entity("first", State.NEW);
             Entity second = new Entity("second", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> firstResult =
-                    registry.of(KEY).async().transitionTo(first, State.READY);
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> secondCall;
+            CompletableFuture<Outcome<Entity, State, Id>> firstResult =
+                    registry.of(KEY).async().execute(first, Id.PREPARE);
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> secondCall;
             try {
                 awaitLatch(firstEntered, "first side effect was not entered");
-                CompletableFuture<Outcome<Entity, State>> secondResult =
-                        registry.of(KEY).async().transitionTo(second, State.READY);
+                CompletableFuture<Outcome<Entity, State, Id>> secondResult =
+                        registry.of(KEY).async().execute(second, Id.PREPARE);
                 secondCall = action.awaitInvocation(GENEROUS);
 
                 assertSame(second, secondCall.call().entity());
@@ -522,7 +524,7 @@ class ControlledAsyncTest {
                 releaseFirst.countDown();
             }
 
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> firstCall =
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> firstCall =
                     action.awaitInvocation(GENEROUS);
             assertSame(first, firstCall.call().entity());
             assertTrue(firstCall.complete(ActionOutcome.ok()));
@@ -534,7 +536,7 @@ class ControlledAsyncTest {
 
     @Test
     void awaitInvocationFailsAsAnAssertionWhenNoInvocationArrives() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         GraphAssertionError error =
                 assertThrows(GraphAssertionError.class, () -> action.awaitInvocation(BUDGET));
         assertEquals("controlled async action", error.context());
@@ -546,7 +548,7 @@ class ControlledAsyncTest {
 
     @Test
     void theGuardFixtureFailsItsOwnWaitUnderItsOwnContext() {
-        ControlledAsyncGuard<Parcel, Status> gate = ControlledAsyncGuard.create();
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
         GraphAssertionError error =
                 assertThrows(GraphAssertionError.class, () -> gate.awaitInvocation(BUDGET));
         assertEquals("controlled async guard", error.context());
@@ -558,7 +560,7 @@ class ControlledAsyncTest {
 
     @Test
     void anInterruptedAwaitInvocationKeepsTheInterruptFlag() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         Thread.currentThread().interrupt();
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> action.awaitInvocation(Duration.ofSeconds(30)));
@@ -571,7 +573,7 @@ class ControlledAsyncTest {
 
     @Test
     void anInterruptedGuardWaitKeepsTheInterruptFlag() {
-        ControlledAsyncGuard<Parcel, Status> gate = ControlledAsyncGuard.create();
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
         Thread.currentThread().interrupt();
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> gate.awaitInvocation(Duration.ofSeconds(30)));
@@ -583,8 +585,8 @@ class ControlledAsyncTest {
 
     @Test
     void aBudgetThatIsNotPositiveOrDoesNotFitInNanosecondsIsRejected() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
-        ControlledAsyncGuard<Parcel, Status> gate = ControlledAsyncGuard.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
         Duration tooLong = Duration.ofSeconds(Long.MAX_VALUE);
         assertThrows(NullPointerException.class, () -> action.awaitInvocation(null));
         assertThrows(NullPointerException.class, () -> gate.awaitInvocation(null));
@@ -602,12 +604,12 @@ class ControlledAsyncTest {
 
     @Test
     void aHandleRejectsANullAnswer() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(GENEROUS, action));
         try (registry; action) {
             Entity entity = new Entity("e", State.NEW);
-            registry.of(KEY).async().transitionTo(entity, State.READY);
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
+            registry.of(KEY).async().execute(entity, Id.PREPARE);
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
             assertThrows(NullPointerException.class, () -> call.complete(null));
             assertThrows(NullPointerException.class, () -> call.fail(null));
             assertFalse(call.isDone());
@@ -617,14 +619,14 @@ class ControlledAsyncTest {
 
     @Test
     void aFailedInvocationReachesTheEngineAsTheCauseOfTheAbort() {
-        ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
         IllegalStateException boom = new IllegalStateException("remote call refused");
         MachineRegistry registry = TestDomain.registry(TestDomain.graph(GENEROUS, action));
         try (registry; action) {
             Entity entity = new Entity("e", State.NEW);
-            CompletableFuture<Outcome<Entity, State>> result =
-                    registry.of(KEY).async().transitionTo(entity, State.READY);
-            PendingInvocation<ActionCall<Entity, State>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> call = action.awaitInvocation(GENEROUS);
             assertTrue(call.fail(boom));
             assertFalse(call.fail(boom));
             assertTrue(call.isDone());
@@ -645,14 +647,13 @@ class ControlledAsyncTest {
         }
     }
 
-    private static MachineRegistry gatedRegistry(AsyncTransitionGuard<Parcel, Status> guard,
-                                                 AsyncTransitionAction<Parcel, Status> action) {
-        GraphDefinition<Parcel, Status> graph = StateGraph.define(PARCEL)
+    private static MachineRegistry gatedRegistry(AsyncTransitionGuard<Parcel, Status, Move> guard,
+                                                 AsyncTransitionAction<Parcel, Status, Move> action) {
+        GraphDefinition<Parcel, Status, Move> graph = StateGraph.define(PARCEL)
                 .initial(Status.NEW).terminal(Status.SENT)
-                .from(Status.NEW)
-                    .to(Status.SENT).asyncAction("send", action).asyncGuard("gate", guard)
-                    .stay().forbidOthers("only sending")
-                .from(Status.SENT).stay().forbidOthers("sent is final")
+                .statePolicy(Status.NEW, "only sending")
+                .transition(Move.SEND, Status.NEW, Status.SENT)
+                    .asyncAction("send", action).asyncGuard("gate", guard).endTransition()
                 .build();
         return MachineRegistry.builder()
                 .add(StateMachines.from(graph).state(Parcel::status, Parcel::setStatus)
@@ -661,6 +662,9 @@ class ControlledAsyncTest {
     }
 
     private enum Status { NEW, SENT }
+
+    /** Transition identifiers of the parcel machine. */
+    private enum Move { SEND }
 
     private static final class Parcel {
 

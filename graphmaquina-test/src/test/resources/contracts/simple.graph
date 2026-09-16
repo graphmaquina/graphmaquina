@@ -1,82 +1,18 @@
-graphmaquina-snapshot-v1
-/cells/DONE/DONE/failsOn/count	0
-/cells/DONE/DONE/guards/count	0
-/cells/DONE/DONE/kind	STAY
-/cells/DONE/DONE/reason	
-/cells/DONE/FAILED/failsOn/count	0
-/cells/DONE/FAILED/guards/count	0
-/cells/DONE/FAILED/kind	FORBID
-/cells/DONE/FAILED/reason	done is final
-/cells/DONE/NEW/failsOn/count	0
-/cells/DONE/NEW/guards/count	0
-/cells/DONE/NEW/kind	FORBID
-/cells/DONE/NEW/reason	done is final
-/cells/DONE/READY/failsOn/count	0
-/cells/DONE/READY/guards/count	0
-/cells/DONE/READY/kind	FORBID
-/cells/DONE/READY/reason	done is final
-/cells/FAILED/DONE/failsOn/count	0
-/cells/FAILED/DONE/guards/count	0
-/cells/FAILED/DONE/kind	FORBID
-/cells/FAILED/DONE/reason	failed is final
-/cells/FAILED/FAILED/failsOn/count	0
-/cells/FAILED/FAILED/guards/count	0
-/cells/FAILED/FAILED/kind	STAY
-/cells/FAILED/FAILED/reason	
-/cells/FAILED/NEW/failsOn/count	0
-/cells/FAILED/NEW/guards/count	0
-/cells/FAILED/NEW/kind	FORBID
-/cells/FAILED/NEW/reason	failed is final
-/cells/FAILED/READY/failsOn/count	0
-/cells/FAILED/READY/guards/count	0
-/cells/FAILED/READY/kind	FORBID
-/cells/FAILED/READY/reason	failed is final
-/cells/NEW/DONE/failsOn/count	0
-/cells/NEW/DONE/guards/count	0
-/cells/NEW/DONE/kind	FORBID
-/cells/NEW/DONE/reason	prepare first
-/cells/NEW/FAILED/failsOn/count	0
-/cells/NEW/FAILED/guards/count	0
-/cells/NEW/FAILED/kind	MOVE
-/cells/NEW/FAILED/reason	
-/cells/NEW/NEW/failsOn/count	0
-/cells/NEW/NEW/guards/count	0
-/cells/NEW/NEW/kind	STAY
-/cells/NEW/NEW/reason	
-/cells/NEW/READY/action/async	true
-/cells/NEW/READY/action/name	prepare
-/cells/NEW/READY/afterCommit	audit
-/cells/NEW/READY/failsOn/0	java.io.IOException
-/cells/NEW/READY/failsOn/count	1
-/cells/NEW/READY/guards/0/async	false
-/cells/NEW/READY/guards/0/name	first
-/cells/NEW/READY/guards/1/async	false
-/cells/NEW/READY/guards/1/name	second
-/cells/NEW/READY/guards/count	2
-/cells/NEW/READY/kind	ACTION
-/cells/NEW/READY/onFailure	FAILED
-/cells/NEW/READY/reason	
-/cells/NEW/READY/timeout	PT1S
-/cells/READY/DONE/failsOn/count	0
-/cells/READY/DONE/guards/count	0
-/cells/READY/DONE/kind	MOVE
-/cells/READY/DONE/reason	
-/cells/READY/FAILED/failsOn/count	0
-/cells/READY/FAILED/guards/count	0
-/cells/READY/FAILED/kind	FORBID
-/cells/READY/FAILED/reason	finish only
-/cells/READY/NEW/failsOn/count	0
-/cells/READY/NEW/guards/count	0
-/cells/READY/NEW/kind	FORBID
-/cells/READY/NEW/reason	finish only
-/cells/READY/READY/failsOn/count	0
-/cells/READY/READY/guards/count	0
-/cells/READY/READY/kind	STAY
-/cells/READY/READY/reason	
+graphmaquina-snapshot-v2
+/catalog/0	PREPARE
+/catalog/1	RECOVER
+/catalog/2	FINISH
+/catalog/3	ABANDON
+/catalog/count	4
 /hasAsync	true
 /initial	NEW
 /machine/entity	io.github.graphmaquina.test.fixtures.TestDomain$Entity
 /machine/states	io.github.graphmaquina.test.fixtures.TestDomain$State
+/machine/transitions	io.github.graphmaquina.test.fixtures.TestDomain$Id
+/policies/DONE/otherwise	terminal state DONE accepts no transitions
+/policies/FAILED/otherwise	terminal state FAILED accepts no transitions
+/policies/NEW/otherwise	prepare first
+/policies/READY/otherwise	finish only
 /states/0	NEW
 /states/1	READY
 /states/2	DONE
@@ -84,3 +20,25 @@ graphmaquina-snapshot-v1
 /states/count	4
 /terminals/DONE	true
 /terminals/FAILED	true
+/transitions/NEW/PREPARE/action/async	true
+/transitions/NEW/PREPARE/action/name	prepare
+/transitions/NEW/PREPARE/afterCommit	audit
+/transitions/NEW/PREPARE/failsOn/0	java.io.IOException
+/transitions/NEW/PREPARE/failsOn/count	1
+/transitions/NEW/PREPARE/guards/0/async	false
+/transitions/NEW/PREPARE/guards/0/name	first
+/transitions/NEW/PREPARE/guards/1/async	false
+/transitions/NEW/PREPARE/guards/1/name	second
+/transitions/NEW/PREPARE/guards/count	2
+/transitions/NEW/PREPARE/kind	ACTION
+/transitions/NEW/PREPARE/onFailure	RECOVER
+/transitions/NEW/PREPARE/timeout	PT1S
+/transitions/NEW/PREPARE/to	READY
+/transitions/NEW/RECOVER/failsOn/count	0
+/transitions/NEW/RECOVER/guards/count	0
+/transitions/NEW/RECOVER/kind	MOVE
+/transitions/NEW/RECOVER/to	FAILED
+/transitions/READY/FINISH/failsOn/count	0
+/transitions/READY/FINISH/guards/count	0
+/transitions/READY/FINISH/kind	MOVE
+/transitions/READY/FINISH/to	DONE

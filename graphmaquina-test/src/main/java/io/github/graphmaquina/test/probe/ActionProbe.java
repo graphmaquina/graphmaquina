@@ -23,14 +23,15 @@ import java.util.function.Supplier;
  *
  * @param <E> the entity type of the machine the action belongs to
  * @param <S> the state enum of that machine
+ * @param <T> the transition identifier enum of that machine
  */
-public final class ActionProbe<E, S extends Enum<S>> implements TransitionAction<E, S> {
+public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implements TransitionAction<E, S, T> {
 
     private final String name;
     private final CallTrace trace;
-    private final ProbeCalls<ActionCall<E, S>> calls;
+    private final ProbeCalls<ActionCall<E, S, T>> calls;
     private final ResponseScript<ActionOutcome> script;
-    private volatile Consumer<TransitionContext<E, S>> onCall = context -> { };
+    private volatile Consumer<TransitionContext<E, S, T>> onCall = context -> { };
 
     private ActionProbe(String name, CallTrace trace) {
         this.name = name;
@@ -40,7 +41,8 @@ public final class ActionProbe<E, S extends Enum<S>> implements TransitionAction
     }
 
     /** The name must be the one the graph gives this action, since that is what the trace reports. */
-    public static <E, S extends Enum<S>> ActionProbe<E, S> create(String name, CallTrace trace) {
+    public static <E, S extends Enum<S>, T extends Enum<T>> ActionProbe<E, S, T> create(String name,
+            CallTrace trace) {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(trace, "trace");
         if (name.isBlank()) {
@@ -50,21 +52,21 @@ public final class ActionProbe<E, S extends Enum<S>> implements TransitionAction
     }
 
     /** Queues one outcome, answered after every response queued before it. */
-    public ActionProbe<E, S> thenReturn(ActionOutcome outcome) {
+    public ActionProbe<E, S, T> thenReturn(ActionOutcome outcome) {
         Objects.requireNonNull(outcome, "outcome");
         script.then(() -> outcome);
         return this;
     }
 
     /** Queues one exception, thrown by identity: the call throws this very instance. */
-    public ActionProbe<E, S> thenThrow(RuntimeException error) {
+    public ActionProbe<E, S, T> thenThrow(RuntimeException error) {
         Objects.requireNonNull(error, "error");
         script.then(() -> { throw error; });
         return this;
     }
 
     /** Sets the outcome answered by every call the queue no longer covers; a later call replaces it. */
-    public ActionProbe<E, S> otherwiseReturn(ActionOutcome outcome) {
+    public ActionProbe<E, S, T> otherwiseReturn(ActionOutcome outcome) {
         Objects.requireNonNull(outcome, "outcome");
         script.otherwise(() -> outcome);
         return this;
@@ -74,19 +76,19 @@ public final class ActionProbe<E, S extends Enum<S>> implements TransitionAction
      * Replaces the side effect run on every call. It receives the live context, which the engine invalidates
      * when the transaction ends, so read it now rather than storing it.
      */
-    public ActionProbe<E, S> onCall(Consumer<TransitionContext<E, S>> onCall) {
+    public ActionProbe<E, S, T> onCall(Consumer<TransitionContext<E, S, T>> onCall) {
         this.onCall = Objects.requireNonNull(onCall, "onCall");
         return this;
     }
 
-    public ProbeCalls<ActionCall<E, S>> calls() {
+    public ProbeCalls<ActionCall<E, S, T>> calls() {
         return calls;
     }
 
     @Override
-    public ActionOutcome process(TransitionContext<E, S> context) {
-        ActionCall<E, S> call =
-                new ActionCall<>(context.entity(), context.from(), context.to(), context.depth(), context.input());
+    public ActionOutcome process(TransitionContext<E, S, T> context) {
+        ActionCall<E, S, T> call = new ActionCall<>(context.entity(), context.from(), context.transition(),
+                context.to(), context.depth(), context.input());
         calls.record(call);
         trace.record(name, call);
         Supplier<ActionOutcome> response = script.next();

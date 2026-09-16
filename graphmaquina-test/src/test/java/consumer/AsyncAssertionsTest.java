@@ -13,6 +13,7 @@ import io.github.graphmaquina.test.AsyncAssertions;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.TransitionFailureAssert;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import java.time.Duration;
 import java.util.List;
@@ -30,8 +31,8 @@ class AsyncAssertionsTest {
 
     private static final Duration BUDGET = Duration.ofMillis(50);
 
-    private static Outcome.Applied<Entity, State> applied(Entity entity) {
-        return new Outcome.Applied<>(entity, State.NEW, State.READY, List.of(), List.of());
+    private static Outcome.Applied<Entity, State, Id> applied(Entity entity) {
+        return new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(), List.of());
     }
 
     // --- await: the stage carried an outcome ----------------------------------------------------------
@@ -39,7 +40,7 @@ class AsyncAssertionsTest {
     @Test
     void awaitHandsTheOutcomeToTheTypedView() {
         Entity entity = new Entity("e", State.NEW);
-        CompletableFuture<Outcome<Entity, State>> stage = CompletableFuture.completedFuture(applied(entity));
+        CompletableFuture<Outcome<Entity, State, Id>> stage = CompletableFuture.completedFuture(applied(entity));
         AsyncAssertions.await(stage, Duration.ofSeconds(2))
                 .isApplied().movedTo(State.READY).hasEntitySameAs(entity);
     }
@@ -47,15 +48,15 @@ class AsyncAssertionsTest {
     @Test
     void awaitAcceptsAStageOfASubtypeOfOutcome() {
         Entity entity = new Entity("e", State.NEW);
-        CompletableFuture<Outcome.Applied<Entity, State>> stage =
+        CompletableFuture<Outcome.Applied<Entity, State, Id>> stage =
                 CompletableFuture.completedFuture(applied(entity));
-        AsyncAssertions.<Entity, State>await(stage, Duration.ofSeconds(2)).isApplied().movedTo(State.READY);
+        AsyncAssertions.<Entity, State, Id>await(stage, Duration.ofSeconds(2)).isApplied().movedTo(State.READY);
     }
 
     @Test
     void awaitReportsAnExceptionalCompletionAsADiscrepancy() {
         IllegalStateException boom = new IllegalStateException("engine down");
-        CompletableFuture<Outcome<Entity, State>> stage = CompletableFuture.failedFuture(boom);
+        CompletableFuture<Outcome<Entity, State, Id>> stage = CompletableFuture.failedFuture(boom);
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> AsyncAssertions.await(stage, Duration.ofSeconds(2)));
         assertEquals("async test", error.context());
@@ -66,7 +67,7 @@ class AsyncAssertionsTest {
 
     @Test
     void awaitReportsACancelledStageAsADiscrepancy() {
-        CompletableFuture<Outcome<Entity, State>> stage = new CompletableFuture<>();
+        CompletableFuture<Outcome<Entity, State, Id>> stage = new CompletableFuture<>();
         assertTrue(stage.cancel(false));
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> AsyncAssertions.await(stage, Duration.ofSeconds(2)));
@@ -77,7 +78,7 @@ class AsyncAssertionsTest {
 
     @Test
     void anExpiredAwaitBudgetLeavesTheStageUntouched() {
-        CompletableFuture<Outcome<Entity, State>> stage = new CompletableFuture<>();
+        CompletableFuture<Outcome<Entity, State, Id>> stage = new CompletableFuture<>();
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> AsyncAssertions.await(stage, BUDGET));
         assertEquals("async test", error.context());
@@ -91,7 +92,7 @@ class AsyncAssertionsTest {
 
     @Test
     void anInterruptedAwaitKeepsTheInterruptFlag() {
-        CompletableFuture<Outcome<Entity, State>> stage = new CompletableFuture<>();
+        CompletableFuture<Outcome<Entity, State, Id>> stage = new CompletableFuture<>();
         Thread.currentThread().interrupt();
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> AsyncAssertions.await(stage, Duration.ofSeconds(30)));
@@ -107,7 +108,7 @@ class AsyncAssertionsTest {
     @Test
     void awaitFailureUnwrapsTheExecutionExceptionOfItsOwnWait() {
         IllegalStateException boom = new IllegalStateException("engine down");
-        CompletableFuture<Outcome<Entity, State>> stage = CompletableFuture.failedFuture(boom);
+        CompletableFuture<Outcome<Entity, State, Id>> stage = CompletableFuture.failedFuture(boom);
         TransitionFailureAssert failure = AsyncAssertions.awaitFailure(stage, Duration.ofSeconds(2));
         GraphAssertionError error = assertThrows(GraphAssertionError.class, failure::isAbort);
         assertSame(boom, error.actual());
@@ -115,7 +116,7 @@ class AsyncAssertionsTest {
 
     @Test
     void awaitFailureAcceptsACancelledStageAsAnObservableFailure() {
-        CompletableFuture<Outcome<Entity, State>> stage = new CompletableFuture<>();
+        CompletableFuture<Outcome<Entity, State, Id>> stage = new CompletableFuture<>();
         assertTrue(stage.cancel(false));
         TransitionFailureAssert failure = AsyncAssertions.awaitFailure(stage, Duration.ofSeconds(2));
         failure.hasNoCause();
@@ -126,8 +127,8 @@ class AsyncAssertionsTest {
     @Test
     void awaitFailureReportsAStageThatCompletedNormally() {
         Entity entity = new Entity("e", State.NEW);
-        Outcome.Applied<Entity, State> outcome = applied(entity);
-        CompletableFuture<Outcome<Entity, State>> stage = CompletableFuture.completedFuture(outcome);
+        Outcome.Applied<Entity, State, Id> outcome = applied(entity);
+        CompletableFuture<Outcome<Entity, State, Id>> stage = CompletableFuture.completedFuture(outcome);
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> AsyncAssertions.awaitFailure(stage, Duration.ofSeconds(2)));
         assertEquals("async test", error.context());
@@ -138,7 +139,7 @@ class AsyncAssertionsTest {
 
     @Test
     void anExpiredAwaitFailureBudgetIsTheTestsOwnFailureAndLeavesTheStageUntouched() {
-        CompletableFuture<Outcome<Entity, State>> stage = new CompletableFuture<>();
+        CompletableFuture<Outcome<Entity, State, Id>> stage = new CompletableFuture<>();
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> AsyncAssertions.awaitFailure(stage, BUDGET));
         assertEquals("completion", error.property());
@@ -150,7 +151,7 @@ class AsyncAssertionsTest {
 
     @Test
     void anInterruptedAwaitFailureKeepsTheInterruptFlag() {
-        CompletableFuture<Outcome<Entity, State>> stage = new CompletableFuture<>();
+        CompletableFuture<Outcome<Entity, State, Id>> stage = new CompletableFuture<>();
         Thread.currentThread().interrupt();
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> AsyncAssertions.awaitFailure(stage, Duration.ofSeconds(30)));
@@ -165,7 +166,7 @@ class AsyncAssertionsTest {
 
     @Test
     void awaitOfANullStageFailsAsAnAssertion() {
-        CompletionStage<Outcome<Entity, State>> missing = null;
+        CompletionStage<Outcome<Entity, State, Id>> missing = null;
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> AsyncAssertions.await(missing, Duration.ofSeconds(2)));
         assertEquals("async test", error.context());
@@ -194,7 +195,7 @@ class AsyncAssertionsTest {
 
     @Test
     void aBudgetThatIsNotPositiveIsRejected() {
-        CompletableFuture<Outcome<Entity, State>> stage = new CompletableFuture<>();
+        CompletableFuture<Outcome<Entity, State, Id>> stage = new CompletableFuture<>();
         assertEquals("the budget must be positive, not PT0S",
                 assertThrows(IllegalArgumentException.class,
                         () -> AsyncAssertions.await(stage, Duration.ZERO)).getMessage());
@@ -208,7 +209,7 @@ class AsyncAssertionsTest {
 
     @Test
     void aBudgetThatDoesNotFitInNanosecondsIsRejected() {
-        CompletableFuture<Outcome<Entity, State>> stage = new CompletableFuture<>();
+        CompletableFuture<Outcome<Entity, State, Id>> stage = new CompletableFuture<>();
         Duration tooLong = Duration.ofSeconds(Long.MAX_VALUE);
         assertInstanceOf(ArithmeticException.class,
                 assertThrows(IllegalArgumentException.class,

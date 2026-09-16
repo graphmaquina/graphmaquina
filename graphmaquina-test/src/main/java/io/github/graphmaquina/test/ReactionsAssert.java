@@ -75,7 +75,8 @@ public final class ReactionsAssert {
      */
     public ReactionsAssert hasNoAbortedRecursively() {
         List<Reaction> reactions = Checks.subject(CONTEXT, ABORTED, NONE, actual);
-        Set<Outcome<?, ?>> visited = Collections.newSetFromMap(new IdentityHashMap<Outcome<?, ?>, Boolean>());
+        Set<Outcome<?, ?, ?>> visited =
+                Collections.newSetFromMap(new IdentityHashMap<Outcome<?, ?, ?>, Boolean>());
         Deque<Level> pending = new ArrayDeque<>();
         pending.addLast(new Level(reactions, CONTEXT));
         while (!pending.isEmpty()) {
@@ -96,7 +97,8 @@ public final class ReactionsAssert {
     }
 
     /** Selects by key and by entity identity; an entity with no reactions yields an empty view, not a failure. */
-    public <E, S extends Enum<S>> TypedReactionsAssert<E, S> forEntity(MachineKey<E, S> key, E entity) {
+    public <E, S extends Enum<S>, T extends Enum<T>> TypedReactionsAssert<E, S, T> forEntity(
+            MachineKey<E, S, T> key, E entity) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(entity, "entity");
         List<Reaction> reactions = Checks.subject(CONTEXT, "entity reactions", entity, actual);
@@ -109,10 +111,10 @@ public final class ReactionsAssert {
     /** Only a committed outcome carries reactions of its own; an ignored or rejected one has none. */
     private static List<Reaction> nested(Reaction.Done done) {
         return switch (done.outcome()) {
-            case Outcome.Applied<?, ?> applied -> applied.reactions();
-            case Outcome.Failed<?, ?> failed -> failed.reactions();
-            case Outcome.Ignored<?, ?> ignored -> List.of();
-            case Outcome.Rejected<?, ?> rejected -> List.of();
+            case Outcome.Applied<?, ?, ?> applied -> applied.reactions();
+            case Outcome.Failed<?, ?, ?> failed -> failed.reactions();
+            case Outcome.Ignored<?, ?, ?> ignored -> List.of();
+            case Outcome.Rejected<?, ?, ?> rejected -> List.of();
         };
     }
 

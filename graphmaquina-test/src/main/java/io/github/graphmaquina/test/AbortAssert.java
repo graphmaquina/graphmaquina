@@ -12,6 +12,10 @@ import java.util.Optional;
  * moved and there are no committed hops to read — only what was being attempted, how far the cascade had
  * gone, and which actions had already run. The cascade route is compared as the list of literal strings the
  * engine wrote; no expectation here takes it apart to recover a state or an identity.
+ *
+ * <p>{@link #at(MachineKey, Object, Enum, Enum, Enum)} describes an abort that had already resolved its
+ * edge; {@link #atUnresolved(MachineKey, Object, Enum, Enum)} describes one raised before an edge was
+ * resolved, which has no destination to report because the identifier matched none from that state.
  */
 public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
 
@@ -27,20 +31,41 @@ public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
         return this;
     }
 
-    /** The four fields that say what was being attempted; the entity is matched by reference. */
-    public <E, S extends Enum<S>> AbortAssert at(MachineKey<E, S> key, E entity, S from, S to) {
+    /** The five fields that say which edge was being run; the entity is matched by reference. */
+    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert at(MachineKey<E, S, T> key, E entity, S from,
+            T transition, S to) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(transition, "transition");
         Objects.requireNonNull(to, "to");
         Checks.equal(context, "key", key, abort.key());
         Checks.same(context, "entity", entity, abort.entity());
         Checks.equal(context, "from", from, abort.from());
-        Checks.equal(context, "to", to, abort.to());
+        Checks.equal(context, "transition", Optional.<Enum<?>>of(transition), abort.transition());
+        Checks.equal(context, "to", Optional.<Enum<?>>of(to), abort.to());
         return this;
     }
 
-    /** The action that was running when the transition aborted, which a FORBID cell never names. */
+    /**
+     * The request that was refused before any edge was resolved: the identifier was read, so it is compared,
+     * and no destination is reported because none was selected.
+     */
+    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnresolved(MachineKey<E, S, T> key,
+            E entity, S from, T transition) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(transition, "transition");
+        Checks.equal(context, "key", key, abort.key());
+        Checks.same(context, "entity", entity, abort.entity());
+        Checks.equal(context, "from", from, abort.from());
+        Checks.equal(context, "transition", Optional.<Enum<?>>of(transition), abort.transition());
+        Checks.equal(context, "to", Optional.empty(), abort.to());
+        return this;
+    }
+
+    /** The action that was running when the transition aborted, which an edge without one never names. */
     public AbortAssert hasActionNamed(String expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.equal(context, "action", Optional.of(expected), abort.action());

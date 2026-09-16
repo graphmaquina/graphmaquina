@@ -12,8 +12,9 @@ import java.util.Objects;
 /**
  * Compares the structural snapshot of a graph against a checked-in golden resource, and rewrites that
  * resource when the run is in update mode. Where {@link GraphGoldens} pins what a diagram shows, this pins
- * everything the definition carries — timeouts, failure routes, guard modes, hooks — so a change no diagram
- * would reveal still breaks the build, and it fails with the paths that differ rather than with two files.
+ * everything the definition carries — transition identifiers, timeouts, recovery routes, guard modes, hooks,
+ * policies — so a change no diagram would reveal still breaks the build, and it fails with the paths that
+ * differ rather than with two files.
  *
  * <p>In read mode a stored snapshot of an unknown version or a broken format is a fixture problem, not a
  * mismatch: it is reported as such rather than compared. Update mode never reads the old text as a snapshot
@@ -29,7 +30,7 @@ public final class GraphSnapshots {
     private GraphSnapshots() { }
 
     /** Compares against {@code resource} with the default options. */
-    public static void assertMatches(GraphDefinition<?, ?> definition, String resource) {
+    public static void assertMatches(GraphDefinition<?, ?, ?> definition, String resource) {
         assertMatches(definition, resource, GoldenOptions.defaults());
     }
 
@@ -38,11 +39,11 @@ public final class GraphSnapshots {
      *     differs from the capture
      * @throws IllegalArgumentException if the stored snapshot is not readable in read mode
      */
-    public static void assertMatches(GraphDefinition<?, ?> definition, String resource,
+    public static void assertMatches(GraphDefinition<?, ?, ?> definition, String resource,
             GoldenOptions options) {
         GoldenStore.validateResource(resource);
         Objects.requireNonNull(options, "options");
-        GraphDefinition<?, ?> graph = Checks.subject(resource, "content", "matching golden", definition);
+        GraphDefinition<?, ?, ?> graph = Checks.subject(resource, "content", "matching golden", definition);
         GoldenStore.assertMatches(resource, GraphSnapshot.capture(graph).serialize(), options,
                 (expected, produced) -> diff(resource, expected, produced));
     }

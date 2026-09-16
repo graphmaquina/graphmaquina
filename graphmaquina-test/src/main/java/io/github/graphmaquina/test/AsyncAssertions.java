@@ -29,10 +29,10 @@ public final class AsyncAssertions {
     private AsyncAssertions() { }
 
     /** Waits for the outcome the stage carries; every other ending is a discrepancy, not a subject. */
-    public static <E, S extends Enum<S>> OutcomeAssert<E, S> await(
-            CompletionStage<? extends Outcome<E, S>> stage, Duration budget) {
+    public static <E, S extends Enum<S>, T extends Enum<T>> OutcomeAssert<E, S, T> await(
+            CompletionStage<? extends Outcome<E, S, T>> stage, Duration budget) {
         long nanos = budgetNanos(budget);
-        CompletionStage<? extends Outcome<E, S>> awaited =
+        CompletionStage<? extends Outcome<E, S, T>> awaited =
                 Checks.subject(CONTEXT, "completion", "a stage to await", stage);
         try {
             return OutcomeAssert.assertThat(

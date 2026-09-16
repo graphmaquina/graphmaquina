@@ -169,7 +169,7 @@ class StateSnapshotTest {
         assertEquals(List.of(new StateChange(SHELVES, box, Shelf.OUT, Shelf.IN)), snapshot.changes());
 
         StateSnapshot.Builder builder = StateSnapshot.builder().track(FLAGS, box, Box::flag);
-        MachineKey<Box, Flag> sameValue = MachineKey.of(Box.class, Flag.class);
+        MachineKey<Box, Flag, Toggle> sameValue = MachineKey.of(Box.class, Flag.class, Toggle.class);
         assertEquals(FLAGS, sameValue);
         assertNotSame(FLAGS, sameValue);
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
@@ -224,14 +224,22 @@ class StateSnapshotTest {
 
     // --- fixtures ------------------------------------------------------------------------------------
 
-    private static final MachineKey<Box, Flag> FLAGS = MachineKey.of(Box.class, Flag.class);
-    private static final MachineKey<Box, Shelf> SHELVES = MachineKey.of(Box.class, Shelf.class);
+    private static final MachineKey<Box, Flag, Toggle> FLAGS =
+            MachineKey.of(Box.class, Flag.class, Toggle.class);
+    private static final MachineKey<Box, Shelf, Move> SHELVES =
+            MachineKey.of(Box.class, Shelf.class, Move.class);
 
     /** One state enum of {@link Box}. */
     enum Flag { OFF, ON }
 
+    /** Transition identifiers of the machine over {@link Flag}. */
+    enum Toggle { SWITCH }
+
     /** A second state enum of {@link Box}: one entity class belongs to as many machines as it has states. */
     enum Shelf { OUT, IN }
+
+    /** Transition identifiers of the machine over {@link Shelf}. */
+    enum Move { PUT_AWAY }
 
     /** Entity of two machines at once, comparing equal to any other box carrying the same id. */
     static final class Box {

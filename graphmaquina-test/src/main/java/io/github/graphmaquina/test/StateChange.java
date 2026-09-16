@@ -14,7 +14,7 @@ import java.util.Objects;
  * @param before the state observed when the snapshot was captured, or null
  * @param after the state observed when the change was read, or null
  */
-public record StateChange(MachineKey<?, ?> key, Object entity, Enum<?> before, Enum<?> after) {
+public record StateChange(MachineKey<?, ?, ?> key, Object entity, Enum<?> before, Enum<?> after) {
 
     public StateChange {
         Objects.requireNonNull(key, "key");
