@@ -412,6 +412,7 @@ to change:
 
 | Symptom | Cause and remedy |
 | --- | --- |
+| `SG599` "could not write …" | the processor could not create or write an output. Follow the named type/path and underlying error using [processor output failures](#processor-output-failures-sg599), then rerun the full lifecycle after correcting the cause. |
 | `SG602` "…names no manifest at all" | javac ran without `-Agraphmaquina.annotationManifest=…`. In Maven, add the argument to that execution; in Gradle, the source set is not participating — declare `graphmaquina-processor` in its annotation-processor configuration. |
 | `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
 | `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host). The message names the type and the declaration. |
@@ -425,6 +426,21 @@ to change:
 | "…switches the main compilation off…" | drop `maven.main.skip` / `maven.test.skip` / `<skipMain>`, or drop the GraphMaquina plugin from that build. |
 | `complete` fails naming `pending-exports.json` | javac ran but published no index: the processor was not on the path for that compilation. |
 | `[INFO] StateGraph completes nothing for <id>` | javac did not run at all in this invocation (for example `mvn generate-sources`). Nothing was retired; this is a no-op, not an error. |
+
+### Processor output failures (SG599)
+
+SG599 reports a technical failure while producing compiler outputs. The message identifies which of the
+three paths failed and includes the underlying error:
+
+| Message | Output and corrective action |
+| --- | --- |
+| `could not write <qualified type>` | A generated Java source could not be created or written through javac's `Filer`. Check the processor's generated-sources directory, write permissions and available space. If the error reports an attempt to recreate a file, resolve the competing generated type or processor output. |
+| `could not write META-INF/graphmaquina/pending-exports.json` | Encoding the provisional export index, staging its temporary file, or writing the resource under javac's class output failed. Inspect the underlying error and check both the class-output directory and the JVM temporary directory (`java.io.tmpdir`), including permissions and available space. |
+| `could not write the processor inventory <path>` | The manifest's `processorInventory` path is invalid, its parent could not be created, or the inventory could not be written. Correct the work-directory configuration or the filesystem condition named in the message; verify that a regular file is not occupying a required directory. |
+
+After correcting the reported cause, rerun the normal Gradle or Maven generation/compilation lifecycle so
+preparation, javac and completion run together. SG599 is an error: a compilation that reports it has not
+successfully completed publication of its outputs.
 
 ### Repeated builds, renames and deletions
 

@@ -2562,6 +2562,7 @@ code runs.
 
 | Code | Meaning / corrective action |
 | --- | --- |
+| `SG599` | The processor could not write a generated source, provisional export index or processor inventory. Inspect the named type/path and underlying error; correct the output path, permissions, available space or reported file collision, then rerun the full generation/compilation lifecycle. See [processor output failures](docs/typed-annotations-build.md#processor-output-failures-sg599). |
 | `SG601` | Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. `Machine<E, S, T>` must resolve to a concrete entity type and **two distinct enums**, one for states and one for transition identifiers. |
 | `SG602` | Manifest or export index is missing, incompatible, stale, or written in the retired schema 1. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place needs one `clean`. |
 | `SG603` | Generated output or export collision, including names that normalize to the same PascalCase spelling. The diagnostic names both conflicting sources; rename a declaration and its references. |
