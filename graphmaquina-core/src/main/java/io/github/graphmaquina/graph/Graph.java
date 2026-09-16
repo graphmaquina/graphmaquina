@@ -205,9 +205,13 @@ public final class Graph<N> {
         }
         List<List<N>> cycles = new ArrayList<>();
         for (N root : nodes) {
-            if (!cyclic.contains(componentOf.get(root))) {
+            // Both reads are constant for the whole search below, so they are taken once here rather than on
+            // every candidate: re-deriving them per edge costs two hash lookups each time and buys nothing.
+            Integer rootComponent = componentOf.get(root);
+            if (!cyclic.contains(rootComponent)) {
                 continue;
             }
+            int rootIndex = declarationIndex(root);
             List<N> path = new ArrayList<>();
             Set<N> onPath = new HashSet<>();
             Deque<Frame<N>> stack = new ArrayDeque<>();
@@ -223,10 +227,10 @@ public final class Graph<N> {
                     continue;
                 }
                 N next = frame.next().next();
-                if (!componentOf.get(next).equals(componentOf.get(root))) {
+                if (!componentOf.get(next).equals(rootComponent)) {
                     continue;
                 }
-                if (declarationIndex(next) < declarationIndex(root)) {
+                if (declarationIndex(next) < rootIndex) {
                     continue;
                 }
                 if (next.equals(root)) {
