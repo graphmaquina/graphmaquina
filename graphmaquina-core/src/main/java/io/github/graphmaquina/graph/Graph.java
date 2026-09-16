@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
@@ -170,42 +171,77 @@ public final class Graph<N> {
         return Graph.of(retained, inside);
     }
 
-    /** Elementary cycles. Each starts at its lowest-declaration-index node and does not repeat the closing node. */
+    /**
+     * Elementary cycles. Each starts at its lowest-declaration-index node and does not repeat the closing node.
+     * The whole listing is produced: there is no quota, no deadline and no sampling.
+     *
+     * <p>One pass over the strongly connected components decides, before any path is walked, which nodes can
+     * possibly close a cycle: a component of more than one node, or a single node that points at itself. Roots
+     * outside those components are skipped and candidates outside the root's own component are never followed,
+     * so an acyclic graph costs its own size instead of its number of paths. Inside one large component the
+     * search can still walk paths that close nothing; this prunes the components, not the search within one.
+     *
+     * <p>The search carries its path on an explicit stack, so a cycle as long as the graph does not grow the
+     * Java stack. Roots are visited in the declared node order and not component by component, because members
+     * of different components interleave in that order and the order of the answer is part of the contract.
+     */
     public List<List<N>> cycles() {
-        List<N> order = new ArrayList<>(nodes);
-        Map<N, Integer> index = new HashMap<>();
-        for (int i = 0; i < order.size(); i++) {
-            index.put(order.get(i), i);
+        List<Set<N>> components = StrongComponents.find(this);
+        Map<N, Integer> componentOf = new HashMap<>();
+        Set<Integer> cyclic = new HashSet<>();
+        for (int i = 0; i < components.size(); i++) {
+            Set<N> component = components.get(i);
+            for (N member : component) {
+                componentOf.put(member, i);
+            }
+            boolean closesACycle = component.size() > 1;
+            if (!closesACycle) {
+                N only = component.iterator().next();
+                closesACycle = successors.get(only).contains(only);
+            }
+            if (closesACycle) {
+                cyclic.add(i);
+            }
         }
-        List<List<N>> found = new ArrayList<>();
-        for (int i = 0; i < order.size(); i++) {
-            N start = order.get(i);
-            Deque<N> path = new ArrayDeque<>();
+        List<List<N>> cycles = new ArrayList<>();
+        for (N root : nodes) {
+            if (!cyclic.contains(componentOf.get(root))) {
+                continue;
+            }
+            List<N> path = new ArrayList<>();
             Set<N> onPath = new HashSet<>();
-            path.addLast(start);
-            onPath.add(start);
-            searchCycles(start, start, i, index, path, onPath, found);
+            Deque<Frame<N>> stack = new ArrayDeque<>();
+            path.add(root);
+            onPath.add(root);
+            stack.addLast(new Frame<>(root, successors.get(root).iterator()));
+            while (!stack.isEmpty()) {
+                Frame<N> frame = stack.peekLast();
+                if (!frame.next().hasNext()) {
+                    stack.removeLast();
+                    onPath.remove(frame.node());
+                    path.remove(path.size() - 1);
+                    continue;
+                }
+                N next = frame.next().next();
+                if (!componentOf.get(next).equals(componentOf.get(root))) {
+                    continue;
+                }
+                if (declarationIndex(next) < declarationIndex(root)) {
+                    continue;
+                }
+                if (next.equals(root)) {
+                    cycles.add(List.copyOf(path));
+                } else if (onPath.add(next)) {
+                    path.add(next);
+                    stack.addLast(new Frame<>(next, successors.get(next).iterator()));
+                }
+            }
         }
-        return List.copyOf(found);
+        return List.copyOf(cycles);
     }
 
-    private void searchCycles(N start, N current, int minIndex, Map<N, Integer> index,
-                              Deque<N> path, Set<N> onPath, List<List<N>> found) {
-        for (N next : successors.get(current)) {
-            if (next.equals(start)) {
-                found.add(List.copyOf(path));
-                continue;
-            }
-            if (index.get(next) < minIndex || onPath.contains(next)) {
-                continue;
-            }
-            path.addLast(next);
-            onPath.add(next);
-            searchCycles(start, next, minIndex, index, path, onPath, found);
-            path.removeLast();
-            onPath.remove(next);
-        }
-    }
+    /** One node of the path under construction, together with the successors of that node still to examine. */
+    private record Frame<N>(N node, Iterator<N> next) { }
 
     private void requireNode(N node) {
         if (!nodes.contains(node)) {
