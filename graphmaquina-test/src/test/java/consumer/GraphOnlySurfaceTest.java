@@ -190,20 +190,26 @@ class GraphOnlySurfaceTest {
         assertEquals(List.of(), shipped, "the published artifacts still carry the retired contract");
     }
 
-    /** Whether {@code entry} declares a retired type: its own file, one of its members, or a retired nesting. */
+    /**
+     * Whether {@code entry} declares a retired type: its own file, one of its members, or a retired nesting.
+     *
+     * <p>The three jars spell a nesting differently — a class file and a source file join the outer and inner
+     * names with {@code $}, a javadoc page joins them with {@code .} — so the extension comes off first and
+     * both separators are then read the same way. Only the segments after the first are nestings; a bare outer
+     * name is what the qualified list above already answers for.
+     */
     private static boolean isRetired(String entry) {
         for (String retired : RETIRED) {
             String path = retired.replace('.', '/');
             if (entry.equals(path + ".class") || entry.equals(path + ".java") || entry.equals(path + ".html")
-                    || entry.startsWith(path + "$")) {
+                    || entry.startsWith(path + "$") || entry.startsWith(path + ".")) {
                 return true;
             }
         }
         String name = entry.substring(entry.lastIndexOf('/') + 1);
-        List<String> nested = List.of(name.split("\\$", -1));
+        List<String> nested = List.of(name.replaceFirst("\\.(class|java|html)$", "").split("[$.]", -1));
         for (int index = 1; index < nested.size(); index++) {
-            String segment = nested.get(index).replaceAll("\\.[A-Za-z]+$", "");
-            if (RETIRED_NESTED.contains(segment)) {
+            if (RETIRED_NESTED.contains(nested.get(index))) {
                 return true;
             }
         }
@@ -253,7 +259,7 @@ class GraphOnlySurfaceTest {
     private static String property(String name) {
         String value = System.getProperty(name);
         assertNotNull(value, "this surface test reads published files and needs the " + name
-                + " system property; run it through :graphmaquina-test:test");
+                + " system property; run it through :graphmaquina-test:publishedArtifactTest");
         return value;
     }
 }
