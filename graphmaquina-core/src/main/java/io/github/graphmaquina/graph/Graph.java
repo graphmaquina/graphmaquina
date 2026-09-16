@@ -22,11 +22,21 @@ public final class Graph<N> {
     private final Set<N> nodes;
     private final Set<GraphEdge<N>> edges;
     private final Map<N, Set<N>> successors;
+    private final Map<N, Integer> declarationIndex;
 
     private Graph(Set<N> nodes, Set<GraphEdge<N>> edges, Map<N, Set<N>> successors) {
         this.nodes = nodes;
         this.edges = edges;
         this.successors = successors;
+        // A plain HashMap, so that a graph built over whatever `of` admitted as a node stays buildable: an
+        // immutable map would reject a null key here and narrow what `of` accepts, which is not this index's call.
+        Map<N, Integer> positions = new HashMap<>();
+        int position = 0;
+        for (N node : nodes) {
+            positions.put(node, position);
+            position++;
+        }
+        this.declarationIndex = positions;
     }
 
     public static <N> Graph<N> of(@NonNull Collection<? extends N> nodes, @NonNull Collection<? extends GraphEdge<N>> edges) {
@@ -62,6 +72,21 @@ public final class Graph<N> {
     public Set<N> successors(@NonNull N node) {
         requireNode(node);
         return successors.get(node);
+    }
+
+    /**
+     * The position of a node in the declared order, counted from zero, keeping the first appearance of a repeated
+     * node. The whole map is built once with the graph, so asking which member of a set comes first never costs a
+     * walk over every node.
+     *
+     * @throws IllegalArgumentException if the node is not in this graph
+     */
+    int declarationIndex(N node) {
+        Integer position = declarationIndex.get(node);
+        if (position == null) {
+            throw new IllegalArgumentException("unknown node: " + node);
+        }
+        return position;
     }
 
     public Set<N> reachableFrom(@NonNull N origin) {

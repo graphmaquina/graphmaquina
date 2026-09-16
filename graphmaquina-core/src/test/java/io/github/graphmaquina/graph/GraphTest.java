@@ -83,4 +83,29 @@ class GraphTest {
         Graph<String> g = graph(List.of("A", "B", "C"), "A>B", "B>A", "B>C", "C>B");
         assertEquals(List.of(List.of("A", "B"), List.of("B", "C")), g.cycles());
     }
+
+    /**
+     * Characterisation, not an endorsement: {@code of} admits a null node today and the null only fails later, at
+     * the members annotated {@code @NonNull}. Nothing added inside the graph may narrow that admission.
+     */
+    @Test
+    void admitsANullNodeAndOnlyFailsWhereItAlreadyFailed() {
+        Graph<String> g = Graph.of(java.util.Arrays.asList("A", null), List.of());
+        assertEquals(2, g.nodes().size());
+        assertTrue(g.nodes().contains(null));
+        assertEquals(1, g.declarationIndex(null));
+        assertThrows(NullPointerException.class, () -> g.successors(null));
+    }
+
+    @Test
+    void declarationIndexKeepsTheFirstAppearanceAndRejectsAStranger() {
+        Graph<String> g = graph(List.of("C", "A", "C", "B"), "C>A");
+        assertEquals(List.of("C", "A", "B"), List.copyOf(g.nodes()));
+        assertEquals(0, g.declarationIndex("C"));
+        assertEquals(1, g.declarationIndex("A"));
+        assertEquals(2, g.declarationIndex("B"));
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> g.declarationIndex("Z"));
+        assertEquals("unknown node: Z", error.getMessage());
+    }
 }

@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -66,26 +67,33 @@ public final class StrongComponents {
     }
 
     /**
-     * One cycle inside {@code component}, starting and ending at the member the graph declares first. The list
-     * closes on that node again, so a self-loop reads {@code [A, A]}. The witness does not depend on the
-     * iteration order of {@code component}, so an unordered set yields the same answer.
+     * One cycle inside {@code component}. The search starts at the member the graph declares first and stops at
+     * the first back edge it meets, so the list starts and ends on the node that back edge closes, which is not
+     * always the first member: over {@code A→B, B→C, C→B, C→A} the witness of {@code {A, B, C}} is
+     * {@code [B, C, B]}. A self-loop reads {@code [A, A]}. The answer follows the graph's declared order and its
+     * successor order and never the iteration order of {@code component}, so an unordered set and an ordered one
+     * yield the same witness.
      *
-     * @throws IllegalArgumentException if the component holds no cycle, or is not part of {@code graph}
+     * @throws IllegalArgumentException if the component is empty, holds no cycle, or is not part of {@code graph}
      */
     public static <N> List<N> cycleWitness(@NonNull Graph<N> graph, @NonNull Set<N> component) {
         if (component.isEmpty()) {
             throw new IllegalArgumentException("an empty component holds no cycle");
         }
-        Set<N> members = new LinkedHashSet<>();
-        for (N node : graph.nodes()) {
-            if (component.contains(node)) {
-                members.add(node);
+        N start = null;
+        int first = Integer.MAX_VALUE;
+        Set<N> members = new HashSet<>();
+        for (N node : component) {
+            if (!graph.nodes().contains(node)) {
+                throw new IllegalArgumentException("the component " + component + " holds a node outside the graph");
+            }
+            members.add(node);
+            int position = graph.declarationIndex(node);
+            if (position < first) {
+                first = position;
+                start = node;
             }
         }
-        if (members.size() != component.size()) {
-            throw new IllegalArgumentException("the component " + component + " holds a node outside the graph");
-        }
-        N start = members.iterator().next();
         Map<N, N> parent = new HashMap<>();
         Set<N> onPath = new LinkedHashSet<>();
         Set<N> done = new LinkedHashSet<>();
