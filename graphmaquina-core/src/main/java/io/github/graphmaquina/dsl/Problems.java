@@ -5,10 +5,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-/** Collects every problem found while assembling a graph and sorts them by code, row and column. */
+/** Collects every problem found while assembling a machine and sorts them by code, origin and identifier. */
 final class Problems {
 
-    /** One recorded problem, before sorting: a code, its cell (or -1, -1 when row-level), and a message. */
+    /**
+     * One recorded problem, before sorting: a code, the declaration index of the origin state and of the
+     * transition identifier it concerns (-1 for either when the problem is not about that part), and a message.
+     */
     private record Entry(String code, int from, int to, String message) { }
 
     private final List<Entry> entries = new ArrayList<>();

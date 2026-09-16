@@ -13,29 +13,30 @@ import java.util.List;
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
+ * @param <T> transition identifier enum of the machine
  */
-public final class OutcomeSequenceAssert<E, S extends Enum<S>> {
+public final class OutcomeSequenceAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
-    private final List<Outcome<E, S>> actual;
+    private final List<Outcome<E, S, T>> actual;
 
-    OutcomeSequenceAssert(String context, List<Outcome<E, S>> actual) {
+    OutcomeSequenceAssert(String context, List<Outcome<E, S, T>> actual) {
         this.context = context;
         this.actual = actual;
     }
 
-    public OutcomeSequenceAssert<E, S> hasSize(int expected) {
+    public OutcomeSequenceAssert<E, S, T> hasSize(int expected) {
         Checks.equal(context, "size", expected, actual.size());
         return this;
     }
 
     /** The one callback about this entity; a selection of any other size fails rather than picking the first. */
-    public OutcomeAssert<E, S> single() {
+    public OutcomeAssert<E, S, T> single() {
         Checks.equal(context, "size", 1, actual.size());
         return atIndex(0);
     }
 
-    public OutcomeAssert<E, S> atIndex(int index) {
+    public OutcomeAssert<E, S, T> atIndex(int index) {
         if (index < 0) {
             throw new IllegalArgumentException("index must not be negative: " + index);
         }

@@ -13,6 +13,7 @@ import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.TopologyAssert;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import java.time.Duration;
 import java.util.Arrays;
@@ -32,6 +33,9 @@ class TopologyAssertionsTest {
     /** States of a graph with both a self-loop and a three-state cycle. */
     enum Loop { A, B, C }
 
+    /** Transition identifiers of the cyclic graph. */
+    enum Turn { RETRY, FORWARD, ONWARD, BACK }
+
     /** An enum that belongs to no graph under test, used to reach the topology through raw types. */
     enum Foreign { OTHER }
 
@@ -45,7 +49,7 @@ class TopologyAssertionsTest {
 
     @Test
     void pathChecksEveryAdjacentPair() {
-        GraphDefinition<Entity, State> graph = TestDomain.graph(Duration.ofSeconds(1));
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
         TopologyAssert<State> topology = GraphAssert.assertThat(graph).topology();
         topology.hasPath(List.of(State.NEW, State.READY, State.DONE));
         assertThrows(GraphAssertionError.class,
@@ -65,8 +69,9 @@ class TopologyAssertionsTest {
                 TOPOLOGY, "path[2]", Boolean.TRUE, Boolean.FALSE);
     }
 
+    /** Only a declared self-loop is a step from a node to itself; a state with no such edge has none. */
     @Test
-    void aStayCellIsNotAStepOfAPath() {
+    void aStateWithoutASelfLoopIsNotAStepOfAPathToItself() {
         assertFailure(assertThrows(GraphAssertionError.class,
                         () -> topology().hasPath(List.of(State.DONE, State.DONE))),
                 TOPOLOGY, "path[1]", Boolean.TRUE, Boolean.FALSE);
@@ -127,7 +132,7 @@ class TopologyAssertionsTest {
     }
 
     @Test
-    void successorsAreTheDirectMoveCellsAndNeverTheStayCell() {
+    void successorsAreTheDestinationsOfTheDeclaredEdges() {
         TopologyAssert<State> topology = topology();
         assertSame(topology, topology.hasSuccessorsExactly(State.NEW, Set.of(State.READY, State.FAILED)));
         topology.hasSuccessorsExactly(State.READY, Set.of(State.DONE));
@@ -306,7 +311,7 @@ class TopologyAssertionsTest {
     }
 
     private static TopologyAssert<State> nullTopology() {
-        return GraphAssert.<Entity, State>assertThat(null).topology();
+        return GraphAssert.<Entity, State, Id>assertThat(null).topology();
     }
 
     private static TopologyAssert<Loop> loopTopology() {
@@ -321,14 +326,16 @@ class TopologyAssertionsTest {
         assertEquals(actual, error.actual());
     }
 
-    private static GraphDefinition<String, Loop> loopGraph() {
-        return StateGraph.define(MachineKey.of(String.class, Loop.class))
+    private static GraphDefinition<String, Loop, Turn> loopGraph() {
+        return StateGraph.define(MachineKey.of(String.class, Loop.class, Turn.class))
                 .initial(Loop.A).allowsCycle(Loop.A)
-                .from(Loop.A)
-                    .to(Loop.A).action("retry", ctx -> ActionOutcome.ok())
-                    .to(Loop.B).move().forbidOthers("go forward")
-                .from(Loop.B).to(Loop.C).move().stay().forbidOthers("keep going")
-                .from(Loop.C).to(Loop.A).move().stay().forbidOthers("go back")
+                .statePolicy(Loop.A, "go forward").statePolicy(Loop.B, "keep going")
+                .statePolicy(Loop.C, "go back")
+                .transition(Turn.RETRY, Loop.A, Loop.A).action("retry", ctx -> ActionOutcome.ok())
+                    .endTransition()
+                .transition(Turn.FORWARD, Loop.A, Loop.B).endTransition()
+                .transition(Turn.ONWARD, Loop.B, Loop.C).endTransition()
+                .transition(Turn.BACK, Loop.C, Loop.A).endTransition()
                 .build();
     }
 }

@@ -14,29 +14,32 @@ import java.util.Objects;
  * narrows it: it selects by machine key and by entity IDENTITY, never by entity equality, so two entities
  * that carry the same business id stay distinct subjects. Order and multiplicity are part of the contract,
  * and the list is copied when the view is built, so later edits to the caller's collection are not seen.
+ *
+ * <p>{@link #containsExactly(java.util.List)} compares the identifier of every hop as well as its endpoints,
+ * so two edges that connect the same pair of states under different identifiers never satisfy each other.
  */
 public final class TransitionRecordsAssert {
 
     private static final String CONTEXT = "transition records";
 
-    private final List<? extends TransitionRecord<?, ?>> actual;
+    private final List<? extends TransitionRecord<?, ?, ?>> actual;
 
-    private TransitionRecordsAssert(List<? extends TransitionRecord<?, ?>> actual) {
+    private TransitionRecordsAssert(List<? extends TransitionRecord<?, ?, ?>> actual) {
         this.actual = actual == null ? null : List.copyOf(actual);
     }
 
-    public static TransitionRecordsAssert assertThat(List<? extends TransitionRecord<?, ?>> actual) {
+    public static TransitionRecordsAssert assertThat(List<? extends TransitionRecord<?, ?, ?>> actual) {
         return new TransitionRecordsAssert(actual);
     }
 
     public TransitionRecordsAssert hasSize(int expected) {
-        List<? extends TransitionRecord<?, ?>> records = Checks.subject(CONTEXT, "size", expected, actual);
+        List<? extends TransitionRecord<?, ?, ?>> records = Checks.subject(CONTEXT, "size", expected, actual);
         Checks.equal(CONTEXT, "size", expected, records.size());
         return this;
     }
 
     public TransitionRecordsAssert isEmpty() {
-        List<? extends TransitionRecord<?, ?>> records = Checks.subject(CONTEXT, "size", 0, actual);
+        List<? extends TransitionRecord<?, ?, ?>> records = Checks.subject(CONTEXT, "size", 0, actual);
         Checks.equal(CONTEXT, "size", 0, records.size());
         return this;
     }
@@ -45,10 +48,11 @@ public final class TransitionRecordsAssert {
      * Every record in order, compared field by field: the key and the states by value, the entity by
      * reference. The first difference is reported by its own index and field name.
      */
-    public TransitionRecordsAssert containsExactly(List<? extends TransitionRecord<?, ?>> expected) {
+    public TransitionRecordsAssert containsExactly(List<? extends TransitionRecord<?, ?, ?>> expected) {
         Objects.requireNonNull(expected, "expected");
-        List<? extends TransitionRecord<?, ?>> wanted = List.copyOf(expected);
-        List<? extends TransitionRecord<?, ?>> records = Checks.subject(CONTEXT, "size", wanted.size(), actual);
+        List<? extends TransitionRecord<?, ?, ?>> wanted = List.copyOf(expected);
+        List<? extends TransitionRecord<?, ?, ?>> records =
+                Checks.subject(CONTEXT, "size", wanted.size(), actual);
         Checks.equal(CONTEXT, "size", wanted.size(), records.size());
         for (int index = 0; index < wanted.size(); index++) {
             compare(CONTEXT + "[" + index + "]", wanted.get(index), records.get(index));
@@ -57,25 +61,28 @@ public final class TransitionRecordsAssert {
     }
 
     /** Selects by key and by entity identity; an entity with no records yields an empty view, not a failure. */
-    public <E, S extends Enum<S>> TypedRecordsAssert<E, S> forEntity(MachineKey<E, S> key, E entity) {
+    public <E, S extends Enum<S>, T extends Enum<T>> TypedRecordsAssert<E, S, T> forEntity(
+            MachineKey<E, S, T> key, E entity) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(entity, "entity");
-        List<? extends TransitionRecord<?, ?>> records = Checks.subject(CONTEXT, "entity records", entity, actual);
-        List<TransitionRecord<E, S>> selected = records.stream()
+        List<? extends TransitionRecord<?, ?, ?>> records =
+                Checks.subject(CONTEXT, "entity records", entity, actual);
+        List<TransitionRecord<E, S, T>> selected = records.stream()
                 .filter(record -> record.key().equals(key) && record.entity() == entity)
                 .map(record -> CheckedTypes.record(key, record))
                 .toList();
         return new TypedRecordsAssert<>(CONTEXT + " for " + key, selected);
     }
 
-    private static void compare(String where, TransitionRecord<?, ?> expected, TransitionRecord<?, ?> actual) {
+    private static void compare(String where, TransitionRecord<?, ?, ?> expected,
+            TransitionRecord<?, ?, ?> actual) {
         Checks.equal(where, "key", expected.key(), actual.key());
         Checks.same(where, "entity", expected.entity(), actual.entity());
         Checks.equal(where, "from", expected.from(), actual.from());
+        Checks.equal(where, "transition", expected.transition(), actual.transition());
         Checks.equal(where, "to", expected.to(), actual.to());
         Checks.equal(where, "kind", expected.kind(), actual.kind());
         Checks.equal(where, "action", expected.action(), actual.action());
         Checks.equal(where, "depth", expected.depth(), actual.depth());
-        Checks.equal(where, "convergent", expected.convergent(), actual.convergent());
     }
 }

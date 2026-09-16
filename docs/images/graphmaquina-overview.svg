@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="520" viewBox="0 0 1440 520" role="img" aria-labelledby="title desc">
-<title id="title">GraphMaquina: typed graphs, predictable transitions</title><desc id="desc">GraphMaquina for Java 21. A ticket starts OPEN, moves to IN_PROGRESS, then completes DONE or follows a handled failure route to FAILED.</desc>
+<title id="title">GraphMaquina: typed graphs, predictable transitions</title><desc id="desc">GraphMaquina for Java 21. A ticket starts OPEN, takes the SUBMIT edge to REVIEW, then APPROVE reaches DONE or the declared failure route reaches FAILED.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
@@ -23,25 +23,23 @@
 <rect x="208" y="432" width="155" height="38" rx="19" fill="#0b1220" stroke="#7aafff" stroke-width="2" />
 <text x="285.5" y="458" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="600" fill="#7aafff" text-anchor="middle">TYPED API</text>
 <rect x="379" y="432" width="245" height="38" rx="19" fill="#0b1220" stroke="#c3a2ff" stroke-width="2" />
-<text x="501.5" y="458" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="600" fill="#c3a2ff" text-anchor="middle">EXHAUSTIVE GRAPH</text>
+<text x="501.5" y="458" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="600" fill="#c3a2ff" text-anchor="middle">IDENTIFIED EDGES</text>
 <text x="822" y="88" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="600" fill="#a9b8ce" text-anchor="start">A WORKFLOW, MADE EXPLICIT</text>
 <rect x="842" y="126" width="160" height="66" rx="14" fill="#131f32" stroke="#7aafff" stroke-width="2" />
 <text x="922.0" y="168" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="22" font-weight="650" fill="#7aafff" text-anchor="middle">OPEN</text>
 <rect x="842" y="258" width="228" height="66" rx="14" fill="#131f32" stroke="#c3a2ff" stroke-width="2" />
-<text x="956.0" y="300" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="22" font-weight="650" fill="#c3a2ff" text-anchor="middle">IN_PROGRESS</text>
+<text x="956.0" y="300" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="22" font-weight="650" fill="#c3a2ff" text-anchor="middle">REVIEW</text>
 <rect x="1150" y="206" width="180" height="66" rx="14" fill="#131f32" stroke="#55e0c0" stroke-width="2" />
 <text x="1240.0" y="248" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="22" font-weight="650" fill="#55e0c0" text-anchor="middle">DONE</text>
 <rect x="1150" y="338" width="180" height="66" rx="14" fill="#131f32" stroke="#ff8998" stroke-width="2" />
 <text x="1240.0" y="380" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="22" font-weight="650" fill="#ff8998" text-anchor="middle">FAILED</text>
 <path d="M 922 192 L 922 258" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 915 248 L 922 258 L 929 248" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="940" y="231" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">start</text>
-<path d="M 1070 291 H 1106 V 239 H 1150" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 1120 239 L 1150 239" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="940" y="231" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">SUBMIT</text>
+<path d="M 1070 291 H 1116 V 239 H 1150" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 1140 232 L 1150 239 L 1140 246" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="1120" y="182" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#55e0c0" text-anchor="start">success</text>
-<path d="M 1070 291 H 1106 V 371 H 1150" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 1120 371 L 1150 371" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1150" y="192" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#55e0c0" text-anchor="start">APPROVE</text>
+<path d="M 1002 159 H 1096 V 371 H 1150" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 1140 364 L 1150 371 L 1140 378" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="1130" y="430" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#ff8998" text-anchor="start">handled failure</text>
+<text x="1030" y="430" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#ff8998" text-anchor="start">DECLINE, the onFailure route of SUBMIT</text>
 </svg>

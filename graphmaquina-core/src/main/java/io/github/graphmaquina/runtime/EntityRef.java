@@ -4,7 +4,7 @@ import io.github.graphmaquina.api.MachineKey;
 import java.util.Objects;
 
 /** Identity of an entity within a transaction: (machine, id). The instance does not take part in equals. */
-record EntityRef(MachineKey<?, ?> key, Object id, Object instance) {
+record EntityRef(MachineKey<?, ?, ?> key, Object id, Object instance) {
 
     @Override
     public boolean equals(Object other) {

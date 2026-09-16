@@ -1,6 +1,5 @@
 package io.github.graphmaquina.runtime;
 
-import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.error.CommitFailedException;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,14 +11,14 @@ final class Commit {
 
     private Commit() { }
 
-    static List<TransitionRecord<?, ?>> apply(MachineRegistry registry, UnitOfWork uow) {
+    static void apply(MachineRegistry registry, UnitOfWork uow) {
         Map<EntityRef, List<LogEntry>> chains = uow.chains();
         List<Object> all = new ArrayList<>();
         for (EntityRef ref : chains.keySet()) {
             all.add(ref.instance());
         }
         for (Map.Entry<EntityRef, List<LogEntry>> entry : chains.entrySet()) {
-            DefaultStateMachine<?, ?> machine = registry.anyMachineFor(entry.getKey().key());
+            DefaultStateMachine<?, ?, ?> machine = registry.anyMachineFor(entry.getKey().key());
             Optional<Enum<?>> current = machine.peekState(entry.getKey().instance());
             Enum<?> expected = entry.getValue().get(0).from();
             if (current.isEmpty() || current.get() != expected) {
@@ -30,7 +29,7 @@ final class Commit {
         }
         List<Object> applied = new ArrayList<>();
         for (Map.Entry<EntityRef, List<LogEntry>> entry : chains.entrySet()) {
-            DefaultStateMachine<?, ?> machine = registry.anyMachineFor(entry.getKey().key());
+            DefaultStateMachine<?, ?, ?> machine = registry.anyMachineFor(entry.getKey().key());
             List<LogEntry> chain = entry.getValue();
             Enum<?> last = chain.get(chain.size() - 1).to();
             try {
@@ -40,6 +39,5 @@ final class Commit {
             }
             applied.add(entry.getKey().instance());
         }
-        return uow.records();
     }
 }

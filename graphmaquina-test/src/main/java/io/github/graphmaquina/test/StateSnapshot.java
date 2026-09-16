@@ -63,8 +63,8 @@ public final class StateSnapshot {
 
         private Builder() { }
 
-        public <E, S extends Enum<S>> Builder track(
-                MachineKey<E, S> key, E entity, Function<? super E, ? extends S> getter) {
+        public <E, S extends Enum<S>, T extends Enum<T>> Builder track(
+                MachineKey<E, S, T> key, E entity, Function<? super E, ? extends S> getter) {
             Objects.requireNonNull(key, "key");
             Objects.requireNonNull(entity, "entity");
             Objects.requireNonNull(getter, "getter");
@@ -87,7 +87,7 @@ public final class StateSnapshot {
         }
     }
 
-    private record Tracked(MachineKey<?, ?> key, Object entity, Supplier<Enum<?>> reader) { }
+    private record Tracked(MachineKey<?, ?, ?> key, Object entity, Supplier<Enum<?>> reader) { }
 
     private record Captured(Tracked tracked, Enum<?> before) { }
 }

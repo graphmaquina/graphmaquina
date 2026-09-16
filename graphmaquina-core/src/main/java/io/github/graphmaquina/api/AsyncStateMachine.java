@@ -5,26 +5,26 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Asynchronous counterpart of {@link StateMachine}, returning outcomes as futures instead of blocking.
- * SPI: applications receive facades generated from their {@code @StateGraph} interfaces; this type is what the generated code wraps.
+ * SPI: applications receive facades generated from their declarations; this type is what the generated code wraps.
  */
-public interface AsyncStateMachine<E, S extends Enum<S>> {
+public interface AsyncStateMachine<E, S extends Enum<S>, T extends Enum<T>> {
 
-    CompletableFuture<Outcome<E, S>> transitionTo(E entity, S target);
+    CompletableFuture<Outcome<E, S, T>> execute(E entity, T transition);
 
-    CompletableFuture<Outcome<E, S>> reevaluate(E entity);
+    CompletableFuture<Outcome<E, S, T>> reevaluate(E entity);
 
     /**
-     * Same as the two-argument {@code transitionTo}, carrying a second, operation-specific value that guards and
+     * Same as the two-argument {@code execute}, carrying a second, operation-specific value that guards and
      * actions read back through their context's {@code input} accessors. A {@code null} input delegates to that
      * overload; this default fails the returned future instead of silently dropping any other value.
      *
-     * @throws NullPointerException if {@code entity} or {@code target} is null
+     * @throws NullPointerException if {@code entity} or {@code transition} is null
      */
-    default CompletableFuture<Outcome<E, S>> transitionTo(E entity, S target, Object input) {
+    default CompletableFuture<Outcome<E, S, T>> execute(E entity, T transition, Object input) {
         Objects.requireNonNull(entity, "entity");
-        Objects.requireNonNull(target, "target");
+        Objects.requireNonNull(transition, "transition");
         if (input == null) {
-            return transitionTo(entity, target);
+            return execute(entity, transition);
         }
         return CompletableFuture.failedFuture(
                 new UnsupportedOperationException("this AsyncStateMachine does not support operation input"));

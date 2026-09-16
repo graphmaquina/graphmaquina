@@ -53,7 +53,7 @@ class SetGenerationTest {
         Class<?> companion = result.load("fx.LibraryRuntime");
         Object builder = companion.getMethod("builder", Duration.class, docActions).invoke(null, Duration.ofSeconds(5), actions);
         List<String> seen = new ArrayList<>();
-        TransitionListener listener = (MachineKey<?, ?> key, Outcome<?, ?> outcome) ->
+        TransitionListener listener = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) ->
                 seen.add(key.entity().getSimpleName() + ":" + outcome.getClass().getSimpleName());
         builder.getClass().getMethod("listener", TransitionListener.class).invoke(builder, listener);
         Object library = builder.getClass().getMethod("build").invoke(builder);
@@ -68,7 +68,7 @@ class SetGenerationTest {
             Object page = pageClass.getConstructor(String.class, docClass).newInstance("p1", doc);
             assertInstanceOf(Outcome.Applied.class, docs.getClass().getMethod("submit", docClass).invoke(docs, doc));
             Object finished = pages.getClass().getMethod("finish", pageClass).invoke(pages, page);
-            Outcome.Applied<?, ?> applied = assertInstanceOf(Outcome.Applied.class, finished);
+            Outcome.Applied<?, ?, ?> applied = assertInstanceOf(Outcome.Applied.class, finished);
             Reaction.Done reaction = assertInstanceOf(Reaction.Done.class, applied.reactions().get(0));
             assertInstanceOf(Outcome.Applied.class, reaction.outcome());
             assertEquals("PUBLISHED", docClass.getMethod("getStatus").invoke(doc).toString());
@@ -82,7 +82,7 @@ class SetGenerationTest {
     }
 
     @Test
-    void perMachineTimeoutOverrideRejectsMachinesWithoutAsyncCells() throws Exception {
+    void perMachineTimeoutOverrideRejectsMachinesWithoutAsyncTransitions() throws Exception {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertTrue(result.success(), result.describe());
@@ -99,6 +99,7 @@ class SetGenerationTest {
     /** A package holding Status, Thing and a minimal Things machine over them: three simple names shared with every twin. */
     private static void twin(Map<String, String> sources, String name) {
         sources.put(name + ".Status", "package " + name + ";\npublic enum Status { OPEN, DONE }\n");
+        sources.put(name + ".Step", "package " + name + ";\npublic enum Step { FINISH }\n");
         sources.put(name + ".Thing", """
                 package %s;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -118,12 +119,13 @@ class SetGenerationTest {
                 import io.github.graphmaquina.api.Outcome;
                 import static %1$s.Status.DONE;
                 import static %1$s.Status.OPEN;
+                import static %1$s.Step.FINISH;
                 @GenerateGraphApi
                 @ThingsGraph.Definition(initial = OPEN, terminals = DONE, state = ThingRefs.Status.class, id = ThingRefs.Id.class)
-                @ThingsGraph.Row(state = OPEN, otherwise = "a thing is finished")
-                public interface Things extends Machine<Thing, Status> {
-                    @ThingsGraph.Move(from = OPEN, to = DONE)
-                    Outcome<Thing, Status> finish(Thing thing);
+                @ThingsGraph.StatePolicy(state = OPEN, otherwise = "a thing is finished")
+                public interface Things extends Machine<Thing, Status, Step> {
+                    @ThingsGraph.Transition(id = FINISH, from = OPEN, to = DONE)
+                    Outcome<Thing, Status, Step> finish(Thing thing);
                 }
                 """.formatted(name));
     }
@@ -161,7 +163,7 @@ class SetGenerationTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public class Executor {
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> ctx) { return ActionOutcome.ok(); }
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { return ActionOutcome.ok(); }
                 }
                 """);
         Compilation.Result result = Compilation.compileTyped(sources);

@@ -13,29 +13,30 @@ import java.util.List;
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
+ * @param <T> transition identifier enum of the machine
  */
-public final class TypedRecordsAssert<E, S extends Enum<S>> {
+public final class TypedRecordsAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
-    private final List<TransitionRecord<E, S>> actual;
+    private final List<TransitionRecord<E, S, T>> actual;
 
-    TypedRecordsAssert(String context, List<TransitionRecord<E, S>> actual) {
+    TypedRecordsAssert(String context, List<TransitionRecord<E, S, T>> actual) {
         this.context = context;
         this.actual = actual;
     }
 
-    public TypedRecordsAssert<E, S> hasSize(int expected) {
+    public TypedRecordsAssert<E, S, T> hasSize(int expected) {
         Checks.equal(context, "size", expected, actual.size());
         return this;
     }
 
     /** The one record of this entity; a selection of any other size fails rather than picking the first. */
-    public TransitionRecordAssert<E, S> single() {
+    public TransitionRecordAssert<E, S, T> single() {
         Checks.equal(context, "size", 1, actual.size());
         return atIndex(0);
     }
 
-    public TransitionRecordAssert<E, S> atIndex(int index) {
+    public TransitionRecordAssert<E, S, T> atIndex(int index) {
         if (index < 0) {
             throw new IllegalArgumentException("index must not be negative: " + index);
         }

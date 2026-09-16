@@ -46,26 +46,26 @@ final class TypedValues {
     }
 
     /**
-     * The name of the state {@code value} holds, and empty when it holds anything else or a constant of another
-     * enum. The enum is compared by identity, not by name, so a constant only names a state of the machine that
-     * declares {@code states}; javac has already refused what this returns empty for, and no code wraps that
-     * refusal in one of its own.
+     * The name of the constant {@code value} holds, and empty when it holds anything else or a constant of
+     * another enum. The enum is compared by identity, not by name, so a constant only names a state or an
+     * identifier of the machine that declares {@code declaring}; javac has already refused what this returns
+     * empty for, and no code wraps that refusal in one of its own.
      */
-    static Optional<String> stateName(AnnotationValue value, TypeElement states) {
+    static Optional<String> constantName(AnnotationValue value, TypeElement declaring) {
         if (!(value.getValue() instanceof VariableElement)) {
             return Optional.empty();
         }
         VariableElement constant = enumConstant(value);
-        return constant.getEnclosingElement().equals(states)
+        return constant.getEnclosingElement().equals(declaring)
                 ? Optional.of(constant.getSimpleName().toString())
                 : Optional.empty();
     }
 
-    /** The names of every state of an array element, and empty when one of its values is not one of {@code states}. */
-    static Optional<List<String>> stateNames(List<AnnotationValue> values, TypeElement states) {
+    /** The names of every constant of an array element, and empty when one of them is not one of {@code declaring}'s. */
+    static Optional<List<String>> constantNames(List<AnnotationValue> values, TypeElement declaring) {
         List<String> names = new ArrayList<>();
         for (AnnotationValue value : values) {
-            Optional<String> name = stateName(value, states);
+            Optional<String> name = constantName(value, declaring);
             if (name.isEmpty()) {
                 return Optional.empty();
             }

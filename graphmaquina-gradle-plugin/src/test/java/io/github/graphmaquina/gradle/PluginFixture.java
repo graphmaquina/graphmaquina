@@ -56,6 +56,13 @@ public final class PluginFixture {
     /** The published index a compilation leaves beside its classes. */
     private static final String EXPORTS = "META-INF/graphmaquina/exports.json";
 
+    /** The manifest and index schema this release of the tool reads; the retired one is 1. */
+    private static final int SCHEMA_VERSION = 2;
+
+    /** The nested types of the retired matrix vocabulary; no 2.0 artefact may carry one. */
+    private static final List<String> RETIRED_VOCABULARY =
+            List.of("$Row", "$Cell", "$Forbid", "$Action", "$Move");
+
     private final Path directory;
 
     /** Whether TestKit injects the plugin under development, instead of the build resolving a published one. */
@@ -88,10 +95,10 @@ public final class PluginFixture {
     }
 
     /**
-     * Writes the shared adapter domain — {@code fx.Status}, {@code fx.Order}, {@code fx.Actions},
-     * {@code fx.Orders} and the unmarked {@code fx.Unrelated} — into a build that resolves StateGraph from
-     * {@code repository}, compiles with Lombok before the StateGraph processor and uses the project's own strict
-     * compiler options.
+     * Writes the shared adapter domain — {@code fx.Status}, {@code fx.Transition}, {@code fx.Order},
+     * {@code fx.Actions}, {@code fx.Orders} and the unmarked {@code fx.Unrelated} — into a build that resolves
+     * StateGraph from {@code repository}, compiles with Lombok before the StateGraph processor and uses the
+     * project's own strict compiler options.
      *
      * @param directory the temporary directory to materialize the project under
      * @param repository the file Maven repository the StateGraph artifacts were published to
@@ -339,6 +346,12 @@ public final class PluginFixture {
                 /** The states an order moves through. */
                 public enum Status { NEW, DONE }
                 """);
+        sources.put("fx.Transition", """
+                package fx;
+
+                /** The identified transitions of the order graph. */
+                public enum Transition { APPROVE }
+                """);
         sources.put("fx.Order", """
                 package fx;
 
@@ -369,7 +382,7 @@ public final class PluginFixture {
                 public final class Actions {
 
                     @GraphAction
-                    public ActionOutcome approve(TransitionContext<Order, Status> context) {
+                    public ActionOutcome approve(TransitionContext<Order, Status, Transition> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -406,17 +419,17 @@ public final class PluginFixture {
 
                 import static fx.Status.DONE;
                 import static fx.Status.NEW;
+                import static fx.Transition.APPROVE;
 
                 /** The machine of the fixture. */
                 @GenerateGraphApi
                 @%1$sGraph.Definition(initial = NEW, terminals = DONE,
                     state = OrderRefs.Status.class, id = OrderRefs.Id.class)
-                @%1$sGraph.Row(state = NEW, otherwise = "a new order is approved")
-                @%1$sGraph.Row(state = DONE, otherwise = "a finished order does not move")
-                public interface %1$s extends Machine<Order, Status> {
+                @%1$sGraph.StatePolicy(state = NEW, otherwise = "a new order is approved")
+                public interface %1$s extends Machine<Order, Status, Transition> {
 
-                    @%1$sGraph.Action(from = NEW, to = DONE, action = ActionsRefs.%2$s.class)
-                    Outcome<Order, Status> %3$s(Order order);
+                    @%1$sGraph.Transition(id = APPROVE, from = NEW, to = DONE, action = ActionsRefs.%2$s.class)
+                    Outcome<Order, Status, Transition> %3$s(Order order);
                 }
                 """.formatted(facade, symbol, operation);
     }
@@ -468,16 +481,31 @@ public final class PluginFixture {
 
     /**
      * Writes {@code lib/dep.jar}, a dependency whose only StateGraph content is the index it publishes, so a
-     * test can change that resource alone and watch the generation react to it.
+     * test can change that resource alone and watch the generation react to it. The index is of the current
+     * schema and of this very tool version, which is what a coordinated producer publishes.
      *
      * @param compilationId the identity the published index claims
      * @throws IOException if the jar cannot be written
      */
     public void writeDependencyJar(String compilationId) throws IOException {
+        writeDependencyJar(compilationId, SCHEMA_VERSION, VERSION);
+    }
+
+    /**
+     * The same dependency, publishing an index of {@code schemaVersion} written by {@code toolVersion}, so a
+     * test can present a producer this tool must refuse instead of interpret.
+     *
+     * @param compilationId the identity the published index claims
+     * @param schemaVersion the schema the index declares
+     * @param toolVersion the tool version the index claims to have been written by
+     * @throws IOException if the jar cannot be written
+     */
+    public void writeDependencyJar(String compilationId, int schemaVersion, String toolVersion)
+            throws IOException {
         Path jar = Files.createDirectories(directory.resolve("lib")).resolve("dep.jar");
         String index = """
                 {
-                  "schemaVersion": 1,
+                  "schemaVersion": %d,
                   "toolVersion": "%s",
                   "compilationId": "%s",
                   "model": {
@@ -486,7 +514,7 @@ public final class PluginFixture {
                   },
                   "annotationTypes": []
                 }
-                """.formatted(VERSION, compilationId);
+                """.formatted(schemaVersion, toolVersion, compilationId);
         try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(jar), StandardCharsets.UTF_8)) {
             out.putNextEntry(new ZipEntry(EXPORTS));
             out.write(index.getBytes(StandardCharsets.UTF_8));
@@ -519,6 +547,16 @@ public final class PluginFixture {
                 .withProjectDir(directory.toFile())
                 .withArguments(arguments);
         return injectedPluginClasspath ? runner.withPluginClasspath() : runner;
+    }
+
+    /**
+     * The version every StateGraph artifact of the fixture repository is published under, which is also the
+     * tool version a coordinated producer's index claims.
+     *
+     * @return the version this build resolved
+     */
+    public static String version() {
+        return VERSION;
     }
 
     /**
@@ -570,6 +608,24 @@ public final class PluginFixture {
             }
         }
         return false;
+    }
+
+    /**
+     * The entries of the project's jar that declare a nested type of the retired matrix vocabulary, which a
+     * 2.0 artefact never publishes.
+     *
+     * @return the offending entry names, empty when the jar carries only the graph vocabulary
+     */
+    public List<String> retiredVocabularyEntries() {
+        List<String> found = new ArrayList<>();
+        for (String entry : jarEntries()) {
+            for (String retired : RETIRED_VOCABULARY) {
+                if (entry.contains(retired)) {
+                    found.add(entry);
+                }
+            }
+        }
+        return List.copyOf(found);
     }
 
     /**

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.TransitionContext;
@@ -24,6 +25,7 @@ import io.github.graphmaquina.test.RecordedTransitionsAssert;
 import io.github.graphmaquina.test.TransitionRecorder;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,10 +52,10 @@ class TransitionRecorderTest {
     @Test
     void recorderCapturesProjectionAtNotificationTime() {
         TransitionRecorder recorder = TransitionRecorder.projecting(
-                (MachineKey<?, ?> key, Outcome<?, ?> outcome) -> ((Entity) outcome.entity()).state());
+                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> ((Entity) outcome.entity()).state());
         Entity entity = new Entity("e", State.READY);
         recorder.onOutcome(TestDomain.KEY,
-                new Outcome.Applied<>(entity, State.NEW, State.READY, List.of(), List.of()));
+                new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(), List.of()));
         entity.setState(State.DONE);
         assertEquals(Optional.of(State.READY), recorder.snapshot().get(0).projection());
         recorder.assertRecorded().forEntity(TestDomain.KEY, entity).single()
@@ -63,12 +65,12 @@ class TransitionRecorderTest {
     @Test
     void theProjectionReceivesTheKeyOfTheCallbackItIsRecording() {
         TransitionRecorder recorder = TransitionRecorder.projecting(
-                (MachineKey<?, ?> key, Outcome<?, ?> outcome) -> key + "=" + outcome.current());
+                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> key + "=" + outcome.current());
         Entity entity = new Entity("e", State.NEW);
         Twin twin = new Twin("t", State.NEW);
         recorder.onOutcome(TestDomain.KEY, applied(entity));
         recorder.onOutcome(TWINS,
-                new Outcome.Applied<>(twin, State.NEW, State.READY, List.of(), List.of()));
+                new Outcome.Applied<>(twin, State.NEW, TwinId.ADVANCE, State.READY, List.of(), List.of()));
         assertEquals(List.of(Optional.of("Entity/State=READY"), Optional.of("Twin/State=READY")),
                 recorder.snapshot().stream().map(RecordedTransition::projection).toList());
     }
@@ -88,7 +90,7 @@ class TransitionRecorderTest {
     @Test
     void aProjectionThatReturnsNothingIsRejectedAndRecordsNothing() {
         TransitionRecorder recorder = TransitionRecorder.projecting(
-                (MachineKey<?, ?> key, Outcome<?, ?> outcome) -> null);
+                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> null);
         Entity entity = new Entity("e", State.NEW);
         assertThrows(NullPointerException.class,
                 () -> recorder.onOutcome(TestDomain.KEY, applied(entity)));
@@ -174,7 +176,8 @@ class TransitionRecorderTest {
         Entity entity = new Entity("e", State.NEW);
         Twin twin = new Twin("t", State.NEW);
         recorder.onOutcome(TestDomain.KEY, applied(entity));
-        recorder.onOutcome(TWINS, new Outcome.Applied<>(twin, State.NEW, State.READY, List.of(), List.of()));
+        recorder.onOutcome(TWINS,
+                new Outcome.Applied<>(twin, State.NEW, TwinId.ADVANCE, State.READY, List.of(), List.of()));
         RecordedTransitionsAssert view = recorder.assertRecorded();
         assertSame(view, view.hasKeysExactly(TestDomain.KEY, TWINS));
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -220,9 +223,12 @@ class TransitionRecorderTest {
         Twin one = new Twin("same", State.NEW);
         Twin other = new Twin("same", State.NEW);
         assertEquals(one, other);
-        recorder.onOutcome(TWINS, new Outcome.Applied<>(one, State.NEW, State.READY, List.of(), List.of()));
-        recorder.onOutcome(TWINS, new Outcome.Applied<>(other, State.NEW, State.DONE, List.of(), List.of()));
-        recorder.onOutcome(TWIN_FLAGS, new Outcome.Applied<>(one, Flag.OFF, Flag.ON, List.of(), List.of()));
+        recorder.onOutcome(TWINS,
+                new Outcome.Applied<>(one, State.NEW, TwinId.ADVANCE, State.READY, List.of(), List.of()));
+        recorder.onOutcome(TWINS,
+                new Outcome.Applied<>(other, State.NEW, TwinId.ADVANCE, State.DONE, List.of(), List.of()));
+        recorder.onOutcome(TWIN_FLAGS,
+                new Outcome.Applied<>(one, Flag.OFF, TwinId.ADVANCE, Flag.ON, List.of(), List.of()));
         recorder.onOutcome(TestDomain.KEY, applied(new Entity("e", State.NEW)));
         RecordedTransitionsAssert view = recorder.assertRecorded();
         view.hasSize(4);
@@ -235,11 +241,11 @@ class TransitionRecorderTest {
     void aKeyThatEqualsTheRecordedKeyMatchesEvenAsAFreshInstance() {
         TransitionRecorder recorder = TransitionRecorder.create();
         Twin one = new Twin("one", State.NEW);
-        MachineKey<Twin, State> sameValue = MachineKey.of(Twin.class, State.class);
+        MachineKey<Twin, State, TwinId> sameValue = MachineKey.of(Twin.class, State.class, TwinId.class);
         assertEquals(TWINS, sameValue);
         assertNotSame(TWINS, sameValue);
         recorder.onOutcome(TWINS,
-                new Outcome.Applied<>(one, State.NEW, State.READY, List.of(), List.of()));
+                new Outcome.Applied<>(one, State.NEW, TwinId.ADVANCE, State.READY, List.of(), List.of()));
         RecordedTransitionsAssert view = recorder.assertRecorded();
         assertSame(view, view.hasKeysExactly(sameValue));
         view.forEntity(sameValue, one).single().isApplied().movedTo(State.READY);
@@ -251,7 +257,7 @@ class TransitionRecorderTest {
         Entity entity = new Entity("e", State.NEW);
         Entity absent = new Entity("absent", State.NEW);
         recorder.onOutcome(TestDomain.KEY, applied(entity));
-        OutcomeSequenceAssert<Entity, State> view =
+        OutcomeSequenceAssert<Entity, State, Id> view =
                 recorder.assertRecorded().forEntity(TestDomain.KEY, absent);
         assertSame(view, view.hasSize(0));
         String context = "recorded transitions for " + TestDomain.KEY;
@@ -268,7 +274,7 @@ class TransitionRecorderTest {
         Entity entity = new Entity("e", State.NEW);
         recorder.onOutcome(TestDomain.KEY, applied(entity));
         recorder.onOutcome(TestDomain.KEY, ignored(entity));
-        OutcomeSequenceAssert<Entity, State> view =
+        OutcomeSequenceAssert<Entity, State, Id> view =
                 recorder.assertRecorded().forEntity(TestDomain.KEY, entity);
         view.hasSize(2).atIndex(0).isApplied().movedTo(State.READY);
         view.atIndex(1).isIgnored().hasRecordedState(State.NEW);
@@ -284,7 +290,7 @@ class TransitionRecorderTest {
         Entity entity = new Entity("e", State.NEW);
         recorder.onOutcome(TestDomain.KEY, applied(entity));
         recorder.onOutcome(TestDomain.KEY, ignored(entity));
-        OutcomeSequenceAssert<Entity, State> view =
+        OutcomeSequenceAssert<Entity, State, Id> view =
                 recorder.assertRecorded().forEntity(TestDomain.KEY, entity);
         String context = "recorded transitions for " + TestDomain.KEY;
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.atIndex(1).isApplied()),
@@ -309,7 +315,8 @@ class TransitionRecorderTest {
     void anOutcomeThatDoesNotBelongToItsKeyIsAProgrammingError() {
         TransitionRecorder recorder = TransitionRecorder.create();
         Twin twin = new Twin("t", State.NEW);
-        recorder.onOutcome(TWINS, new Outcome.Applied<>(twin, Flag.OFF, Flag.ON, List.of(), List.of()));
+        recorder.onOutcome(TWINS,
+                new Outcome.Applied<>(twin, Flag.OFF, TwinId.ADVANCE, Flag.ON, List.of(), List.of()));
         RecordedTransitionsAssert view = recorder.assertRecorded();
         assertTrue(assertThrows(IllegalArgumentException.class, () -> view.forEntity(TWINS, twin))
                 .getMessage().startsWith("outcome does not belong to the machine: states"));
@@ -322,11 +329,11 @@ class TransitionRecorderTest {
         TransitionRecorder recorder = TransitionRecorder.create();
         List<String> calls = new ArrayList<>();
         IllegalStateException boom = new IllegalStateException("audit down");
-        TransitionListener failing = (MachineKey<?, ?> key, Outcome<?, ?> outcome) -> {
+        TransitionListener failing = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> {
             calls.add("failing");
             throw boom;
         };
-        TransitionListener never = (MachineKey<?, ?> key, Outcome<?, ?> outcome) -> calls.add("never");
+        TransitionListener never = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> calls.add("never");
         TransitionListener composed = TransitionRecorder.compose(recorder, failing, never);
         Entity entity = new Entity("e", State.NEW);
         assertSame(boom, assertThrows(IllegalStateException.class,
@@ -403,7 +410,7 @@ class TransitionRecorderTest {
         Shipment shipment = new Shipment("s1", ShipmentStatus.OPEN);
         Parcel parcel = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
         try (MachineRegistry registry = registry(recorder)) {
-            registry.of(PARCELS).transitionTo(parcel, ParcelStatus.LOADED);
+            registry.of(PARCELS).execute(parcel, Loading.LOAD);
         }
         RecordedTransitionsAssert recorded = recorder.assertRecorded();
         recorded.hasSize(2).hasKeysExactly(SHIPMENTS, PARCELS)
@@ -417,11 +424,11 @@ class TransitionRecorderTest {
     @Test
     void aProjectionSurvivesTheTransitionsThatFollowIt() {
         TransitionRecorder recorder = TransitionRecorder.projecting(
-                (MachineKey<?, ?> key, Outcome<?, ?> outcome) -> outcome.current());
+                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> outcome.current());
         Shipment shipment = new Shipment("s1", ShipmentStatus.OPEN);
         Parcel parcel = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
         try (MachineRegistry registry = registry(recorder)) {
-            registry.of(PARCELS).transitionTo(parcel, ParcelStatus.LOADED);
+            registry.of(PARCELS).execute(parcel, Loading.LOAD);
         }
         shipment.setStatus(ShipmentStatus.OPEN);
         assertEquals(List.of(Optional.of(ShipmentStatus.SENT), Optional.of(ParcelStatus.LOADED)),
@@ -433,13 +440,13 @@ class TransitionRecorderTest {
     void aComposedListenerThatThrowsStillLeavesTheRecordingBehind() {
         TransitionRecorder recorder = TransitionRecorder.create();
         IllegalStateException boom = new IllegalStateException("audit down");
-        TransitionListener failing = (MachineKey<?, ?> key, Outcome<?, ?> outcome) -> {
+        TransitionListener failing = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> {
             throw boom;
         };
         Parcel parcel = new Parcel("p1", ParcelStatus.LOADING, Optional.empty());
         try (MachineRegistry registry = registry(TransitionRecorder.compose(recorder, failing))) {
             AfterCommitException error = assertThrows(AfterCommitException.class,
-                    () -> registry.of(PARCELS).transitionTo(parcel, ParcelStatus.LOADED));
+                    () -> registry.of(PARCELS).execute(parcel, Loading.LOAD));
             assertSame(boom, error.getCause());
         }
         recorder.assertRecorded().hasSize(1).forEntity(PARCELS, parcel).single()
@@ -448,21 +455,32 @@ class TransitionRecorderTest {
 
     // --- fixtures -------------------------------------------------------------------------------------------
 
-    private static final MachineKey<Twin, State> TWINS = MachineKey.of(Twin.class, State.class);
-    private static final MachineKey<Twin, Flag> TWIN_FLAGS = MachineKey.of(Twin.class, Flag.class);
-    private static final MachineKey<Shipment, ShipmentStatus> SHIPMENTS =
-            MachineKey.of(Shipment.class, ShipmentStatus.class);
-    private static final MachineKey<Parcel, ParcelStatus> PARCELS =
-            MachineKey.of(Parcel.class, ParcelStatus.class);
+    private static final MachineKey<Twin, State, TwinId> TWINS =
+            MachineKey.of(Twin.class, State.class, TwinId.class);
+    private static final MachineKey<Twin, Flag, TwinId> TWIN_FLAGS =
+            MachineKey.of(Twin.class, Flag.class, TwinId.class);
+    private static final MachineKey<Shipment, ShipmentStatus, Sending> SHIPMENTS =
+            MachineKey.of(Shipment.class, ShipmentStatus.class, Sending.class);
+    private static final MachineKey<Parcel, ParcelStatus, Loading> PARCELS =
+            MachineKey.of(Parcel.class, ParcelStatus.class, Loading.class);
 
     /** A second state enum of {@link Twin}: one entity class belongs to as many machines as it has states. */
     enum Flag { OFF, ON }
 
+    /** Transition identifiers of the twin machines. */
+    enum TwinId { ADVANCE }
+
     /** States of {@link Shipment}: the machine that watches. */
     enum ShipmentStatus { OPEN, SENT }
 
+    /** Transition identifiers of the shipment machine. */
+    enum Sending { SEND }
+
     /** States of {@link Parcel}: the machine that is watched. */
     enum ParcelStatus { LOADING, LOADED }
+
+    /** Transition identifiers of the parcel machine. */
+    enum Loading { LOAD }
 
     /** Entity that compares equal to any other twin carrying the same id, so identity and equality differ. */
     static final class Twin {
@@ -534,31 +552,30 @@ class TransitionRecorderTest {
         void setStatus(ParcelStatus status) { this.status = status; }
     }
 
-    private static Outcome<Entity, State> applied(Entity entity) {
-        return new Outcome.Applied<>(entity, State.NEW, State.READY, List.of(), List.of());
+    private static Outcome<Entity, State, Id> applied(Entity entity) {
+        return new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(), List.of());
     }
 
-    private static Outcome<Entity, State> ignored(Entity entity) {
-        return new Outcome.Ignored<>(entity, State.NEW, State.NEW);
+    private static Outcome<Entity, State, Id> ignored(Entity entity) {
+        return new Outcome.Ignored<>(entity, State.NEW, IgnoreReason.NO_WATCH);
     }
 
     private static MachineRegistry registry(TransitionListener listener) {
-        GraphDefinition<Shipment, ShipmentStatus> shipments = StateGraph.define(SHIPMENTS)
+        GraphDefinition<Shipment, ShipmentStatus, Sending> shipments = StateGraph.define(SHIPMENTS)
                 .initial(ShipmentStatus.OPEN).terminal(ShipmentStatus.SENT)
-                .from(ShipmentStatus.OPEN)
-                    .to(ShipmentStatus.SENT).action("SendShipment",
-                            (TransitionContext<Shipment, ShipmentStatus> ctx) -> ActionOutcome.ok())
-                    .stay()
-                    .watches(PARCELS, Shipment::parcels, Parcel::shipment)
-                        .when(allIn(ParcelStatus.LOADED)).goTo(ShipmentStatus.SENT)
-                    .forbidOthers("an open shipment only sends")
-                .from(ShipmentStatus.SENT).stay().forbidOthers("sent is final")
+                .statePolicy(ShipmentStatus.OPEN, "an open shipment only sends")
+                .transition(Sending.SEND, ShipmentStatus.OPEN, ShipmentStatus.SENT)
+                    .action("SendShipment",
+                            (TransitionContext<Shipment, ShipmentStatus, Sending> ctx) -> ActionOutcome.ok())
+                    .endTransition()
+                .watch(ShipmentStatus.OPEN, PARCELS, Shipment::parcels, Parcel::shipment)
+                    .when(allIn(ParcelStatus.LOADED)).execute(Sending.SEND)
+                    .endWatch()
                 .build();
-        GraphDefinition<Parcel, ParcelStatus> parcels = StateGraph.define(PARCELS)
+        GraphDefinition<Parcel, ParcelStatus, Loading> parcels = StateGraph.define(PARCELS)
                 .initial(ParcelStatus.LOADING).terminal(ParcelStatus.LOADED)
-                .from(ParcelStatus.LOADING).to(ParcelStatus.LOADED).move().stay()
-                    .forbidOthers("a loading parcel only loads")
-                .from(ParcelStatus.LOADED).stay().forbidOthers("loaded is final")
+                .statePolicy(ParcelStatus.LOADING, "a loading parcel only loads")
+                .transition(Loading.LOAD, ParcelStatus.LOADING, ParcelStatus.LOADED).endTransition()
                 .build();
         return MachineRegistry.builder()
                 .add(StateMachines.from(shipments)

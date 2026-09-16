@@ -1,0 +1,187 @@
+package io.github.graphmaquina.graphonly;
+
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.APPROVE;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.AUTO_APPROVE;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.FAIL;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.RETOUCH;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.SUBMIT;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.KEY;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.DONE;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.OPEN;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.REVIEW;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.IgnoreReason;
+import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.RejectionKind;
+import io.github.graphmaquina.api.TransitionKind;
+import io.github.graphmaquina.api.TransitionRecord;
+import io.github.graphmaquina.dsl.StateGraph;
+import io.github.graphmaquina.fixtures.GraphOnlyFixture.Id;
+import io.github.graphmaquina.fixtures.GraphOnlyFixture.State;
+import io.github.graphmaquina.fixtures.GraphOnlyFixture.Ticket;
+import io.github.graphmaquina.fixtures.GraphOnlyFixture;
+import io.github.graphmaquina.runtime.MachineRegistry;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+class GraphOnlyRuntimeTest {
+
+    @Test void invokesTheSelectedParallelTransition() {
+        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder().transition(AUTO_APPROVE, REVIEW, DONE)
+            .action("auto", ctx -> { ctx.entity().calls.add("auto"); return ActionOutcome.ok(); })
+            .endTransition().build();
+        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+            Ticket ticket = new Ticket(1, REVIEW);
+            Outcome<Ticket,State,Id> result = registry.of(KEY).execute(ticket, AUTO_APPROVE);
+            assertInstanceOf(Outcome.Applied.class, result);
+            assertEquals(List.of("auto"), ticket.calls);
+            assertEquals(Optional.of(AUTO_APPROVE), result.requestedTransition());
+        }
+    }
+
+    @Test void missingTransitionDoesNotRunAnotherOperation() {
+        try (MachineRegistry registry = GraphOnlyFixture.registry(GraphOnlyFixture.builder().build())) {
+            Ticket ticket = new Ticket(1, OPEN);
+            Outcome<Ticket,State,Id> result = registry.of(KEY).execute(ticket, AUTO_APPROVE);
+            assertInstanceOf(Outcome.Rejected.class, result);
+            assertEquals(OPEN, result.current());
+            assertTrue(ticket.calls.isEmpty());
+        }
+    }
+
+    @Test void explicitSelfLoopRunsItsActionAndHook() {
+        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder().allowsCycle(REVIEW)
+            .transition(RETOUCH, REVIEW, REVIEW)
+            .action("touch", ctx -> { ctx.entity().calls.add("touch"); return ActionOutcome.ok(); })
+            .afterCommitWith("touched", (ticket, commit) -> ticket.calls.add(commit.transition().name()))
+            .endTransition().build();
+        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+            Ticket ticket = new Ticket(1, REVIEW);
+            Outcome<Ticket,State,Id> result = registry.of(KEY).execute(ticket, RETOUCH);
+            assertInstanceOf(Outcome.Applied.class, result);
+            assertEquals(List.of("touch", "RETOUCH"), ticket.calls);
+            assertEquals(REVIEW, ticket.state);
+        }
+    }
+
+    @Test void inputIsPerInvocationAndSurvivesRecovery() {
+        Object payload = new Object();
+        List<Optional<?>> seen = new ArrayList<>();
+        GraphDefinition<Ticket,State,Id> graph = StateGraph.define(KEY)
+            .initial(OPEN).terminal(DONE)
+            .statePolicy(OPEN, "submit first").statePolicy(REVIEW, "review required")
+            .transition(SUBMIT, OPEN, REVIEW).endTransition()
+            .transition(APPROVE, REVIEW, DONE)
+                .guard("inputGuard", ctx -> { seen.add(ctx.input()); return GuardResult.pass(); })
+                .action("failed", ctx -> { seen.add(ctx.input()); return ActionOutcome.failed("declined"); })
+                .onFailure(FAIL).endTransition()
+            .transition(FAIL, REVIEW, DONE)
+                .action("recover", ctx -> { seen.add(ctx.input()); return ActionOutcome.ok(); })
+                .endTransition().build();
+        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+            Outcome<Ticket,State,Id> outcome = registry.of(KEY).execute(new Ticket(1, REVIEW), APPROVE, payload);
+            assertInstanceOf(Outcome.Failed.class, outcome);
+            assertEquals(3, seen.size());
+            for (Optional<?> input : seen) assertSame(payload, input.orElseThrow());
+            seen.clear();
+            registry.of(KEY).execute(new Ticket(2, REVIEW), FAIL);
+            registry.of(KEY).execute(new Ticket(3, REVIEW), FAIL, null);
+            assertEquals(List.of(Optional.empty(), Optional.empty()), seen);
+        }
+    }
+
+    /** A rejection reports why, and never invents a destination the request never had. */
+    @Test void aRejectionCarriesItsKindAndTheRequestedIdentity() {
+        try (MachineRegistry registry = GraphOnlyFixture.registry(GraphOnlyFixture.builder().build())) {
+            Outcome<Ticket,State,Id> result = registry.of(KEY).execute(new Ticket(1, OPEN), APPROVE);
+            assertInstanceOf(Outcome.Rejected.class, result);
+            Outcome.Rejected<Ticket,State,Id> rejected = (Outcome.Rejected<Ticket,State,Id>) result;
+            assertEquals(RejectionKind.NO_TRANSITION, rejected.kind());
+            assertEquals("submit first", rejected.reason());
+            assertEquals(Optional.empty(), rejected.guard());
+            assertEquals(Optional.of(APPROVE), rejected.requestedTransition());
+        }
+    }
+
+    /** A specific reason overrides the state's default one, and only for identifiers with no edge. */
+    @Test void aDeclaredRejectionReasonWinsOverThePolicyDefault() {
+        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
+            .reject(OPEN, APPROVE, "approval requires review").build();
+        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+            Outcome<Ticket,State,Id> approve = registry.of(KEY).execute(new Ticket(1, OPEN), APPROVE);
+            assertEquals("approval requires review", ((Outcome.Rejected<Ticket,State,Id>) approve).reason());
+            Outcome<Ticket,State,Id> auto = registry.of(KEY).execute(new Ticket(2, OPEN), AUTO_APPROVE);
+            assertEquals("submit first", ((Outcome.Rejected<Ticket,State,Id>) auto).reason());
+        }
+    }
+
+    /** An edge with no action is applied straight after its guards, and it records the identity that selected it. */
+    @Test void aMoveIsAppliedAndRecordsItsIdentity() {
+        try (MachineRegistry registry = GraphOnlyFixture.registry(GraphOnlyFixture.builder().build())) {
+            Ticket ticket = new Ticket(1, OPEN);
+            Outcome<Ticket,State,Id> result = registry.of(KEY).execute(ticket, SUBMIT);
+            assertInstanceOf(Outcome.Applied.class, result);
+            Outcome.Applied<Ticket,State,Id> applied = (Outcome.Applied<Ticket,State,Id>) result;
+            assertEquals(REVIEW, ticket.state);
+            assertEquals(1, applied.records().size());
+            TransitionRecord<?,?,?> record = applied.records().get(0);
+            assertEquals(TransitionKind.MOVE, record.kind());
+            assertEquals(SUBMIT, record.transition());
+            assertEquals(Optional.empty(), record.action());
+            assertEquals(KEY, record.key());
+        }
+    }
+
+    /** Two guards reject with GUARD and name the one that stopped the request; the action never runs. */
+    @Test void aGuardRejectionNamesTheGuardAndSkipsTheAction() {
+        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
+            .transition(AUTO_APPROVE, REVIEW, DONE)
+                .guard("never", ctx -> GuardResult.reject("not automatic"))
+                .action("auto", ctx -> { ctx.entity().calls.add("auto"); return ActionOutcome.ok(); })
+                .endTransition().build();
+        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+            Ticket ticket = new Ticket(1, REVIEW);
+            Outcome<Ticket,State,Id> result = registry.of(KEY).execute(ticket, AUTO_APPROVE);
+            assertInstanceOf(Outcome.Rejected.class, result);
+            Outcome.Rejected<Ticket,State,Id> rejected = (Outcome.Rejected<Ticket,State,Id>) result;
+            assertEquals(RejectionKind.GUARD, rejected.kind());
+            assertEquals(Optional.of("never"), rejected.guard());
+            assertEquals("not automatic", rejected.reason());
+            assertTrue(ticket.calls.isEmpty());
+            assertEquals(REVIEW, ticket.state);
+        }
+    }
+
+    /** Reevaluation without a watch is Ignored and says so; it is not a rejection and selects nothing. */
+    @Test void reevaluationWithoutAWatchIsIgnoredWithoutARequest() {
+        try (MachineRegistry registry = GraphOnlyFixture.registry(GraphOnlyFixture.builder().build())) {
+            Outcome<Ticket,State,Id> result = registry.of(KEY).reevaluate(new Ticket(1, OPEN));
+            assertInstanceOf(Outcome.Ignored.class, result);
+            Outcome.Ignored<Ticket,State,Id> ignored = (Outcome.Ignored<Ticket,State,Id>) result;
+            assertEquals(IgnoreReason.NO_WATCH, ignored.reason());
+            assertEquals(Optional.empty(), ignored.requestedTransition());
+            assertEquals(OPEN, ignored.current());
+        }
+    }
+
+    /** Structural inspection returns identifiers, not destinations, and evaluates no guard. */
+    @Test void transitionsFromListsIdentifiers() {
+        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
+            .transition(AUTO_APPROVE, REVIEW, DONE).endTransition().build();
+        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+            assertEquals(Set.of(APPROVE, AUTO_APPROVE), registry.of(KEY).transitionsFrom(REVIEW));
+            assertEquals(Set.of(SUBMIT), registry.of(KEY).transitionsFrom(OPEN));
+            assertEquals(Set.of(), registry.of(KEY).transitionsFrom(DONE));
+        }
+    }
+}

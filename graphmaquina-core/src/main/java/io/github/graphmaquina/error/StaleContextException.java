@@ -9,10 +9,10 @@ import lombok.NonNull;
 @Getter
 public final class StaleContextException extends StateMachineException {
 
-    private final MachineKey<?, ?> key;
+    private final MachineKey<?, ?, ?> key;
     private final Object entity;
 
-    public StaleContextException(MachineKey<?, ?> key, @NonNull Object entity) {
+    public StaleContextException(MachineKey<?, ?, ?> key, @NonNull Object entity) {
         super("the context of " + Objects.requireNonNull(key, "key") + " is no longer valid: the transaction ended");
         this.key = key;
         this.entity = entity;

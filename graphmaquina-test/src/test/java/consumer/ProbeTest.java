@@ -18,6 +18,7 @@ import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.probe.ActionCall;
 import io.github.graphmaquina.test.probe.ActionProbe;
@@ -46,9 +47,9 @@ import org.junit.jupiter.api.Test;
  */
 class ProbeTest {
 
-    // Two distinct instances: the DSL rejects the same guard object declared twice on one cell (SG105).
-    private static final TransitionGuard<Entity, State> PASS_FIRST = context -> GuardResult.pass();
-    private static final TransitionGuard<Entity, State> PASS_SECOND = context -> GuardResult.pass();
+    // Two distinct instances: the DSL rejects the same guard object declared twice on one edge (SG105).
+    private static final TransitionGuard<Entity, State, Id> PASS_FIRST = context -> GuardResult.pass();
+    private static final TransitionGuard<Entity, State, Id> PASS_SECOND = context -> GuardResult.pass();
     private static final Consumer<Entity> NO_HOOK = entity -> { };
 
     // --- the premise of this task: the engine's short-circuit is visible in the probes -----------------
@@ -56,22 +57,22 @@ class ProbeTest {
     @Test
     void rejectedGuardPreventsLaterGuardAndActionCalls() {
         CallTrace trace = CallTrace.create();
-        GuardProbe<Entity, State> first = GuardProbe.<Entity, State>create("first", trace)
+        GuardProbe<Entity, State, Id> first = GuardProbe.<Entity, State, Id>create("first", trace)
                 .thenReturn(GuardResult.reject("no title"));
-        GuardProbe<Entity, State> second = GuardProbe.<Entity, State>create("second", trace)
+        GuardProbe<Entity, State, Id> second = GuardProbe.<Entity, State, Id>create("second", trace)
                 .otherwiseReturn(GuardResult.pass());
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
                 .otherwiseReturn(ActionOutcome.ok());
-        GraphDefinition<Entity, State> graph = StateGraph.define(TestDomain.KEY).initial(State.NEW)
-                .terminal(State.READY).terminal(State.DONE).terminal(State.FAILED)
-                .from(State.NEW).to(State.READY).action("prepare", action)
-                        .guard("first", first).guard("second", second)
-                    .to(State.DONE).move().to(State.FAILED).move().stay().forbidOthers("x")
-                .from(State.READY).stay().forbidOthers("x")
-                .from(State.DONE).stay().forbidOthers("x")
-                .from(State.FAILED).stay().forbidOthers("x").build();
+        GraphDefinition<Entity, State, Id> graph = StateGraph.define(TestDomain.KEY).initial(State.NEW)
+                .terminal(State.DONE).terminal(State.FAILED)
+                .statePolicy(State.NEW, "x").statePolicy(State.READY, "x")
+                .transition(Id.PREPARE, State.NEW, State.READY).action("prepare", action)
+                    .guard("first", first).guard("second", second).endTransition()
+                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
+                .transition(Id.FINISH, State.READY, State.DONE).endTransition()
+                .build();
         try (MachineRegistry registry = TestDomain.registry(graph)) {
-            registry.of(TestDomain.KEY).transitionTo(new Entity("e", State.NEW), State.READY);
+            registry.of(TestDomain.KEY).execute(new Entity("e", State.NEW), Id.PREPARE);
         }
         trace.assertNamesExactly("first");
         second.calls().assertCount(0);
@@ -81,11 +82,11 @@ class ProbeTest {
     @Test
     void guardsThenTheActionThenTheHookShareOneOrder() {
         CallTrace trace = CallTrace.create();
-        GuardProbe<Entity, State> first = GuardProbe.<Entity, State>create("first", trace)
+        GuardProbe<Entity, State, Id> first = GuardProbe.<Entity, State, Id>create("first", trace)
                 .otherwiseReturn(GuardResult.pass());
-        GuardProbe<Entity, State> second = GuardProbe.<Entity, State>create("second", trace)
+        GuardProbe<Entity, State, Id> second = GuardProbe.<Entity, State, Id>create("second", trace)
                 .otherwiseReturn(GuardResult.pass());
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
                 .otherwiseReturn(ActionOutcome.ok());
         HookProbe<Entity> hook = HookProbe.<Entity>create("audit", trace).otherwiseSucceed();
         Entity entity = new Entity("e", State.NEW);
@@ -99,10 +100,10 @@ class ProbeTest {
     @Test
     void theTraceRecordsEntryIntoACallbackAndNeitherSuccessNorCommit() {
         CallTrace trace = CallTrace.create();
-        GuardProbe<Entity, State> first = GuardProbe.<Entity, State>create("first", trace)
+        GuardProbe<Entity, State, Id> first = GuardProbe.<Entity, State, Id>create("first", trace)
                 .otherwiseReturn(GuardResult.pass());
         IllegalStateException boom = new IllegalStateException("no stock");
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace).thenThrow(boom);
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace).thenThrow(boom);
         HookProbe<Entity> hook = HookProbe.<Entity>create("audit", trace).otherwiseSucceed();
         Entity entity = new Entity("e", State.NEW);
         TransitionAbortedException aborted = assertThrows(TransitionAbortedException.class,
@@ -119,11 +120,14 @@ class ProbeTest {
         Entity child = new Entity("child", State.NEW);
         IllegalStateException boom = new IllegalStateException("first hook failed");
         HookProbe<Entity> later = HookProbe.<Entity>create("hook", CallTrace.create()).otherwiseSucceed();
-        GraphDefinition<Entity, State> graph = StateGraph.define(TestDomain.KEY).initial(State.NEW)
-                .terminal(State.READY).terminal(State.DONE).terminal(State.FAILED)
-                .from(State.NEW).to(State.READY).action("prepare", context -> {
+        GraphDefinition<Entity, State, Id> graph = StateGraph.define(TestDomain.KEY).initial(State.NEW)
+                .terminal(State.DONE).terminal(State.FAILED)
+                .statePolicy(State.NEW, "x").statePolicy(State.READY, "x")
+                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
+                .transition(Id.FINISH, State.READY, State.DONE).endTransition()
+                .transition(Id.PREPARE, State.NEW, State.READY).action("prepare", context -> {
                     if (context.entity() == root) {
-                        context.cascade(TestDomain.KEY, child, State.READY);
+                        context.cascade(TestDomain.KEY, child, Id.PREPARE);
                     }
                     return ActionOutcome.ok();
                 }).afterCommit("hook", entity -> {
@@ -131,14 +135,12 @@ class ProbeTest {
                         throw boom;
                     }
                     later.accept(entity);
-                }).to(State.DONE).move().to(State.FAILED).move().stay().forbidOthers("x")
-                .from(State.READY).stay().forbidOthers("x")
-                .from(State.DONE).stay().forbidOthers("x")
-                .from(State.FAILED).stay().forbidOthers("x").build();
+                }).endTransition()
+                .build();
 
         try (MachineRegistry registry = TestDomain.registry(graph)) {
             AfterCommitException failure = assertThrows(AfterCommitException.class,
-                    () -> registry.of(TestDomain.KEY).transitionTo(root, State.READY));
+                    () -> registry.of(TestDomain.KEY).execute(root, Id.PREPARE));
             assertSame(boom, failure.getCause());
         }
         assertEquals(State.READY, root.state());
@@ -151,16 +153,16 @@ class ProbeTest {
     @Test
     void queuedResponsesAreServedInTheOrderTheyWereScripted() {
         CallTrace trace = CallTrace.create();
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
                 .thenReturn(ActionOutcome.ok())
                 .thenReturn(ActionOutcome.failed("no stock"));
         HookProbe<Entity> hook = HookProbe.<Entity>create("audit", trace).otherwiseSucceed();
-        GraphDefinition<Entity, State> graph = graph(PASS_FIRST, PASS_SECOND, action, hook);
+        GraphDefinition<Entity, State, Id> graph = graph(PASS_FIRST, PASS_SECOND, action, hook);
         Entity moved = new Entity("moved", State.NEW);
         Entity failed = new Entity("failed", State.NEW);
         try (MachineRegistry registry = TestDomain.registry(graph)) {
-            registry.of(TestDomain.KEY).transitionTo(moved, State.READY);
-            registry.of(TestDomain.KEY).transitionTo(failed, State.READY);
+            registry.of(TestDomain.KEY).execute(moved, Id.PREPARE);
+            registry.of(TestDomain.KEY).execute(failed, Id.PREPARE);
         }
         assertEquals(State.READY, moved.state());
         assertEquals(State.FAILED, failed.state());
@@ -173,15 +175,15 @@ class ProbeTest {
     @Test
     void theDefaultAnswersEveryCallTheQueueNoLongerCovers() {
         CallTrace trace = CallTrace.create();
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
                 .thenReturn(ActionOutcome.failed("first try"))
                 .otherwiseReturn(ActionOutcome.ok());
-        GraphDefinition<Entity, State> graph = graph(PASS_FIRST, PASS_SECOND, action, NO_HOOK);
+        GraphDefinition<Entity, State, Id> graph = graph(PASS_FIRST, PASS_SECOND, action, NO_HOOK);
         List<Entity> entities = List.of(new Entity("a", State.NEW), new Entity("b", State.NEW),
                 new Entity("c", State.NEW));
         try (MachineRegistry registry = TestDomain.registry(graph)) {
             for (Entity entity : entities) {
-                registry.of(TestDomain.KEY).transitionTo(entity, State.READY);
+                registry.of(TestDomain.KEY).execute(entity, Id.PREPARE);
             }
         }
         assertEquals(List.of(State.FAILED, State.READY, State.READY),
@@ -205,7 +207,7 @@ class ProbeTest {
     @Test
     void anUnscriptedActionFailsTheTestRatherThanTheMachine() {
         CallTrace trace = CallTrace.create();
-        ActionProbe<Entity, State> action = ActionProbe.create("prepare", trace);
+        ActionProbe<Entity, State, Id> action = ActionProbe.create("prepare", trace);
         Entity entity = new Entity("e", State.NEW);
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
                 () -> transition(graph(PASS_FIRST, PASS_SECOND, action, NO_HOOK), entity));
@@ -228,8 +230,8 @@ class ProbeTest {
     void aGuardThatThrowsAbortsWithTheVeryExceptionItWasGiven() {
         CallTrace trace = CallTrace.create();
         IllegalStateException boom = new IllegalStateException("cannot decide");
-        GuardProbe<Entity, State> first = GuardProbe.<Entity, State>create("first", trace).thenThrow(boom);
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+        GuardProbe<Entity, State, Id> first = GuardProbe.<Entity, State, Id>create("first", trace).thenThrow(boom);
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
                 .otherwiseReturn(ActionOutcome.ok());
         TransitionAbortedException aborted = assertThrows(TransitionAbortedException.class,
                 () -> transition(graph(first, PASS_SECOND, action, NO_HOOK), new Entity("e", State.NEW)));
@@ -257,11 +259,11 @@ class ProbeTest {
         CallTrace trace = CallTrace.create();
         IllegalStateException boom = new IllegalStateException("no stock");
         List<String> seen = new ArrayList<>();
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
                 .thenReturn(ActionOutcome.ok())
                 .thenThrow(boom)
                 .onCall(context -> seen.add(context.entity().id() + ":" + context.to()));
-        GraphDefinition<Entity, State> graph = graph(PASS_FIRST, PASS_SECOND, action, NO_HOOK);
+        GraphDefinition<Entity, State, Id> graph = graph(PASS_FIRST, PASS_SECOND, action, NO_HOOK);
         Entity applied = new Entity("applied", State.NEW);
         transition(graph, applied);
         assertEquals(State.READY, applied.state());
@@ -279,13 +281,13 @@ class ProbeTest {
         CallTrace trace = CallTrace.create();
         IllegalStateException boom = new IllegalStateException("cannot decide");
         List<String> seen = new ArrayList<>();
-        GuardProbe<Entity, State> first = GuardProbe.<Entity, State>create("first", trace)
+        GuardProbe<Entity, State, Id> first = GuardProbe.<Entity, State, Id>create("first", trace)
                 .thenReturn(GuardResult.pass())
                 .thenThrow(boom)
                 .onCall(context -> seen.add(context.entity().id() + ":" + context.from()));
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
                 .otherwiseReturn(ActionOutcome.ok());
-        GraphDefinition<Entity, State> graph = graph(first, PASS_SECOND, action, NO_HOOK);
+        GraphDefinition<Entity, State, Id> graph = graph(first, PASS_SECOND, action, NO_HOOK);
         Entity passed = new Entity("passed", State.NEW);
         transition(graph, passed);
         assertEquals(State.READY, passed.state());
@@ -304,15 +306,16 @@ class ProbeTest {
     @Test
     void anActionCallKeepsTheValuesReadOnEntryAndNotTheLiveContext() {
         CallTrace trace = CallTrace.create();
-        AtomicReference<TransitionContext<Entity, State>> captured = new AtomicReference<>();
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+        AtomicReference<TransitionContext<Entity, State, Id>> captured = new AtomicReference<>();
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
                 .otherwiseReturn(ActionOutcome.ok())
                 .onCall(captured::set);
         Entity entity = new Entity("e", State.NEW);
         transition(graph(PASS_FIRST, PASS_SECOND, action, NO_HOOK), entity);
-        ActionCall<Entity, State> call = action.calls().single();
+        ActionCall<Entity, State, Id> call = action.calls().single();
         assertSame(entity, call.entity());
         assertEquals(State.NEW, call.from());
+        assertEquals(Id.PREPARE, call.transition());
         assertEquals(State.READY, call.to());
         assertEquals(0, call.depth());
         assertEquals(State.READY, entity.state());
@@ -322,24 +325,25 @@ class ProbeTest {
     @Test
     void aGuardCallKeepsTheEntityAndTheEdgeItWasAskedAbout() {
         CallTrace trace = CallTrace.create();
-        GuardProbe<Entity, State> first = GuardProbe.<Entity, State>create("first", trace)
+        GuardProbe<Entity, State, Id> first = GuardProbe.<Entity, State, Id>create("first", trace)
                 .otherwiseReturn(GuardResult.pass());
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
                 .otherwiseReturn(ActionOutcome.ok());
         Entity entity = new Entity("e", State.NEW);
         transition(graph(first, PASS_SECOND, action, NO_HOOK), entity);
-        GuardCall<Entity, State> call = first.calls().single();
+        GuardCall<Entity, State, Id> call = first.calls().single();
         assertSame(entity, call.entity());
         assertEquals(State.NEW, call.from());
+        assertEquals(Id.PREPARE, call.transition());
         assertEquals(State.READY, call.to());
     }
 
     @Test
     void theTraceCarriesTheSameCallTheProbeRecorded() {
         CallTrace trace = CallTrace.create();
-        GuardProbe<Entity, State> first = GuardProbe.<Entity, State>create("first", trace)
+        GuardProbe<Entity, State, Id> first = GuardProbe.<Entity, State, Id>create("first", trace)
                 .otherwiseReturn(GuardResult.pass());
-        ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+        ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
                 .otherwiseReturn(ActionOutcome.ok());
         HookProbe<Entity> hook = HookProbe.<Entity>create("audit", trace).otherwiseSucceed();
         Entity entity = new Entity("e", State.NEW);
@@ -427,23 +431,23 @@ class ProbeTest {
     @Test
     void aProbeRejectsAMissingOrBlankName() {
         CallTrace trace = CallTrace.create();
-        assertThrows(NullPointerException.class, () -> ActionProbe.<Entity, State>create(null, trace));
-        assertThrows(NullPointerException.class, () -> GuardProbe.<Entity, State>create("first", null));
+        assertThrows(NullPointerException.class, () -> ActionProbe.<Entity, State, Id>create(null, trace));
+        assertThrows(NullPointerException.class, () -> GuardProbe.<Entity, State, Id>create("first", null));
         assertThrows(NullPointerException.class, () -> HookProbe.<Entity>create("audit", null));
-        assertThrows(IllegalArgumentException.class, () -> ActionProbe.<Entity, State>create(" ", trace));
-        assertThrows(IllegalArgumentException.class, () -> GuardProbe.<Entity, State>create("", trace));
+        assertThrows(IllegalArgumentException.class, () -> ActionProbe.<Entity, State, Id>create(" ", trace));
+        assertThrows(IllegalArgumentException.class, () -> GuardProbe.<Entity, State, Id>create("", trace));
         assertThrows(IllegalArgumentException.class, () -> HookProbe.<Entity>create(" ", trace));
     }
 
     @Test
     void aProbeRejectsANullResponseOrSideEffect() {
         CallTrace trace = CallTrace.create();
-        ActionProbe<Entity, State> action = ActionProbe.create("prepare", trace);
+        ActionProbe<Entity, State, Id> action = ActionProbe.create("prepare", trace);
         assertThrows(NullPointerException.class, () -> action.thenReturn(null));
         assertThrows(NullPointerException.class, () -> action.thenThrow(null));
         assertThrows(NullPointerException.class, () -> action.otherwiseReturn(null));
         assertThrows(NullPointerException.class, () -> action.onCall(null));
-        GuardProbe<Entity, State> guard = GuardProbe.create("first", trace);
+        GuardProbe<Entity, State, Id> guard = GuardProbe.create("first", trace);
         assertThrows(NullPointerException.class, () -> guard.thenReturn(null));
         assertThrows(NullPointerException.class, () -> guard.otherwiseReturn(null));
         assertThrows(NullPointerException.class, () -> guard.onCall(null));
@@ -494,23 +498,23 @@ class ProbeTest {
      * followed by the hook {@code audit}; a failed outcome routes to FAILED, so the probe can script one
      * without aborting the transaction.
      */
-    private static GraphDefinition<Entity, State> graph(TransitionGuard<Entity, State> first,
-            TransitionGuard<Entity, State> second, TransitionAction<Entity, State> action,
+    private static GraphDefinition<Entity, State, Id> graph(TransitionGuard<Entity, State, Id> first,
+            TransitionGuard<Entity, State, Id> second, TransitionAction<Entity, State, Id> action,
             Consumer<? super Entity> hook) {
         return StateGraph.define(TestDomain.KEY).initial(State.NEW)
-                .terminal(State.READY).terminal(State.DONE).terminal(State.FAILED)
-                .from(State.NEW).to(State.READY).action("prepare", action)
-                        .guard("first", first).guard("second", second)
-                        .onFailure(State.FAILED).afterCommit("audit", hook)
-                    .to(State.DONE).move().to(State.FAILED).move().stay().forbidOthers("x")
-                .from(State.READY).stay().forbidOthers("x")
-                .from(State.DONE).stay().forbidOthers("x")
-                .from(State.FAILED).stay().forbidOthers("x").build();
+                .terminal(State.DONE).terminal(State.FAILED)
+                .statePolicy(State.NEW, "x").statePolicy(State.READY, "x")
+                .transition(Id.PREPARE, State.NEW, State.READY).action("prepare", action)
+                    .guard("first", first).guard("second", second)
+                    .onFailure(Id.RECOVER).afterCommit("audit", hook).endTransition()
+                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
+                .transition(Id.FINISH, State.READY, State.DONE).endTransition()
+                .build();
     }
 
-    private static void transition(GraphDefinition<Entity, State> graph, Entity entity) {
+    private static void transition(GraphDefinition<Entity, State, Id> graph, Entity entity) {
         try (MachineRegistry registry = TestDomain.registry(graph)) {
-            registry.of(TestDomain.KEY).transitionTo(entity, State.READY);
+            registry.of(TestDomain.KEY).execute(entity, Id.PREPARE);
         }
     }
 }

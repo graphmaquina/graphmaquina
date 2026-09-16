@@ -43,8 +43,8 @@ class ManifestDiscoveryTest {
             "io.github.graphmaquina.annotation.internal.GeneratedVocabulary",
             "io.github.graphmaquina.annotation.internal.GeneratedSymbol",
             "io.github.graphmaquina.annotation.internal.GraphCompilation",
-            "io.github.graphmaquina.annotation.StateGraph",
             "io.github.graphmaquina.annotation.StateGraphs",
+            "io.github.graphmaquina.annotation.StateGraph",
             "io.github.graphmaquina.annotation.Row",
             "io.github.graphmaquina.annotation.Rows",
             "io.github.graphmaquina.annotation.Action",
@@ -68,9 +68,9 @@ class ManifestDiscoveryTest {
 
     /** The vocabulary the generator emits for the machine of {@link TypedFixtures#minimal()}. */
     private static final Set<String> GENERATED = Set.of(
-            "fx.DocsGraph.Definition", "fx.DocsGraph.Row", "fx.DocsGraph.Rows", "fx.DocsGraph.Action",
-            "fx.DocsGraph.Move", "fx.DocsGraph.Cell", "fx.DocsGraph.Cells", "fx.DocsGraph.Forbid",
-            "fx.DocsGraph.Forbids");
+            "fx.DocsGraph.Definition", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.StatePolicies",
+            "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsGraph.Reject",
+            "fx.DocsGraph.Rejects");
 
     @Test
     void claimsTheFixedSetAndEveryAnnotationTheManifestLists() {
@@ -78,7 +78,7 @@ class ManifestDiscoveryTest {
         assertTrue(result.success(), result.describe());
 
         Set<String> claimed = ManifestProcessors.Recording.claimed();
-        assertTrue(claimed.containsAll(List.of("fx.DocsGraph.Row", "fx.DocsGraph.Rows",
+        assertTrue(claimed.containsAll(List.of("fx.DocsGraph.Transition", "fx.DocsGraph.Transitions",
                 "io.github.graphmaquina.annotation.internal.GraphCompilation",
                 "javax.annotation.processing.Generated")), claimed::toString);
         assertFalse(claimed.stream().anyMatch(name -> name.contains("*")), claimed::toString);
@@ -90,7 +90,7 @@ class ManifestDiscoveryTest {
         Compilation.Result result = record(TypedFixtures.minimal(), ManifestProcessors.Recording.class);
         assertTrue(result.success(), result.describe());
 
-        assertEquals(List.of("DRAFT", "PUBLISHED"), ManifestProcessors.Recording.rows());
+        assertEquals(List.of("DRAFT"), ManifestProcessors.Recording.policies());
         assertEquals(List.of("fx.DocActionsRefs.Publish"), ManifestProcessors.Recording.actions());
     }
 
@@ -194,10 +194,10 @@ class ManifestDiscoveryTest {
     @Test
     void reportsADuplicatedAnnotationType() {
         Compilation.Prepared prepared = Compilation.prepare(TypedFixtures.minimal());
-        rewrite(prepared, manifest -> annotationTypes(manifest, added(manifest, "fx.DocsGraph.Row")));
+        rewrite(prepared, manifest -> annotationTypes(manifest, added(manifest, "fx.DocsGraph.Transition")));
 
         assertSingleManifestError(Compilation.compileWithoutLifecycle(prepared, List.of()),
-                "fx.DocsGraph.Row twice");
+                "fx.DocsGraph.Transition twice");
     }
 
     @Test
@@ -209,7 +209,7 @@ class ManifestDiscoveryTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class DocActions {
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> context, String note) {
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context, String note) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -312,6 +312,17 @@ class ManifestDiscoveryTest {
                 """);
 
         assertSingleManifestError(Compilation.compilePrepared(prepared), "fx.DocStatus");
+    }
+
+    @Test
+    void reportsATransitionEnumWhoseConstantsChangedAfterGeneration() {
+        Compilation.Prepared prepared = Compilation.prepare(TypedFixtures.minimal());
+        rewriteOriginal(prepared, "fx.DocTransition", """
+                package fx;
+                public enum DocTransition { PUBLISH, ARCHIVE }
+                """);
+
+        assertSingleManifestError(Compilation.compilePrepared(prepared), "fx.DocTransition");
     }
 
     /** Exactly one SG602, naming the manifest and the claim that no longer holds. */

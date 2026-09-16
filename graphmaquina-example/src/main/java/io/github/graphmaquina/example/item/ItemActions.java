@@ -8,7 +8,7 @@ import io.github.graphmaquina.api.TransitionContext;
 public final class ItemActions {
 
     @GraphAction
-    public ActionOutcome pack(TransitionContext<Item, ItemStatus> ctx) {
+    public ActionOutcome pack(TransitionContext<Item, ItemStatus, ItemTransition> ctx) {
         return ActionOutcome.ok();
     }
 }

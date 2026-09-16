@@ -8,9 +8,10 @@ import java.util.List;
  * Emits the watch vocabulary of one ordered pair of machines: the top-level {@code <Owner><Peer>} declared in the
  * owner's package, holding {@code Watch}, its repeatable container and {@code When}.
  *
- * <p>The pair is fixed by the vocabulary itself, so no declaration repeats it. The owner's enum types the state
- * being watched and every destination, and the peer's enum types the three filters, which makes a constant of the
- * wrong machine a javac error rather than a diagnostic of this tool.</p>
+ * <p>The pair is fixed by the vocabulary itself, so no declaration repeats it. The owner's state enum types the
+ * state being watched, the owner's transition enum types the edge each rule executes, and the peer's state enum
+ * types the three filters, which makes a constant of the wrong machine a javac error rather than a diagnostic of
+ * this tool.</p>
  */
 final class WatchVocabularyEmitter {
 
@@ -69,7 +70,7 @@ final class WatchVocabularyEmitter {
 
     private static void watch(JavaSource source, String vocabulary, String pair, GraphDescriptor owner) {
         describe(source, "Watches the peers of {@link " + owner.facade() + "} while it is in one state and",
-            "moves it with the first rule that holds.");
+            "executes the transition of the first rule that holds.");
         annotation(source, pair, "WATCH", "ElementType.TYPE", vocabulary + ".Watches", "Watch");
         source.line(owner.stateType() + " state();");
         source.line("Class<? extends PropertySymbol> peers();");
@@ -89,13 +90,13 @@ final class WatchVocabularyEmitter {
 
     private static void when(JavaSource source, String pair, GraphDescriptor owner, GraphDescriptor peer) {
         describe(source, "One watch rule: the condition or the filter over the peers' states that must hold,",
-            "and the state of {@link " + owner.facade() + "} the entity moves to.");
+            "and the transition of {@link " + owner.facade() + "} the entity executes.");
         annotation(source, pair, "WHEN", "{}", null, "When");
         source.line("Class<? extends ConditionSymbol>[] condition() default {};");
         source.line(peer.stateType() + "[] allIn() default {};");
         source.line(peer.stateType() + "[] anyIn() default {};");
         source.line(peer.stateType() + "[] noneIn() default {};");
-        source.line(owner.stateType() + " goTo();");
+        source.line(owner.transitionType() + " transition();");
         close(source);
     }
 

@@ -43,7 +43,7 @@ import javax.lang.model.util.Elements;
  */
 final class ManifestChecks {
 
-    private static final int SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 2;
 
     private ManifestChecks() { }
 
@@ -123,7 +123,7 @@ final class ManifestChecks {
         Map<String, GraphDescriptor> graphs = new LinkedHashMap<>();
         for (GraphDescriptor graph : index.model().graphs()) {
             graphs.put(graph.facade(), graph);
-            Optional<String> problem = states(graph, elements);
+            Optional<String> problem = enums(graph, elements);
             if (problem.isPresent()) {
                 return problem;
             }
@@ -143,22 +143,35 @@ final class ManifestChecks {
         return Optional.empty();
     }
 
-    /** A machine's states are the constants of its enum, in the order that enum declares them. */
-    private static Optional<String> states(GraphDescriptor graph, Elements elements) {
-        TypeElement state = elements.getTypeElement(graph.stateType());
-        if (state == null || state.getKind() != ElementKind.ENUM) {
-            return Optional.of("describes the machine " + graph.facade() + " over the state enum "
-                + graph.stateType() + ", which this compilation does not declare");
+    /**
+     * A machine's states and its transition identifiers are the constants of its two enums, in the order those
+     * enums declare them.
+     */
+    private static Optional<String> enums(GraphDescriptor graph, Elements elements) {
+        Optional<String> states = constants(graph.facade(), "state", graph.stateType(), graph.states(), elements);
+        if (states.isPresent()) {
+            return states;
         }
-        List<String> constants = new ArrayList<>();
-        for (Element member : state.getEnclosedElements()) {
+        return constants(graph.facade(), "transition", graph.transitionType(), graph.transitions(), elements);
+    }
+
+    /** One enum of a machine: it must still be declared, still be an enum, and still declare {@code claimed}. */
+    private static Optional<String> constants(String facade, String role, String type, List<String> claimed,
+            Elements elements) {
+        TypeElement declaration = elements.getTypeElement(type);
+        if (declaration == null || declaration.getKind() != ElementKind.ENUM) {
+            return Optional.of("describes the machine " + facade + " over the " + role + " enum " + type
+                + ", which this compilation does not declare");
+        }
+        List<String> declared = new ArrayList<>();
+        for (Element member : declaration.getEnclosedElements()) {
             if (member.getKind() == ElementKind.ENUM_CONSTANT) {
-                constants.add(member.getSimpleName().toString());
+                declared.add(member.getSimpleName().toString());
             }
         }
-        if (!constants.equals(graph.states())) {
-            return Optional.of("gives " + graph.stateType() + " the states " + graph.states()
-                + ", but that enum now declares " + constants);
+        if (!declared.equals(claimed)) {
+            return Optional.of("gives " + type + " the " + role + "s " + claimed
+                + ", but that enum now declares " + declared);
         }
         return Optional.empty();
     }

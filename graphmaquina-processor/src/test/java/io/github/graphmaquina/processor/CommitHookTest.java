@@ -10,10 +10,10 @@ import org.junit.jupiter.api.Test;
 
 class CommitHookTest {
 
-    private static final String CONTEXTUAL = "Doc doc, CommitContext<DocStatus> context";
+    private static final String CONTEXTUAL = "Doc doc, CommitContext<DocStatus, DocTransition> context";
 
     @Test
-    void generatedHooksReceiveEachCommittedCellAndItsGraphTerminality() throws Exception {
+    void generatedHooksReceiveEachCommittedTransitionAndItsGraphTerminality() throws Exception {
         Compilation.Result result = Compilation.compileTyped(fixture(CONTEXTUAL, """
                 calls.add(context.from() + ":" + context.to() + ":" + context.kind()
                         + ":" + context.isTerminal() + ":" + doc.status());
@@ -33,11 +33,11 @@ class CommitHookTest {
     }
 
     @Test
-    void deliversTheContextAfterAnAsynchronousActionCellCommits() throws Exception {
+    void deliversTheContextAfterAnAsynchronousActionCommits() throws Exception {
         Map<String, String> sources = fixture(CONTEXTUAL, "calls.add(context.to() + \":\" + context.kind() + \":\" + context.isTerminal());");
         sources.put("fx.DocActions", edit(sources.get("fx.DocActions"),
-                "public ActionOutcome publish(TransitionContext<Doc, DocStatus> context) { return ActionOutcome.ok(); }",
-                "public java.util.concurrent.CompletionStage<ActionOutcome> publish(TransitionContext<Doc, DocStatus> context) {"
+                "public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) { return ActionOutcome.ok(); }",
+                "public java.util.concurrent.CompletionStage<ActionOutcome> publish(TransitionContext<Doc, DocStatus, DocTransition> context) {"
                         + " return java.util.concurrent.CompletableFuture.completedFuture(ActionOutcome.ok()); }"));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
@@ -55,7 +55,7 @@ class CommitHookTest {
 
     @Test
     void rejectsAContextForAnotherStateEnumAtBinding() {
-        Map<String, String> sources = fixture("Doc doc, CommitContext<OtherStatus> context", "");
+        Map<String, String> sources = fixture("Doc doc, CommitContext<OtherStatus, DocTransition> context", "");
         sources.put("fx.OtherStatus", "package fx; public enum OtherStatus { OPEN, CLOSED }");
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success(), result.describe());
@@ -78,15 +78,16 @@ class CommitHookTest {
     void resolvesAnInheritedGenericHookAgainstItsConcreteHost() throws Exception {
         Map<String, String> sources = fixture(CONTEXTUAL, "calls.add(context.to().name());");
         String base = sources.get("fx.DocActions");
-        base = edit(base, "public final class DocActions {", "public class BaseActions<E, S extends Enum<S>> {");
-        base = edit(base, "TransitionContext<Doc, DocStatus>", "TransitionContext<E, S>");
+        base = edit(base, "public final class DocActions {",
+                "public class BaseActions<E, S extends Enum<S>, T extends Enum<T>> {");
+        base = edit(base, "TransitionContext<Doc, DocStatus, DocTransition>", "TransitionContext<E, S, T>");
         base = edit(base, "Doc doc", "E doc");
-        base = edit(base, "CommitContext<DocStatus>", "CommitContext<S>");
+        base = edit(base, "CommitContext<DocStatus, DocTransition>", "CommitContext<S, T>");
         sources.put("fx.BaseActions", base);
         sources.put("fx.DocActions", """
                 package fx;
                 @io.github.graphmaquina.annotation.GraphBindings
-                public final class DocActions extends BaseActions<Doc, DocStatus> { }
+                public final class DocActions extends BaseActions<Doc, DocStatus, DocTransition> { }
                 """);
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
@@ -120,7 +121,7 @@ class CommitHookTest {
 
     @Test
     void rejectsRawAndWildcardContextsAtBinding() {
-        for (String parameters : new String[] {"Doc doc, CommitContext context", "Doc doc, CommitContext<?> context"}) {
+        for (String parameters : new String[] {"Doc doc, CommitContext context", "Doc doc, CommitContext<?, ?> context"}) {
             Compilation.Result result = Compilation.compileTyped(fixture(parameters, ""));
             assertFalse(result.success(), result.describe());
             assertTrue(result.hasError("SG505"), result.describe());
@@ -153,14 +154,14 @@ class CommitHookTest {
         Map<String, String> sources = TypedFixtures.graph("""
                 @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
                     state = DocRefs.Status.class, id = DocRefs.Id.class)
-                @DocsGraph.Row(state = DRAFT, otherwise = "submit first")
-                @DocsGraph.Row(state = REVIEW, otherwise = "publish next")
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "submit first")
+                @DocsGraph.StatePolicy(state = REVIEW, otherwise = "publish next")
                 """, """
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW, afterCommit = DocActionsRefs.Notified.class)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW, afterCommit = DocActionsRefs.Notified.class)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
                         afterCommit = DocActionsRefs.Notified.class)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """);
         sources.put("fx.DocActions", """
                 package fx;
@@ -173,7 +174,7 @@ class CommitHookTest {
                 import java.util.List;
                 public final class DocActions {
                     public final List<String> calls = new ArrayList<>();
-                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus> context) { return ActionOutcome.ok(); }
+                    @GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) { return ActionOutcome.ok(); }
                     @GraphHook public void notified(%s) { %s }
                 }
                 """.formatted(parameters, body));
@@ -185,11 +186,11 @@ class CommitHookTest {
                 public final class Probe {
                     public static String run() {
                         DocActions actions = new DocActions();
-                        StateMachine<Doc, DocStatus> machine = StateMachines.from(DocsRuntime.graph(actions))
+                        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(DocsRuntime.graph(actions))
                                 .state(Doc::status, Doc::status).asyncTimeout(Duration.ofSeconds(5)).build();
                         Doc doc = new Doc();
-                        machine.transitionTo(doc, DocStatus.REVIEW);
-                        machine.transitionTo(doc, DocStatus.PUBLISHED);
+                        machine.execute(doc, DocTransition.SUBMIT);
+                        machine.execute(doc, DocTransition.PUBLISH);
                         return actions.calls.toString();
                     }
                 }

@@ -9,11 +9,11 @@ import java.util.Set;
 
 /**
  * Chainable, typed assertion over the reachability graph of a definition, obtained from
- * {@link GraphAssert#topology()}. Its nodes are all the declared states and its edges are only the
- * cells that move — ACTION and MOVE — so a STAY cell is never a self-loop here. Every expectation
- * reports the graph's own answer rather than a reinterpretation of it: reachability lists the origin
- * only when some cycle leads back to it, a node always reaches itself in zero steps, and cycles keep
- * the order and the canonical rotation the graph produces.
+ * {@link GraphAssert#topology()}. Its nodes are all the declared states and its edges are the declared
+ * edges, with parallel identifiers between the same pair collapsed into one; a declared self-loop is a
+ * self-loop here. Every expectation reports the graph's own answer rather than a reinterpretation of it:
+ * reachability lists the origin only when some cycle leads back to it, a node always reaches itself in
+ * zero steps, and cycles keep the order and the canonical rotation the graph produces.
  *
  * @param <S> state enum of the machine
  */
@@ -27,7 +27,7 @@ public final class TopologyAssert<S extends Enum<S>> {
         this.actual = actual;
     }
 
-    /** The nodes are every state of the enum, whether or not any cell reaches them. */
+    /** The nodes are every declared state, whether or not any edge reaches them. */
     public TopologyAssert<S> hasNodesExactly(Set<S> expected) {
         Objects.requireNonNull(expected, "expected");
         Set<S> wanted = Set.copyOf(expected);
@@ -36,7 +36,7 @@ public final class TopologyAssert<S extends Enum<S>> {
         return this;
     }
 
-    /** The destinations reachable in one step, so a STAY-only state has none. */
+    /** The destinations reachable in one step, so a state with no outgoing edge has none. */
     public TopologyAssert<S> hasSuccessorsExactly(S from, Set<S> expected) {
         Objects.requireNonNull(from, "from");
         Objects.requireNonNull(expected, "expected");

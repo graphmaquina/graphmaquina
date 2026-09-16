@@ -7,12 +7,12 @@ import java.util.function.Function;
 import lombok.NonNull;
 
 /** The watch of a state: which machine it looks at, how to reach the peers and back, and which rules advance it. */
-public record WatchSpec<E, S extends Enum<S>, P, Q extends Enum<Q>>(
+public record WatchSpec<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>(
         @NonNull S state,
-        @NonNull MachineKey<P, Q> peer,
+        @NonNull MachineKey<P, Q, U> peer,
         @NonNull Function<? super E, ? extends Collection<? extends P>> peersOf,
         @NonNull Function<? super P, Optional<E>> ownerOf,
-        @NonNull List<WatchRule<E, S, P, Q>> rules) {
+        @NonNull List<WatchRule<E, S, T, P, Q, U>> rules) {
 
     public WatchSpec {
         rules = List.copyOf(rules);

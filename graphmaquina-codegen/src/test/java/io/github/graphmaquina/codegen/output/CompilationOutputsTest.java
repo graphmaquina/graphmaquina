@@ -27,6 +27,8 @@ import java.util.TreeSet;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Verifies the lifecycle a build runs around javac: what {@code prepare} retires before the compiler starts and
@@ -63,18 +65,52 @@ class CompilationOutputsTest {
     @TempDir
     Path workDirectory;
 
+    @ParameterizedTest
+    @ValueSource(strings = {INVENTORY, PENDING_INVENTORY})
+    void refusesRetiredInventoriesBeforeChangingAnyOutput(String inventoryName) throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        Path inventory = workDirectory.resolve(inventoryName);
+        ManifestCodec.writeOwned(inventory, new OwnedOutputs(1,
+                List.of("fx/Old.java"), List.of("fx/Old.class"), List.of(PUBLISHED), List.of()));
+        Map<Path, byte[]> original = new LinkedHashMap<>();
+        original.put(inventory, Files.readAllBytes(inventory));
+        original.put(workDirectory.resolve("annotation-manifest.json"),
+                Files.readAllBytes(workDirectory.resolve("annotation-manifest.json")));
+        for (Path file : List.of(processorSourcesOutput.resolve("fx/Old.java"),
+                classesOutput.resolve("fx/Old.class"), classesOutput.resolve("fx/Manual.class"),
+                classesOutput.resolve(PUBLISHED), classesOutput.resolve(PENDING))) {
+            byte[] bytes = ("unchanged " + file.getFileName()).getBytes(StandardCharsets.UTF_8);
+            write(file, bytes);
+            original.put(file, bytes);
+        }
+        List<String> workFiles = sorted(names(workDirectory));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
+
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().contains("clean"), failure.getMessage());
+        for (Map.Entry<Path, byte[]> entry : original.entrySet()) {
+            assertArrayEquals(entry.getValue(), Files.readAllBytes(entry.getKey()), entry.getKey().toString());
+        }
+        assertEquals(workFiles, sorted(names(workDirectory)));
+    }
+
+    /** Current-schema inventories retire owned files while preserving every unlisted user file. */
     @Test
     void retiresTheOutputsTheInventoryListsAndLeavesEveryOtherFileAlone() throws IOException {
         writeManifest(List.of(CARRIER_SOURCE));
-        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(1,
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
                 List.of("fx/Docs_.java"),
-                List.of("fx/OldRefs.class", "fx/OldRefs$Run.class", "fx/Old_.class"),
+                List.of("fx/OldGraph$Transition.class", "fx/OldGraph$Transitions.class",
+                        "fx/OldGraph$Policy.class", "fx/OldGraph$Policies.class"),
                 List.of(PUBLISHED), List.of()));
         byte[] manualBytes = {(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE, 0, 0, 0, 65};
-        Path manualClass = write(classesOutput.resolve("fx/OldRefs$Manual.class"), manualBytes);
-        write(classesOutput.resolve("fx/OldRefs.class"), manualBytes);
-        write(classesOutput.resolve("fx/OldRefs$Run.class"), manualBytes);
-        write(classesOutput.resolve("fx/Old_.class"), manualBytes);
+        Path manualClass = write(classesOutput.resolve("fx/MachineGraph$Manual.class"), manualBytes);
+        Path userClass = write(classesOutput.resolve("fx/Order.class"), manualBytes);
+        write(classesOutput.resolve("fx/OldGraph$Transition.class"), manualBytes);
+        write(classesOutput.resolve("fx/OldGraph$Transitions.class"), manualBytes);
+        write(classesOutput.resolve("fx/OldGraph$Policy.class"), manualBytes);
+        write(classesOutput.resolve("fx/OldGraph$Policies.class"), manualBytes);
         write(classesOutput.resolve(PUBLISHED), "{}".getBytes(StandardCharsets.UTF_8));
         write(classesOutput.resolve(PENDING), "{}".getBytes(StandardCharsets.UTF_8));
         write(processorSourcesOutput.resolve("fx/Docs_.java"), "class Docs_ {}".getBytes(StandardCharsets.UTF_8));
@@ -84,17 +120,19 @@ class CompilationOutputsTest {
         assertFalse(Files.exists(classesOutput.resolve(PUBLISHED)));
         assertFalse(Files.exists(classesOutput.resolve(PENDING)));
         assertFalse(Files.exists(classesOutput.resolve("META-INF")));
-        assertFalse(Files.exists(classesOutput.resolve("fx/OldRefs.class")));
-        assertFalse(Files.exists(classesOutput.resolve("fx/OldRefs$Run.class")));
-        assertFalse(Files.exists(classesOutput.resolve("fx/Old_.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/OldGraph$Transition.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/OldGraph$Transitions.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/OldGraph$Policy.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/OldGraph$Policies.class")));
         assertFalse(Files.exists(processorSourcesOutput.resolve("fx/Docs_.java")));
         assertArrayEquals(manualBytes, Files.readAllBytes(manualClass));
+        assertArrayEquals(manualBytes, Files.readAllBytes(userClass));
     }
 
     @Test
     void recordsWhatItIsAboutToRetireBeforeItDeletesAnything() throws IOException {
         writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
-        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(1,
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
                 List.of("fx/Docs_.java"), List.of("fx/Old_.class"), List.of(PUBLISHED),
                 List.of("io/github/graphmaquina/generated/bootstrap/GraphCompilation_fedcba9876543210.class")));
 
@@ -121,7 +159,7 @@ class CompilationOutputsTest {
     @Test
     void refusesAnInventoryPathThatEscapesItsRoot() throws IOException {
         writeManifest(List.of(CARRIER_SOURCE));
-        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(1,
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
                 List.of(), List.of("../outside.class"), List.of(), List.of()));
 
         CodegenException failure =
@@ -138,7 +176,7 @@ class CompilationOutputsTest {
     @Test
     void refusesABlankInventoryPath() throws IOException {
         writeManifest(List.of(CARRIER_SOURCE));
-        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(1,
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
                 List.of(), List.of(""), List.of(), List.of()));
         Path kept = write(classesOutput.resolve("fx/Kept.class"), new byte[] {1});
 
@@ -155,7 +193,7 @@ class CompilationOutputsTest {
         writeManifest(List.of(CARRIER_SOURCE));
         Path kept = write(classesOutput.resolve("fx/Kept.class"), new byte[] {1});
         for (String entry : List.of(".", "fx/..")) {
-            ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(1,
+            ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
                     List.of(), List.of(entry), List.of(), List.of()));
             CodegenException failure = assertThrows(CodegenException.class,
                     () -> CompilationOutputs.prepare(request()));
@@ -212,7 +250,7 @@ class CompilationOutputsTest {
 
         OwnedOutputs owned = ManifestCodec.readOwned(workDirectory.resolve(INVENTORY));
         assertEquals(List.of("fx/Docs_.java"), owned.sources());
-        assertEquals(new TreeSet<>(List.of("fx/DocsGraph.class", "fx/DocsGraph$Row.class", "fx/Docs_.class")),
+        assertEquals(new TreeSet<>(List.of("fx/DocsGraph.class", "fx/DocsGraph$Transition.class", "fx/Docs_.class")),
                 new TreeSet<>(owned.binaries()));
         assertEquals(List.of(PUBLISHED), owned.resources());
         assertEquals(List.of(CARRIER_BINARY), owned.excludedBinaries());
@@ -262,7 +300,7 @@ class CompilationOutputsTest {
         assertFalse(Files.exists(classesOutput.resolve(CARRIER_BINARY)), "the carrier of an interrupted cycle");
         assertFalse(Files.exists(classesOutput.resolve("io/github/graphmaquina")));
         assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph.class")));
-        assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph$Row.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph$Transition.class")));
         assertArrayEquals(manualBytes, Files.readAllBytes(classesOutput.resolve("fx/Manual.class")));
     }
 
@@ -274,10 +312,10 @@ class CompilationOutputsTest {
 
     /** A manifest describing a compilation that owns {@code ownedSources} and writes its inventory in work. */
     private void writeManifest(List<String> ownedSources) throws IOException {
-        ExportIndex local = new ExportIndex(1, ToolVersion.current(), "fx:test:main",
+        ExportIndex local = new ExportIndex(2, ToolVersion.current(), "fx:test:main",
                 new GenerationModel(List.of(), List.of()), List.of());
         ManifestCodec.writeCompile(workDirectory.resolve("annotation-manifest.json"),
-                new CompileManifest(1, ToolVersion.current(), local, List.of(),
+                new CompileManifest(2, ToolVersion.current(), local, List.of(),
                         workDirectory.resolve("processor-inventory.json").toString(), ownedSources));
     }
 
@@ -292,7 +330,7 @@ class CompilationOutputsTest {
         sources.put("fx.DocsGraph", """
                 package fx;
                 public class DocsGraph {
-                    public static class Row { }
+                    public static class Transition { }
                 }
                 """);
         sources.put(CARRIER, """
@@ -320,14 +358,14 @@ class CompilationOutputsTest {
     private byte[] writeProvisionalIndex() throws IOException {
         Path pending = classesOutput.resolve(PENDING);
         Files.createDirectories(pending.getParent());
-        ManifestCodec.writeExports(pending, new ExportIndex(1, ToolVersion.current(), "fx:test:main",
+        ManifestCodec.writeExports(pending, new ExportIndex(2, ToolVersion.current(), "fx:test:main",
                 new GenerationModel(List.of(), List.of()), List.of()));
         return Files.readAllBytes(pending);
     }
 
     /** The inventory the processor writes at the absolute path the manifest names. */
     private void writeProcessorInventory(List<String> generatedTypes) throws IOException {
-        StringBuilder json = new StringBuilder("{\n  \"schemaVersion\": 1,\n  \"generatedTypes\": [");
+        StringBuilder json = new StringBuilder("{\n  \"schemaVersion\": 2,\n  \"generatedTypes\": [");
         String separator = "\n    ";
         for (String name : generatedTypes) {
             json.append(separator).append('"').append(name).append('"');

@@ -13,6 +13,7 @@ import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
@@ -21,6 +22,7 @@ import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,36 +39,38 @@ class OperationInputTest {
 
     enum S { OPEN, DONE, FAILED }
 
+    enum T { WORK, RECOVER, WATCH_IT }
+
     static final class Entity {
         S state = S.OPEN;
     }
 
     record Verdict(boolean eligible) { }
 
-    static final MachineKey<Entity, S> KEY = MachineKey.of(Entity.class, S.class);
+    static final MachineKey<Entity, S, T> KEY = MachineKey.of(Entity.class, S.class, T.class);
 
-    private StateMachine<Entity, S> machine(TransitionGuard<Entity, S> guard, TransitionAction<Entity, S> action,
-                                            TransitionAction<Entity, S> recovery) {
-        GraphDefinition<Entity, S> graph = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE).terminal(S.FAILED)
-                .from(S.OPEN).to(S.DONE).action("work", action).guard("eligible", guard)
-                    .onFailure(S.FAILED).failsOn(IllegalStateException.class)
-                    .to(S.FAILED).action("recover", recovery).stay().forbidOthers("closed")
-                .from(S.DONE).stay().forbidOthers("done")
-                .from(S.FAILED).stay().forbidOthers("failed").build();
+    private StateMachine<Entity, S, T> machine(TransitionGuard<Entity, S, T> guard, TransitionAction<Entity, S, T> action,
+                                               TransitionAction<Entity, S, T> recovery) {
+        GraphDefinition<Entity, S, T> graph = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE).terminal(S.FAILED)
+                .statePolicy(S.OPEN, "closed")
+                .transition(T.WORK, S.OPEN, S.DONE).action("work", action).guard("eligible", guard)
+                    .onFailure(T.RECOVER).failsOn(IllegalStateException.class).endTransition()
+                .transition(T.RECOVER, S.OPEN, S.FAILED).action("recover", recovery).endTransition()
+                .build();
         return StateMachines.from(graph).state((Entity e) -> e.state, (Entity e, S s) -> e.state = s)
                 .asyncExecutor(Runnable::run).build();
     }
 
     @Test void eachCallHasItsOwnValueAndAbsenceDoesNotReuseIt() {
         List<Optional<?>> seen = new ArrayList<>();
-        StateMachine<Entity, S> m = machine(
-                (GuardContext<Entity, S> ctx) -> { seen.add(ctx.input()); return GuardResult.pass(); },
-                (TransitionContext<Entity, S> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); },
-                (TransitionContext<Entity, S> ctx) -> ActionOutcome.ok());
+        StateMachine<Entity, S, T> m = machine(
+                (GuardContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return GuardResult.pass(); },
+                (TransitionContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); },
+                (TransitionContext<Entity, S, T> ctx) -> ActionOutcome.ok());
         Verdict v = new Verdict(true);
-        m.transitionTo(new Entity(), S.DONE, v);
-        m.transitionTo(new Entity(), S.DONE);
-        m.transitionTo(new Entity(), S.DONE, null);
+        m.execute(new Entity(), T.WORK, v);
+        m.execute(new Entity(), T.WORK);
+        m.execute(new Entity(), T.WORK, null);
         assertEquals(6, seen.size());
         assertSame(v, seen.get(0).orElseThrow());
         assertSame(v, seen.get(1).orElseThrow());
@@ -75,12 +79,12 @@ class OperationInputTest {
 
     @Test void rejectionKeepsStateAndSkipsAction() {
         Entity e = new Entity();
-        StateMachine<Entity, S> m = machine(
-                (GuardContext<Entity, S> ctx) -> ctx.input(Verdict.class).orElseThrow().eligible()
+        StateMachine<Entity, S, T> m = machine(
+                (GuardContext<Entity, S, T> ctx) -> ctx.input(Verdict.class).orElseThrow().eligible()
                         ? GuardResult.pass() : GuardResult.reject("ineligible"),
-                (TransitionContext<Entity, S> ctx) -> { fail("action must not run"); return ActionOutcome.ok(); },
-                (TransitionContext<Entity, S> ctx) -> ActionOutcome.ok());
-        assertInstanceOf(Outcome.Rejected.class, m.transitionTo(e, S.DONE, new Verdict(false)));
+                (TransitionContext<Entity, S, T> ctx) -> { fail("action must not run"); return ActionOutcome.ok(); },
+                (TransitionContext<Entity, S, T> ctx) -> ActionOutcome.ok());
+        assertInstanceOf(Outcome.Rejected.class, m.execute(e, T.WORK, new Verdict(false)));
         assertEquals(S.OPEN, e.state);
     }
 
@@ -88,46 +92,46 @@ class OperationInputTest {
         for (boolean throwsFailure : List.of(false, true)) {
             Verdict v = new Verdict(true);
             AtomicReference<Object> recovered = new AtomicReference<>();
-            StateMachine<Entity, S> m = machine((GuardContext<Entity, S> ctx) -> GuardResult.pass(),
-                    (TransitionContext<Entity, S> ctx) -> {
+            StateMachine<Entity, S, T> m = machine((GuardContext<Entity, S, T> ctx) -> GuardResult.pass(),
+                    (TransitionContext<Entity, S, T> ctx) -> {
                         assertSame(v, ctx.input(Verdict.class).orElseThrow());
                         if (throwsFailure) {
                             throw new IllegalStateException("service failed");
                         }
                         return ActionOutcome.failed("declined");
                     },
-                    (TransitionContext<Entity, S> ctx) -> {
+                    (TransitionContext<Entity, S, T> ctx) -> {
                         recovered.set(ctx.input().orElseThrow());
                         return ActionOutcome.ok();
                     });
             Entity e = new Entity();
-            assertInstanceOf(Outcome.Failed.class, m.transitionTo(e, S.DONE, v));
+            assertInstanceOf(Outcome.Failed.class, m.execute(e, T.WORK, v));
             assertSame(v, recovered.get());
             assertEquals(S.FAILED, e.state);
         }
     }
 
-    @Test void directCallToTheFailStateDoesNotInheritAPastFailuresInput() {
+    @Test void directCallToTheRecoveringEdgeDoesNotInheritAPastFailuresInput() {
         AtomicReference<Object> seen = new AtomicReference<>();
-        StateMachine<Entity, S> m = machine((GuardContext<Entity, S> ctx) -> GuardResult.pass(),
-                (TransitionContext<Entity, S> ctx) -> ActionOutcome.failed("declined"),
-                (TransitionContext<Entity, S> ctx) -> { seen.set(ctx.input().orElse(null)); return ActionOutcome.ok(); });
+        StateMachine<Entity, S, T> m = machine((GuardContext<Entity, S, T> ctx) -> GuardResult.pass(),
+                (TransitionContext<Entity, S, T> ctx) -> ActionOutcome.failed("declined"),
+                (TransitionContext<Entity, S, T> ctx) -> { seen.set(ctx.input().orElse(null)); return ActionOutcome.ok(); });
         Verdict fromAFailure = new Verdict(true);
-        m.transitionTo(new Entity(), S.DONE, fromAFailure);
+        m.execute(new Entity(), T.WORK, fromAFailure);
         assertSame(fromAFailure, seen.get());
         Verdict direct = new Verdict(false);
-        m.transitionTo(new Entity(), S.FAILED, direct);
+        m.execute(new Entity(), T.RECOVER, direct);
         assertSame(direct, seen.get());
     }
 
     @Test void aWrongGuardInputTypeAbortsWithoutCommit() {
-        StateMachine<Entity, S> m = machine(
-                (GuardContext<Entity, S> ctx) -> { ctx.input(String.class); return GuardResult.pass(); },
-                (TransitionContext<Entity, S> ctx) -> ActionOutcome.ok(),
-                (TransitionContext<Entity, S> ctx) -> ActionOutcome.ok());
+        StateMachine<Entity, S, T> m = machine(
+                (GuardContext<Entity, S, T> ctx) -> { ctx.input(String.class); return GuardResult.pass(); },
+                (TransitionContext<Entity, S, T> ctx) -> ActionOutcome.ok(),
+                (TransitionContext<Entity, S, T> ctx) -> ActionOutcome.ok());
         Entity e = new Entity();
         TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
-                () -> m.transitionTo(e, S.DONE, new Verdict(true)));
+                () -> m.execute(e, T.WORK, new Verdict(true)));
         assertInstanceOf(ClassCastException.class, error.getCause());
         assertEquals(S.OPEN, e.state);
     }
@@ -137,38 +141,64 @@ class OperationInputTest {
         Entity child = new Entity();
         Object value = new Object();
         AtomicInteger recoveries = new AtomicInteger();
-        StateMachine<Entity, S> m = machine((GuardContext<Entity, S> ctx) -> GuardResult.pass(),
-                (TransitionContext<Entity, S> ctx) -> {
+        StateMachine<Entity, S, T> m = machine((GuardContext<Entity, S, T> ctx) -> GuardResult.pass(),
+                (TransitionContext<Entity, S, T> ctx) -> {
                     if (ctx.depth() == 0) {
                         assertSame(value, ctx.input().orElseThrow());
-                        assertInstanceOf(Outcome.Failed.class, ctx.cascade(KEY, child, S.DONE));
+                        assertInstanceOf(Outcome.Failed.class, ctx.cascade(KEY, child, T.WORK));
                         assertSame(value, ctx.input().orElseThrow());
                         return ActionOutcome.ok();
                     }
                     assertTrue(ctx.input().isEmpty());
                     return ActionOutcome.failed("child failed");
                 },
-                (TransitionContext<Entity, S> ctx) -> {
+                (TransitionContext<Entity, S, T> ctx) -> {
                     assertTrue(ctx.input().isEmpty());
                     assertEquals(1, ctx.depth());
                     recoveries.incrementAndGet();
                     return ActionOutcome.ok();
                 });
-        assertInstanceOf(Outcome.Applied.class, m.transitionTo(root, S.DONE, value));
+        assertInstanceOf(Outcome.Applied.class, m.execute(root, T.WORK, value));
         assertEquals(S.DONE, root.state);
         assertEquals(S.FAILED, child.state);
         assertEquals(1, recoveries.get());
     }
 
+    /** A watch reevaluation opens its own root: it never inherits the input of the call that moved the peer. */
+    @Test void watchReevaluationRunsItsTransitionWithoutTheCallersInput() {
+        List<Optional<?>> seen = new ArrayList<>();
+        GraphDefinition<Entity, S, T> watched = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE).terminal(S.FAILED)
+                .statePolicy(S.OPEN, "closed")
+                .transition(T.WORK, S.OPEN, S.DONE)
+                    .action("work", (TransitionContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); })
+                    .endTransition()
+                .transition(T.WATCH_IT, S.OPEN, S.FAILED)
+                    .action("watched", (TransitionContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); })
+                    .endTransition()
+                .watch(S.OPEN, KEY, (Entity e) -> List.of(e), (Entity e) -> Optional.of(e))
+                    .when("always", (Entity e, Collection<? extends Entity> peers,
+                            PeerView<Entity, S, T> view) -> true).execute(T.WATCH_IT)
+                    .endWatch()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(watched).state((Entity e) -> e.state, (Entity e, S s) -> e.state = s)
+                        .identity(System::identityHashCode)).build()) {
+            Entity entity = new Entity();
+            assertInstanceOf(Outcome.Applied.class, registry.of(KEY).reevaluate(entity));
+            assertEquals(List.of(Optional.empty()), seen);
+            assertEquals(S.FAILED, entity.state);
+        }
+    }
+
     @Test void valueGettersRemainReadableAfterReturnAndOnAnotherThread() throws Exception {
-        AtomicReference<GuardContext<Entity, S>> guard = new AtomicReference<>();
-        AtomicReference<TransitionContext<Entity, S>> action = new AtomicReference<>();
-        StateMachine<Entity, S> m = machine(
-                (GuardContext<Entity, S> ctx) -> { guard.set(ctx); return GuardResult.pass(); },
-                (TransitionContext<Entity, S> ctx) -> { action.set(ctx); return ActionOutcome.ok(); },
-                (TransitionContext<Entity, S> ctx) -> ActionOutcome.ok());
+        AtomicReference<GuardContext<Entity, S, T>> guard = new AtomicReference<>();
+        AtomicReference<TransitionContext<Entity, S, T>> action = new AtomicReference<>();
+        StateMachine<Entity, S, T> m = machine(
+                (GuardContext<Entity, S, T> ctx) -> { guard.set(ctx); return GuardResult.pass(); },
+                (TransitionContext<Entity, S, T> ctx) -> { action.set(ctx); return ActionOutcome.ok(); },
+                (TransitionContext<Entity, S, T> ctx) -> ActionOutcome.ok());
         Verdict v = new Verdict(true);
-        m.transitionTo(new Entity(), S.DONE, v);
+        m.execute(new Entity(), T.WORK, v);
         assertSame(v, guard.get().input().orElseThrow());
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             assertSame(v, executor.submit(() -> action.get().input(Verdict.class).orElseThrow()).get(5, TimeUnit.SECONDS));
@@ -183,23 +213,27 @@ class OperationInputTest {
         Map<Entity, Verdict> expected = Map.of(first, a, second, b);
         CountDownLatch bothEntered = new CountDownLatch(2);
         CompletableFuture<Void> release = new CompletableFuture<>();
-        GraphDefinition<Entity, S> graph = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE).terminal(S.FAILED)
-                .from(S.OPEN).to(S.DONE).asyncAction("work", (TransitionContext<Entity, S> ctx) -> {
-                    assertSame(expected.get(ctx.entity()), ctx.input(Verdict.class).orElseThrow());
-                    return CompletableFuture.completedFuture(ActionOutcome.ok());
-                }).asyncGuard("eligible", (GuardContext<Entity, S> ctx) -> {
-                    Verdict value = ctx.input(Verdict.class).orElseThrow();
-                    assertSame(expected.get(ctx.entity()), value);
-                    bothEntered.countDown();
-                    return release.thenApply((Void ignored) -> GuardResult.pass());
-                }).to(S.FAILED).move().stay().forbidOthers("closed")
-                .from(S.DONE).stay().forbidOthers("done")
-                .from(S.FAILED).stay().forbidOthers("failed").build();
+        GraphDefinition<Entity, S, T> graph = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE).terminal(S.FAILED)
+                .statePolicy(S.OPEN, "closed")
+                .transition(T.WORK, S.OPEN, S.DONE)
+                    .asyncAction("work", (TransitionContext<Entity, S, T> ctx) -> {
+                        assertSame(expected.get(ctx.entity()), ctx.input(Verdict.class).orElseThrow());
+                        return CompletableFuture.completedFuture(ActionOutcome.ok());
+                    })
+                    .asyncGuard("eligible", (GuardContext<Entity, S, T> ctx) -> {
+                        Verdict value = ctx.input(Verdict.class).orElseThrow();
+                        assertSame(expected.get(ctx.entity()), value);
+                        bothEntered.countDown();
+                        return release.thenApply((Void ignored) -> GuardResult.pass());
+                    }).endTransition()
+                .transition(T.RECOVER, S.OPEN, S.FAILED).endTransition()
+                .build();
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            StateMachine<Entity, S> m = StateMachines.from(graph).state((Entity e) -> e.state, (Entity e, S s) -> e.state = s)
+            StateMachine<Entity, S, T> m = StateMachines.from(graph)
+                    .state((Entity e) -> e.state, (Entity e, S s) -> e.state = s)
                     .asyncTimeout(Duration.ofSeconds(10)).asyncExecutor(executor).build();
-            CompletableFuture<Outcome<Entity, S>> one = m.async().transitionTo(first, S.DONE, a);
-            CompletableFuture<Outcome<Entity, S>> two = m.async().transitionTo(second, S.DONE, b);
+            CompletableFuture<Outcome<Entity, S, T>> one = m.async().execute(first, T.WORK, a);
+            CompletableFuture<Outcome<Entity, S, T>> two = m.async().execute(second, T.WORK, b);
             try {
                 assertTrue(bothEntered.await(5, TimeUnit.SECONDS));
             } finally {

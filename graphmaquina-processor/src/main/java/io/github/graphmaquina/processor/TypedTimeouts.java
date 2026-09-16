@@ -5,7 +5,7 @@ import java.util.Optional;
 import javax.lang.model.element.AnnotationMirror;
 
 /**
- * Reads the timeout of a cell as the two fields a {@link Duration} is built from: whole seconds and a
+ * Reads the timeout of a transition as the two fields a {@link Duration} is built from: whole seconds and a
  * nanosecond adjustment.
  *
  * <p>Nothing is converted to a single unit first. Nanoseconds alone cannot hold the durations {@code Duration}

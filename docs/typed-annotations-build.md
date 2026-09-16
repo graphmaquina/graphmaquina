@@ -24,9 +24,8 @@ find no manifest and refuse the compilation with SG602.
 | Gradle adapter | plugin id `io.github.graphmaquina` | the Gradle build integration |
 | Maven adapter | `io.github.graphmaquina:graphmaquina-maven-plugin` | the Maven build integration |
 
-Keep the runtime, generator, processor and adapter at the same version: the one the badge in the
-[README](../README.md) reports, set once as the `graphmaquinaVersion` Gradle property or the
-`graphmaquina.version` Maven property. The processor emits `<Machine>Runtime` and `<Set>Runtime`. Generated
+Keep the runtime, generator, processor and adapter at the same version: the one you installed from a
+checkout, set once as the `graphmaquinaVersion` Gradle property or the `graphmaquina.version` Maven property. The processor emits `<Machine>Runtime` and `<Set>Runtime`. Generated
 types normalize underscores and nesting dots to PascalCase, preserving internal case and acronyms.
 See the [generated naming reference](../README.md#generated-names).
 
@@ -42,7 +41,7 @@ type-checks the application; no previously compiled machine is required.
 
 The version comes from git tags: both builds read `-PgraphmaquinaVersion` when a release passes it and
 otherwise derive it from the most recent tag, so no file in the repository states a release version. A
-published version is immutable; future publications use fresh `1.0.x` patch versions. The
+published version is immutable; the next publication is `2.0.0`, which every module carries at once. The
 [README](../README.md#release-to-maven-central) describes the release, the steps below among them.
 
 Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD` to its passphrase, then run:
@@ -241,7 +240,7 @@ The `graphmaquinaGenerator` configuration carries the generator's classpath. By 
 plugin's own version, so nothing needs to be declared. Two cases where it does:
 
 ```kotlin
-// x.y.z is the version the badge in the README reports.
+// x.y.z is the version you installed from a checkout.
 graphmaquina { generatorVersion = "x.y.z" } // explicit override; keep all components aligned
 dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) }  // inside this repository
 ```
@@ -259,7 +258,7 @@ resolvable, which for Central or a locally installed build means nothing further
 ```xml
 <properties>
   <java.version>21</java.version>
-  <!-- the version the badge in the README reports -->
+  <!-- the version you installed from a checkout -->
   <graphmaquina.version>x.y.z</graphmaquina.version>
 </properties>
 
@@ -413,6 +412,7 @@ to change:
 
 | Symptom | Cause and remedy |
 | --- | --- |
+| `SG599` "could not write …" | the processor could not create or write an output. Follow the named type/path and underlying error using [processor output failures](#processor-output-failures-sg599), then rerun the full lifecycle after correcting the cause. |
 | `SG602` "…names no manifest at all" | javac ran without `-Agraphmaquina.annotationManifest=…`. In Maven, add the argument to that execution; in Gradle, the source set is not participating — declare `graphmaquina-processor` in its annotation-processor configuration. |
 | `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
 | `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host). The message names the type and the declaration. |
@@ -426,6 +426,21 @@ to change:
 | "…switches the main compilation off…" | drop `maven.main.skip` / `maven.test.skip` / `<skipMain>`, or drop the GraphMaquina plugin from that build. |
 | `complete` fails naming `pending-exports.json` | javac ran but published no index: the processor was not on the path for that compilation. |
 | `[INFO] StateGraph completes nothing for <id>` | javac did not run at all in this invocation (for example `mvn generate-sources`). Nothing was retired; this is a no-op, not an error. |
+
+### Processor output failures (SG599)
+
+SG599 reports a technical failure while producing compiler outputs. The message identifies which of the
+three paths failed and includes the underlying error:
+
+| Message | Output and corrective action |
+| --- | --- |
+| `could not write <qualified type>` | A generated Java source could not be created or written through javac's `Filer`. Check the processor's generated-sources directory, write permissions and available space. If the error reports an attempt to recreate a file, resolve the competing generated type or processor output. |
+| `could not write META-INF/graphmaquina/pending-exports.json` | Encoding the provisional export index, staging its temporary file, or writing the resource under javac's class output failed. Inspect the underlying error and check both the class-output directory and the JVM temporary directory (`java.io.tmpdir`), including permissions and available space. |
+| `could not write the processor inventory <path>` | The manifest's `processorInventory` path is invalid, its parent could not be created, or the inventory could not be written. Correct the work-directory configuration or the filesystem condition named in the message; verify that a regular file is not occupying a required directory. |
+
+After correcting the reported cause, rerun the normal Gradle or Maven generation/compilation lifecycle so
+preparation, javac and completion run together. SG599 is an error: a compilation that reports it has not
+successfully completed publication of its outputs.
 
 ### Repeated builds, renames and deletions
 

@@ -7,11 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import io.github.graphmaquina.example.item.Item;
 import io.github.graphmaquina.example.item.ItemActions;
 import io.github.graphmaquina.example.item.ItemStatus;
+import io.github.graphmaquina.example.item.ItemTransition;
 import io.github.graphmaquina.example.item.Items;
 import io.github.graphmaquina.example.item.ItemsRuntime;
 import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
 import io.github.graphmaquina.example.order.OrderStatus;
+import io.github.graphmaquina.example.order.OrderTransition;
 import io.github.graphmaquina.example.order.Orders;
 import io.github.graphmaquina.example.order.OrdersRuntime;
 import io.github.graphmaquina.test.GuardExpectation;
@@ -54,23 +56,36 @@ class TestingApiTest {
                 .hasInitial(OrderStatus.NEW)
                 .hasTerminalsExactly(OrderStatus.SHIPPED, OrderStatus.CANCELLED)
                 .hasAsync()
-                .hasAllowedTargetsExactly(OrderStatus.NEW,
-                        OrderStatus.PAID, OrderStatus.PAYMENT_DECLINED, OrderStatus.CANCELLED)
+                .hasTransitionsExactly(OrderStatus.NEW,
+                        OrderTransition.PAYMENT_DECLINED, OrderTransition.PAY, OrderTransition.CANCEL)
+                .hasTransitionsExactly(OrderStatus.PAYMENT_DECLINED,
+                        OrderTransition.RETRY, OrderTransition.CANCEL)
                 .watch(OrderStatus.PAID)
                 .hasPeer(ItemsRuntime.KEY)
-                .hasRulesExactly(List.of(new WatchRuleExpectation<>("allIn PACKED", OrderStatus.SHIPPED)));
+                .hasRulesExactly(List.of(new WatchRuleExpectation<>("allIn PACKED", OrderTransition.SHIP)));
+    }
+
+    /** A terminal declares no edge at all, and its policy is what answers every identifier. */
+    @Test
+    void terminalStatesDeclareNoEdgeAndAnswerFromTheirPolicy() {
+        assertThat(orders.definition())
+                .hasTransitionsExactly(OrderStatus.SHIPPED)
+                .hasNoTransition(OrderStatus.SHIPPED, OrderTransition.CANCEL)
+                .policy(OrderStatus.SHIPPED)
+                .hasDefaultReason("a shipment cannot be undone");
     }
 
     @Test
     void thePaymentEdgeCarriesItsTimeoutFailureRouteAndDeclaredFailure() {
         assertThat(orders.definition())
-                .edge(OrderStatus.NEW, OrderStatus.PAID)
+                .transition(OrderStatus.NEW, OrderTransition.PAY)
+                .hasTarget(OrderStatus.PAID)
                 .isAction()
                 .hasActionNamed("pay")
                 .hasAsyncAction()
                 .hasGuardsExactly(new GuardExpectation("retryBudgetLeft", false))
                 .hasTimeout(Duration.ofSeconds(5))
-                .hasFailureTarget(OrderStatus.PAYMENT_DECLINED)
+                .hasFailureTransition(OrderTransition.PAYMENT_DECLINED)
                 .failsOnExactly(IOException.class)
                 .hasNoHook();
     }
@@ -78,14 +93,15 @@ class TestingApiTest {
     @Test
     void theShippingEdgeRunsItsAfterCommitHook() {
         assertThat(orders.definition())
-                .edge(OrderStatus.PAID, OrderStatus.SHIPPED)
+                .transition(OrderStatus.PAID, OrderTransition.SHIP)
+                .hasTarget(OrderStatus.SHIPPED)
                 .isAction()
                 .hasActionNamed("ship")
                 .hasSyncAction()
                 .hasGuardsExactly(new GuardExpectation("allItemsPacked", false))
                 .hasHookNamed("notifyCarrier")
                 .hasNoTimeout()
-                .hasNoFailureTarget()
+                .hasNoFailureTransition()
                 .failsOnExactly();
     }
 
@@ -96,17 +112,30 @@ class TestingApiTest {
                 .hasTerminalsExactly(ItemStatus.PACKED, ItemStatus.CANCELLED)
                 .hasNoAsync()
                 .hasNoWatch(ItemStatus.PACKING)
-                .edge(ItemStatus.PACKING, ItemStatus.PACKED)
+                .transition(ItemStatus.PACKING, ItemTransition.PACK)
+                .hasTarget(ItemStatus.PACKED)
                 .isAction()
                 .hasActionNamed("pack")
                 .hasSyncAction()
                 .hasNoGuards()
                 .hasNoHook();
         assertThat(items.definition())
-                .edge(ItemStatus.PENDING, ItemStatus.PACKED)
-                .isForbidden()
-                .hasReason("an item is packed by going through PACKING")
-                .hasNoAction();
+                .hasNoTransition(ItemStatus.PENDING, ItemTransition.PACK)
+                .policy(ItemStatus.PENDING)
+                .hasDefaultReason("an item is packed by going through PACKING");
+    }
+
+    /** One identifier leaves two different states; the current state, not the destination, disambiguates. */
+    @Test
+    void oneIdentifierLeavesEveryStateItWasDeclaredFrom() {
+        assertThat(items.definition())
+                .transition(ItemStatus.PENDING, ItemTransition.CANCEL)
+                .hasTarget(ItemStatus.CANCELLED)
+                .isMove();
+        assertThat(items.definition())
+                .transition(ItemStatus.PACKING, ItemTransition.CANCEL)
+                .hasTarget(ItemStatus.CANCELLED)
+                .isMove();
     }
 
     @Test

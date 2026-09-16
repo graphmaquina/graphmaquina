@@ -1,19 +1,14 @@
 package io.github.graphmaquina.processor;
 
-import io.github.graphmaquina.dsl.GraphOutlineValidator;
+import io.github.graphmaquina.dsl.MachineOutlineValidator;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.processor.model.Binding;
-import io.github.graphmaquina.processor.model.CellModel;
-import io.github.graphmaquina.processor.model.ForbidModel;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
-import io.github.graphmaquina.processor.model.OperationModel;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
@@ -28,11 +23,15 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * What every graph must hold whatever the declaration that spells it: the shape of the facade, of one
- * operation and of one cell, and the structure of the whole matrix once it is assembled.
+ * operation and of one edge, and the structure of the whole graph once it is assembled.
  *
  * <p>None of these rules reads an annotation. They are asked by the readers of the typed vocabulary, each with
  * the values it has already resolved and the anchor it wants the answer reported at, so a rule is stated once
  * and a diagnostic still points at the declaration the author wrote.</p>
+ *
+ * <p>Everything about the assembled graph — unique keys, policies, reachability, terminals, cycles, failure
+ * routes and watches — is asked of {@link MachineOutlineValidator}, the very validator the DSL runs, so a
+ * machine declared in either language is refused for the same reason under the same code.</p>
  */
 @RequiredArgsConstructor
 final class StructuralChecks {
@@ -42,28 +41,40 @@ final class StructuralChecks {
     private final Signatures signatures;
     private final Diagnostics diagnostics;
 
-    /** E and S from {@code extends Machine<E, S>}, searched through the supertypes; empty when not an interface or not resolvable. */
+    /** E, S and T from {@code extends Machine<E, S, T>}, searched through the supertypes; empty when not resolvable. */
     Optional<MachineTypes> machineTypes(TypeElement type) {
         if (type.getKind() != ElementKind.INTERFACE) {
             return Optional.empty();
         }
         Optional<DeclaredType> machine = findMachine(type.asType());
-        if (machine.isEmpty() || machine.get().getTypeArguments().size() != 2) {
+        if (machine.isEmpty() || machine.get().getTypeArguments().size() != 3) {
             return Optional.empty();
         }
         TypeMirror entity = machine.get().getTypeArguments().get(0);
         TypeMirror states = machine.get().getTypeArguments().get(1);
-        if (!(entity instanceof DeclaredType entityType) || !(states instanceof DeclaredType statesType) || !signatures.isEnum(states)) {
+        TypeMirror transitions = machine.get().getTypeArguments().get(2);
+        if (!(entity instanceof DeclaredType entityType) || !(states instanceof DeclaredType statesType)
+                || !(transitions instanceof DeclaredType transitionsType)
+                || !signatures.isEnum(states) || !signatures.isEnum(transitions)
+                || signatures.same(states, transitions)) {
             return Optional.empty();
         }
         TypeElement statesElement = (TypeElement) statesType.asElement();
+        TypeElement transitionsElement = (TypeElement) transitionsType.asElement();
+        return Optional.of(new MachineTypes(type, entityType, (TypeElement) entityType.asElement(), statesType,
+                statesElement, constants(statesElement), transitionsType, transitionsElement,
+                constants(transitionsElement)));
+    }
+
+    /** The constants of an enum, in the order it declares them. */
+    private static List<String> constants(TypeElement type) {
         List<String> names = new ArrayList<>();
-        for (Element member : statesElement.getEnclosedElements()) {
+        for (Element member : type.getEnclosedElements()) {
             if (member.getKind() == ElementKind.ENUM_CONSTANT) {
                 names.add(member.getSimpleName().toString());
             }
         }
-        return Optional.of(new MachineTypes(type, entityType, (TypeElement) entityType.asElement(), statesType, statesElement, names));
+        return names;
     }
 
     private Optional<DeclaredType> findMachine(TypeMirror type) {
@@ -82,27 +93,6 @@ final class StructuralChecks {
         return Optional.empty();
     }
 
-    /** SG102 for every pair of states two declarations of the same machine both claim. */
-    void checkDuplicateCells(TypeElement type, List<ForbidModel> forbids, List<CellModel> cells, List<OperationModel> operations) {
-        Set<String> seen = new LinkedHashSet<>();
-        for (ForbidModel forbid : forbids) {
-            if (!seen.add(forbid.from() + " → " + forbid.to())) {
-                diagnostics.error("SG102", "the cell " + forbid.from() + " → " + forbid.to() + " is declared twice", type);
-            }
-        }
-        List<CellModel> all = new ArrayList<>(cells);
-        for (OperationModel operation : operations) {
-            all.add(operation.cell());
-        }
-        for (CellModel cell : all) {
-            for (String from : cell.from()) {
-                if (!seen.add(from + " → " + cell.to())) {
-                    diagnostics.error("SG102", "the cell " + from + " → " + cell.to() + " is declared twice", type);
-                }
-            }
-        }
-    }
-
     /** SG502 unless {@code type} is top-level: the generated companion lives next to it in its package. */
     boolean checkTopLevel(TypeElement type, DiagnosticAnchor anchor) {
         if (type.getNestingKind() == NestingKind.TOP_LEVEL) {
@@ -113,30 +103,32 @@ final class StructuralChecks {
         return false;
     }
 
-    /** Whether {@code method} must declare a cell: a default, static or private declaration is not an operation. */
+    /** Whether {@code method} must declare an edge: a default, static or private declaration is not an operation. */
     static boolean isOperation(ExecutableElement method) {
         return !method.isDefault() && !method.getModifiers().contains(Modifier.STATIC)
                 && !method.getModifiers().contains(Modifier.PRIVATE);
     }
 
-    /** SG504 unless the operation carries exactly one of the two annotations that declare its cell. */
-    boolean checkOperationKinds(ExecutableElement method, boolean action, boolean move) {
-        if (action == move) {
-            diagnostics.error("SG504", method.getSimpleName() + " must carry exactly one Action or Move of its own graph vocabulary", method);
+    /** SG504 unless the operation carries at least one Transition of its own graph vocabulary. */
+    boolean checkOperationDeclared(ExecutableElement method, boolean declared) {
+        if (!declared) {
+            diagnostics.error("SG504", method.getSimpleName() + " must carry at least one Transition of its own"
+                    + " graph vocabulary", method);
             return false;
         }
         return true;
     }
 
     /**
-     * SG504 unless the operation is declared as {@code Outcome<E, S> operation(E)} or as
-     * {@code Outcome<E, S> operation(E, I)}, the form that takes the input of one call. The payload type is
+     * SG504 unless the operation is declared as {@code Outcome<E, S, T> operation(E)} or as
+     * {@code Outcome<E, S, T> operation(E, I)}, the form that takes the input of one call. The payload type is
      * whatever javac resolved, so an inaccessible or unknown one is its own diagnostic; an operation that takes
      * one may not be varargs nor declare type parameters of its own, because neither names a payload type the
      * facade could declare.
      */
     boolean checkOperationSignature(ExecutableElement method, MachineTypes types) {
-        DeclaredType outcome = signatures.declared("io.github.graphmaquina.api.Outcome", types.entity(), types.states());
+        DeclaredType outcome = signatures.declared("io.github.graphmaquina.api.Outcome", types.entity(),
+                types.states(), types.transitions());
         int arity = method.getParameters().size();
         boolean supported = arity == 1 || (arity == 2 && !method.isVarArgs()
                 && method.getTypeParameters().isEmpty());
@@ -144,24 +136,17 @@ final class StructuralChecks {
                 && signatures.same(method.getReturnType(), outcome)) {
             return true;
         }
-        diagnostics.error("SG504", "an operation is declared as Outcome<" + types.entityName() + ", " + types.statesName() + "> "
-                + method.getSimpleName() + "(" + types.entityName() + ") or " + method.getSimpleName() + "("
-                + types.entityName() + ", I), without varargs or method type parameters on input operations", method);
+        diagnostics.error("SG504", "an operation is declared as Outcome<" + types.entityName() + ", " + types.statesName()
+                + ", " + types.transitionsName() + "> " + method.getSimpleName() + "(" + types.entityName() + ") or "
+                + method.getSimpleName() + "(" + types.entityName() + ", I), without varargs or method type"
+                + " parameters on input operations", method);
         return false;
     }
 
-    /** SG507 unless the cell names at least one state to leave. */
+    /** SG507 unless the edge names at least one state to leave. */
     void checkFrom(boolean declared, DiagnosticAnchor anchor) {
         if (!declared) {
             anchor.report(diagnostics, "SG507", "from must name at least one state");
-        }
-    }
-
-    /** SG104 when a cell leaves a state to reach that same state: the diagonal is always STAY. */
-    void checkDiagonal(List<String> from, String to, DiagnosticAnchor anchor) {
-        if (from.contains(to)) {
-            anchor.report(diagnostics, "SG104", to + " is both in from and to: a cell cannot move to itself;"
-                    + " the diagonal is always STAY");
         }
     }
 
@@ -175,7 +160,7 @@ final class StructuralChecks {
         }
     }
 
-    /** SG507 when a cell that runs no action still declares what only an action can use. {@code remedy} ends the message. */
+    /** SG507 when an edge that runs no action still declares what only an action can use. {@code remedy} ends the message. */
     void checkActionRequired(boolean action, Optional<String> onFailure, List<TypeMirror> failsOn, Optional<Duration> timeout,
             String remedy, DiagnosticAnchor anchor) {
         if (!action && (onFailure.isPresent() || !failsOn.isEmpty() || timeout.isPresent())) {
@@ -190,19 +175,9 @@ final class StructuralChecks {
         }
     }
 
-    /** SG506 for every state that is neither terminal nor closed by a row of its own. */
-    void checkRowsClosed(MachineTypes types, Set<String> closed, List<String> terminals, DiagnosticAnchor anchor) {
-        for (String state : types.stateNames()) {
-            if (!closed.contains(state) && !terminals.contains(state)) {
-                anchor.report(diagnostics, "SG506", state + " is not terminal and closes no Row: close its row with the reason"
-                        + " every transition it does not declare is refused for");
-            }
-        }
-    }
-
     /** Every problem the full outline of {@code model} has, reported where its graph is declared. */
     void checkOutline(MachineModel model, DiagnosticAnchor anchor) {
-        for (InvalidGraphException.Problem problem : GraphOutlineValidator.validate(Outlines.of(model))) {
+        for (InvalidGraphException.Problem problem : MachineOutlineValidator.validate(Outlines.of(model))) {
             anchor.report(diagnostics, problem.code(), problem.message());
         }
     }

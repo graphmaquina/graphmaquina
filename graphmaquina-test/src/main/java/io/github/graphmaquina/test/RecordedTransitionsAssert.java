@@ -31,8 +31,8 @@ public final class RecordedTransitionsAssert {
     }
 
     /** The machine of every callback in order, which is how a test pins which machines were notified. */
-    public RecordedTransitionsAssert hasKeysExactly(MachineKey<?, ?>... expected) {
-        List<MachineKey<?, ?>> wanted = List.of(expected);
+    public RecordedTransitionsAssert hasKeysExactly(MachineKey<?, ?, ?>... expected) {
+        List<MachineKey<?, ?, ?>> wanted = List.of(expected);
         Checks.equal(CONTEXT, "size", wanted.size(), actual.size());
         for (int index = 0; index < wanted.size(); index++) {
             Checks.equal(CONTEXT + "[" + index + "]", "key", wanted.get(index), actual.get(index).key());
@@ -55,10 +55,11 @@ public final class RecordedTransitionsAssert {
     }
 
     /** Selects by key and by entity identity; an entity with no callbacks yields an empty view, not a failure. */
-    public <E, S extends Enum<S>> OutcomeSequenceAssert<E, S> forEntity(MachineKey<E, S> key, E entity) {
+    public <E, S extends Enum<S>, T extends Enum<T>> OutcomeSequenceAssert<E, S, T> forEntity(
+            MachineKey<E, S, T> key, E entity) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(entity, "entity");
-        List<Outcome<E, S>> selected = actual.stream()
+        List<Outcome<E, S, T>> selected = actual.stream()
                 .filter(recorded -> recorded.key().equals(key) && recorded.outcome().entity() == entity)
                 .map(recorded -> CheckedTypes.outcome(key, recorded.outcome()))
                 .toList();

@@ -6,28 +6,33 @@ import java.util.Optional;
 
 /**
  * What a {@link GuardProbe} recorded about one invocation. A guard decides and does not cascade, so there is no
- * depth to record; as with {@link ActionCall}, the live {@code GuardContext} is not kept. Input is the
- * reference read on entry, not a deep copy, and remains readable after the transaction ends.
+ * depth to record; as with {@link ActionCall}, the live {@code GuardContext} is not kept and the identifier of
+ * the edge under evaluation is recorded alongside its endpoints. Input is the reference read on entry, not a
+ * deep copy, and remains readable after the transaction ends.
  *
  * @param entity the entity the guard was asked about
  * @param from the state the entity was in when the guard was entered
+ * @param transition the identifier that selected the edge being evaluated
  * @param to the state the transition was heading for
  * @param input the operation argument, or empty when none was provided
  * @param <E> the entity type of the machine
  * @param <S> the state enum of the machine
+ * @param <T> the transition identifier enum of the machine
  */
-public record GuardCall<E, S extends Enum<S>>(E entity, S from, S to, Optional<?> input) {
+public record GuardCall<E, S extends Enum<S>, T extends Enum<T>>(E entity, S from, T transition, S to,
+        Optional<?> input) {
 
     public GuardCall {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(transition, "transition");
         Objects.requireNonNull(to, "to");
         Objects.requireNonNull(input, "input");
     }
 
-    /** Creates a call with no operation input, preserving the original constructor. */
-    public GuardCall(E entity, S from, S to) {
-        this(entity, from, to, Optional.empty());
+    /** Creates a call with no operation input. */
+    public GuardCall(E entity, S from, T transition, S to) {
+        this(entity, from, transition, to, Optional.empty());
     }
 
     /**

@@ -7,53 +7,53 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * The typed frontend builds the same model the legacy one does, from the vocabulary generated for the machine
- * instead of from names written as strings. Every structural rule the legacy frontend enforces is still
- * enforced here, with the code it already had, and what the language itself refuses is left to javac.
+ * The frontend builds the model the generators read from the vocabulary generated for the machine. Every
+ * structural rule holds with the code the catalogue gives it, and what the language itself refuses is left to
+ * javac.
  */
 class TypedMachineProcessorTest {
 
-    /** The header of the fixture every negative case varies: three states, two closed rows, one terminal. */
+    /** The header of the fixture every negative case varies: three states, two policies, one terminal. */
     private static final String HEADER = """
             @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
                 state = DocRefs.Status.class, id = DocRefs.Id.class)
-            @DocsGraph.Row(state = DRAFT, otherwise = "a draft is sent to review")
-            @DocsGraph.Row(state = REVIEW, otherwise = "a review is published")
+            @DocsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is sent to review")
+            @DocsGraph.StatePolicy(state = REVIEW, otherwise = "a review is published")
             """;
 
     /** The operations of that fixture: a move into the review and the action that publishes it. */
     private static final String OPERATIONS = """
-                @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                Outcome<Doc, DocStatus> submit(Doc doc);
-                @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
-                Outcome<Doc, DocStatus> publish(Doc doc);
+                @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
             """;
 
     /**
-     * The companion keeps the operations of the facade and exposes no {@code transitionTo} of its own, which is
+     * The companion keeps the operations of the facade and exposes no generic selector of its own, which is
      * what a facade preserves; the graph it builds calls the very method the action symbol names. The check is
      * written on the declaration, not on any mention of the name, because an operation is still implemented by
-     * delegating to the state machine's own {@code transitionTo}, as it has always been.
+     * delegating to the state machine's own {@code execute}, as it has always been.
      */
     @Test
-    void compilesTypedMachineAndPreservesFacade() {
+    void compilesMachineAndPreservesFacade() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.minimal());
         assertTrue(result.success(), result.describe());
         assertTrue(result.hasGenerated("fx.DocsRuntime"));
         String companion = result.generated("fx.DocsRuntime");
-        assertTrue(companion.contains("public Outcome<Doc, DocStatus> publish(Doc doc)"), companion);
-        assertFalse(companion.contains("public Outcome<Doc, DocStatus> transitionTo("), companion);
+        assertTrue(companion.contains("public Outcome<Doc, DocStatus, DocTransition> publish(Doc doc)"), companion);
+        assertFalse(companion.contains("public Outcome<Doc, DocStatus, DocTransition> execute("), companion);
         assertTrue(companion.contains(".action(\"publish\", (context) -> docActions.publish(context))"), companion);
     }
 
     @Test
     void reportsMoreThanOneFailureTargetAsInvalidCardinality() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
-                        onFailure = {DRAFT, REVIEW})
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                        onFailure = {SUBMIT, RETURN})
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
 
         assertFalse(result.success(), result.describe());
@@ -80,23 +80,25 @@ class TypedMachineProcessorTest {
     @Test
     void refusesTheVocabularyOfAnotherMachine() {
         Map<String, String> sources = TypedFixtures.graph(HEADER
-                + "@DraftsGraph.Row(state = PUBLISHED, otherwise = \"borrowed from another machine\")\n", OPERATIONS);
+                + "@DraftsGraph.StatePolicy(state = PUBLISHED, otherwise = \"borrowed from another machine\")\n",
+                OPERATIONS);
         sources.put("fx.Drafts", """
                 package fx;
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
                 import io.github.graphmaquina.api.Machine;
                 import io.github.graphmaquina.api.Outcome;
                 import static fx.DocStatus.*;
+                import static fx.DocTransition.*;
                 @GenerateGraphApi
                 @DraftsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
                     state = DocRefs.Status.class, id = DocRefs.Id.class)
-                @DraftsGraph.Row(state = DRAFT, otherwise = "a draft is published")
-                @DraftsGraph.Row(state = REVIEW, otherwise = "a review is published")
-                public interface Drafts extends Machine<Doc, DocStatus> {
-                    @DraftsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DraftsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                @DraftsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is published")
+                @DraftsGraph.StatePolicy(state = REVIEW, otherwise = "a review is published")
+                public interface Drafts extends Machine<Doc, DocStatus, DocTransition> {
+                    @DraftsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DraftsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 }
                 """);
 
@@ -106,43 +108,49 @@ class TypedMachineProcessorTest {
         assertTrue(result.hasError("SG606"), result.describe());
     }
 
+    /**
+     * An element the vocabulary requires is javac's own error, reported at the declaration that omits it. The
+     * identifier is that element now: an absent action means the edge runs none.
+     */
     @Test
-    void leavesAnActionWithoutItsActionToJavac() {
+    void leavesATransitionWithoutItsIdentifierToJavac() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
 
         assertFalse(result.success(), result.describe());
         assertFalse(result.errors().stream().anyMatch(error -> error.contains("[SG")), result.describe());
         assertTrue(result.errors().stream().anyMatch(error ->
-                error.contains("is missing a default value for the element 'action'")), result.describe());
+                error.contains("is missing a default value for the element 'id'")), result.describe());
     }
 
     @Test
-    void readsACellWithoutAnActionAsAMove() {
+    void readsATransitionWithoutAnActionAsAMove() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph("""
                 @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED, allowsCycle = REVIEW,
                     state = DocRefs.Status.class, id = DocRefs.Id.class)
-                @DocsGraph.Row(state = DRAFT, otherwise = "a draft is sent to review")
-                @DocsGraph.Row(state = REVIEW, otherwise = "a review is published or sent back")
-                @DocsGraph.Cell(from = REVIEW, to = DRAFT)
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is sent to review")
+                @DocsGraph.StatePolicy(state = REVIEW, otherwise = "a review is published or sent back")
+                @DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)
                 """, OPERATIONS));
 
         assertTrue(result.success(), result.describe());
-        assertTrue(result.generated("fx.DocsRuntime").contains(".to(DocStatus.DRAFT).move()"), result.generated("fx.DocsRuntime"));
+        assertTrue(result.generated("fx.DocsRuntime")
+                .contains(".transition(DocTransition.RETURN, DocStatus.REVIEW, DocStatus.DRAFT).endTransition()"),
+                result.generated("fx.DocsRuntime"));
     }
 
     @Test
     void keepsTheOriginalNamesOfTheMembersItCalls() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
                         guards = DocActionsRefs.Approved.class, afterCommit = DocActionsRefs.Notified.class)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
 
         assertTrue(result.success(), result.describe());
@@ -154,11 +162,11 @@ class TypedMachineProcessorTest {
     @Test
     void reportsAGuardAskedTwice() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
                         guards = {DocActionsRefs.Approved.class, DocActionsRefs.Approved.class})
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
 
         assertFalse(result.success(), result.describe());
@@ -168,11 +176,11 @@ class TypedMachineProcessorTest {
     @Test
     void keepsTheFailsOnRestrictions() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
-                    @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                    Outcome<Doc, DocStatus> submit(Doc doc);
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class,
                         failsOn = RuntimeException.class)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
 
         assertFalse(result.success(), result.describe());
@@ -180,15 +188,15 @@ class TypedMachineProcessorTest {
     }
 
     @Test
-    void reportsAStateThatClosesNoRow() {
+    void reportsAStateWithoutAPolicy() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph("""
                 @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
                     state = DocRefs.Status.class, id = DocRefs.Id.class)
-                @DocsGraph.Row(state = DRAFT, otherwise = "a draft is sent to review")
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is sent to review")
                 """, OPERATIONS));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG506"), result.describe());
+        assertTrue(result.hasError("SG701"), result.describe());
     }
 
     @Test
@@ -200,13 +208,14 @@ class TypedMachineProcessorTest {
         assertTrue(result.hasError("SG103"), result.describe());
     }
 
+    /** A self-loop is a real edge now; only the cycle it takes part in has to be authorised. */
     @Test
-    void reportsACellOnTheDiagonal() {
+    void reportsAnUnauthorisedSelfLoop() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER,
                 OPERATIONS.replace("from = REVIEW, to = PUBLISHED", "from = REVIEW, to = REVIEW")));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG104"), result.describe());
+        assertTrue(result.hasError("SG204"), result.describe());
     }
 
     @Test
@@ -219,19 +228,19 @@ class TypedMachineProcessorTest {
     }
 
     @Test
-    void reportsACellDeclaredTwice() {
+    void reportsARejectionOfAnIdentifierThatIsAlsoDeclared() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(
-                HEADER + "@DocsGraph.Forbid(from = DRAFT, to = REVIEW, reason = \"already a move\")\n", OPERATIONS));
+                HEADER + "@DocsGraph.Reject(from = DRAFT, transition = SUBMIT, reason = \"already a move\")\n", OPERATIONS));
 
         assertFalse(result.success(), result.describe());
-        assertTrue(result.hasError("SG102"), result.describe());
+        assertTrue(result.hasError("SG702"), result.describe());
     }
 
     @Test
     void reportsAnUnreachableState() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, """
-                    @DocsGraph.Action(from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
-                    Outcome<Doc, DocStatus> publish(Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED, action = DocActionsRefs.Publish.class)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 """));
 
         assertFalse(result.success(), result.describe());
@@ -241,8 +250,8 @@ class TypedMachineProcessorTest {
     @Test
     void reportsAnUndeclaredCycle() {
         Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER, OPERATIONS + """
-                    @DocsGraph.Move(from = REVIEW, to = DRAFT)
-                    Outcome<Doc, DocStatus> reject(Doc doc);
+                    @DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)
+                    Outcome<Doc, DocStatus, DocTransition> reject(Doc doc);
                 """));
 
         assertFalse(result.success(), result.describe());

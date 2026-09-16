@@ -3,29 +3,35 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Function;
 
 /**
  * Expectations every {@link Outcome} variant shares, returning the concrete view so that a chain keeps
- * the narrowed type. Three readings of "where the entity is" are kept apart on purpose: {@link
- * #requestedTarget(Enum)} is the transition that was asked for, {@link #hasRecordedState(Enum)} is the
- * state the outcome itself records as current, and {@link #hasEntityState(Function, Enum)} reads the
- * live entity at the moment the expectation runs. They diverge whenever something moved the entity
+ * the narrowed type. Three readings of a transition are kept apart on purpose:
+ * {@link #requestedTransition(Enum)} is the identifier that was asked for, {@link #hasRecordedState(Enum)}
+ * is the state the outcome itself records as current, and {@link #hasEntityState(Function, Enum)} reads
+ * the live entity at the moment the expectation runs. They diverge whenever something moved the entity
  * after the outcome was produced, such as an after-commit hook opening its own transition.
+ *
+ * <p>There is no shared reading of a requested destination. An identifier without an edge has no
+ * destination to report, so only the variants that resolved one expose it.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
+ * @param <T> transition identifier enum of the machine
  * @param <SELF> the concrete view returned by every expectation
  */
-public abstract class BaseOutcomeAssert<E, S extends Enum<S>, SELF extends BaseOutcomeAssert<E, S, SELF>> {
+public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
+        SELF extends BaseOutcomeAssert<E, S, T, SELF>> {
 
     /** Prefix of every failure message raised by this view. */
     final String context;
 
     /** The outcome under test, null only for a view built straight from a null subject. */
-    final Outcome<E, S> actual;
+    final Outcome<E, S, T> actual;
 
-    BaseOutcomeAssert(String context, Outcome<E, S> actual) {
+    BaseOutcomeAssert(String context, Outcome<E, S, T> actual) {
         this.context = context;
         this.actual = actual;
     }
@@ -36,16 +42,25 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, SELF extends BaseO
     /** The state the transition started from, which every variant reports. */
     public SELF from(S expected) {
         Objects.requireNonNull(expected, "expected");
-        Outcome<E, S> outcome = Checks.subject(context, "from", expected, actual);
+        Outcome<E, S, T> outcome = Checks.subject(context, "from", expected, actual);
         Checks.equal(context, "from", expected, outcome.from());
         return self();
     }
 
-    /** The target the transition was asked for, whether or not the engine ever moved there. */
-    public SELF requestedTarget(S expected) {
+    /** The identifier the caller asked for, whether or not the engine ever ran its edge. */
+    public SELF requestedTransition(T expected) {
         Objects.requireNonNull(expected, "expected");
-        Outcome<E, S> outcome = Checks.subject(context, "requested target", expected, actual);
-        Checks.equal(context, "requested target", expected, targetOf(outcome));
+        Optional<T> wanted = Optional.of(expected);
+        Outcome<E, S, T> outcome = Checks.subject(context, "requested transition", wanted, actual);
+        Checks.equal(context, "requested transition", wanted, outcome.requestedTransition());
+        return self();
+    }
+
+    /** No identifier was requested, which is what a reevaluation that selected no edge reports. */
+    public SELF hasNoRequestedTransition() {
+        Optional<T> wanted = Optional.empty();
+        Outcome<E, S, T> outcome = Checks.subject(context, "requested transition", wanted, actual);
+        Checks.equal(context, "requested transition", wanted, outcome.requestedTransition());
         return self();
     }
 
@@ -55,7 +70,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, SELF extends BaseO
      */
     public SELF hasRecordedState(S expected) {
         Objects.requireNonNull(expected, "expected");
-        Outcome<E, S> outcome = Checks.subject(context, "recorded state", expected, actual);
+        Outcome<E, S, T> outcome = Checks.subject(context, "recorded state", expected, actual);
         Checks.equal(context, "recorded state", expected, outcome.current());
         return self();
     }
@@ -67,7 +82,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, SELF extends BaseO
     public SELF hasEntityState(Function<? super E, ? extends S> getter, S expected) {
         Objects.requireNonNull(getter, "getter");
         Objects.requireNonNull(expected, "expected");
-        Outcome<E, S> outcome = Checks.subject(context, "entity state", expected, actual);
+        Outcome<E, S, T> outcome = Checks.subject(context, "entity state", expected, actual);
         S observed = getter.apply(outcome.entity());
         Checks.equal(context, "entity state", expected, observed);
         return self();
@@ -76,17 +91,8 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, SELF extends BaseO
     /** Entity selection is by reference, so a distinct instance that compares equal does not satisfy it. */
     public SELF hasEntitySameAs(E expected) {
         Objects.requireNonNull(expected, "expected");
-        Outcome<E, S> outcome = Checks.subject(context, "entity", expected, actual);
+        Outcome<E, S, T> outcome = Checks.subject(context, "entity", expected, actual);
         Checks.same(context, "entity", expected, outcome.entity());
         return self();
-    }
-
-    private static <E, S extends Enum<S>> S targetOf(Outcome<E, S> outcome) {
-        return switch (outcome) {
-            case Outcome.Applied<E, S> applied -> applied.to();
-            case Outcome.Failed<E, S> failed -> failed.to();
-            case Outcome.Rejected<E, S> rejected -> rejected.to();
-            case Outcome.Ignored<E, S> ignored -> ignored.to();
-        };
     }
 }

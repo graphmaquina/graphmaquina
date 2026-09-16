@@ -1,15 +1,15 @@
 package io.github.graphmaquina.processor.gen;
 
+import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
-import io.github.graphmaquina.api.EdgeKind;
 import io.github.graphmaquina.processor.model.Binding;
-import io.github.graphmaquina.processor.model.CellModel;
-import io.github.graphmaquina.processor.model.ForbidModel;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.OperationModel;
-import io.github.graphmaquina.processor.model.RowModel;
+import io.github.graphmaquina.processor.model.RejectionModel;
 import io.github.graphmaquina.processor.model.RuleKind;
 import io.github.graphmaquina.processor.model.RuleModel;
+import io.github.graphmaquina.processor.model.StatePolicyModel;
+import io.github.graphmaquina.processor.model.TransitionModel;
 import io.github.graphmaquina.processor.model.WatchModel;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -52,6 +52,8 @@ public final class MachineGenerator {
         Names names = new Names(model.packageName(), types(model));
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
         String s = names.of(model.types().statesElement().getQualifiedName().toString());
+        String t = names.of(model.types().transitionsElement().getQualifiedName().toString());
+        String generics = "<" + e + ", " + s + ", " + t + ">";
         String facade = model.facadeName();
         String companion = SymbolNames.runtimeName(facade);
         String key = names.of(MACHINE_KEY);
@@ -71,43 +73,43 @@ public final class MachineGenerator {
         out.line("@" + names.of(GENERATED) + "(\"io.github.graphmaquina.processor.StateGraphProcessor\")");
         out.open("public final class " + companion + " implements " + facade);
         out.blank();
-        out.line("public static final " + key + "<" + e + ", " + s + "> KEY = " + key + ".of(" + e + ".class, " + s + ".class);");
+        out.line("public static final " + key + generics + " KEY = " + key + ".of(" + e + ".class, " + s + ".class, "
+                + t + ".class);");
         out.blank();
-        out.line("private final " + names.of(STATE_MACHINE) + "<" + e + ", " + s + "> stateMachine;");
+        out.line("private final " + names.of(STATE_MACHINE) + generics + " stateMachine;");
         out.blank();
-        out.open("public " + companion + "(" + names.of(STATE_MACHINE) + "<" + e + ", " + s + "> stateMachine)");
+        out.open("public " + companion + "(" + names.of(STATE_MACHINE) + generics + " stateMachine)");
         out.line("this.stateMachine = " + objects + ".requireNonNull(stateMachine, \"stateMachine\");");
         out.close();
         out.blank();
         graph(model, names, parameters, invocations, out);
         for (OperationModel operation : model.operations()) {
             String input = entity.equals("input") ? "input2" : "input";
-            String declaration = operation.inputType().map((TypeMirror type) -> ", " + TypeSource.render(type) + " " + input)
-                    .orElse("");
+            String declaration = operation.inputType()
+                    .map((TypeMirror type) -> ", " + TypeSource.render(type) + " " + input).orElse("");
             String argument = operation.inputType().isPresent() ? ", " + input : "";
             out.blank();
             out.line("@Override");
-            out.open("public " + outcome + "<" + e + ", " + s + "> " + operation.name()
-                    + "(" + e + " " + entity + declaration + ")");
+            out.open("public " + outcome + generics + " " + operation.name() + "(" + e + " " + entity + declaration + ")");
             out.line(objects + ".requireNonNull(" + entity + ", \"" + entity + "\");");
-            out.line("return stateMachine.transitionTo(" + entity + ", " + s + "."
-                    + operation.cell().to() + argument + ");");
+            out.line("return stateMachine.execute(" + entity + ", " + t + "." + operation.transitionId() + argument + ");");
             out.close();
         }
         out.blank();
         out.line("@Override");
-        out.line("public " + definition + "<" + e + ", " + s + "> definition() { return stateMachine.definition(); }");
+        out.line("public " + definition + generics + " definition() { return stateMachine.definition(); }");
         out.blank();
         out.line("@Override");
-        out.line("public " + outcome + "<" + e + ", " + s + "> reevaluate(" + e + " " + entity + ") { return stateMachine.reevaluate("
+        out.line("public " + outcome + generics + " reevaluate(" + e + " " + entity + ") { return stateMachine.reevaluate("
                 + entity + "); }");
         out.blank();
         out.line("@Override");
-        out.line("public " + names.of(SET) + "<" + s + "> allowedFrom(" + s + " state) { return stateMachine.allowedFrom(state); }");
+        out.line("public " + names.of(SET) + "<" + t + "> transitionsFrom(" + s
+                + " state) { return stateMachine.transitionsFrom(state); }");
         out.blank();
         out.line("@Override");
-        out.line("public <T> " + names.of(COMPLETABLE_FUTURE) + "<T> async(" + names.of(SUPPLIER)
-                + "<T> call) { return stateMachine.supplyAsync(call); }");
+        out.line("public <R> " + names.of(COMPLETABLE_FUTURE) + "<R> async(" + names.of(SUPPLIER)
+                + "<R> call) { return stateMachine.supplyAsync(call); }");
         out.close();
         return out.toString();
     }
@@ -116,6 +118,7 @@ public final class MachineGenerator {
                               SourceWriter out) {
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
         String s = names.of(model.types().statesElement().getQualifiedName().toString());
+        String t = names.of(model.types().transitionsElement().getQualifiedName().toString());
         String objects = names.of(OBJECTS);
         List<String> declarations = new ArrayList<>();
         for (TypeElement dependency : model.instanceDependencies()) {
@@ -123,7 +126,8 @@ public final class MachineGenerator {
                     + parameters.get(dependency.getQualifiedName().toString()));
         }
         out.line("/** The definition, built from the annotations of {@link " + model.facadeName() + "}. One parameter per class with instance members. */");
-        out.open("public static " + names.of(GRAPH_DEFINITION) + "<" + e + ", " + s + "> graph(" + String.join(", ", declarations) + ")");
+        out.open("public static " + names.of(GRAPH_DEFINITION) + "<" + e + ", " + s + ", " + t + "> graph("
+                + String.join(", ", declarations) + ")");
         for (TypeElement dependency : model.instanceDependencies()) {
             String name = parameters.get(dependency.getQualifiedName().toString());
             out.line(objects + ".requireNonNull(" + name + ", \"" + name + "\");");
@@ -137,78 +141,77 @@ public final class MachineGenerator {
         for (String state : model.cycleAllowed()) {
             out.line(".allowsCycle(" + s + "." + state + ")");
         }
-        for (String from : model.types().stateNames()) {
-            out.line(".from(" + s + "." + from + ")");
-            out.indent();
-            for (String to : model.types().stateNames()) {
-                if (to.equals(from)) {
-                    continue;
-                }
-                Optional<CellModel> cell = cellOf(model, from, to);
-                Optional<ForbidModel> forbid = forbidOf(model, from, to);
-                if (cell.isPresent()) {
-                    emitCell(model, names, parameters, invocations, cell.get(), to, out);
-                } else if (forbid.isPresent()) {
-                    out.line(".to(" + s + "." + to + ").forbid(" + quote(forbid.get().reason()) + ")");
-                }
+        for (StatePolicyModel policy : model.policies()) {
+            out.line(".statePolicy(" + s + "." + policy.state() + ", " + quote(policy.otherwise()) + ")");
+        }
+        for (RejectionModel rejection : model.rejections()) {
+            out.line(".reject(" + s + "." + rejection.from() + ", " + t + "." + rejection.transition() + ", "
+                    + quote(rejection.reason()) + ")");
+        }
+        for (TransitionModel transition : model.allTransitions()) {
+            for (String from : transition.from()) {
+                emitTransition(model, names, parameters, invocations, transition, from, out);
             }
-            out.line(".stay()");
-            Optional<WatchModel> watch = watchOf(model, from);
-            watch.ifPresent((WatchModel found) -> emitWatch(model, names, parameters, invocations, found, out));
-            out.line(".forbidOthers(" + quote(rowReason(model, from)) + ")");
-            out.outdent();
+        }
+        for (WatchModel watch : model.watches()) {
+            emitWatch(model, names, parameters, invocations, watch, out);
         }
         out.line(".build();");
         out.outdent().outdent();
         out.close();
     }
 
-    private static void emitCell(MachineModel model, Names names, Map<String, String> parameters, BoundInvocation invocations,
-                                 CellModel cell, String to, SourceWriter out) {
+    private static void emitTransition(MachineModel model, Names names, Map<String, String> parameters,
+                                       BoundInvocation invocations, TransitionModel transition, String from,
+                                       SourceWriter out) {
         String s = names.of(model.types().statesElement().getQualifiedName().toString());
+        String t = names.of(model.types().transitionsElement().getQualifiedName().toString());
         List<String> context = List.of(lambdaParameter("context", parameters));
         List<String> entity = List.of(entityParameter(model, parameters));
-        StringBuilder line = new StringBuilder(".to(" + s + "." + to + ")");
-        if (cell.kind() == EdgeKind.ACTION) {
-            Binding action = cell.action().orElseThrow();
-            line.append(action.async() ? ".asyncAction(" : ".action(").append(quote(cell.name())).append(", ")
+        StringBuilder line = new StringBuilder(".transition(" + t + "." + transition.transitionId() + ", " + s + "."
+                + from + ", " + s + "." + transition.to() + ")");
+        if (transition.kind() == TransitionKind.ACTION) {
+            Binding action = transition.action().orElseThrow();
+            line.append(action.async() ? ".asyncAction(" : ".action(").append(quote(transition.name())).append(", ")
                     .append(lambda(action, context, parameters, names, invocations)).append(')');
-            cell.timeout().ifPresent((Duration timeout) -> line.append(".timeout(").append(names.of(DURATION))
+            transition.timeout().ifPresent((Duration timeout) -> line.append(".timeout(").append(names.of(DURATION))
                     .append(".parse(\"").append(timeout).append("\"))"));
-        } else {
-            line.append(".move()");
         }
-        for (Binding guard : cell.guards()) {
+        for (Binding guard : transition.guards()) {
             line.append(guard.async() ? ".asyncGuard(" : ".guard(").append(quote(guard.methodName())).append(", ")
                     .append(lambda(guard, context, parameters, names, invocations)).append(')');
         }
-        cell.onFailure().ifPresent((String state) -> line.append(".onFailure(").append(s).append('.').append(state).append(')'));
-        for (TypeMirror type : cell.failsOn()) {
+        transition.onFailure().ifPresent((String recovery) ->
+                line.append(".onFailure(").append(t).append('.').append(recovery).append(')'));
+        for (TypeMirror type : transition.failsOn()) {
             line.append(".failsOn(").append(type).append(".class)");
         }
-        cell.afterCommit().ifPresent((Binding hook) -> {
+        transition.afterCommit().ifPresent((Binding hook) -> {
             boolean contextual = hook.arguments().size() == 2;
             line.append(contextual ? ".afterCommitWith(" : ".afterCommit(").append(quote(hook.methodName())).append(", ")
                     .append(lambda(hook, contextual ? hookParameters(entity.get(0), parameters) : entity, parameters, names, invocations))
                     .append(')');
         });
-        out.line(line.toString());
+        out.line(line.append(".endTransition()").toString());
     }
 
     private static void emitWatch(MachineModel model, Names names, Map<String, String> parameters, BoundInvocation invocations,
                                   WatchModel watch, SourceWriter out) {
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
         String s = names.of(model.types().statesElement().getQualifiedName().toString());
+        String t = names.of(model.types().transitionsElement().getQualifiedName().toString());
         String p = names.of(watch.peer().entityElement().getQualifiedName().toString());
         String q = names.of(watch.peer().statesElement().getQualifiedName().toString());
+        String u = names.of(watch.peer().transitionsElement().getQualifiedName().toString());
         String entity = entityParameter(model, parameters);
         List<String> arguments = conditionParameters(entity, parameters);
         String peer = lambdaParameter(decapitalize(watch.peer().entityName()), parameters);
         String owner = watch.ownerIsOptional()
                 ? peer + "." + watch.owner().method() + "()"
                 : names.of(OPTIONAL) + ".ofNullable(" + peer + "." + watch.owner().method() + "())";
-        out.line(".watches(" + names.of(MACHINE_KEY) + ".of(" + p + ".class, " + q + ".class), (" + e + " " + entity + ") -> " + entity + "."
-                + watch.peers().method() + "(), (" + p + " " + peer + ") -> " + owner + ")");
+        out.line(".watch(" + s + "." + watch.state() + ", " + names.of(MACHINE_KEY) + ".of(" + p + ".class, " + q
+                + ".class, " + u + ".class), (" + e + " " + entity + ") -> " + entity + "." + watch.peers().method()
+                + "(), (" + p + " " + peer + ") -> " + owner + ")");
         out.indent();
         for (RuleModel rule : watch.rules()) {
             String condition = switch (rule.kind()) {
@@ -218,45 +221,10 @@ public final class MachineGenerator {
                 case ANY_IN -> names.of(WATCH_CONDITION) + ".anyIn(" + q + "." + rule.argument() + ")";
                 case NONE_IN -> names.of(WATCH_CONDITION) + ".noneIn(" + q + "." + rule.argument() + ")";
             };
-            out.line(".when(" + condition + ").goTo(" + s + "." + rule.goTo() + ")");
+            out.line(".when(" + condition + ").execute(" + t + "." + rule.transition() + ")");
         }
+        out.line(".endWatch()");
         out.outdent();
-    }
-
-    private static Optional<CellModel> cellOf(MachineModel model, String from, String to) {
-        for (CellModel cell : model.allCells()) {
-            if (cell.from().contains(from) && cell.to().equals(to)) {
-                return Optional.of(cell);
-            }
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<ForbidModel> forbidOf(MachineModel model, String from, String to) {
-        for (ForbidModel forbid : model.forbids()) {
-            if (forbid.from().equals(from) && forbid.to().equals(to)) {
-                return Optional.of(forbid);
-            }
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<WatchModel> watchOf(MachineModel model, String state) {
-        for (WatchModel watch : model.watches()) {
-            if (watch.state().equals(state)) {
-                return Optional.of(watch);
-            }
-        }
-        return Optional.empty();
-    }
-
-    private static String rowReason(MachineModel model, String state) {
-        for (RowModel row : model.rows()) {
-            if (row.state().equals(state)) {
-                return row.otherwise();
-            }
-        }
-        return state + " is final";
     }
 
     /** Every type the companion names, in the order it claims them: its own first, then the fixed ones, then the model's. */
@@ -277,8 +245,8 @@ public final class MachineGenerator {
         boolean anyTimeout = false;
         boolean anyNullableOwner = false;
         boolean anyBuiltIn = false;
-        for (CellModel cell : model.allCells()) {
-            anyTimeout |= cell.timeout().isPresent();
+        for (TransitionModel transition : model.allTransitions()) {
+            anyTimeout |= transition.timeout().isPresent();
         }
         for (WatchModel watch : model.watches()) {
             anyNullableOwner |= !watch.ownerIsOptional();
@@ -287,6 +255,7 @@ public final class MachineGenerator {
             }
             types.add(watch.peer().entityElement().getQualifiedName().toString());
             types.add(watch.peer().statesElement().getQualifiedName().toString());
+            types.add(watch.peer().transitionsElement().getQualifiedName().toString());
         }
         if (anyTimeout) {
             types.add(DURATION);
@@ -299,11 +268,12 @@ public final class MachineGenerator {
         }
         types.add(model.types().entityElement().getQualifiedName().toString());
         types.add(model.types().statesElement().getQualifiedName().toString());
+        types.add(model.types().transitionsElement().getQualifiedName().toString());
         for (TypeElement dependency : model.instanceDependencies()) {
             types.add(dependency.getQualifiedName().toString());
         }
-        for (CellModel cell : model.allCells()) {
-            for (Binding binding : cell.bindings()) {
+        for (TransitionModel transition : model.allTransitions()) {
+            for (Binding binding : transition.bindings()) {
                 if (binding.isStatic()) {
                     types.add(binding.owner().getQualifiedName().toString());
                 }

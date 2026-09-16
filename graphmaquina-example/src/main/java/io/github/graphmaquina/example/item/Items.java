@@ -9,18 +9,19 @@ import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.Outcome;
 
-/** The item machine: four states, sixteen cells. Cancellation is reached only by the order's cascade. */
+/** The item machine: four states and four edges. Cancellation is reached only by the order's cascade. */
 @GenerateGraphApi
 @ItemsGraph.Definition(initial = PENDING, terminals = {PACKED, CANCELLED},
         state = ItemRefs.Status.class, id = ItemRefs.Id.class)
-@ItemsGraph.Row(state = PENDING, otherwise = "an item is packed by going through PACKING")
-@ItemsGraph.Row(state = PACKING, otherwise = "cannot go back to pending")
-@ItemsGraph.Cell(from = {PENDING, PACKING}, to = CANCELLED)
-public interface Items extends Machine<Item, ItemStatus> {
+@ItemsGraph.StatePolicy(state = PENDING, otherwise = "an item is packed by going through PACKING")
+@ItemsGraph.StatePolicy(state = PACKING, otherwise = "cannot go back to pending")
+@ItemsGraph.Transition(id = ItemTransition.CANCEL, from = {PENDING, PACKING}, to = CANCELLED)
+public interface Items extends Machine<Item, ItemStatus, ItemTransition> {
 
-    @ItemsGraph.Move(from = PENDING, to = PACKING)
-    Outcome<Item, ItemStatus> startPacking(Item item);
+    @ItemsGraph.Transition(id = ItemTransition.START_PACKING, from = PENDING, to = PACKING)
+    Outcome<Item, ItemStatus, ItemTransition> startPacking(Item item);
 
-    @ItemsGraph.Action(from = PACKING, to = PACKED, action = ItemActionsRefs.Pack.class)
-    Outcome<Item, ItemStatus> pack(Item item);
+    @ItemsGraph.Transition(id = ItemTransition.PACK, from = PACKING, to = PACKED,
+            action = ItemActionsRefs.Pack.class)
+    Outcome<Item, ItemStatus, ItemTransition> pack(Item item);
 }

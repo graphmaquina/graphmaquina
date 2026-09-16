@@ -1,0 +1,30 @@
+package io.github.graphmaquina.export;
+
+import io.github.graphmaquina.api.TransitionKind;
+import java.util.List;
+import java.util.Optional;
+import lombok.NonNull;
+
+/**
+ * One declared edge seen only through names, so the renderer never depends on the entity or the enums. There is
+ * no view of an absent edge: what was not declared is simply not here.
+ *
+ * @param from origin state name
+ * @param transition identifier name
+ * @param to destination state name
+ * @param kind whether the edge runs an action
+ * @param action the action's name, when it has one
+ * @param guards the guards' names, in declaration order
+ * @param async the edge's action or some guard is asynchronous
+ * @param failureTransition the identifier this edge recovers through, when it declares one
+ * @param watch the watch rules of {@code from} that execute this identifier, rendered
+ */
+public record TransitionView(@NonNull String from, @NonNull String transition, @NonNull String to,
+                             @NonNull TransitionKind kind, @NonNull Optional<String> action,
+                             @NonNull List<String> guards, boolean async,
+                             @NonNull Optional<String> failureTransition, @NonNull Optional<String> watch) {
+
+    public TransitionView {
+        guards = List.copyOf(guards);
+    }
+}

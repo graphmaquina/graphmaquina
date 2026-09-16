@@ -1,20 +1,28 @@
 package io.github.graphmaquina.test.snapshot;
 
-import io.github.graphmaquina.api.EdgeSpec;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardRef;
+import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
+import io.github.graphmaquina.api.WatchSpec;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
 
 /**
- * The structure of a graph as a flat, versioned map of path to value: the machine identity, the states
- * and their order, the initial and terminal states, every cell of the N×N matrix with its kind, reason,
- * action, guards, failure route, timeout and hook, and the watches with their peers and rules. It carries
- * what a diagram leaves out, so two definitions that render identically still differ here, and it carries
- * only names and types, never lambdas or the identity of a callback, so a snapshot is stable across runs.
+ * The structure of a graph as a flat, versioned map of path to value: the machine identity, the states and
+ * their order, the catalogue of transition identifiers, the initial and terminal states, every declared edge
+ * under {@code /transitions/<from>/<id>} with its destination, kind, action, guards, recovery identifier,
+ * timeout and hook, the rejection policy of every state, and the watches with their peers and rules. It
+ * carries what a diagram leaves out, so two definitions that render identically still differ here, and it
+ * carries only names and types, never lambdas or the identity of a callback, so a snapshot is stable across
+ * runs.
+ *
+ * <p>Absence is not recorded: a pair of an origin and an identifier with no edge has no path at all. What the
+ * state would answer such a request with lives in its policy instead.
  *
  * <p>The map is immutable and always in canonical order — ascending {@link String#compareTo} of the path —
  * which is also the order {@link #serialize()} writes and the order a parsed snapshot comes back in.
@@ -28,14 +36,15 @@ public final class GraphSnapshot {
     }
 
     /** Reads the definition's own accessors only: no callback of the graph is ever invoked. */
-    public static GraphSnapshot capture(GraphDefinition<?, ?> definition) {
+    public static GraphSnapshot capture(GraphDefinition<?, ?, ?> definition) {
         return captureTyped(Objects.requireNonNull(definition, "definition"));
     }
 
     /**
      * Reads back a serialized snapshot.
      *
-     * @throws IllegalArgumentException if the text is not a well-formed snapshot of a known version
+     * @throws IllegalArgumentException if the text is not a well-formed snapshot of the current version,
+     *     including a snapshot of an earlier format, which is reported with what to do about it
      */
     public static GraphSnapshot parse(String text) {
         return new GraphSnapshot(SnapshotCodec.decode(Objects.requireNonNull(text, "text")));
@@ -49,59 +58,82 @@ public final class GraphSnapshot {
         return fields;
     }
 
-    private static <E, S extends Enum<S>> GraphSnapshot captureTyped(GraphDefinition<E, S> definition) {
+    private static <E, S extends Enum<S>, T extends Enum<T>> GraphSnapshot captureTyped(
+            GraphDefinition<E, S, T> definition) {
         Map<String, String> fields = new TreeMap<>();
         fields.put("/machine/entity", definition.key().entity().getName());
         fields.put("/machine/states", definition.key().states().getName());
+        fields.put("/machine/transitions", definition.key().transitions().getName());
         fields.put("/initial", definition.initial().name());
         fields.put("/hasAsync", Boolean.toString(definition.hasAsync()));
-        S[] states = definition.key().states().getEnumConstants();
-        fields.put("/states/count", Integer.toString(states.length));
-        for (int index = 0; index < states.length; index++) {
-            fields.put("/states/" + index, states[index].name());
+        List<S> states = definition.graph().nodes();
+        fields.put("/states/count", Integer.toString(states.size()));
+        for (int index = 0; index < states.size(); index++) {
+            fields.put("/states/" + index, states.get(index).name());
+        }
+        T[] catalog = definition.key().transitions().getEnumConstants();
+        fields.put("/catalog/count", Integer.toString(catalog.length));
+        for (int index = 0; index < catalog.length; index++) {
+            fields.put("/catalog/" + index, catalog[index].name());
         }
         for (S terminal : definition.terminals()) {
             fields.put("/terminals/" + terminal.name(), "true");
         }
-        for (S from : states) {
-            for (S to : states) {
-                captureCell(fields, definition.edge(from, to), "/cells/" + from.name() + "/" + to.name());
-            }
-            definition.watch(from).ifPresent(watch -> {
-                String prefix = "/watches/" + from.name();
-                fields.put(prefix + "/peer/entity", watch.peer().entity().getName());
-                fields.put(prefix + "/peer/states", watch.peer().states().getName());
-                fields.put(prefix + "/rules/count", Integer.toString(watch.rules().size()));
-                for (int index = 0; index < watch.rules().size(); index++) {
-                    WatchRule<E, S, ?, ?> rule = watch.rules().get(index);
-                    fields.put(prefix + "/rules/" + index + "/condition", rule.condition().name());
-                    fields.put(prefix + "/rules/" + index + "/target", rule.target().name());
-                }
-            });
+        for (TransitionSpec<E, S, T> transition : definition.transitions()) {
+            String path = "/transitions/" + transition.from().name() + "/" + transition.transition().name();
+            fields.put(path + "/to", transition.to().name());
+            fields.put(path + "/kind", transition.kind().name());
+            transition.onFailure().ifPresent(id -> fields.put(path + "/onFailure", id.name()));
+            captureCallbacks(fields, transition, path);
+        }
+        for (S state : states) {
+            capturePolicy(fields, definition.policy(state));
+            definition.watch(state).ifPresent(watch -> captureWatch(fields, watch));
         }
         return new GraphSnapshot(fields);
     }
 
-    private static <E, S extends Enum<S>> void captureCell(
-            Map<String, String> fields, EdgeSpec<E, S> edge, String prefix) {
-        fields.put(prefix + "/kind", edge.kind().name());
-        fields.put(prefix + "/reason", edge.reason());
-        edge.action().ifPresent(action -> {
-            fields.put(prefix + "/action/name", action.name());
-            fields.put(prefix + "/action/async", Boolean.toString(action.isAsync()));
+    /** Everything the runtime would run, by name and mode only: nothing here is ever invoked. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void captureCallbacks(
+            Map<String, String> fields, TransitionSpec<E, S, T> transition, String path) {
+        transition.action().ifPresent(action -> {
+            fields.put(path + "/action/name", action.name());
+            fields.put(path + "/action/async", Boolean.toString(action.isAsync()));
         });
-        fields.put(prefix + "/guards/count", Integer.toString(edge.guards().size()));
-        for (int index = 0; index < edge.guards().size(); index++) {
-            GuardRef<E, S> guard = edge.guards().get(index);
-            fields.put(prefix + "/guards/" + index + "/name", guard.name());
-            fields.put(prefix + "/guards/" + index + "/async", Boolean.toString(guard.isAsync()));
+        fields.put(path + "/guards/count", Integer.toString(transition.guards().size()));
+        for (int index = 0; index < transition.guards().size(); index++) {
+            GuardRef<E, S, T> guard = transition.guards().get(index);
+            fields.put(path + "/guards/" + index + "/name", guard.name());
+            fields.put(path + "/guards/" + index + "/async", Boolean.toString(guard.isAsync()));
         }
-        edge.onFailure().ifPresent(value -> fields.put(prefix + "/onFailure", value.name()));
-        edge.timeout().ifPresent(value -> fields.put(prefix + "/timeout", value.toString()));
-        edge.afterCommit().ifPresent(value -> fields.put(prefix + "/afterCommit", value.name()));
-        fields.put(prefix + "/failsOn/count", Integer.toString(edge.failsOn().size()));
-        for (int index = 0; index < edge.failsOn().size(); index++) {
-            fields.put(prefix + "/failsOn/" + index, edge.failsOn().get(index).getName());
+        fields.put(path + "/failsOn/count", Integer.toString(transition.failsOn().size()));
+        for (int index = 0; index < transition.failsOn().size(); index++) {
+            fields.put(path + "/failsOn/" + index, transition.failsOn().get(index).getName());
+        }
+        transition.timeout().ifPresent(value -> fields.put(path + "/timeout", value.toString()));
+        transition.afterCommit().ifPresent(value -> fields.put(path + "/afterCommit", value.name()));
+    }
+
+    private static <S extends Enum<S>, T extends Enum<T>> void capturePolicy(
+            Map<String, String> fields, StatePolicy<S, T> policy) {
+        String path = "/policies/" + policy.state().name();
+        fields.put(path + "/otherwise", policy.otherwise());
+        for (Map.Entry<T, String> rejection : policy.rejectionReasons().entrySet()) {
+            fields.put(path + "/rejects/" + rejection.getKey().name(), rejection.getValue());
+        }
+    }
+
+    private static <E, S extends Enum<S>, T extends Enum<T>> void captureWatch(
+            Map<String, String> fields, WatchSpec<E, S, T, ?, ?, ?> watch) {
+        String path = "/watches/" + watch.state().name();
+        fields.put(path + "/peer/entity", watch.peer().entity().getName());
+        fields.put(path + "/peer/states", watch.peer().states().getName());
+        fields.put(path + "/peer/transitions", watch.peer().transitions().getName());
+        fields.put(path + "/rules/count", Integer.toString(watch.rules().size()));
+        for (int index = 0; index < watch.rules().size(); index++) {
+            WatchRule<E, S, T, ?, ?, ?> rule = watch.rules().get(index);
+            fields.put(path + "/rules/" + index + "/condition", rule.condition().name());
+            fields.put(path + "/rules/" + index + "/transition", rule.transition().name());
         }
     }
 }

@@ -30,21 +30,22 @@ import java.util.function.Consumer;
  *
  * @param <E> the entity type of the machine the guard belongs to
  * @param <S> the state enum of that machine
+ * @param <T> the transition identifier enum of that machine
  */
-public final class ControlledAsyncGuard<E, S extends Enum<S>>
-        implements AsyncTransitionGuard<E, S>, AutoCloseable {
+public final class ControlledAsyncGuard<E, S extends Enum<S>, T extends Enum<T>>
+        implements AsyncTransitionGuard<E, S, T>, AutoCloseable {
 
     private static final String CONTEXT = "controlled async guard";
 
-    private final BlockingQueue<PendingInvocation<GuardCall<E, S>, GuardResult>> arrivals =
+    private final BlockingQueue<PendingInvocation<GuardCall<E, S, T>, GuardResult>> arrivals =
             new LinkedBlockingQueue<>();
-    private final List<PendingInvocation<GuardCall<E, S>, GuardResult>> invocations = new ArrayList<>();
-    private volatile Consumer<GuardContext<E, S>> onCall = context -> { };
+    private final List<PendingInvocation<GuardCall<E, S, T>, GuardResult>> invocations = new ArrayList<>();
+    private volatile Consumer<GuardContext<E, S, T>> onCall = context -> { };
     private boolean closed;
 
     private ControlledAsyncGuard() { }
 
-    public static <E, S extends Enum<S>> ControlledAsyncGuard<E, S> create() {
+    public static <E, S extends Enum<S>, T extends Enum<T>> ControlledAsyncGuard<E, S, T> create() {
         return new ControlledAsyncGuard<>();
     }
 
@@ -52,7 +53,7 @@ public final class ControlledAsyncGuard<E, S extends Enum<S>>
      * Replaces the side effect run on the engine's thread as each invocation is entered. It receives the live
      * context, which the engine invalidates when the transaction ends, so read it now rather than storing it.
      */
-    public ControlledAsyncGuard<E, S> onCall(Consumer<GuardContext<E, S>> onCall) {
+    public ControlledAsyncGuard<E, S, T> onCall(Consumer<GuardContext<E, S, T>> onCall) {
         this.onCall = Objects.requireNonNull(onCall, "onCall");
         return this;
     }
@@ -62,10 +63,11 @@ public final class ControlledAsyncGuard<E, S extends Enum<S>>
      * invocation that arrived earlier is returned at once. Raises {@link GraphAssertionError} when the budget
      * expires, since a wait that was not met is a failed expectation of the test and not of the machine.
      */
-    public PendingInvocation<GuardCall<E, S>, GuardResult> awaitInvocation(Duration budget) {
+    public PendingInvocation<GuardCall<E, S, T>, GuardResult> awaitInvocation(Duration budget) {
         long nanos = budgetNanos(budget);
         try {
-            PendingInvocation<GuardCall<E, S>, GuardResult> arrival = arrivals.poll(nanos, TimeUnit.NANOSECONDS);
+            PendingInvocation<GuardCall<E, S, T>, GuardResult> arrival =
+                    arrivals.poll(nanos, TimeUnit.NANOSECONDS);
             if (arrival == null) {
                 throw new GraphAssertionError(
                         CONTEXT, "invocation", "within " + budget, "no invocation arrived");
@@ -82,16 +84,16 @@ public final class ControlledAsyncGuard<E, S extends Enum<S>>
      * here may still be running its {@link #onCall} side effect; if that side effect fails, the invocation
      * remains in this history but is not delivered by {@link #awaitInvocation(Duration)}.
      */
-    public List<PendingInvocation<GuardCall<E, S>, GuardResult>> invocations() {
+    public List<PendingInvocation<GuardCall<E, S, T>, GuardResult>> invocations() {
         synchronized (invocations) {
             return List.copyOf(invocations);
         }
     }
 
     @Override
-    public CompletionStage<GuardResult> test(GuardContext<E, S> context) {
-        PendingInvocation<GuardCall<E, S>, GuardResult> pending =
-                new PendingInvocation<>(new GuardCall<>(context.entity(), context.from(), context.to(), context.input()));
+    public CompletionStage<GuardResult> test(GuardContext<E, S, T> context) {
+        PendingInvocation<GuardCall<E, S, T>, GuardResult> pending = new PendingInvocation<>(new GuardCall<>(
+                context.entity(), context.from(), context.transition(), context.to(), context.input()));
         synchronized (invocations) {
             if (closed) {
                 throw new IllegalStateException("the controlled guard is closed and takes no more invocations");
@@ -110,7 +112,7 @@ public final class ControlledAsyncGuard<E, S extends Enum<S>>
 
     @Override
     public void close() {
-        List<PendingInvocation<GuardCall<E, S>, GuardResult>> entered;
+        List<PendingInvocation<GuardCall<E, S, T>, GuardResult>> entered;
         synchronized (invocations) {
             if (closed) {
                 return;
@@ -118,7 +120,7 @@ public final class ControlledAsyncGuard<E, S extends Enum<S>>
             closed = true;
             entered = List.copyOf(invocations);
         }
-        for (PendingInvocation<GuardCall<E, S>, GuardResult> pending : entered) {
+        for (PendingInvocation<GuardCall<E, S, T>, GuardResult> pending : entered) {
             pending.cancelStage();
         }
     }

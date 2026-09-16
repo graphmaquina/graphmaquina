@@ -3,18 +3,20 @@ package io.github.graphmaquina.processor;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.processor.model.Binding;
-import io.github.graphmaquina.processor.model.CellModel;
-import io.github.graphmaquina.processor.model.ForbidModel;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import io.github.graphmaquina.processor.model.OperationModel;
 import io.github.graphmaquina.processor.model.Property;
-import io.github.graphmaquina.processor.model.RowModel;
+import io.github.graphmaquina.processor.model.RejectionModel;
 import io.github.graphmaquina.processor.model.StateAccess;
+import io.github.graphmaquina.processor.model.StatePolicyModel;
+import io.github.graphmaquina.processor.model.TransitionModel;
 import io.github.graphmaquina.processor.model.WatchModel;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.AnnotationMirror;
@@ -30,23 +32,28 @@ import javax.lang.model.type.TypeMirror;
  * Turns a machine that declares its graph with the vocabulary generated for it into the {@link MachineModel}
  * the generators read, reporting every problem it finds with an SG code.
  *
- * <p>Identity comes first. The facade must carry the {@code Definition} generated for that very machine, and
- * every other declaration on it must belong to the same vocabulary, so a machine can never be described with
- * the annotations of another one that happens to have the same states. Each state is then read as the enum
- * constant it is, checked against the machine's own enum, and only then named; each symbol is resolved to the
- * exported member behind it. What the language itself refuses — a constant of another enum, an annotation that
- * omits an element it requires — is left to javac, which has already reported it precisely.</p>
+ * <p>Identity comes first, twice over. The facade must carry the {@code Definition} generated for that very
+ * machine, and every other declaration on it must belong to the same vocabulary, so a machine can never be
+ * described with the annotations of another one that happens to have the same states. Inside the machine, an
+ * edge is identified by its own {@code id}: one method owns one identifier and every annotation it carries
+ * must agree on it, while the interface may add further branches of that identifier from other origins. Each
+ * state and each identifier is read as the enum constant it is, checked against the machine's own enum, and
+ * only then named; each symbol is resolved to the exported member behind it. What the language itself refuses
+ * — a constant of another enum, an annotation that omits an element it requires — is left to javac, which has
+ * already reported it precisely.</p>
  *
  * <p>Everything the model must hold beyond that is a rule about a graph and not about a declaration, so it is
- * asked of {@link StructuralChecks}: the signature of an operation, the closure of the rows, the duplicated
- * cells and the full outline of the graph.</p>
+ * asked of {@link StructuralChecks}: the signature of an operation, the duplicated keys and the full outline of
+ * the graph.</p>
  */
 final class TypedMachineModelBuilder {
 
     private static final String FOREIGN = "SG606";
     private static final String HEADER = "SG502";
-    private static final String DUPLICATE_ROW = "SG102";
+    private static final String DUPLICATE = "SG102";
     private static final String BLANK_REASON = "SG103";
+    private static final String GENERICS = "SG601";
+    private static final String IDENTITY = "SG703";
 
     private final VocabularyRegistry vocabulary;
     private final StructuralChecks structure;
@@ -75,7 +82,7 @@ final class TypedMachineModelBuilder {
         List<AnnotationMirror> definitions = own(type, VocabularyKind.DEFINITION, type);
         if (definitions.isEmpty()) {
             diagnostics.error(HEADER, type.getSimpleName() + " declares no graph: apply the Definition generated for it"
-                    + ", which is the vocabulary its own name and states belong to", type);
+                    + ", which is the vocabulary its own name, states and transitions belong to", type);
             return Optional.empty();
         }
         AnnotationMirror definition = definitions.get(0);
@@ -85,8 +92,15 @@ final class TypedMachineModelBuilder {
         }
         Optional<MachineTypes> resolved = structure.machineTypes(type);
         if (resolved.isEmpty()) {
-            header.report(diagnostics, HEADER, type.getSimpleName() + " must be an interface extending Machine<E, S>"
-                    + " with a concrete entity type and an enum state type");
+            // An invalid declaration is SG502; a declaration whose E, S and T do not resolve is SG601.
+            if (type.getKind() != ElementKind.INTERFACE) {
+                header.report(diagnostics, HEADER, type.getSimpleName() + " must be an interface extending"
+                        + " Machine<E, S, T>");
+            } else {
+                header.report(diagnostics, GENERICS, type.getSimpleName() + " does not resolve Machine<E, S, T>"
+                        + " to a concrete entity type and two distinct enum types for its states and its"
+                        + " transition identifiers");
+            }
             return Optional.empty();
         }
         MachineTypes types = resolved.get();
@@ -98,10 +112,10 @@ final class TypedMachineModelBuilder {
             // javac refuses a Definition that omits an element it requires, and leaves that element out.
             return Optional.empty();
         }
-        Optional<String> initial = TypedValues.stateName(declaredInitial.get(), types.statesElement());
-        Optional<List<String>> terminals = TypedValues.stateNames(annotations.array(definition, "terminals"),
+        Optional<String> initial = TypedValues.constantName(declaredInitial.get(), types.statesElement());
+        Optional<List<String>> terminals = TypedValues.constantNames(annotations.array(definition, "terminals"),
                 types.statesElement());
-        Optional<List<String>> cycleAllowed = TypedValues.stateNames(annotations.array(definition, "allowsCycle"),
+        Optional<List<String>> cycleAllowed = TypedValues.constantNames(annotations.array(definition, "allowsCycle"),
                 types.statesElement());
         if (initial.isEmpty() || terminals.isEmpty() || cycleAllowed.isEmpty()) {
             return Optional.empty();
@@ -112,90 +126,97 @@ final class TypedMachineModelBuilder {
                 properties.id(symbol, types, DiagnosticAnchor.of(type, definition, declaredId.get())));
         Optional<Binding> defaultAfterCommit = transitions.afterCommit(type, definition, types);
 
-        Set<String> closed = new LinkedHashSet<>();
-        List<RowModel> rows = rows(type, types, closed);
-        List<ForbidModel> forbids = forbids(type, types);
-        List<CellModel> cells = cells(type, types, defaultAfterCommit);
+        List<StatePolicyModel> policies = policies(type, types);
+        List<RejectionModel> rejections = rejections(type, types);
+        List<TransitionModel> declared = declared(type, types, defaultAfterCommit);
         List<OperationModel> operations = operations(type, types, defaultAfterCommit);
         List<WatchModel> watched = watches.read(type, types);
-        structure.checkDuplicateCells(type, forbids, cells, operations);
-        structure.checkRowsClosed(types, closed, terminals.get(), header);
+        checkDuplicateKeys(type, declared, operations);
         if (state.isEmpty() || id.isEmpty() || diagnostics.errors() > before) {
             return Optional.empty();
         }
         MachineModel model = new MachineModel(types, packageName(type), initial.get(), terminals.get(), cycleAllowed.get(),
-                state.get().reader(), state.get().writer(), id.get(), rows, forbids, cells, operations, watched);
+                state.get().reader(), state.get().writer(), id.get(), policies, rejections, declared, operations, watched);
         structure.checkOutline(model, header);
         return diagnostics.errors() > before ? Optional.empty() : Optional.of(model);
     }
 
-    /** The rows the facade closes; a state that carries one is closed even when its reason is refused. */
-    private List<RowModel> rows(TypeElement type, MachineTypes types, Set<String> closed) {
-        List<RowModel> rows = new ArrayList<>();
-        for (AnnotationMirror row : own(type, VocabularyKind.ROW, type)) {
-            Optional<AnnotationValue> declaredState = annotations.find(row, "state");
-            Optional<AnnotationValue> declaredReason = annotations.find(row, "otherwise");
+    /** The policy of each state: the reason every identifier it declares no edge for is refused with. */
+    private List<StatePolicyModel> policies(TypeElement type, MachineTypes types) {
+        List<StatePolicyModel> policies = new ArrayList<>();
+        Set<String> declared = new LinkedHashSet<>();
+        for (AnnotationMirror policy : own(type, VocabularyKind.STATE_POLICY, type)) {
+            Optional<AnnotationValue> declaredState = annotations.find(policy, "state");
+            Optional<AnnotationValue> declaredReason = annotations.find(policy, "otherwise");
             if (declaredState.isEmpty() || declaredReason.isEmpty()) {
                 continue;
             }
-            Optional<String> state = TypedValues.stateName(declaredState.get(), types.statesElement());
+            Optional<String> state = TypedValues.constantName(declaredState.get(), types.statesElement());
             if (state.isEmpty() || !(declaredReason.get().getValue() instanceof String reason)) {
                 continue;
             }
-            if (!closed.add(state.get())) {
-                DiagnosticAnchor.of(type, row, declaredState.get()).report(diagnostics, DUPLICATE_ROW,
-                        "the row " + state.get() + " is closed twice");
+            if (!declared.add(state.get())) {
+                DiagnosticAnchor.of(type, policy, declaredState.get()).report(diagnostics, DUPLICATE,
+                        "the state " + state.get() + " declares two policies");
                 continue;
             }
             if (reason.isBlank()) {
-                DiagnosticAnchor.of(type, row, declaredReason.get()).report(diagnostics, BLANK_REASON,
-                        "the row " + state.get() + " has a blank reason");
+                DiagnosticAnchor.of(type, policy, declaredReason.get()).report(diagnostics, BLANK_REASON,
+                        "the policy of " + state.get() + " has a blank reason");
                 continue;
             }
-            rows.add(new RowModel(state.get(), reason));
+            policies.add(new StatePolicyModel(state.get(), reason));
         }
-        return rows;
+        return policies;
     }
 
-    /** The transitions the facade refuses, each with the reason it is refused for. */
-    private List<ForbidModel> forbids(TypeElement type, MachineTypes types) {
-        List<ForbidModel> forbids = new ArrayList<>();
-        for (AnnotationMirror forbid : own(type, VocabularyKind.FORBID, type)) {
-            Optional<AnnotationValue> declaredFrom = annotations.find(forbid, "from");
-            Optional<AnnotationValue> declaredTo = annotations.find(forbid, "to");
-            Optional<AnnotationValue> declaredReason = annotations.find(forbid, "reason");
-            if (declaredFrom.isEmpty() || declaredTo.isEmpty() || declaredReason.isEmpty()) {
+    /** The identifiers the facade refuses from a state, each with the reason it is refused for. */
+    private List<RejectionModel> rejections(TypeElement type, MachineTypes types) {
+        List<RejectionModel> rejections = new ArrayList<>();
+        Set<String> declared = new LinkedHashSet<>();
+        for (AnnotationMirror reject : own(type, VocabularyKind.REJECT, type)) {
+            Optional<AnnotationValue> declaredFrom = annotations.find(reject, "from");
+            Optional<AnnotationValue> declaredTransition = annotations.find(reject, "transition");
+            Optional<AnnotationValue> declaredReason = annotations.find(reject, "reason");
+            if (declaredFrom.isEmpty() || declaredTransition.isEmpty() || declaredReason.isEmpty()) {
                 continue;
             }
-            Optional<String> from = TypedValues.stateName(declaredFrom.get(), types.statesElement());
-            Optional<String> to = TypedValues.stateName(declaredTo.get(), types.statesElement());
-            if (from.isEmpty() || to.isEmpty() || !(declaredReason.get().getValue() instanceof String reason)) {
+            Optional<String> from = TypedValues.constantName(declaredFrom.get(), types.statesElement());
+            Optional<String> transition = TypedValues.constantName(declaredTransition.get(), types.transitionsElement());
+            if (from.isEmpty() || transition.isEmpty() || !(declaredReason.get().getValue() instanceof String reason)) {
+                continue;
+            }
+            if (!declared.add(from.get() + "/" + transition.get())) {
+                DiagnosticAnchor.of(type, reject, declaredTransition.get()).report(diagnostics, DUPLICATE,
+                        "the state " + from.get() + " rejects " + transition.get() + " twice");
                 continue;
             }
             if (reason.isBlank()) {
-                DiagnosticAnchor.of(type, forbid, declaredReason.get()).report(diagnostics, BLANK_REASON,
-                        "the @Forbid " + from.get() + " → " + to.get() + " has a blank reason");
+                DiagnosticAnchor.of(type, reject, declaredReason.get()).report(diagnostics, BLANK_REASON,
+                        "the rejection of " + transition.get() + " in " + from.get() + " has a blank reason");
                 continue;
             }
-            forbids.add(new ForbidModel(from.get(), to.get(), reason));
+            rejections.add(new RejectionModel(from.get(), transition.get(), reason));
         }
-        return forbids;
+        return rejections;
     }
 
-    /** The transitions the interface declares itself, which no operation of the facade triggers. */
-    private List<CellModel> cells(TypeElement type, MachineTypes types,
-            Optional<Binding> defaultAfterCommit) {
-        List<CellModel> cells = new ArrayList<>();
-        for (AnnotationMirror cell : own(type, VocabularyKind.CELL, type)) {
-            transitions.read(type, cell, types, "", defaultAfterCommit).ifPresent(cells::add);
+    /** The edges the interface declares itself, which no operation of the facade executes. */
+    private List<TransitionModel> declared(TypeElement type, MachineTypes types, Optional<Binding> defaultAfterCommit) {
+        List<TransitionModel> declared = new ArrayList<>();
+        for (AnnotationMirror transition : own(type, VocabularyKind.TRANSITION, type)) {
+            transitions.read(type, transition, types, "", defaultAfterCommit).ifPresent(declared::add);
         }
-        return cells;
+        return declared;
     }
 
-    /** The operations of the facade, each with the cell its own declaration triggers. */
-    private List<OperationModel> operations(TypeElement type, MachineTypes types,
-            Optional<Binding> defaultAfterCommit) {
+    /**
+     * The operations of the facade, each with the identifier it executes and every edge its own declarations
+     * open. All of a method's annotations must name one identifier, and no two methods may own the same one.
+     */
+    private List<OperationModel> operations(TypeElement type, MachineTypes types, Optional<Binding> defaultAfterCommit) {
         List<OperationModel> operations = new ArrayList<>();
+        Map<String, ExecutableElement> owners = new LinkedHashMap<>();
         for (Element member : type.getEnclosedElements()) {
             if (member.getKind() != ElementKind.METHOD) {
                 continue;
@@ -204,20 +225,77 @@ final class TypedMachineModelBuilder {
             if (!StructuralChecks.isOperation(method)) {
                 continue;
             }
-            List<AnnotationMirror> actions = own(method, VocabularyKind.ACTION, type);
-            List<AnnotationMirror> moves = own(method, VocabularyKind.MOVE, type);
-            if (!structure.checkOperationKinds(method, !actions.isEmpty(), !moves.isEmpty())
+            List<AnnotationMirror> mirrors = own(method, VocabularyKind.TRANSITION, type);
+            if (!structure.checkOperationDeclared(method, !mirrors.isEmpty())
                     || !structure.checkOperationSignature(method, types)) {
                 continue;
             }
+            Optional<String> identifier = identity(method, mirrors, types);
+            if (identifier.isEmpty() || !owns(method, identifier.get(), owners)) {
+                continue;
+            }
             String name = method.getSimpleName().toString();
-            AnnotationMirror mirror = actions.isEmpty() ? moves.get(0) : actions.get(0);
             Optional<TypeMirror> inputType = method.getParameters().size() == 2
                     ? Optional.of(method.getParameters().get(1).asType()) : Optional.empty();
-            transitions.read(method, mirror, types, name, defaultAfterCommit)
-                    .ifPresent((CellModel cell) -> operations.add(new OperationModel(name, cell, inputType)));
+            List<TransitionModel> edges = new ArrayList<>();
+            for (AnnotationMirror mirror : mirrors) {
+                transitions.read(method, mirror, types, name, defaultAfterCommit).ifPresent(edges::add);
+            }
+            if (edges.size() == mirrors.size()) {
+                operations.add(new OperationModel(name, identifier.get(), edges, inputType));
+            }
         }
         return operations;
+    }
+
+    /**
+     * The one identifier every annotation of {@code method} names, or empty after {@code SG703} when they
+     * disagree. The identity of an operation is what it executes, never the name of its action or of the
+     * method itself.
+     */
+    private Optional<String> identity(ExecutableElement method, List<AnnotationMirror> mirrors, MachineTypes types) {
+        Set<String> identifiers = new LinkedHashSet<>();
+        for (AnnotationMirror mirror : mirrors) {
+            transitions.identifier(mirror, types).ifPresent(identifiers::add);
+        }
+        if (identifiers.isEmpty()) {
+            // javac has already refused an id it could not read as a constant of this machine's own enum.
+            return Optional.empty();
+        }
+        if (identifiers.size() > 1) {
+            diagnostics.error(IDENTITY, method.getSimpleName() + " declares the transitions " + identifiers
+                    + ": every annotation of one operation names the same identifier", method);
+            return Optional.empty();
+        }
+        return Optional.of(identifiers.iterator().next());
+    }
+
+    /** SG703 unless {@code identifier} is still unclaimed: two methods cannot execute the same transition. */
+    private boolean owns(ExecutableElement method, String identifier, Map<String, ExecutableElement> owners) {
+        ExecutableElement previous = owners.putIfAbsent(identifier, method);
+        if (previous == null) {
+            return true;
+        }
+        diagnostics.error(IDENTITY, "the transition " + identifier + " is already executed by "
+                + previous.getSimpleName() + ": one identifier belongs to one operation", method);
+        return false;
+    }
+
+    /** SG102 for every key {@code (from, id)} two declarations of the same machine both claim. */
+    private void checkDuplicateKeys(TypeElement type, List<TransitionModel> declared, List<OperationModel> operations) {
+        List<TransitionModel> all = new ArrayList<>(declared);
+        for (OperationModel operation : operations) {
+            all.addAll(operation.transitions());
+        }
+        Set<String> seen = new LinkedHashSet<>();
+        for (TransitionModel transition : all) {
+            for (String from : transition.from()) {
+                if (!seen.add(from + "/" + transition.transitionId())) {
+                    diagnostics.error(DUPLICATE, "the transition " + transition.transitionId() + " leaves "
+                            + from + " twice", type);
+                }
+            }
+        }
     }
 
     /** Every vocabulary of {@code kind} on {@code element} that was generated for {@code facade}. */

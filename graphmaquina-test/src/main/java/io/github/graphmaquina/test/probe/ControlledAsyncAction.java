@@ -34,21 +34,22 @@ import java.util.function.Consumer;
  *
  * @param <E> the entity type of the machine the action belongs to
  * @param <S> the state enum of that machine
+ * @param <T> the transition identifier enum of that machine
  */
-public final class ControlledAsyncAction<E, S extends Enum<S>>
-        implements AsyncTransitionAction<E, S>, AutoCloseable {
+public final class ControlledAsyncAction<E, S extends Enum<S>, T extends Enum<T>>
+        implements AsyncTransitionAction<E, S, T>, AutoCloseable {
 
     private static final String CONTEXT = "controlled async action";
 
-    private final BlockingQueue<PendingInvocation<ActionCall<E, S>, ActionOutcome>> arrivals =
+    private final BlockingQueue<PendingInvocation<ActionCall<E, S, T>, ActionOutcome>> arrivals =
             new LinkedBlockingQueue<>();
-    private final List<PendingInvocation<ActionCall<E, S>, ActionOutcome>> invocations = new ArrayList<>();
-    private volatile Consumer<TransitionContext<E, S>> onCall = context -> { };
+    private final List<PendingInvocation<ActionCall<E, S, T>, ActionOutcome>> invocations = new ArrayList<>();
+    private volatile Consumer<TransitionContext<E, S, T>> onCall = context -> { };
     private boolean closed;
 
     private ControlledAsyncAction() { }
 
-    public static <E, S extends Enum<S>> ControlledAsyncAction<E, S> create() {
+    public static <E, S extends Enum<S>, T extends Enum<T>> ControlledAsyncAction<E, S, T> create() {
         return new ControlledAsyncAction<>();
     }
 
@@ -56,7 +57,7 @@ public final class ControlledAsyncAction<E, S extends Enum<S>>
      * Replaces the side effect run on the engine's thread as each invocation is entered. It receives the live
      * context, which the engine invalidates when the transaction ends, so read it now rather than storing it.
      */
-    public ControlledAsyncAction<E, S> onCall(Consumer<TransitionContext<E, S>> onCall) {
+    public ControlledAsyncAction<E, S, T> onCall(Consumer<TransitionContext<E, S, T>> onCall) {
         this.onCall = Objects.requireNonNull(onCall, "onCall");
         return this;
     }
@@ -66,10 +67,10 @@ public final class ControlledAsyncAction<E, S extends Enum<S>>
      * invocation that arrived earlier is returned at once. Raises {@link GraphAssertionError} when the budget
      * expires, since a wait that was not met is a failed expectation of the test and not of the machine.
      */
-    public PendingInvocation<ActionCall<E, S>, ActionOutcome> awaitInvocation(Duration budget) {
+    public PendingInvocation<ActionCall<E, S, T>, ActionOutcome> awaitInvocation(Duration budget) {
         long nanos = budgetNanos(budget);
         try {
-            PendingInvocation<ActionCall<E, S>, ActionOutcome> arrival =
+            PendingInvocation<ActionCall<E, S, T>, ActionOutcome> arrival =
                     arrivals.poll(nanos, TimeUnit.NANOSECONDS);
             if (arrival == null) {
                 throw new GraphAssertionError(
@@ -87,16 +88,17 @@ public final class ControlledAsyncAction<E, S extends Enum<S>>
      * here may still be running its {@link #onCall} side effect; if that side effect fails, the invocation
      * remains in this history but is not delivered by {@link #awaitInvocation(Duration)}.
      */
-    public List<PendingInvocation<ActionCall<E, S>, ActionOutcome>> invocations() {
+    public List<PendingInvocation<ActionCall<E, S, T>, ActionOutcome>> invocations() {
         synchronized (invocations) {
             return List.copyOf(invocations);
         }
     }
 
     @Override
-    public CompletionStage<ActionOutcome> process(TransitionContext<E, S> context) {
-        PendingInvocation<ActionCall<E, S>, ActionOutcome> pending = new PendingInvocation<>(
-                new ActionCall<>(context.entity(), context.from(), context.to(), context.depth(), context.input()));
+    public CompletionStage<ActionOutcome> process(TransitionContext<E, S, T> context) {
+        PendingInvocation<ActionCall<E, S, T>, ActionOutcome> pending = new PendingInvocation<>(
+                new ActionCall<>(context.entity(), context.from(), context.transition(), context.to(),
+                        context.depth(), context.input()));
         synchronized (invocations) {
             if (closed) {
                 throw new IllegalStateException("the controlled action is closed and takes no more invocations");
@@ -115,7 +117,7 @@ public final class ControlledAsyncAction<E, S extends Enum<S>>
 
     @Override
     public void close() {
-        List<PendingInvocation<ActionCall<E, S>, ActionOutcome>> entered;
+        List<PendingInvocation<ActionCall<E, S, T>, ActionOutcome>> entered;
         synchronized (invocations) {
             if (closed) {
                 return;
@@ -123,7 +125,7 @@ public final class ControlledAsyncAction<E, S extends Enum<S>>
             closed = true;
             entered = List.copyOf(invocations);
         }
-        for (PendingInvocation<ActionCall<E, S>, ActionOutcome> pending : entered) {
+        for (PendingInvocation<ActionCall<E, S, T>, ActionOutcome> pending : entered) {
             pending.cancelStage();
         }
     }

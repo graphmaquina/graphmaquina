@@ -13,13 +13,17 @@ import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Shared fixture for this module's own tests: a small NEW/READY/DONE/FAILED machine exercising an
- * async action, guards, a timeout, an onFailure route and an after-commit hook.
+ * Shared fixture for this module's own tests: a small NEW/READY/DONE/FAILED machine whose three declared
+ * edges exercise an async action, guards, a timeout, a recovery identifier and an after-commit hook. The
+ * catalogue declares one identifier with no edge at all, so absence stays observable.
  */
 public final class TestDomain {
 
     /** States of {@link Entity}. */
     public enum State { NEW, READY, DONE, FAILED }
+
+    /** Catalogue of transition identifiers; {@code ABANDON} deliberately has no edge. */
+    public enum Id { PREPARE, RECOVER, FINISH, ABANDON }
 
     /** Mutable entity carrying its current {@link State}. */
     public static final class Entity {
@@ -39,32 +43,33 @@ public final class TestDomain {
         public void setState(State state) { this.state = state; }
     }
 
-    public static final MachineKey<Entity, State> KEY = MachineKey.of(Entity.class, State.class);
+    public static final MachineKey<Entity, State, Id> KEY =
+            MachineKey.of(Entity.class, State.class, Id.class);
 
     private TestDomain() { }
 
-    public static GraphDefinition<Entity, State> graph(Duration timeout) {
+    public static GraphDefinition<Entity, State, Id> graph(Duration timeout) {
         return graph(timeout, ctx -> CompletableFuture.completedFuture(ActionOutcome.ok()));
     }
 
-    public static GraphDefinition<Entity, State> graph(
-            Duration timeout, AsyncTransitionAction<Entity, State> action) {
+    public static GraphDefinition<Entity, State, Id> graph(
+            Duration timeout, AsyncTransitionAction<Entity, State, Id> action) {
         return StateGraph.define(KEY).initial(State.NEW)
                 .terminal(State.DONE).terminal(State.FAILED)
-                .from(State.NEW)
-                    .to(State.READY).asyncAction("prepare", action)
-                        .guard("first", ctx -> GuardResult.pass())
-                        .guard("second", ctx -> GuardResult.pass())
-                        .timeout(timeout).onFailure(State.FAILED).failsOn(IOException.class)
-                        .afterCommit("audit", entity -> { })
-                    .to(State.FAILED).move().stay().forbidOthers("prepare first")
-                .from(State.READY).to(State.DONE).move().stay().forbidOthers("finish only")
-                .from(State.DONE).stay().forbidOthers("done is final")
-                .from(State.FAILED).stay().forbidOthers("failed is final")
+                .statePolicy(State.NEW, "prepare first")
+                .statePolicy(State.READY, "finish only")
+                .transition(Id.PREPARE, State.NEW, State.READY).asyncAction("prepare", action)
+                    .guard("first", ctx -> GuardResult.pass())
+                    .guard("second", ctx -> GuardResult.pass())
+                    .timeout(timeout).onFailure(Id.RECOVER).failsOn(IOException.class)
+                    .afterCommit("audit", entity -> { })
+                    .endTransition()
+                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
+                .transition(Id.FINISH, State.READY, State.DONE).endTransition()
                 .build();
     }
 
-    public static MachineRegistry registry(GraphDefinition<Entity, State> graph) {
+    public static MachineRegistry registry(GraphDefinition<Entity, State, Id> graph) {
         return MachineRegistry.builder()
                 .add(StateMachines.from(graph).state(Entity::state, Entity::setState)
                         .identity(Entity::id).asyncTimeout(Duration.ofSeconds(5)))

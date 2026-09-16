@@ -22,14 +22,15 @@ import java.util.function.Supplier;
  *
  * @param <E> the entity type of the machine the guard belongs to
  * @param <S> the state enum of that machine
+ * @param <T> the transition identifier enum of that machine
  */
-public final class GuardProbe<E, S extends Enum<S>> implements TransitionGuard<E, S> {
+public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implements TransitionGuard<E, S, T> {
 
     private final String name;
     private final CallTrace trace;
-    private final ProbeCalls<GuardCall<E, S>> calls;
+    private final ProbeCalls<GuardCall<E, S, T>> calls;
     private final ResponseScript<GuardResult> script;
-    private volatile Consumer<GuardContext<E, S>> onCall = context -> { };
+    private volatile Consumer<GuardContext<E, S, T>> onCall = context -> { };
 
     private GuardProbe(String name, CallTrace trace) {
         this.name = name;
@@ -39,7 +40,8 @@ public final class GuardProbe<E, S extends Enum<S>> implements TransitionGuard<E
     }
 
     /** The name must be the one the graph gives this guard, since that is what the trace reports. */
-    public static <E, S extends Enum<S>> GuardProbe<E, S> create(String name, CallTrace trace) {
+    public static <E, S extends Enum<S>, T extends Enum<T>> GuardProbe<E, S, T> create(String name,
+            CallTrace trace) {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(trace, "trace");
         if (name.isBlank()) {
@@ -49,21 +51,21 @@ public final class GuardProbe<E, S extends Enum<S>> implements TransitionGuard<E
     }
 
     /** Queues one verdict, answered after every response queued before it. */
-    public GuardProbe<E, S> thenReturn(GuardResult result) {
+    public GuardProbe<E, S, T> thenReturn(GuardResult result) {
         Objects.requireNonNull(result, "result");
         script.then(() -> result);
         return this;
     }
 
     /** Queues one exception, thrown by identity: the call throws this very instance. */
-    public GuardProbe<E, S> thenThrow(RuntimeException error) {
+    public GuardProbe<E, S, T> thenThrow(RuntimeException error) {
         Objects.requireNonNull(error, "error");
         script.then(() -> { throw error; });
         return this;
     }
 
     /** Sets the verdict answered by every call the queue no longer covers; a later call replaces it. */
-    public GuardProbe<E, S> otherwiseReturn(GuardResult result) {
+    public GuardProbe<E, S, T> otherwiseReturn(GuardResult result) {
         Objects.requireNonNull(result, "result");
         script.otherwise(() -> result);
         return this;
@@ -73,18 +75,19 @@ public final class GuardProbe<E, S extends Enum<S>> implements TransitionGuard<E
      * Replaces the side effect run on every call. It receives the live context, which the engine invalidates
      * when the transaction ends, so read it now rather than storing it.
      */
-    public GuardProbe<E, S> onCall(Consumer<GuardContext<E, S>> onCall) {
+    public GuardProbe<E, S, T> onCall(Consumer<GuardContext<E, S, T>> onCall) {
         this.onCall = Objects.requireNonNull(onCall, "onCall");
         return this;
     }
 
-    public ProbeCalls<GuardCall<E, S>> calls() {
+    public ProbeCalls<GuardCall<E, S, T>> calls() {
         return calls;
     }
 
     @Override
-    public GuardResult test(GuardContext<E, S> context) {
-        GuardCall<E, S> call = new GuardCall<>(context.entity(), context.from(), context.to(), context.input());
+    public GuardResult test(GuardContext<E, S, T> context) {
+        GuardCall<E, S, T> call = new GuardCall<>(context.entity(), context.from(), context.transition(),
+                context.to(), context.input());
         calls.record(call);
         trace.record(name, call);
         Supplier<GuardResult> response = script.next();

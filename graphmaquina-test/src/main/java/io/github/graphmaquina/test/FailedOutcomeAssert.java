@@ -7,43 +7,59 @@ import java.util.Optional;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Failed}, obtained from {@link
- * OutcomeAssert#isFailed()}. A failed outcome commits: it carries both the target that was requested
- * and the failure route it actually landed on, and {@link #movedTo(Enum)} reads the route. The cause is
- * optional and is only ever compared by type or by reference — no expectation here reads its message.
+ * OutcomeAssert#isFailed()}. A failed outcome commits: it carries the destination of the edge that
+ * failed, the identifier of the recovery edge and the state it actually landed on, and
+ * {@link #movedTo(Enum)} reads that landing. The cause is optional and is only ever compared by type or
+ * by reference — no expectation here reads its message.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
+ * @param <T> transition identifier enum of the machine
  */
-public final class FailedOutcomeAssert<E, S extends Enum<S>>
-        extends BaseOutcomeAssert<E, S, FailedOutcomeAssert<E, S>> {
+public final class FailedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
+        extends BaseOutcomeAssert<E, S, T, FailedOutcomeAssert<E, S, T>> {
 
-    private final Outcome.Failed<E, S> failed;
+    private final Outcome.Failed<E, S, T> failed;
 
-    FailedOutcomeAssert(Outcome.Failed<E, S> failed) {
+    FailedOutcomeAssert(Outcome.Failed<E, S, T> failed) {
         super("failed outcome", failed);
         this.failed = failed;
     }
 
     @Override
-    protected FailedOutcomeAssert<E, S> self() {
+    protected FailedOutcomeAssert<E, S, T> self() {
         return this;
     }
 
-    /** The failure route the entity was committed to, which is not the target that was requested. */
-    public FailedOutcomeAssert<E, S> movedTo(S expected) {
+    /** The destination of the edge that failed, which is not where the entity was committed. */
+    public FailedOutcomeAssert<E, S, T> hasTarget(S expected) {
+        Objects.requireNonNull(expected, "expected");
+        Checks.equal(context, "target", expected, failed.to());
+        return this;
+    }
+
+    /** The identifier of the recovery edge the engine resolved from the failed edge's origin. */
+    public FailedOutcomeAssert<E, S, T> hasFailureTransition(T expected) {
+        Objects.requireNonNull(expected, "expected");
+        Checks.equal(context, "failure transition", expected, failed.failureTransition());
+        return this;
+    }
+
+    /** The state the recovery edge committed, which is not the destination that was asked for. */
+    public FailedOutcomeAssert<E, S, T> movedTo(S expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.equal(context, "moved to", expected, failed.movedTo());
         return this;
     }
 
-    public FailedOutcomeAssert<E, S> hasReason(String expected) {
+    public FailedOutcomeAssert<E, S, T> hasReason(String expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.equal(context, "reason", expected, failed.reason());
         return this;
     }
 
     /** Satisfied by any cause the type accepts, subclasses included; a failure without a cause never does. */
-    public FailedOutcomeAssert<E, S> hasCause(Class<? extends Throwable> expected) {
+    public FailedOutcomeAssert<E, S, T> hasCause(Class<? extends Throwable> expected) {
         Objects.requireNonNull(expected, "expected");
         Optional<Throwable> cause = failed.cause();
         if (cause.isEmpty() || !expected.isInstance(cause.get())) {
@@ -53,24 +69,24 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>>
     }
 
     /** Compares by reference, so a distinct throwable of the same type does not satisfy it. */
-    public FailedOutcomeAssert<E, S> hasCauseSameAs(Throwable expected) {
+    public FailedOutcomeAssert<E, S, T> hasCauseSameAs(Throwable expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.same(context, "cause", expected, failed.cause().orElse(null));
         return this;
     }
 
-    public FailedOutcomeAssert<E, S> hasNoCause() {
+    public FailedOutcomeAssert<E, S, T> hasNoCause() {
         Optional<Throwable> none = Optional.empty();
         Checks.equal(context, "cause", none, failed.cause());
         return this;
     }
 
-    /** The hops this transaction committed, the failure route included, since a failed outcome still commits. */
+    /** The hops this transaction committed, the recovery edge included, since a failed outcome still commits. */
     public TransitionRecordsAssert records() {
         return TransitionRecordsAssert.assertThat(failed.records());
     }
 
-    /** The watch re-evaluations this commit triggered; the failure route is a commit, so it triggers them too. */
+    /** The watch re-evaluations this commit triggered; the recovery edge is a commit, so it triggers them too. */
     public ReactionsAssert reactions() {
         return ReactionsAssert.assertThat(failed.reactions());
     }

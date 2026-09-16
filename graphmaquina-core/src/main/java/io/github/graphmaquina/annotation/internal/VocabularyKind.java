@@ -7,14 +7,12 @@ package io.github.graphmaquina.annotation.internal;
  */
 public enum VocabularyKind {
     DEFINITION,
-    ROW,
-    ROWS,
-    ACTION,
-    MOVE,
-    CELL,
-    CELLS,
-    FORBID,
-    FORBIDS,
+    STATE_POLICY,
+    STATE_POLICIES,
+    TRANSITION,
+    TRANSITIONS,
+    REJECT,
+    REJECTS,
     WATCH,
     WATCHES,
     WHEN

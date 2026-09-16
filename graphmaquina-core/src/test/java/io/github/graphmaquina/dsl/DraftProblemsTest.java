@@ -4,165 +4,180 @@ import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
 import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
+import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
+import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
+import static io.github.graphmaquina.fixtures.DocTransition.RETOUCH;
+import static io.github.graphmaquina.fixtures.DocTransition.SEND_BACK;
+import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionGuard;
-import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.WatchCondition;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
+import io.github.graphmaquina.fixtures.DocTransition;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
+/** Problems a single draft carries: names, duplicates, forbidden failsOn types, watches and reasons. */
 class DraftProblemsTest {
 
-    static final class Publish implements TransitionAction<Doc, DocStatus> {
-        @Override public ActionOutcome process(TransitionContext<Doc, DocStatus> ctx) { return ActionOutcome.ok(); }
+    static final class Publish implements TransitionAction<Doc, DocStatus, DocTransition> {
+        @Override public ActionOutcome process(TransitionContext<Doc, DocStatus, DocTransition> ctx) {
+            return ActionOutcome.ok();
+        }
     }
 
-    static final class Approved implements TransitionGuard<Doc, DocStatus> {
-        @Override public GuardResult test(GuardContext<Doc, DocStatus> ctx) { return GuardResult.pass(); }
+    static final class Approved implements TransitionGuard<Doc, DocStatus, DocTransition> {
+        @Override public GuardResult test(GuardContext<Doc, DocStatus, DocTransition> ctx) { return GuardResult.pass(); }
     }
 
-    /** REVIEW, PUBLISHED and ARCHIVED rows are valid; each test supplies the DRAFT row. */
-    private static GraphBuilder<Doc, DocStatus> tail(RowBuilder<Doc, DocStatus> draftRow, String draftReason) {
-        return draftRow.forbidOthers(draftReason)
-                .from(REVIEW).to(PUBLISHED).action(new Publish()).to(DRAFT).move().stay().forbidOthers("x")
-                .from(PUBLISHED).to(ARCHIVED).move().stay().forbidOthers("x")
-                .from(ARCHIVED).stay().forbidOthers("x");
+    /** The rest of a valid machine, so each test only supplies the declaration under scrutiny. */
+    private static GraphBuilder<Doc, DocStatus, DocTransition> tail(GraphBuilder<Doc, DocStatus, DocTransition> builder) {
+        return builder
+                .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
+                .transition(SEND_BACK, REVIEW, DRAFT).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition();
     }
 
-    private static GraphBuilder<Doc, DocStatus> head() {
-        return StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED).allowsCycle(REVIEW);
+    private static GraphBuilder<Doc, DocStatus, DocTransition> head() {
+        return StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED).allowsCycle(REVIEW)
+                .statePolicy(DRAFT, "a draft is submitted")
+                .statePolicy(REVIEW, "in review it is published or sent back")
+                .statePolicy(PUBLISHED, "published only archives");
     }
 
-    private static InvalidGraphException failing(GraphBuilder<Doc, DocStatus> builder) {
+    private static InvalidGraphException failing(GraphBuilder<Doc, DocStatus, DocTransition> builder) {
         return assertThrows(InvalidGraphException.class, builder::build);
     }
 
     @Test
-    void sg101ListsMissingCellsWithPasteableBlock() {
-        InvalidGraphException error = assertThrows(InvalidGraphException.class, () -> head()
-                .from(DRAFT).to(REVIEW).move().stay()
-                .from(REVIEW).to(PUBLISHED).action(new Publish()).to(DRAFT).move().stay().forbidOthers("x")
-                .from(PUBLISHED).to(ARCHIVED).move().stay().forbidOthers("x")
-                .from(ARCHIVED).stay().forbidOthers("x")
-                .build());
-        assertEquals(List.of("SG101"), error.codes());
-        String message = error.problems().get(0).message();
-        assertTrue(message.contains("missing 2 of 16 cells"));
-        assertTrue(message.contains(".from(DRAFT)"));
-        assertTrue(message.contains(".to(PUBLISHED).forbid(\"TODO why not\")"));
-        assertTrue(message.contains(".to(ARCHIVED).forbid(\"TODO why not\")"));
-    }
+    void sg102DuplicateKeyAndDuplicatePolicyOrRejection() {
+        InvalidGraphException duplicateKey = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(SUBMIT, DRAFT, PUBLISHED).endTransition()));
+        assertEquals(List.of("SG102"), duplicateKey.codes());
+        assertTrue(duplicateKey.problems().get(0).message().contains("duplicate transition DRAFT/SUBMIT"));
 
-    @Test
-    void sg102DuplicateCellAndDuplicateForbidOthers() {
-        InvalidGraphException duplicateCell = failing(tail(head().from(DRAFT).to(REVIEW).move().to(REVIEW).move().stay(), "x"));
-        assertEquals(List.of("SG102"), duplicateCell.codes());
-        InvalidGraphException duplicateRow = assertThrows(InvalidGraphException.class, () -> head()
-                .from(DRAFT).to(REVIEW).move().stay().forbidOthers("x")
-                .from(DRAFT).forbidOthers("y")
-                .from(REVIEW).to(PUBLISHED).action(new Publish()).to(DRAFT).move().stay().forbidOthers("x")
-                .from(PUBLISHED).to(ARCHIVED).move().stay().forbidOthers("x")
-                .from(ARCHIVED).stay().forbidOthers("x")
-                .build());
-        assertEquals(List.of("SG102"), duplicateRow.codes());
+        InvalidGraphException duplicatePolicy = failing(tail(head().statePolicy(DRAFT, "again")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()));
+        assertEquals(List.of("SG102"), duplicatePolicy.codes());
+
+        InvalidGraphException duplicateRejection = failing(tail(head()
+                .reject(DRAFT, PUBLISH, "not yet").reject(DRAFT, PUBLISH, "still not")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()));
+        assertEquals(List.of("SG102"), duplicateRejection.codes());
     }
 
     @Test
     void sg103BlankReason() {
-        assertEquals(List.of("SG103"), failing(tail(head().from(DRAFT).to(REVIEW).move().to(PUBLISHED).forbid(" ").stay(), "x")).codes());
-        assertEquals(List.of("SG103"), failing(tail(head().from(DRAFT).to(REVIEW).move().stay(), "  ")).codes());
-    }
+        assertEquals(List.of("SG103"), failing(tail(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .allowsCycle(REVIEW)
+                .statePolicy(DRAFT, " ")
+                .statePolicy(REVIEW, "in review it is published or sent back")
+                .statePolicy(PUBLISHED, "published only archives")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition())).codes());
 
-    @Test
-    void sg104MoveSelfLoop() {
-        assertEquals(List.of("SG104"), failing(tail(head().from(DRAFT).to(REVIEW).move().to(DRAFT).move(), "x")).codes());
+        assertEquals(List.of("SG103"), failing(tail(head().reject(DRAFT, PUBLISH, "  ")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition())).codes());
     }
 
     @Test
     void sg105SameGuardTwice() {
         Approved approved = new Approved();
-        assertEquals(List.of("SG105"),
-                failing(tail(head().from(DRAFT).to(REVIEW).move().guard(approved).guard(approved).stay(), "x")).codes());
+        assertEquals(List.of("SG105"), failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).guard(approved).guard(approved).endTransition())).codes());
+    }
+
+    @Test
+    void sg106ALambdaWithoutAName() {
+        assertEquals(List.of("SG106"), failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action((TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ActionOutcome.ok())
+                    .endTransition())).codes());
     }
 
     @Test
     void sg107BlankExplicitName() {
-        assertEquals(List.of("SG107"), failing(tail(head().from(DRAFT).to(REVIEW).move().guard(" ", new Approved()).stay(), "x")).codes());
+        assertEquals(List.of("SG107"), failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).guard(" ", new Approved()).endTransition())).codes());
     }
 
     @Test
     void sg201InitialMissingOrDoubled() {
-        InvalidGraphException missing = assertThrows(InvalidGraphException.class, () -> StateGraph.define(DOCS)
-                .terminal(ARCHIVED).allowsCycle(REVIEW)
-                .from(DRAFT).to(REVIEW).move().stay().forbidOthers("x")
-                .from(REVIEW).to(PUBLISHED).action(new Publish()).to(DRAFT).move().stay().forbidOthers("x")
-                .from(PUBLISHED).to(ARCHIVED).move().stay().forbidOthers("x")
-                .from(ARCHIVED).stay().forbidOthers("x")
-                .build());
+        InvalidGraphException missing = failing(tail(StateGraph.define(DOCS).terminal(ARCHIVED).allowsCycle(REVIEW)
+                .statePolicy(DRAFT, "a draft is submitted")
+                .statePolicy(REVIEW, "in review it is published or sent back")
+                .statePolicy(PUBLISHED, "published only archives")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()));
         assertEquals(List.of("SG201"), missing.codes());
-        assertEquals(List.of("SG201"), failing(tail(head().initial(REVIEW).from(DRAFT).to(REVIEW).move().stay(), "x")).codes());
+        assertEquals(List.of("SG201"), failing(tail(head().initial(REVIEW)
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition())).codes());
     }
 
     @Test
     void sg302ForbiddenFailsOnTypes() {
-        assertEquals(List.of("SG302"), failing(tail(head()
-                .from(DRAFT).to(REVIEW).action(new Publish()).failsOn(RuntimeException.class).stay(), "x")).codes());
-        assertEquals(List.of("SG302"), failing(tail(head()
-                .from(DRAFT).to(REVIEW).action(new Publish()).failsOn(StateMachineException.class).stay(), "x")).codes());
-        assertEquals(List.of("SG302"), failing(tail(head()
-                .from(DRAFT).to(REVIEW).action(new Publish()).failsOn(OutOfMemoryError.class).stay(), "x")).codes());
+        for (Class<? extends Throwable> type : List.of(RuntimeException.class, StateMachineException.class,
+                OutOfMemoryError.class)) {
+            assertEquals(List.of("SG302"), failing(tail(head()
+                    .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).failsOn(type).endTransition())).codes(),
+                    type.getSimpleName());
+        }
     }
 
     @Test
     void sg403TwoWatchesOnOneState() {
-        InvalidGraphException error = assertThrows(InvalidGraphException.class, () -> head()
-                .from(DRAFT).to(REVIEW).move().stay()
-                    .watches(DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty())
-                        .when(WatchCondition.allIn(REVIEW)).goTo(REVIEW)
-                    .watches(DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty())
-                        .when(WatchCondition.allIn(REVIEW)).goTo(REVIEW)
-                    .forbidOthers("x")
-                .from(REVIEW).to(PUBLISHED).action(new Publish()).to(DRAFT).move().stay().forbidOthers("x")
-                .from(PUBLISHED).to(ARCHIVED).move().stay().forbidOthers("x")
-                .from(ARCHIVED).stay().forbidOthers("x")
-                .build());
+        InvalidGraphException error = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .watch(DRAFT, DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty())
+                    .when(WatchCondition.allIn(REVIEW)).execute(SUBMIT).endWatch()
+                .watch(DRAFT, DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty())
+                    .when(WatchCondition.allIn(REVIEW)).execute(SUBMIT).endWatch()));
         assertEquals(List.of("SG403"), error.codes());
     }
 
     @Test
     void sg404WatchWithoutRules() {
-        InvalidGraphException error = assertThrows(InvalidGraphException.class, () -> head()
-                .from(DRAFT).to(REVIEW).move().stay()
-                    .watches(DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty())
-                    .forbidOthers("x")
-                .from(REVIEW).to(PUBLISHED).action(new Publish()).to(DRAFT).move().stay().forbidOthers("x")
-                .from(PUBLISHED).to(ARCHIVED).move().stay().forbidOthers("x")
-                .from(ARCHIVED).stay().forbidOthers("x")
-                .build());
+        InvalidGraphException error = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .watch(DRAFT, DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty()).endWatch()));
         assertEquals(List.of("SG404"), error.codes());
     }
 
     @Test
-    void problemsAreSortedByCodeThenCell() {
-        InvalidGraphException error = assertThrows(InvalidGraphException.class, () -> head()
-                .from(DRAFT).to(REVIEW).move().to(PUBLISHED).forbid(" ").to(DRAFT).move()
-                .from(REVIEW).to(PUBLISHED).action(new Publish()).to(DRAFT).move().stay().forbidOthers("x")
-                .from(PUBLISHED).to(ARCHIVED).move().stay().forbidOthers("x")
-                .from(ARCHIVED).stay().forbidOthers("x")
-                .build());
-        assertEquals(List.of("SG101", "SG103", "SG104"), error.codes());
+    void sg507ElementsThatNeedAnActionAndSg511ADurationThatIsNotPositive() {
+        assertEquals(List.of("SG507"), failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).onFailure(RETOUCH).endTransition())).codes());
+        assertEquals(List.of("SG507"), failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).timeout(Duration.ofSeconds(1)).endTransition())).codes());
+        assertEquals(List.of("SG507"), failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).timeout(Duration.ofSeconds(1))
+                .endTransition())).codes());
+        assertEquals(List.of("SG511"), failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .asyncAction("slow", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                            java.util.concurrent.CompletableFuture.completedFuture(ActionOutcome.ok()))
+                    .timeout(Duration.ZERO).endTransition())).codes());
+    }
+
+    @Test
+    void problemsAreSortedByCodeThenByOriginAndIdentifier() {
+        Approved approved = new Approved();
+        InvalidGraphException error = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).guard(" ", new Approved()).endTransition()
+                .transition(RETOUCH, DRAFT, ARCHIVED).guard(approved).guard(approved).endTransition()));
+        assertEquals(List.of("SG105", "SG107"), error.codes());
     }
 }

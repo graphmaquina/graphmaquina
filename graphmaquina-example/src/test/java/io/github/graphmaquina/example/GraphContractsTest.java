@@ -4,10 +4,12 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.example.item.Item;
 import io.github.graphmaquina.example.item.ItemActions;
 import io.github.graphmaquina.example.item.ItemStatus;
+import io.github.graphmaquina.example.item.ItemTransition;
 import io.github.graphmaquina.example.item.ItemsRuntime;
 import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
 import io.github.graphmaquina.example.order.OrderStatus;
+import io.github.graphmaquina.example.order.OrderTransition;
 import io.github.graphmaquina.example.order.OrdersRuntime;
 import io.github.graphmaquina.test.GraphSnapshots;
 import org.junit.jupiter.api.Test;
@@ -15,11 +17,11 @@ import org.junit.jupiter.api.Test;
 /** Declared metadata of the example machines, independent of graphical exporters. */
 class GraphContractsTest {
 
-    private static GraphDefinition<Order, OrderStatus> orderGraph() {
+    private static GraphDefinition<Order, OrderStatus, OrderTransition> orderGraph() {
         return OrdersRuntime.graph(new OrderActions(new FakeGateway(), new FakeCarrier()));
     }
 
-    private static GraphDefinition<Item, ItemStatus> itemGraph() {
+    private static GraphDefinition<Item, ItemStatus, ItemTransition> itemGraph() {
         return ItemsRuntime.graph(new ItemActions());
     }
 

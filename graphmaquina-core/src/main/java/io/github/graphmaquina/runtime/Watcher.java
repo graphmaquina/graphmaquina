@@ -5,10 +5,11 @@ import io.github.graphmaquina.api.WatchSpec;
 import java.util.Optional;
 
 /** A machine that watches another from a state. Indexed by the peer's key. */
-record Watcher<E, S extends Enum<S>, P, Q extends Enum<Q>>(DefaultStateMachine<E, S> machine, WatchSpec<E, S, P, Q> spec) {
+record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>(
+        DefaultStateMachine<E, S, T> machine, WatchSpec<E, S, T, P, Q, U> spec) {
 
-    static <E, S extends Enum<S>, P, Q extends Enum<Q>> Watcher<E, S, P, Q> of(DefaultStateMachine<E, S> machine,
-                                                                                WatchSpec<E, S, P, Q> spec) {
+    static <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>> Watcher<E, S, T, P, Q, U> of(
+            DefaultStateMachine<E, S, T> machine, WatchSpec<E, S, T, P, Q, U> spec) {
         return new Watcher<>(machine, spec);
     }
 

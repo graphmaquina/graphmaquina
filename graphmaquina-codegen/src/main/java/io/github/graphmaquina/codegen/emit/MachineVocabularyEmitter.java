@@ -7,12 +7,13 @@ import java.util.List;
 
 /**
  * Emits the typed vocabulary of one machine: the top-level {@code <Machine>Graph} holding {@code Definition},
- * {@code Row}, {@code Action}, {@code Move}, {@code Cell} and {@code Forbid} with their repeatable containers.
+ * {@code StatePolicy}, {@code Transition} and {@code Reject} with their repeatable containers.
  *
- * <p>Every element that names a state is declared with the machine's own enum, so javac rejects a constant of
- * another machine before any processor runs. The states, the hosts and the machine itself are written with their
- * qualified names and only StateGraph and {@code java.lang.annotation} types are imported, so no simple name of
- * the application can collide with a name this file claims.</p>
+ * <p>Every element that names a state is declared with the machine's own state enum and every element that
+ * names an edge is declared with its own transition enum, so a constant of another machine, or a state written
+ * where an identifier belongs, is a javac error before any processor runs. The enums, the hosts and the machine
+ * itself are written with their qualified names and only StateGraph and {@code java.lang.annotation} types are
+ * imported, so no simple name of the application can collide with a name this file claims.</p>
  */
 final class MachineVocabularyEmitter {
 
@@ -29,6 +30,8 @@ final class MachineVocabularyEmitter {
         "java.lang.annotation.Retention",
         "java.lang.annotation.RetentionPolicy",
         "java.lang.annotation.Target");
+
+    private static final String EDGE_TARGETS = "{ElementType.TYPE, ElementType.METHOD}";
 
     private MachineVocabularyEmitter() {
     }
@@ -51,8 +54,8 @@ final class MachineVocabularyEmitter {
     /** The canonical names of every annotation the vocabulary of {@code graph} declares, in declaration order. */
     static List<String> annotationTypes(GraphDescriptor graph) {
         String vocabulary = vocabularyName(graph);
-        return List.of("Definition", "Row", "Rows", "Action", "Move", "Cell", "Cells", "Forbid", "Forbids")
-                .stream().map(name -> vocabulary + '.' + name).toList();
+        return List.of("Definition", "StatePolicy", "StatePolicies", "Transition", "Transitions", "Reject",
+                "Rejects").stream().map(name -> vocabulary + '.' + name).toList();
     }
 
     /** The compilation unit carrying the vocabulary of {@code graph}. */
@@ -61,6 +64,7 @@ final class MachineVocabularyEmitter {
         String simpleName = SymbolNames.nameWithin(graph.packageName(), vocabulary);
         String machine = graph.facade();
         String state = graph.stateType();
+        String transition = graph.transitionType();
 
         JavaSource source = new JavaSource();
         source.header(graph.packageName(), IMPORTS);
@@ -74,14 +78,12 @@ final class MachineVocabularyEmitter {
         source.line("}");
 
         definition(source, machine, state);
-        row(source, simpleName, machine, state);
-        rows(source, simpleName, machine);
-        action(source, machine, state);
-        move(source, machine, state);
-        cell(source, simpleName, machine, state);
-        cells(source, simpleName, machine);
-        forbid(source, simpleName, machine, state);
-        forbids(source, simpleName, machine);
+        statePolicy(source, simpleName, machine, state);
+        statePolicies(source, simpleName, machine);
+        transition(source, simpleName, machine, state, transition);
+        transitions(source, simpleName, machine);
+        reject(source, simpleName, machine, state, transition);
+        rejects(source, simpleName, machine);
 
         source.outdent();
         source.line("}");
@@ -103,84 +105,65 @@ final class MachineVocabularyEmitter {
         close(source);
     }
 
-    private static void row(JavaSource source, String vocabulary, String machine, String state) {
-        describe(source, "Closes the row of one state of {@link " + machine + "} with the reason every",
-            "transition it does not declare is refused for.");
-        annotation(source, machine, "ROW", "ElementType.TYPE", vocabulary + ".Rows", "Row");
+    private static void statePolicy(JavaSource source, String vocabulary, String machine, String state) {
+        describe(source, "Gives one state of {@link " + machine + "} the reason every identifier it declares",
+            "no edge for is refused with.");
+        annotation(source, machine, "STATE_POLICY", "ElementType.TYPE", vocabulary + ".StatePolicies",
+            "StatePolicy");
         source.line(state + " state();");
         source.line("String otherwise();");
         close(source);
     }
 
-    private static void rows(JavaSource source, String vocabulary, String machine) {
-        describe(source, "Holds the repeated {@link " + vocabulary + ".Row} declarations of {@link " + machine
-            + "}.");
-        annotation(source, machine, "ROWS", "ElementType.TYPE", null, "Rows");
-        source.line(vocabulary + ".Row[] value();");
+    private static void statePolicies(JavaSource source, String vocabulary, String machine) {
+        describe(source, "Holds the repeated {@link " + vocabulary + ".StatePolicy} declarations of {@link "
+            + machine + "}.");
+        annotation(source, machine, "STATE_POLICIES", "ElementType.TYPE", null, "StatePolicies");
+        source.line(vocabulary + ".StatePolicy[] value();");
         close(source);
     }
 
-    private static void action(JavaSource source, String machine, String state) {
-        describe(source, "Declares one operation of {@link " + machine + "} that runs an action before it commits.");
-        annotation(source, machine, "ACTION", "ElementType.METHOD", null, "Action");
-        source.line(state + "[] from();");
-        source.line(state + " to();");
-        source.line("Class<? extends ActionSymbol> action();");
-        source.line("Class<? extends GuardSymbol>[] guards() default {};");
-        source.line(state + "[] onFailure() default {};");
-        source.line("Class<? extends Throwable>[] failsOn() default {};");
-        source.line("Timeout[] timeout() default {};");
-        source.line("Class<? extends HookSymbol>[] afterCommit() default {};");
-        close(source);
-    }
-
-    private static void move(JavaSource source, String machine, String state) {
-        describe(source, "Declares one operation of {@link " + machine + "} that only moves the entity.");
-        annotation(source, machine, "MOVE", "ElementType.METHOD", null, "Move");
-        source.line(state + "[] from();");
-        source.line(state + " to();");
-        source.line("Class<? extends GuardSymbol>[] guards() default {};");
-        source.line("Class<? extends HookSymbol>[] afterCommit() default {};");
-        close(source);
-    }
-
-    private static void cell(JavaSource source, String vocabulary, String machine, String state) {
-        describe(source, "Declares one internal transition of {@link " + machine + "}. An absent {@code action}",
-            "makes the cell a move; a single action makes it an action.");
-        annotation(source, machine, "CELL", "ElementType.TYPE", vocabulary + ".Cells", "Cell");
+    private static void transition(JavaSource source, String vocabulary, String machine, String state,
+            String transition) {
+        describe(source, "Declares one edge of {@link " + machine + "}, identified by {@code id} from each of",
+            "its origins. An absent {@code action} makes the edge a move; a single action makes it an action.");
+        annotation(source, machine, "TRANSITION", EDGE_TARGETS, vocabulary + ".Transitions", "Transition");
+        source.line(transition + " id();");
         source.line(state + "[] from();");
         source.line(state + " to();");
         source.line("Class<? extends ActionSymbol>[] action() default {};");
         source.line("Class<? extends GuardSymbol>[] guards() default {};");
-        source.line(state + "[] onFailure() default {};");
+        source.line(transition + "[] onFailure() default {};");
         source.line("Class<? extends Throwable>[] failsOn() default {};");
         source.line("Timeout[] timeout() default {};");
         source.line("Class<? extends HookSymbol>[] afterCommit() default {};");
         close(source);
     }
 
-    private static void cells(JavaSource source, String vocabulary, String machine) {
-        describe(source, "Holds the repeated {@link " + vocabulary + ".Cell} declarations of {@link " + machine
-            + "}.");
-        annotation(source, machine, "CELLS", "ElementType.TYPE", null, "Cells");
-        source.line(vocabulary + ".Cell[] value();");
+    private static void transitions(JavaSource source, String vocabulary, String machine) {
+        describe(source, "Holds the repeated {@link " + vocabulary + ".Transition} declarations of {@link "
+            + machine + "}.");
+        annotation(source, machine, "TRANSITIONS", EDGE_TARGETS, null, "Transitions");
+        source.line(vocabulary + ".Transition[] value();");
         close(source);
     }
 
-    private static void forbid(JavaSource source, String vocabulary, String machine, String state) {
-        describe(source, "Refuses one transition of {@link " + machine + "} with an explicit reason.");
-        annotation(source, machine, "FORBID", "ElementType.TYPE", vocabulary + ".Forbids", "Forbid");
+    private static void reject(JavaSource source, String vocabulary, String machine, String state,
+            String transition) {
+        describe(source, "Refuses one identifier of {@link " + machine + "} from one state, with an explicit",
+            "reason that overrides that state's policy.");
+        annotation(source, machine, "REJECT", "ElementType.TYPE", vocabulary + ".Rejects", "Reject");
         source.line(state + " from();");
-        source.line(state + " to();");
+        source.line(transition + " transition();");
         source.line("String reason();");
         close(source);
     }
 
-    private static void forbids(JavaSource source, String vocabulary, String machine) {
-        describe(source, "Holds the repeated {@link " + vocabulary + ".Forbid} declarations of {@link " + machine
+    private static void rejects(JavaSource source, String vocabulary, String machine) {
+        describe(source, "Holds the repeated {@link " + vocabulary + ".Reject} declarations of {@link " + machine
             + "}.");
-        annotation(source, machine, "FORBIDS", "ElementType.TYPE", null, "Forbids");
-        source.line(vocabulary + ".Forbid[] value();");
+        annotation(source, machine, "REJECTS", "ElementType.TYPE", null, "Rejects");
+        source.line(vocabulary + ".Reject[] value();");
         close(source);
     }
 

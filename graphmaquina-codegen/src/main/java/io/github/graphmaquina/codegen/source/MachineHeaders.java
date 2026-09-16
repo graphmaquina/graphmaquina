@@ -14,8 +14,8 @@ import java.util.Set;
 import javax.lang.model.element.ElementKind;
 
 /**
- * Specializes one machine interface to the {@code Machine<E, S>} it ultimately extends. The supertype chain is
- * walked by declaration identity, substituting each type argument into the parameters the supertype declares,
+ * Specializes one machine interface to the {@code Machine<E, S, T>} it ultimately extends. The supertype chain
+ * is walked by declaration identity, substituting each type argument into the parameters the supertype declares,
  * so a generic base contributes its specialization whether it is an original source or a classpath binary.
  */
 public final class MachineHeaders {
@@ -27,7 +27,10 @@ public final class MachineHeaders {
     private MachineHeaders() {
     }
 
-    /** Resolves the entity, the state enum, its constants and the declared peers of {@code facade}. */
+    /**
+     * Resolves the entity, the state enum, the transition enum, the constants of both and the declared peers
+     * of {@code facade}.
+     */
     public static GraphDescriptor resolve(DeclarationIndex index, String facade) {
         Objects.requireNonNull(index, "index");
         Objects.requireNonNull(facade, "facade");
@@ -55,8 +58,20 @@ public final class MachineHeaders {
             throw new CodegenException(UNRESOLVED, "the state type " + stateHeader.canonicalName() + " of "
                     + facade + " is not an enum", origin);
         }
+        TypeUse.Declared transition = declared(arguments.get(new TypeParameterKey(MACHINE, 2)),
+            "transition", facade, origin);
+        TypeHeader transitionHeader = index.find(transition.name()).orElseThrow(() ->
+            new CodegenException(UNRESOLVED, "unresolved transition enum " + transition.render(), origin));
+        if (transitionHeader.kind() != ElementKind.ENUM) {
+            throw new CodegenException(UNRESOLVED, "the transition type " + transitionHeader.canonicalName() + " of "
+                    + facade + " is not an enum", origin);
+        }
+        if (transitionHeader.canonicalName().equals(stateHeader.canonicalName())) {
+            throw new CodegenException(UNRESOLVED, "states and transitions require distinct enum types", origin);
+        }
         return new GraphDescriptor(header.canonicalName(), header.scope().packageName(), entity.render(),
-                stateHeader.canonicalName(), stateHeader.constants(), peers(index, header, origin), origin);
+                stateHeader.canonicalName(), stateHeader.constants(), transitionHeader.canonicalName(),
+                transitionHeader.constants(), peers(index, header, origin), origin);
     }
 
     /**

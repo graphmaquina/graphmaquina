@@ -60,22 +60,32 @@ class PublicApiCompilationTest {
 
                 enum OtherState { READY }
 
+                enum Id { PREPARE }
+
+                enum OtherId { PREPARE }
+
                 public static void run() {
-                    Outcome.Applied<String, State> result =
-                            new Outcome.Applied<>("entity", State.NEW, State.READY, List.of(), List.of());
+                    Outcome.Applied<String, State, Id> result = new Outcome.Applied<>(
+                            "entity", State.NEW, Id.PREPARE, State.READY, List.of(), List.of());
                     GraphAssertions.assertThat(result).isApplied().movedTo(State.READY);
                 }
 
-                public static void inspect(GraphDefinition<String, State> definition) {
-                    GraphAssertions.assertThat(definition).edge(State.NEW, State.READY).isAction();
+                public static void inspect(GraphDefinition<String, State, Id> definition) {
+                    GraphAssertions.assertThat(definition).transition(State.NEW, Id.PREPARE).isAction();
+                }
+
+                public static void policy(GraphDefinition<String, State, Id> definition) {
+                    GraphAssertions.assertThat(definition).policy(State.NEW).rejects(Id.PREPARE, "no");
                 }
 
                 public static void reaction() {
-                    MachineKey<String, State> key = MachineKey.of(String.class, State.class);
-                    Outcome.Applied<String, State> child =
-                            new Outcome.Applied<>("entity", State.NEW, State.READY, List.of(), List.of());
-                    Outcome.Applied<String, State> root = new Outcome.Applied<>("root", State.NEW, State.READY,
-                            List.of(), List.of(new Reaction.Done(key, "entity", child)));
+                    MachineKey<String, State, Id> key =
+                            MachineKey.of(String.class, State.class, Id.class);
+                    Outcome.Applied<String, State, Id> child = new Outcome.Applied<>(
+                            "entity", State.NEW, Id.PREPARE, State.READY, List.of(), List.of());
+                    Outcome.Applied<String, State, Id> root = new Outcome.Applied<>(
+                            "root", State.NEW, Id.PREPARE, State.READY, List.of(),
+                            List.of(new Reaction.Done(key, "entity", child)));
                     GraphAssertions.assertThat(root).isApplied().reactions().forEntity(key, "entity")
                             .single().isDone().outcome().isApplied().movedTo(State.READY);
                 }
@@ -96,8 +106,35 @@ class PublicApiCompilationTest {
     }
 
     @Test
-    void aForeignStateIsRejectedOnTheCellSelector(@TempDir Path workDir) throws IOException {
-        assertRejected(workDir, "edge(State.NEW, State.READY)", "edge(State.NEW, OtherState.READY)");
+    void aForeignStateIsRejectedOnTheEdgeSelector(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, "transition(State.NEW, Id.PREPARE).isAction()",
+                "transition(OtherState.READY, Id.PREPARE).isAction()");
+    }
+
+    @Test
+    void aForeignIdentifierIsRejectedOnTheEdgeSelector(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, "transition(State.NEW, Id.PREPARE).isAction()",
+                "transition(State.NEW, OtherId.PREPARE).isAction()");
+    }
+
+    @Test
+    void aForeignIdentifierIsRejectedOnThePolicyView(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, "rejects(Id.PREPARE, \"no\")", "rejects(OtherId.PREPARE, \"no\")");
+    }
+
+    /**
+     * The retired matrix routes are not deprecated, they are gone: a consumer that still names
+     * {@code edge(from, to)} or {@code EdgeAssert} must fail to compile, which reflection over the jar
+     * could never show on its own.
+     */
+    @Test
+    void theRetiredMatrixRoutesNoLongerCompile(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, "transition(State.NEW, Id.PREPARE).isAction()",
+                "edge(State.NEW, State.READY).isAction()");
+        assertRejected(workDir, "transition(State.NEW, Id.PREPARE).isAction()",
+                "hasAllowedTargetsExactly(State.NEW, State.READY)");
+        assertRejected(workDir, "enum OtherId { PREPARE }",
+                "io.github.graphmaquina.test.EdgeAssert retired;");
     }
 
     @Test

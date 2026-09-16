@@ -3,17 +3,20 @@ package io.github.graphmaquina.api;
 import java.util.Optional;
 
 /** A guard decides, it does not mutate: no cascade and no depth. */
-public interface GuardContext<E, S extends Enum<S>> {
+public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 
     E entity();
 
     S from();
 
+    /** The identifier that selected the edge being evaluated. */
+    T transition();
+
     S to();
 
-    <P, Q extends Enum<Q>> PeerView<P, Q> peer(MachineKey<P, Q> key);
+    <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(MachineKey<P, Q, U> key);
 
-    <P, Q extends Enum<Q>, M extends Machine<P, Q>> PeerView<P, Q> peer(Class<M> peer);
+    <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(Class<M> peer);
 
     /**
      * The value passed as this operation's second argument, if any; empty when called with one argument or an

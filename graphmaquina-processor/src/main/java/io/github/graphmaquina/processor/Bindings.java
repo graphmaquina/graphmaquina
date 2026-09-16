@@ -41,20 +41,20 @@ final class Bindings {
     boolean fits(List<? extends TypeMirror> parameters, TypeMirror returned, Role role, MachineTypes machine, Optional<MachineTypes> peer) {
         return switch (role) {
             case ACTION -> parameters.size() == 1
-                    && signatures.same(parameters.get(0), signatures.declared(TRANSITION_CONTEXT, machine.entity(), machine.states()))
+                    && signatures.same(parameters.get(0), signatures.declared(TRANSITION_CONTEXT, machine.entity(), machine.states(), machine.transitions()))
                     && (signatures.same(returned, signatures.declared(ACTION_OUTCOME))
                         || signatures.assignable(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(ACTION_OUTCOME))));
             case GUARD -> parameters.size() == 1
-                    && signatures.same(parameters.get(0), signatures.declared(GUARD_CONTEXT, machine.entity(), machine.states()))
+                    && signatures.same(parameters.get(0), signatures.declared(GUARD_CONTEXT, machine.entity(), machine.states(), machine.transitions()))
                     && (signatures.same(returned, signatures.declared(GUARD_RESULT))
                         || signatures.assignable(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(GUARD_RESULT))));
             case HOOK -> (parameters.size() == 1 || (parameters.size() == 2
-                    && signatures.same(parameters.get(1), signatures.declared(COMMIT_CONTEXT, machine.states()))))
+                    && signatures.same(parameters.get(1), signatures.declared(COMMIT_CONTEXT, machine.states(), machine.transitions()))))
                     && signatures.same(parameters.get(0), machine.entity()) && returned.getKind() == TypeKind.VOID;
             case CONDITION -> peer.isPresent() && parameters.size() == 3
                     && signatures.same(parameters.get(0), machine.entity())
                     && signatures.assignable(signatures.declared(COLLECTION, signatures.extendsWildcard(peer.get().entity())), parameters.get(1))
-                    && signatures.same(parameters.get(2), signatures.declared(PEER_VIEW, peer.get().entity(), peer.get().states()))
+                    && signatures.same(parameters.get(2), signatures.declared(PEER_VIEW, peer.get().entity(), peer.get().states(), peer.get().transitions()))
                     && returned.getKind() == TypeKind.BOOLEAN;
         };
     }
@@ -67,14 +67,14 @@ final class Bindings {
      */
     List<TypeMirror> arguments(Role role, MachineTypes machine, Optional<MachineTypes> peer, int arity) {
         return switch (role) {
-            case ACTION -> List.of(signatures.declared(TRANSITION_CONTEXT, machine.entity(), machine.states()));
-            case GUARD -> List.of(signatures.declared(GUARD_CONTEXT, machine.entity(), machine.states()));
+            case ACTION -> List.of(signatures.declared(TRANSITION_CONTEXT, machine.entity(), machine.states(), machine.transitions()));
+            case GUARD -> List.of(signatures.declared(GUARD_CONTEXT, machine.entity(), machine.states(), machine.transitions()));
             case HOOK -> arity == 1 ? List.of(machine.entity())
-                    : List.of(machine.entity(), signatures.declared(COMMIT_CONTEXT, machine.states()));
+                    : List.of(machine.entity(), signatures.declared(COMMIT_CONTEXT, machine.states(), machine.transitions()));
             case CONDITION -> peer.<List<TypeMirror>>map((MachineTypes found) -> List.of(
                     machine.entity(),
                     signatures.declared(COLLECTION, signatures.extendsWildcard(found.entity())),
-                    signatures.declared(PEER_VIEW, found.entity(), found.states()))).orElseGet(List::of);
+                    signatures.declared(PEER_VIEW, found.entity(), found.states(), found.transitions()))).orElseGet(List::of);
         };
     }
 
@@ -99,14 +99,18 @@ final class Bindings {
     static String expected(String name, Role role, MachineTypes machine, Optional<MachineTypes> peer) {
         String e = machine.entityName();
         String s = machine.statesName();
+        String t = machine.transitionsName();
+        String p = peer.map(MachineTypes::entityName).orElse("P");
+        String q = peer.map(MachineTypes::statesName).orElse("Q");
+        String u = peer.map(MachineTypes::transitionsName).orElse("U");
         return switch (role) {
-            case ACTION -> "ActionOutcome " + name + "(TransitionContext<" + e + ", " + s + ">) or CompletionStage<ActionOutcome> " + name
-                    + "(TransitionContext<" + e + ", " + s + ">)";
-            case GUARD -> "GuardResult " + name + "(GuardContext<" + e + ", " + s + ">) or CompletionStage<GuardResult> " + name
-                    + "(GuardContext<" + e + ", " + s + ">)";
-            case HOOK -> "void " + name + "(" + e + ") or void " + name + "(" + e + ", CommitContext<" + s + ">)";
-            case CONDITION -> "boolean " + name + "(" + e + ", Collection<? extends " + peer.map(MachineTypes::entityName).orElse("P") + ">, PeerView<"
-                    + peer.map(MachineTypes::entityName).orElse("P") + ", " + peer.map(MachineTypes::statesName).orElse("Q") + ">)";
+            case ACTION -> "ActionOutcome " + name + "(TransitionContext<" + e + ", " + s + ", " + t
+                    + ">) or CompletionStage<ActionOutcome> " + name + "(TransitionContext<" + e + ", " + s + ", " + t + ">)";
+            case GUARD -> "GuardResult " + name + "(GuardContext<" + e + ", " + s + ", " + t
+                    + ">) or CompletionStage<GuardResult> " + name + "(GuardContext<" + e + ", " + s + ", " + t + ">)";
+            case HOOK -> "void " + name + "(" + e + ") or void " + name + "(" + e + ", CommitContext<" + s + ", " + t + ">)";
+            case CONDITION -> "boolean " + name + "(" + e + ", Collection<? extends " + p + ">, PeerView<"
+                    + p + ", " + q + ", " + u + ">)";
         };
     }
 }

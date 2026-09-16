@@ -1,46 +1,62 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="710" viewBox="0 0 1440 710" role="img" aria-labelledby="title desc">
-<title id="title">Ticket workflow: success, rejection and handled failure</title><desc id="desc">OPEN transitions to IN_PROGRESS if hasTitle passes. Completion either commits DONE, or its failure route commits FAILED. Rejection leaves the source state unchanged.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="770" viewBox="0 0 1440 770" role="img" aria-labelledby="title desc">
+<title id="title">The ticket graph: identified edges, parallel edges and a self-loop</title><desc id="desc">Four states and six identified edges. SUBMIT leaves OPEN for REVIEW behind the hasTitle guard, and its onFailure route DECLINE leaves the same origin for FAILED. From REVIEW, APPROVE and AUTO_APPROVE are two separate edges to DONE, each with its own action; RETOUCH is a self-loop that applies and stays in REVIEW; REJECT returns to OPEN. A request whose identifier has no edge from the current state is refused by that node's policy.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
-  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
   <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
 </defs>
-<rect x="0" y="0" width="1440" height="710" rx="24" fill="url(#back)" />
-<rect x="0" y="0" width="1440" height="710" rx="24" fill="url(#grid)" />
+<rect x="0" y="0" width="1440" height="770" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="770" rx="24" fill="url(#grid)" />
 <text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / QUICKSTART</text>
-<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">A small workflow. Every outcome explained.</text>
-<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">The same ticket machine used by the complete Gradle and Maven examples.</text>
-<rect x="62" y="242" width="260" height="138" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<rect x="62" y="260" width="4" height="102" rx="2" fill="#7aafff" />
-<text x="86" y="286" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">OPEN</text>
-<text x="86" y="326" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Initial state</text>
-<rect x="544" y="242" width="328" height="138" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<rect x="544" y="260" width="4" height="102" rx="2" fill="#c3a2ff" />
-<text x="568" y="286" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">IN_PROGRESS</text>
-<text x="568" y="326" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Work has started</text>
-<rect x="1110" y="204" width="270" height="138" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<rect x="1110" y="222" width="4" height="102" rx="2" fill="#55e0c0" />
-<text x="1134" y="248" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">DONE</text>
-<text x="1134" y="288" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Terminal · success</text>
-<rect x="1110" y="434" width="270" height="138" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<rect x="1110" y="452" width="4" height="102" rx="2" fill="#ff8998" />
-<text x="1134" y="478" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">FAILED</text>
-<text x="1134" y="518" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Terminal · failure</text>
-<path d="M 322 307 L 544 307" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 534 300 L 544 307 L 534 314" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="432" y="250" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="24" font-weight="600" fill="#7aafff" text-anchor="middle">start()</text>
-<text x="432" y="280" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="21" font-weight="400" fill="#a9b8ce" text-anchor="middle">hasTitle</text>
-<path d="M 872 285 H 1000 V 272 H 1110" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 1078 272 L 1110 272" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 1100 265 L 1110 272 L 1100 279" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="973" y="226" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="23" font-weight="600" fill="#55e0c0" text-anchor="middle">complete()</text>
-<path d="M 872 326 H 973 V 503 H 1110" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 1078 503 L 1110 503" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 1100 496 L 1110 503 L 1100 510" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="943" y="408" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="21" font-weight="600" fill="#ff8998" text-anchor="end">onFailure</text>
-<rect x="62" y="450" width="750" height="113" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<text x="88" y="490" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="26" font-weight="600" fill="#ffc77a" text-anchor="start">A rejection does not move the entity</text>
-<text x="88" y="530" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Guard rejection or forbidden cell → Outcome.Rejected</text>
-<path d="M 52 646 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="52" y="681" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">The failure route is a separate IN_PROGRESS → FAILED cell. Terminal diagonals remain STAY.</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">Four states. Six edges. Each one has a name.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">An operation selects an edge by its identifier, never by where that edge lands.</text>
+
+<path d="M 670 250 V 206 H 190 V 244" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 183 234 L 190 244 L 197 234" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="430" y="196" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="23" font-weight="600" fill="#c3a2ff" text-anchor="middle">REJECT  reject()</text>
+
+<rect x="70" y="250" width="240" height="120" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="70" y="266" width="4" height="88" rx="2" fill="#7aafff" />
+<text x="94" y="296" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">OPEN</text>
+<text x="94" y="334" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Initial state</text>
+
+<rect x="530" y="250" width="280" height="120" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="530" y="266" width="4" height="88" rx="2" fill="#c3a2ff" />
+<text x="554" y="296" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">REVIEW</text>
+<text x="554" y="334" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Four edges leave here</text>
+
+<rect x="1130" y="196" width="240" height="118" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="1130" y="212" width="4" height="86" rx="2" fill="#55e0c0" />
+<text x="1154" y="242" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">DONE</text>
+<text x="1154" y="280" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Terminal · no exit</text>
+
+<rect x="1130" y="500" width="240" height="118" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="1130" y="516" width="4" height="86" rx="2" fill="#ff8998" />
+<text x="1154" y="546" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">FAILED</text>
+<text x="1154" y="584" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Terminal · no exit</text>
+
+<path d="M 310 300 L 530 300" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 520 293 L 530 300 L 520 307" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="418" y="272" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="21" font-weight="600" fill="#7aafff" text-anchor="middle">SUBMIT  submit()</text>
+<text x="418" y="330" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="middle">guard hasTitle</text>
+<text x="418" y="356" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="middle">action register</text>
+
+<path d="M 810 278 H 960 V 236 H 1130" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 229 L 1130 236 L 1120 243" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="985" y="216" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="23" font-weight="600" fill="#55e0c0" text-anchor="middle">APPROVE  approve()</text>
+
+<path d="M 810 338 H 990 V 292 H 1130" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 285 L 1130 292 L 1120 299" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1000" y="366" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="23" font-weight="600" fill="#55e0c0" text-anchor="middle">AUTO_APPROVE  autoApprove()</text>
+
+<path d="M 600 370 C 588 442, 692 442, 682 378" fill="none" stroke="#ffc77a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 675 388 L 682 378 L 689 388" fill="none" stroke="#ffc77a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="640" y="474" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="23" font-weight="600" fill="#ffc77a" text-anchor="middle">RETOUCH  retouch()</text>
+
+<path d="M 190 370 V 559 H 1130" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 552 L 1130 559 L 1120 566" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="216" y="536" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="23" font-weight="600" fill="#ff8998" text-anchor="start">DECLINE — the onFailure route of SUBMIT, resolved from OPEN</text>
+
+<path d="M 52 658 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="694" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">APPROVE and AUTO_APPROVE are two edges between the same pair of states; each runs its own action and neither can stand in for the other.</text>
+<text x="52" y="726" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">RETOUCH is an ordinary edge that ends where it started: it applies. An identifier with no edge from the current state is refused by that node's policy.</text>
 </svg>

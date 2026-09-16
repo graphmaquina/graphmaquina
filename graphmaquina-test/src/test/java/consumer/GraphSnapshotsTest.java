@@ -12,6 +12,7 @@ import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.GraphSnapshots;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.snapshot.GoldenOptions;
 import io.github.graphmaquina.test.snapshot.GraphDiff;
@@ -31,9 +32,10 @@ import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Contract of the structural golden. It pins what the diagram leaves out, so a change of timeout or of
- * failure route breaks the build with the path that differs instead of with two files; a stored snapshot of
- * an unknown version is reported as the fixture problem it is and never silently rewritten by a read; and
- * update replaces whatever was there with the current version without reading the old one as a snapshot.
+ * recovery identifier breaks the build with the path that differs instead of with two files; a stored
+ * snapshot of an unknown version — the retired matrix format included — is reported as the fixture problem
+ * it is and never silently rewritten by a read; and update replaces whatever was there with the current
+ * version without reading the old one as a snapshot.
  */
 class GraphSnapshotsTest {
 
@@ -66,9 +68,10 @@ class GraphSnapshotsTest {
         assertEquals(RESOURCE, error.context());
         assertEquals("content", error.property());
         assertEquals("matching golden", error.expected());
-        assertEquals("/cells/NEW/READY/timeout: expected \"PT1S\" but was \"PT30S\"\n", error.actual());
+        assertEquals("/transitions/NEW/PREPARE/timeout: expected \"PT1S\" but was \"PT30S\"\n",
+                error.actual());
         assertEquals(RESOURCE + ": content expected <matching golden> but was "
-                + "</cells/NEW/READY/timeout: expected \"PT1S\" but was \"PT30S\"\n>" + REGENERATE,
+                + "</transitions/NEW/PREPARE/timeout: expected \"PT1S\" but was \"PT30S\"\n>" + REGENERATE,
                 error.getMessage());
     }
 
@@ -79,7 +82,7 @@ class GraphSnapshotsTest {
      */
     @Test
     void aGoldenWhoseLinesOnlyMovedFallsBackToTheLineDiff(@TempDir Path root) throws Exception {
-        GraphDefinition<Entity, State> graph = TestDomain.graph(Duration.ofSeconds(1));
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
         String capture = GraphSnapshot.capture(graph).serialize();
         String reordered = capture.replace("/hasAsync\ttrue\n/initial\tNEW\n",
                 "/initial\tNEW\n/hasAsync\ttrue\n");
@@ -91,16 +94,16 @@ class GraphSnapshotsTest {
             GraphAssertionError error = assertThrows(GraphAssertionError.class,
                     () -> GraphSnapshots.assertMatches(graph, RESOURCE, GoldenOptions.readOnly(loader)));
             String difference = """
-                    @@ -73,8 +73,8 @@
-                     /cells/READY/READY/guards/count\t0
-                     /cells/READY/READY/kind\tSTAY
-                     /cells/READY/READY/reason\t
+                    @@ -4,8 +4,8 @@
+                     /catalog/2\tFINISH
+                     /catalog/3\tABANDON
+                     /catalog/count\t4
                     -/initial\tNEW
                      /hasAsync\ttrue
                     +/initial\tNEW
                      /machine/entity\tio.github.graphmaquina.test.fixtures.TestDomain$Entity
                      /machine/states\tio.github.graphmaquina.test.fixtures.TestDomain$State
-                     /states/0\tNEW
+                     /machine/transitions\tio.github.graphmaquina.test.fixtures.TestDomain$Id
                     """;
             assertEquals(difference, error.actual());
             assertEquals(RESOURCE + ": content expected <matching golden> but was <" + difference + ">"
@@ -112,7 +115,7 @@ class GraphSnapshotsTest {
 
     @Test
     void updateCreatesSourceThenReadOnlyMatchesIt(@TempDir Path root) throws Exception {
-        GraphDefinition<Entity, State> graph = TestDomain.graph(Duration.ofSeconds(1));
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
         List<Path> written = new ArrayList<>();
         try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {
             GoldenOptions update = GoldenOptions.updating(loader, root, written::add);
@@ -128,7 +131,7 @@ class GraphSnapshotsTest {
 
     @Test
     void updateReplacesAnUnreadableSnapshotWithTheCurrentVersion(@TempDir Path root) throws Exception {
-        GraphDefinition<Entity, State> graph = TestDomain.graph(Duration.ofSeconds(1));
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
         Files.createDirectories(root.resolve("contracts"));
         Files.writeString(root.resolve(RESOURCE), "graphmaquina-snapshot-v0\nnonsense\n",
                 StandardCharsets.UTF_8);
@@ -183,7 +186,7 @@ class GraphSnapshotsTest {
 
     @Test
     void nullArgumentsAreProgrammingErrors() {
-        GraphDefinition<Entity, State> graph = TestDomain.graph(Duration.ofSeconds(1));
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
         assertEquals("resource", assertThrows(NullPointerException.class,
                 () -> GraphSnapshots.assertMatches(graph, null, READ_ONLY)).getMessage());
         assertEquals("options", assertThrows(NullPointerException.class,

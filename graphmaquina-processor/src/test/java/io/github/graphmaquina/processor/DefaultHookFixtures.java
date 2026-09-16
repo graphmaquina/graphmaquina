@@ -10,15 +10,15 @@ final class DefaultHookFixtures {
         Map<String, String> sources = TypedFixtures.graph("""
             @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED, allowsCycle = REVIEW,
                 state = DocRefs.Status.class, id = DocRefs.Id.class%s)
-            @DocsGraph.Row(state = DRAFT, otherwise = "review first")
-            @DocsGraph.Row(state = REVIEW, otherwise = "publish or return")
-            @DocsGraph.Cell(from = REVIEW, to = DRAFT)
+            @DocsGraph.StatePolicy(state = DRAFT, otherwise = "review first")
+            @DocsGraph.StatePolicy(state = REVIEW, otherwise = "publish or return")
+            @DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)
             """.formatted(definitionHook), """
-                @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                Outcome<Doc, DocStatus> submit(Doc doc);
-                @DocsGraph.Action(from = REVIEW, to = PUBLISHED,
+                @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
+                @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED,
                     action = DocActionsRefs.Publish.class%s)
-                Outcome<Doc, DocStatus> publish(Doc doc);
+                Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
             """.formatted(actionHook));
         sources.put("fx.Recorder", """
             package fx;

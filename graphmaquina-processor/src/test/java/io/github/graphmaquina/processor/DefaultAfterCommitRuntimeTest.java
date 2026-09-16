@@ -12,7 +12,7 @@ class DefaultAfterCommitRuntimeTest {
     private static Map<String, String> sources() {
         Map<String, String> sources = DefaultHookFixtures.sources(
             ", afterCommit = RecorderRefs.Persist.class",
-            ", afterCommit = DocActionsRefs.Notified.class, onFailure = DRAFT");
+            ", afterCommit = DocActionsRefs.Notified.class, onFailure = RETURN");
         sources.put("fx.Recorder", """
             package fx;
             import io.github.graphmaquina.annotation.GraphHook;
@@ -64,8 +64,8 @@ class DefaultAfterCommitRuntimeTest {
     @Test void hookSeesCommittedStateOnCallingThreadBeforeListener() throws Exception {
         assertEquals(Boolean.TRUE, execute(sources(), """
             Thread caller = Thread.currentThread();
-            Outcome<Doc, DocStatus> outcome = library.docs().submit(doc);
-            return outcome instanceof Outcome.Applied<?, ?>
+            Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().submit(doc);
+            return outcome instanceof Outcome.Applied<?, ?, ?>
                 && doc.status() == DocStatus.REVIEW && recorder.thread == caller
                 && recorder.events.equals(List.of("persist:REVIEW", "listener"));
             """));
@@ -98,11 +98,11 @@ class DefaultAfterCommitRuntimeTest {
         assertEquals(Boolean.TRUE, execute(sources(), """
             Thread caller = Thread.currentThread();
             java.util.concurrent.atomic.AtomicReference<Thread> worker = new java.util.concurrent.atomic.AtomicReference<>();
-            Outcome<Doc, DocStatus> outcome = library.docs().async(() -> {
+            Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().async(() -> {
                 worker.set(Thread.currentThread());
                 return library.docs().submit(doc);
             }).join();
-            return outcome instanceof Outcome.Applied<?, ?>
+            return outcome instanceof Outcome.Applied<?, ?, ?>
                 && recorder.thread == worker.get() && recorder.thread != caller
                 && recorder.events.equals(List.of("persist:REVIEW", "listener"));
             """));
@@ -118,7 +118,7 @@ class DefaultAfterCommitRuntimeTest {
             import java.util.List;
             public final class Recorder {
                 public final List<String> hops = new ArrayList<>();
-                @GraphHook public void persist(Doc doc, CommitContext<DocStatus> commit) {
+                @GraphHook public void persist(Doc doc, CommitContext<DocStatus, DocTransition> commit) {
                     hops.add(commit.from() + ":" + commit.to() + ":" + commit.kind()
                         + ":" + commit.isTerminal() + ":" + doc.status());
                 }
@@ -174,23 +174,45 @@ class DefaultAfterCommitRuntimeTest {
         assertEquals(3, result.load("fx.Scenario").getMethod("run").invoke(null));
     }
 
+    /**
+     * An explicit self-loop is a real ACTION/MOVE edge: it commits {@code Applied} on the state it leaves and
+     * runs the one hook in force on it exactly once.
+     */
+    @Test void explicitSelfLoopCommitsAppliedAndRunsItsOneEffectiveHook() throws Exception {
+        Map<String, String> sources = sources();
+        sources.compute("fx.Docs", (key, text) -> text
+            .replace("@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)\n", "")
+            .replace("    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)\n",
+                "    @DocsGraph.Transition(id = RETURN, from = REVIEW, to = REVIEW)\n"
+                + "    Outcome<Doc, DocStatus, DocTransition> retouch(Doc doc);\n"
+                + "    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)\n"));
+        assertEquals(Boolean.TRUE, execute(sources, """
+            library.docs().submit(doc);
+            recorder.events.clear();
+            Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().retouch(doc);
+            return outcome instanceof Outcome.Applied<?, ?, ?>
+                && doc.status() == DocStatus.REVIEW
+                && recorder.events.equals(List.of("persist:REVIEW", "listener"));
+            """));
+    }
+
     @Test void rejectedAndIgnoredDoNotRunDefault() throws Exception {
         assertEquals(Boolean.TRUE, execute(sources(), """
-            Outcome<Doc, DocStatus> rejected = library.docs().publish(doc);
-            Outcome<Doc, DocStatus> ignored = library.docs().reevaluate(doc);
-            return rejected instanceof Outcome.Rejected<?, ?>
-                && ignored instanceof Outcome.Ignored<?, ?>
+            Outcome<Doc, DocStatus, DocTransition> rejected = library.docs().publish(doc);
+            Outcome<Doc, DocStatus, DocTransition> ignored = library.docs().reevaluate(doc);
+            return rejected instanceof Outcome.Rejected<?, ?, ?>
+                && ignored instanceof Outcome.Ignored<?, ?, ?>
                 && recorder.events.equals(List.of("listener", "listener"));
             """));
     }
 
-    @Test void failureRouteUsesInternalCellDefaultInsteadOfOriginalOverride() throws Exception {
+    @Test void failureRouteUsesTheRecoveringEdgeDefaultInsteadOfOriginalOverride() throws Exception {
         assertEquals(Boolean.TRUE, execute(sources(), """
             library.docs().submit(doc);
             recorder.events.clear();
             actions.fail = true;
-            Outcome<Doc, DocStatus> outcome = library.docs().publish(doc);
-            return outcome instanceof Outcome.Failed<?, ?> && doc.status() == DocStatus.DRAFT
+            Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().publish(doc);
+            return outcome instanceof Outcome.Failed<?, ?, ?> && doc.status() == DocStatus.DRAFT
                 && actions.notified == 0
                 && recorder.events.equals(List.of("persist:DRAFT", "listener"));
             """));

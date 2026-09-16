@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.github.graphmaquina.test.CallInputAssert;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.probe.ActionCall;
 import io.github.graphmaquina.test.probe.GuardCall;
@@ -15,7 +16,12 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Contract of {@link CallInputAssert}: the recorded per-invocation payload, read back by value, by identity
+ * and by type, with every unmet expectation inspectable and every bad argument a programming error.
+ */
 class CallInputAssertionsTest {
+
     private final Entity entity = new Entity("e", State.NEW);
 
     @Test
@@ -59,8 +65,8 @@ class CallInputAssertionsTest {
 
     @Test
     void nullSubjectsFailAsAssertionsAndBadArgumentsRemainProgrammingErrors() {
-        var guard = assertThat((GuardCall<Entity, State>) null);
-        var action = assertThat((ActionCall<Entity, State>) null);
+        CallInputAssert guard = assertThat((GuardCall<Entity, State, Id>) null);
+        CallInputAssert action = assertThat((ActionCall<Entity, State, Id>) null);
         assertEquals("guard call", assertThrows(GraphAssertionError.class, guard::hasNoInput).context());
         assertEquals("action call", assertThrows(GraphAssertionError.class, action::hasNoInput).context());
         for (CallInputAssert view : List.of(guard, action, views(Optional.empty()).getFirst())) {
@@ -82,7 +88,7 @@ class CallInputAssertionsTest {
     }
 
     private List<CallInputAssert> views(Optional<?> input) {
-        return List.of(assertThat(new GuardCall<>(entity, State.NEW, State.READY, input)),
-                assertThat(new ActionCall<>(entity, State.NEW, State.READY, 0, input)));
+        return List.of(assertThat(new GuardCall<>(entity, State.NEW, Id.PREPARE, State.READY, input)),
+                assertThat(new ActionCall<>(entity, State.NEW, Id.PREPARE, State.READY, 0, input)));
     }
 }

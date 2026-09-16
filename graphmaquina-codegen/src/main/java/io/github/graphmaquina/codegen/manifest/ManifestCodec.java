@@ -17,6 +17,10 @@ import java.util.List;
  * boundary of the {@code io.github.graphmaquina.codegen} module: every other type in this package and in
  * {@code io.github.graphmaquina.codegen.model} is a plain value read or written only through this class.
  *
+ * <p>Schema 2 is the only schema this tool reads, including inventories of owned outputs. A schema 1 document
+ * is refused with a message asking the user to clean the build, then regenerate and recompile producer and
+ * consumer. There is no conversion, partial model reading or cleanup using retired inventories.
+ *
  * <p>Every read method parses the document with a strict {@link com.google.gson.stream.JsonReader}: unknown
  * {@code schemaVersion} values, a missing mandatory member, a member of the wrong JSON type, a duplicate key at
  * any nesting level, and an inventory path ({@link CompileManifest#ownedSources()}) that is absolute or escapes
@@ -28,9 +32,10 @@ import java.util.List;
  * {@code qualifiedName}, a symbol's {@code kinds} and {@code candidates} by name, an index's
  * {@code annotationTypes}, a manifest's {@code dependencies} by {@code compilationId} and its
  * {@code ownedSources}) so that two equal values always serialize to byte-identical files; a graph's
- * {@code states} and a member's {@code parameterTypes} keep the order they were given in, since that order is
- * semantically significant. A {@link io.github.graphmaquina.codegen.model.SymbolDescriptor#property()} that is empty is
- * omitted from the JSON entirely, never written as {@code null}.
+ * {@code states}, its {@code transitions} and a member's {@code parameterTypes} keep the order they were given
+ * in, since that order is semantically significant. A
+ * {@link io.github.graphmaquina.codegen.model.SymbolDescriptor#property()} that is empty is omitted from the
+ * JSON entirely, never written as {@code null}.
  *
  * <h2>{@code GenerationRequest} JSON (readRequest/writeRequest)</h2>
  *
@@ -54,15 +59,15 @@ import java.util.List;
  *
  * <pre>{@code
  * {
- *   "schemaVersion": <number, currently 1>,
+ *   "schemaVersion": <number, currently 2>,
  *   "toolVersion": "<string>",
  *   "compilationId": "<string>",
  *   "model": {
  *     "graphs": [
  *       {
  *         "facade": "<string>", "packageName": "<string, empty for the unnamed package>",
- *         "entityType": "<string>", "stateType": "<string>",
- *         "states": ["<string>", ...], "peers": ["<string>", ...],
+ *         "entityType": "<string>", "stateType": "<string>", "states": ["<string>", ...],
+ *         "transitionType": "<string>", "transitions": ["<string>", ...], "peers": ["<string>", ...],
  *         "origin": {"path": "<string>", "line": <number>, "column": <number>}
  *       }, ...
  *     ],
@@ -96,7 +101,7 @@ import java.util.List;
  *
  * <pre>{@code
  * {
- *   "schemaVersion": <number, currently 1>,
+ *   "schemaVersion": <number, currently 2>,
  *   "toolVersion": "<string>",
  *   "local": { ...an ExportIndex, as above... },
  *   "dependencies": [ { ...an ExportIndex, as above... }, ... ],
@@ -109,7 +114,7 @@ import java.util.List;
  *
  * <pre>{@code
  * {
- *   "schemaVersion": <number, currently 1>,
+ *   "schemaVersion": <number, currently 2>,
  *   "sources": ["<string, path relative to processorSourcesOutput>", ...],
  *   "binaries": ["<string, path relative to classesOutput>", ...],
  *   "resources": ["<string, path relative to classesOutput>", ...],
@@ -126,7 +131,7 @@ import java.util.List;
  *
  * <pre>{@code
  * {
- *   "schemaVersion": <number, currently 1>,
+ *   "schemaVersion": <number, currently 2>,
  *   "generatedTypes": ["<string, qualified name of a source the processor generated>", ...]
  * }
  * }</pre>
@@ -249,7 +254,7 @@ public final class ManifestCodec {
     }
 
     /**
-     * Reads an {@link OwnedOutputs} inventory from {@code path}.
+     * Reads an {@link OwnedOutputs} inventory from {@code path}, of the current schema only.
      *
      * @throws IOException if {@code path} cannot be read
      */

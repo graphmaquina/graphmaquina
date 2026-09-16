@@ -14,66 +14,74 @@ import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
+/** The SPI defaults: a third-party implementation keeps working, and never silently drops a payload. */
 class OperationInputDefaultsTest {
     enum S { OPEN }
 
-    static class OldGuard implements GuardContext<Object, S> {
+    enum T { GO }
+
+    static class PlainGuard implements GuardContext<Object, S, T> {
         public Object entity() { return this; }
         public S from() { return S.OPEN; }
+        public T transition() { return T.GO; }
         public S to() { return S.OPEN; }
-        public <P, Q extends Enum<Q>> PeerView<P, Q> peer(MachineKey<P, Q> key) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(MachineKey<P, Q, U> key) {
             throw new UnsupportedOperationException();
         }
-        public <P, Q extends Enum<Q>, M extends Machine<P, Q>> PeerView<P, Q> peer(Class<M> type) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(Class<M> type) {
             throw new UnsupportedOperationException();
         }
     }
-    static class OldAction implements TransitionContext<Object, S> {
+    static class PlainAction implements TransitionContext<Object, S, T> {
         public Object entity() { return this; }
         public S from() { return S.OPEN; }
+        public T transition() { return T.GO; }
         public S to() { return S.OPEN; }
         public int depth() { return 0; }
-        public <P, Q extends Enum<Q>> PeerView<P, Q> peer(MachineKey<P, Q> key) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(MachineKey<P, Q, U> key) {
             throw new UnsupportedOperationException();
         }
-        public <P, Q extends Enum<Q>, M extends Machine<P, Q>> PeerView<P, Q> peer(Class<M> type) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(Class<M> type) {
             throw new UnsupportedOperationException();
         }
-        public <P, Q extends Enum<Q>> Outcome<P, Q> cascade(MachineKey<P, Q> key, P entity, Q target) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(MachineKey<P, Q, U> key, P entity, U transition) {
             throw new UnsupportedOperationException();
         }
-        public <P, Q extends Enum<Q>, M extends Machine<P, Q>> Outcome<P, Q> cascade(Class<M> type, P entity, Q target) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(
+                Class<M> type, P entity, U transition) {
             throw new UnsupportedOperationException();
         }
-        public <P, Q extends Enum<Q>> List<Outcome<P, Q>> cascadeAll(
-                MachineKey<P, Q> key, Collection<? extends P> entities, Q target, CascadePolicy policy) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(
+                MachineKey<P, Q, U> key, Collection<? extends P> entities, U transition, CascadePolicy policy) {
             throw new UnsupportedOperationException();
         }
-        public <P, Q extends Enum<Q>, M extends Machine<P, Q>> List<Outcome<P, Q>> cascadeAll(
-                Class<M> type, Collection<? extends P> entities, Q target, CascadePolicy policy) {
+        public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
+                Class<M> type, Collection<? extends P> entities, U transition, CascadePolicy policy) {
             throw new UnsupportedOperationException();
         }
     }
-    static class OldAsync implements AsyncStateMachine<Object, S> {
-        public CompletableFuture<Outcome<Object, S>> transitionTo(Object e, S s) {
-            return CompletableFuture.completedFuture(new Outcome.Ignored<>(e, s, s));
+    static class PlainAsync implements AsyncStateMachine<Object, S, T> {
+        public CompletableFuture<Outcome<Object, S, T>> execute(Object e, T t) {
+            return CompletableFuture.completedFuture(new Outcome.Ignored<>(e, S.OPEN, IgnoreReason.NO_WATCH));
         }
-        public CompletableFuture<Outcome<Object, S>> reevaluate(Object e) { return transitionTo(e, S.OPEN); }
+        public CompletableFuture<Outcome<Object, S, T>> reevaluate(Object e) { return execute(e, T.GO); }
     }
-    static class OldMachine implements StateMachine<Object, S> {
-        public MachineKey<Object, S> key() { return MachineKey.of(Object.class, S.class); }
-        public GraphDefinition<Object, S> definition() { throw new UnsupportedOperationException(); }
-        public Outcome<Object, S> transitionTo(Object e, S s) { return new Outcome.Ignored<>(e, s, s); }
-        public Outcome<Object, S> reevaluate(Object e) { return transitionTo(e, S.OPEN); }
-        public Set<S> allowedFrom(S s) { return Set.of(); }
-        public AsyncStateMachine<Object, S> async() { return new OldAsync(); }
-        public <T> CompletableFuture<T> supplyAsync(Supplier<T> call) {
+    static class PlainMachine implements StateMachine<Object, S, T> {
+        public MachineKey<Object, S, T> key() { return MachineKey.of(Object.class, S.class, T.class); }
+        public GraphDefinition<Object, S, T> definition() { throw new UnsupportedOperationException(); }
+        public Outcome<Object, S, T> execute(Object e, T t) {
+            return new Outcome.Ignored<>(e, S.OPEN, IgnoreReason.NO_WATCH);
+        }
+        public Outcome<Object, S, T> reevaluate(Object e) { return execute(e, T.GO); }
+        public Set<T> transitionsFrom(S s) { return Set.of(); }
+        public AsyncStateMachine<Object, S, T> async() { return new PlainAsync(); }
+        public <R> CompletableFuture<R> supplyAsync(Supplier<R> call) {
             return CompletableFuture.completedFuture(call.get());
         }
     }
-    @Test void oldContextsRemainValidAndEmpty() {
-        OldGuard guard = new OldGuard();
-        OldAction action = new OldAction();
+    @Test void contextsWithoutInputRemainValidAndEmpty() {
+        PlainGuard guard = new PlainGuard();
+        PlainAction action = new PlainAction();
         assertTrue(guard.input().isEmpty());
         assertTrue(guard.input(String.class).isEmpty());
         assertTrue(action.input().isEmpty());
@@ -85,20 +93,20 @@ class OperationInputDefaultsTest {
     }
     @Test void typedReadersPreserveIdentityAndFailOnWrongType() {
         String value = new String("value");
-        OldGuard guard = new OldGuard() { public Optional<?> input() { return Optional.of(value); } };
-        OldAction action = new OldAction() { public Optional<?> input() { return Optional.of(value); } };
+        PlainGuard guard = new PlainGuard() { public Optional<?> input() { return Optional.of(value); } };
+        PlainAction action = new PlainAction() { public Optional<?> input() { return Optional.of(value); } };
         assertSame(value, guard.input(String.class).orElseThrow());
         assertSame(value, action.input(CharSequence.class).orElseThrow());
         assertThrows(ClassCastException.class, () -> guard.input(Integer.class));
         assertThrows(ClassCastException.class, () -> action.input(Integer.class));
     }
-    @Test void legacySpiDelegatesAbsenceButNeverDropsPayload() {
+    @Test void theSpiDelegatesAbsenceButNeverDropsPayload() {
         Object e = new Object();
-        OldMachine machine = new OldMachine();
-        assertSame(e, machine.transitionTo(e, S.OPEN, null).entity());
-        assertSame(e, machine.async().transitionTo(e, S.OPEN, null).join().entity());
-        assertThrows(UnsupportedOperationException.class, () -> machine.transitionTo(e, S.OPEN, "value"));
-        CompletableFuture<Outcome<Object, S>> future = machine.async().transitionTo(e, S.OPEN, "value");
+        PlainMachine machine = new PlainMachine();
+        assertSame(e, machine.execute(e, T.GO, null).entity());
+        assertSame(e, machine.async().execute(e, T.GO, null).join().entity());
+        assertThrows(UnsupportedOperationException.class, () -> machine.execute(e, T.GO, "value"));
+        CompletableFuture<Outcome<Object, S, T>> future = machine.async().execute(e, T.GO, "value");
         assertInstanceOf(UnsupportedOperationException.class,
                 assertThrows(CompletionException.class, future::join).getCause());
     }

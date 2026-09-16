@@ -29,11 +29,13 @@ public final class GraphAssertions {
 
     private GraphAssertions() { }
 
-    public static <E, S extends Enum<S>> GraphAssert<E, S> assertThat(GraphDefinition<E, S> actual) {
+    public static <E, S extends Enum<S>, T extends Enum<T>> GraphAssert<E, S, T> assertThat(
+            GraphDefinition<E, S, T> actual) {
         return GraphAssert.assertThat(actual);
     }
 
-    public static <E, S extends Enum<S>> OutcomeAssert<E, S> assertThat(Outcome<E, S> actual) {
+    public static <E, S extends Enum<S>, T extends Enum<T>> OutcomeAssert<E, S, T> assertThat(
+            Outcome<E, S, T> actual) {
         return OutcomeAssert.assertThat(actual);
     }
 
@@ -46,12 +48,12 @@ public final class GraphAssertions {
     }
 
     /** Expectations over the input in a guard's recorded invocation. */
-    public static CallInputAssert assertThat(GuardCall<?, ?> actual) {
+    public static CallInputAssert assertThat(GuardCall<?, ?, ?> actual) {
         return CallInputAssert.assertThat(actual);
     }
 
     /** Expectations over the input in an action's recorded invocation. */
-    public static CallInputAssert assertThat(ActionCall<?, ?> actual) {
+    public static CallInputAssert assertThat(ActionCall<?, ?, ?> actual) {
         return CallInputAssert.assertThat(actual);
     }
 

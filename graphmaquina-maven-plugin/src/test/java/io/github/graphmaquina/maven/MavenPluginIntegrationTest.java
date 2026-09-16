@@ -223,7 +223,7 @@ class MavenPluginIntegrationTest {
 
                     @GraphAction
                     @GraphProperty
-                    public ActionOutcome reject(TransitionContext<Order, Status> context) {
+                    public ActionOutcome reject(TransitionContext<Order, Status, Transition> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -310,23 +310,25 @@ class MavenPluginIntegrationTest {
                 import fx.Order;
                 import fx.OrderRefs;
                 import fx.Status;
+                import fx.Transition;
                 import io.github.graphmaquina.annotation.GenerateGraphApi;
                 import io.github.graphmaquina.api.Machine;
                 import io.github.graphmaquina.api.Outcome;
 
                 import static fx.Status.DONE;
                 import static fx.Status.NEW;
+                import static fx.Transition.APPROVE;
 
                 /** A machine of the downstream project over the vocabulary the producer jar publishes. */
                 @GenerateGraphApi
                 @ReviewsGraph.Definition(initial = NEW, terminals = DONE,
                     state = OrderRefs.Status.class, id = OrderRefs.Id.class)
-                @ReviewsGraph.Row(state = NEW, otherwise = "a new order is reviewed")
-                @ReviewsGraph.Row(state = DONE, otherwise = "a reviewed order does not move")
-                public interface Reviews extends Machine<Order, Status> {
+                @ReviewsGraph.StatePolicy(state = NEW, otherwise = "a new order is reviewed")
+                public interface Reviews extends Machine<Order, Status, Transition> {
 
-                    @ReviewsGraph.Action(from = NEW, to = DONE, action = ActionsRefs.Approve.class)
-                    Outcome<Order, Status> review(Order order);
+                    @ReviewsGraph.Transition(id = APPROVE, from = NEW, to = DONE,
+                        action = ActionsRefs.Approve.class)
+                    Outcome<Order, Status, Transition> review(Order order);
                 }
                 """));
 
@@ -338,6 +340,37 @@ class MavenPluginIntegrationTest {
         assertTrue(consumer.jarContains("cx/ReviewsGraph.class"));
         assertTrue(consumer.jarContains("cx/ReviewsRuntime.class"));
         assertFalse(consumer.jarContainsGraphCompilationCarrier());
+        // The downstream machine identifies its edges with the producer's own enum, and neither jar carries a
+        // nested type of the retired matrix vocabulary for it to have inherited instead.
+        assertEquals(List.of("fx.Transition.APPROVE"), producer.transitionsOf("fx.Orders"));
+        assertEquals(List.of("fx.Transition.APPROVE"), consumer.transitionsOf("cx.Reviews"));
+        assertEquals(List.of(), producer.retiredVocabularyEntries());
+        assertEquals(List.of(), consumer.retiredVocabularyEntries());
+    }
+
+    /**
+     * {@code clean} is a complete migration path out of the retired release: with the whole target directory
+     * gone there is no inventory left to retire anything from, and the build regenerates the vocabulary,
+     * compiles it and publishes the same index again. The hand-written sources it was generated from are
+     * byte for byte what they were, since nothing of the deletion ever reaches {@code src}.
+     */
+    @Test
+    void cleanIsACompleteMigrationPath() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExports();
+        Map<String, String> sources = handWrittenSources(fixture);
+
+        MavenResult result = fixture.run("clean", "package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExports());
+        assertTrue(published.contains("fx.Orders"));
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertTrue(fixture.jarContains("fx/OrdersRuntime.class"));
+        assertFalse(fixture.jarContainsGraphCompilationCarrier());
+        assertEquals(sources, handWrittenSources(fixture));
     }
 
     /**
@@ -679,6 +712,16 @@ class MavenPluginIntegrationTest {
         assertFalse(fixture.exists("target/fixture-1.0.0.jar"));
     }
 
+    /** Every hand-written source of {@code fixture}, keyed by its path relative to the source root. */
+    private static Map<String, String> handWrittenSources(MavenFixture fixture) throws IOException {
+        Path root = fixture.projectDirectory().resolve("src/main/java");
+        Map<String, String> sources = new LinkedHashMap<>();
+        for (Path file : filesUnder(root)) {
+            sources.put(root.relativize(file).toString(), Files.readString(file, StandardCharsets.UTF_8));
+        }
+        return sources;
+    }
+
     /** Every regular file under {@code root}, or nothing when the build has not written it yet. */
     private static List<Path> filesUnder(Path root) throws IOException {
         if (!Files.isDirectory(root)) {
@@ -704,7 +747,7 @@ class MavenPluginIntegrationTest {
                 public final class Actions {
 
                     @GraphAction
-                    public ActionOutcome accept(TransitionContext<Order, Status> context) {
+                    public ActionOutcome accept(TransitionContext<Order, Status, Transition> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -748,6 +791,12 @@ class MavenPluginIntegrationTest {
                 /** The states a ticket moves through. */
                 public enum Level { OPEN, CLOSED }
                 """);
+        sources.put("fxt.Step", """
+                package fxt;
+
+                /** The identified transitions of the ticket graph. */
+                public enum Step { RESOLVE }
+                """);
         sources.put("fxt.Ticket", """
                 package fxt;
 
@@ -784,7 +833,7 @@ class MavenPluginIntegrationTest {
                 public final class TicketActions {
 
                     @GraphAction
-                    public ActionOutcome resolve(TransitionContext<Ticket, Level> context) {
+                    public ActionOutcome resolve(TransitionContext<Ticket, Level, Step> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -798,18 +847,18 @@ class MavenPluginIntegrationTest {
 
                 import static fxt.Level.CLOSED;
                 import static fxt.Level.OPEN;
+                import static fxt.Step.RESOLVE;
 
                 /** The machine of the test source set. */
                 @GenerateGraphApi
                 @TicketsGraph.Definition(initial = OPEN, terminals = CLOSED,
                     state = TicketRefs.Status.class, id = TicketRefs.Id.class)
-                @TicketsGraph.Row(state = OPEN, otherwise = "an open ticket is resolved")
-                @TicketsGraph.Row(state = CLOSED, otherwise = "a closed ticket does not move")
-                public interface Tickets extends Machine<Ticket, Level> {
+                @TicketsGraph.StatePolicy(state = OPEN, otherwise = "an open ticket is resolved")
+                public interface Tickets extends Machine<Ticket, Level, Step> {
 
-                    @TicketsGraph.Action(from = OPEN, to = CLOSED,
+                    @TicketsGraph.Transition(id = RESOLVE, from = OPEN, to = CLOSED,
                         action = TicketActionsRefs.Resolve.class)
-                    Outcome<Ticket, Level> resolve(Ticket ticket);
+                    Outcome<Ticket, Level, Step> resolve(Ticket ticket);
                 }
                 """);
         return sources;

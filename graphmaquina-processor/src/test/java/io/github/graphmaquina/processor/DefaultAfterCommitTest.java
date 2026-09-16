@@ -10,7 +10,7 @@ import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
-/** Verifies how Definition's default afterCommit hook is inherited, replaced and validated for actions, moves and cells. */
+/** Verifies how Definition's default afterCommit hook is inherited, replaced and validated for every edge. */
 class DefaultAfterCommitTest {
     private static final String DEFAULT = ", afterCommit = RecorderRefs.Persist.class";
     private static final String EXPLICIT = ", afterCommit = DocActionsRefs.Notified.class";
@@ -52,15 +52,15 @@ class DefaultAfterCommitTest {
         assertEquals(current.generated("fx.LibraryRuntime"), legacy.generated("fx.LibraryRuntime"));
     }
 
-    @Test void defaultReachesActionMoveAndInternalCellAndItsDependency() {
+    @Test void defaultReachesEveryDeclaredEdgeAndItsDependency() {
         Compilation.Result result = Compilation.compileTyped(DefaultHookFixtures.sources(DEFAULT, ""));
         assertTrue(result.success(), result::describe);
         assertEquals(3, hooks(result, "persist"));
         assertTrue(result.generated("fx.LibraryRuntime")
             .contains("public static Builder builder(Recorder recorder, DocActions docActions)"));
+        // Only a declared edge carries a hook: nothing else in the built graph may.
         assertFalse(result.generated("fx.DocsRuntime").lines()
-            .anyMatch(line -> (line.contains(".stay()") || line.contains(".forbid("))
-                && line.contains(".afterCommit(")));
+            .anyMatch(line -> line.contains(".afterCommit(") && !line.contains(".transition(")));
     }
 
     @Test void explicitActionReplacesDefaultAndEmptyInheritsIt() {
@@ -76,21 +76,22 @@ class DefaultAfterCommitTest {
     @Test void internalActionAndMultipleFromStatesInherit() {
         Map<String, String> sources = DefaultHookFixtures.sources(DEFAULT, "");
         sources.compute("fx.Docs", (key, text) -> text
-            .replace("@DocsGraph.Cell(from = REVIEW, to = DRAFT)",
-                "@DocsGraph.Cell(from = REVIEW, to = DRAFT, action = DocActionsRefs.Publish.class)")
-            .replace("@DocsGraph.Action(from = REVIEW,", "@DocsGraph.Action(from = {DRAFT, REVIEW},"));
+            .replace("@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)",
+                "@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT, action = DocActionsRefs.Publish.class)")
+            .replace("@DocsGraph.Transition(id = PUBLISH, from = REVIEW,",
+                "@DocsGraph.Transition(id = PUBLISH, from = {DRAFT, REVIEW},"));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result::describe);
         assertEquals(4, hooks(result, "persist"));
     }
 
-    @Test void explicitMoveAndCellReplaceDefaultWithoutUnusedInjection() {
+    @Test void explicitMovesAndInternalEdgesReplaceDefaultWithoutUnusedInjection() {
         Map<String, String> sources = DefaultHookFixtures.sources(DEFAULT, EXPLICIT);
         sources.compute("fx.Docs", (key, text) -> text
-            .replace("@DocsGraph.Cell(from = REVIEW, to = DRAFT)",
-                "@DocsGraph.Cell(from = REVIEW, to = DRAFT" + EXPLICIT + ")")
-            .replace("@DocsGraph.Move(from = DRAFT, to = REVIEW)",
-                "@DocsGraph.Move(from = DRAFT, to = REVIEW" + EXPLICIT + ")"));
+            .replace("@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)",
+                "@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT" + EXPLICIT + ")")
+            .replace("@DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)",
+                "@DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW" + EXPLICIT + ")"));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result::describe);
         assertEquals(0, hooks(result, "persist"));
@@ -119,7 +120,7 @@ class DefaultAfterCommitTest {
             ", afterCommit = {RecorderRefs.Persist.class, RecorderRefs.Persist.class}", ""));
         assertFalse(result.success());
         assertEquals(1, result.countError("SG607"), result::describe);
-        assertEquals(9, result.lineOf("SG607"), result::describe);
+        assertEquals(10, result.lineOf("SG607"), result::describe);
         assertFalse(result.hasGenerated("fx.DocsRuntime"));
     }
 
@@ -140,14 +141,29 @@ class DefaultAfterCommitTest {
         sources.compute("fx.Recorder", (key, text) -> text.replace(
             "@GraphHook public void persist(Doc doc) { }", """
             @GraphHook public void persist(Doc doc) { }
-            @GraphHook public void persist(Doc doc, io.github.graphmaquina.api.CommitContext<DocStatus> commit) { }
+            @GraphHook public void persist(Doc doc, io.github.graphmaquina.api.CommitContext<DocStatus, DocTransition> commit) { }
             """));
         Compilation.Result result = Compilation.compileTyped(sources);
         assertFalse(result.success());
         assertEquals(1, result.countError("SG505"), result::describe);
-        assertEquals(9, result.lineOf("SG505"), result::describe);
+        assertEquals(10, result.lineOf("SG505"), result::describe);
         assertFalse(result.hasGenerated("fx.DocsRuntime"));
         assertFalse(result.hasGenerated("fx.LibraryRuntime"));
+    }
+
+    /** An explicit self-loop is a real edge, so it commits and runs exactly the one hook in force on it. */
+    @Test void explicitSelfLoopCarriesOneEffectiveHook() {
+        Map<String, String> sources = DefaultHookFixtures.sources(DEFAULT, "");
+        sources.compute("fx.Docs", (key, text) -> text.replace(
+            "@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)",
+            "@DocsGraph.Transition(id = RETURN, from = REVIEW, to = REVIEW)"));
+        Compilation.Result result = Compilation.compileTyped(sources);
+        assertTrue(result.success(), result::describe);
+        String selfLoop = result.generated("fx.DocsRuntime").lines()
+            .filter(line -> line.contains(".transition(DocTransition.RETURN, DocStatus.REVIEW, DocStatus.REVIEW)"))
+            .findFirst().orElseThrow(() -> new AssertionError(result.generated("fx.DocsRuntime")));
+        assertEquals(1, selfLoop.split("\\.afterCommit\\(", -1).length - 1, selfLoop);
+        assertTrue(selfLoop.contains(".afterCommit(\"persist\""), selfLoop);
     }
 
     @Test void invalidExplicitHookDoesNotFallBackSilently() {

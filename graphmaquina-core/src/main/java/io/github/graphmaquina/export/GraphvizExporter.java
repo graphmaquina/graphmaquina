@@ -1,6 +1,5 @@
 package io.github.graphmaquina.export;
 
-import io.github.graphmaquina.api.EdgeKind;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,52 +10,47 @@ import lombok.NonNull;
  * Renders a {@link GraphView} as Graphviz DOT text with deterministic ordering and LF line endings.
  * Export requires no Graphviz installation; use Graphviz separately to render DOT as an image.
  * State names are escaped labels on internal node IDs. Initial states have an incoming point arrow,
- * terminals use double circles, and watches use notes with dashed connections.
+ * terminals use double circles, and watches use notes with dashed connections. Only declared edges are
+ * drawn; a rejection policy is a tooltip on its node, never an arrow.
  */
 public final class GraphvizExporter {
 
     private GraphvizExporter() { }
 
-    /** Renders only the transitable edges: ACTION and MOVE. */
+    /** Every declared edge, parallels included, in the view's order. */
     public static String render(@NonNull GraphView view) {
-        return render(view, Detail.TRANSITABLE);
-    }
-
-    /**
-     * Renders {@code view} at the given level of {@link Detail}, retaining all known states.
-     * States follow matrix endpoint order, then the initial state if absent, then remaining terminals
-     * in name order and watch-only states in watch order. Edges and watches follow the view's lists.
-     */
-    public static String render(@NonNull GraphView view, @NonNull Detail detail) {
         Map<String, String> nodes = new LinkedHashMap<>();
-        for (EdgeView edge : view.edges()) {
-            addState(nodes, edge.from());
-            addState(nodes, edge.to());
+        view.states().forEach((String state) -> addState(nodes, state));
+        for (TransitionView transition : view.transitions()) {
+            addState(nodes, transition.from());
+            addState(nodes, transition.to());
         }
         addState(nodes, view.initial());
-        view.terminals().stream().sorted().forEach(state -> addState(nodes, state));
+        view.terminals().stream().sorted().forEach((String state) -> addState(nodes, state));
         for (WatchView watch : view.watches()) {
             addState(nodes, watch.state());
+        }
+        Map<String, PolicyView> policies = new LinkedHashMap<>();
+        for (PolicyView policy : view.policies()) {
+            policies.putIfAbsent(policy.state(), policy);
         }
 
         StringBuilder out = new StringBuilder("digraph ").append(quote(view.name())).append(" {\n");
         out.append("    rankdir=LR;\n");
         out.append("    initial [shape=point, label=\"\"];\n");
-        nodes.forEach((state, id) -> out.append("    ").append(id)
-                .append(" [label=").append(quote(state)).append(", shape=")
-                .append(view.terminals().contains(state) ? "doublecircle" : "ellipse").append("];\n"));
+        nodes.forEach((String state, String id) -> {
+            out.append("    ").append(id).append(" [label=").append(quote(state)).append(", shape=")
+                    .append(view.terminals().contains(state) ? "doublecircle" : "ellipse");
+            PolicyView policy = policies.get(state);
+            if (policy != null) {
+                out.append(", tooltip=").append(quote(tooltip(policy)));
+            }
+            out.append("];\n");
+        });
         out.append("    initial -> ").append(nodes.get(view.initial())).append(";\n");
-        for (EdgeView edge : view.edges()) {
-            boolean transitable = edge.kind() == EdgeKind.ACTION || edge.kind() == EdgeKind.MOVE;
-            if (!transitable && detail == Detail.TRANSITABLE) {
-                continue;
-            }
-            out.append("    ").append(nodes.get(edge.from())).append(" -> ").append(nodes.get(edge.to()));
-            String label = label(edge);
-            if (!label.isEmpty()) {
-                out.append(" [label=").append(quote(label)).append(']');
-            }
-            out.append(";\n");
+        for (TransitionView transition : view.transitions()) {
+            out.append("    ").append(nodes.get(transition.from())).append(" -> ").append(nodes.get(transition.to()))
+                    .append(" [label=").append(quote(label(transition))).append("];\n");
         }
         for (int i = 0; i < view.watches().size(); i++) {
             WatchView watch = view.watches().get(i);
@@ -78,23 +72,26 @@ public final class GraphvizExporter {
                 .replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n") + "\"";
     }
 
-    private static String label(EdgeView edge) {
-        if (edge.kind() == EdgeKind.STAY) {
-            return "stay";
-        }
-        if (edge.kind() == EdgeKind.FORBID) {
-            return "forbid: " + edge.reason();
-        }
+    private static String tooltip(PolicyView policy) {
         List<String> parts = new ArrayList<>();
-        edge.action().ifPresent(parts::add);
-        if (edge.async()) {
+        parts.add("otherwise: " + policy.otherwise());
+        parts.addAll(policy.rejections());
+        return String.join("; ", parts);
+    }
+
+    /** The identifier always leads; the action, guards and routing follow it. */
+    private static String label(TransitionView transition) {
+        List<String> parts = new ArrayList<>();
+        parts.add(transition.transition());
+        transition.action().ifPresent(parts::add);
+        if (transition.async()) {
             parts.add("[async]");
         }
-        if (!edge.guards().isEmpty()) {
-            parts.add("[if " + String.join(", ", edge.guards()) + "]");
+        if (!transition.guards().isEmpty()) {
+            parts.add("[if " + String.join(", ", transition.guards()) + "]");
         }
-        edge.failureOf().ifPresent((String action) -> parts.add("[failure of " + action + "]"));
-        edge.watchRule().ifPresent((String rule) -> parts.add("[watches " + rule + "]"));
+        transition.failureTransition().ifPresent((String id) -> parts.add("[onFailure " + id + "]"));
+        transition.watch().ifPresent((String rule) -> parts.add("[watches " + rule + "]"));
         return String.join(" ", parts);
     }
 }

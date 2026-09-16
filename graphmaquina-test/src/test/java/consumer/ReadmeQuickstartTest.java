@@ -31,8 +31,8 @@ class ReadmeQuickstartTest {
         Files.writeString(project.resolve("build.gradle.kts"), build + "\n" + testDependencies);
 
         Path mainSources = Files.createDirectories(project.resolve("src/main/java/com/example/tickets"));
-        for (String file : List.of("TicketStatus.java", "Ticket.java", "TicketActions.java", "Tickets.java",
-                "TicketMachines.java", "App.java")) {
+        for (String file : List.of("TicketState.java", "TicketTransition.java", "Ticket.java",
+                "TicketActions.java", "Tickets.java", "TicketMachines.java", "App.java")) {
             Files.writeString(mainSources.resolve(file), fenceAfter(readme, "### " + file, "java"));
         }
         Path testSources = Files.createDirectories(project.resolve("src/test/java/com/example/tickets"));

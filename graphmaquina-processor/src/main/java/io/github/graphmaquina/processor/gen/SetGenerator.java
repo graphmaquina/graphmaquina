@@ -126,7 +126,8 @@ public final class SetGenerator {
         out.blank();
         if (async) {
             out.line("/** Overrides the shared timeout for one asynchronous machine. */");
-            out.open("public Builder asyncTimeout(Class<? extends " + names.of(MACHINE) + "<?, ?>> machine, " + names.of(DURATION) + " timeout)");
+            out.open("public Builder asyncTimeout(Class<? extends " + names.of(MACHINE) + "<?, ?, ?>> machine, "
+                    + names.of(DURATION) + " timeout)");
             out.line(objects + ".requireNonNull(machine, \"machine\");");
             out.line(objects + ".requireNonNull(timeout, \"timeout\");");
             out.open("if (!ASYNC_MACHINES.contains(machine))");
@@ -164,14 +165,16 @@ public final class SetGenerator {
             MachineModel machine = accessor.machine();
             String e = names.of(machine.types().entityElement().getQualifiedName().toString());
             String s = names.of(machine.types().statesElement().getQualifiedName().toString());
+            String t = names.of(machine.types().transitionsElement().getQualifiedName().toString());
             String facade = facadeName(accessor, names);
             String variable = accessor.method() + "Builder";
             List<String> arguments = new ArrayList<>();
             for (TypeElement dependency : machine.instanceDependencies()) {
                 arguments.add(parameterNames.get(dependency.getQualifiedName().toString()));
             }
-            out.line(names.of(STATE_MACHINES) + ".Builder<" + e + ", " + s + "> " + variable + " = " + names.of(STATE_MACHINES)
-                    + ".from(" + companionName(accessor, names) + ".graph(" + String.join(", ", arguments) + "))");
+            out.line(names.of(STATE_MACHINES) + ".Builder<" + e + ", " + s + ", " + t + "> " + variable + " = "
+                    + names.of(STATE_MACHINES) + ".from(" + companionName(accessor, names) + ".graph("
+                    + String.join(", ", arguments) + "))");
             out.indent().indent();
             out.line(".state(" + e + "::" + machine.stateGetter().method() + ", " + e + "::" + machine.stateSetter().method() + ")");
             out.line(".identity(" + e + "::" + machine.idGetter().method() + ")");
@@ -255,6 +258,7 @@ public final class SetGenerator {
             types.add(MachineGenerator.qualifiedName(machine));
             types.add(machine.types().entityElement().getQualifiedName().toString());
             types.add(machine.types().statesElement().getQualifiedName().toString());
+            types.add(machine.types().transitionsElement().getQualifiedName().toString());
         }
         for (TypeElement dependency : model.dependencies()) {
             types.add(dependency.getQualifiedName().toString());

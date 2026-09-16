@@ -70,23 +70,34 @@ class PublishedArtifactSmokeTest {
 
             public class PublishedConsumer {
                 enum State { NEW, DONE }
+                enum Id { FINISH, ABANDON }
                 static final class Entity { State state = State.NEW; }
-                private static final MachineKey<Entity, State> KEY = MachineKey.of(Entity.class, State.class);
+                private static final MachineKey<Entity, State, Id> KEY =
+                        MachineKey.of(Entity.class, State.class, Id.class);
 
-                private static GraphDefinition<Entity, State> graph(String action) {
+                private static GraphDefinition<Entity, State, Id> graph(String action) {
                     return StateGraph.define(KEY).initial(State.NEW).terminal(State.DONE)
-                            .from(State.NEW).to(State.DONE).action(action, context -> ActionOutcome.ok())
-                            .stay().forbidOthers("finish first")
-                            .from(State.DONE).stay().forbidOthers("done").build();
+                            .statePolicy(State.NEW, "finish first")
+                            .transition(Id.FINISH, State.NEW, State.DONE)
+                            .action(action, context -> ActionOutcome.ok())
+                            .endTransition().build();
                 }
 
                 public static void main(String[] args) throws Exception {
-                    GraphDefinition<Entity, State> definition = graph("finish");
+                    GraphDefinition<Entity, State, Id> definition = graph("finish");
                     assertThat(definition).hasInitial(State.NEW).hasTerminalsExactly(State.DONE)
-                            .edge(State.NEW, State.DONE).isAction().hasActionNamed("finish").hasNoGuards();
+                            .hasTransitionsExactly(State.NEW, Id.FINISH)
+                            .hasNoTransition(State.NEW, Id.ABANDON)
+                            .transition(State.NEW, Id.FINISH).hasTarget(State.DONE).isAction()
+                            .hasActionNamed("finish").hasNoGuards();
+                    assertThat(definition).policy(State.NEW).hasDefaultReason("finish first")
+                            .rejects(Id.ABANDON, "finish first");
                     GraphSnapshot snapshot = GraphSnapshot.capture(definition);
+                    if (!snapshot.serialize().startsWith("graphmaquina-snapshot-v2\\n")) {
+                        throw new AssertionError("the published snapshot must be version 2");
+                    }
                     GraphDiff diff = GraphDiff.compare(snapshot, GraphSnapshot.capture(graph("complete")));
-                    if (!List.of(new GraphDiff.Change("/cells/NEW/DONE/action/name",
+                    if (!List.of(new GraphDiff.Change("/transitions/NEW/FINISH/action/name",
                             Optional.of("finish"), Optional.of("complete"))).equals(diff.changes())) {
                         throw new AssertionError("the action change must be detected structurally");
                     }
@@ -98,26 +109,31 @@ class PublishedArtifactSmokeTest {
                     }
                     Entity entity = new Entity();
                     StateSnapshot before = StateSnapshot.builder().track(KEY, entity, value -> value.state).capture();
-                    StateMachine<Entity, State> machine = StateMachines.from(definition)
+                    StateMachine<Entity, State, Id> machine = StateMachines.from(definition)
                             .state(value -> value.state, (value, state) -> value.state = state)
                             .asyncExecutor(Runnable::run).build();
-                    assertThat(machine.transitionTo(entity, State.DONE)).isApplied().movedTo(State.DONE)
+                    assertThat(machine.execute(entity, Id.FINISH)).isApplied().movedTo(State.DONE)
+                            .requestedTransition(Id.FINISH)
                             .hasEntityState(value -> value.state, State.DONE).records().hasSize(1);
                     if (before.changes().size() != 1) {
                         throw new AssertionError("the actual state write must be observed");
                     }
                     CallTrace trace = CallTrace.create();
-                    var guard = GuardProbe.<Entity, State>create("gate", trace).thenReturn(GuardResult.pass());
-                    var action = ActionProbe.<Entity, State>create("finish", trace).thenReturn(ActionOutcome.ok());
-                    var inputGraph = StateGraph.define(KEY).initial(State.NEW).terminal(State.DONE)
-                            .from(State.NEW).to(State.DONE).action("finish", action).guard("gate", guard)
-                            .stay().forbidOthers("finish first")
-                            .from(State.DONE).stay().forbidOthers("done").build();
-                    var inputMachine = StateMachines.from(inputGraph)
+                    GuardProbe<Entity, State, Id> guard =
+                            GuardProbe.<Entity, State, Id>create("gate", trace).thenReturn(GuardResult.pass());
+                    ActionProbe<Entity, State, Id> action =
+                            ActionProbe.<Entity, State, Id>create("finish", trace).thenReturn(ActionOutcome.ok());
+                    GraphDefinition<Entity, State, Id> inputGraph = StateGraph.define(KEY)
+                            .initial(State.NEW).terminal(State.DONE)
+                            .statePolicy(State.NEW, "finish first")
+                            .transition(Id.FINISH, State.NEW, State.DONE)
+                            .action("finish", action).guard("gate", guard)
+                            .endTransition().build();
+                    StateMachine<Entity, State, Id> inputMachine = StateMachines.from(inputGraph)
                             .state(value -> value.state, (value, state) -> value.state = state)
                             .asyncExecutor(Runnable::run).build();
                     String input = new String("approved");
-                    assertThat(inputMachine.transitionTo(new Entity(), State.DONE, input)).isApplied();
+                    assertThat(inputMachine.execute(new Entity(), Id.FINISH, input)).isApplied();
                     assertThat(guard.calls().single()).hasInput("approved").hasInputSameAs(input);
                     assertThat(action.calls().single()).inputSatisfies(CharSequence.class, value -> {
                         if (value != input) { throw new AssertionError("input identity was lost"); }
@@ -125,6 +141,10 @@ class PublishedArtifactSmokeTest {
                     if (guard.calls().single().input(String.class).orElseThrow() != input
                             || action.calls().single().input(String.class).orElseThrow() != input) {
                         throw new AssertionError("recorded input was lost");
+                    }
+                    if (guard.calls().single().transition() != Id.FINISH
+                            || action.calls().single().transition() != Id.FINISH) {
+                        throw new AssertionError("the recorded identifier was lost");
                     }
                     System.out.println("PUBLIC_API_OK");
                 }

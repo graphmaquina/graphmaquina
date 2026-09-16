@@ -9,10 +9,10 @@ import lombok.NonNull;
 @Getter
 public final class UninitializedStateException extends StateMachineException {
 
-    private final MachineKey<?, ?> key;
+    private final MachineKey<?, ?, ?> key;
     private final Object entity;
 
-    public UninitializedStateException(MachineKey<?, ?> key, @NonNull Object entity) {
+    public UninitializedStateException(MachineKey<?, ?, ?> key, @NonNull Object entity) {
         super("the state of " + Objects.requireNonNull(key, "key")
                 + " is null: set the state in the entity's constructor, for example with definition().initial()");
         this.key = key;

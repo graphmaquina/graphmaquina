@@ -65,7 +65,7 @@ class PublishedGraphsTest {
 
         assertEquals("""
                 {
-                  "schemaVersion": 1,
+                  "schemaVersion": 2,
                   "generatedTypes": [
                     "fx.DocsRuntime",
                     "fx.LibraryRuntime",
@@ -104,7 +104,7 @@ class PublishedGraphsTest {
         assertTrue(result.hasGenerated("cons.ArchivesRuntime"), result::describe);
         assertTrue(result.hasGenerated("cons.ShelfRuntime"), result::describe);
         assertTrue(ManifestProcessors.Recording.claimed().containsAll(
-                List.of("prod.BillsGraph.Definition", "prod.BillsGraph.Action", "cons.ArchivesGraph.Definition")),
+                List.of("prod.BillsGraph.Definition", "prod.BillsGraph.Transition", "cons.ArchivesGraph.Definition")),
                 () -> ManifestProcessors.Recording.claimed().toString());
 
         ExportIndex index = ManifestCodec.readExports(prepared.request().classesOutput().resolve(PUBLISHED));
@@ -160,6 +160,10 @@ class PublishedGraphsTest {
                 package prod;
                 public enum BillStatus { OPEN, PAID }
                 """);
+        sources.put("prod.BillTransition", """
+                package prod;
+                public enum BillTransition { SETTLE, CANCEL }
+                """);
         sources.put("prod.Bill", """
                 package prod;
                 import io.github.graphmaquina.annotation.GraphProperty;
@@ -178,10 +182,10 @@ class PublishedGraphsTest {
                 import io.github.graphmaquina.api.ActionOutcome;
                 import io.github.graphmaquina.api.TransitionContext;
                 public final class BillActions {
-                    @GraphAction public ActionOutcome settle(TransitionContext<Bill, BillStatus> context) {
+                    @GraphAction public ActionOutcome settle(TransitionContext<Bill, BillStatus, BillTransition> context) {
                         return ActionOutcome.ok();
                     }
-                    @GraphAction public ActionOutcome cancel(TransitionContext<Bill, BillStatus> context) {
+                    @GraphAction public ActionOutcome cancel(TransitionContext<Bill, BillStatus, BillTransition> context) {
                         return ActionOutcome.ok();
                     }
                 }
@@ -192,13 +196,14 @@ class PublishedGraphsTest {
                 import io.github.graphmaquina.api.Machine;
                 import io.github.graphmaquina.api.Outcome;
                 import static prod.BillStatus.*;
+                import static prod.BillTransition.*;
                 @GenerateGraphApi
                 @BillsGraph.Definition(initial = OPEN, terminals = PAID,
                     state = BillRefs.Status.class, id = BillRefs.Id.class)
-                @BillsGraph.Row(state = OPEN, otherwise = "a bill is settled")
-                public interface Bills extends Machine<Bill, BillStatus> {
-                    @BillsGraph.Action(from = OPEN, to = PAID, action = BillActionsRefs.Settle.class)
-                    Outcome<Bill, BillStatus> settle(Bill bill);
+                @BillsGraph.StatePolicy(state = OPEN, otherwise = "a bill is settled")
+                public interface Bills extends Machine<Bill, BillStatus, BillTransition> {
+                    @BillsGraph.Transition(id = SETTLE, from = OPEN, to = PAID, action = BillActionsRefs.Settle.class)
+                    Outcome<Bill, BillStatus, BillTransition> settle(Bill bill);
                 }
                 """);
         sources.put("prod.Ledger", """
@@ -225,14 +230,16 @@ class PublishedGraphsTest {
                 import prod.BillActionsRefs;
                 import prod.BillRefs;
                 import prod.BillStatus;
+                import prod.BillTransition;
                 import static prod.BillStatus.*;
+                import static prod.BillTransition.*;
                 @GenerateGraphApi
                 @ArchivesGraph.Definition(initial = OPEN, terminals = PAID,
                     state = BillRefs.Status.class, id = BillRefs.Id.class)
-                @ArchivesGraph.Row(state = OPEN, otherwise = "an archived bill is cancelled")
-                public interface Archives extends Machine<Bill, BillStatus> {
-                    @ArchivesGraph.Action(from = OPEN, to = PAID, action = BillActionsRefs.Cancel.class)
-                    Outcome<Bill, BillStatus> cancel(Bill bill);
+                @ArchivesGraph.StatePolicy(state = OPEN, otherwise = "an archived bill is cancelled")
+                public interface Archives extends Machine<Bill, BillStatus, BillTransition> {
+                    @ArchivesGraph.Transition(id = CANCEL, from = OPEN, to = PAID, action = BillActionsRefs.Cancel.class)
+                    Outcome<Bill, BillStatus, BillTransition> cancel(Bill bill);
                 }
                 """);
         sources.put("cons.Shelf", """

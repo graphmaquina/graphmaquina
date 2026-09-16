@@ -14,31 +14,32 @@ import java.util.List;
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
+ * @param <T> transition identifier enum of the machine
  */
-public final class TypedReactionsAssert<E, S extends Enum<S>> {
+public final class TypedReactionsAssert<E, S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
-    private final MachineKey<E, S> key;
+    private final MachineKey<E, S, T> key;
     private final List<Reaction> actual;
 
-    TypedReactionsAssert(String context, MachineKey<E, S> key, List<Reaction> actual) {
+    TypedReactionsAssert(String context, MachineKey<E, S, T> key, List<Reaction> actual) {
         this.context = context;
         this.key = key;
         this.actual = actual;
     }
 
-    public TypedReactionsAssert<E, S> hasSize(int expected) {
+    public TypedReactionsAssert<E, S, T> hasSize(int expected) {
         Checks.equal(context, "size", expected, actual.size());
         return this;
     }
 
     /** The one reaction of this entity; a selection of any other size fails rather than picking the first. */
-    public ReactionAssert<E, S> single() {
+    public ReactionAssert<E, S, T> single() {
         Checks.equal(context, "size", 1, actual.size());
         return atIndex(0);
     }
 
-    public ReactionAssert<E, S> atIndex(int index) {
+    public ReactionAssert<E, S, T> atIndex(int index) {
         if (index < 0) {
             throw new IllegalArgumentException("index must not be negative: " + index);
         }

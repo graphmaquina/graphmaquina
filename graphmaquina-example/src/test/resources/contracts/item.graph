@@ -1,74 +1,17 @@
-graphmaquina-snapshot-v1
-/cells/CANCELLED/CANCELLED/failsOn/count	0
-/cells/CANCELLED/CANCELLED/guards/count	0
-/cells/CANCELLED/CANCELLED/kind	STAY
-/cells/CANCELLED/CANCELLED/reason	
-/cells/CANCELLED/PACKED/failsOn/count	0
-/cells/CANCELLED/PACKED/guards/count	0
-/cells/CANCELLED/PACKED/kind	FORBID
-/cells/CANCELLED/PACKED/reason	CANCELLED is final
-/cells/CANCELLED/PACKING/failsOn/count	0
-/cells/CANCELLED/PACKING/guards/count	0
-/cells/CANCELLED/PACKING/kind	FORBID
-/cells/CANCELLED/PACKING/reason	CANCELLED is final
-/cells/CANCELLED/PENDING/failsOn/count	0
-/cells/CANCELLED/PENDING/guards/count	0
-/cells/CANCELLED/PENDING/kind	FORBID
-/cells/CANCELLED/PENDING/reason	CANCELLED is final
-/cells/PACKED/CANCELLED/failsOn/count	0
-/cells/PACKED/CANCELLED/guards/count	0
-/cells/PACKED/CANCELLED/kind	FORBID
-/cells/PACKED/CANCELLED/reason	PACKED is final
-/cells/PACKED/PACKED/failsOn/count	0
-/cells/PACKED/PACKED/guards/count	0
-/cells/PACKED/PACKED/kind	STAY
-/cells/PACKED/PACKED/reason	
-/cells/PACKED/PACKING/failsOn/count	0
-/cells/PACKED/PACKING/guards/count	0
-/cells/PACKED/PACKING/kind	FORBID
-/cells/PACKED/PACKING/reason	PACKED is final
-/cells/PACKED/PENDING/failsOn/count	0
-/cells/PACKED/PENDING/guards/count	0
-/cells/PACKED/PENDING/kind	FORBID
-/cells/PACKED/PENDING/reason	PACKED is final
-/cells/PACKING/CANCELLED/failsOn/count	0
-/cells/PACKING/CANCELLED/guards/count	0
-/cells/PACKING/CANCELLED/kind	MOVE
-/cells/PACKING/CANCELLED/reason	
-/cells/PACKING/PACKED/action/async	false
-/cells/PACKING/PACKED/action/name	pack
-/cells/PACKING/PACKED/failsOn/count	0
-/cells/PACKING/PACKED/guards/count	0
-/cells/PACKING/PACKED/kind	ACTION
-/cells/PACKING/PACKED/reason	
-/cells/PACKING/PACKING/failsOn/count	0
-/cells/PACKING/PACKING/guards/count	0
-/cells/PACKING/PACKING/kind	STAY
-/cells/PACKING/PACKING/reason	
-/cells/PACKING/PENDING/failsOn/count	0
-/cells/PACKING/PENDING/guards/count	0
-/cells/PACKING/PENDING/kind	FORBID
-/cells/PACKING/PENDING/reason	cannot go back to pending
-/cells/PENDING/CANCELLED/failsOn/count	0
-/cells/PENDING/CANCELLED/guards/count	0
-/cells/PENDING/CANCELLED/kind	MOVE
-/cells/PENDING/CANCELLED/reason	
-/cells/PENDING/PACKED/failsOn/count	0
-/cells/PENDING/PACKED/guards/count	0
-/cells/PENDING/PACKED/kind	FORBID
-/cells/PENDING/PACKED/reason	an item is packed by going through PACKING
-/cells/PENDING/PACKING/failsOn/count	0
-/cells/PENDING/PACKING/guards/count	0
-/cells/PENDING/PACKING/kind	MOVE
-/cells/PENDING/PACKING/reason	
-/cells/PENDING/PENDING/failsOn/count	0
-/cells/PENDING/PENDING/guards/count	0
-/cells/PENDING/PENDING/kind	STAY
-/cells/PENDING/PENDING/reason	
+graphmaquina-snapshot-v2
+/catalog/0	START_PACKING
+/catalog/1	PACK
+/catalog/2	CANCEL
+/catalog/count	3
 /hasAsync	false
 /initial	PENDING
 /machine/entity	io.github.graphmaquina.example.item.Item
 /machine/states	io.github.graphmaquina.example.item.ItemStatus
+/machine/transitions	io.github.graphmaquina.example.item.ItemTransition
+/policies/CANCELLED/otherwise	terminal state CANCELLED accepts no transitions
+/policies/PACKED/otherwise	terminal state PACKED accepts no transitions
+/policies/PACKING/otherwise	cannot go back to pending
+/policies/PENDING/otherwise	an item is packed by going through PACKING
 /states/0	PENDING
 /states/1	PACKING
 /states/2	PACKED
@@ -76,3 +19,21 @@ graphmaquina-snapshot-v1
 /states/count	4
 /terminals/CANCELLED	true
 /terminals/PACKED	true
+/transitions/PACKING/CANCEL/failsOn/count	0
+/transitions/PACKING/CANCEL/guards/count	0
+/transitions/PACKING/CANCEL/kind	MOVE
+/transitions/PACKING/CANCEL/to	CANCELLED
+/transitions/PACKING/PACK/action/async	false
+/transitions/PACKING/PACK/action/name	pack
+/transitions/PACKING/PACK/failsOn/count	0
+/transitions/PACKING/PACK/guards/count	0
+/transitions/PACKING/PACK/kind	ACTION
+/transitions/PACKING/PACK/to	PACKED
+/transitions/PENDING/CANCEL/failsOn/count	0
+/transitions/PENDING/CANCEL/guards/count	0
+/transitions/PENDING/CANCEL/kind	MOVE
+/transitions/PENDING/CANCEL/to	CANCELLED
+/transitions/PENDING/START_PACKING/failsOn/count	0
+/transitions/PENDING/START_PACKING/guards/count	0
+/transitions/PENDING/START_PACKING/kind	MOVE
+/transitions/PENDING/START_PACKING/to	PACKING

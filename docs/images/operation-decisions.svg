@@ -1,83 +1,98 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1100" viewBox="0 0 1440 1100" role="img" aria-labelledby="title desc">
-<title id="title">How an operation chooses its result</title><desc id="desc">FORBID is rejected. STAY, MOVE and ACTION evaluate guards; an accepted STAY is ignored and a rejected guard is rejected. A move or successful action commits. A declared failure route can commit an Outcome.Failed. Technical errors throw; post-commit errors can occur after state changed.</desc>
+<title id="title">How an operation selects its edge and its result</title><desc id="desc">An operation names a transition identifier. The engine resolves the single edge keyed by the current state and that identifier. With no such edge the node's policy rejects the request as NO_TRANSITION. Otherwise guards run, and a rejecting guard rejects as GUARD. A move or successful action commits the resolved edge as Applied; a returned business failure resolves the onFailure identifier from the same origin and commits it as Failed. Reevaluation is a separate entry point whose only results are Ignored with NO_WATCH or NO_RULE_MATCHED. Technical errors throw instead of producing an outcome.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
-  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
   <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
 </defs>
 <rect x="0" y="0" width="1440" height="1100" rx="24" fill="url(#back)" />
 <rect x="0" y="0" width="1440" height="1100" rx="24" fill="url(#grid)" />
 <text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / OPERATION FLOW</text>
-<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">Follow the decision, not just the destination.</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">One identifier. One edge. One answer.</text>
 <text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Simplified root operation; hooks, watches and listener follow a successful commit.</text>
+
 <rect x="52" y="219" width="302" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="52" y="237" width="4" height="108" rx="2" fill="#7aafff" />
-<text x="76" y="263" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Requested cell</text>
-<text x="76" y="303" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Current state → target</text>
+<text x="76" y="263" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Request an edge</text>
+<text x="76" y="303" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="start">execute(entity, APPROVE)</text>
+<text x="76" y="334" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Never a target state</text>
+
 <rect x="491" y="219" width="344" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="491" y="237" width="4" height="108" rx="2" fill="#c3a2ff" />
-<text x="515" y="263" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Evaluate guards</text>
-<text x="515" y="303" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">STAY / MOVE / ACTION</text>
+<text x="515" y="263" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Resolve (from, id)</text>
+<text x="515" y="303" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Exactly one edge, or none</text>
+<text x="515" y="334" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Resolved once, never retried</text>
+
 <rect x="1002" y="219" width="386" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="1002" y="237" width="4" height="108" rx="2" fill="#ffc77a" />
-<text x="1026" y="263" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Guard rejects</text>
-<text x="1026" y="303" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome.Rejected</text>
-<text x="1026" y="334" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">No staged state commit</text>
+<text x="1026" y="263" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">No edge: the node answers</text>
+<text x="1026" y="303" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Rejected · NO_TRANSITION</text>
+<text x="1026" y="334" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">The policy supplies the reason</text>
+
 <path d="M 354 291 L 491 291" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 481 284 L 491 291 L 481 298" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 835 291 L 1002 291" fill="none" stroke="#ffc77a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 992 284 L 1002 291 L 992 298" fill="none" stroke="#ffc77a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="906" y="270" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#ffc77a" text-anchor="middle">reject</text>
+<text x="916" y="270" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#ffc77a" text-anchor="middle">nothing keyed</text>
+
 <rect x="52" y="461" width="302" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<rect x="52" y="479" width="4" height="108" rx="2" fill="#ffc77a" />
-<text x="76" y="505" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">FORBID</text>
-<text x="76" y="545" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome.Rejected</text>
-<text x="76" y="576" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">No state change</text>
-<path d="M 203 363 L 203 461" fill="none" stroke="#ffc77a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 196 451 L 203 461 L 210 451" fill="none" stroke="#ffc77a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="52" y="479" width="4" height="108" rx="2" fill="#a9b8ce" />
+<text x="76" y="505" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">reevaluate(entity)</text>
+<text x="76" y="545" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">A separate entry point</text>
+<text x="76" y="576" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Selects an edge, or does not</text>
+
 <rect x="491" y="461" width="344" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="491" y="479" width="4" height="108" rx="2" fill="#c3a2ff" />
-<text x="515" y="505" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Select behavior</text>
-<text x="515" y="545" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">MOVE: no action</text>
-<text x="515" y="576" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">ACTION: run / await action</text>
+<text x="515" y="505" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Run the resolved edge</text>
+<text x="515" y="545" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Guards in declaration order</text>
+<text x="515" y="576" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">MOVE: none · ACTION: await</text>
+
+<rect x="1002" y="461" width="386" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="1002" y="479" width="4" height="108" rx="2" fill="#ffc77a" />
+<text x="1026" y="505" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">A guard rejects</text>
+<text x="1026" y="545" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Rejected · GUARD, guard named</text>
+<text x="1026" y="576" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">No staged state commit</text>
+
+<path d="M 663 363 L 663 461" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 656 451 L 663 461 L 670 451" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="692" y="418" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#55e0c0" text-anchor="start">one edge found</text>
+
+<path d="M 835 533 L 1002 533" fill="none" stroke="#ffc77a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 992 526 L 1002 533 L 992 540" fill="none" stroke="#ffc77a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="916" y="512" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#ffc77a" text-anchor="middle">reject</text>
+
 <rect x="52" y="720" width="302" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="52" y="738" width="4" height="108" rx="2" fill="#a9b8ce" />
 <text x="76" y="764" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Outcome.Ignored</text>
-<text x="76" y="804" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">STAY: no state change</text>
-<path d="M 491 551 H 406 V 792 H 354" fill="none" stroke="#a9b8ce" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 385 792 L 354 792" fill="none" stroke="#a9b8ce" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 364 785 L 354 792 L 364 799" fill="none" stroke="#a9b8ce" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="383" y="676" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#a9b8ce" text-anchor="end">STAY</text>
-<path d="M 663 363 L 663 461" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 656 451 L 663 461 L 670 451" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="692" y="418" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#55e0c0" text-anchor="start">guards pass</text>
-<rect x="1002" y="461" width="386" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
-<rect x="1002" y="479" width="4" height="108" rx="2" fill="#ff8998" />
-<text x="1026" y="505" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Business failure</text>
-<text x="1026" y="545" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Select declared onFailure</text>
-<text x="1026" y="576" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Missing route → exception</text>
-<path d="M 835 533 L 1002 533" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 992 526 L 1002 533 L 992 540" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="911" y="505" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#ff8998" text-anchor="middle">failed()</text>
+<text x="76" y="804" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">NO_WATCH</text>
+<text x="76" y="835" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">NO_RULE_MATCHED</text>
+
+<path d="M 203 605 L 203 720" fill="none" stroke="#a9b8ce" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 196 710 L 203 720 L 210 710" fill="none" stroke="#a9b8ce" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="228" y="668" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">no rule held</text>
+
 <rect x="491" y="720" width="344" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="491" y="738" width="4" height="108" rx="2" fill="#55e0c0" />
-<text x="515" y="764" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Commit requested edge</text>
+<text x="515" y="764" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Commit that same edge</text>
 <text x="515" y="804" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome.Applied</text>
-<text x="515" y="835" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">State setters execute</text>
+<text x="515" y="835" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">A self-loop commits too</text>
+
 <path d="M 663 605 L 663 720" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 656 710 L 663 720 L 670 710" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="690" y="664" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#55e0c0" text-anchor="start">success</text>
+<text x="690" y="668" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#55e0c0" text-anchor="start">guards pass, action ok</text>
+
 <rect x="1002" y="720" width="386" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="1002" y="738" width="4" height="108" rx="2" fill="#ff8998" />
-<text x="1026" y="764" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Commit failure route</text>
-<text x="1026" y="804" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome.Failed</text>
-<text x="1026" y="835" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Actual state = movedTo()</text>
-<path d="M 1195 605 L 1195 720" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<path d="M 1188 710 L 1195 720 L 1202 710" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="1220" y="649" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#ff8998" text-anchor="start">route succeeds</text>
+<text x="1026" y="764" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Commit the onFailure edge</text>
+<text x="1026" y="804" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Its id, resolved from the origin</text>
+<text x="1026" y="835" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome.Failed · movedTo()</text>
+
+<path d="M 835 585 H 918 V 792 H 1002" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 992 785 L 1002 792 L 992 799" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="938" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="600" fill="#ff8998" text-anchor="start">action failed()</text>
+
 <rect x="52" y="911" width="1336" height="89" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <text x="78" y="947" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ff8998" text-anchor="start">TECHNICAL EXCEPTION</text>
-<text x="78" y="981" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A timeout aborts before commit. A hook/listener failure may happen after commit.</text>
+<text x="78" y="981" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A timeout aborts before commit. A hook or listener failure may happen after commit. Neither becomes an Outcome.</text>
 <path d="M 52 1036 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="52" y="1071" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">Handled failure is a normal Outcome. Inspect exceptions and watch reactions separately.</text>
+<text x="52" y="1071" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">No second edge is ever tried: another edge reaching the same state is a different transition, and it is not a substitute.</text>
 </svg>

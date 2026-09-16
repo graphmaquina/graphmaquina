@@ -1,18 +1,18 @@
 digraph "Order/OrderStatus" {
     rankdir=LR;
     initial [shape=point, label=""];
-    n0 [label="NEW", shape=ellipse];
-    n1 [label="PAID", shape=ellipse];
-    n2 [label="PAYMENT_DECLINED", shape=ellipse];
-    n3 [label="SHIPPED", shape=doublecircle];
-    n4 [label="CANCELLED", shape=doublecircle];
+    n0 [label="NEW", shape=ellipse, tooltip="otherwise: cannot ship without payment"];
+    n1 [label="PAID", shape=ellipse, tooltip="otherwise: money was charged: requires a refund"];
+    n2 [label="PAYMENT_DECLINED", shape=ellipse, tooltip="otherwise: go back to NEW to retry the charge"];
+    n3 [label="SHIPPED", shape=doublecircle, tooltip="otherwise: a shipment cannot be undone"];
+    n4 [label="CANCELLED", shape=doublecircle, tooltip="otherwise: cancelled is final"];
     initial -> n0;
-    n0 -> n1 [label="pay [async] [if retryBudgetLeft]"];
-    n0 -> n2 [label="[failure of pay]"];
-    n0 -> n4 [label="cancel"];
-    n1 -> n3 [label="ship [if allItemsPacked] [watches Item: allIn PACKED]"];
-    n2 -> n0 [label="[if retryBudgetLeft]"];
-    n2 -> n4 [label="cancel"];
+    n0 -> n1 [label="PAY pay [async] [if retryBudgetLeft] [onFailure PAYMENT_DECLINED]"];
+    n0 -> n4 [label="CANCEL cancel"];
+    n0 -> n2 [label="PAYMENT_DECLINED"];
+    n1 -> n3 [label="SHIP ship [if allItemsPacked] [watches Item: allIn PACKED]"];
+    n2 -> n0 [label="RETRY [if retryBudgetLeft]"];
+    n2 -> n4 [label="CANCEL cancel"];
     watch0 [shape=note, label="watches Item"];
     n1 -> watch0 [style=dashed, arrowhead=none];
 }

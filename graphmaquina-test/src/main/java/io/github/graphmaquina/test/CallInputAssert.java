@@ -18,11 +18,11 @@ public final class CallInputAssert {
         this.input = input;
     }
 
-    public static CallInputAssert assertThat(GuardCall<?, ?> actual) {
+    public static CallInputAssert assertThat(GuardCall<?, ?, ?> actual) {
         return new CallInputAssert("guard call", actual == null ? null : actual.input());
     }
 
-    public static CallInputAssert assertThat(ActionCall<?, ?> actual) {
+    public static CallInputAssert assertThat(ActionCall<?, ?, ?> actual) {
         return new CallInputAssert("action call", actual == null ? null : actual.input());
     }
 

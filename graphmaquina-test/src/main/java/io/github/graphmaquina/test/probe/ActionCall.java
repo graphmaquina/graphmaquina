@@ -11,26 +11,33 @@ import java.util.Optional;
  * keeps moving after the call, so read it for identity rather than for the state it had then.
  * Input is also the reference read on entry, not a deep copy; mutations to that object remain visible.
  *
+ * <p>The identifier is recorded alongside the endpoints, because it is what selected this edge: two edges
+ * that connect the same pair of states are distinguishable here and nowhere else.
+ *
  * @param entity the entity the action was invoked for
  * @param from the state the entity was in when the action was entered
+ * @param transition the identifier that selected the edge being executed
  * @param to the state the transition was heading for
  * @param depth 0 at the root transition, n at the n-th level of cascade
  * @param input the operation argument, or empty when none was provided
  * @param <E> the entity type of the machine
  * @param <S> the state enum of the machine
+ * @param <T> the transition identifier enum of the machine
  */
-public record ActionCall<E, S extends Enum<S>>(E entity, S from, S to, int depth, Optional<?> input) {
+public record ActionCall<E, S extends Enum<S>, T extends Enum<T>>(E entity, S from, T transition, S to, int depth,
+        Optional<?> input) {
 
     public ActionCall {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(transition, "transition");
         Objects.requireNonNull(to, "to");
         Objects.requireNonNull(input, "input");
     }
 
-    /** Creates a call with no operation input, preserving the original constructor. */
-    public ActionCall(E entity, S from, S to, int depth) {
-        this(entity, from, to, depth, Optional.empty());
+    /** Creates a call with no operation input. */
+    public ActionCall(E entity, S from, T transition, S to, int depth) {
+        this(entity, from, transition, to, depth, Optional.empty());
     }
 
     /**

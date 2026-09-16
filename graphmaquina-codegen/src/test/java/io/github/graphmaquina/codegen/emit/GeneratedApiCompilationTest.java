@@ -42,6 +42,10 @@ class GeneratedApiCompilationTest {
             package fx;
             public enum DocStatus { DRAFT, REVIEW, PUBLISHED }
             """);
+        sources.put("fx.DocTransition", """
+            package fx;
+            public enum DocTransition { SUBMIT, PUBLISH, ARCHIVE }
+            """);
         sources.put("fx.Doc", """
             package fx;
             import io.github.graphmaquina.annotation.GraphProperty;
@@ -60,7 +64,7 @@ class GeneratedApiCompilationTest {
             import io.github.graphmaquina.annotation.GenerateGraphApi;
             import io.github.graphmaquina.api.Machine;
             @GenerateGraphApi
-            public interface Docs extends Machine<Doc, DocStatus> {}
+            public interface Docs extends Machine<Doc, DocStatus, DocTransition> {}
             """);
         sources.put("fx.DocActions", """
             package fx;
@@ -89,29 +93,40 @@ class GeneratedApiCompilationTest {
                 allowsCycle = {},
                 state = fx.DocRefs.Status.class,
                 id = fx.DocRefs.Id.class)
-        @fx.DocsGraph.Row(state = fx.DocStatus.DRAFT, otherwise = "a draft must be reviewed first")
-        @fx.DocsGraph.Row(state = fx.DocStatus.REVIEW, otherwise = "a review must be published first")
-        @fx.DocsGraph.Cell(from = fx.DocStatus.DRAFT, to = fx.DocStatus.REVIEW)
-        @fx.DocsGraph.Cell(
+        @fx.DocsGraph.StatePolicy(state = fx.DocStatus.DRAFT, otherwise = "a draft must be reviewed first")
+        @fx.DocsGraph.StatePolicy(state = fx.DocStatus.REVIEW, otherwise = "a review must be published first")
+        @fx.DocsGraph.Transition(
+                id = fx.DocTransition.SUBMIT,
+                from = fx.DocStatus.DRAFT,
+                to = fx.DocStatus.REVIEW)
+        @fx.DocsGraph.Transition(
+                id = fx.DocTransition.PUBLISH,
                 from = fx.DocStatus.REVIEW,
                 to = fx.DocStatus.PUBLISHED,
                 action = fx.DocActionsRefs.Publish.class,
                 guards = fx.DocActionsRefs.Reviewed.class)
-        @fx.DocsGraph.Forbid(from = fx.DocStatus.DRAFT, to = fx.DocStatus.PUBLISHED, reason = "review first")
+        @fx.DocsGraph.Reject(
+                from = fx.DocStatus.DRAFT,
+                transition = fx.DocTransition.PUBLISH,
+                reason = "review first")
         public interface DocsUsage {
 
-            @fx.DocsGraph.Action(
+            @fx.DocsGraph.Transition(
+                    id = fx.DocTransition.PUBLISH,
                     from = fx.DocStatus.REVIEW,
                     to = fx.DocStatus.PUBLISHED,
                     action = fx.DocActionsRefs.Publish.class,
                     guards = fx.DocActionsRefs.Reviewed.class,
-                    onFailure = fx.DocStatus.DRAFT,
+                    onFailure = fx.DocTransition.ARCHIVE,
                     failsOn = java.io.IOException.class,
                     timeout = @Timeout(seconds = 5),
                     afterCommit = fx.DocActionsRefs.Notified.class)
             void publish();
 
-            @fx.DocsGraph.Move(from = fx.DocStatus.DRAFT, to = fx.DocStatus.REVIEW)
+            @fx.DocsGraph.Transition(
+                    id = fx.DocTransition.SUBMIT,
+                    from = fx.DocStatus.DRAFT,
+                    to = fx.DocStatus.REVIEW)
             void review();
         }
         """);
@@ -127,7 +142,15 @@ class GeneratedApiCompilationTest {
 
         String vocabulary = content(emitted, "fx.DocsGraph");
         assertTrue(vocabulary.contains("fx.DocStatus initial();"), vocabulary);
-        assertTrue(vocabulary.contains("Class<? extends ActionSymbol> action();"), vocabulary);
+        assertTrue(vocabulary.contains("fx.DocTransition id();"), vocabulary);
+        assertTrue(vocabulary.contains("fx.DocTransition[] onFailure() default {};"), vocabulary);
+        assertTrue(vocabulary.contains("Class<? extends ActionSymbol>[] action() default {};"), vocabulary);
+        assertTrue(vocabulary.contains("Class<? extends PropertySymbol> state();"), vocabulary);
+        assertTrue(vocabulary.contains("Class<? extends PropertySymbol> id();"), vocabulary);
+        assertTrue(vocabulary.contains("Class<? extends HookSymbol>[] afterCommit() default {};"), vocabulary);
+        for (String retired : List.of("Row", "Rows", "Cell", "Cells", "Action", "Move", "Forbid", "Forbids")) {
+            assertFalse(vocabulary.contains("public @interface " + retired + " {"), retired);
+        }
         assertTrue(content(emitted, "fx.DocActionsRefs").contains("public static final class Publish "
                 + "implements io.github.graphmaquina.symbol.ActionSymbol {"), content(emitted, "fx.DocActionsRefs"));
 
@@ -157,7 +180,7 @@ class GeneratedApiCompilationTest {
                 "bad.OtherStatus", "package bad; public enum OtherStatus { NEW }",
                 "bad.WrongEnum", """
                     package bad;
-                    @fx.DocsGraph.Row(state = bad.OtherStatus.NEW, otherwise = "another machine's enum")
+                    @fx.DocsGraph.StatePolicy(state = bad.OtherStatus.NEW, otherwise = "another machine's enum")
                     public interface WrongEnum {}
                     """));
 
@@ -174,6 +197,10 @@ class GeneratedApiCompilationTest {
             package com.Acme.docs;
             public enum DocStatus { DRAFT, PUBLISHED }
             """,
+        "com.Acme.docs.DocTransition", """
+            package com.Acme.docs;
+            public enum DocTransition { SUBMIT, PUBLISH, ARCHIVE }
+            """,
         "com.Acme.docs.Doc", """
             package com.Acme.docs;
             import io.github.graphmaquina.annotation.GraphProperty;
@@ -188,7 +215,7 @@ class GeneratedApiCompilationTest {
             import io.github.graphmaquina.annotation.GenerateGraphApi;
             import io.github.graphmaquina.api.Machine;
             @GenerateGraphApi
-            public interface Docs extends Machine<Doc, DocStatus> {}
+            public interface Docs extends Machine<Doc, DocStatus, DocTransition> {}
             """,
         "com.Acme.docs.DocActions", """
             package com.Acme.docs;
@@ -225,7 +252,8 @@ class GeneratedApiCompilationTest {
                     initial = com.Acme.docs.DocStatus.DRAFT,
                     state = com.Acme.docs.DocRefs.Status.class,
                     id = com.Acme.docs.DocRefs.Status.class)
-            @com.Acme.docs.DocsGraph.Cell(
+            @com.Acme.docs.DocsGraph.Transition(
+                    id = com.Acme.docs.DocTransition.PUBLISH,
                     from = com.Acme.docs.DocStatus.DRAFT,
                     to = com.Acme.docs.DocStatus.PUBLISHED,
                     action = com.Acme.docs.DocActionsRefs.Publish.class)
@@ -249,6 +277,7 @@ class GeneratedApiCompilationTest {
             import io.github.graphmaquina.api.Machine;
             public class Outer_Host {
                 public enum Status { NEW, DONE }
+                public enum Transition_id { PROCESS }
                 public static class Entity {
                     @GraphProperty public String _id;
                     @GraphProperty public Status current_state;
@@ -258,7 +287,7 @@ class GeneratedApiCompilationTest {
                     @GraphGuard public boolean has_title(Entity entity) { return true; }
                 }
                 @GenerateGraphApi
-                public interface Ticket_machine extends Machine<Entity, Status> {}
+                public interface Ticket_machine extends Machine<Entity, Status, Transition_id> {}
             }
             """);
         Path root = directory.resolve("sources");
@@ -276,7 +305,8 @@ class GeneratedApiCompilationTest {
             package fx;
             @OuterHostTicketMachineGraph.Definition(initial = Outer_Host.Status.NEW,
                 id = OuterHostEntityRefs.Id.class, state = OuterHostEntityRefs.CurrentState.class)
-            @OuterHostTicketMachineGraph.Cell(from = Outer_Host.Status.NEW, to = Outer_Host.Status.DONE,
+            @OuterHostTicketMachineGraph.Transition(id = Outer_Host.Transition_id.PROCESS,
+                from = Outer_Host.Status.NEW, to = Outer_Host.Status.DONE,
                 action = OuterHostHTTPActionsRefs.Process.class,
                 guards = OuterHostHTTPActionsRefs.HasTitle.class)
             public interface Usage {}
@@ -333,7 +363,7 @@ class GeneratedApiCompilationTest {
             import io.github.graphmaquina.annotation.GenerateGraphApi;
             import io.github.graphmaquina.api.Machine;
             @GenerateGraphApi
-            public interface _1machine extends Machine<String, Thread.State> {}
+            public interface _1machine extends Machine<String, Thread.State, java.time.DayOfWeek> {}
             """));
         GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(root),
             SourceFiles.classpath(), directory.resolve("generated"), directory.resolve("processor-generated"),
@@ -346,10 +376,57 @@ class GeneratedApiCompilationTest {
 
     @Test
     void namesEveryGeneratedAnnotationAndContainerCanonically() {
-        assertEquals(List.of("fx.DocsGraph.Action", "fx.DocsGraph.Cell", "fx.DocsGraph.Cells",
-                "fx.DocsGraph.Definition", "fx.DocsGraph.Forbid", "fx.DocsGraph.Forbids", "fx.DocsGraph.Move",
-                "fx.DocsGraph.Row", "fx.DocsGraph.Rows"),
+        assertEquals(List.of("fx.DocsGraph.Definition", "fx.DocsGraph.Reject", "fx.DocsGraph.Rejects",
+                "fx.DocsGraph.StatePolicies", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.Transition",
+                "fx.DocsGraph.Transitions"),
                 ApiEmitter.annotationTypes(model()).stream().sorted().toList());
+    }
+
+    /** The processor routes on these markers, so each annotation must carry the kind it was emitted for. */
+    @Test
+    void marksEveryAnnotationWithTheVocabularyKindItDeclares() {
+        String vocabulary = content(ApiEmitter.emit(model(), "io.github.graphmaquina:test:main"), "fx.DocsGraph");
+        List<String> kinds = new ArrayList<>();
+        for (String line : vocabulary.lines().toList()) {
+            int marker = line.indexOf("VocabularyKind.");
+            if (marker >= 0) {
+                kinds.add(line.substring(marker + "VocabularyKind.".length(), line.lastIndexOf(')')));
+            }
+        }
+        assertEquals(List.of("DEFINITION", "STATE_POLICY", "STATE_POLICIES", "TRANSITION", "TRANSITIONS",
+                "REJECT", "REJECTS"), kinds);
+    }
+
+    /**
+     * The three type errors the generated vocabulary must leave to javac: a state constant where a transition
+     * identifier belongs, a foreign machine's constant in {@code from}, and — for the same declaration written
+     * correctly — no error at all.
+     */
+    @Test
+    void refusesAStateConstantAsATransitionIdentifierAndAForeignConstantInFrom() {
+        List<GeneratedSource> emitted = ApiEmitter.emit(model(), "io.github.graphmaquina:test:main");
+        String declaration = """
+            package use;
+            @fx.DocsGraph.Transition(id = %s, from = %s, to = fx.DocStatus.REVIEW)
+            public interface TypedUsage {}
+            """;
+
+        SourceFiles.Compilation correct = compile(emitted, Map.of("use.TypedUsage",
+            declaration.formatted("fx.DocTransition.SUBMIT", "fx.DocStatus.DRAFT")));
+        assertTrue(correct.success(), () -> String.valueOf(correct.messages()));
+
+        SourceFiles.Compilation stateAsIdentifier = compile(emitted, Map.of("use.TypedUsage",
+            declaration.formatted("fx.DocStatus.DRAFT", "fx.DocStatus.DRAFT")));
+        assertFalse(stateAsIdentifier.success());
+        assertTrue(stateAsIdentifier.codes().stream().allMatch(code -> code.startsWith("compiler.err.")),
+            () -> String.valueOf(stateAsIdentifier.codes()));
+
+        SourceFiles.Compilation foreignFrom = compile(emitted, Map.of(
+            "bad.OtherStatus", "package bad; public enum OtherStatus { NEW }",
+            "use.TypedUsage", declaration.formatted("fx.DocTransition.SUBMIT", "bad.OtherStatus.NEW")));
+        assertFalse(foreignFrom.success());
+        assertTrue(foreignFrom.codes().stream().allMatch(code -> code.startsWith("compiler.err.")),
+            () -> String.valueOf(foreignFrom.codes()));
     }
 
     private GenerationModel model() {

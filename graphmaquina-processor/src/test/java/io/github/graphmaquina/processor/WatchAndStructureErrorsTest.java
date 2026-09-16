@@ -6,9 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 /**
- * What a watch and the outline of a whole graph must still hold once the vocabulary types every state and
- * every symbol. The identity of a pair and the shape of a rule are {@link TypedWatchTest}'s subject; here the
- * accessors a watch needs and the structural rules of the graph itself keep the codes they had.
+ * What a watch and the outline of a whole graph must still hold once the vocabulary types every state, every
+ * identifier and every symbol. The identity of a pair and the shape of a rule are {@link TypedWatchTest}'s
+ * subject; here the accessors a watch needs and the structural rules of the graph itself keep the codes they
+ * had.
  */
 class WatchAndStructureErrorsTest {
 
@@ -23,8 +24,8 @@ class WatchAndStructureErrorsTest {
         Compilation.Result condition = watch("""
                 @GraphPeers(Pages.class)
                 @DocsPages.Watch(state = REVIEW, peers = DocRefs.Pages.class, owner = PageRefs.Doc.class,
-                        rules = { @DocsPages.When(condition = DocActionsRefs.AllPagesDone.class, goTo = PUBLISHED),
-                                  @DocsPages.When(noneIn = PageStatus.OPEN, goTo = DRAFT) })
+                        rules = { @DocsPages.When(condition = DocActionsRefs.AllPagesDone.class, transition = PUBLISH),
+                                  @DocsPages.When(noneIn = PageStatus.OPEN, transition = RETURN) })
                 """);
         assertTrue(condition.success(), condition.describe());
     }
@@ -43,8 +44,8 @@ class WatchAndStructureErrorsTest {
     void structuralCodesComeOutOfJavac() {
         Compilation.Result unreachable = Compilation.compileTyped(Fixtures.withDocs(Fixtures.DOCS_HEADER,
                 Fixtures.DOCS_BODY.replace("""
-                            @DocsGraph.Move(from = DRAFT, to = REVIEW)
-                            Outcome<Doc, DocStatus> submit(Doc doc);
+                            @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                            Outcome<Doc, DocStatus, DocTransition> submit(Doc doc);
                         """, "")));
         assertTrue(unreachable.hasError("SG203"), unreachable.describe());
         assertEquals(Fixtures.HEADER_LINE, unreachable.lineOf("SG203"), unreachable.describe());
@@ -64,10 +65,10 @@ class WatchAndStructureErrorsTest {
         assertTrue(deadCycle.hasError("SG205"), deadCycle.describe());
 
         Compilation.Result badRoute = Compilation.compileTyped(Fixtures.withDocs(Fixtures.DOCS_HEADER,
-                Fixtures.DOCS_BODY.replace("onFailure = DRAFT", "onFailure = ARCHIVED")));
+                Fixtures.DOCS_BODY.replace("onFailure = RETURN", "onFailure = ARCHIVE")));
         assertTrue(badRoute.hasError("SG301"), badRoute.describe());
 
-        assertTrue(watch(Fixtures.DOCS_WATCH.replace("goTo = PUBLISHED", "goTo = ARCHIVED")).hasError("SG401"));
+        assertTrue(watch(Fixtures.DOCS_WATCH.replace("transition = PUBLISH", "transition = ARCHIVE")).hasError("SG401"));
         assertTrue(watch(Fixtures.DOCS_WATCH.replace("state = REVIEW", "state = ARCHIVED")).hasError("SG402"));
     }
 }

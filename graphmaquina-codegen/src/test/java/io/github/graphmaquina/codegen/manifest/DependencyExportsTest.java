@@ -42,7 +42,7 @@ class DependencyExportsTest {
 
         assertEquals(List.of("io.github.graphmaquina:alpha:main", "io.github.graphmaquina:beta:main"),
                 indexes.stream().map(ExportIndex::compilationId).toList());
-        assertEquals(List.of("fx.OrdersGraph.Row"), indexes.get(0).annotationTypes());
+        assertEquals(List.of("fx.OrdersGraph.Transition"), indexes.get(0).annotationTypes());
     }
 
     @Test
@@ -66,6 +66,26 @@ class DependencyExportsTest {
         assertTrue(failure.getMessage().contains("0.0.1-OTHER"), failure.getMessage());
     }
 
+    /** A dependency published by 1.x must send its owner back to the generator, not be read half-way. */
+    @Test
+    void refusesAnIndexOfTheRetiredSemanticSchemaNamingTheRegeneration() throws IOException {
+        Path classes = Files.createDirectories(directory.resolve("classes/META-INF/graphmaquina"));
+        Files.writeString(classes.resolve("exports.json"),
+                "{\"schemaVersion\": 1, \"toolVersion\": \"" + ToolVersion.current()
+                    + "\", \"compilationId\": \"x\", \"model\": {\"graphs\": [], \"symbols\": []},"
+                    + " \"annotationTypes\": []}\n", StandardCharsets.UTF_8);
+
+        CodegenException failure = assertThrows(CodegenException.class,
+                () -> DependencyExports.read(List.of(directory.resolve("classes"))));
+
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().contains("schema 1"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("regenerate"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("recompile"), failure.getMessage());
+        assertTrue(failure.getMessage().contains(directory.resolve("classes").toString()),
+                failure.getMessage());
+    }
+
     @Test
     void refusesAnIndexOfAnotherSchema() throws IOException {
         Path classes = Files.createDirectories(directory.resolve("classes/META-INF/graphmaquina"));
@@ -83,7 +103,7 @@ class DependencyExportsTest {
     }
 
     private static ExportIndex index(String toolVersion, String compilationId) {
-        return new ExportIndex(1, toolVersion, compilationId, EMPTY, List.of("fx.OrdersGraph.Row"));
+        return new ExportIndex(2, toolVersion, compilationId, EMPTY, List.of("fx.OrdersGraph.Transition"));
     }
 
     /** Writes {@code index} under {@code root} as the named file of the published metadata directory. */

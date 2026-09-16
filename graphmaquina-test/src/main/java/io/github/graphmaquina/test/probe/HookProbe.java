@@ -7,7 +7,7 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
- * A {@link Consumer} for the after-commit hook of a cell, scripted like {@link ActionProbe} but with nothing to
+ * A {@link Consumer} for the after-commit hook of an edge, scripted like {@link ActionProbe} but with nothing to
  * return: a scripted response either succeeds, from {@link #thenSucceed} or {@link #otherwiseSucceed}, or
  * throws the exception given to {@link #thenThrow}. The hook is recorded in the probe's own {@link ProbeCalls}
  * — which holds the entities themselves — and in the shared {@link CallTrace}, and a call the script no longer

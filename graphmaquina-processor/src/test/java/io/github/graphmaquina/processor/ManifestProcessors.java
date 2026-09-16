@@ -29,7 +29,7 @@ public final class ManifestProcessors {
     public static final class Recording extends AbstractProcessor {
 
         private static final Set<String> CLAIMED = new LinkedHashSet<>();
-        private static final List<String> ROWS = new ArrayList<>();
+        private static final List<String> POLICIES = new ArrayList<>();
         private static final List<String> ACTIONS = new ArrayList<>();
 
         private ManifestRegistry registry = ManifestRegistry.unloaded();
@@ -37,7 +37,7 @@ public final class ManifestProcessors {
         /** Forgets what a previous compilation recorded. */
         static void reset() {
             CLAIMED.clear();
-            ROWS.clear();
+            POLICIES.clear();
             ACTIONS.clear();
         }
 
@@ -46,12 +46,12 @@ public final class ManifestProcessors {
             return Set.copyOf(CLAIMED);
         }
 
-        /** The state each {@code Row} of {@code fx.Docs} declares, in the order the machine spells them. */
-        static List<String> rows() {
-            return List.copyOf(ROWS);
+        /** The state each {@code StatePolicy} of {@code fx.Docs} declares, in the order the machine spells them. */
+        static List<String> policies() {
+            return List.copyOf(POLICIES);
         }
 
-        /** The action each {@code Action} of {@code fx.Docs} names, in the order the machine spells them. */
+        /** The action each {@code Transition} of {@code fx.Docs} names, in the order the machine spells them. */
         static List<String> actions() {
             return List.copyOf(ACTIONS);
         }
@@ -91,13 +91,15 @@ public final class ManifestProcessors {
                 if (!(root instanceof TypeElement type) || !type.getQualifiedName().contentEquals("fx.Docs")) {
                     continue;
                 }
-                for (AnnotationMirror row : vocabulary.findAll(type, VocabularyKind.ROW)) {
-                    ROWS.add(TypedValues.enumConstant(values.value(row, "state")).getSimpleName().toString());
+                for (AnnotationMirror policy : vocabulary.findAll(type, VocabularyKind.STATE_POLICY)) {
+                    POLICIES.add(TypedValues.enumConstant(values.value(policy, "state")).getSimpleName().toString());
                 }
                 for (Element member : type.getEnclosedElements()) {
                     if (member instanceof ExecutableElement method) {
-                        for (AnnotationMirror action : vocabulary.findAll(method, VocabularyKind.ACTION)) {
-                            ACTIONS.add(TypedValues.classLiteral(values.value(action, "action")).toString());
+                        for (AnnotationMirror transition : vocabulary.findAll(method, VocabularyKind.TRANSITION)) {
+                            for (javax.lang.model.element.AnnotationValue action : values.array(transition, "action")) {
+                                ACTIONS.add(TypedValues.classLiteral(action).toString());
+                            }
                         }
                     }
                 }
