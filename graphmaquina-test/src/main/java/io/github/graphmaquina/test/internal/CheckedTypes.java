@@ -56,7 +56,7 @@ public final class CheckedTypes {
         return typed;
     }
 
-    /** Origin and current state always, plus the destination of whichever variant resolved an edge. */
+    /** Origin and current state always, plus the destination of the two variants that resolved an edge. */
     private static List<Enum<?>> statesOf(Outcome<?, ?, ?> outcome) {
         List<Enum<?>> states = new ArrayList<>();
         states.add(outcome.from());
@@ -64,8 +64,7 @@ public final class CheckedTypes {
         switch (outcome) {
             case Outcome.Applied<?, ?, ?> applied -> states.add(applied.to());
             case Outcome.Failed<?, ?, ?> failed -> states.add(failed.to());
-            case Outcome.Rejected<?, ?, ?> rejected -> { }
-            case Outcome.Ignored<?, ?, ?> ignored -> { }
+            default -> { }
         }
         return List.copyOf(states);
     }

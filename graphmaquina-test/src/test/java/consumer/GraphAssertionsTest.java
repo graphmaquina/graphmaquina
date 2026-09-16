@@ -253,6 +253,11 @@ class GraphAssertionsTest {
         graph.transition(State.READY, Id.FINISH).isMove().hasTarget(State.DONE);
     }
 
+    /**
+     * Absence is the one expectation a foreign identifier could satisfy by accident: the index is keyed by
+     * {@code (from, id)}, so a constant of another enum would simply miss it and report a green absence.
+     * Every selector that names an identifier refuses one that is not in the machine's catalogue.
+     */
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
     void aForeignEnumIsRejectedBeforeTheDefinitionIsQueried() {
@@ -270,9 +275,17 @@ class GraphAssertionsTest {
         IllegalArgumentException absent = assertThrows(IllegalArgumentException.class,
                 () -> raw.hasNoTransition(Foreign.OTHER, Id.PREPARE));
         assertTrue(absent.getMessage().startsWith("from OTHER is not a state of "), absent.getMessage());
+        IllegalArgumentException absentIdentifier = assertThrows(IllegalArgumentException.class,
+                () -> raw.hasNoTransition(State.NEW, Foreign.OTHER));
+        assertTrue(absentIdentifier.getMessage().startsWith("transition OTHER is not a transition of "),
+                absentIdentifier.getMessage());
         IllegalArgumentException policy = assertThrows(IllegalArgumentException.class,
                 () -> raw.policy(Foreign.OTHER));
         assertTrue(policy.getMessage().startsWith("state OTHER is not a state of "), policy.getMessage());
+        IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class,
+                () -> raw.policy(State.NEW).rejects(Foreign.OTHER, "prepare first"));
+        assertTrue(rejected.getMessage().startsWith("transition OTHER is not a transition of "),
+                rejected.getMessage());
         IllegalArgumentException watched = assertThrows(IllegalArgumentException.class,
                 () -> raw.hasNoWatch(Foreign.OTHER));
         assertTrue(watched.getMessage().startsWith("state OTHER is not a state of "), watched.getMessage());

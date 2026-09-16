@@ -17,10 +17,15 @@ import java.util.Objects;
 public final class StatePolicyAssert<S extends Enum<S>, T extends Enum<T>> {
 
     private final String context;
+
+    /** The machine's catalogue, so a foreign identifier is refused; null only when there is no definition. */
+    private final Class<T> transitions;
+
     private final StatePolicy<S, T> actual;
 
-    StatePolicyAssert(String context, StatePolicy<S, T> actual) {
+    StatePolicyAssert(String context, Class<T> transitions, StatePolicy<S, T> actual) {
         this.context = context;
+        this.transitions = transitions;
         this.actual = actual;
     }
 
@@ -33,13 +38,18 @@ public final class StatePolicyAssert<S extends Enum<S>, T extends Enum<T>> {
     }
 
     /**
-     * The reason declared for {@code transition} alone. An identifier with no reason of its own falls back
-     * to the default, so this expectation is satisfied by the default's text too — which is exactly what
-     * the engine would report for that request.
+     * The reason this state gives {@code transition} alone. An identifier the policy does not name falls
+     * back to the default, so this expectation is satisfied by the default's text too — which is exactly
+     * what the engine would report for that request. An identifier that is not in the machine's catalogue
+     * at all is a different matter: it would fall back to the default without ever having been declarable,
+     * so it is refused as a programming error rather than quietly accepted.
      */
     public StatePolicyAssert<S, T> rejects(T transition, String expected) {
         Objects.requireNonNull(transition, "transition");
         Objects.requireNonNull(expected, "expected");
+        if (transitions != null) {
+            GraphAssert.requireDeclaredTransition(transitions, transition);
+        }
         String where = context + " " + transition.name();
         StatePolicy<S, T> policy = Checks.subject(where, "reason", expected, actual);
         Checks.equal(where, "reason", expected, policy.reasonFor(transition));

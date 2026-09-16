@@ -80,7 +80,11 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
         return this;
     }
 
-    /** No edge is keyed by {@code (from, transition)}: the request would be rejected by the state's policy. */
+    /**
+     * No edge is keyed by {@code (from, transition)}: the request would be rejected by the state's policy.
+     * Both arguments must belong to the definition's own enums, because an identifier of a foreign enum
+     * would simply miss the index and make this expectation pass without proving anything.
+     */
     public GraphAssert<E, S, T> hasNoTransition(S from, T transition) {
         Objects.requireNonNull(from, "from");
         Objects.requireNonNull(transition, "transition");
@@ -88,6 +92,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
         String context = context() + " " + from.name() + " -" + transition.name() + "->";
         GraphDefinition<E, S, T> definition = Checks.subject(context, "transition", none, actual);
         requireDeclaredState(definition, from, "from");
+        requireDeclaredTransition(definition.key().transitions(), transition);
         Checks.equal(context, "transition", none,
                 definition.findTransition(from, transition).map(TransitionSpec::to));
         return this;
@@ -134,7 +139,7 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
             return new TransitionAssert<>(context, null);
         }
         requireDeclaredState(actual, from, "from");
-        requireDeclaredTransition(actual, transition);
+        requireDeclaredTransition(actual.key().transitions(), transition);
         return new TransitionAssert<>(context, actual.findTransition(from, transition).orElse(null));
     }
 
@@ -147,10 +152,10 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
         Objects.requireNonNull(state, "state");
         String context = context() + " policy " + state.name();
         if (actual == null) {
-            return new StatePolicyAssert<>(context, null);
+            return new StatePolicyAssert<>(context, null, null);
         }
         requireDeclaredState(actual, state, "state");
-        return new StatePolicyAssert<>(context, actual.policy(state));
+        return new StatePolicyAssert<>(context, actual.key().transitions(), actual.policy(state));
     }
 
     /**
@@ -208,9 +213,12 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
         }
     }
 
-    private static <E, S extends Enum<S>, T extends Enum<T>> void requireDeclaredTransition(
-            GraphDefinition<E, S, T> definition, T transition) {
-        Class<T> transitions = definition.key().transitions();
+    /**
+     * Shared by every view this class hands out, so that an identifier of a foreign enum — reachable only
+     * through raw types — is refused wherever it is named instead of quietly missing an index and reporting
+     * a green absence.
+     */
+    static <T extends Enum<T>> void requireDeclaredTransition(Class<T> transitions, T transition) {
         if (!transitions.isInstance(transition)) {
             throw new IllegalArgumentException(
                     "transition " + transition + " is not a transition of " + transitions.getName());
