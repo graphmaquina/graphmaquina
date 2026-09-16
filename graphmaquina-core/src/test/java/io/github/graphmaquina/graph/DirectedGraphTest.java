@@ -56,6 +56,14 @@ class DirectedGraphTest {
         assertThrows(NullPointerException.class, () -> new DirectedEdge<String, String>("A", null, "B"));
     }
 
+    @Test void rejectsNullFrom() {
+        assertThrows(NullPointerException.class, () -> new DirectedEdge<String, String>(null, "go", "B"));
+    }
+
+    @Test void rejectsNullTo() {
+        assertThrows(NullPointerException.class, () -> new DirectedEdge<String, String>("A", "go", null));
+    }
+
     @Test void collectionsAreUnmodifiable() {
         DirectedEdge<String, String> edge = new DirectedEdge<>("A", "go", "B");
         DirectedGraph<String, String> graph = DirectedGraph.of(List.of("A", "B"), List.of(edge));
