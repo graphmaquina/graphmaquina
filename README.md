@@ -12,10 +12,12 @@ GraphMaquina combines a pre-compilation code generator, a javac annotation proce
 Your application calls a generated, typed facade. Actions, guards, hooks, properties and watched states are
 bound through Java symbols rather than string names.
 
-The current release is the one the badge above reports, published to Maven Central under
-`io.github.graphmaquina`. The examples below do not repeat that number: they read it from a
-`graphmaquinaVersion` Gradle property or a `graphmaquina.version` Maven property, set once per build.
-Everything in this guide resolves from Maven Central: following it needs no build of this repository.
+This guide documents the API this repository builds. The examples never name a version: they read one from a
+`graphmaquinaVersion` Gradle property or a `graphmaquina.version` Maven property, set once per build. Build
+that version from a checkout and stage it into a local Maven repository first — [build, verify and
+release](#build-verify-and-release-this-repository) has the commands — then point your build at that
+repository and set the property to the version you staged. The `mavenCentral()` entry in the quickstart is
+there for third-party dependencies, JUnit among them, not for GraphMaquina itself.
 
 This README is the developer guide for the current implementation. The quickstart has complete, runnable
 files. Later examples are extensions or fragments of the repository's shop example.
@@ -111,13 +113,13 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 | Runtime and public annotations | `io.github.graphmaquina:graphmaquina-core` | Application dependencies |
 | Pre-compilation generator | `io.github.graphmaquina:graphmaquina-codegen` | Build tooling; resolved by the adapter |
 | Annotation processor | `io.github.graphmaquina:graphmaquina-processor` | javac annotation-processor path |
-| Typed testing assertions and probes | `io.github.graphmaquina:graphmaquina-test` | Test dependencies; ships with the next release |
+| Typed testing assertions and probes | `io.github.graphmaquina:graphmaquina-test` | Test dependencies |
 | Gradle plugin | plugin ID `io.github.graphmaquina` | Gradle `plugins` block |
 | Maven plugin | `io.github.graphmaquina:graphmaquina-maven-plugin` | Maven build plugins |
 | Reference application | `graphmaquina-example` | Source and tests in this repository; not an application dependency |
 
-Every coordinate takes the version the badge at the top reports, set once as the `graphmaquinaVersion` Gradle
-property or the `graphmaquina.version` Maven property; the examples below read it from there.
+Every coordinate takes the version you staged, set once as the `graphmaquinaVersion` Gradle property or the
+`graphmaquina.version` Maven property; the examples below read it from there.
 
 The generator and processor are build-time tools. Do not add them as application runtime dependencies.
 Application imports begin with `io.github.graphmaquina`.
@@ -233,12 +235,11 @@ does not perform the required pre-generation step.
 
 ## Publication and verification status
 
-GraphMaquina is available from Maven Central and the badge at the top reports the current release. The
-namespace `io.github.graphmaquina` is verified. A release contains the runtime, generator, processor, testing
-module, Maven plugin, Gradle plugin and Gradle plugin marker. `graphmaquina-test` joins that publication with
-the next release; the release the badge reports does not carry it yet, so until then it is built from a
-checkout as [typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots)
-describes.
+GraphMaquina publishes to Maven Central under the verified namespace `io.github.graphmaquina`. A release
+contains the runtime, generator, processor, testing module, Maven plugin, Gradle plugin and Gradle plugin
+marker. The API documented here is the one this repository builds, so follow the guide against a checkout you
+built and staged yourself; [typed assertions, probes and graph
+snapshots](#typed-assertions-probes-and-graph-snapshots) describes the testing module the same way.
 
 | Check | Current development result |
 | --- | --- |
@@ -275,7 +276,7 @@ separate application directory, `tickets-demo`, and put these files at its root.
 graphmaquinaVersion=x.y.z
 ```
 
-Use the version the badge at the top reports. The two scripts below read it from here, so no coordinate
+Use the version you staged from a checkout. The two scripts below read it from here, so no coordinate
 repeats it.
 
 ### settings.gradle.kts
@@ -390,7 +391,7 @@ The plugin resolves the generator version matching its own version. Advanced ove
 
 ```kotlin
 graphmaquina {
-    generatorVersion.set("x.y.z")  // the version the badge at the top reports
+    generatorVersion.set("x.y.z")  // the version you staged from a checkout
 }
 ```
 
@@ -420,7 +421,7 @@ property sets. For an internal repository, configure both dependency and plugin 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
-    <!-- the version the badge at the top of this README reports -->
+    <!-- the version you staged from a checkout -->
     <graphmaquina.version>x.y.z</graphmaquina.version>
   </properties>
 
@@ -2293,12 +2294,10 @@ policies, outcomes, transition records, reactions and engine exceptions — and 
 no test framework: nothing in its API mentions JUnit or AssertJ, so it works under the runner your project
 already uses.
 
-It is a module of the **next** release. The release the badge at the top reports does not contain it yet, so
-until then build it from a GraphMaquina checkout with
+Build it from a GraphMaquina checkout with
 `./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-test:publishToMavenLocal -PgraphmaquinaVersion=<version>`
-and resolve it from `mavenLocal()` — its POM pins `graphmaquina-core` at the same version, which Maven
-Central does not carry for an unreleased one. The coordinates take the same version variable as every other
-module:
+and resolve it from `mavenLocal()`; its POM pins `graphmaquina-core` at the same version, so stage the two
+together. The coordinates take the same version variable as every other module:
 
 ```kotlin
 dependencies {

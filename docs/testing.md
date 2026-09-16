@@ -25,9 +25,8 @@ the file it came from.
 
 ## Install
 
-`graphmaquina-test` is a module of the **next** release. The release the README badge reports does not
-contain it, so the coordinates below resolve from Maven Central only once that release is published. Until
-then, build it from a checkout of this repository and consume it locally.
+Build `graphmaquina-test` from a checkout of this repository and consume it locally, alongside the other
+modules of the version you staged.
 
 The coordinates follow the same version convention as the rest of the guide: a `graphmaquinaVersion` Gradle
 property or a `graphmaquina.version` Maven property, set once per build, never a literal repeated per
