@@ -26,7 +26,7 @@ the file it came from.
 ## Install
 
 Build `graphmaquina-test` from a checkout of this repository and consume it locally, alongside the other
-modules of the version you staged.
+modules of the version you installed.
 
 The coordinates follow the same version convention as the rest of the guide: a `graphmaquinaVersion` Gradle
 property or a `graphmaquina.version` Maven property, set once per build, never a literal repeated per
@@ -50,18 +50,19 @@ dependencies {
 The module is test-scoped: it depends on `graphmaquina-core` and adds nothing to your application's runtime
 classpath. Keep its version equal to the runtime, generator and processor versions you already align.
 
-Before that release, publish it from a GraphMaquina checkout and resolve it from the local repository. Its
-POM pins `graphmaquina-core` at its own version, so publish core under the same version in the same command;
-a version that Maven Central does not carry yet has nowhere else to resolve core from:
+Its POM pins `graphmaquina-core` at its own version, which is why the
+[install command](../README.md#configure-gradle) writes both in one invocation:
 
 ```bash
 ./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-test:publishToMavenLocal \
     -PgraphmaquinaVersion=<the version you want to resolve>
 ```
 
-Then add `mavenLocal()` to the repositories your build uses for test dependencies, ahead of Maven Central.
-Inside this repository no publication is needed at all: `graphmaquina-example` depends on the project
-directly with `testImplementation(project(":graphmaquina-test"))`.
+A Gradle build then needs `mavenLocal()` among the repositories it uses for test dependencies, as the
+quickstart's [settings.gradle.kts](../README.md#settingsgradlekts) declares; Maven reads that repository
+itself and needs no declaration. Inside this repository no publication is needed at all:
+`graphmaquina-example` depends on the project directly with
+`testImplementation(project(":graphmaquina-test"))`.
 
 ## Your first test
 

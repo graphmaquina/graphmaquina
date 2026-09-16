@@ -13,11 +13,11 @@ Your application calls a generated, typed facade. Actions, guards, hooks, proper
 bound through Java symbols rather than string names.
 
 This guide documents the API this repository builds. The examples never name a version: they read one from a
-`graphmaquinaVersion` Gradle property or a `graphmaquina.version` Maven property, set once per build. Build
-that version from a checkout and stage it into a local Maven repository first — [build, verify and
-release](#build-verify-and-release-this-repository) has the commands — then point your build at that
-repository and set the property to the version you staged. The `mavenCentral()` entry in the quickstart is
-there for third-party dependencies, JUnit among them, not for GraphMaquina itself.
+`graphmaquinaVersion` Gradle property or a `graphmaquina.version` Maven property, set once per build. Install
+that version from a checkout into your local Maven repository first — [configure Gradle](#configure-gradle)
+opens with the one command that does it, and [configure Maven](#configure-maven) uses the same one — then set
+the property to the version you installed. `mavenCentral()` stays in both builds for third-party
+dependencies, JUnit among them, not for GraphMaquina itself.
 
 This README is the developer guide for the current implementation. The quickstart has complete, runnable
 files. Later examples are extensions or fragments of the repository's shop example.
@@ -118,8 +118,8 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 | Maven plugin | `io.github.graphmaquina:graphmaquina-maven-plugin` | Maven build plugins |
 | Reference application | `graphmaquina-example` | Source and tests in this repository; not an application dependency |
 
-Every coordinate takes the version you staged, set once as the `graphmaquinaVersion` Gradle property or the
-`graphmaquina.version` Maven property; the examples below read it from there.
+Every coordinate takes the version you installed, set once as the `graphmaquinaVersion` Gradle property or
+the `graphmaquina.version` Maven property; the examples below read it from there.
 
 The generator and processor are build-time tools. Do not add them as application runtime dependencies.
 Application imports begin with `io.github.graphmaquina`.
@@ -237,9 +237,10 @@ does not perform the required pre-generation step.
 
 GraphMaquina publishes to Maven Central under the verified namespace `io.github.graphmaquina`. A release
 contains the runtime, generator, processor, testing module, Maven plugin, Gradle plugin and Gradle plugin
-marker. The API documented here is the one this repository builds, so follow the guide against a checkout you
-built and staged yourself; [typed assertions, probes and graph
-snapshots](#typed-assertions-probes-and-graph-snapshots) describes the testing module the same way.
+marker. The API documented here is the one this repository builds, so follow the guide against a build of
+your own: [configure Gradle](#configure-gradle) opens with the command that installs it locally, and [typed
+assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots) describes the testing
+module the same way.
 
 | Check | Current development result |
 | --- | --- |
@@ -270,14 +271,32 @@ for verification commands and maintainer setup. Publishing a release does not re
 The following files build and run the [ticket quickstart](#quickstart-a-complete-ticket-machine). Create a
 separate application directory, `tickets-demo`, and put these files at its root.
 
+First install GraphMaquina into your local Maven repository, from a checkout of this repository — a
+different directory from `tickets-demo`. Choose any version string; it is the one every file below reads
+from a single property:
+
+```bash
+./gradlew -PgraphmaquinaVersion=x.y.z \
+    :graphmaquina-core:publishToMavenLocal \
+    :graphmaquina-codegen:publishToMavenLocal \
+    :graphmaquina-processor:publishToMavenLocal \
+    :graphmaquina-test:publishToMavenLocal \
+    :graphmaquina-gradle-plugin:publishToMavenLocal
+```
+
+That writes the runtime, the generator, the processor, the testing module, the Gradle plugin and the plugin
+marker under `~/.m2/repository`. Gradle does not read that directory unless a build asks it to, which is why
+`settings.gradle.kts` below declares `mavenLocal()`; Maven reads it as its own local repository and needs no
+declaration at all.
+
 ### gradle.properties
 
 ```properties
 graphmaquinaVersion=x.y.z
 ```
 
-Use the version you staged from a checkout. The two scripts below read it from here, so no coordinate
-repeats it.
+Use the version you installed above. The two scripts below read it from here, so no coordinate repeats
+it.
 
 ### settings.gradle.kts
 
@@ -285,6 +304,7 @@ repeats it.
 pluginManagement {
     repositories {
         mavenCentral()
+        mavenLocal()
         gradlePluginPortal()
     }
     plugins {
@@ -295,6 +315,7 @@ pluginManagement {
 dependencyResolutionManagement {
     repositories {
         mavenCentral()
+        mavenLocal()
     }
 }
 
@@ -391,7 +412,7 @@ The plugin resolves the generator version matching its own version. Advanced ove
 
 ```kotlin
 graphmaquina {
-    generatorVersion.set("x.y.z")  // the version you staged from a checkout
+    generatorVersion.set("x.y.z")  // the version you installed from a checkout
 }
 ```
 
@@ -402,8 +423,10 @@ this to run the sibling codegen project. Use matching versions for every GraphMa
 
 This is a complete alternative build for the same ticket source files. Save it as `pom.xml` in
 `tickets-demo`. It includes all six lifecycle executions and distinct main/test manifest arguments.
-Maven resolves every GraphMaquina artifact from Central, at the single version the `graphmaquina.version`
-property sets. For an internal repository, configure both dependency and plugin repositories as shown in
+Run the same [install command](#configure-gradle) first: Maven reads `~/.m2/repository` as its local
+repository, so it resolves what that command wrote with no repository declaration in this POM. Every
+GraphMaquina artifact comes from the single version the `graphmaquina.version` property sets. For an
+internal repository, configure both dependency and plugin repositories as shown in
 [the build guide](docs/typed-annotations-build.md#where-the-artifacts-come-from).
 
 ### pom.xml
@@ -421,7 +444,7 @@ property sets. For an internal repository, configure both dependency and plugin 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
-    <!-- the version you staged from a checkout -->
+    <!-- the version you installed from a checkout -->
     <graphmaquina.version>x.y.z</graphmaquina.version>
   </properties>
 
@@ -2220,20 +2243,10 @@ request with no edge, a self-loop, a cycle and two parallel edges, and
 [OrderFlowTest](graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java)
 shows JUnit tests for payment, retries, cascades, watches and journals.
 
-The test below reads its outcome with `graphmaquina-test`, the module that holds the typed assertions. It
-ships with the next release, so Maven Central does not carry it yet and the quickstart's `mavenCentral()`
-cannot resolve it. Install it first from a GraphMaquina checkout, passing the version this build already
-sets in `gradle.properties`:
-
-```bash
-./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-test:publishToMavenLocal \
-          -PgraphmaquinaVersion=x.y.z
-```
-
-Then add `mavenLocal()` above `mavenCentral()` in the `dependencyResolutionManagement` block of
-[settings.gradle.kts](#settingsgradlekts), so both modules resolve from there: the testing module's POM pins
-`graphmaquina-core` at its own version, which Central does not carry for an unreleased one. For a Gradle
-application using JUnit, add:
+The test below reads its outcome with `graphmaquina-test`, the module that holds the typed assertions. The
+[install command](#configure-gradle) already wrote it to your local Maven repository alongside the runtime,
+at the same version, and [settings.gradle.kts](#settingsgradlekts) already resolves it from there. For a
+Gradle application using JUnit, add:
 
 ```kotlin
 dependencies {
@@ -2282,8 +2295,9 @@ staged artifacts. This verifies the local Gradle workflow; it does not execute t
 Maven or against released artifacts. This test consumes generated main code; it does not declare test graphs
 and needs no `testAnnotationProcessor`. In Maven, add JUnit and a compatible test runner through your application's usual
 test configuration, together with the test-scoped `graphmaquina-test` dependency shown under
-[typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots); the local
-install above writes into the `~/.m2` repository Maven already reads, so it needs no repository entry.
+[typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots); the
+[install command](#configure-gradle) writes into the `~/.m2` repository Maven already reads, so it needs no
+repository entry.
 Preserve the graph generation lifecycle for any test graphs.
 
 ### Typed assertions, probes and graph snapshots
@@ -2294,10 +2308,9 @@ policies, outcomes, transition records, reactions and engine exceptions — and 
 no test framework: nothing in its API mentions JUnit or AssertJ, so it works under the runner your project
 already uses.
 
-Build it from a GraphMaquina checkout with
-`./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-test:publishToMavenLocal -PgraphmaquinaVersion=<version>`
-and resolve it from `mavenLocal()`; its POM pins `graphmaquina-core` at the same version, so stage the two
-together. The coordinates take the same version variable as every other module:
+The [install command](#configure-gradle) writes it with the other modules, and its POM pins
+`graphmaquina-core` at the same version, which is why that command installs both in one invocation. The
+coordinates take the same version variable as every other module:
 
 ```kotlin
 dependencies {
@@ -2593,7 +2606,7 @@ API contract.
 | `TicketsGraph` / `TicketRefs` cannot be found | Run generation before javac; check processor participation and original source roots. |
 | A graph annotation from a 1.x declaration cannot be resolved | The retired vocabulary was removed in 2.0, not deprecated. [Migrating to 2.0](docs/migration-2.0.md) names the replacement for each one. |
 | `SG602` on the first build after upgrading | The work directory still holds schema 1 artefacts. Run `clean` once, or delete the build directory. |
-| Gradle plugin cannot resolve | Add `mavenCentral()` to `pluginManagement.repositories`. |
+| Gradle plugin cannot resolve | Declare the repository that holds it in `pluginManagement.repositories`: `mavenLocal()` for a version you installed from a checkout, `mavenCentral()` for a published one. |
 | Core resolves but Maven plugin does not | Configure `<pluginRepositories>` as well as `<repositories>` for an internal repository. |
 | Processor reports no manifest | Use the Gradle plugin or add Maven's per-execution manifest arguments and six goals. |
 | A Lombok accessor is missing | Put Lombok first on the processor path, or provide a public handwritten accessor. |

@@ -24,8 +24,8 @@ find no manifest and refuse the compilation with SG602.
 | Gradle adapter | plugin id `io.github.graphmaquina` | the Gradle build integration |
 | Maven adapter | `io.github.graphmaquina:graphmaquina-maven-plugin` | the Maven build integration |
 
-Keep the runtime, generator, processor and adapter at the same version: the one you staged from a checkout,
-set once as the `graphmaquinaVersion` Gradle property or the `graphmaquina.version` Maven property. The processor emits `<Machine>Runtime` and `<Set>Runtime`. Generated
+Keep the runtime, generator, processor and adapter at the same version: the one you installed from a
+checkout, set once as the `graphmaquinaVersion` Gradle property or the `graphmaquina.version` Maven property. The processor emits `<Machine>Runtime` and `<Set>Runtime`. Generated
 types normalize underscores and nesting dots to PascalCase, preserving internal case and acronyms.
 See the [generated naming reference](../README.md#generated-names).
 
@@ -240,7 +240,7 @@ The `graphmaquinaGenerator` configuration carries the generator's classpath. By 
 plugin's own version, so nothing needs to be declared. Two cases where it does:
 
 ```kotlin
-// x.y.z is the version you staged from a checkout.
+// x.y.z is the version you installed from a checkout.
 graphmaquina { generatorVersion = "x.y.z" } // explicit override; keep all components aligned
 dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) }  // inside this repository
 ```
@@ -258,7 +258,7 @@ resolvable, which for Central or a locally installed build means nothing further
 ```xml
 <properties>
   <java.version>21</java.version>
-  <!-- the version you staged from a checkout -->
+  <!-- the version you installed from a checkout -->
   <graphmaquina.version>x.y.z</graphmaquina.version>
 </properties>
 
