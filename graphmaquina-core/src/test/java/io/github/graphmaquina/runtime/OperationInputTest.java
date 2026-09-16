@@ -13,6 +13,7 @@ import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
@@ -21,6 +22,7 @@ import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -174,8 +176,8 @@ class OperationInputTest {
                     .action("watched", (TransitionContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); })
                     .endTransition()
                 .watch(S.OPEN, KEY, (Entity e) -> List.of(e), (Entity e) -> Optional.of(e))
-                    .when("always", (Entity e, java.util.Collection<? extends Entity> peers,
-                            io.github.graphmaquina.api.PeerView<Entity, S, T> view) -> true).execute(T.WATCH_IT)
+                    .when("always", (Entity e, Collection<? extends Entity> peers,
+                            PeerView<Entity, S, T> view) -> true).execute(T.WATCH_IT)
                     .endWatch()
                 .build();
         try (MachineRegistry registry = MachineRegistry.builder()

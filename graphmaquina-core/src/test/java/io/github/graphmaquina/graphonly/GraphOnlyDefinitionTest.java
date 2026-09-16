@@ -12,10 +12,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.error.InvalidGraphException;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture;
 import io.github.graphmaquina.fixtures.GraphOnlyFixture.Id;
 import io.github.graphmaquina.fixtures.GraphOnlyFixture.State;
 import io.github.graphmaquina.fixtures.GraphOnlyFixture.Ticket;
+import io.github.graphmaquina.fixtures.GraphOnlyFixture;
 import org.junit.jupiter.api.Test;
 
 class GraphOnlyDefinitionTest {

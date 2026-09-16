@@ -2,6 +2,7 @@ package io.github.graphmaquina.graph;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
@@ -59,14 +60,15 @@ public final class StrongComponents {
         components.sort(Comparator.comparingInt((List<N> component) -> index.get(component.get(0))));
         List<Set<N>> frozen = new ArrayList<>();
         for (List<N> component : components) {
-            frozen.add(java.util.Collections.unmodifiableSet(new LinkedHashSet<>(component)));
+            frozen.add(Collections.unmodifiableSet(new LinkedHashSet<>(component)));
         }
         return List.copyOf(frozen);
     }
 
     /**
-     * One cycle inside {@code component}, starting and ending at the component's first node. The list closes on
-     * that node again, so a self-loop reads {@code [A, A]}.
+     * One cycle inside {@code component}, starting and ending at the member the graph declares first. The list
+     * closes on that node again, so a self-loop reads {@code [A, A]}. The witness does not depend on the
+     * iteration order of {@code component}, so an unordered set yields the same answer.
      *
      * @throws IllegalArgumentException if the component holds no cycle, or is not part of {@code graph}
      */
@@ -74,11 +76,14 @@ public final class StrongComponents {
         if (component.isEmpty()) {
             throw new IllegalArgumentException("an empty component holds no cycle");
         }
-        Set<N> members = new LinkedHashSet<>(component);
-        for (N node : members) {
-            if (!graph.nodes().contains(node)) {
-                throw new IllegalArgumentException("unknown node: " + node);
+        Set<N> members = new LinkedHashSet<>();
+        for (N node : graph.nodes()) {
+            if (component.contains(node)) {
+                members.add(node);
             }
+        }
+        if (members.size() != component.size()) {
+            throw new IllegalArgumentException("the component " + component + " holds a node outside the graph");
         }
         N start = members.iterator().next();
         Map<N, N> parent = new HashMap<>();

@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.ActionRef;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
@@ -23,6 +24,6 @@ final class Typed {
     static <E, S extends Enum<S>, T extends Enum<T>> TransitionRecord<E, S, T> record(MachineKey<E, S, T> key, LogEntry entry) {
         TransitionSpec<E, S, T> spec = spec(key, entry);
         return new TransitionRecord<>(key, key.entity().cast(entry.ref().instance()), spec.from(), spec.transition(),
-                spec.to(), spec.kind(), spec.action().map(io.github.graphmaquina.api.ActionRef::name), entry.depth());
+                spec.to(), spec.kind(), spec.action().map(ActionRef::name), entry.depth());
     }
 }

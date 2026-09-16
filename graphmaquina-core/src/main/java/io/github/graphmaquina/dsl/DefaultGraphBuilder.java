@@ -135,7 +135,9 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
                 .thenComparingInt((TransitionSpec<E, S, T> spec) -> spec.to().ordinal()));
         Map<S, StatePolicy<S, T>> policies = resolvePolicies();
         Map<S, WatchSpec<E, S, T, ?, ?, ?>> watchSpecs = resolveWatches();
-        if (initialDeclarations == 1) {
+        // A missing initial state, or a draft that could not be assembled, leaves the machine without an edge it
+        // was meant to have, and every structural check downstream would report noise about a graph nobody wrote.
+        if (problems.isEmpty()) {
             MachineOutlineValidator.validate(outline(ordered, policies, watchSpecs), problems);
         }
         if (!problems.isEmpty()) {

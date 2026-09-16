@@ -5,18 +5,20 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
-import io.github.graphmaquina.api.EdgeKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.TransitionContext;
+import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
+import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.Keys;
 import io.github.graphmaquina.fixtures.Order;
 import io.github.graphmaquina.fixtures.OrderGraphs;
 import io.github.graphmaquina.fixtures.OrderStatus;
+import io.github.graphmaquina.fixtures.OrderTransition;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -34,64 +36,67 @@ class GraphvizExporterTest {
         }
     }
 
-    private static GraphDefinition<Order, OrderStatus> orderGraph() {
+    private static GraphDefinition<Order, OrderStatus, OrderTransition> orderGraph() {
         return OrderGraphs.order(
-                (TransitionContext<Order, OrderStatus> ctx) -> CompletableFuture.completedFuture(ActionOutcome.ok()),
-                (TransitionContext<Order, OrderStatus> ctx) -> ActionOutcome.ok(),
-                (TransitionContext<Order, OrderStatus> ctx) -> ActionOutcome.ok(),
-                (GuardContext<Order, OrderStatus> ctx) -> GuardResult.pass(),
-                (GuardContext<Order, OrderStatus> ctx) -> GuardResult.pass());
+                (TransitionContext<Order, OrderStatus, OrderTransition> ctx) ->
+                        CompletableFuture.completedFuture(ActionOutcome.ok()),
+                (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> ActionOutcome.ok(),
+                (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> ActionOutcome.ok(),
+                (GuardContext<Order, OrderStatus, OrderTransition> ctx) -> GuardResult.pass(),
+                (GuardContext<Order, OrderStatus, OrderTransition> ctx) -> GuardResult.pass());
     }
 
     @Test
-    void transitableViewMatchesGolden() throws IOException {
+    void realEdgesMatchGolden() throws IOException {
         assertEquals(golden("order.dot"), GraphvizExporter.render(GraphView.of(orderGraph())));
     }
 
     @Test
-    void fullViewMatchesGolden() throws IOException {
-        assertEquals(golden("order-full.dot"), GraphvizExporter.render(GraphView.of(orderGraph()), Detail.FULL));
-    }
-
-    @Test
-    void viewCarriesNamesFailureRoutesAndWatches() {
+    void viewCarriesNamesRoutesPoliciesAndWatches() {
         GraphView view = GraphView.of(orderGraph());
         assertEquals("Order/OrderStatus", view.name());
         assertEquals("NEW", view.initial());
         assertEquals(Set.of("SHIPPED", "CANCELLED"), view.terminals());
-        EdgeView newToDeclined = view.edges().get(2);
-        assertEquals("PAYMENT_DECLINED", newToDeclined.to());
-        assertEquals(Optional.of("ChargeCard"), newToDeclined.failureOf());
-        EdgeView paidToShipped = view.edges().get(8);
-        assertEquals(Optional.of("Item: allIn PACKED"), paidToShipped.watchRule());
-        assertEquals(List.of(new WatchView("PAID", "Item", List.of("allIn PACKED → SHIPPED"))), view.watches());
+        assertEquals(List.of("NEW", "PAID", "PAYMENT_DECLINED", "SHIPPED", "CANCELLED"), view.states());
+        TransitionView charge = view.transitions().get(0);
+        assertEquals("CHARGE", charge.transition());
+        assertEquals(Optional.of("DECLINE"), charge.failureTransition());
+        assertTrue(charge.async());
+        TransitionView ship = view.transitions().get(3);
+        assertEquals("SHIP", ship.transition());
+        assertEquals(Optional.of("Item: allIn PACKED"), ship.watch());
+        assertEquals(List.of(new WatchView("PAID", "Item", List.of("allIn PACKED → SHIP"))), view.watches());
+        assertEquals("cannot ship without payment", view.policies().get(0).otherwise());
+        assertEquals("terminal state SHIPPED accepts no transitions", view.policies().get(3).otherwise());
     }
 
+    /** Two edges between the same pair are two arrows, one per identifier. */
     @Test
-    void twoActionsSharingAFailureRouteAreBothNamed() {
-        GraphDefinition<Doc, DocStatus> graph = StateGraph.define(Keys.DOCS)
+    void parallelEdgesAreBothDrawn() {
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(Keys.DOCS)
                 .initial(DocStatus.DRAFT).terminal(DocStatus.ARCHIVED)
-                .from(DocStatus.DRAFT)
-                    .to(DocStatus.REVIEW).action("A", (TransitionContext<Doc, DocStatus> ctx) -> ActionOutcome.ok())
-                        .onFailure(DocStatus.ARCHIVED)
-                    .to(DocStatus.PUBLISHED).action("B", (TransitionContext<Doc, DocStatus> ctx) -> ActionOutcome.ok())
-                        .onFailure(DocStatus.ARCHIVED)
-                    .to(DocStatus.ARCHIVED).move()
-                    .stay()
-                    .forbidOthers("a draft goes forward or is archived")
-                .from(DocStatus.REVIEW).to(DocStatus.PUBLISHED).move().stay().forbidOthers("review only publishes")
-                .from(DocStatus.PUBLISHED).to(DocStatus.ARCHIVED).move().stay().forbidOthers("published only archives")
-                .from(DocStatus.ARCHIVED).stay().forbidOthers("archived is final")
+                .statePolicy(DocStatus.DRAFT, "a draft goes forward or is archived")
+                .statePolicy(DocStatus.REVIEW, "review only publishes")
+                .statePolicy(DocStatus.PUBLISHED, "published only archives")
+                .transition(DocTransition.SUBMIT, DocStatus.DRAFT, DocStatus.REVIEW)
+                    .action("A", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ActionOutcome.ok())
+                    .onFailure(DocTransition.DISCARD).endTransition()
+                .transition(DocTransition.PUBLISH, DocStatus.DRAFT, DocStatus.REVIEW)
+                    .action("B", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ActionOutcome.ok())
+                    .onFailure(DocTransition.DISCARD).endTransition()
+                .transition(DocTransition.DISCARD, DocStatus.DRAFT, DocStatus.ARCHIVED).endTransition()
+                .transition(DocTransition.SEND_BACK, DocStatus.REVIEW, DocStatus.PUBLISHED).endTransition()
+                .transition(DocTransition.ARCHIVE, DocStatus.PUBLISHED, DocStatus.ARCHIVED).endTransition()
                 .build();
         String rendered = GraphvizExporter.render(GraphView.of(graph));
-        assertTrue(rendered.contains("[label=\"[failure of A, B]\"]"), rendered);
-        assertTrue(rendered.contains("[label=\"A\"]"), rendered);
-        assertTrue(rendered.contains("[label=\"B\"]"), rendered);
+        assertTrue(rendered.contains("[label=\"SUBMIT A [onFailure DISCARD]\"]"), rendered);
+        assertTrue(rendered.contains("[label=\"PUBLISH B [onFailure DISCARD]\"]"), rendered);
     }
 
     @Test
     void terminalWithNoOutgoingEdgesIsDeclared() {
-        GraphView view = new GraphView("X", "A", Set.of("B"), List.of(move("A", "B")), List.of());
+        GraphView view = new GraphView("X", "A", Set.of("B"), List.of("A", "B"), List.of(move("A", "GO", "B")),
+                List.of(), List.of());
         assertEquals("""
                 digraph "X" {
                     rankdir=LR;
@@ -99,14 +104,15 @@ class GraphvizExporterTest {
                     n0 [label="A", shape=ellipse];
                     n1 [label="B", shape=doublecircle];
                     initial -> n0;
-                    n0 -> n1;
+                    n0 -> n1 [label="GO"];
                 }
                 """, GraphvizExporter.render(view));
     }
 
     @Test
-    void nonFirstInitialStateDoesNotReorderTheMatrix() {
-        GraphView view = new GraphView("X", "B", Set.of("B"), List.of(move("A", "B")), List.of());
+    void nonFirstInitialStateDoesNotReorderTheStates() {
+        GraphView view = new GraphView("X", "B", Set.of("B"), List.of("A", "B"), List.of(move("A", "GO", "B")),
+                List.of(), List.of());
         assertEquals("""
                 digraph "X" {
                     rankdir=LR;
@@ -114,33 +120,28 @@ class GraphvizExporterTest {
                     n0 [label="A", shape=ellipse];
                     n1 [label="B", shape=doublecircle];
                     initial -> n1;
-                    n0 -> n1;
+                    n0 -> n1 [label="GO"];
                 }
                 """, GraphvizExporter.render(view));
     }
 
+    /** Nothing that was not declared is ever drawn: there is no mode that expands absent edges. */
     @Test
-    void fullIncludesStayAndForbidWhileDefaultOnlyIncludesMoves() {
-        GraphView view = new GraphView("X", "A", Set.of("B"), List.of(
-                move("A", "B"),
-                new EdgeView("A", "A", EdgeKind.STAY, "", Optional.empty(), List.of(), false, Optional.empty(), Optional.empty()),
-                new EdgeView("B", "A", EdgeKind.FORBID, "no way back", Optional.empty(), List.of(), false, Optional.empty(), Optional.empty())),
-                List.of());
-        String full = GraphvizExporter.render(view, Detail.FULL);
-        assertTrue(full.contains("n0 -> n1;"), full);
-        assertTrue(full.contains("n0 -> n0 [label=\"stay\"];"), full);
-        assertTrue(full.contains("n1 -> n0 [label=\"forbid: no way back\"];"), full);
-        String transitable = GraphvizExporter.render(view);
-        assertFalse(transitable.contains("stay"), transitable);
-        assertFalse(transitable.contains("forbid"), transitable);
-        assertTrue(transitable.contains("n0 -> n1;"), transitable);
+    void onlyDeclaredEdgesAreEverDrawn() {
+        GraphView view = new GraphView("X", "A", Set.of("B"), List.of("A", "B"), List.of(move("A", "GO", "B")),
+                List.of(new PolicyView("B", "no way back", List.of("GO: B is final"))), List.of());
+        String rendered = GraphvizExporter.render(view);
+        assertEquals(1, rendered.lines().filter((String line) -> line.contains("->") && !line.contains("initial ->")).count());
+        assertFalse(rendered.contains("stay"), rendered);
+        assertFalse(rendered.contains("forbid"), rendered);
+        assertTrue(rendered.contains("n1 [label=\"B\", shape=doublecircle, tooltip=\"otherwise: no way back; GO: B is final\"];"),
+                rendered);
     }
 
     @Test
     void isolatedStatesAndUnorderedTerminalsAreAlwaysDeclaredDeterministically() {
-        GraphView view = new GraphView("X", "initial", Set.of("Z", "B"), List.of(
-                new EdgeView("island", "island", EdgeKind.STAY, "", Optional.empty(), List.of(), false, Optional.empty(), Optional.empty())),
-                List.of(new WatchView("watch0", "Peer", List.of())));
+        GraphView view = new GraphView("X", "initial", Set.of("Z", "B"), List.of("island"), List.of(),
+                List.of(), List.of(new WatchView("watch0", "Peer", List.of())));
         assertEquals("""
                 digraph "X" {
                     rankdir=LR;
@@ -159,7 +160,8 @@ class GraphvizExporterTest {
 
     @Test
     void initialCanAlsoBeTerminalWithoutAnyEdges() {
-        String rendered = GraphvizExporter.render(new GraphView("X", "done", Set.of("done"), List.of(), List.of()));
+        String rendered = GraphvizExporter.render(
+                new GraphView("X", "done", Set.of("done"), List.of(), List.of(), List.of(), List.of()));
         assertTrue(rendered.contains("n0 [label=\"done\", shape=doublecircle];"), rendered);
         assertTrue(rendered.contains("initial -> n0;"), rendered);
     }
@@ -168,26 +170,25 @@ class GraphvizExporterTest {
     void userTextIsEscapedAndNeverUsedAsNodeIds() {
         String special = "quote\" slash\\N\r\nnext\rline\n雪";
         String escaped = "quote\\\" slash\\\\N\\nnext\\nline\\n雪";
-        GraphView view = new GraphView(special, special, Set.of("n0"), List.of(
-                new EdgeView(special, "n0", EdgeKind.ACTION, "", Optional.of(special), List.of(special),
-                        true, Optional.of(special), Optional.of(special)),
-                new EdgeView("n0", special, EdgeKind.FORBID, special, Optional.empty(), List.of(),
-                        false, Optional.empty(), Optional.empty())),
+        GraphView view = new GraphView(special, special, Set.of("n0"), List.of(special, "n0"), List.of(
+                new TransitionView(special, special, "n0", TransitionKind.ACTION, Optional.of(special), List.of(special),
+                        true, Optional.of(special), Optional.of(special))),
+                List.of(new PolicyView("n0", special, List.of())),
                 List.of(new WatchView(special, special, List.of())));
-        String rendered = GraphvizExporter.render(view, Detail.FULL);
+        String rendered = GraphvizExporter.render(view);
         assertTrue(rendered.startsWith("digraph \"" + escaped + "\" {\n"), rendered);
         assertTrue(rendered.contains("n0 [label=\"" + escaped + "\", shape=ellipse];"), rendered);
-        assertTrue(rendered.contains("n1 [label=\"n0\", shape=doublecircle];"), rendered);
-        assertTrue(rendered.contains("n0 -> n1 [label=\"" + escaped + " [async] [if " + escaped
-                + "] [failure of " + escaped + "] [watches " + escaped + "]\"];"), rendered);
-        assertTrue(rendered.contains("n1 -> n0 [label=\"forbid: " + escaped + "\"];"), rendered);
+        assertTrue(rendered.contains("n1 [label=\"n0\", shape=doublecircle, tooltip=\"otherwise: " + escaped + "\"];"),
+                rendered);
+        assertTrue(rendered.contains("n0 -> n1 [label=\"" + escaped + " " + escaped + " [async] [if " + escaped
+                + "] [onFailure " + escaped + "] [watches " + escaped + "]\"];"), rendered);
         assertTrue(rendered.contains("watch0 [shape=note, label=\"watches " + escaped + "\"];"), rendered);
         assertFalse(rendered.contains("\r"), rendered);
     }
 
     @Test
     void multipleWatchesHaveSeparateNotes() {
-        GraphView view = new GraphView("X", "A", Set.of(), List.of(), List.of(
+        GraphView view = new GraphView("X", "A", Set.of(), List.of("A"), List.of(), List.of(), List.of(
                 new WatchView("A", "Peer1", List.of()), new WatchView("A", "Peer2", List.of())));
         String rendered = GraphvizExporter.render(view);
         assertTrue(rendered.contains("watch0 [shape=note, label=\"watches Peer1\"];"), rendered);
@@ -196,7 +197,8 @@ class GraphvizExporterTest {
         assertTrue(rendered.contains("n0 -> watch1 [style=dashed, arrowhead=none];"), rendered);
     }
 
-    private static EdgeView move(String from, String to) {
-        return new EdgeView(from, to, EdgeKind.MOVE, "", Optional.empty(), List.of(), false, Optional.empty(), Optional.empty());
+    private static TransitionView move(String from, String transition, String to) {
+        return new TransitionView(from, transition, to, TransitionKind.MOVE, Optional.empty(), List.of(), false,
+                Optional.empty(), Optional.empty());
     }
 }

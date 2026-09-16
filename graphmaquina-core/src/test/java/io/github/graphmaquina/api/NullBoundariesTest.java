@@ -4,7 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.DayOfWeek;
+import java.time.Month;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.function.Executable;
@@ -16,24 +19,41 @@ class NullBoundariesTest {
 
     static Stream<Arguments> entries() {
         return Stream.of(
-                Arguments.of("from", (Executable) () -> new EdgeSpec<String, DayOfWeek>(null, DayOfWeek.MONDAY, EdgeKind.STAY, "",
-                        Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty())),
-                Arguments.of("kind", (Executable) () -> new EdgeSpec<String, DayOfWeek>(DayOfWeek.MONDAY, DayOfWeek.MONDAY, null, "",
-                        Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty())),
-                Arguments.of("guards", (Executable) () -> new EdgeSpec<String, DayOfWeek>(DayOfWeek.MONDAY, DayOfWeek.MONDAY, EdgeKind.STAY, "",
-                        Optional.empty(), null, Optional.empty(), List.of(), Optional.empty())),
-                Arguments.of("condition", (Executable) () -> new WatchRule<String, DayOfWeek, String, DayOfWeek>(null, DayOfWeek.MONDAY)),
-                Arguments.of("peer", (Executable) () -> new WatchSpec<String, DayOfWeek, String, DayOfWeek>(DayOfWeek.MONDAY, null,
-                        (String e) -> List.of(), (String p) -> Optional.empty(), List.of())),
-                Arguments.of("entity", (Executable) () -> new Outcome.Ignored<String, DayOfWeek>(null, DayOfWeek.MONDAY, DayOfWeek.MONDAY)),
-                Arguments.of("records", (Executable) () -> new Outcome.Applied<String, DayOfWeek>("e", DayOfWeek.MONDAY, DayOfWeek.MONDAY, null, List.of())),
-                Arguments.of("key", (Executable) () -> new ActionRecord(null, "e", DayOfWeek.MONDAY, DayOfWeek.MONDAY, "A", 0, ActionStatus.OK)),
-                Arguments.of("state", (Executable) () -> WatchCondition.<String, String, DayOfWeek>allIn(null)),
-                Arguments.of("name", (Executable) () -> new NamedCondition<String, String, DayOfWeek>(null,
-                        (String e, java.util.Collection<? extends String> peers, PeerView<String, DayOfWeek> v) -> true)),
-                Arguments.of("hook", (Executable) () -> new HookRef<String>("H", null)),
-                Arguments.of("afterCommit", (Executable) () -> new EdgeSpec<String, DayOfWeek>(DayOfWeek.MONDAY, DayOfWeek.TUESDAY,
-                        EdgeKind.MOVE, "", Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(), null)));
+                Arguments.of("from", (Executable) () -> new TransitionSpec<String, DayOfWeek, Month>(null, Month.JANUARY,
+                        DayOfWeek.MONDAY, Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(),
+                        Optional.empty())),
+                Arguments.of("transition", (Executable) () -> new TransitionSpec<String, DayOfWeek, Month>(DayOfWeek.MONDAY,
+                        null, DayOfWeek.MONDAY, Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(),
+                        Optional.empty())),
+                Arguments.of("guards", (Executable) () -> new TransitionSpec<String, DayOfWeek, Month>(DayOfWeek.MONDAY,
+                        Month.JANUARY, DayOfWeek.MONDAY, Optional.empty(), null, Optional.empty(), List.of(),
+                        Optional.empty(), Optional.empty())),
+                Arguments.of("afterCommit", (Executable) () -> new TransitionSpec<String, DayOfWeek, Month>(DayOfWeek.MONDAY,
+                        Month.JANUARY, DayOfWeek.TUESDAY, Optional.empty(), List.of(), Optional.empty(), List.of(),
+                        Optional.empty(), null)),
+                Arguments.of("from", (Executable) () -> new TransitionKey<DayOfWeek, Month>(null, Month.JANUARY)),
+                Arguments.of("state", (Executable) () -> new StatePolicy<DayOfWeek, Month>(null, "why", Map.of())),
+                Arguments.of("otherwise", (Executable) () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, null, Map.of())),
+                Arguments.of("condition", (Executable) () ->
+                        new WatchRule<String, DayOfWeek, Month, String, DayOfWeek, Month>(null, Month.JANUARY)),
+                Arguments.of("transition", (Executable) () -> new WatchRule<String, DayOfWeek, Month, String, DayOfWeek, Month>(
+                        new NamedCondition<>("c", (String e, Collection<? extends String> peers,
+                                PeerView<String, DayOfWeek, Month> v) -> true), null)),
+                Arguments.of("peer", (Executable) () -> new WatchSpec<String, DayOfWeek, Month, String, DayOfWeek, Month>(
+                        DayOfWeek.MONDAY, null, (String e) -> List.of(), (String p) -> Optional.empty(), List.of())),
+                Arguments.of("entity", (Executable) () ->
+                        new Outcome.Ignored<String, DayOfWeek, Month>(null, DayOfWeek.MONDAY, IgnoreReason.NO_WATCH)),
+                Arguments.of("reason", (Executable) () ->
+                        new Outcome.Ignored<String, DayOfWeek, Month>("e", DayOfWeek.MONDAY, null)),
+                Arguments.of("records", (Executable) () -> new Outcome.Applied<String, DayOfWeek, Month>("e",
+                        DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.MONDAY, null, List.of())),
+                Arguments.of("key", (Executable) () -> new ActionRecord(null, "e", DayOfWeek.MONDAY, Month.JANUARY,
+                        DayOfWeek.MONDAY, "A", 0, ActionStatus.OK)),
+                Arguments.of("state", (Executable) () -> WatchCondition.<String, String, DayOfWeek, Month>allIn(null)),
+                Arguments.of("name", (Executable) () -> new NamedCondition<String, String, DayOfWeek, Month>(null,
+                        (String e, Collection<? extends String> peers, PeerView<String, DayOfWeek, Month> v) -> true)),
+                Arguments.of("hook", (Executable) () -> new HookRef<String, DayOfWeek, Month>("H", null)),
+                Arguments.of("transitions", (Executable) () -> MachineKey.of(String.class, DayOfWeek.class, null)));
     }
 
     @ParameterizedTest

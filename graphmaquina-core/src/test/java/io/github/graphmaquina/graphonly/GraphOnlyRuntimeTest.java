@@ -23,14 +23,15 @@ import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.dsl.StateGraph;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture;
 import io.github.graphmaquina.fixtures.GraphOnlyFixture.Id;
 import io.github.graphmaquina.fixtures.GraphOnlyFixture.State;
 import io.github.graphmaquina.fixtures.GraphOnlyFixture.Ticket;
+import io.github.graphmaquina.fixtures.GraphOnlyFixture;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class GraphOnlyRuntimeTest {
@@ -178,9 +179,9 @@ class GraphOnlyRuntimeTest {
         GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
             .transition(AUTO_APPROVE, REVIEW, DONE).endTransition().build();
         try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
-            assertEquals(java.util.Set.of(APPROVE, AUTO_APPROVE), registry.of(KEY).transitionsFrom(REVIEW));
-            assertEquals(java.util.Set.of(SUBMIT), registry.of(KEY).transitionsFrom(OPEN));
-            assertEquals(java.util.Set.of(), registry.of(KEY).transitionsFrom(DONE));
+            assertEquals(Set.of(APPROVE, AUTO_APPROVE), registry.of(KEY).transitionsFrom(REVIEW));
+            assertEquals(Set.of(SUBMIT), registry.of(KEY).transitionsFrom(OPEN));
+            assertEquals(Set.of(), registry.of(KEY).transitionsFrom(DONE));
         }
     }
 }

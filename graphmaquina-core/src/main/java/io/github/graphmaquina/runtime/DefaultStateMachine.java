@@ -21,6 +21,7 @@ import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.WatchChainExceededException;
 import java.time.Duration;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
@@ -75,7 +76,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         for (TransitionSpec<E, S, T> spec : definition.outgoingFrom(state)) {
             declared.add(spec.transition());
         }
-        return java.util.Collections.unmodifiableSet(declared);
+        return Collections.unmodifiableSet(declared);
     }
 
     @Override
