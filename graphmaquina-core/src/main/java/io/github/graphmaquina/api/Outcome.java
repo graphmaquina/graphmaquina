@@ -4,8 +4,8 @@ import java.util.List;
 import java.util.Optional;
 import lombok.NonNull;
 
-/** Domain-level result of a transition. Technical failures are not modeled here: they throw. */
-public sealed interface Outcome<E, S extends Enum<S>>
+/** Domain-level result of a request. Technical failures are not modeled here: they throw. */
+public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         permits Outcome.Applied, Outcome.Ignored, Outcome.Rejected, Outcome.Failed {
 
     E entity();
@@ -15,10 +15,14 @@ public sealed interface Outcome<E, S extends Enum<S>>
     /** Where the entity ended up. */
     S current();
 
-    /** ACTION or MOVE applied and committed. */
-    record Applied<E, S extends Enum<S>>(@NonNull E entity, @NonNull S from, @NonNull S to,
-                                         @NonNull List<TransitionRecord<?, ?>> records,
-                                         @NonNull List<Reaction> reactions) implements Outcome<E, S> {
+    /** The identifier the caller asked for; empty only when a reevaluation selected no edge. */
+    Optional<T> requestedTransition();
+
+    /** The selected edge ran and committed. */
+    record Applied<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from, @NonNull T transition,
+                                                            @NonNull S to,
+                                                            @NonNull List<TransitionRecord<?, ?, ?>> records,
+                                                            @NonNull List<Reaction> reactions) implements Outcome<E, S, T> {
         public Applied {
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
@@ -28,30 +32,60 @@ public sealed interface Outcome<E, S extends Enum<S>>
         public S current() {
             return to;
         }
+
+        @Override
+        public Optional<T> requestedTransition() {
+            return Optional.of(transition);
+        }
     }
 
-    /** STAY, a convergent no-op, or a reevaluation with no matching rule. */
-    record Ignored<E, S extends Enum<S>>(@NonNull E entity, @NonNull S from, @NonNull S to) implements Outcome<E, S> {
+    /** A reevaluation that selected no edge: no watch on the state, or no rule of its watch held. */
+    record Ignored<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from,
+                                                            @NonNull IgnoreReason reason) implements Outcome<E, S, T> {
         @Override
         public S current() {
             return from;
         }
+
+        @Override
+        public Optional<T> requestedTransition() {
+            return Optional.empty();
+        }
     }
 
-    /** FORBID or a guard that rejected. Nothing ran. */
-    record Rejected<E, S extends Enum<S>>(@NonNull E entity, @NonNull S from, @NonNull S to, @NonNull String reason,
-                                          @NonNull Optional<String> guard) implements Outcome<E, S> {
+    /**
+     * No edge leaves {@code from} with that identifier, or a guard rejected. Nothing ran, and there is no
+     * destination to report: the same identifier may reach different states from different origins.
+     */
+    record Rejected<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from, @NonNull T transition,
+                                                             @NonNull String reason, @NonNull RejectionKind kind,
+                                                             @NonNull Optional<String> guard) implements Outcome<E, S, T> {
+        public Rejected {
+            if (kind == RejectionKind.NO_TRANSITION && guard.isPresent()) {
+                throw new IllegalArgumentException("a NO_TRANSITION rejection carries no guard");
+            }
+            if (kind == RejectionKind.GUARD && guard.isEmpty()) {
+                throw new IllegalArgumentException("a GUARD rejection names the guard that rejected");
+            }
+        }
+
         @Override
         public S current() {
             return from;
         }
+
+        @Override
+        public Optional<T> requestedTransition() {
+            return Optional.of(transition);
+        }
     }
 
-    /** Domain-level failure with onFailure. Commits: the entity is at {@code movedTo}. */
-    record Failed<E, S extends Enum<S>>(@NonNull E entity, @NonNull S from, @NonNull S to, @NonNull S movedTo,
-                                        @NonNull String reason, @NonNull Optional<Throwable> cause,
-                                        @NonNull List<TransitionRecord<?, ?>> records,
-                                        @NonNull List<Reaction> reactions) implements Outcome<E, S> {
+    /** Domain-level failure routed through {@code failureTransition}. Commits: the entity is at {@code movedTo}. */
+    record Failed<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from, @NonNull T transition,
+                                                           @NonNull S to, @NonNull T failureTransition, @NonNull S movedTo,
+                                                           @NonNull String reason, @NonNull Optional<Throwable> cause,
+                                                           @NonNull List<TransitionRecord<?, ?, ?>> records,
+                                                           @NonNull List<Reaction> reactions) implements Outcome<E, S, T> {
         public Failed {
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
@@ -60,6 +94,11 @@ public sealed interface Outcome<E, S extends Enum<S>>
         @Override
         public S current() {
             return movedTo;
+        }
+
+        @Override
+        public Optional<T> requestedTransition() {
+            return Optional.of(transition);
         }
     }
 }

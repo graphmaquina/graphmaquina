@@ -22,7 +22,7 @@ public final class InvalidGraphException extends StateMachineException {
     @Getter
     private final List<Problem> problems;
 
-    public InvalidGraphException(MachineKey<?, ?> key, List<Problem> problems) {
+    public InvalidGraphException(MachineKey<?, ?, ?> key, List<Problem> problems) {
         super(describe(key, problems));
         this.problems = List.copyOf(problems);
     }
@@ -35,7 +35,7 @@ public final class InvalidGraphException extends StateMachineException {
         return List.copyOf(codes);
     }
 
-    private static String describe(MachineKey<?, ?> key, List<Problem> problems) {
+    private static String describe(MachineKey<?, ?, ?> key, List<Problem> problems) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(problems, "problems");
         StringBuilder text = new StringBuilder("the graph " + key + " has " + problems.size() + " problem(s):");

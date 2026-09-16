@@ -4,9 +4,9 @@ import java.util.Collection;
 import lombok.NonNull;
 
 /** Read-only view over another machine. Reads the UnitOfWork first, then the entity. */
-public interface PeerView<P, Q extends Enum<Q>> {
+public interface PeerView<P, Q extends Enum<Q>, U extends Enum<U>> {
 
-    MachineKey<P, Q> key();
+    MachineKey<P, Q, U> key();
 
     Q stateOf(P peer);
 

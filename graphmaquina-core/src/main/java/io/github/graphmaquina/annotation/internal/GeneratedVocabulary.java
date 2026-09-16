@@ -16,10 +16,10 @@ import java.lang.annotation.Target;
 public @interface GeneratedVocabulary {
 
     /** Machine for which the vocabulary was generated. */
-    Class<? extends Machine<?, ?>> machine();
+    Class<? extends Machine<?, ?, ?>> machine();
 
     /** Peer machines associated with pair-specific watch vocabulary. */
-    Class<? extends Machine<?, ?>>[] peer() default {};
+    Class<? extends Machine<?, ?, ?>>[] peer() default {};
 
     /** Generated vocabulary role. */
     VocabularyKind value();

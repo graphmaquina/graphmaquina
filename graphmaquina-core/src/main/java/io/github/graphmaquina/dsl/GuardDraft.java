@@ -5,10 +5,10 @@ import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.TransitionGuard;
 import java.util.Optional;
 
-/** Draft of one guard declared on a cell, before its name is resolved. */
-record GuardDraft<E, S extends Enum<S>>(Optional<String> explicitName,
-                                         Optional<TransitionGuard<E, S>> sync,
-                                         Optional<AsyncTransitionGuard<E, S>> async) {
+/** Draft of one guard declared on an edge, before its name is resolved. */
+record GuardDraft<E, S extends Enum<S>, T extends Enum<T>>(Optional<String> explicitName,
+                                                            Optional<TransitionGuard<E, S, T>> sync,
+                                                            Optional<AsyncTransitionGuard<E, S, T>> async) {
 
     Object instance() {
         if (sync.isPresent()) {
@@ -17,7 +17,7 @@ record GuardDraft<E, S extends Enum<S>>(Optional<String> explicitName,
         return async.orElseThrow();
     }
 
-    GuardRef<E, S> toRef(String name) {
+    GuardRef<E, S, T> toRef(String name) {
         if (sync.isPresent()) {
             return new GuardRef.Sync<>(name, sync.get());
         }

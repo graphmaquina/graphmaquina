@@ -6,6 +6,7 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.TransitionContext;
+import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.StaleContextException;
 import java.util.Collection;
 import java.util.List;
@@ -17,21 +18,26 @@ import lombok.RequiredArgsConstructor;
 
 /** Live {@link TransitionContext} handed to an action: entity, edge, depth, peers and cascading. */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
-final class DefaultTransitionContext<E, S extends Enum<S>> implements TransitionContext<E, S>, ContextHandle {
+final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
+        implements TransitionContext<E, S, T>, ContextHandle {
 
     private final Transaction tx;
-    private final DefaultStateMachine<E, S> machine;
-    @Getter
+    private final DefaultStateMachine<E, S, T> machine;
     private final E entity;
-    @Getter
-    private final S from;
-    @Getter
-    private final S to;
+    private final TransitionSpec<E, S, T> spec;
     @Getter
     private final int depth;
     private final Object operationInput;
     private final Thread owner = Thread.currentThread();
     private boolean stale;
+
+    @Override public E entity() { return entity; }
+
+    @Override public S from() { return spec.from(); }
+
+    @Override public T transition() { return spec.transition(); }
+
+    @Override public S to() { return spec.to(); }
 
     @Override
     public Optional<?> input() {
@@ -39,39 +45,42 @@ final class DefaultTransitionContext<E, S extends Enum<S>> implements Transition
     }
 
     @Override
-    public <P, Q extends Enum<Q>> PeerView<P, Q> peer(@NonNull MachineKey<P, Q> key) {
+    public <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(@NonNull MachineKey<P, Q, U> key) {
         check();
         return tx.peer(this, this::check, key);
     }
 
     @Override
-    public <P, Q extends Enum<Q>> Outcome<P, Q> cascade(@NonNull MachineKey<P, Q> key, @NonNull P peer, @NonNull Q target) {
+    public <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(@NonNull MachineKey<P, Q, U> key,
+                                                                              @NonNull P peer, @NonNull U transition) {
         check();
-        return tx.cascade(this, key, peer, target);
+        return tx.cascade(this, key, peer, transition);
     }
 
     @Override
-    public <P, Q extends Enum<Q>> List<Outcome<P, Q>> cascadeAll(@NonNull MachineKey<P, Q> key, @NonNull Collection<? extends P> peers,
-                                                                 @NonNull Q target, @NonNull CascadePolicy policy) {
+    public <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(
+            @NonNull MachineKey<P, Q, U> key, @NonNull Collection<? extends P> peers, @NonNull U transition,
+            @NonNull CascadePolicy policy) {
         check();
-        return tx.cascadeAll(this, key, peers, target, policy);
+        return tx.cascadeAll(this, key, peers, transition, policy);
     }
 
     @Override
-    public <P, Q extends Enum<Q>, M extends Machine<P, Q>> PeerView<P, Q> peer(@NonNull Class<M> peer) {
+    public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(@NonNull Class<M> peer) {
         return peer(tx.keyFor(peer));
     }
 
     @Override
-    public <P, Q extends Enum<Q>, M extends Machine<P, Q>> Outcome<P, Q> cascade(@NonNull Class<M> peer, @NonNull P entity, @NonNull Q target) {
-        return cascade(tx.keyFor(peer), entity, target);
+    public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(
+            @NonNull Class<M> peer, @NonNull P target, @NonNull U transition) {
+        return cascade(tx.keyFor(peer), target, transition);
     }
 
     @Override
-    public <P, Q extends Enum<Q>, M extends Machine<P, Q>> List<Outcome<P, Q>> cascadeAll(@NonNull Class<M> peer,
-                                                                                         @NonNull Collection<? extends P> peers,
-                                                                                         @NonNull Q target, @NonNull CascadePolicy policy) {
-        return cascadeAll(tx.keyFor(peer), peers, target, policy);
+    public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
+            @NonNull Class<M> peer, @NonNull Collection<? extends P> peers, @NonNull U transition,
+            @NonNull CascadePolicy policy) {
+        return cascadeAll(tx.keyFor(peer), peers, transition, policy);
     }
 
     /** Only from the thread running process(), and only while the transaction is alive. */
@@ -85,13 +94,15 @@ final class DefaultTransitionContext<E, S extends Enum<S>> implements Transition
         }
     }
 
-    @Override public MachineKey<?, ?> machineKey() { return machine.key(); }
+    @Override public MachineKey<?, ?, ?> machineKey() { return machine.key(); }
 
     @Override public Object entityInstance() { return entity; }
 
-    @Override public Enum<?> fromState() { return from; }
+    @Override public Enum<?> fromState() { return spec.from(); }
 
-    @Override public Enum<?> toState() { return to; }
+    @Override public Enum<?> requestedTransition() { return spec.transition(); }
+
+    @Override public Enum<?> toState() { return spec.to(); }
 
     @Override public int contextDepth() { return depth; }
 

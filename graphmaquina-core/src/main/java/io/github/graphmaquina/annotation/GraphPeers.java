@@ -12,5 +12,5 @@ import java.lang.annotation.Target;
 public @interface GraphPeers {
 
     /** Peer machine interfaces. */
-    Class<? extends Machine<?, ?>>[] value();
+    Class<? extends Machine<?, ?, ?>>[] value();
 }

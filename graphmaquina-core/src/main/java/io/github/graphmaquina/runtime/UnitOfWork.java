@@ -2,8 +2,8 @@ package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
-import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.TransitionRecord;
+import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.StateMachineException;
 import java.util.ArrayDeque;
@@ -68,6 +68,8 @@ final class UnitOfWork {
 
     void append(LogEntry entry) { log.add(entry); }
 
+    List<LogEntry> entries() { return List.copyOf(log); }
+
     int appendJournal(ActionRecord record) {
         journal.add(record);
         return journal.size() - 1;
@@ -75,7 +77,8 @@ final class UnitOfWork {
 
     void journalStatus(int index, ActionStatus status) {
         ActionRecord old = journal.get(index);
-        journal.set(index, new ActionRecord(old.key(), old.entity(), old.from(), old.to(), old.action(), old.depth(), status));
+        journal.set(index, new ActionRecord(old.key(), old.entity(), old.from(), old.transition(), old.to(), old.action(),
+                old.depth(), status));
     }
 
     List<ActionRecord> journal() { return List.copyOf(journal); }
@@ -92,7 +95,7 @@ final class UnitOfWork {
         }
     }
 
-    void push(EntityRef ref, Enum<?> target) { inFlight.addLast(new InFlight(ref, target)); }
+    void push(EntityRef ref, TransitionSpec<?, ?, ?> spec) { inFlight.addLast(new InFlight(ref, spec)); }
 
     void pop() { inFlight.removeLast(); }
 
@@ -147,16 +150,11 @@ final class UnitOfWork {
         return List.copyOf(moved);
     }
 
-    List<TransitionRecord<?, ?>> records() {
-        List<TransitionRecord<?, ?>> records = new ArrayList<>();
+    List<TransitionRecord<?, ?, ?>> records() {
+        List<TransitionRecord<?, ?, ?>> records = new ArrayList<>();
         for (LogEntry entry : log) {
-            records.add(toRecord(entry.ref().key(), entry));
+            records.add(Typed.record(entry.ref().key(), entry));
         }
         return List.copyOf(records);
-    }
-
-    private static <E, S extends Enum<S>> TransitionRecord<E, S> toRecord(MachineKey<E, S> key, LogEntry entry) {
-        return new TransitionRecord<>(key, key.entity().cast(entry.ref().instance()), key.states().cast(entry.from()),
-                key.states().cast(entry.to()), entry.kind(), entry.action(), entry.depth(), entry.convergent());
     }
 }

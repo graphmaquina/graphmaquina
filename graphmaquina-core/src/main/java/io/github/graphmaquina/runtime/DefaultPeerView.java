@@ -12,14 +12,14 @@ import lombok.RequiredArgsConstructor;
  * The guard runs before every read, so a view captured in an action cannot outlive its transaction.
  */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
-final class DefaultPeerView<P, Q extends Enum<Q>> implements PeerView<P, Q> {
+final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements PeerView<P, Q, U> {
 
     private final Runnable guard;
     private final UnitOfWork uow;
-    private final DefaultStateMachine<P, Q> machine;
+    private final DefaultStateMachine<P, Q, U> machine;
 
     @Override
-    public MachineKey<P, Q> key() { return machine.key(); }
+    public MachineKey<P, Q, U> key() { return machine.key(); }
 
     @Override
     public Q stateOf(@NonNull P peer) {

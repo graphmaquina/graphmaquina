@@ -5,14 +5,14 @@ import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionRef;
 import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CascadePolicy;
-import io.github.graphmaquina.api.EdgeKind;
-import io.github.graphmaquina.api.EdgeSpec;
 import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
+import io.github.graphmaquina.api.RejectionKind;
+import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AbortDetails;
 import io.github.graphmaquina.error.CascadeCycleException;
 import io.github.graphmaquina.error.CascadeDepthExceededException;
@@ -40,7 +40,7 @@ final class Transaction {
 
     UnitOfWork uow() { return uow; }
 
-    <P, Q extends Enum<Q>> MachineKey<P, Q> keyFor(Class<? extends Machine<P, Q>> facade) {
+    <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> keyFor(Class<? extends Machine<P, Q, U>> facade) {
         return registry.keyFor(facade);
     }
 
@@ -51,62 +51,65 @@ final class Transaction {
     }
 
     /** Cascades and reevaluate keep calling this: no per-call input to carry. */
-    <E, S extends Enum<S>> StepResult<S> transition(DefaultStateMachine<E, S> machine, E entity, S target, int depth) {
-        return transition(machine, entity, target, depth, null);
+    <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine, E entity,
+                                                                          T id, int depth) {
+        return transition(machine, entity, id, depth, null);
     }
 
-    /** One step: resolve the cell, guards, annotate, execute, failure route. depth 0 is the root. */
-    <E, S extends Enum<S>> StepResult<S> transition(DefaultStateMachine<E, S> machine, E entity, S target, int depth, Object input) {
+    /** One step: resolve (current state, identifier) exactly once, guards, annotate, execute, failure route. */
+    <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine, E entity,
+                                                                          T id, int depth, Object input) {
         EntityRef ref = uow.register(machine.refOf(entity));
         S from = currentState(machine, ref, entity);
-        EdgeSpec<E, S> edge = machine.definition().edge(from, target);
-        if (edge.kind() == EdgeKind.FORBID) {
-            return rejected(machine, ref, from, target, depth, edge.reason(), Optional.empty());
+        Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
+        if (selected.isEmpty()) {
+            return rejected(machine, ref, from, id, Optional.empty(), depth,
+                    machine.definition().policy(from).reasonFor(id), RejectionKind.NO_TRANSITION, Optional.empty());
         }
-        uow.push(ref, target);
+        TransitionSpec<E, S, T> transition = selected.orElseThrow();
+        uow.push(ref, transition);
         try {
-            for (GuardRef<E, S> guard : edge.guards()) {
-                DefaultGuardContext<E, S> guardContext = new DefaultGuardContext<>(this, machine, entity, from, target, depth, input);
+            for (GuardRef<E, S, T> guard : transition.guards()) {
+                DefaultGuardContext<E, S, T> guardContext =
+                        new DefaultGuardContext<>(this, machine, entity, transition, depth, input);
                 contexts.add(guardContext);
-                GuardResult verdict = evaluateGuard(machine, ref, from, target, depth, guard, guardContext);
+                GuardResult verdict = evaluateGuard(machine, ref, transition, depth, guard, guardContext);
                 if (verdict instanceof GuardResult.Reject reject) {
-                    return rejected(machine, ref, from, target, depth, reject.reason(), Optional.of(guard.name()));
+                    return rejected(machine, ref, from, id, Optional.of(transition.to()), depth, reject.reason(),
+                            RejectionKind.GUARD, Optional.of(guard.name()));
                 }
             }
-            if (edge.kind() == EdgeKind.STAY) {
-                uow.append(new LogEntry(ref, from, target, EdgeKind.STAY, Optional.empty(), depth, false));
-                return new StepResult.Ignored<>(from, target);
-            }
             int savepoint = uow.savepoint();
-            uow.append(new LogEntry(ref, from, target, edge.kind(), edge.action().map(ActionRef::name), depth, false));
-            if (edge.kind() == EdgeKind.MOVE) {
-                return new StepResult.Moved<>(from, target);
+            uow.append(new LogEntry(ref, transition, depth));
+            if (transition.action().isEmpty()) {
+                return new StepResult.Applied<>(from, id, transition.to());
             }
-            return runAction(machine, ref, entity, edge, from, target, depth, savepoint, input);
+            return runAction(machine, ref, entity, transition, depth, savepoint, input);
         } finally {
             uow.pop();
         }
     }
 
-    private <E, S extends Enum<S>> StepResult<S> runAction(DefaultStateMachine<E, S> machine, EntityRef ref, E entity,
-                                                            EdgeSpec<E, S> edge, S from, S target, int depth, int savepoint,
-                                                            Object input) {
-        ActionRef<E, S> action = edge.action().orElseThrow();
-        int journalIndex = uow.appendJournal(
-                new ActionRecord(machine.key(), entity, from, target, action.name(), depth, ActionStatus.RUNNING));
-        DefaultTransitionContext<E, S> ctx = new DefaultTransitionContext<>(this, machine, entity, from, target, depth, input);
+    private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> runAction(
+            DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> transition, int depth,
+            int savepoint, Object input) {
+        ActionRef<E, S, T> action = transition.action().orElseThrow();
+        int journalIndex = uow.appendJournal(new ActionRecord(machine.key(), entity, transition.from(),
+                transition.transition(), transition.to(), action.name(), depth, ActionStatus.RUNNING));
+        DefaultTransitionContext<E, S, T> ctx = new DefaultTransitionContext<>(this, machine, entity, transition, depth, input);
         contexts.add(ctx);
         ActionOutcome outcome;
         try {
-            outcome = executeAction(machine, ref, edge, action, ctx);
+            outcome = executeAction(machine, ref, transition, action, ctx);
         } catch (ActionFailure failure) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
             Throwable cause = failure.getCause();
-            if (matchesFailsOn(edge, cause)) {
-                return failureRoute(machine, ref, entity, edge, from, target, depth, savepoint, describe(cause), Optional.of(cause), input);
+            if (matchesFailsOn(transition, cause)) {
+                return failureRoute(machine, ref, entity, transition, depth, savepoint, describe(cause),
+                        Optional.of(cause), input);
             }
-            throw abort(machine, ref, from, target, Optional.of(action.name()), depth,
-                    "the action " + action.name() + " threw " + cause, Optional.of(cause));
+            throw abort(machine, ref, transition.from(), Optional.of(transition.transition()), Optional.of(transition.to()),
+                    Optional.of(action.name()), depth, "the action " + action.name() + " threw " + cause, Optional.of(cause));
         } catch (StateMachineException e) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
             throw e;
@@ -117,17 +120,18 @@ final class Transaction {
         }
         if (outcome instanceof ActionOutcome.Failed failed) {
             uow.journalStatus(journalIndex, ActionStatus.FAILED);
-            return failureRoute(machine, ref, entity, edge, from, target, depth, savepoint, failed.reason(), Optional.empty(), input);
+            return failureRoute(machine, ref, entity, transition, depth, savepoint, failed.reason(), Optional.empty(), input);
         }
         uow.journalStatus(journalIndex, ActionStatus.OK);
-        return new StepResult.Moved<>(from, target);
+        return new StepResult.Applied<>(transition.from(), transition.transition(), transition.to());
     }
 
     /** Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. */
-    private <E, S extends Enum<S>> ActionOutcome executeAction(DefaultStateMachine<E, S> machine, EntityRef ref, EdgeSpec<E, S> edge,
-                                                               ActionRef<E, S> action, DefaultTransitionContext<E, S> ctx) {
+    private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
+            DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
+            ActionRef<E, S, T> action, DefaultTransitionContext<E, S, T> ctx) {
         ActionOutcome outcome = switch (action) {
-            case ActionRef.Sync<E, S> sync -> {
+            case ActionRef.Sync<E, S, T> sync -> {
                 try {
                     yield sync.action().process(ctx);
                 } catch (StateMachineException e) {
@@ -136,7 +140,7 @@ final class Transaction {
                     throw new ActionFailure(e);
                 }
             }
-            case ActionRef.Async<E, S> async -> {
+            case ActionRef.Async<E, S, T> async -> {
                 CompletionStage<ActionOutcome> stage;
                 try {
                     stage = async.action().process(ctx);
@@ -146,36 +150,42 @@ final class Transaction {
                     throw new ActionFailure(e);
                 }
                 if (stage == null) {
-                    throw abort(machine, ref, ctx.from(), ctx.to(), Optional.of(action.name()), ctx.depth(),
+                    throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
+                            Optional.of(action.name()), ctx.depth(),
                             "the action " + action.name() + " returned a null stage", Optional.empty());
                 }
-                yield await(machine, ref, ctx.from(), ctx.to(), Optional.of(action.name()), ctx.depth(),
-                        "the action " + action.name(), stage, edgeDeadline(edge));
+                yield await(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
+                        Optional.of(action.name()), ctx.depth(), "the action " + action.name(), stage,
+                        edgeDeadline(transition));
             }
         };
         if (outcome == null) {
-            throw abort(machine, ref, ctx.from(), ctx.to(), Optional.of(action.name()), ctx.depth(),
-                    "the action " + action.name() + " returned null", Optional.empty());
+            throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
+                    Optional.of(action.name()), ctx.depth(), "the action " + action.name() + " returned null",
+                    Optional.empty());
         }
         return outcome;
     }
 
     /** Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. */
-    private <E, S extends Enum<S>> GuardResult evaluateGuard(DefaultStateMachine<E, S> machine, EntityRef ref, S from, S target,
-                                                             int depth, GuardRef<E, S> guard, DefaultGuardContext<E, S> ctx) {
+    private <E, S extends Enum<S>, T extends Enum<T>> GuardResult evaluateGuard(
+            DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition, int depth,
+            GuardRef<E, S, T> guard, DefaultGuardContext<E, S, T> ctx) {
+        Optional<Enum<?>> id = Optional.of(transition.transition());
+        Optional<Enum<?>> to = Optional.of(transition.to());
         GuardResult verdict = switch (guard) {
-            case GuardRef.Sync<E, S> sync -> {
+            case GuardRef.Sync<E, S, T> sync -> {
                 try {
                     yield sync.guard().test(ctx);
                 } catch (StateMachineException e) {
                     throw e;
                 } catch (RuntimeException e) {
                     Throwable cause = Unwrap.unwrap(e);
-                    throw abort(machine, ref, from, target, Optional.empty(), depth,
+                    throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                             "the guard " + guard.name() + " threw " + cause, Optional.of(cause));
                 }
             }
-            case GuardRef.Async<E, S> async -> {
+            case GuardRef.Async<E, S, T> async -> {
                 CompletionStage<GuardResult> stage;
                 try {
                     stage = async.guard().test(ctx);
@@ -183,80 +193,87 @@ final class Transaction {
                     throw e;
                 } catch (RuntimeException e) {
                     Throwable cause = Unwrap.unwrap(e);
-                    throw abort(machine, ref, from, target, Optional.empty(), depth,
+                    throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                             "the guard " + guard.name() + " threw " + cause, Optional.of(cause));
                 }
                 if (stage == null) {
-                    throw abort(machine, ref, from, target, Optional.empty(), depth,
+                    throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                             "the guard " + guard.name() + " returned a null stage", Optional.empty());
                 }
                 try {
-                    yield await(machine, ref, from, target, Optional.empty(), depth, "the guard " + guard.name(), stage, uow.deadlineNanos());
+                    yield await(machine, ref, transition.from(), id, to, Optional.empty(), depth,
+                            "the guard " + guard.name(), stage, uow.deadlineNanos());
                 } catch (ActionFailure failure) {
-                    throw abort(machine, ref, from, target, Optional.empty(), depth,
+                    throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                             "the guard " + guard.name() + " failed: " + failure.getCause(), Optional.of(failure.getCause()));
                 }
             }
         };
         if (verdict == null) {
-            throw abort(machine, ref, from, target, Optional.empty(), depth,
+            throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                     "the guard " + guard.name() + " returned null", Optional.empty());
         }
         return verdict;
     }
 
     /** Waits under the deadline. Timeout and interruption are aborts; the user's stage is left running. */
-    private <T> T await(DefaultStateMachine<?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> to, Optional<String> action,
-                        int depth, String what, CompletionStage<T> stage, long deadlineNanos) {
+    private <R> R await(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Optional<Enum<?>> id,
+                        Optional<Enum<?>> to, Optional<String> action, int depth, String what, CompletionStage<R> stage,
+                        long deadlineNanos) {
         try {
             return Await.await(stage, deadlineNanos);
         } catch (Await.Timeout timeout) {
-            throw abort(machine, ref, from, to, action, depth, "waiting for " + what + " timed out", Optional.of(timeout.getCause()));
+            throw abort(machine, ref, from, id, to, action, depth, "waiting for " + what + " timed out",
+                    Optional.of(timeout.getCause()));
         } catch (Await.Interrupted interrupted) {
-            throw abort(machine, ref, from, to, action, depth, "interrupted while waiting for " + what, Optional.of(interrupted.getCause()));
+            throw abort(machine, ref, from, id, to, action, depth, "interrupted while waiting for " + what,
+                    Optional.of(interrupted.getCause()));
         }
     }
 
     /** The edge's timeout can only shorten the transaction's deadline, never extend it. */
-    private <E, S extends Enum<S>> long edgeDeadline(EdgeSpec<E, S> edge) {
+    private <E, S extends Enum<S>, T extends Enum<T>> long edgeDeadline(TransitionSpec<E, S, T> transition) {
         long base = uow.deadlineNanos();
-        if (edge.timeout().isEmpty()) {
+        if (transition.timeout().isEmpty()) {
             return base;
         }
-        return Math.min(base, System.nanoTime() + edge.timeout().get().toNanos());
+        return Math.min(base, System.nanoTime() + transition.timeout().get().toNanos());
     }
 
     /**
-     * Spec §6.6: roll back to the savepoint, annotate from → onFailure, run its action without guards and without its own failure route.
+     * Roll back to the savepoint, then resolve the recovery edge from the original origin by its identifier and
+     * run it without guards and without a failure route of its own.
      */
-    private <E, S extends Enum<S>> StepResult<S> failureRoute(DefaultStateMachine<E, S> machine, EntityRef ref, E entity,
-                                                               EdgeSpec<E, S> edge, S from, S target, int depth, int savepoint,
-                                                               String reason, Optional<Throwable> cause, Object input) {
+    private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
+            DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> failing, int depth,
+            int savepoint, String reason, Optional<Throwable> cause, Object input) {
         uow.rollbackTo(savepoint);
-        Optional<String> actionName = edge.action().map(ActionRef::name);
-        if (edge.onFailure().isEmpty()) {
-            AbortDetails details = details(machine, ref, from, target, actionName);
+        S from = failing.from();
+        Optional<String> actionName = failing.action().map(ActionRef::name);
+        if (failing.onFailure().isEmpty()) {
+            AbortDetails details = details(machine, ref, from, Optional.of(failing.transition()),
+                    Optional.of(failing.to()), actionName);
             UnhandledFailureException unhandled = cause.isPresent()
                     ? new UnhandledFailureException(details, reason, cause.get())
                     : new UnhandledFailureException(details, reason);
             throw poisonIfNested(depth, unhandled);
         }
-        S failState = edge.onFailure().get();
-        EdgeSpec<E, S> route = machine.definition().edge(from, failState);
-        Optional<String> routeAction = route.action().map(ActionRef::name);
-        uow.append(new LogEntry(ref, from, failState, route.kind(), routeAction, depth, false));
-        if (route.kind() == EdgeKind.ACTION) {
-            ActionRef<E, S> action = route.action().orElseThrow();
-            int journalIndex = uow.appendJournal(
-                    new ActionRecord(machine.key(), entity, from, failState, action.name(), depth, ActionStatus.RUNNING));
-            DefaultTransitionContext<E, S> ctx = new DefaultTransitionContext<>(this, machine, entity, from, failState, depth, input);
+        T recoveryId = failing.onFailure().orElseThrow();
+        TransitionSpec<E, S, T> route = machine.definition().findTransition(from, recoveryId).orElseThrow();
+        uow.append(new LogEntry(ref, route, depth));
+        if (route.action().isPresent()) {
+            ActionRef<E, S, T> action = route.action().orElseThrow();
+            int journalIndex = uow.appendJournal(new ActionRecord(machine.key(), entity, from, recoveryId, route.to(),
+                    action.name(), depth, ActionStatus.RUNNING));
+            DefaultTransitionContext<E, S, T> ctx = new DefaultTransitionContext<>(this, machine, entity, route, depth, input);
             contexts.add(ctx);
             ActionOutcome outcome;
             try {
                 outcome = executeAction(machine, ref, route, action, ctx);
             } catch (ActionFailure failure) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
-                throw abort(machine, ref, from, failState, Optional.of(action.name()), depth,
+                throw abort(machine, ref, from, Optional.of(recoveryId), Optional.of(route.to()),
+                        Optional.of(action.name()), depth,
                         "the failure route action " + action.name() + " threw after the original failure (" + reason + ")",
                         Optional.of(failure.getCause()));
             } catch (StateMachineException e) {
@@ -269,26 +286,29 @@ final class Transaction {
             }
             if (outcome instanceof ActionOutcome.Failed nested) {
                 uow.journalStatus(journalIndex, ActionStatus.FAILED);
-                throw abort(machine, ref, from, failState, Optional.of(action.name()), depth,
+                throw abort(machine, ref, from, Optional.of(recoveryId), Optional.of(route.to()),
+                        Optional.of(action.name()), depth,
                         "the failure route action " + action.name() + " returned failed (" + nested.reason()
                                 + ") after the original failure (" + reason + ")", cause);
             }
             uow.journalStatus(journalIndex, ActionStatus.OK);
         }
-        return new StepResult.FailedTo<>(from, target, failState, reason, cause);
+        return new StepResult.Failed<>(from, failing.transition(), failing.to(), recoveryId, route.to(), reason, cause);
     }
 
-    private <E, S extends Enum<S>> StepResult<S> rejected(DefaultStateMachine<E, S> machine, EntityRef ref, S from, S target,
-                                                           int depth, String reason, Optional<String> guard) {
+    private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> rejected(
+            DefaultStateMachine<E, S, T> machine, EntityRef ref, S from, T id, Optional<S> to, int depth, String reason,
+            RejectionKind kind, Optional<String> guard) {
         if (depth == 0) {
-            return new StepResult.Rejected<>(from, target, reason, guard);
+            return new StepResult.Rejected<>(from, id, reason, kind, guard);
         }
-        String who = guard.map((String name) -> "guard " + name).orElse("the FORBID cell");
-        throw abort(machine, ref, from, target, Optional.empty(), depth,
+        String who = guard.map((String name) -> "guard " + name).orElse("no such transition");
+        throw abort(machine, ref, from, Optional.of(id), to.map((S state) -> (Enum<?>) state), Optional.empty(), depth,
                 "rejected inside a cascade by " + who + ": " + reason, Optional.empty());
     }
 
-    private <E, S extends Enum<S>> S currentState(DefaultStateMachine<E, S> machine, EntityRef ref, E entity) {
+    private <E, S extends Enum<S>, T extends Enum<T>> S currentState(DefaultStateMachine<E, S, T> machine, EntityRef ref,
+                                                                      E entity) {
         Optional<Enum<?>> pending = uow.pendingState(ref);
         if (pending.isPresent()) {
             return machine.key().states().cast(pending.get());
@@ -296,11 +316,12 @@ final class Transaction {
         return machine.readState(entity);
     }
 
-    private static <E, S extends Enum<S>> boolean matchesFailsOn(EdgeSpec<E, S> edge, Throwable cause) {
+    private static <E, S extends Enum<S>, T extends Enum<T>> boolean matchesFailsOn(TransitionSpec<E, S, T> transition,
+                                                                                     Throwable cause) {
         if (cause instanceof Error || cause instanceof CancellationException) {
             return false;
         }
-        for (Class<? extends Throwable> type : edge.failsOn()) {
+        for (Class<? extends Throwable> type : transition.failsOn()) {
             if (type.isInstance(cause)) {
                 return true;
             }
@@ -313,9 +334,10 @@ final class Transaction {
         return cause.getClass().getSimpleName() + (message == null ? "" : ": " + message);
     }
 
-    private TransitionAbortedException abort(DefaultStateMachine<?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> to,
-                                             Optional<String> action, int depth, String message, Optional<Throwable> cause) {
-        AbortDetails details = details(machine, ref, from, to, action);
+    private TransitionAbortedException abort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
+                                             Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action, int depth,
+                                             String message, Optional<Throwable> cause) {
+        AbortDetails details = details(machine, ref, from, id, to, action);
         TransitionAbortedException error = cause.isPresent()
                 ? new TransitionAbortedException(details, message, cause.get())
                 : new TransitionAbortedException(details, message);
@@ -330,30 +352,34 @@ final class Transaction {
         return error;
     }
 
-    private AbortDetails details(DefaultStateMachine<?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> to, Optional<String> action) {
+    private AbortDetails details(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Optional<Enum<?>> id,
+                                 Optional<Enum<?>> to, Optional<String> action) {
         uow.markRunningAsThrew();
-        return new AbortDetails(machine.key(), ref.instance(), from, to, action, uow.path(), uow.journal());
+        return new AbortDetails(machine.key(), ref.instance(), from, id, to, action, uow.path(), uow.journal());
     }
 
     private AbortDetails details(ContextHandle caller) {
         uow.markRunningAsThrew();
-        return new AbortDetails(caller.machineKey(), caller.entityInstance(), caller.fromState(), caller.toState(),
-                Optional.empty(), uow.path(), uow.journal());
+        return new AbortDetails(caller.machineKey(), caller.entityInstance(), caller.fromState(),
+                Optional.of(caller.requestedTransition()), Optional.of(caller.toState()), Optional.empty(),
+                uow.path(), uow.journal());
     }
 
     // Peers and cascading.
 
     /** {@code guard} is the caller context's own check: the view stays as alive as the context that made it. */
-    <P, Q extends Enum<Q>> PeerView<P, Q> peer(ContextHandle caller, Runnable guard, MachineKey<P, Q> key) {
+    <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(ContextHandle caller, Runnable guard,
+                                                                     MachineKey<P, Q, U> key) {
         checkPoison(caller);
         return new DefaultPeerView<>(guard, uow, registry.machineFor(key));
     }
 
     /** Cascade to a single peer. Any failure poisons the UnitOfWork: the parent cannot carry on as if nothing happened. */
-    <P, Q extends Enum<Q>> Outcome<P, Q> cascade(ContextHandle caller, MachineKey<P, Q> key, P peer, Q target) {
+    <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(ContextHandle caller, MachineKey<P, Q, U> key,
+                                                                       P peer, U id) {
         checkPoison(caller);
         try {
-            return cascadeOne(caller, key, peer, target);
+            return cascadeOne(caller, key, peer, id);
         } catch (StateMachineException e) {
             uow.poison(e);
             throw e;
@@ -361,36 +387,43 @@ final class Transaction {
     }
 
     /**
-     * Order of checks per §6.5: identity, convergent no-op, cycle, depth, and only then the step.
-     * A no-op runs no code, so it can come before the cycle check without opening a hole.
+     * Order of checks: identity, re-entry, depth, and only then the step. There is no convergent no-op: a request
+     * that resolves no edge is rejected, and a request on an entity already in flight is a cycle.
      */
-    private <P, Q extends Enum<Q>> Outcome<P, Q> cascadeOne(ContextHandle caller, MachineKey<P, Q> key, P peer, Q target) {
-        DefaultStateMachine<P, Q> machine = registry.machineFor(key);
+    private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascadeOne(ContextHandle caller,
+                                                                                  MachineKey<P, Q, U> key, P peer, U id) {
+        DefaultStateMachine<P, Q, U> machine = registry.machineFor(key);
         EntityRef ref = uow.register(machine.refOf(peer));
         int depth = caller.contextDepth() + 1;
-        Optional<Enum<?>> pending = uow.pendingState(ref);
-        if (pending.isPresent() && pending.get() == target) {
-            uow.append(new LogEntry(ref, target, target, EdgeKind.STAY, Optional.empty(), depth, true));
-            return new Outcome.Ignored<>(peer, target, target);
-        }
         Optional<InFlight> flight = uow.inFlight(ref);
         if (flight.isPresent()) {
-            List<String> route = new ArrayList<>(uow.path());
-            route.add(ref.toString());
-            throw new CascadeCycleException(details(caller), route, flight.get().target(), target);
+            throw cascadeCycle(caller, flight.orElseThrow(), id);
         }
         if (depth > uow.maxDepth()) {
             throw new CascadeDepthExceededException(details(caller), uow.maxDepth());
         }
-        StepResult<Q> step = transition(machine, peer, target, depth);
+        return outcomeOf(peer, transition(machine, peer, id, depth, null));
+    }
+
+    /** The cascade path plus the entity that was re-entered, with the identity in flight and the one requested. */
+    private CascadeCycleException cascadeCycle(ContextHandle caller, InFlight flight, Enum<?> requested) {
+        List<String> route = new ArrayList<>(uow.path());
+        route.add(flight.ref().toString());
+        return new CascadeCycleException(details(caller), route, flight.transition(), requested);
+    }
+
+    /** Adapts a nested step to an outcome: records and reactions belong to the root, so they stay empty here. */
+    private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> outcomeOf(P peer, StepResult<Q, U> step) {
         return switch (step) {
-            case StepResult.Moved<Q> moved -> new Outcome.Applied<>(peer, moved.from(), moved.to(), List.of(), List.of());
-            case StepResult.Ignored<Q> ignored -> new Outcome.Ignored<>(peer, ignored.from(), ignored.to());
+            case StepResult.Applied<Q, U> applied ->
+                    new Outcome.Applied<>(peer, applied.from(), applied.transition(), applied.to(), List.of(), List.of());
+            case StepResult.Ignored<Q, U> ignored -> new Outcome.Ignored<>(peer, ignored.from(), ignored.reason());
             // Unreachable: at depth > 0, rejected(...) always aborts. Kept only for switch exhaustiveness.
-            case StepResult.Rejected<Q> rejected ->
-                    new Outcome.Rejected<>(peer, rejected.from(), rejected.to(), rejected.reason(), rejected.guard());
-            case StepResult.FailedTo<Q> failed -> new Outcome.Failed<>(peer, failed.from(), failed.to(), failed.movedTo(),
-                    failed.reason(), failed.cause(), List.of(), List.of());
+            case StepResult.Rejected<Q, U> rejected -> new Outcome.Rejected<>(peer, rejected.from(), rejected.transition(),
+                    rejected.reason(), rejected.kind(), rejected.guard());
+            case StepResult.Failed<Q, U> failed -> new Outcome.Failed<>(peer, failed.from(), failed.transition(),
+                    failed.to(), failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
+                    List.of(), List.of());
         };
     }
 
@@ -398,19 +431,21 @@ final class Transaction {
      * FAIL_FAST aborts at the first failure. COLLECT tries every element under its own savepoint, rolls back
      * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
      */
-    <P, Q extends Enum<Q>> List<Outcome<P, Q>> cascadeAll(ContextHandle caller, MachineKey<P, Q> key,
-                                                          Collection<? extends P> peers, Q target, CascadePolicy policy) {
+    <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(ContextHandle caller,
+                                                                                MachineKey<P, Q, U> key,
+                                                                                Collection<? extends P> peers, U id,
+                                                                                CascadePolicy policy) {
         checkPoison(caller);
-        List<Outcome<P, Q>> outcomes = new ArrayList<>();
+        List<Outcome<P, Q, U>> outcomes = new ArrayList<>();
         List<TransitionAbortedException> errors = new ArrayList<>();
         for (P peer : peers) {
             if (policy == CascadePolicy.FAIL_FAST) {
-                outcomes.add(cascade(caller, key, peer, target));
+                outcomes.add(cascade(caller, key, peer, id));
                 continue;
             }
             int savepoint = uow.savepoint();
             try {
-                outcomes.add(cascadeOne(caller, key, peer, target));
+                outcomes.add(cascadeOne(caller, key, peer, id));
             } catch (TransitionAbortedException e) {
                 uow.rollbackTo(savepoint);
                 uow.clearPoison();

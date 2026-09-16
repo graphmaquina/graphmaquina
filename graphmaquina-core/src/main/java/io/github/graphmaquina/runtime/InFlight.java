@@ -1,4 +1,9 @@
 package io.github.graphmaquina.runtime;
 
-/** An entity currently mid-step toward a target, used to detect cascade cycles. */
-record InFlight(EntityRef ref, Enum<?> target) { }
+import io.github.graphmaquina.api.TransitionSpec;
+
+/** An entity currently mid-step along an edge, used to detect cascade cycles. */
+record InFlight(EntityRef ref, TransitionSpec<?, ?, ?> spec) {
+
+    Enum<?> transition() { return spec.transition(); }
+}

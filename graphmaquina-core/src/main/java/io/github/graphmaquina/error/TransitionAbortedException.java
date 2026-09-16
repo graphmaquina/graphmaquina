@@ -23,13 +23,17 @@ public class TransitionAbortedException extends StateMachineException {
         this.details = details;
     }
 
-    public MachineKey<?, ?> key() { return details.key(); }
+    public MachineKey<?, ?, ?> key() { return details.key(); }
 
     public Object entity() { return details.entity(); }
 
     public Enum<?> from() { return details.from(); }
 
-    public Enum<?> to() { return details.to(); }
+    /** The requested identifier, absent when the abort happened before one was read. */
+    public Optional<Enum<?>> transition() { return details.transition(); }
+
+    /** The destination of the resolved edge; absent when no edge was selected. */
+    public Optional<Enum<?>> to() { return details.to(); }
 
     public Optional<String> action() { return details.action(); }
 
@@ -42,6 +46,6 @@ public class TransitionAbortedException extends StateMachineException {
         Objects.requireNonNull(details, "details");
         Objects.requireNonNull(message, "message");
         String path = details.cascadePath().isEmpty() ? "" : " [route " + String.join(" → ", details.cascadePath()) + "]";
-        return "transition aborted in " + details.key() + " " + details.from() + " → " + details.to() + ": " + message + path;
+        return "transition aborted in " + details.key() + " " + details.describeEdge() + ": " + message + path;
     }
 }

@@ -11,14 +11,14 @@ import lombok.Getter;
 @Getter
 public final class AfterCommitException extends StateMachineException {
 
-    private final MachineKey<?, ?> key;
+    private final MachineKey<?, ?, ?> key;
     private final Object entity;
     private final Enum<?> from;
     private final Enum<?> to;
     /** The hook's name, or {@code "listener"}. */
     private final String step;
 
-    public AfterCommitException(MachineKey<?, ?> key, Object entity, Enum<?> from, Enum<?> to, String step, Throwable cause) {
+    public AfterCommitException(MachineKey<?, ?, ?> key, Object entity, Enum<?> from, Enum<?> to, String step, Throwable cause) {
         super(describe(key, from, to, step), cause);
         this.key = key;
         this.entity = Objects.requireNonNull(entity, "entity");
@@ -27,7 +27,7 @@ public final class AfterCommitException extends StateMachineException {
         this.step = step;
     }
 
-    private static String describe(MachineKey<?, ?> key, Enum<?> from, Enum<?> to, String step) {
+    private static String describe(MachineKey<?, ?, ?> key, Enum<?> from, Enum<?> to, String step) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(from, "from");
         Objects.requireNonNull(to, "to");

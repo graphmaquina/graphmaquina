@@ -1,87 +1,95 @@
 package io.github.graphmaquina.export;
 
 import io.github.graphmaquina.api.ActionRef;
-import io.github.graphmaquina.api.EdgeSpec;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardRef;
+import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
 import io.github.graphmaquina.api.WatchSpec;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import lombok.NonNull;
 
-/** Structural view of a graph by names only. The DSL produces it today; a processor will produce it tomorrow. */
+/** Structural view of a graph by names only. The DSL produces it today; a processor produces it tomorrow. */
 public record GraphView(@NonNull String name, @NonNull String initial, @NonNull Set<String> terminals,
-                        @NonNull List<EdgeView> edges, @NonNull List<WatchView> watches) {
+                        @NonNull List<String> states, @NonNull List<TransitionView> transitions,
+                        @NonNull List<PolicyView> policies, @NonNull List<WatchView> watches) {
 
     public GraphView {
         terminals = Set.copyOf(terminals);
-        edges = List.copyOf(edges);
+        states = List.copyOf(states);
+        transitions = List.copyOf(transitions);
+        policies = List.copyOf(policies);
         watches = List.copyOf(watches);
     }
 
-    /** Builds the view of {@code definition} by walking its full N&times;N matrix in ordinal order. */
-    public static <E, S extends Enum<S>> GraphView of(@NonNull GraphDefinition<E, S> definition) {
-        S[] states = definition.key().states().getEnumConstants();
-        List<EdgeView> edges = new ArrayList<>();
-        for (S from : states) {
-            for (S to : states) {
-                EdgeSpec<E, S> spec = definition.edge(from, to);
-                List<String> failureActions = new ArrayList<>();
-                for (S other : states) {
-                    EdgeSpec<E, S> candidate = definition.edge(from, other);
-                    if (candidate.onFailure().isPresent() && candidate.onFailure().get() == to && candidate.action().isPresent()) {
-                        failureActions.add(candidate.action().get().name());
-                    }
-                }
-                Optional<String> failureOf =
-                        failureActions.isEmpty() ? Optional.empty() : Optional.of(String.join(", ", failureActions));
-                Optional<String> watchRule = Optional.empty();
-                Optional<WatchSpec<E, S, ?, ?>> watch = definition.watch(from);
-                if (watch.isPresent()) {
-                    watchRule = ruleLabel(watch.get(), to);
-                }
-                List<String> guards = new ArrayList<>();
-                for (GuardRef<E, S> guard : spec.guards()) {
-                    guards.add(guard.name());
-                }
-                edges.add(new EdgeView(from.name(), to.name(), spec.kind(), spec.reason(), spec.action().map(ActionRef::name),
-                        guards, spec.isAsync(), failureOf, watchRule));
+    /** Builds the view of {@code definition}: every state as a node, every declared edge, and nothing else. */
+    public static <E, S extends Enum<S>, T extends Enum<T>> GraphView of(@NonNull GraphDefinition<E, S, T> definition) {
+        List<String> states = new ArrayList<>();
+        for (S state : definition.graph().nodes()) {
+            states.add(state.name());
+        }
+        List<TransitionView> transitions = new ArrayList<>();
+        for (TransitionSpec<E, S, T> spec : definition.transitions()) {
+            List<String> guards = new ArrayList<>();
+            for (GuardRef<E, S, T> guard : spec.guards()) {
+                guards.add(guard.name());
             }
+            transitions.add(new TransitionView(spec.from().name(), spec.transition().name(), spec.to().name(), spec.kind(),
+                    spec.action().map(ActionRef::name), guards, spec.isAsync(), spec.onFailure().map(Enum::name),
+                    watchLabel(definition, spec)));
+        }
+        List<PolicyView> policies = new ArrayList<>();
+        for (S state : definition.graph().nodes()) {
+            StatePolicy<S, T> policy = definition.policy(state);
+            List<String> rejections = new ArrayList<>();
+            for (Map.Entry<T, String> rejection : policy.rejectionReasons().entrySet()) {
+                rejections.add(rejection.getKey().name() + ": " + rejection.getValue());
+            }
+            policies.add(new PolicyView(state.name(), policy.otherwise(), rejections));
         }
         List<WatchView> watches = new ArrayList<>();
-        for (S state : states) {
-            Optional<WatchSpec<E, S, ?, ?>> watch = definition.watch(state);
-            if (watch.isPresent()) {
-                List<String> rules = new ArrayList<>();
-                for (WatchRule<E, S, ?, ?> rule : watch.get().rules()) {
-                    rules.add(rule.condition().name() + " → " + rule.target().name());
-                }
-                watches.add(new WatchView(state.name(), watch.get().peer().entity().getSimpleName(), rules));
+        for (S state : definition.graph().nodes()) {
+            Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = definition.watch(state);
+            if (watch.isEmpty()) {
+                continue;
             }
+            List<String> rules = new ArrayList<>();
+            for (WatchRule<E, S, T, ?, ?, ?> rule : watch.get().rules()) {
+                rules.add(rule.condition().name() + " → " + rule.transition().name());
+            }
+            watches.add(new WatchView(state.name(), watch.get().peer().entity().getSimpleName(), rules));
         }
         Set<String> terminals = new LinkedHashSet<>();
-        for (S state : states) {
+        for (S state : definition.graph().nodes()) {
             if (definition.terminals().contains(state)) {
                 terminals.add(state.name());
             }
         }
-        return new GraphView(definition.key().toString(), definition.initial().name(), terminals, edges, watches);
+        return new GraphView(definition.key().toString(), definition.initial().name(), terminals, states, transitions,
+                policies, watches);
     }
 
-    private static <E, S extends Enum<S>> Optional<String> ruleLabel(WatchSpec<E, S, ?, ?> watch, S to) {
+    private static <E, S extends Enum<S>, T extends Enum<T>> Optional<String> watchLabel(GraphDefinition<E, S, T> definition,
+                                                                                         TransitionSpec<E, S, T> spec) {
+        Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = definition.watch(spec.from());
+        if (watch.isEmpty()) {
+            return Optional.empty();
+        }
         List<String> names = new ArrayList<>();
-        for (WatchRule<E, S, ?, ?> rule : watch.rules()) {
-            if (rule.target() == to) {
+        for (WatchRule<E, S, T, ?, ?, ?> rule : watch.get().rules()) {
+            if (rule.transition() == spec.transition()) {
                 names.add(rule.condition().name());
             }
         }
         if (names.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(watch.peer().entity().getSimpleName() + ": " + String.join(", ", names));
+        return Optional.of(watch.get().peer().entity().getSimpleName() + ": " + String.join(", ", names));
     }
 }

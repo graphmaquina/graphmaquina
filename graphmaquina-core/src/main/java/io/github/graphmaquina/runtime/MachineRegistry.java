@@ -26,9 +26,9 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class MachineRegistry implements AutoCloseable {
 
-    private final Map<MachineKey<?, ?>, DefaultStateMachine<?, ?>> machines = new LinkedHashMap<>();
-    private final Map<MachineKey<?, ?>, List<Watcher<?, ?, ?, ?>>> watchers = new LinkedHashMap<>();
-    private final Map<Class<?>, MachineKey<?, ?>> facades = new LinkedHashMap<>();
+    private final Map<MachineKey<?, ?, ?>, DefaultStateMachine<?, ?, ?>> machines = new LinkedHashMap<>();
+    private final Map<MachineKey<?, ?, ?>, List<Watcher<?, ?, ?, ?, ?, ?>>> watchers = new LinkedHashMap<>();
+    private final Map<Class<?>, MachineKey<?, ?, ?>> facades = new LinkedHashMap<>();
     private final int maxCascadeDepth;
     private final int maxWatchChain;
     private final Optional<TransitionListener> listener;
@@ -37,20 +37,20 @@ public final class MachineRegistry implements AutoCloseable {
         return new Builder();
     }
 
-    static <E, S extends Enum<S>> StateMachine<E, S> standalone(StateMachines.Builder<E, S> builder) {
+    static <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> standalone(StateMachines.Builder<E, S, T> builder) {
         MachineRegistry registry = new MachineRegistry(10, 10, Optional.empty());
-        DefaultStateMachine<E, S> machine = builder.build(registry);
+        DefaultStateMachine<E, S, T> machine = builder.build(registry);
         registry.machines.put(machine.key(), machine);
         return machine;
     }
 
     /** Throws if not present: an Optional would end up in an orElse that swallows a wiring error. */
-    public <E, S extends Enum<S>> StateMachine<E, S> of(MachineKey<E, S> key) {
+    public <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> of(MachineKey<E, S, T> key) {
         Objects.requireNonNull(key, "key");
         return machineFor(key);
     }
 
-    public Set<MachineKey<?, ?>> keys() {
+    public Set<MachineKey<?, ?, ?>> keys() {
         return Collections.unmodifiableSet(machines.keySet());
     }
 
@@ -60,7 +60,7 @@ public final class MachineRegistry implements AutoCloseable {
      */
     @Override
     public void close() {
-        for (DefaultStateMachine<?, ?> machine : machines.values()) {
+        for (DefaultStateMachine<?, ?, ?> machine : machines.values()) {
             machine.closeIfOwned();
         }
     }
@@ -71,15 +71,15 @@ public final class MachineRegistry implements AutoCloseable {
 
     Optional<TransitionListener> listener() { return listener; }
 
-    <E, S extends Enum<S>> DefaultStateMachine<E, S> machineFor(MachineKey<E, S> key) {
-        DefaultStateMachine<?, ?> machine = anyMachineFor(key);
-        @SuppressWarnings("unchecked") // the map is filled in build() with each machine's typed key: the key fixes E and S
-        DefaultStateMachine<E, S> typed = (DefaultStateMachine<E, S>) machine;
+    <E, S extends Enum<S>, T extends Enum<T>> DefaultStateMachine<E, S, T> machineFor(MachineKey<E, S, T> key) {
+        DefaultStateMachine<?, ?, ?> machine = anyMachineFor(key);
+        @SuppressWarnings("unchecked") // the map is filled in build() with each machine's typed key: the key fixes E, S and T
+        DefaultStateMachine<E, S, T> typed = (DefaultStateMachine<E, S, T>) machine;
         return typed;
     }
 
-    DefaultStateMachine<?, ?> anyMachineFor(MachineKey<?, ?> key) {
-        DefaultStateMachine<?, ?> machine = machines.get(key);
+    DefaultStateMachine<?, ?, ?> anyMachineFor(MachineKey<?, ?, ?> key) {
+        DefaultStateMachine<?, ?, ?> machine = machines.get(key);
         if (machine == null) {
             throw new UnknownPeerMachineException(key, machines.keySet());
         }
@@ -87,35 +87,35 @@ public final class MachineRegistry implements AutoCloseable {
     }
 
     /** Resolves a facade type to its key. The generics of the facade fix P and Q, so the cast is sound. */
-    <P, Q extends Enum<Q>> MachineKey<P, Q> keyFor(Class<? extends Machine<P, Q>> facade) {
-        MachineKey<?, ?> key = facades.get(facade);
+    <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> keyFor(Class<? extends Machine<P, Q, U>> facade) {
+        MachineKey<?, ?, ?> key = facades.get(facade);
         if (key == null) {
             throw new UnknownFacadeException(facade, facades.keySet());
         }
-        @SuppressWarnings("unchecked") // put in build() from a Builder<P, Q> whose as(...) takes Class<? extends Machine<P, Q>>
-        MachineKey<P, Q> typed = (MachineKey<P, Q>) key;
+        @SuppressWarnings("unchecked") // put in build() from a Builder whose as(...) takes Class<? extends Machine<P, Q, U>>
+        MachineKey<P, Q, U> typed = (MachineKey<P, Q, U>) key;
         return typed;
     }
 
     void indexWatchers() {
-        for (DefaultStateMachine<?, ?> machine : machines.values()) {
+        for (DefaultStateMachine<?, ?, ?> machine : machines.values()) {
             indexWatchersOf(machine);
         }
     }
 
-    private <E, S extends Enum<S>> void indexWatchersOf(DefaultStateMachine<E, S> machine) {
+    private <E, S extends Enum<S>, T extends Enum<T>> void indexWatchersOf(DefaultStateMachine<E, S, T> machine) {
         S[] states = machine.key().states().getEnumConstants();
         for (S state : states) {
-            Optional<WatchSpec<E, S, ?, ?>> watch = machine.definition().watch(state);
+            Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = machine.definition().watch(state);
             if (watch.isEmpty()) {
                 continue;
             }
-            MachineKey<?, ?> peer = watch.get().peer();
+            MachineKey<?, ?, ?> peer = watch.get().peer();
             if (!machines.containsKey(peer)) {
                 throw new IllegalStateException("the watch of " + machine.key() + "." + state + " points to " + peer
                         + ", which is not in the registry");
             }
-            watchers.computeIfAbsent(peer, (MachineKey<?, ?> key) -> new ArrayList<>()).add(Watcher.of(machine, watch.get()));
+            watchers.computeIfAbsent(peer, (MachineKey<?, ?, ?> key) -> new ArrayList<>()).add(Watcher.of(machine, watch.get()));
         }
     }
 
@@ -124,10 +124,10 @@ public final class MachineRegistry implements AutoCloseable {
      * an owner is re-evaluated only once even if several of its peers moved.
      */
     List<Reaction> dispatchWatches(UnitOfWork uow, int chain) {
-        Map<EntityRef, Watcher<?, ?, ?, ?>> targets = new LinkedHashMap<>();
+        Map<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> targets = new LinkedHashMap<>();
         List<Reaction> reactions = new ArrayList<>();
         for (EntityRef moved : uow.movedEntities()) {
-            for (Watcher<?, ?, ?, ?> watcher : watchers.getOrDefault(moved.key(), List.of())) {
+            for (Watcher<?, ?, ?, ?, ?, ?> watcher : watchers.getOrDefault(moved.key(), List.of())) {
                 try {
                     Optional<EntityRef> owner = watcher.ownerToReevaluate(moved.instance());
                     if (owner.isPresent()) {
@@ -138,7 +138,7 @@ public final class MachineRegistry implements AutoCloseable {
                 }
             }
         }
-        for (Map.Entry<EntityRef, Watcher<?, ?, ?, ?>> entry : targets.entrySet()) {
+        for (Map.Entry<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> entry : targets.entrySet()) {
             reactions.add(entry.getValue().react(entry.getKey().instance(), chain + 1));
         }
         return List.copyOf(reactions);
@@ -147,7 +147,7 @@ public final class MachineRegistry implements AutoCloseable {
     /** Single-use and not thread-safe. Accepts builders, not machines. */
     public static final class Builder {
 
-        private final List<StateMachines.Builder<?, ?>> builders = new ArrayList<>();
+        private final List<StateMachines.Builder<?, ?, ?>> builders = new ArrayList<>();
         private int maxCascadeDepth = 10;
         private int maxWatchChain = 10;
         private Optional<TransitionListener> listener = Optional.empty();
@@ -155,11 +155,18 @@ public final class MachineRegistry implements AutoCloseable {
 
         private Builder() { }
 
-        public Builder add(StateMachines.Builder<?, ?> builder) {
+        public Builder add(StateMachines.Builder<?, ?, ?> builder) {
             Objects.requireNonNull(builder, "builder");
-            for (StateMachines.Builder<?, ?> existing : builders) {
+            for (StateMachines.Builder<?, ?, ?> existing : builders) {
                 if (existing.key().equals(builder.key())) {
                     throw new IllegalStateException("the machine " + builder.key() + " is already in the registry");
+                }
+                if (existing.key().entity().equals(builder.key().entity())
+                        && existing.key().states().equals(builder.key().states())) {
+                    throw new IllegalStateException("the machine " + builder.key() + " writes the same state as "
+                            + existing.key() + " with a different transition catalogue: "
+                            + existing.key().transitions().getSimpleName() + " and "
+                            + builder.key().transitions().getSimpleName());
                 }
             }
             builders.add(builder);
@@ -198,11 +205,11 @@ public final class MachineRegistry implements AutoCloseable {
             }
             used = true;
             MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, listener);
-            for (StateMachines.Builder<?, ?> builder : builders) {
+            for (StateMachines.Builder<?, ?, ?> builder : builders) {
                 if (!builder.hasIdentity()) {
                     throw new IllegalStateException("the machine " + builder.key() + " must declare identity(...) within a registry");
                 }
-                DefaultStateMachine<?, ?> machine = builder.build(registry);
+                DefaultStateMachine<?, ?, ?> machine = builder.build(registry);
                 registry.machines.put(machine.key(), machine);
                 // Defensive: as(...) is typed by (E, S) and add(...) already rejects a duplicate key,
                 // so a typed caller cannot reach this collision.

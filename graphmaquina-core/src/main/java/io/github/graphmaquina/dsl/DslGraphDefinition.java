@@ -1,14 +1,17 @@
 package io.github.graphmaquina.dsl;
 
-import io.github.graphmaquina.api.EdgeSpec;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.TransitionKey;
+import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
-import io.github.graphmaquina.graph.Graph;
-import io.github.graphmaquina.graph.GraphEdge;
+import io.github.graphmaquina.graph.DirectedEdge;
+import io.github.graphmaquina.graph.DirectedGraph;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,78 +21,90 @@ import java.util.Set;
 import lombok.Getter;
 import lombok.NonNull;
 
-/** Immutable {@link GraphDefinition} assembled by the DSL from a complete, valid matrix of drafts. */
-final class DslGraphDefinition<E, S extends Enum<S>> implements GraphDefinition<E, S> {
+/** Immutable {@link GraphDefinition} assembled by the DSL from the edges that were actually declared. */
+final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implements GraphDefinition<E, S, T> {
 
     @Getter
-    private final MachineKey<E, S> key;
-    private final S[] states;
+    private final MachineKey<E, S, T> key;
     @Getter
     private final S initial;
     @Getter
     private final Set<S> terminals;
-    private final List<EdgeSpec<E, S>> cells;
     @Getter
-    private final Graph<S> graph;
-    private final Map<S, WatchSpec<E, S, ?, ?>> watches;
+    private final List<TransitionSpec<E, S, T>> transitions;
+    @Getter
+    private final DirectedGraph<S, T> graph;
+    private final Map<TransitionKey<S, T>, TransitionSpec<E, S, T>> index;
+    private final Map<S, List<TransitionSpec<E, S, T>>> outgoing;
+    private final Map<S, StatePolicy<S, T>> policies;
+    private final Map<S, WatchSpec<E, S, T, ?, ?, ?>> watches;
     @Getter
     private final boolean hasAsync;
-    private final String rendered;
 
-    DslGraphDefinition(MachineKey<E, S> key, S[] states, S initial, Set<S> terminals,
-                       Map<CellKey<S>, EdgeSpec<E, S>> specs, Map<S, WatchSpec<E, S, ?, ?>> watches) {
+    DslGraphDefinition(MachineKey<E, S, T> key, S[] states, S initial, Set<S> terminals,
+                       List<TransitionSpec<E, S, T>> ordered, Map<S, StatePolicy<S, T>> policies,
+                       Map<S, WatchSpec<E, S, T, ?, ?, ?>> watches) {
         this.key = key;
-        this.states = states;
         this.initial = initial;
         EnumSet<S> terminalCopy = EnumSet.noneOf(key.states());
         terminalCopy.addAll(terminals);
         this.terminals = Collections.unmodifiableSet(terminalCopy);
-        List<EdgeSpec<E, S>> ordered = new ArrayList<>();
-        List<GraphEdge<S>> edges = new ArrayList<>();
+        this.transitions = List.copyOf(ordered);
+        Map<TransitionKey<S, T>, TransitionSpec<E, S, T>> byKey = new LinkedHashMap<>();
+        Map<S, List<TransitionSpec<E, S, T>>> leaving = new EnumMap<>(key.states());
+        List<DirectedEdge<S, T>> edges = new ArrayList<>();
         boolean async = false;
-        for (S from : states) {
-            for (S to : states) {
-                EdgeSpec<E, S> spec = specs.get(new CellKey<>(from, to));
-                ordered.add(spec);
-                if (spec.moves()) {
-                    edges.add(new GraphEdge<>(from, to));
-                }
-                if (spec.isAsync()) {
-                    async = true;
-                }
-            }
+        for (S state : states) {
+            leaving.put(state, new ArrayList<>());
         }
-        this.cells = List.copyOf(ordered);
-        this.graph = Graph.of(Arrays.asList(states), edges);
+        for (TransitionSpec<E, S, T> spec : this.transitions) {
+            byKey.put(spec.key(), spec);
+            leaving.get(spec.from()).add(spec);
+            edges.add(new DirectedEdge<>(spec.from(), spec.transition(), spec.to()));
+            async = async || spec.isAsync();
+        }
+        this.index = Collections.unmodifiableMap(byKey);
+        Map<S, List<TransitionSpec<E, S, T>>> frozen = new EnumMap<>(key.states());
+        for (Map.Entry<S, List<TransitionSpec<E, S, T>>> entry : leaving.entrySet()) {
+            frozen.put(entry.getKey(), List.copyOf(entry.getValue()));
+        }
+        this.outgoing = Collections.unmodifiableMap(frozen);
+        this.graph = DirectedGraph.of(Arrays.asList(states), edges);
+        this.policies = Collections.unmodifiableMap(new EnumMap<>(policies));
         this.watches = Collections.unmodifiableMap(new LinkedHashMap<>(watches));
         this.hasAsync = async;
-        this.rendered = MatrixRenderer.render(states, this.cells);
     }
 
     @Override
-    public EdgeSpec<E, S> edge(@NonNull S from, @NonNull S to) {
-        return cells.get(from.ordinal() * states.length + to.ordinal());
+    public List<TransitionSpec<E, S, T>> outgoingFrom(@NonNull S state) {
+        return required(outgoing, state);
     }
 
     @Override
-    public Set<S> allowedFrom(@NonNull S state) {
-        EnumSet<S> allowed = EnumSet.noneOf(key.states());
-        for (S to : states) {
-            if (edge(state, to).moves()) {
-                allowed.add(to);
-            }
-        }
-        return Collections.unmodifiableSet(allowed);
+    public Optional<TransitionSpec<E, S, T>> findTransition(@NonNull S from, @NonNull T transition) {
+        return Optional.ofNullable(index.get(new TransitionKey<>(from, transition)));
     }
 
     @Override
-    public Optional<WatchSpec<E, S, ?, ?>> watch(@NonNull S state) {
+    public StatePolicy<S, T> policy(@NonNull S state) {
+        return required(policies, state);
+    }
+
+    @Override
+    public Optional<WatchSpec<E, S, T, ?, ?, ?>> watch(@NonNull S state) {
         return Optional.ofNullable(watches.get(state));
     }
 
-    @Override
-    public String render() { return rendered; }
+    private <V> V required(Map<S, V> map, S state) {
+        V found = map.get(state);
+        if (found == null) {
+            throw new IllegalArgumentException("unknown state: " + state);
+        }
+        return found;
+    }
 
     @Override
-    public String toString() { return rendered; }
+    public String toString() {
+        return key + "[" + graph.nodes().size() + " states, " + transitions.size() + " transitions]";
+    }
 }

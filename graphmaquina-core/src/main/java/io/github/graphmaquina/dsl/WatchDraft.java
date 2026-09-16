@@ -1,6 +1,5 @@
 package io.github.graphmaquina.dsl;
 
-import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.NamedCondition;
 import io.github.graphmaquina.api.WatchCondition;
@@ -15,30 +14,29 @@ import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
-/** Draft of the watch declared on one state, accumulating its when(...).goTo(...) rules. */
+/** Draft of the watch declared on one state, accumulating its when(...).execute(...) rules. */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
-final class WatchDraft<E, S extends Enum<S>, P, Q extends Enum<Q>>
-        implements WatchBuilder<E, S, P, Q>, WatchRuleBuilder<E, S, P, Q> {
+final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>
+        implements WatchBuilder<E, S, T, P, Q, U>, WatchRuleBuilder<E, S, T, P, Q, U> {
 
-    private final DefaultGraphBuilder<E, S> graph;
-    private final RowDraft<E, S> row;
+    private final DefaultGraphBuilder<E, S, T> graph;
     private final S state;
-    private final MachineKey<P, Q> peer;
+    private final MachineKey<P, Q, U> peer;
     private final Function<? super E, ? extends Collection<? extends P>> peersOf;
     private final Function<? super P, Optional<E>> ownerOf;
-    private final List<WatchRule<E, S, P, Q>> rules = new ArrayList<>();
-    private Optional<NamedCondition<E, P, Q>> pending = Optional.empty();
+    private final List<WatchRule<E, S, T, P, Q, U>> rules = new ArrayList<>();
+    private Optional<NamedCondition<E, P, Q, U>> pending = Optional.empty();
 
     S state() { return state; }
 
     @Override
-    public WatchRuleBuilder<E, S, P, Q> when(@NonNull NamedCondition<E, P, Q> condition) {
+    public WatchRuleBuilder<E, S, T, P, Q, U> when(@NonNull NamedCondition<E, P, Q, U> condition) {
         pending = Optional.of(condition);
         return this;
     }
 
     @Override
-    public WatchRuleBuilder<E, S, P, Q> when(@NonNull String name, @NonNull WatchCondition<E, P, Q> condition) {
+    public WatchRuleBuilder<E, S, T, P, Q, U> when(@NonNull String name, @NonNull WatchCondition<E, P, Q, U> condition) {
         if (name.isBlank()) {
             graph.problems().add("SG107", state.ordinal(), -1,
                     "a condition of the watch of " + state + " has a blank name");
@@ -50,42 +48,23 @@ final class WatchDraft<E, S extends Enum<S>, P, Q extends Enum<Q>>
     }
 
     @Override
-    public WatchBuilder<E, S, P, Q> goTo(@NonNull S target) {
-        rules.add(new WatchRule<>(pending.orElseThrow(), target));
+    public WatchBuilder<E, S, T, P, Q, U> execute(@NonNull T transition) {
+        rules.add(new WatchRule<>(pending.orElseThrow(), transition));
         pending = Optional.empty();
         return this;
     }
 
-    Optional<WatchSpec<E, S, P, Q>> toSpec(Problems problems) {
+    @Override
+    public GraphBuilder<E, S, T> endWatch() {
+        return graph;
+    }
+
+    Optional<WatchSpec<E, S, T, P, Q, U>> toSpec(Problems problems) {
         if (rules.isEmpty()) {
             problems.add("SG404", state.ordinal(), -1,
-                    "the watch of " + state + " declares no when(...).goTo(...) rule");
+                    "the watch of " + state + " declares no when(...).execute(...) rule");
             return Optional.empty();
         }
         return Optional.of(new WatchSpec<>(state, peer, peersOf, ownerOf, rules));
     }
-
-    // RowBuilder: delegates to the row
-
-    @Override
-    public EdgeStart<E, S> to(S target) { return row.to(target); }
-
-    @Override
-    public StayEdge<E, S> stay() { return row.stay(); }
-
-    @Override
-    public <P2, Q2 extends Enum<Q2>> WatchBuilder<E, S, P2, Q2> watches(MachineKey<P2, Q2> otherPeer,
-                                                                        Function<? super E, ? extends Collection<? extends P2>> otherPeersOf,
-                                                                        Function<? super P2, Optional<E>> otherOwnerOf) {
-        return row.watches(otherPeer, otherPeersOf, otherOwnerOf);
-    }
-
-    @Override
-    public GraphBuilder<E, S> forbidOthers(String reason) { return row.forbidOthers(reason); }
-
-    @Override
-    public RowBuilder<E, S> from(S other) { return row.from(other); }
-
-    @Override
-    public GraphDefinition<E, S> build() { return row.build(); }
 }
