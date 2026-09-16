@@ -1,0 +1,198 @@
+package io.github.graphmaquina.graph;
+
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import lombok.NonNull;
+
+/**
+ * Strongly connected components of a {@link Graph}, computed iteratively so that a graph with tens of thousands
+ * of nodes never depends on the Java stack. Used to authorise cycles without enumerating them: a component of
+ * more than one node, or a single node with a self-loop, is a cycle.
+ *
+ * <p>Both the components and the nodes inside each of them follow the graph's declared node order, so a build
+ * reports the same components and the same witnesses every time.
+ */
+public final class StrongComponents {
+
+    private StrongComponents() { }
+
+    /** The components of {@code graph}, ordered by the declaration index of their first node. */
+    public static <N> List<Set<N>> find(@NonNull Graph<N> graph) {
+        List<N> order = new ArrayList<>(graph.nodes());
+        Map<N, Integer> index = new HashMap<>();
+        for (int i = 0; i < order.size(); i++) {
+            index.put(order.get(i), i);
+        }
+        Map<N, List<N>> reverse = reverseAdjacency(graph, order);
+        List<N> byFinish = finishOrder(graph, order);
+        Set<N> assigned = new LinkedHashSet<>();
+        List<List<N>> components = new ArrayList<>();
+        for (int i = byFinish.size() - 1; i >= 0; i--) {
+            N root = byFinish.get(i);
+            if (assigned.contains(root)) {
+                continue;
+            }
+            List<N> component = new ArrayList<>();
+            Deque<N> pending = new ArrayDeque<>();
+            pending.addLast(root);
+            assigned.add(root);
+            while (!pending.isEmpty()) {
+                N current = pending.removeLast();
+                component.add(current);
+                for (N previous : reverse.get(current)) {
+                    if (assigned.add(previous)) {
+                        pending.addLast(previous);
+                    }
+                }
+            }
+            component.sort(Comparator.comparingInt(index::get));
+            components.add(component);
+        }
+        components.sort(Comparator.comparingInt((List<N> component) -> index.get(component.get(0))));
+        List<Set<N>> frozen = new ArrayList<>();
+        for (List<N> component : components) {
+            frozen.add(java.util.Collections.unmodifiableSet(new LinkedHashSet<>(component)));
+        }
+        return List.copyOf(frozen);
+    }
+
+    /**
+     * One cycle inside {@code component}, starting and ending at the component's first node. The list closes on
+     * that node again, so a self-loop reads {@code [A, A]}.
+     *
+     * @throws IllegalArgumentException if the component holds no cycle, or is not part of {@code graph}
+     */
+    public static <N> List<N> cycleWitness(@NonNull Graph<N> graph, @NonNull Set<N> component) {
+        if (component.isEmpty()) {
+            throw new IllegalArgumentException("an empty component holds no cycle");
+        }
+        Set<N> members = new LinkedHashSet<>(component);
+        for (N node : members) {
+            if (!graph.nodes().contains(node)) {
+                throw new IllegalArgumentException("unknown node: " + node);
+            }
+        }
+        N start = members.iterator().next();
+        Map<N, N> parent = new HashMap<>();
+        Set<N> onPath = new LinkedHashSet<>();
+        Set<N> done = new LinkedHashSet<>();
+        Deque<N> stack = new ArrayDeque<>();
+        Deque<List<N>> successors = new ArrayDeque<>();
+        Deque<int[]> cursors = new ArrayDeque<>();
+        stack.addLast(start);
+        successors.addLast(inside(graph, start, members));
+        cursors.addLast(new int[] {0});
+        onPath.add(start);
+        while (!stack.isEmpty()) {
+            N current = stack.peekLast();
+            List<N> next = successors.peekLast();
+            int[] cursor = cursors.peekLast();
+            if (cursor[0] == next.size()) {
+                stack.removeLast();
+                successors.removeLast();
+                cursors.removeLast();
+                onPath.remove(current);
+                done.add(current);
+                continue;
+            }
+            N candidate = next.get(cursor[0]);
+            cursor[0]++;
+            if (onPath.contains(candidate)) {
+                return close(parent, current, candidate);
+            }
+            if (done.contains(candidate)) {
+                continue;
+            }
+            parent.put(candidate, current);
+            stack.addLast(candidate);
+            successors.addLast(inside(graph, candidate, members));
+            cursors.addLast(new int[] {0});
+            onPath.add(candidate);
+        }
+        throw new IllegalArgumentException("the component " + component + " holds no cycle");
+    }
+
+    /** Walks the parents from {@code last} back to {@code first} and closes the list on {@code first}. */
+    private static <N> List<N> close(Map<N, N> parent, N last, N first) {
+        List<N> reversed = new ArrayList<>();
+        N cursor = last;
+        reversed.add(cursor);
+        while (!cursor.equals(first)) {
+            cursor = parent.get(cursor);
+            reversed.add(cursor);
+        }
+        List<N> witness = new ArrayList<>();
+        for (int i = reversed.size() - 1; i >= 0; i--) {
+            witness.add(reversed.get(i));
+        }
+        witness.add(first);
+        return List.copyOf(witness);
+    }
+
+    private static <N> List<N> inside(Graph<N> graph, N node, Set<N> members) {
+        List<N> kept = new ArrayList<>();
+        for (N successor : graph.successors(node)) {
+            if (members.contains(successor)) {
+                kept.add(successor);
+            }
+        }
+        return kept;
+    }
+
+    /** Built once: the second traversal walks the edges backwards and must not rescan the whole graph per node. */
+    private static <N> Map<N, List<N>> reverseAdjacency(Graph<N> graph, List<N> order) {
+        Map<N, List<N>> reverse = new LinkedHashMap<>();
+        for (N node : order) {
+            reverse.put(node, new ArrayList<>());
+        }
+        for (GraphEdge<N> edge : graph.edges()) {
+            reverse.get(edge.to()).add(edge.from());
+        }
+        return reverse;
+    }
+
+    /** Iterative depth-first pass over the forward edges, recording each node once it has no successors left. */
+    private static <N> List<N> finishOrder(Graph<N> graph, List<N> order) {
+        Set<N> seen = new LinkedHashSet<>();
+        List<N> finished = new ArrayList<>();
+        Deque<N> stack = new ArrayDeque<>();
+        Deque<List<N>> successors = new ArrayDeque<>();
+        Deque<int[]> cursors = new ArrayDeque<>();
+        for (N root : order) {
+            if (!seen.add(root)) {
+                continue;
+            }
+            stack.addLast(root);
+            successors.addLast(new ArrayList<>(graph.successors(root)));
+            cursors.addLast(new int[] {0});
+            while (!stack.isEmpty()) {
+                N current = stack.peekLast();
+                List<N> next = successors.peekLast();
+                int[] cursor = cursors.peekLast();
+                if (cursor[0] == next.size()) {
+                    stack.removeLast();
+                    successors.removeLast();
+                    cursors.removeLast();
+                    finished.add(current);
+                    continue;
+                }
+                N candidate = next.get(cursor[0]);
+                cursor[0]++;
+                if (seen.add(candidate)) {
+                    stack.addLast(candidate);
+                    successors.addLast(new ArrayList<>(graph.successors(candidate)));
+                    cursors.addLast(new int[] {0});
+                }
+            }
+        }
+        return finished;
+    }
+}

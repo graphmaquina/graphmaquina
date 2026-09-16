@@ -3,6 +3,7 @@ package io.github.graphmaquina.dsl;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.graph.Graph;
 import io.github.graphmaquina.graph.GraphEdge;
+import io.github.graphmaquina.graph.StrongComponents;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -31,6 +32,7 @@ public final class MachineOutlineValidator {
         policies(outline, byKey, problems);
         exits(outline, problems);
         reachability(outline, problems);
+        cycles(outline, problems);
         failureRoutes(outline, byKey, problems);
         watches(outline, byKey, problems);
     }
@@ -100,6 +102,33 @@ public final class MachineOutlineValidator {
                 problems.add("SG203", outline.indexOf(state), -1, state + " is unreachable from " + outline.initial());
             }
         }
+    }
+
+    /**
+     * Authorises cycles without enumerating them: every allowed state must take part in one, and the graph with
+     * the allowed states removed must hold none. One witness per remaining cyclic component is enough.
+     */
+    private static void cycles(MachineOutline outline, Problems problems) {
+        Graph<String> full = topology(outline);
+        Set<String> participating = new HashSet<>();
+        for (Set<String> component : StrongComponents.find(full))
+            if (cyclic(component, full)) participating.addAll(component);
+        for (String allowed : outline.cycleAllowed())
+            if (!participating.contains(allowed)) problems.add("SG205", "unused cycle permission " + allowed);
+        Graph<String> restricted = full.inducedSubgraph(
+            full.nodes().stream().filter(n -> !outline.cycleAllowed().contains(n)).toList());
+        for (Set<String> component : StrongComponents.find(restricted))
+            if (cyclic(component, restricted))
+                problems.add("SG204", "unauthorized cycle " + StrongComponents.cycleWitness(restricted, component));
+    }
+
+    /** More than one node, or a single node that reaches itself. */
+    private static boolean cyclic(Set<String> component, Graph<String> graph) {
+        if (component.size() > 1) {
+            return true;
+        }
+        String only = component.iterator().next();
+        return graph.successors(only).contains(only);
     }
 
     private static void failureRoutes(MachineOutline outline, Map<String, TransitionOutline> byKey, Problems problems) {

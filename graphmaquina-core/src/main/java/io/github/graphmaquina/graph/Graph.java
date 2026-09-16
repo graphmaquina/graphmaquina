@@ -124,6 +124,27 @@ public final class Graph<N> {
         return List.copyOf(path);
     }
 
+    /**
+     * The subgraph over {@code kept}: those nodes, and only the edges whose two endpoints are both among them.
+     * The declared order of the kept nodes is preserved.
+     *
+     * @throws IllegalArgumentException if a node of {@code kept} is not in this graph
+     */
+    public Graph<N> inducedSubgraph(@NonNull Collection<? extends N> kept) {
+        Set<N> retained = new LinkedHashSet<>();
+        for (N node : kept) {
+            requireNode(node);
+            retained.add(node);
+        }
+        List<GraphEdge<N>> inside = new ArrayList<>();
+        for (GraphEdge<N> edge : edges) {
+            if (retained.contains(edge.from()) && retained.contains(edge.to())) {
+                inside.add(edge);
+            }
+        }
+        return Graph.of(retained, inside);
+    }
+
     /** Elementary cycles. Each starts at its lowest-declaration-index node and does not repeat the closing node. */
     public List<List<N>> cycles() {
         List<N> order = new ArrayList<>(nodes);

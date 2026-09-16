@@ -174,11 +174,6 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
             problems.add("SG511", fromIndex, idIndex, where + " declares a timeout that is not positive");
             valid = false;
         }
-        if (onFailure.isPresent() && onFailure.get() == transition) {
-            problems.add("SG301", fromIndex, idIndex, where + " declares onFailure = " + transition
-                    + ", which is its own key");
-            valid = false;
-        }
         List<GuardRef<E, S, T>> guardRefs = new ArrayList<>();
         Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
         for (GuardDraft<E, S, T> guard : guards) {

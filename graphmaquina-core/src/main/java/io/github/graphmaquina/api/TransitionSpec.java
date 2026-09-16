@@ -37,9 +37,6 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(@NonNull S
         if (action.isEmpty() && (onFailure.isPresent() || !failsOn.isEmpty())) {
             throw new IllegalArgumentException(where + ": onFailure and failsOn are only allowed with an action");
         }
-        if (onFailure.isPresent() && onFailure.get() == transition) {
-            throw new IllegalArgumentException(where + ": onFailure cannot be this very transition");
-        }
         if (timeout.isPresent() && !(action.isPresent() && action.get().isAsync())) {
             throw new IllegalArgumentException(where + ": timeout is only allowed on an asynchronous action");
         }
