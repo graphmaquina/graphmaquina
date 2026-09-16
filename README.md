@@ -778,6 +778,7 @@ and closes their default executors together.
 package com.example.tickets;
 
 import io.github.graphmaquina.api.Outcome;
+import java.util.List;
 
 public final class App {
     private App() { }
@@ -815,7 +816,7 @@ public final class App {
             Ticket automatic = new Ticket("T-6", "Trivial typo fix", true);
             tickets.submit(automatic);
             require(tickets.autoApprove(automatic) instanceof Outcome.Applied<?, ?, ?>, "autoApprove should apply");
-            require(actions.decisions().equals(java.util.List.of(
+            require(actions.decisions().equals(List.of(
                     "approve T-1", "retouch T-5", "autoApprove T-6")),
                     "each operation runs its own action: " + actions.decisions());
             System.out.println("All ticket scenarios passed.");
@@ -1832,11 +1833,11 @@ from its pending state like any other.
 | `FAIL_FAST` | Stop when a cascade fails. |
 | `COLLECT` | Try peers under savepoints, aggregate transition-abort errors, then abort the whole root if any were collected. Other engine failures can abort immediately. |
 
-`COLLECT` is not partial commit. A forbidden or guard-rejected nested transition is an abort, rather than an
-ordinary root-level `Rejected` result. A handled domain failure can select the child's declared failure route.
-An engine failure poisons the unit of work; catching it in your action does not make the transaction safe to
-commit. Use `ctx.cascade` instead of calling another facade operation from inside an action: nested facade
-entry points violate the runtime's reentrancy rules.
+`COLLECT` is not partial commit. A nested transition that no edge carries, or that a guard rejected, is an
+abort rather than an ordinary root-level `Rejected` result. A handled domain failure can select the child's
+declared failure route. An engine failure poisons the unit of work; catching it in your action does not make
+the transaction safe to commit. Use `ctx.cascade` instead of calling another facade operation from inside an
+action: nested facade entry points violate the runtime's reentrancy rules.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.
@@ -1850,7 +1851,7 @@ The shop has orders and items. An order watches its items while it is `PAID`, an
 
 ![After the last item commits PACKED, the PAID order is reevaluated in a new transaction. If all peers are PACKED, its normal shipping edge runs. A failed reaction does not undo the item commit.](docs/images/watch-reactions.svg)
 
-This excerpt belongs on the shop's `Orders` interface, alongside its definition, rows and operations:
+This excerpt belongs on the shop's `Orders` interface, alongside its definition, policies and operations:
 
 ```java
 @GraphPeers(Items.class)
@@ -2052,10 +2053,10 @@ states; avoid remote calls, persistence flushes and unrelated business logic ins
 
 ### Stable identity
 
-An identity is scoped by the machine key, which contains the entity and state types. It must be stable,
-non-null and suitable for identifying one domain entity. Using two different object instances with the same
-machine identity in one unit of work is an `AmbiguousIdentityException`; this prevents silently treating two
-representations of one row as separate entities.
+An identity is scoped by the machine key, which contains the entity, state and transition types. It must be
+stable, non-null and suitable for identifying one domain entity. Using two different object instances with
+the same machine identity in one unit of work is an `AmbiguousIdentityException`; this prevents silently
+treating two representations of one row as separate entities.
 
 When working with an ORM, load and reuse a consistent object instance for each identity within the operation.
 Identity tracking does not provide database uniqueness enforcement or cross-process coordination.
