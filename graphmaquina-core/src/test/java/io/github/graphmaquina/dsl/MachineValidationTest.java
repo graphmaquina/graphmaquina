@@ -175,6 +175,19 @@ class MachineValidationTest {
         assertTrue(error.problems().get(0).message().contains("unused cycle permission PUBLISHED"));
     }
 
+    /** Two unused permissions must be reported in declaration order, whatever set the outline copies them into. */
+    @Test
+    void sg205ReportsUnusedPermissionsInDeclarationOrder() {
+        InvalidGraphException error = failing(policies(StateGraph.define(DOCS)
+                .initial(DRAFT).terminal(ARCHIVED).allowsCycle(PUBLISHED).allowsCycle(REVIEW))
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).action(new Publish()).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition());
+        assertEquals(List.of("SG205", "SG205"), error.codes());
+        assertEquals(List.of("unused cycle permission REVIEW", "unused cycle permission PUBLISHED"),
+                error.problems().stream().map(InvalidGraphException.Problem::message).toList());
+    }
+
     @Test
     void sg301OnFailureMustNameAnotherTransitionLeavingTheSameState() {
         InvalidGraphException sameKey = failing(policies(StateGraph.define(DOCS)

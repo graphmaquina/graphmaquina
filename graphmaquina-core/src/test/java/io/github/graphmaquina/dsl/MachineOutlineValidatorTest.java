@@ -97,6 +97,24 @@ class MachineOutlineValidatorTest {
         assertEquals(List.of("SG102", "SG102", "SG103", "SG702"), codes(MachineOutlineValidator.validate(outline)));
     }
 
+    /**
+     * An element-level combination gets its own code, not a thrown record constructor: the processor normalises to
+     * this model before it validates, so the model has to be able to hold what it is about to reject.
+     */
+    @Test
+    void sg507OnFailureWithoutAnAction() {
+        MachineOutline outline = new MachineOutline("Doc/DocStatus", STATES, CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(new TransitionOutline("DRAFT", "SUBMIT", "REVIEW", TransitionKind.MOVE, Optional.of("DISCARD")),
+                        new TransitionOutline("DRAFT", "DISCARD", "ARCHIVED", TransitionKind.MOVE, Optional.empty()),
+                        action("REVIEW", "PUBLISH", "PUBLISHED", null), move("REVIEW", "SEND_BACK", "DRAFT"),
+                        move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
+        List<InvalidGraphException.Problem> problems = MachineOutlineValidator.validate(outline);
+        assertEquals(List.of("SG507"), codes(problems));
+        assertTrue(problems.get(0).message().contains("declares onFailure without an action"));
+    }
+
     @Test
     void outlineMustUseKnownStatesAndIdentifiers() {
         assertThrows(IllegalArgumentException.class, () -> new MachineOutline("X", STATES, CATALOG, "NOPE", Set.of(),
@@ -107,7 +125,5 @@ class MachineOutlineValidatorTest {
                 Set.of(), List.of(action("REVIEW", "PUBLISH", "PUBLISHED", "NOPE")), List.of(), List.of()));
         assertThrows(IllegalArgumentException.class, () -> new MachineOutline("X", STATES, CATALOG, "DRAFT", Set.of(),
                 Set.of(), List.of(), List.of(), List.of(new WatchOutline("DRAFT", List.of("NOPE")))));
-        assertThrows(IllegalArgumentException.class,
-                () -> new TransitionOutline("DRAFT", "SUBMIT", "REVIEW", TransitionKind.MOVE, Optional.of("PUBLISH")));
     }
 }

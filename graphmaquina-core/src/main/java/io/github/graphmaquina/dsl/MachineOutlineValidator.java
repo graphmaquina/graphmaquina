@@ -1,5 +1,6 @@
 package io.github.graphmaquina.dsl;
 
+import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.graph.Graph;
 import io.github.graphmaquina.graph.GraphEdge;
@@ -107,6 +108,9 @@ public final class MachineOutlineValidator {
     /**
      * Authorises cycles without enumerating them: every allowed state must take part in one, and the graph with
      * the allowed states removed must hold none. One witness per remaining cyclic component is enough.
+     *
+     * <p>An unused permission is filed under its state's declaration index, because the outline holds the
+     * authorisations in a set whose iteration order is not guaranteed.
      */
     private static void cycles(MachineOutline outline, Problems problems) {
         Graph<String> full = topology(outline);
@@ -114,7 +118,8 @@ public final class MachineOutlineValidator {
         for (Set<String> component : StrongComponents.find(full))
             if (cyclic(component, full)) participating.addAll(component);
         for (String allowed : outline.cycleAllowed())
-            if (!participating.contains(allowed)) problems.add("SG205", "unused cycle permission " + allowed);
+            if (!participating.contains(allowed))
+                problems.add("SG205", outline.indexOf(allowed), -1, "unused cycle permission " + allowed);
         Graph<String> restricted = full.inducedSubgraph(
             full.nodes().stream().filter(n -> !outline.cycleAllowed().contains(n)).toList());
         for (Set<String> component : StrongComponents.find(restricted))
@@ -137,7 +142,12 @@ public final class MachineOutlineValidator {
                 continue;
             }
             String recovery = edge.onFailure().get();
-            String where = edge.from() + " -" + edge.transition() + "-> " + edge.to();
+            String where = edge.describe();
+            if (edge.kind() != TransitionKind.ACTION) {
+                problems.add("SG507", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+                        where + " declares onFailure without an action");
+                continue;
+            }
             if (recovery.equals(edge.transition())) {
                 problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
                         where + " declares onFailure = " + recovery + ", which is its own key");
