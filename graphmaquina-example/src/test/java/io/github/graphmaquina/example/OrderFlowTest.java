@@ -15,6 +15,7 @@ import io.github.graphmaquina.example.item.ItemsRuntime;
 import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
 import io.github.graphmaquina.example.order.OrderStatus;
+import io.github.graphmaquina.example.order.OrderTransition;
 import io.github.graphmaquina.example.order.Orders;
 import io.github.graphmaquina.example.order.OrdersRuntime;
 import io.github.graphmaquina.test.TransitionRecorder;
@@ -84,6 +85,7 @@ class OrderFlowTest {
 
         for (int attempt = 1; attempt <= 3; attempt++) {
             assertThat(orders.pay(order)).isFailed().movedTo(OrderStatus.PAYMENT_DECLINED)
+                    .hasFailureTransition(OrderTransition.PAYMENT_DECLINED)
                     .hasEntityState(Order::status, OrderStatus.PAYMENT_DECLINED);
             if (attempt < 3) {
                 assertThat(orders.retry(order)).isApplied().movedTo(OrderStatus.NEW);
@@ -134,12 +136,29 @@ class OrderFlowTest {
         assertThat(pending, Item::status).isIn(ItemStatus.PENDING);
     }
 
+    /** No edge carries SHIP from NEW, so the node's policy answers and nothing else is attempted. */
     @Test
-    void operationsThatDoNotApplyAreRejectedWithTheRowReason() {
+    void anIdentifierWithNoEdgeFromTheCurrentStateIsRejectedByTheNodePolicy() {
         Order order = new Order("o1");
 
         assertThat(orders.ship(order)).isRejected()
                 .hasReason("cannot ship without payment")
-                .isForbidden();
+                .hasNoTransition()
+                .requestedTransition(OrderTransition.SHIP);
+        assertThat(order, Order::status).isIn(OrderStatus.NEW);
+    }
+
+    /**
+     * PACK is the only way a PENDING item ever reaches PACKED, and START_PACKING is the only edge that leaves
+     * PENDING. The engine still refuses PACK rather than taking the edge that happens to be available.
+     */
+    @Test
+    void anAbsentIdentifierIsNeverServedByTheOtherEdgeLeavingTheSameState() {
+        Item item = new Item("i1", Optional.empty());
+
+        assertThat(items.pack(item)).isRejected()
+                .hasReason("an item is packed by going through PACKING")
+                .hasNoTransition();
+        assertThat(item, Item::status).isIn(ItemStatus.PENDING);
     }
 }

@@ -1,9 +1,10 @@
 # Testing GraphMaquina machines
 
 `graphmaquina-test` is a test-scoped module of typed assertions, probes and graph snapshots for machines
-built with GraphMaquina. It asserts over the runtime's own values — definitions, outcomes, transition
-records, reactions, engine exceptions — and reports every unmet expectation as a `GraphAssertionError`
-carrying the context, the property, the expected value and the actual one.
+built with GraphMaquina. It asserts over the runtime's own values — definitions, edges,
+node policies, outcomes, transition records, reactions, engine exceptions — and reports every unmet
+expectation as a `GraphAssertionError` carrying the context, the property, the expected value and the actual
+one.
 
 It brings no test framework of its own. Nothing in its public API mentions JUnit or AssertJ, so it works
 under whatever runner your project already uses; the examples here are JUnit 5 because the repository's own
@@ -12,6 +13,7 @@ example module is.
 - [Install](#install)
 - [Your first test](#your-first-test)
 - [What each entry point checks](#what-each-entry-point-checks)
+- [Asserting on identity](#asserting-on-identity)
 - [Verified samples](#verified-samples)
 - [Goldens and structural snapshots](#goldens-and-structural-snapshots)
 - [What a check does not prove](#what-a-check-does-not-prove)
@@ -85,33 +87,40 @@ subject a test holds directly: a definition, an outcome, an action or guard resu
 A bare list of transition records and a bare list of reactions would need two overloads with the same
 erasure, so they keep their own factories, `TransitionRecordsAssert.assertThat` and
 `ReactionsAssert.assertThat`; inside a chain they are reached as `records()` and `reactions()`. The overload
-is chosen from the subject's static type, and the chain keeps the entity and state types of that subject, so
-the state enum of the machine under test is the only one the compiler accepts along it:
+is chosen from the subject's static type, and the chain keeps the entity, state and transition types of that
+subject, so the two enums of the machine under test are the only ones the compiler accepts along it:
 
 ```java
 @Test
-void operationsThatDoNotApplyAreRejectedWithTheRowReason() {
+void anIdentifierWithNoEdgeFromTheCurrentStateIsRejectedByTheNodePolicy() {
     Order order = new Order("o1");
 
     assertThat(orders.ship(order)).isRejected()
             .hasReason("cannot ship without payment")
-            .isForbidden();
+            .hasNoTransition()
+            .requestedTransition(OrderTransition.SHIP);
+    assertThat(order, Order::status).isIn(OrderStatus.NEW);
 }
 ```
+
+The chain carries three type parameters — the entity, the state enum and the transition enum — so a
+constant of another machine's catalogue does not compile inside it.
 
 ## What each entry point checks
 
 | Subject | Entry point | What the view can expect |
 | --- | --- | --- |
-| Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, allowed targets of a row, absence of a watch |
-| One matrix cell | `assertThat(definition).edge(from, to)` | kind, forbid reason, action name and sync/async mode, guard names and modes in order, failure target, `failsOn` classes, timeout, after-commit hook |
-| A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules |
+| Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch |
+| One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, failure identifier, `failsOn` classes, timeout, after-commit hook |
+| One node's policy | `assertThat(definition).policy(state)` | the default reason and the reason declared for one identifier |
+| A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
 | Reachability | `assertThat(definition).topology()` | nodes, successors, reachable set, an explicit walk, the shortest path, absence of a path, cycles |
-| Outcome | `assertThat(outcome)` | the variant, then `from`, requested target, recorded state, live entity state, entity identity |
+| Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity |
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo`, plus `records()` and `reactions()` |
-| Failed outcome | `assertThat(outcome).isFailed()` | `movedTo`, reason, cause, plus `records()` and `reactions()` |
-| Rejected outcome | `assertThat(outcome).isRejected()` | reason, whether the cell is forbidden, the rejecting guard's name |
-| Transition records | `.records()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: kind, from, to, action, depth, convergence |
+| Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, reason, cause, plus `records()` and `reactions()` |
+| Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, and `isRejectedByGuardNamed` for `GUARD` |
+| Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED` |
+| Transition records | `.records()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
 | Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal |
 | Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, and the reason |
@@ -125,9 +134,32 @@ void operationsThatDoNotApplyAreRejectedWithTheRowReason() {
 | Rendered diagram | `GraphGoldens.assertMatches` | visual DOT output only; not machine logic |
 | Whole definition | `GraphSnapshots.assertMatches` | every field the definition carries against a checked-in resource |
 
+## Asserting on identity
+
+Four expectations answer four different questions about an edge that may or may not be there. They are easy
+to confuse, so keep them apart:
+
+| What you want to establish | Expectation |
+| --- | --- |
+| This origin declares exactly these identifiers | `hasTransitionsExactly(from, ids…)` |
+| This identifier has no edge from this origin | `hasNoTransition(from, id)` |
+| The request was refused because nothing was keyed | `isRejected().hasNoTransition()` |
+| The request was refused by a guard on an edge that does exist | `isRejected().isRejectedByGuardNamed(name)` |
+
+`hasTransitionsExactly` takes identifiers, not destinations, so two edges that reach the same state are two
+entries. No set of destinations could express that, which is exactly the point.
+
+An `Ignored` outcome now says which of the two reevaluation cases it is, through
+`isIgnored().hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED`. It is the only outcome with no
+requested identifier, so `hasNoRequestedTransition()` holds on it and `requestedTransition(id)` holds on
+every other variant.
+
+Upgrading tests written against 1.x is a separate document:
+[migrating to 2.0](migration-2.0.md) lists every renamed assertion.
+
 ## Verified samples
 
-### The graph, its watch and its cells
+### The graph, its watch and its edges
 
 Names are the runtime's public names — the name the DSL or the generated companion declared — not the name
 of the Java method that implements them. From
@@ -138,40 +170,66 @@ assertThat(orders.definition())
         .hasInitial(OrderStatus.NEW)
         .hasTerminalsExactly(OrderStatus.SHIPPED, OrderStatus.CANCELLED)
         .hasAsync()
-        .hasAllowedTargetsExactly(OrderStatus.NEW,
-                OrderStatus.PAID, OrderStatus.PAYMENT_DECLINED, OrderStatus.CANCELLED)
+        .hasTransitionsExactly(OrderStatus.NEW,
+                OrderTransition.PAYMENT_DECLINED, OrderTransition.PAY, OrderTransition.CANCEL)
+        .hasTransitionsExactly(OrderStatus.PAYMENT_DECLINED,
+                OrderTransition.RETRY, OrderTransition.CANCEL)
         .watch(OrderStatus.PAID)
         .hasPeer(ItemsRuntime.KEY)
-        .hasRulesExactly(List.of(new WatchRuleExpectation<>("allIn PACKED", OrderStatus.SHIPPED)));
+        .hasRulesExactly(List.of(new WatchRuleExpectation<>("allIn PACKED", OrderTransition.SHIP)));
 ```
 
-One cell carries everything the row declared for it, including the parts no diagram shows:
+One edge carries everything its declaration gave it, including the parts no diagram shows:
 
 ```java
 assertThat(orders.definition())
-        .edge(OrderStatus.NEW, OrderStatus.PAID)
+        .transition(OrderStatus.NEW, OrderTransition.PAY)
+        .hasTarget(OrderStatus.PAID)
         .isAction()
         .hasActionNamed("pay")
         .hasAsyncAction()
         .hasGuardsExactly(new GuardExpectation("retryBudgetLeft", false))
         .hasTimeout(Duration.ofSeconds(5))
-        .hasFailureTarget(OrderStatus.PAYMENT_DECLINED)
+        .hasFailureTransition(OrderTransition.PAYMENT_DECLINED)
         .failsOnExactly(IOException.class)
         .hasNoHook();
 ```
 
-A forbidden cell is asserted the same way, and its reason is the row's own text:
+An absent edge has no view of its own, because there is nothing to describe. What a test asserts instead is
+that nothing is keyed there, and what the node will say when it is asked:
 
 ```java
 assertThat(items.definition())
-        .edge(ItemStatus.PENDING, ItemStatus.PACKED)
-        .isForbidden()
-        .hasReason("an item is packed by going through PACKING")
-        .hasNoAction();
+        .hasNoTransition(ItemStatus.PENDING, ItemTransition.PACK)
+        .policy(ItemStatus.PENDING)
+        .hasDefaultReason("an item is packed by going through PACKING");
+```
+
+One identifier can leave several states. Each `(from, id)` pair is its own edge, asserted on its own:
+
+```java
+assertThat(items.definition())
+        .transition(ItemStatus.PENDING, ItemTransition.CANCEL)
+        .hasTarget(ItemStatus.CANCELLED)
+        .isMove();
+assertThat(items.definition())
+        .transition(ItemStatus.PACKING, ItemTransition.CANCEL)
+        .hasTarget(ItemStatus.CANCELLED)
+        .isMove();
+```
+
+A terminal is asserted by the absence of everything, not by a kind:
+
+```java
+assertThat(orders.definition())
+        .hasTransitionsExactly(OrderStatus.SHIPPED)
+        .hasNoTransition(OrderStatus.SHIPPED, OrderTransition.CANCEL)
+        .policy(OrderStatus.SHIPPED)
+        .hasDefaultReason("a shipment cannot be undone");
 ```
 
 `hasGuardsExactly` keeps order and multiplicity, because the engine evaluates guards in declaration order
-and stops at the first rejection. `failsOnExactly()` with no argument asserts that the cell maps no
+and stops at the first rejection. `failsOnExactly()` with no argument asserts that the edge maps no
 exception to its failure route.
 
 ### Outcomes, reactions and observed state
@@ -192,7 +250,8 @@ assertThat(items.pack(i2)).isApplied().reactions()
         .hasEntityState(Order::status, OrderStatus.SHIPPED);
 ```
 
-A guard rejection names the guard; a domain failure keeps the very exception instance the action reported:
+A guard rejection names the guard, and asserting the name also asserts `RejectionKind.GUARD`. A domain
+failure keeps the very exception instance the action reported, and names the identifier that recovered:
 
 ```java
 assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudgetLeft");
@@ -202,6 +261,15 @@ assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudget
 assertThat(orders.pay(order)).isFailed().hasCauseSameAs(down)
         .hasEntityState(Order::status, OrderStatus.PAYMENT_DECLINED);
 ```
+
+```java
+assertThat(orders.pay(order)).isFailed().movedTo(OrderStatus.PAYMENT_DECLINED)
+        .hasFailureTransition(OrderTransition.PAYMENT_DECLINED)
+        .hasEntityState(Order::status, OrderStatus.PAYMENT_DECLINED);
+```
+
+`movedTo` is where the recovering edge landed and `hasFailureTransition` is which edge that was. They are
+not the same question: a route may legitimately reach the state another edge also reaches.
 
 ### Failures and the journal
 
@@ -277,11 +345,11 @@ observable. From [ProbeTest](../graphmaquina-test/src/test/java/consumer/ProbeTe
 
 ```java
 CallTrace trace = CallTrace.create();
-GuardProbe<Entity, State> first = GuardProbe.<Entity, State>create("first", trace)
+GuardProbe<Entity, State, Id> first = GuardProbe.<Entity, State, Id>create("first", trace)
         .thenReturn(GuardResult.reject("no title"));
-GuardProbe<Entity, State> second = GuardProbe.<Entity, State>create("second", trace)
+GuardProbe<Entity, State, Id> second = GuardProbe.<Entity, State, Id>create("second", trace)
         .otherwiseReturn(GuardResult.pass());
-ActionProbe<Entity, State> action = ActionProbe.<Entity, State>create("prepare", trace)
+ActionProbe<Entity, State, Id> action = ActionProbe.<Entity, State, Id>create("prepare", trace)
         .otherwiseReturn(ActionOutcome.ok());
 ```
 
@@ -341,14 +409,18 @@ and incompatible present values throw `ClassCastException`. A null type token th
 primitive tokens (including `void.class`) throw `IllegalArgumentException`, even for an empty input. Use
 wrapper classes for primitive operation arguments.
 
-Root guards, actions and failure actions record the root input. Cascades, watch reactions and reevaluation
-have their own calls with empty input; a later invocation never reuses a previous input. For a controlled
+Root guards, actions and failure actions record the root input, and the recovering action records the input
+of the invocation that failed. Cascades, watch reactions and reevaluation have their own calls with empty
+input; a later invocation never reuses a previous input. For a controlled
 async callback, inspect `assertThat(pending.call()).hasInputSameAs(verdict)` before answering it or after
 completion. The same reference remains in `fixture.invocations()` after close.
 
-The original three-argument `GuardCall` and four-argument `ActionCall` constructors remain available and
-create calls with empty input. The records now have an additional component: record patterns must include
-it, and generated equality, hash codes and string representations include it.
+Both records carry the identifier that selected the edge:
+`GuardCall<E, S, T>(entity, from, transition, to, input)` and
+`ActionCall<E, S, T>(entity, from, transition, to, depth, input)`. The shorter constructors — four arguments
+for a guard call, five for an action call — remain available and create calls with empty input. Record
+patterns must list every component, and generated equality, hash codes and string representations include
+them all.
 
 Executable examples: [ProbeInputTest](../graphmaquina-test/src/test/java/consumer/ProbeInputTest.java) and
 [CallInputAssertionsTest](../graphmaquina-test/src/test/java/consumer/CallInputAssertionsTest.java). The
@@ -356,7 +428,7 @@ published-artifact consumer also compiles and runs the new API directly from the
 
 ### Controlled asynchronous invocations
 
-A `ControlledAsyncAction` or `ControlledAsyncGuard` is declared on the cell in place of the real async
+A `ControlledAsyncAction` or `ControlledAsyncGuard` is declared on the edge in place of the real async
 callback. The test resumes when the engine has entered it, and the engine resumes when the test answers that
 very invocation, so an asynchronous transition is asserted without a single sleep. `awaitInvocation` and
 `AsyncAssertions.await` each take a budget that belongs to the test. The fixture is `AutoCloseable`; closing
@@ -366,26 +438,26 @@ Concurrent invocations are independent: each arrives with its own handle and is 
 `GENEROUS` is that test's own two-second budget:
 
 ```java
-ControlledAsyncAction<Entity, State> action = ControlledAsyncAction.create();
+ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
 MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(5), action));
 try (registry; action) {
     Entity first = new Entity("first", State.NEW);
     Entity second = new Entity("second", State.NEW);
-    CompletableFuture<Outcome<Entity, State>> firstResult =
-            registry.of(KEY).async().transitionTo(first, State.READY);
-    CompletableFuture<Outcome<Entity, State>> secondResult =
-            registry.of(KEY).async().transitionTo(second, State.READY);
-    PendingInvocation<ActionCall<Entity, State>, ActionOutcome> one =
+    CompletableFuture<Outcome<Entity, State, Id>> firstResult =
+            registry.of(KEY).async().execute(first, Id.PREPARE);
+    CompletableFuture<Outcome<Entity, State, Id>> secondResult =
+            registry.of(KEY).async().execute(second, Id.PREPARE);
+    PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> one =
             action.awaitInvocation(GENEROUS);
-    PendingInvocation<ActionCall<Entity, State>, ActionOutcome> other =
+    PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> other =
             action.awaitInvocation(GENEROUS);
     assertNotSame(one, other);
     assertNotSame(one.call().entity(), other.call().entity());
     assertEquals(2, action.invocations().size());
 
-    PendingInvocation<ActionCall<Entity, State>, ActionOutcome> firstCall =
+    PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> firstCall =
             one.call().entity() == first ? one : other;
-    PendingInvocation<ActionCall<Entity, State>, ActionOutcome> secondCall =
+    PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> secondCall =
             firstCall == one ? other : one;
     assertTrue(firstCall.complete(ActionOutcome.ok()));
     AsyncAssertions.await(firstResult, GENEROUS).isApplied().hasEntitySameAs(first);
@@ -407,28 +479,32 @@ for it. Listed the other way round, a test that fails before answering an invoca
 out the machine's whole `asyncTimeout` — once per unanswered invocation — before the fixture ever gets to
 cancel it.
 
-The machine that holds an async cell must declare `asyncTimeout(...)`, as any async machine does. That
+The machine that holds an async edge must declare `asyncTimeout(...)`, as any async machine does. That
 deadline is the engine's; the budgets above are the test's, and the two are unrelated — see
 [what a check does not prove](#what-a-check-does-not-prove).
 
 ## Goldens and structural snapshots
 
-Machine contracts and visual output have separate tests. Do not use a graphical export or
-`definition().render()` to validate machine logic.
+Machine contracts and visual output have separate tests. Do not use a graphical export to validate machine
+logic.
 
 - `GraphSnapshots.assertMatches(definition, resource)` compares declared metadata with a checked-in
-  `.graph` file: the machine key, ordered states, initial state, terminals, async mode, watches and ordered
-  rules, and every cell's kind, reason, action and guard names/modes, failure route, `failsOn` classes,
-  timeout and after-commit hook. It reads `GraphDefinition` and `EdgeSpec` directly and does not call an
-  exporter. Use typed graph assertions for focused expectations. Neither approach executes domain logic;
-  test guards, actions, cascades and watches through real operations and assert their outcomes, records,
-  reactions and observed entity states.
+  `.graph` file: the machine key including the transition enum, the ordered catalogue of identifiers,
+  ordered states, initial state, terminals, async mode, node policies, watches and their ordered rules with
+  the identifier each one executes, and for every edge its `(from, id)` key, destination, kind, reason-free
+  action and guard names/modes, failure identifier, `failsOn` classes, timeout and after-commit hook. It
+  reads `GraphDefinition` and its `TransitionSpec`s directly and does not call an exporter. Absence has no
+  path at all: an identifier with no edge from a state simply does not appear. Use typed graph assertions
+  for focused expectations. Neither approach executes domain logic; test guards, actions, cascades and
+  watches through real operations and assert their outcomes, records, reactions and observed entity states.
 - `GraphGoldens.assertMatches(definition, resource)` compares the Graphviz DOT output with a checked-in
-  `.dot` file. Its default detail is `TRANSITABLE`. This is a visual regression test only: a diagram change
-  must not be the evidence for a change in machine behavior.
+  `.dot` file. There is no detail mode: the export draws the declared edges and renders each node's policy
+  as that node's tooltip. This is a visual regression test only: a diagram change must not be the evidence
+  for a change in machine behavior.
 
-The `.graph` resources from before the Graphviz migration remain unchanged. Only visual goldens move from
-the previous format to `.dot`. `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after
+Snapshots are `graphmaquina-snapshot-v2`. `GraphSnapshot.parse` refuses a v1 document by name and asks for
+it to be regenerated; it is never converted, so a 1.x `.graph` resource is rewritten from the migrated
+definition and its diff reviewed. `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after
 removing every graphic-export class from the core JAR; assertions, state observation and structural
 snapshots must still work.
 
@@ -536,11 +612,13 @@ A test that needs no properties at all can pass options explicitly —
 | `topology().hasPath(...)`: the graph permits this walk | that any run took it. Only an outcome or a transition record shows a hop that happened. |
 | `isApplied()`: the root transition committed | that everything it triggered did. A watch reaction inside an applied outcome may have aborted; `reactions().hasNoAbortedRecursively()` is the expectation that rules that out. |
 | `movedTo(...)` and `hasRecordedState(...)`: the state the outcome recorded | where the entity is now. `hasEntityState(getter, ...)` reads the live entity, and the entity can move again right after. |
+| `hasTransitionsExactly(from, ids…)`: which identifiers the state declares | that any of them would succeed for a given entity. It is structural; guards are not evaluated. |
+| `isRejected().hasNoTransition()`: nothing was keyed by `(from, id)` | that the entity cannot move at all. Another identifier may well have an edge from the same state. |
 | `calls().assertCount(n)`: a callback was entered n times | that the machine wrote a state. Only `StateWriteProbe.writes()` sees the setter. |
 | `journal()`: which actions the aborted attempt entered, and how each ended | that the entities were put back. `StateSnapshot.assertUnchanged()` is the expectation that asserts the rollback. |
 | the recorder: every outcome the engine published to the listener | anything about a call that aborted. An abort throws instead of producing an outcome, so no callback is made for it; capture the throwable instead. |
 | `AsyncAssertions.await(stage, budget)`: the engine's transition finished | that work the action started in the background ended. Neither wait ever cancels a stage it was handed. |
-| that budget: how long the test is willing to wait | the engine's deadline. That is `asyncTimeout(...)` on the machine and `hasTimeout(...)` on the cell, and an expired engine deadline leaves the user's stage alive. |
+| that budget: how long the test is willing to wait | the engine's deadline. That is `asyncTimeout(...)` on the machine and `hasTimeout(...)` on the edge, and an expired engine deadline leaves the user's stage alive. |
 
 ## Sharp edges
 
@@ -562,8 +640,13 @@ A test that needs no properties at all can pass options explicitly —
 - **`ActionStatus.THREW` does not mean your action threw.** The engine also marks actions still in flight as
   `THREW` while it unwinds an abort. The status is the runtime's, and the API does not reinterpret it.
 - **A reaction's callback arrives before the root's.** The recorder's sequence reflects that order.
-- **`hasAsyncAction()` is about the action alone.** A cell whose guard is async but whose action is not still
+- **`hasAsyncAction()` is about the action alone.** An edge whose guard is async but whose action is not still
   satisfies `hasSyncAction()`.
+- **A self-loop is asserted like any other edge.** `transition(REVIEW, RETOUCH).hasTarget(REVIEW)` describes
+  it, and a request for it produces `Applied`, not `Ignored`. `Ignored` only ever comes from `reevaluate`.
+- **Two edges to one state need two expectations.** `transition(from, APPROVE)` and
+  `transition(from, AUTO_APPROVE)` are separate subjects even though both `hasTarget` the same state. A test
+  that asserts only the destination cannot tell which action ran; assert the action name, or observe it.
 - **Entities are selected by reference.** `forEntity(key, entity)` matches on identity, so two entities that
   carry the same id are two different subjects.
 - **`hasTerminalsExactly` compares as a set; records, guards and reactions keep order and multiplicity.**

@@ -1,13 +1,13 @@
 digraph "Item/ItemStatus" {
     rankdir=LR;
     initial [shape=point, label=""];
-    n0 [label="PENDING", shape=ellipse];
-    n1 [label="PACKING", shape=ellipse];
-    n2 [label="PACKED", shape=doublecircle];
-    n3 [label="CANCELLED", shape=doublecircle];
+    n0 [label="PENDING", shape=ellipse, tooltip="otherwise: an item is packed by going through PACKING"];
+    n1 [label="PACKING", shape=ellipse, tooltip="otherwise: cannot go back to pending"];
+    n2 [label="PACKED", shape=doublecircle, tooltip="otherwise: terminal state PACKED accepts no transitions"];
+    n3 [label="CANCELLED", shape=doublecircle, tooltip="otherwise: terminal state CANCELLED accepts no transitions"];
     initial -> n0;
-    n0 -> n1;
-    n0 -> n3;
-    n1 -> n2 [label="pack"];
-    n1 -> n3;
+    n0 -> n1 [label="START_PACKING"];
+    n0 -> n3 [label="CANCEL"];
+    n1 -> n2 [label="PACK pack"];
+    n1 -> n3 [label="CANCEL"];
 }
