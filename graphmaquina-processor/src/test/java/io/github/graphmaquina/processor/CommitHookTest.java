@@ -13,7 +13,7 @@ class CommitHookTest {
     private static final String CONTEXTUAL = "Doc doc, CommitContext<DocStatus, DocTransition> context";
 
     @Test
-    void generatedHooksReceiveEachCommittedCellAndItsGraphTerminality() throws Exception {
+    void generatedHooksReceiveEachCommittedTransitionAndItsGraphTerminality() throws Exception {
         Compilation.Result result = Compilation.compileTyped(fixture(CONTEXTUAL, """
                 calls.add(context.from() + ":" + context.to() + ":" + context.kind()
                         + ":" + context.isTerminal() + ":" + doc.status());
@@ -33,7 +33,7 @@ class CommitHookTest {
     }
 
     @Test
-    void deliversTheContextAfterAnAsynchronousActionCellCommits() throws Exception {
+    void deliversTheContextAfterAnAsynchronousActionCommits() throws Exception {
         Map<String, String> sources = fixture(CONTEXTUAL, "calls.add(context.to() + \":\" + context.kind() + \":\" + context.isTerminal());");
         sources.put("fx.DocActions", edit(sources.get("fx.DocActions"),
                 "public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) { return ActionOutcome.ok(); }",

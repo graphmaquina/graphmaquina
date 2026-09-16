@@ -4,6 +4,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -59,6 +64,35 @@ class MachineHeaderErrorsTest {
         assertTrue(result.hasError("SG502"), result.describe());
         assertFalse(result.hasGenerated("fx.Holder.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+    }
+
+    /**
+     * The machine still declares the vocabulary generated for it, but its own {@code Machine<E, S, T>} no
+     * longer resolves to two distinct enums. The declaration itself is valid Java, so it is not SG502: the
+     * generics are what contradict, and the catalogue gives that to SG601.
+     */
+    @Test
+    void sg601StatesAndTransitionsThatAreNotTwoDistinctEnums() {
+        Compilation.Prepared prepared = Compilation.prepare(Fixtures.validDocs());
+        rewriteOriginal(prepared, "fx.Docs", Fixtures.docs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY)
+                .replace("Machine<Doc, DocStatus, DocTransition>", "Machine<Doc, DocStatus, DocStatus>"));
+
+        Compilation.Result result = Compilation.compilePrepared(prepared);
+
+        assertFalse(result.success(), result.describe());
+        assertEquals(1, result.countError("SG601"), result.describe());
+        assertEquals(0, result.countError("SG502"), result.describe());
+        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+    }
+
+    /** Replaces one original after the generator has read it, as an edit between the two stages does. */
+    private static void rewriteOriginal(Compilation.Prepared prepared, String qualifiedName, String source) {
+        try {
+            Files.writeString(prepared.request().sources().get(0)
+                    .resolve(qualifiedName.replace('.', File.separatorChar) + ".java"), source, StandardCharsets.UTF_8);
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
+        }
     }
 
     /** A property symbol exists, but the accessors it names cannot read or write what the use requires. */

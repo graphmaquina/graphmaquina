@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * The retired matrix vocabulary is no longer a way to declare a graph: it is a migration diagnostic.
@@ -149,6 +151,56 @@ class LegacyAnnotationsTest {
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG609"), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+    }
+
+    /**
+     * Every retired name the processor detects on a type. The names are written as strings now that the types
+     * are gone, so each one is exercised: a typo in one of them would otherwise be silent.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"StateGraph", "Row", "Rows", "Cell", "Cells", "Forbid", "Forbids", "Watch", "Watches"})
+    void reportsEveryRetiredAnnotationOfAType(String retired) {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("io.github.graphmaquina.annotation." + retired, marker(retired, "TYPE"));
+        sources.put("fx.Docs", """
+                package fx;
+                @io.github.graphmaquina.annotation.%s
+                public interface Docs { }
+                """.formatted(retired));
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(1, result.countError("SG609"), () -> retired + "\n" + result.describe());
+    }
+
+    /** The same, for the two retired names an operation carried. */
+    @ParameterizedTest
+    @ValueSource(strings = {"Action", "Move"})
+    void reportsEveryRetiredAnnotationOfAnOperation(String retired) {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("io.github.graphmaquina.annotation." + retired, marker(retired, "METHOD"));
+        sources.put("fx.Docs", """
+                package fx;
+                public interface Docs {
+                    @io.github.graphmaquina.annotation.%s
+                    void publish();
+                }
+                """.formatted(retired));
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(1, result.countError("SG609"), () -> retired + "\n" + result.describe());
+    }
+
+    /** One retired annotation type, as an older release still on the classpath declares it. */
+    private static String marker(String name, String target) {
+        return """
+                package io.github.graphmaquina.annotation;
+                import java.lang.annotation.ElementType;
+                import java.lang.annotation.Target;
+                @Target(ElementType.%s)
+                public @interface %s { }
+                """.formatted(target, name);
     }
 
     @Test

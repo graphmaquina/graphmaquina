@@ -82,7 +82,7 @@ class SetGenerationTest {
     }
 
     @Test
-    void perMachineTimeoutOverrideRejectsMachinesWithoutAsyncCells() throws Exception {
+    void perMachineTimeoutOverrideRejectsMachinesWithoutAsyncTransitions() throws Exception {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
                 Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertTrue(result.success(), result.describe());

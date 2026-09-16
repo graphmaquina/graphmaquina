@@ -314,6 +314,17 @@ class ManifestDiscoveryTest {
         assertSingleManifestError(Compilation.compilePrepared(prepared), "fx.DocStatus");
     }
 
+    @Test
+    void reportsATransitionEnumWhoseConstantsChangedAfterGeneration() {
+        Compilation.Prepared prepared = Compilation.prepare(TypedFixtures.minimal());
+        rewriteOriginal(prepared, "fx.DocTransition", """
+                package fx;
+                public enum DocTransition { PUBLISH, ARCHIVE }
+                """);
+
+        assertSingleManifestError(Compilation.compilePrepared(prepared), "fx.DocTransition");
+    }
+
     /** Exactly one SG602, naming the manifest and the claim that no longer holds. */
     private static void assertSingleManifestError(Compilation.Result result, String cause) {
         assertFalse(result.success(), result.describe());

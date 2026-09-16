@@ -50,7 +50,7 @@ class OperationInputProcessorTest {
      */
     @Test
     void twoOperationsOverOnePairDifferOnlyByTheirIdentifierAndTheirPayload() {
-        Compilation.Result result = Compilation.compileTyped(twoOperations());
+        Compilation.Result result = Compilation.compileTyped(twoOperations(false));
         assertTrue(result.success(), result.describe());
         String generated = result.generated("fx.DocsRuntime");
         assertTrue(generated.contains("return stateMachine.execute(doc, DocTransition.PUBLISH, input);"), generated);
@@ -58,25 +58,43 @@ class OperationInputProcessorTest {
         assertTrue(generated.contains("public Outcome<Doc, DocStatus, DocTransition> announce(Doc doc)"), generated);
     }
 
-    /** The compiled consumer runs both operations and reads back what the guard and the action received. */
+    /**
+     * The compiled consumer runs both operations through the generated facade and reads back what the guard
+     * and the action received: an operation that declares no payload carries none, the payload of an
+     * invocation reaches guard and action even when the call is made on a worker thread of
+     * {@code async(...)}, an explicit {@code null} is the very same invocation as one with no payload at all,
+     * and a guard that reads the payload can still refuse it. The whole matrix runs twice, once with an
+     * ACTION edge and once with a MOVE, because a payload belongs to the invocation and not to the edge.
+     */
     @Test
     void generatedFacadeCarriesTheInputOfTheInvocationThatDeclaresOne() throws Exception {
-        Compilation.Result result = Compilation.compileTyped(twoOperations());
-        assertTrue(result.success(), result.describe());
-        assertEquals(true, result.load("fx.Consumer").getMethod("check").invoke(null));
+        for (boolean move : List.of(false, true)) {
+            Compilation.Result result = Compilation.compileTyped(twoOperations(move));
+            assertTrue(result.success(), move + "\n" + result.describe());
+            // The move variant really is one: no edge of it runs an action at all.
+            assertEquals(!move, result.generated("fx.DocsRuntime").contains(".action(\"publish\""),
+                    () -> result.generated("fx.DocsRuntime"));
+            assertEquals(true, result.load("fx.Consumer").getMethod("check", boolean.class).invoke(null, move));
+        }
     }
 
-    /** The minimal fixture with {@code publish(Doc, Verdict)} and {@code announce(Doc)} over the same pair. */
-    private Map<String, String> twoOperations() {
+    /**
+     * The minimal fixture with {@code publish(Doc, Verdict)} and {@code announce(Doc)} over the same pair of
+     * states. {@code move} strips the action of both edges, so the same operations run as plain moves.
+     */
+    private Map<String, String> twoOperations(boolean move) {
         Map<String, String> src = source("publish(Doc doc, external.Verdict value)");
         String announce = "    @DocsGraph.Transition(id = AUTO_PUBLISH, from = DRAFT, to = PUBLISHED,"
                 + " action = DocActionsRefs.Publish.class, guards = DocActionsRefs.Eligible.class)\n"
                 + "    Outcome<Doc, DocStatus, DocTransition> announce(Doc doc);\n";
-        src.put("fx.Docs", src.get("fx.Docs")
+        String docs = src.get("fx.Docs")
                 .replace("action = DocActionsRefs.Publish.class)",
                         "action = DocActionsRefs.Publish.class, guards = DocActionsRefs.Eligible.class)")
                 .replace("    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, external.Verdict value);\n",
-                        "    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, external.Verdict value);\n" + announce));
+                        "    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc, external.Verdict value);\n" + announce);
+        src.put("fx.Docs", move
+                ? docs.replace("action = DocActionsRefs.Publish.class, guards = ", "guards = ")
+                : docs);
         src.put("fx.DocActions", """
                 package fx;
                 import external.Verdict;
@@ -88,10 +106,12 @@ class OperationInputProcessorTest {
                 import io.github.graphmaquina.api.TransitionContext;
                 import java.util.Optional;
                 public final class DocActions {
+                    public boolean guardHadInput;
                     public Object guardSeen;
                     public Object actionSeen;
                     @GraphGuard public GuardResult eligible(GuardContext<Doc, DocStatus, DocTransition> ctx) {
                         Optional<Verdict> value = ctx.input(Verdict.class);
+                        guardHadInput = value.isPresent();
                         guardSeen = value.orElse(null);
                         return value.map((Verdict v) -> v.accepted() ? GuardResult.pass() : GuardResult.reject("no"))
                                 .orElseGet(GuardResult::pass);
@@ -107,21 +127,49 @@ class OperationInputProcessorTest {
                 import external.Verdict;
                 import io.github.graphmaquina.api.Outcome;
                 import io.github.graphmaquina.runtime.StateMachines;
+                import java.util.concurrent.CompletableFuture;
+                import java.util.concurrent.ExecutorService;
+                import java.util.concurrent.Executors;
+                import java.util.concurrent.TimeUnit;
+                import java.util.concurrent.atomic.AtomicReference;
                 public final class Consumer {
-                    public static boolean check() {
+                    public static boolean check(boolean move) throws Exception {
                         DocActions actions = new DocActions();
-                        Docs docs = new DocsRuntime(StateMachines.from(DocsRuntime.graph(actions))
-                                .state(Doc::status, Doc::status).build());
-                        Doc plain = new Doc();
-                        if (!(docs.announce(plain) instanceof Outcome.Applied)
-                                || actions.guardSeen != null || actions.actionSeen != null) { return false; }
-                        Verdict value = new Verdict(true);
-                        Doc carried = new Doc();
-                        if (!(docs.publish(carried, value) instanceof Outcome.Applied)
-                                || actions.guardSeen != value || actions.actionSeen != value) { return false; }
-                        Doc denied = new Doc();
-                        return docs.publish(denied, new Verdict(false)) instanceof Outcome.Rejected
-                                && denied.status() == DocStatus.DRAFT;
+                        try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                            Docs docs = new DocsRuntime(StateMachines.from(DocsRuntime.graph(actions))
+                                    .state(Doc::status, Doc::status).asyncExecutor(executor).build());
+                            // An operation that declares no payload carries none.
+                            Doc plain = new Doc();
+                            if (!(docs.announce(plain) instanceof Outcome.Applied) || actions.guardHadInput
+                                    || actions.guardSeen != null || actions.actionSeen != null) { return false; }
+
+                            // The payload reaches guard and action from a worker thread of async(...).
+                            Verdict value = new Verdict(true);
+                            Doc carried = new Doc();
+                            Thread caller = Thread.currentThread();
+                            AtomicReference<Thread> worker = new AtomicReference<>();
+                            CompletableFuture<Outcome<Doc, DocStatus, DocTransition>> future = docs.async(() -> {
+                                worker.set(Thread.currentThread());
+                                return docs.publish(carried, value);
+                            });
+                            if (!(future.get(5, TimeUnit.SECONDS) instanceof Outcome.Applied)
+                                    || worker.get() == caller || carried.status() != DocStatus.PUBLISHED
+                                    || !actions.guardHadInput || actions.guardSeen != value
+                                    || (move ? actions.actionSeen != null : actions.actionSeen != value)) { return false; }
+
+                            // An explicit null is the very same invocation as one with no payload at all.
+                            actions.guardHadInput = true;
+                            actions.guardSeen = value;
+                            actions.actionSeen = null;
+                            Doc nulled = new Doc();
+                            if (!(docs.publish(nulled, null) instanceof Outcome.Applied) || actions.guardHadInput
+                                    || actions.guardSeen != null || actions.actionSeen != null) { return false; }
+
+                            // A guard that reads the payload can still refuse it.
+                            Doc denied = new Doc();
+                            return docs.publish(denied, new Verdict(false)) instanceof Outcome.Rejected
+                                    && denied.status() == DocStatus.DRAFT;
+                        }
                     }
                 }
                 """);

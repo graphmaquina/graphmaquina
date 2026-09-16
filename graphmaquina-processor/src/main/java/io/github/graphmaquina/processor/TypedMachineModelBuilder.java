@@ -52,6 +52,7 @@ final class TypedMachineModelBuilder {
     private static final String HEADER = "SG502";
     private static final String DUPLICATE = "SG102";
     private static final String BLANK_REASON = "SG103";
+    private static final String GENERICS = "SG601";
     private static final String IDENTITY = "SG703";
 
     private final VocabularyRegistry vocabulary;
@@ -91,9 +92,15 @@ final class TypedMachineModelBuilder {
         }
         Optional<MachineTypes> resolved = structure.machineTypes(type);
         if (resolved.isEmpty()) {
-            header.report(diagnostics, HEADER, type.getSimpleName() + " must be an interface extending"
-                    + " Machine<E, S, T> with a concrete entity type and two distinct enum types for its states"
-                    + " and its transition identifiers");
+            // An invalid declaration is SG502; a declaration whose E, S and T do not resolve is SG601.
+            if (type.getKind() != ElementKind.INTERFACE) {
+                header.report(diagnostics, HEADER, type.getSimpleName() + " must be an interface extending"
+                        + " Machine<E, S, T>");
+            } else {
+                header.report(diagnostics, GENERICS, type.getSimpleName() + " does not resolve Machine<E, S, T>"
+                        + " to a concrete entity type and two distinct enum types for its states and its"
+                        + " transition identifiers");
+            }
             return Optional.empty();
         }
         MachineTypes types = resolved.get();

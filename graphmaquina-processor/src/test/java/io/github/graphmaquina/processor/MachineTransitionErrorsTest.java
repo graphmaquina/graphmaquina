@@ -103,12 +103,14 @@ class MachineTransitionErrorsTest {
         assertTrue(guardedMove.success(), guardedMove.describe());
     }
 
+    /** Two independent problems on one declaration, each reported once and not once per state it leaves. */
     @Test
     void errorsAreCountedOncePerProblem() {
         Compilation.Result result = body(SUBMIT
-                + publish(", guards = {DocActionsRefs.Approved.class, DocActionsRefs.Approved.class}")
-                        .replace("from = REVIEW", "from = {REVIEW, PUBLISHED}")
+                + publish(", guards = {DocActionsRefs.Approved.class, DocActionsRefs.Approved.class},"
+                        + " failsOn = RuntimeException.class")
                 + ARCHIVE);
         assertEquals(1, result.countError("SG105"), result.describe());
+        assertEquals(1, result.countError("SG302"), result.describe());
     }
 }

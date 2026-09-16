@@ -174,6 +174,28 @@ class DefaultAfterCommitRuntimeTest {
         assertEquals(3, result.load("fx.Scenario").getMethod("run").invoke(null));
     }
 
+    /**
+     * An explicit self-loop is a real ACTION/MOVE edge: it commits {@code Applied} on the state it leaves and
+     * runs the one hook in force on it exactly once.
+     */
+    @Test void explicitSelfLoopCommitsAppliedAndRunsItsOneEffectiveHook() throws Exception {
+        Map<String, String> sources = sources();
+        sources.compute("fx.Docs", (key, text) -> text
+            .replace("@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)\n", "")
+            .replace("    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)\n",
+                "    @DocsGraph.Transition(id = RETURN, from = REVIEW, to = REVIEW)\n"
+                + "    Outcome<Doc, DocStatus, DocTransition> retouch(Doc doc);\n"
+                + "    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)\n"));
+        assertEquals(Boolean.TRUE, execute(sources, """
+            library.docs().submit(doc);
+            recorder.events.clear();
+            Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().retouch(doc);
+            return outcome instanceof Outcome.Applied<?, ?, ?>
+                && doc.status() == DocStatus.REVIEW
+                && recorder.events.equals(List.of("persist:REVIEW", "listener"));
+            """));
+    }
+
     @Test void rejectedAndIgnoredDoNotRunDefault() throws Exception {
         assertEquals(Boolean.TRUE, execute(sources(), """
             Outcome<Doc, DocStatus, DocTransition> rejected = library.docs().publish(doc);

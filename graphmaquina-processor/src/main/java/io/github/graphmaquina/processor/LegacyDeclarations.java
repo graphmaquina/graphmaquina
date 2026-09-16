@@ -106,7 +106,7 @@ final class LegacyDeclarations {
                 + " @GraphCondition or @GraphProperty and name each of them as <Host>Refs.<Member>.class";
     }
 
-    /** What to write instead of the retired cell of one operation. */
+    /** What to write instead of the retired declaration of one operation. */
     private static String describe(TypeElement type, Element member) {
         String graph = type.getSimpleName() + "Graph";
         return type.getQualifiedName() + "." + member.getSimpleName() + " declares its transition with the"
