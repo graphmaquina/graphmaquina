@@ -365,10 +365,10 @@ writing `{}` still inherits, and an explicit hook on an edge still replaces it r
 
 The manifest, the published export index and the compile manifest move to **schema 2**. A `GraphDescriptor`
 carries `transitionType` and `transitions` right after `states`, and both are mandatory. A document of schema 1
-is refused as SG602 with a message that asks for the producer and the consumer to be regenerated and recompiled;
-it is never converted and never read half-way. The single exception is the inventory of owned outputs
-(`owned-outputs.json`), which carries paths and no graph: a previous cycle's inventory is still read, solely so
-the outputs that cycle owned can be deleted. `clean` is always a complete migration path.
+is refused as SG602 with a message that asks the user to run `clean`, then regenerate and recompile the
+producer and the consumer. This also applies to sealed and pending inventories of owned outputs
+(`owned-outputs.json` and `owned-outputs.pending.json`): no schema 1 paths are used to delete or migrate files.
+Only schema 2 is supported. The user is responsible for migrating source code and cleaning old build outputs.
 
 ### Upgrading a build
 
@@ -381,11 +381,10 @@ refused with SG602 just as a schema 1 document is, so a build that upgrades one 
 diagnostic instead of generating against half a graph. Raise the release of `graphmaquina-core`, of the Gradle
 or Maven plugin and of `graphmaquina-processor` on the `annotationProcessorPath` in the same change.
 
-The stale binaries of the retired vocabulary — `<Machine>Graph$Row.class`, `$Rows.class`, `$Cell.class`,
-`$Cells.class` and the rest — are removed by the preparation step of the next build, from the inventory the
-previous cycle sealed and never from a name pattern. A class file that inventory does not list is left exactly
-as it is, whatever it is called, so hand-written classes beside the generated ones survive the upgrade. Deleting
-the build directory reaches the same state.
+Remove stale 1.x binaries by running `clean` or deleting the generated build directory yourself. The 2.0
+preparation step refuses schema 1 inventories before changing outputs. For subsequent 2.0 builds, incremental
+cleanup continues to use schema 2 inventories and leaves unlisted files untouched. Keep hand-written source
+files outside generated output directories before cleaning.
 
 ## Annotation processor
 

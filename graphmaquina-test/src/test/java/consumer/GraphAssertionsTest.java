@@ -196,6 +196,14 @@ class GraphAssertionsTest {
         assertFailure(error, GRAPH + " policy READY", "default reason", "prepare first", "finish only");
     }
 
+    @Test
+    void aPolicyCannotAssertRejectionOfAnExistingTransition() {
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> GraphAssert.assertThat(TestDomain.graph(TIMEOUT)).policy(State.NEW)
+                        .rejects(Id.PREPARE, "prepare first"));
+        assertFailure(error, GRAPH + " policy NEW PREPARE", "transition", Optional.empty(), Optional.of(State.READY));
+    }
+
     // --- asynchrony --------------------------------------------------------------------------------
 
     @Test

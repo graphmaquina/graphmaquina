@@ -49,6 +49,7 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
 
     @Override
     public WatchBuilder<E, S, T, P, Q, U> execute(@NonNull T transition) {
+        graph.requireTransition(transition);
         rules.add(new WatchRule<>(pending.orElseThrow(), transition));
         pending = Optional.empty();
         return this;

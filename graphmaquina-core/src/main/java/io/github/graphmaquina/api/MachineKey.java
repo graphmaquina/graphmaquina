@@ -16,6 +16,15 @@ import lombok.NonNull;
 public record MachineKey<E, S extends Enum<S>, T extends Enum<T>>(@NonNull Class<E> entity, @NonNull Class<S> states,
                                                                   @NonNull Class<T> transitions) {
 
+    public MachineKey {
+        if (!states.isEnum() || !transitions.isEnum()) {
+            throw new IllegalArgumentException("states and transitions must be concrete enum classes");
+        }
+        if (states.equals(transitions)) {
+            throw new IllegalArgumentException("states and transitions must be distinct enums");
+        }
+    }
+
     public static <E, S extends Enum<S>, T extends Enum<T>> MachineKey<E, S, T> of(@NonNull Class<E> entity,
                                                                                    @NonNull Class<S> states,
                                                                                    @NonNull Class<T> transitions) {

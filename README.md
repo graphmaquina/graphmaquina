@@ -889,8 +889,7 @@ uniquely keyed by `(from, transition)`: from one state, one identifier selects e
 declarations of the same key are `SG102`, even when their guards differ; there is no priority and no
 first-guard-wins.
 
-Nothing else exists. There is no table of state pairs, no implicit diagonal, no row to close and no entry for
-a transition nobody declared. The ticket machine above expresses its whole intent in six edges:
+Only declared transitions become edges. The ticket machine above expresses its whole intent in six edges:
 
 | From | Identifier | To | Kind |
 | --- | --- | --- | --- |
@@ -932,7 +931,7 @@ resolved from the origin that needs it.
 
 ### Absence, self-loops and reevaluation
 
-Three situations that older matrix-shaped libraries blur together stay separate here, and each has its own
+Three situations stay separate here, and each has its own
 observable result.
 
 | Situation | What the engine does | Outcome |
@@ -2506,8 +2505,8 @@ public final class ProgrammaticTickets {
 
 Add `import io.github.graphmaquina.api.GuardResult;` for the guard above. Every stage names an identifier:
 `transition(id, from, to)` opens one edge and `endTransition()` closes it, `onFailure(id)` names the
-recovering edge, and `statePolicy` / `reject` word the answers a node gives. There is no row to open, no
-diagonal to declare and no set of destinations to close — a state simply has the edges you gave it.
+recovering edge, and `statePolicy` / `reject` word the answers a node gives. A state has exactly the edges
+you declare.
 
 The DSL exposes runtime functions directly, so this alternative does not need generated action symbols. It
 deliberately omits the quickstart's self-loop, auto-approval and commit hook; add them through the DSL when
@@ -2564,7 +2563,7 @@ code runs.
 | Code | Meaning / corrective action |
 | --- | --- |
 | `SG601` | Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. `Machine<E, S, T>` must resolve to a concrete entity type and **two distinct enums**, one for states and one for transition identifiers. |
-| `SG602` | Manifest or export index is missing, incompatible, stale, or written in the retired semantic schema 1. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place needs one `clean`. |
+| `SG602` | Manifest or export index is missing, incompatible, stale, or written in the retired schema 1. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place needs one `clean`. |
 | `SG603` | Generated output or export collision, including names that normalize to the same PascalCase spelling. The diagnostic names both conflicting sources; rename a declaration and its references. |
 | `SG604` | Invalid or contradictory export/role. Check markers and exported signatures. |
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |

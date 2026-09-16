@@ -88,7 +88,14 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     public Outcome<E, S, T> execute(E entity, T transition, Object input) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(transition, "transition");
+        requireTransition(transition);
         return runRoot(entity, (Transaction tx) -> tx.transition(this, entity, transition, 0, input), 0);
+    }
+
+    void requireTransition(T transition) {
+        if (!key().transitions().isInstance(transition)) {
+            throw new IllegalArgumentException("transition must belong to " + key().transitions().getName() + ": " + transition);
+        }
     }
 
     @Override

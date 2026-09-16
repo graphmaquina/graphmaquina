@@ -90,6 +90,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
 
     @Override
     public TransitionDraft<E, S, T> onFailure(@NonNull T recovery) {
+        graph.requireTransition(recovery);
         onFailure = Optional.of(recovery);
         return this;
     }

@@ -59,6 +59,7 @@ final class Transaction {
     /** One step: resolve (current state, identifier) exactly once, guards, annotate, execute, failure route. */
     <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine, E entity,
                                                                           T id, int depth, Object input) {
+        machine.requireTransition(id);
         EntityRef ref = uow.register(machine.refOf(entity));
         S from = currentState(machine, ref, entity);
         Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
@@ -260,6 +261,9 @@ final class Transaction {
         }
         T recoveryId = failing.onFailure().orElseThrow();
         TransitionSpec<E, S, T> route = machine.definition().findTransition(from, recoveryId).orElseThrow();
+        // The failed action has ended. Keep one frame for the entity, now identifying the recovery edge.
+        uow.pop();
+        uow.push(ref, route);
         uow.append(new LogEntry(ref, route, depth));
         if (route.action().isPresent()) {
             ActionRef<E, S, T> action = route.action().orElseThrow();
@@ -393,6 +397,7 @@ final class Transaction {
     private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascadeOne(ContextHandle caller,
                                                                                   MachineKey<P, Q, U> key, P peer, U id) {
         DefaultStateMachine<P, Q, U> machine = registry.machineFor(key);
+        machine.requireTransition(id);
         EntityRef ref = uow.register(machine.refOf(peer));
         int depth = caller.contextDepth() + 1;
         Optional<InFlight> flight = uow.inFlight(ref);
@@ -437,6 +442,9 @@ final class Transaction {
                                                                                 Collection<? extends P> peers, U id,
                                                                                 CascadePolicy policy) {
         checkPoison(caller);
+        if (!key.transitions().isInstance(id)) {
+            throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": " + id);
+        }
         List<Outcome<P, Q, U>> outcomes = new ArrayList<>();
         List<TransitionAbortedException> errors = new ArrayList<>();
         for (P peer : peers) {

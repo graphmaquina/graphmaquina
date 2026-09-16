@@ -152,10 +152,11 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
         Objects.requireNonNull(state, "state");
         String context = context() + " policy " + state.name();
         if (actual == null) {
-            return new StatePolicyAssert<>(context, null, null);
+            return new StatePolicyAssert<>(context, null, null, null);
         }
         requireDeclaredState(actual, state, "state");
-        return new StatePolicyAssert<>(context, actual.key().transitions(), actual.policy(state));
+        return new StatePolicyAssert<>(context, actual.key().transitions(), actual.policy(state),
+                transition -> actual.findTransition(state, transition).map(TransitionSpec::to));
     }
 
     /**

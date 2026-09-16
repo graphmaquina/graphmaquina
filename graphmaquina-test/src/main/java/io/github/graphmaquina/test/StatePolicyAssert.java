@@ -3,6 +3,8 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.api.StatePolicy;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * Chainable, typed assertion over the rejection policy of one state, obtained from
@@ -22,11 +24,14 @@ public final class StatePolicyAssert<S extends Enum<S>, T extends Enum<T>> {
     private final Class<T> transitions;
 
     private final StatePolicy<S, T> actual;
+    private final Function<T, Optional<S>> transitionTarget;
 
-    StatePolicyAssert(String context, Class<T> transitions, StatePolicy<S, T> actual) {
+    StatePolicyAssert(String context, Class<T> transitions, StatePolicy<S, T> actual,
+                      Function<T, Optional<S>> transitionTarget) {
         this.context = context;
         this.transitions = transitions;
         this.actual = actual;
+        this.transitionTarget = transitionTarget;
     }
 
     /** The reason given for every identifier the policy does not name on its own. */
@@ -40,7 +45,8 @@ public final class StatePolicyAssert<S extends Enum<S>, T extends Enum<T>> {
     /**
      * The reason this state gives {@code transition} alone. An identifier the policy does not name falls
      * back to the default, so this expectation is satisfied by the default's text too — which is exactly
-     * what the engine would report for that request. An identifier that is not in the machine's catalogue
+     * what the engine would report for that request when no edge exists. An existing edge fails this
+     * assertion regardless of its guards or the policy's text. An identifier that is not in the machine's catalogue
      * at all is a different matter: it would fall back to the default without ever having been declarable,
      * so it is refused as a programming error rather than quietly accepted.
      */
@@ -52,6 +58,7 @@ public final class StatePolicyAssert<S extends Enum<S>, T extends Enum<T>> {
         }
         String where = context + " " + transition.name();
         StatePolicy<S, T> policy = Checks.subject(where, "reason", expected, actual);
+        Checks.equal(where, "transition", Optional.empty(), transitionTarget.apply(transition));
         Checks.equal(where, "reason", expected, policy.reasonFor(transition));
         return this;
     }

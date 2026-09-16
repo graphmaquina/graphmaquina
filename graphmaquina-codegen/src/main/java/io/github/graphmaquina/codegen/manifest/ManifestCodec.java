@@ -17,11 +17,9 @@ import java.util.List;
  * boundary of the {@code io.github.graphmaquina.codegen} module: every other type in this package and in
  * {@code io.github.graphmaquina.codegen.model} is a plain value read or written only through this class.
  *
- * <p>Schema 2 is the only semantic schema this tool reads. An index or a manifest of schema 1 is refused with a
- * message that asks for the producer and the consumer to be regenerated and recompiled; there is no conversion
- * and no partial reading of one. {@link #readOwned(Path)} is the single exception: an inventory of owned outputs
- * carries paths and no graph, so a previous cycle's inventory is still readable, solely so the outputs that
- * cycle owned can be deleted.
+ * <p>Schema 2 is the only schema this tool reads, including inventories of owned outputs. A schema 1 document
+ * is refused with a message asking the user to clean the build, then regenerate and recompile producer and
+ * consumer. There is no conversion, partial model reading or cleanup using retired inventories.
  *
  * <p>Every read method parses the document with a strict {@link com.google.gson.stream.JsonReader}: unknown
  * {@code schemaVersion} values, a missing mandatory member, a member of the wrong JSON type, a duplicate key at
@@ -256,14 +254,14 @@ public final class ManifestCodec {
     }
 
     /**
-     * Reads an {@link OwnedOutputs} inventory from {@code path}, of the current schema or of the retired one.
+     * Reads an {@link OwnedOutputs} inventory from {@code path}, of the current schema only.
      *
      * @throws IOException if {@code path} cannot be read
      */
     public static OwnedOutputs readOwned(Path path) throws IOException {
         JsonObject object = JsonSupport.readObject(path);
         int schemaVersion = JsonSupport.requireInt(object, "schemaVersion", path);
-        JsonSupport.requireOwnershipSchema(schemaVersion, path);
+        JsonSupport.requireSupportedSchema(schemaVersion, path);
         return new OwnedOutputs(schemaVersion,
             JsonSupport.requireStringArray(object, "sources", path),
             JsonSupport.requireStringArray(object, "binaries", path),

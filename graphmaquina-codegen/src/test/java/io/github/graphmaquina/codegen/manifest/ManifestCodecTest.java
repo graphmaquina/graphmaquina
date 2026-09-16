@@ -322,12 +322,9 @@ class ManifestCodecTest {
         assertTrue(failure.getMessage().contains("schema 1"), failure.getMessage());
     }
 
-    /**
-     * The one document of the retired schema a 2.0 build still reads: an ownership inventory carries no graph,
-     * and it is read only so the outputs the previous compilation owned can be deleted.
-     */
+    /** The user cleans old outputs explicitly; the tool never consumes an inventory of the retired schema. */
     @Test
-    void readsAnOwnershipInventoryOfTheRetiredSchemaSoItsOutputsCanBeDeleted() throws IOException {
+    void rejectsAnOwnershipInventoryOfTheRetiredSchema() throws IOException {
         Path file = directory.resolve("owned-outputs.json");
         Files.writeString(file, """
             {
@@ -339,11 +336,9 @@ class ManifestCodecTest {
             }
             """);
 
-        OwnedOutputs inventory = ManifestCodec.readOwned(file);
-
-        assertEquals(1, inventory.schemaVersion());
-        assertEquals(List.of("fx/OrdersGraph.java"), inventory.sources());
-        assertEquals(List.of("fx/OrdersGraph.class"), inventory.binaries());
+        CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readOwned(file));
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().contains("clean"), failure.getMessage());
     }
 
     /** The member names of the first graph object of a written index, in the order the document spells them. */

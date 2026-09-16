@@ -4,7 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
@@ -89,7 +91,7 @@ class RepeatedCompilationTest {
     }
 
     @Test
-    void upgradesInventoriedUnderscoreRuntimesWithoutDeletingHandwrittenNeighbors() throws IOException {
+    void refusesRetiredInventoriesAndLeavesCleanupToTheUser() throws IOException {
         Map<String, String> sources = TypedFixtures.minimal();
         sources.put("fx.Library", """
                 package fx;
@@ -111,24 +113,30 @@ class RepeatedCompilationTest {
                 "-proc:none", "--release", "21", "-d", request.classesOutput().toString(),
                 oldMachine.toString(), oldSet.toString(), manual.toString()));
         Path manualBinary = request.classesOutput().resolve("fx/Docs_Helper.class");
-        byte[] manualBefore = Files.readAllBytes(manualBinary);
         ManifestCodec.writeOwned(request.workDirectory().resolve("owned-outputs.json"), new OwnedOutputs(1,
                 List.of("fx/Docs_.java", "fx/Library_.java"),
                 List.of("fx/Docs_.class", "fx/Library_.class", "fx/Library_$Builder.class"),
                 List.of(), List.of()));
 
-        Compilation.Result upgraded = Compilation.compilePrepared(prepared);
+        Map<Path, byte[]> before = new LinkedHashMap<>();
+        for (Path file : List.of(oldMachine, oldSet, manual, manualBinary,
+                request.classesOutput().resolve("fx/Docs_.class"),
+                request.classesOutput().resolve("fx/Library_.class"),
+                request.classesOutput().resolve("fx/Library_$Builder.class"),
+                request.workDirectory().resolve("owned-outputs.json"))) {
+            before.put(file, Files.readAllBytes(file));
+        }
 
-        assertTrue(upgraded.success(), upgraded.describe());
-        assertTrue(upgraded.hasGenerated("fx.DocsRuntime"), upgraded.describe());
-        assertTrue(upgraded.hasGenerated("fx.LibraryRuntime"), upgraded.describe());
-        assertFalse(Files.exists(oldMachine));
-        assertFalse(Files.exists(oldSet));
-        assertFalse(exists(request, "fx/Docs_.class"));
-        assertFalse(exists(request, "fx/Library_.class"));
-        assertFalse(exists(request, "fx/Library_$Builder.class"));
-        assertTrue(Files.exists(manual));
-        assertArrayEquals(manualBefore, Files.readAllBytes(manualBinary));
+        CodegenException failure = assertThrows(CodegenException.class, () -> Compilation.compilePrepared(prepared));
+
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().contains("run clean"), failure.getMessage());
+        for (Map.Entry<Path, byte[]> entry : before.entrySet()) {
+            assertArrayEquals(entry.getValue(), Files.readAllBytes(entry.getKey()), entry.getKey().toString());
+        }
+        assertFalse(Files.exists(request.processorSourcesOutput().resolve("fx/DocsRuntime.java")));
+        assertFalse(Files.exists(request.processorSourcesOutput().resolve("fx/LibraryRuntime.java")));
+        assertFalse(Files.exists(request.workDirectory().resolve("owned-outputs.pending.json")));
     }
 
     @Test

@@ -60,9 +60,8 @@ public final class CompilationOutputs {
     /**
      * Retires everything a previous cycle owned and invalidates the published index, before javac runs.
      *
-     * <p>An inventory left by a compilation of the retired schema is still read here, and only here: it lists
-     * paths and no graph, so reading it retires exactly the files that compilation owned. Nothing of it is
-     * interpreted as a machine.</p>
+     * <p>Only schema 2 inventories are accepted. A retired inventory stops preparation with {@code SG602}
+     * before any output is changed; the user must clean the old build explicitly.</p>
      *
      * <p>When a pending inventory is already there, the cycle it belongs to was interrupted: javac may have
      * written class files for its units that no inventory could list, since only {@code complete} enumerates

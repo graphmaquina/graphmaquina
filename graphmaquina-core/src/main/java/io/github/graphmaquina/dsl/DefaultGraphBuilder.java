@@ -52,8 +52,21 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     Problems problems() { return problems; }
 
+    private void requireState(S state) {
+        if (!key.states().isInstance(state)) {
+            throw new IllegalArgumentException("state must belong to " + key.states().getName() + ": " + state);
+        }
+    }
+
+    void requireTransition(T transition) {
+        if (!key.transitions().isInstance(transition)) {
+            throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": " + transition);
+        }
+    }
+
     @Override
     public GraphBuilder<E, S, T> initial(@NonNull S state) {
+        requireState(state);
         initialDeclarations++;
         initial = Optional.of(state);
         return this;
@@ -61,18 +74,21 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public GraphBuilder<E, S, T> terminal(@NonNull S state) {
+        requireState(state);
         terminals.add(state);
         return this;
     }
 
     @Override
     public GraphBuilder<E, S, T> allowsCycle(@NonNull S state) {
+        requireState(state);
         cycleAllowed.add(state);
         return this;
     }
 
     @Override
     public GraphBuilder<E, S, T> statePolicy(@NonNull S state, @NonNull String otherwise) {
+        requireState(state);
         if (statePolicies.putIfAbsent(state, otherwise) != null) {
             problems.add("SG102", state.ordinal(), -1, "the state " + state + " declares two policies");
         }
@@ -81,6 +97,8 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public GraphBuilder<E, S, T> reject(@NonNull S state, @NonNull T transition, @NonNull String reason) {
+        requireState(state);
+        requireTransition(transition);
         Map<T, String> forState = rejections.computeIfAbsent(state, (S ignored) -> new LinkedHashMap<>());
         if (forState.putIfAbsent(transition, reason) != null) {
             problems.add("SG102", state.ordinal(), transition.ordinal(),
@@ -91,6 +109,9 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public TransitionBuilder<E, S, T> transition(@NonNull T transition, @NonNull S from, @NonNull S to) {
+        requireTransition(transition);
+        requireState(from);
+        requireState(to);
         return new TransitionDraft<>(this, from, transition, to);
     }
 
@@ -99,6 +120,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             @NonNull S state, @NonNull MachineKey<P, Q, U> peer,
             @NonNull Function<? super E, ? extends Collection<? extends P>> peersOf,
             @NonNull Function<? super P, Optional<E>> ownerOf) {
+        requireState(state);
         WatchDraft<E, S, T, P, Q, U> draft = new WatchDraft<>(this, state, peer, peersOf, ownerOf);
         if (watches.putIfAbsent(state, draft) != null) {
             problems.add("SG403", state.ordinal(), -1, "the state " + state + " declares two watches");

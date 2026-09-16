@@ -118,6 +118,30 @@ class GraphOnlyCascadeTest {
         }
     }
 
+    /** A recovery replaces the failed edge as the identity currently executing for the entity. */
+    @Test void recursionDuringRecoveryReportsTheRecoveringIdentity() {
+        GraphDefinition<Ticket,State,Id> graph = StateGraph.define(KEY).initial(OPEN).terminal(DONE)
+                .statePolicy(OPEN, "submit first").statePolicy(REVIEW, "review required")
+                .transition(SUBMIT, OPEN, REVIEW).endTransition()
+                .transition(APPROVE, REVIEW, DONE).action("approve", ctx -> ActionOutcome.failed("declined"))
+                    .onFailure(FAIL).endTransition()
+                .transition(FAIL, REVIEW, DONE).action("recover", ctx -> {
+                    assertEquals(FAIL, ctx.transition());
+                    ctx.cascade(KEY, ctx.entity(), FAIL);
+                    return ActionOutcome.ok();
+                }).afterCommit("hook", ticket -> ticket.calls.add("hook")).endTransition().build();
+        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+            Ticket ticket = new Ticket(1, REVIEW);
+            CascadeCycleException error = assertThrows(CascadeCycleException.class,
+                    () -> registry.of(KEY).execute(ticket, APPROVE));
+            assertEquals(FAIL, error.inFlightTransition());
+            assertEquals(FAIL, error.requestedTransition());
+            assertEquals(List.of(APPROVE, FAIL), error.journal().stream().map(record -> record.transition()).toList());
+            assertEquals(REVIEW, ticket.state);
+            assertEquals(List.of(), ticket.calls);
+        }
+    }
+
     /** Once a cascade has finished, the peer's pending state is what the next request resolves against. */
     @Test void afterACascadeHasFinishedTheNextOneResolvesFromThePendingState() {
         List<String> steps = new ArrayList<>();

@@ -372,7 +372,8 @@ class StateGraphPluginFunctionalTest {
 
         assertEquals(TaskOutcome.FAILED, retired.task(":generateStateGraphApi").getOutcome());
         assertTrue(retired.getOutput().contains("[SG602]"), retired::getOutput);
-        assertTrue(retired.getOutput().contains("the semantic schema 1 of"), retired::getOutput);
+        assertTrue(retired.getOutput().contains("the schema 1 of"), retired::getOutput);
+        assertTrue(retired.getOutput().contains("run clean"), retired::getOutput);
         assertTrue(retired.getOutput().contains(
                 "regenerate and recompile the producer and the consumer with 2.0"), retired::getOutput);
 
