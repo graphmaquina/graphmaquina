@@ -2,6 +2,8 @@ package io.github.graphmaquina.graphonly;
 
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.APPROVE;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.AUTO_APPROVE;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.BACK;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.RETOUCH;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.DONE;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.OPEN;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.REVIEW;
@@ -71,6 +73,27 @@ class GraphOnlyExportTest {
         assertTrue(dot.contains("tooltip=\"otherwise: submit first; APPROVE: approval requires review\""), dot);
         assertEquals(graph.transitions().size(),
                 dot.lines().filter((String line) -> line.contains("->") && !line.contains("initial ->")).count(), dot);
+    }
+
+    /**
+     * The reasons a state gives are rendered in the order they were declared. The three identifiers below are
+     * declared in neither ordinal order (BACK is last in the catalogue, APPROVE second) nor any hash order, so
+     * this fails if the chain reverts to an {@code EnumMap}, which sorts by ordinal, or to {@code Map.copyOf},
+     * whose iteration order is unspecified and salted per JVM.
+     */
+    @Test void rejectionReasonsKeepTheirDeclaredOrderInTheRenderedTooltip() {
+        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
+                .reject(OPEN, BACK, "nothing to go back to")
+                .reject(OPEN, APPROVE, "approval requires review")
+                .reject(OPEN, RETOUCH, "nothing to retouch yet").build();
+        GraphView view = GraphView.of(graph);
+        assertEquals(List.of("BACK", "APPROVE", "RETOUCH"),
+                graph.policy(OPEN).rejectionReasons().keySet().stream().map(Id::name).toList());
+        assertEquals(List.of("BACK: nothing to go back to", "APPROVE: approval requires review",
+                "RETOUCH: nothing to retouch yet"), view.policies().get(0).rejections());
+        String dot = GraphvizExporter.render(view);
+        assertTrue(dot.contains("tooltip=\"otherwise: submit first; BACK: nothing to go back to;"
+                + " APPROVE: approval requires review; RETOUCH: nothing to retouch yet\""), dot);
     }
 
     /** A terminal gets the stable generated policy text when nobody declares one. */

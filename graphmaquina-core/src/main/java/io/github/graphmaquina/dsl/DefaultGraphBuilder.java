@@ -81,7 +81,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public GraphBuilder<E, S, T> reject(@NonNull S state, @NonNull T transition, @NonNull String reason) {
-        Map<T, String> forState = rejections.computeIfAbsent(state, (S ignored) -> new EnumMap<>(key.transitions()));
+        Map<T, String> forState = rejections.computeIfAbsent(state, (S ignored) -> new LinkedHashMap<>());
         if (forState.putIfAbsent(transition, reason) != null) {
             problems.add("SG102", state.ordinal(), transition.ordinal(),
                     "the state " + state + " rejects " + transition + " twice");
