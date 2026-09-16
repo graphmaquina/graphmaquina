@@ -51,7 +51,8 @@ class GraphOnlySurfaceTest {
     /**
      * The qualified names of the retired contract: the total edge model, the row and cell builders and the
      * whole string annotation vocabulary, its repeatable containers included. Kept in one list because the
-     * consumer below asks the classloader for each of them and the jar walk looks for each of them as a file.
+     * consumer below is written from it and the jar walk looks for each of them as a file, so a name added
+     * here is covered by both checks.
      */
     private static final List<String> RETIRED = List.of(
             "io.github.graphmaquina.api.EdgeSpec",
@@ -97,23 +98,7 @@ class GraphOnlySurfaceTest {
 
                 public static void main(String[] args) {
                     for (String retired : List.of(
-                        "io.github.graphmaquina.api.EdgeSpec",
-                        "io.github.graphmaquina.api.EdgeKind",
-                        "io.github.graphmaquina.dsl.RowBuilder",
-                        "io.github.graphmaquina.dsl.CellOutline",
-                        "io.github.graphmaquina.dsl.GraphOutline",
-                        "io.github.graphmaquina.annotation.Row",
-                        "io.github.graphmaquina.annotation.Cell",
-                        "io.github.graphmaquina.annotation.Action",
-                        "io.github.graphmaquina.annotation.Move",
-                        "io.github.graphmaquina.annotation.Forbid",
-                        "io.github.graphmaquina.annotation.StateGraph",
-                        "io.github.graphmaquina.annotation.Watch",
-                        "io.github.graphmaquina.annotation.When",
-                        "io.github.graphmaquina.annotation.Watches",
-                        "io.github.graphmaquina.annotation.Rows",
-                        "io.github.graphmaquina.annotation.Cells",
-                        "io.github.graphmaquina.annotation.Forbids")) {
+                        %s)) {
                         assertThrows(ClassNotFoundException.class, () -> Class.forName(retired));
                     }
                     assertTrue(Arrays.stream(StateMachine.class.getMethods()).noneMatch(m -> m.getName().equals("transitionTo")));
@@ -139,7 +124,8 @@ class GraphOnlySurfaceTest {
                     }
                 }
             }
-            """;
+            """.formatted(RETIRED.stream().map((String retired) -> '"' + retired + '"')
+                    .collect(Collectors.joining(",\n" + " ".repeat(12))));
 
     /**
      * The negative load, run where it means something: the whole published set is the classpath, so a retired

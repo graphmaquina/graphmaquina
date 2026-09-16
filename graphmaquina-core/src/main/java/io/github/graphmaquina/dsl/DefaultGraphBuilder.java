@@ -157,15 +157,8 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             if (otherwise.isEmpty() || otherwise.get().isBlank()) {
                 continue;
             }
-            Map<T, String> declaredRejections = rejections.getOrDefault(state, Map.of());
-            boolean blank = false;
-            for (String reason : declaredRejections.values()) {
-                blank = blank || reason.isBlank();
-            }
-            if (blank) {
-                continue;
-            }
-            resolved.put(state, new StatePolicy<>(state, otherwise.get(), declaredRejections));
+            resolved.put(state, new StatePolicy<>(state, otherwise.get(),
+                    rejections.getOrDefault(state, Map.of())));
         }
         return resolved;
     }

@@ -62,8 +62,11 @@ public final class MachineHeaders {
             "transition", facade, origin);
         TypeHeader transitionHeader = index.find(transition.name()).orElseThrow(() ->
             new CodegenException(UNRESOLVED, "unresolved transition enum " + transition.render(), origin));
-        if (transitionHeader.kind() != ElementKind.ENUM
-                || transitionHeader.canonicalName().equals(stateHeader.canonicalName())) {
+        if (transitionHeader.kind() != ElementKind.ENUM) {
+            throw new CodegenException(UNRESOLVED, "the transition type " + transitionHeader.canonicalName() + " of "
+                    + facade + " is not an enum", origin);
+        }
+        if (transitionHeader.canonicalName().equals(stateHeader.canonicalName())) {
             throw new CodegenException(UNRESOLVED, "states and transitions require distinct enum types", origin);
         }
         return new GraphDescriptor(header.canonicalName(), header.scope().packageName(), entity.render(),

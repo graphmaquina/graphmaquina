@@ -52,25 +52,27 @@ types of technical failures. Rollback of external side effects was never promise
 
 ## A machine, before and after
 
-The same two-state fragment, declared both ways. `1.x` on the left of each pair, `2.0` on the right.
+The same fragment, declared both ways: the `1.x` declaration first, the `2.0` declaration under it.
+Both blocks of a pair name the same states, the same operations and the same reasons, so everything that
+differs between them is the contract and nothing else.
 
 **Before — a row, a cell, a forbid and two operations:**
 
 ```java
 @GenerateGraphApi
 @TicketsGraph.Definition(initial = OPEN, terminals = {DONE, FAILED},
-        state = TicketRefs.Status.class, id = TicketRefs.Id.class)
-@TicketsGraph.Row(state = OPEN, otherwise = "start the ticket before completing it")
-@TicketsGraph.Row(state = IN_PROGRESS, otherwise = "an active ticket must complete or fail")
+        state = TicketRefs.State.class, id = TicketRefs.Id.class)
+@TicketsGraph.Row(state = OPEN, otherwise = "submit the ticket first")
+@TicketsGraph.Row(state = REVIEW, otherwise = "approve or decline the ticket")
 @TicketsGraph.Forbid(from = OPEN, to = DONE, reason = "approval requires review")
-@TicketsGraph.Cell(from = IN_PROGRESS, to = FAILED)
-public interface Tickets extends Machine<Ticket, TicketStatus> {
-    @TicketsGraph.Move(from = OPEN, to = IN_PROGRESS, guards = TicketActionsRefs.HasTitle.class)
-    Outcome<Ticket, TicketStatus> start(Ticket ticket);
+@TicketsGraph.Cell(from = REVIEW, to = FAILED)
+public interface Tickets extends Machine<Ticket, TicketState> {
+    @TicketsGraph.Move(from = OPEN, to = REVIEW, guards = TicketActionsRefs.HasTitle.class)
+    Outcome<Ticket, TicketState> submit(Ticket ticket);
 
-    @TicketsGraph.Action(from = IN_PROGRESS, to = DONE,
-            action = TicketActionsRefs.Complete.class, onFailure = FAILED)
-    Outcome<Ticket, TicketStatus> complete(Ticket ticket);
+    @TicketsGraph.Action(from = REVIEW, to = DONE,
+            action = TicketActionsRefs.Approve.class, onFailure = FAILED)
+    Outcome<Ticket, TicketState> approve(Ticket ticket);
 }
 ```
 
@@ -100,7 +102,7 @@ Line by line: `Row` became `StatePolicy` with the same two members; `Forbid(from
 `Reject(from, transition)` and now names the operation it refuses rather than a destination; `Cell` and the
 `Move` / `Action` pair became one `Transition` whose `id` is mandatory and whose absent `action` still means
 `MOVE`; `onFailure = FAILED` became `onFailure = TicketTransition.DECLINE`, the identifier of the edge
-declared on the interface; and every `Outcome<Ticket, TicketStatus>` grew its third parameter.
+declared on the interface; and every `Outcome<Ticket, TicketState>` grew its third parameter.
 
 What the declaration no longer says matters as much: there is no diagonal, no closed row and no entry at all
 for any pair of states nobody mentioned. Three edges is the whole graph.
@@ -112,13 +114,13 @@ StateGraph.define(key)
         .initial(OPEN).terminal(DONE).terminal(FAILED)
         .from(OPEN)
             .stay()
-            .to(IN_PROGRESS).move()
-            .forbidOthers("start before completing")
-        .from(IN_PROGRESS)
+            .to(REVIEW).move()
+            .forbidOthers("submit the ticket first")
+        .from(REVIEW)
             .stay()
-            .to(DONE).action("complete", actions::complete).onFailure(FAILED)
+            .to(DONE).action("approve", actions::approve).onFailure(FAILED)
             .to(FAILED).move()
-            .forbidOthers("complete or fail")
+            .forbidOthers("approve or decline the ticket")
         .build();
 ```
 
@@ -155,9 +157,9 @@ row. You never wrote it. Every state therefore had a diagonal, and the diagonal 
 any `Cell`, `Action` or `Move` whose `to` was also in its `from`, so an annotated machine could not have any
 other kind of self-transition.
 
-*Before:* with the entity in `IN_PROGRESS`, `machine.transitionTo(ticket, IN_PROGRESS)` evaluated no guards
-— the row's diagonal had none — and returned `Outcome.Ignored`, `current() == IN_PROGRESS`. No record of an
-action, no hook, no state write.
+*Before:* with the entity in `REVIEW`, `machine.transitionTo(ticket, REVIEW)` evaluated no guards — the row's
+diagonal had none — and returned `Outcome.Ignored`, `current() == REVIEW`. No record of an action, no hook,
+no state write.
 
 **What 2.0 does.** Nothing is emitted that you did not declare. There is no diagonal.
 
@@ -167,7 +169,7 @@ carry is `Outcome.Rejected` with `RejectionKind.NO_TRANSITION` and the node's po
 ```java
 assertThat(tickets.definition()).hasNoTransition(TicketState.REVIEW, TicketTransition.SUBMIT);
 assertThat(tickets.submit(inReview)).isRejected().hasNoTransition()
-        .hasReason("approve, reject or retouch the ticket");
+        .hasReason("approve or decline the ticket");
 ```
 
 **How to migrate.** If the implicit diagonal only ever produced `Ignored` — which, for an annotated machine,
@@ -302,7 +304,7 @@ inventing one was how a caller could end up believing a route existed.
 | `Ignored` covers STAY, a convergent cascade no-op and a reevaluation with no rule. | `Ignored` is reserved for reevaluation and says which case it is: `IgnoreReason.NO_WATCH` or `NO_RULE_MATCHED`. |
 | A FORBID cell rejects with its reason, and `Rejected` reports a `to`. | A node's `StatePolicy` rejects, with `otherwise` plus reasons declared per identifier. `Rejected` carries `RejectionKind` and the requested identifier, and no destination: the same identifier reaches different states from different origins. |
 | `forbidOthers(reason)` closes a row; `to(x).forbid(reason)` forbids one cell. | `statePolicy(state, reason)` gives the node its default reason; `reject(state, transition, reason)` overrides it for one identifier. Declaring both an edge and a rejection for the same key is SG702. |
-| A cascade whose peer already holds the requested state is a convergent no-op, recorded with `TransitionRecord.convergent`. | Convergence by destination is gone, and so is `convergent`. A nested request on an entity already in flight is always `CascadeCycleException`, even when it asks for the transition that entity is running. Once the entity is no longer in flight, the request resolves from its pending state. |
+| A cascade whose peer already holds the requested state is a convergent no-op, recorded with `TransitionRecord.convergent`. | Convergence by destination is gone, and so is `convergent`. A peer that used to converge now resolves the identifier from its own pending state and runs that edge: its guards are evaluated, its action runs, its hook runs and its record is an ordinary one, where 1.x ran none of the three and marked the record `convergent`. If no edge is keyed by that pair, the rejection aborts the whole cascade. A cascade whose peers used to converge therefore does work 1.x skipped, which is what declaring edges instead of choosing them by destination costs. A nested request on an entity already in flight is always `CascadeCycleException`, even when it asks for the transition that entity is running. Once the entity is no longer in flight, the request resolves from its pending state. |
 | `CascadeCycleException` reports `inFlightTarget` and `requestedTarget` as states. | It reports `inFlightTransition` and `requestedTransition` as identifiers. |
 | `onFailure(state)` routes to the cell `(origin, state)`. | `onFailure(transition)` names the recovering edge and resolves it from the failing edge's origin. A route may legitimately share the destination of the edge it recovers, because identity removes the old ambiguity. Its guards are still skipped and its own route is still not chained. |
 | `TransitionAbortedException.to()` always reports a destination. | `transition()` and `to()` are `Optional`: an abort before an edge is resolved invents neither. Messages read `FROM -ID-> TO`, or `FROM` when nothing was resolved yet. |

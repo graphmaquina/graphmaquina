@@ -308,7 +308,7 @@ class MachineHeadersTest {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
             assertEquals("SG601", failure.code());
-            assertEquals("states and transitions require distinct enum types", failure.getMessage());
+            assertEquals("the transition type fx.DocTransition of fx.Orders is not an enum", failure.getMessage());
             assertEquals(Path.of("fx", "Orders.java").toString(), failure.location().orElseThrow().path());
         }
     }

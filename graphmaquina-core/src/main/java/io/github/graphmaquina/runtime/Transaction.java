@@ -417,6 +417,7 @@ final class Transaction {
         return switch (step) {
             case StepResult.Applied<Q, U> applied ->
                     new Outcome.Applied<>(peer, applied.from(), applied.transition(), applied.to(), List.of(), List.of());
+            // Unreachable: a nested step executes an edge and never reevaluates. Kept only for switch exhaustiveness.
             case StepResult.Ignored<Q, U> ignored -> new Outcome.Ignored<>(peer, ignored.from(), ignored.reason());
             // Unreachable: at depth > 0, rejected(...) always aborts. Kept only for switch exhaustiveness.
             case StepResult.Rejected<Q, U> rejected -> new Outcome.Rejected<>(peer, rejected.from(), rejected.transition(),
