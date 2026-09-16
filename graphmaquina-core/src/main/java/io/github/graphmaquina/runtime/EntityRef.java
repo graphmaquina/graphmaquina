@@ -13,7 +13,7 @@ record EntityRef(MachineKey<?, ?, ?> key, Object id, Object instance) {
 
     @Override
     public int hashCode() {
-        return Objects.hash(key, id);
+        return 31 * (31 + Objects.hashCode(key)) + Objects.hashCode(id);
     }
 
     @Override
