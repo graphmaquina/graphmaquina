@@ -175,6 +175,58 @@ class CommitContextHooksTest {
                 .transition(SUBMIT, DRAFT, REVIEW).afterCommitWith(" ", (doc, context) -> { }));
     }
 
+    /**
+     * A failure route discards every hop the failed action had cascaded: the peer is read back at its committed
+     * state, the hooks of the discarded hops never run, and only the recovering edge reports a context.
+     */
+    @Test
+    void aFailureRouteDiscardsTheCascadedHopsAndTheirHooks() {
+        List<String> seen = new ArrayList<>();
+        BiConsumer<Item, CommitContext<ItemStatus, ItemTransition>> itemHook =
+                (item, context) -> seen.add("item:" + context.transition());
+        GraphDefinition<Item, ItemStatus, ItemTransition> items = StateGraph.define(ITEMS)
+                .initial(ItemStatus.PENDING).terminal(ItemStatus.PACKED).terminal(ItemStatus.CANCELLED)
+                .statePolicy(ItemStatus.PENDING, "an item starts packing first")
+                .statePolicy(ItemStatus.PACKING, "cannot go back to pending")
+                .transition(ItemTransition.START_PACKING, ItemStatus.PENDING, ItemStatus.PACKING)
+                    .afterCommitWith("packing", itemHook).endTransition()
+                .transition(ItemTransition.CANCEL, ItemStatus.PENDING, ItemStatus.CANCELLED).endTransition()
+                .transition(ItemTransition.PACK, ItemStatus.PACKING, ItemStatus.PACKED)
+                    .afterCommitWith("packed", itemHook).endTransition()
+                .build();
+        Item item = new Item("1", ItemStatus.PENDING, Optional.empty());
+        GraphDefinition<Doc, DocStatus, DocTransition> docs = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "a draft is submitted")
+                .statePolicy(REVIEW, "in review it is published")
+                .statePolicy(PUBLISHED, "published only archives")
+                .transition(SUBMIT, DRAFT, REVIEW).action("pack", context -> {
+                    context.cascade(ITEMS, item, ItemTransition.START_PACKING);
+                    context.cascade(ITEMS, item, ItemTransition.PACK);
+                    return ActionOutcome.failed("nothing to pack");
+                }).afterCommitWith("submitted", (doc, context) -> seen.add("submitted")).onFailure(DISCARD).endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED).action("close", context -> {
+                    seen.add("peer:" + context.peer(ITEMS).stateOf(item));
+                    return ActionOutcome.ok();
+                }).afterCommitWith("closed", (doc, context) -> seen.add("closed:" + context.from() + ":" + context.to()))
+                    .endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(docs).state(Doc::status, Doc::setStatus).identity(Doc::id))
+                .add(StateMachines.from(items).state(Item::status, Item::setStatus).identity(Item::id)).build()) {
+            Doc doc = new Doc("1", DRAFT);
+            Outcome<Doc, DocStatus, DocTransition> outcome = registry.of(DOCS).execute(doc, SUBMIT);
+            assertInstanceOf(Outcome.Failed.class, outcome);
+            Outcome.Failed<Doc, DocStatus, DocTransition> failed =
+                    (Outcome.Failed<Doc, DocStatus, DocTransition>) outcome;
+            assertEquals(List.of("peer:PENDING", "closed:DRAFT:ARCHIVED"), seen);
+            assertEquals(ItemStatus.PENDING, item.status());
+            assertEquals(ARCHIVED, doc.status());
+            assertEquals(List.of(DISCARD), failed.records().stream().map(record -> record.transition()).toList());
+        }
+    }
+
     private static GraphDefinition<Doc, DocStatus, DocTransition> graph(
             BiConsumer<Doc, CommitContext<DocStatus, DocTransition>> hook, boolean fail) {
         return StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)

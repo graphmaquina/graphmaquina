@@ -344,4 +344,47 @@ class CascadeTest {
             assertTrue(children.stream().allMatch((Item item) -> item.status() == ItemStatus.PACKED));
         }
     }
+
+    /**
+     * COLLECT reverts only the element that failed. A child that an earlier element had already moved keeps
+     * that pending state instead of falling back to its committed one, and the journal of the actions whose
+     * hops were discarded still travels with the aggregate.
+     */
+    @Test
+    void collectRestoresThePendingStateAnEarlierElementGaveAChild() {
+        Order order = new Order("o1", OrderStatus.PAID);
+        Item a = new Item("a", ItemStatus.PACKING, Optional.of(order));
+        Item b = new Item("b", ItemStatus.PACKING, Optional.of(order));
+        Item c = new Item("c", ItemStatus.PACKING, Optional.of(order));
+        Item shared = new Item("s", ItemStatus.PENDING, Optional.empty());
+        AtomicReference<ItemStatus> seen = new AtomicReference<>();
+        shipOrder.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
+            ctx.cascadeAll(ITEMS, List.of(a, b, c), ItemTransition.PACK, CascadePolicy.COLLECT);
+            return ActionOutcome.ok();
+        };
+        packItem.behaviour = (TransitionContext<Item, ItemStatus, ItemTransition> ctx) -> {
+            switch (ctx.entity().id()) {
+                case "a" -> ctx.cascade(ITEMS, shared, ItemTransition.START_PACKING);
+                case "b" -> {
+                    ctx.cascade(ITEMS, shared, ItemTransition.PACK);
+                    ctx.cascade(ITEMS, shared, ItemTransition.PACK);
+                }
+                case "c" -> seen.set(ctx.peer(ITEMS).stateOf(shared));
+                default -> { }
+            }
+            return ActionOutcome.ok();
+        };
+        StateMachine<Order, OrderStatus, OrderTransition> orders = registry(10).of(ORDERS);
+        CascadeException error = assertThrows(CascadeException.class, () -> orders.execute(order, OrderTransition.SHIP));
+        assertEquals(ItemStatus.PACKING, seen.get());
+        assertEquals(1, error.errors().size());
+        assertEquals(List.of("ShipOrder:Order#o1:THREW", "PackItem:Item#a:OK", "PackItem:Item#b:THREW",
+                        "PackItem:Item#s:OK", "PackItem:Item#c:OK"),
+                error.journal().stream()
+                        .map((ActionRecord record) -> record.action() + ":" + record.entity() + ":" + record.status())
+                        .toList());
+        assertEquals(OrderStatus.PAID, order.status());
+        assertEquals(ItemStatus.PENDING, shared.status());
+        assertTrue(List.of(a, b, c).stream().allMatch((Item item) -> item.status() == ItemStatus.PACKING));
+    }
 }

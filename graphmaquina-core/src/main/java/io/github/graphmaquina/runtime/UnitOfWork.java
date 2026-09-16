@@ -17,12 +17,15 @@ import java.util.Optional;
 
 /**
  * State of a root transaction. Local to the thread running the transition; no other thread touches it.
- * log answers what state each entity ends up in and is reverted by savepoint.
+ * log answers what state each entity ends up in and is reverted by savepoint; pendingStates indexes that
+ * answer by entity and undo puts it back entry by entry, so a rollback never rebuilds the index.
  * journal answers which actions actually ran and is never reverted.
  */
 final class UnitOfWork {
 
     private final List<LogEntry> log = new ArrayList<>();
+    private final Map<EntityRef, Enum<?>> pendingStates = new HashMap<>();
+    private final List<PendingUndo> undo = new ArrayList<>();
     private final List<ActionRecord> journal = new ArrayList<>();
     private final Deque<InFlight> inFlight = new ArrayDeque<>();
     private final Map<EntityRef, EntityRef> known = new HashMap<>();
@@ -53,20 +56,31 @@ final class UnitOfWork {
 
     /** to of the last log entry for the entity, if any. */
     Optional<Enum<?>> pendingState(EntityRef ref) {
-        for (int i = log.size() - 1; i >= 0; i--) {
-            LogEntry entry = log.get(i);
-            if (entry.ref().equals(ref)) {
-                return Optional.of(entry.to());
-            }
-        }
-        return Optional.empty();
+        return Optional.ofNullable(pendingStates.get(ref));
     }
 
     int savepoint() { return log.size(); }
 
-    void rollbackTo(int savepoint) { log.subList(savepoint, log.size()).clear(); }
+    /** Undoes the index hop by hop. The first call rejects the savepoint exactly as subList did, before mutating. */
+    void rollbackTo(int savepoint) {
+        log.subList(savepoint, log.size());
+        while (log.size() > savepoint) {
+            PendingUndo old = undo.remove(undo.size() - 1);
+            if (old.present()) {
+                pendingStates.put(old.ref(), old.previous());
+            } else {
+                pendingStates.remove(old.ref());
+            }
+            log.remove(log.size() - 1);
+        }
+    }
 
-    void append(LogEntry entry) { log.add(entry); }
+    void append(LogEntry entry) {
+        Enum<?> previous = pendingStates.get(entry.ref());
+        undo.add(new PendingUndo(entry.ref(), previous != null, previous));
+        log.add(entry);
+        pendingStates.put(entry.ref(), entry.to());
+    }
 
     List<LogEntry> entries() { return List.copyOf(log); }
 
@@ -157,4 +171,11 @@ final class UnitOfWork {
         }
         return List.copyOf(records);
     }
+
+    /**
+     * What one log entry did to the index, kept one per entry: the entity it moved, whether that entity already
+     * had a pending state, and the value to put back when it had one. Absence and an earlier pending state are
+     * different answers, and the origin of the entry proves neither.
+     */
+    private record PendingUndo(EntityRef ref, boolean present, Enum<?> previous) { }
 }
