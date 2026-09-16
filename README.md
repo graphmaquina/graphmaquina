@@ -49,7 +49,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 - [Known limitations](#known-limitations)
 - [Build, verify and release this repository](#build-verify-and-release-this-repository)
 - [Migrating from 1.x](docs/migration-2.0.md)
-- [Component benchmarks](benchmarks/README.md) — 1.x figures; the harness is not migrated yet
+- [Component benchmarks](benchmarks/README.md) — graph-only harness and the V/E cost evidence; the 1.x figures are historical
 - [Further reference](#further-reference)
 - [License](#license)
 

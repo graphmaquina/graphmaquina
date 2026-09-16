@@ -126,4 +126,49 @@ class MachineOutlineValidatorTest {
         assertThrows(IllegalArgumentException.class, () -> new MachineOutline("X", STATES, CATALOG, "DRAFT", Set.of(),
                 Set.of(), List.of(), List.of(), List.of(new WatchOutline("DRAFT", List.of("NOPE")))));
     }
+
+    /** V states and V x degree declared edges: the outline holds exactly those, and validation accepts them. */
+    @Test
+    void aLargeOutlineHoldsExactlyItsDeclaredEdges() {
+        MachineOutline outline = circulant(500, 8, true);
+        assertEquals(500 * 8, outline.transitions().size());
+        assertEquals(8, outline.catalog().size());
+        assertEquals(8, outline.outgoing("s0").size());
+        assertTrue(MachineOutlineValidator.validate(outline).isEmpty());
+    }
+
+    /**
+     * The same graph without its cycle authorisations: one witness per cyclic component, not one message per
+     * cycle. 500 states each leaving through eight identifiers hold far more cycles than could be listed.
+     */
+    @Test
+    void anUnauthorizedLargeCycleReportsOneWitnessPerComponent() {
+        List<InvalidGraphException.Problem> problems = MachineOutlineValidator.validate(circulant(500, 8, false));
+        assertEquals(List.of("SG204"), codes(problems));
+        assertTrue(problems.get(0).message().startsWith("unauthorized cycle "));
+    }
+
+    /** {@code vertices} states, each leaving through {@code degree} identifiers towards the next states. */
+    private static MachineOutline circulant(int vertices, int degree, boolean allowed) {
+        List<String> states = new ArrayList<>();
+        List<String> catalog = new ArrayList<>();
+        List<TransitionOutline> transitions = new ArrayList<>();
+        List<PolicyOutline> policies = new ArrayList<>();
+        for (int i = 0; i < vertices; i++) {
+            states.add("s" + i);
+        }
+        for (int offset = 1; offset <= degree; offset++) {
+            catalog.add("step" + offset);
+        }
+        for (int from = 0; from < vertices; from++) {
+            for (int offset = 1; offset <= degree; offset++) {
+                transitions.add(new TransitionOutline("s" + from, "step" + offset, "s" + ((from + offset) % vertices),
+                        TransitionKind.MOVE, Optional.empty()));
+            }
+            policies.add(new PolicyOutline("s" + from, "no edge with that identifier leaves s" + from, Map.of()));
+        }
+        Set<String> cycleAllowed = allowed ? Set.copyOf(states) : Set.of();
+        return new MachineOutline("circulant", states, catalog, "s0", Set.of(), cycleAllowed, transitions, policies,
+                List.of());
+    }
 }
