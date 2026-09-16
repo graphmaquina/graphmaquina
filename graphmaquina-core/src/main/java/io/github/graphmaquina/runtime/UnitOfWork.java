@@ -143,7 +143,10 @@ final class UnitOfWork {
     /** Only cascadeAll with COLLECT can clear it, after reverting the failed element. */
     void clearPoison() { poison = Optional.empty(); }
 
-    /** Chains per entity, in order of first appearance. */
+    /** The log grouped into one change per entity, read straight off the log without copying its entries. */
+    CommitSummary commitSummary() { return CommitSummary.from(log); }
+
+    /** Chains per entity, in order of first appearance. Kept as the control the summary is compared against. */
     Map<EntityRef, List<LogEntry>> chains() {
         Map<EntityRef, List<LogEntry>> chains = new LinkedHashMap<>();
         for (LogEntry entry : log) {

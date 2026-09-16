@@ -164,14 +164,16 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         StepResult<S, T> step;
         List<TransitionRecord<?, ?, ?>> records;
         List<LogEntry> committed;
+        CommitSummary summary;
         try {
             step = body.apply(tx);
             boolean commits = step instanceof StepResult.Applied<S, T> || step instanceof StepResult.Failed<S, T>;
             if (commits) {
-                Commit.apply(registry, uow);
+                summary = Commit.apply(registry, uow);
                 records = uow.records();
                 committed = uow.entries();
             } else {
+                summary = CommitSummary.EMPTY;
                 records = List.of();
                 committed = List.of();
             }
@@ -180,7 +182,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             Reentrancy.exit();
         }
         runHooks(committed);
-        List<Reaction> reactions = committed.isEmpty() ? List.of() : registry.dispatchWatches(uow, chain);
+        List<Reaction> reactions = committed.isEmpty() ? List.of() : registry.dispatchWatches(summary, chain);
         return notify(switch (step) {
             case StepResult.Applied<S, T> applied ->
                     new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(), records, reactions);

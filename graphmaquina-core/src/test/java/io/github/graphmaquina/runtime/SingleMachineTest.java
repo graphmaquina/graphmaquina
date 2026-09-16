@@ -100,6 +100,26 @@ class SingleMachineTest {
             .build();
     final StateMachine<Doc, DocStatus, DocTransition> machine =
             StateMachines.from(graph).state(Doc::status, Doc::setStatus).build();
+    final List<String> writes = new ArrayList<>();
+
+    /** The same machine with a setter that records every write, and that throws for one identity when asked to. */
+    private StateMachine<Doc, DocStatus, DocTransition> recordingWrites(String throwingId) {
+        return StateMachines.from(graph).state(Doc::status, (Doc doc, DocStatus status) -> {
+            writes.add(doc.id() + ":" + status);
+            if (doc.id().equals(throwingId)) {
+                throw new IllegalStateException("the store rejected " + doc.id());
+            }
+            doc.setStatus(status);
+        }).build();
+    }
+
+    private static List<DocTransition> transitionsOf(List<TransitionRecord<?, ?, ?>> records) {
+        List<DocTransition> transitions = new ArrayList<>();
+        for (TransitionRecord<?, ?, ?> record : records) {
+            transitions.add((DocTransition) record.transition());
+        }
+        return transitions;
+    }
 
     @Test
     void moveIsAppliedAndWritten() {
@@ -288,6 +308,81 @@ class SingleMachineTest {
         assertEquals(List.of(), error.applied());
         assertEquals(List.of(doc), error.pending());
         assertTrue(error.getMessage().contains("an action must not call the setter"));
+    }
+
+    /**
+     * The pre-read covers every entity of the commit before the first write. A peer whose state moved under the
+     * transaction stops phase 2 with nothing applied, and the entity that would have been written first is
+     * left exactly as it was.
+     */
+    @Test
+    void aPreReadThatFailsLeavesEverySetterUncalled() {
+        Doc peer = new Doc("2", REVIEW);
+        StateMachine<Doc, DocStatus, DocTransition> recording = recordingWrites("");
+        submit.onCall = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+            ctx.cascade(DOCS, peer, PUBLISH);
+            peer.setStatus(ARCHIVED);
+        };
+        Doc doc = new Doc("1", DRAFT);
+        CommitFailedException error = assertThrows(CommitFailedException.class, () -> recording.execute(doc, SUBMIT));
+        assertEquals(List.of(), error.applied());
+        assertEquals(List.of(doc, peer), error.pending());
+        assertEquals(List.of(), writes);
+        assertEquals(DRAFT, doc.status());
+        assertTrue(error.getMessage().contains("an action must not call the setter"));
+    }
+
+    /** A setter that throws stops phase 2 where it stood: what was written is applied, the rest stays pending. */
+    @Test
+    void aSetterThatThrowsReportsExactlyWhatWasAppliedAndWhatWasNot() {
+        Doc peer = new Doc("2", REVIEW);
+        StateMachine<Doc, DocStatus, DocTransition> recording = recordingWrites("2");
+        submit.onCall = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ctx.cascade(DOCS, peer, PUBLISH);
+        Doc doc = new Doc("1", DRAFT);
+        CommitFailedException error = assertThrows(CommitFailedException.class, () -> recording.execute(doc, SUBMIT));
+        assertEquals(List.of(doc), error.applied());
+        assertEquals(List.of(peer), error.pending());
+        assertInstanceOf(IllegalStateException.class, error.getCause());
+        assertEquals(List.of("1:REVIEW", "2:PUBLISHED"), writes);
+        assertEquals(REVIEW, doc.status());
+        assertEquals(REVIEW, peer.status());
+    }
+
+    /** Two hops of one entity are two records and a single write, with the state its last hop ends in. */
+    @Test
+    void everyEntityIsWrittenOnceWithTheStateOfItsLastHop() {
+        Doc peer = new Doc("2", REVIEW);
+        StateMachine<Doc, DocStatus, DocTransition> recording = recordingWrites("");
+        submit.onCall = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+            ctx.cascade(DOCS, peer, PUBLISH);
+            ctx.cascade(DOCS, peer, ARCHIVE);
+        };
+        Doc doc = new Doc("1", DRAFT);
+        Outcome<Doc, DocStatus, DocTransition> outcome = recording.execute(doc, SUBMIT);
+        assertInstanceOf(Outcome.Applied.class, outcome);
+        Outcome.Applied<Doc, DocStatus, DocTransition> applied = (Outcome.Applied<Doc, DocStatus, DocTransition>) outcome;
+        assertEquals(List.of("1:REVIEW", "2:ARCHIVED"), writes);
+        assertEquals(REVIEW, doc.status());
+        assertEquals(ARCHIVED, peer.status());
+        assertEquals(List.of(SUBMIT, PUBLISH, ARCHIVE), transitionsOf(applied.records()));
+        assertEquals(List.of(0, 1, 1), applied.records().stream().map(TransitionRecord::depth).toList());
+    }
+
+    /** A failure route rolls its cascaded hops back before phase 2: the discarded peer is not part of the commit. */
+    @Test
+    void aFailureRouteCommitsWithoutTheHopsItDiscarded() {
+        Doc peer = new Doc("2", REVIEW);
+        StateMachine<Doc, DocStatus, DocTransition> recording = recordingWrites("");
+        submit.onCall = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ctx.cascade(DOCS, peer, PUBLISH);
+        submit.behaviour = () -> { throw new GatewayException("timeout"); };
+        Doc doc = new Doc("1", DRAFT);
+        Outcome<Doc, DocStatus, DocTransition> outcome = recording.execute(doc, SUBMIT);
+        assertInstanceOf(Outcome.Failed.class, outcome);
+        Outcome.Failed<Doc, DocStatus, DocTransition> failed = (Outcome.Failed<Doc, DocStatus, DocTransition>) outcome;
+        assertEquals(List.of("1:ARCHIVED"), writes);
+        assertEquals(ARCHIVED, doc.status());
+        assertEquals(REVIEW, peer.status());
+        assertEquals(List.of(DISCARD), transitionsOf(failed.records()));
     }
 
     @Test
