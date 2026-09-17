@@ -54,8 +54,15 @@ final class UnitOfWork {
         return existing;
     }
 
-    /** to of the last log entry for the entity, if any. */
+    /**
+     * to of the last log entry for the entity, if any. An empty index has no mapping for any reference, so the
+     * early return is the same answer without handing ref to the map: the reference stays local to the caller
+     * and the JIT can drop it, which is what a watch condition reading N peers before the first hop pays for.
+     */
     Optional<Enum<?>> pendingState(EntityRef ref) {
+        if (pendingStates.isEmpty()) {
+            return Optional.empty();
+        }
         return Optional.ofNullable(pendingStates.get(ref));
     }
 
