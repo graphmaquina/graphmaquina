@@ -164,6 +164,32 @@ class PendingStateIndexTest {
     }
 
     @Test
+    void aRootThatNeverAppendsStillRejectsInvalidSavepointsAndAcceptsZero() {
+        UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
+        assertThrows(IndexOutOfBoundsException.class, () -> uow.rollbackTo(-1));
+        assertThrows(IllegalArgumentException.class, () -> uow.rollbackTo(1));
+        uow.rollbackTo(0);
+        assertEquals(Optional.empty(), uow.pendingState(ref(1)));
+        assertEquals(0, uow.savepoint());
+        assertEquals(List.of(), uow.entries());
+    }
+
+    @Test
+    void theFirstAppendAfterARollbackToZeroStartsAFreshIndex() {
+        UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
+        EntityRef a = ref(1);
+        uow.append(hop(a, S.A, S.B));
+        uow.rollbackTo(0);
+        assertEquals(Optional.empty(), uow.pendingState(a));
+        uow.append(hop(a, S.B, S.C));
+        assertEquals(Optional.of(S.C), uow.pendingState(a));
+        assertEquals(1, uow.savepoint());
+        uow.rollbackTo(0);
+        assertEquals(Optional.empty(), uow.pendingState(a));
+        assertEquals(0, uow.savepoint());
+    }
+
+    @Test
     void aRollbackTouchesNeitherIdentitiesNorJournalNorInFlightNorPoison() {
         UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
         Object instance = new Object();

@@ -19,13 +19,15 @@ import java.util.Optional;
  * State of a root transaction. Local to the thread running the transition; no other thread touches it.
  * log answers what state each entity ends up in and is reverted by savepoint; pendingStates indexes that
  * answer by entity and undo puts it back entry by entry, so a rollback never rebuilds the index.
- * journal answers which actions actually ran and is never reverted.
+ * journal answers which actions actually ran and is never reverted. Both are created on the first append,
+ * so a root that rejects or finds no transition allocates neither.
  */
 final class UnitOfWork {
 
     private final List<LogEntry> log = new ArrayList<>();
-    private final Map<EntityRef, Enum<?>> pendingStates = new HashMap<>();
-    private final List<PendingUndo> undo = new ArrayList<>();
+    /** Created by the first append: a root that never transitions must not pay for the index. */
+    private Map<EntityRef, Enum<?>> pendingStates;
+    private List<PendingUndo> undo;
     private final List<ActionRecord> journal = new ArrayList<>();
     private final Deque<InFlight> inFlight = new ArrayDeque<>();
     private final Map<EntityRef, EntityRef> known = new HashMap<>();
@@ -60,7 +62,7 @@ final class UnitOfWork {
      * and the JIT can drop it, which is what a watch condition reading N peers before the first hop pays for.
      */
     Optional<Enum<?>> pendingState(EntityRef ref) {
-        if (pendingStates.isEmpty()) {
+        if (pendingStates == null || pendingStates.isEmpty()) {
             return Optional.empty();
         }
         return Optional.ofNullable(pendingStates.get(ref));
@@ -83,6 +85,10 @@ final class UnitOfWork {
     }
 
     void append(LogEntry entry) {
+        if (pendingStates == null) {
+            pendingStates = new HashMap<>();
+            undo = new ArrayList<>();
+        }
         Enum<?> previous = pendingStates.get(entry.ref());
         log.add(entry);
         undo.add(new PendingUndo(entry.ref(), previous != null, previous));
