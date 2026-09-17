@@ -36,7 +36,9 @@ final class CommitSummary {
 
     /**
      * Entities whose final state differs from the initial one, in order of first appearance. The comparison is by
-     * reference, as it has always been: a state that comes back null is a movement, not a failed equality.
+     * reference, as it has always been: {@code TransitionSpec} declares both states {@code @NonNull}, and one
+     * entity's entries carry constants of its own state enum, so reference identity is the enum equality the base
+     * compared these two states by.
      */
     List<EntityRef> movedEntities() {
         List<EntityRef> moved = new ArrayList<>();

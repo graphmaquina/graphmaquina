@@ -14,11 +14,12 @@ import java.util.Set;
 
 /**
  * The frozen structural validation of commit {@code 278640e}, kept only so that tests can compare against it.
- * It is a verbatim copy of {@code MachineOutlineValidator} as that commit published it, with three edits and
- * no others: the type is package-private and renamed, its private constructor follows the new name, and the
- * Lombok {@code @NonNull} on the public entry point is dropped because Lombok is not on the test compile
- * classpath. Nothing here may be copied back into production, and nothing here may be optimised: its whole
- * value is that it still computes the problems the way the base did.
+ * It is a verbatim copy of {@code MachineOutlineValidator} as that commit published it, with four edits and no
+ * others: the type is package-private and renamed, its private constructor follows the new name, the Lombok
+ * {@code @NonNull} on the public entry point is dropped with its import because Lombok is not on the test
+ * compile classpath, and this comment replaces the original's own. Nothing below it was touched, nothing here
+ * may be copied back into production, and nothing here may be optimised: its whole value is that it still
+ * computes the problems the way the base did.
  *
  * @see MachineOutlineValidator the live validator this oracle is compared against
  */
