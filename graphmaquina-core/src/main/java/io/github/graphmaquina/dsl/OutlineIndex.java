@@ -18,6 +18,12 @@ import java.util.Map;
  * <p>It indexes what the outline holds, valid or not: an outline may declare two edges under the same key and
  * both stay, in declaration order, because reporting that duplicate is the validator's job. Answers match
  * {@link MachineOutline} exactly — an unknown name has index -1 and leaves through nothing.
+ *
+ * <p>It is only ever built from a constructed {@link MachineOutline}, and that constructor has already rejected
+ * duplicate states, duplicate identifiers and any edge endpoint that is not a declared state. That is the
+ * precondition the single pass over the edges relies on: it adds no check of its own, because invalid data must
+ * stay representable for the validator to report, and an outline breaking the precondition would fail while this
+ * index is built rather than be diagnosed.
  */
 final class OutlineIndex {
 
@@ -31,13 +37,13 @@ final class OutlineIndex {
         Map<String, Integer> stateIndexes = new HashMap<>();
         Map<String, List<TransitionOutline>> outgoing = new LinkedHashMap<>();
         for (int i = 0; i < declaredStates.size(); i++) {
-            stateIndexes.put(declaredStates.get(i), i);
+            stateIndexes.putIfAbsent(declaredStates.get(i), i);
             outgoing.put(declaredStates.get(i), new ArrayList<>());
         }
         List<String> declaredCatalog = outline.catalog();
         Map<String, Integer> transitionIndexes = new HashMap<>();
         for (int i = 0; i < declaredCatalog.size(); i++) {
-            transitionIndexes.put(declaredCatalog.get(i), i);
+            transitionIndexes.putIfAbsent(declaredCatalog.get(i), i);
         }
         List<GraphEdge<String>> edges = new ArrayList<>();
         for (TransitionOutline edge : outline.transitions()) {

@@ -77,8 +77,8 @@ final class UnitOfWork {
 
     void append(LogEntry entry) {
         Enum<?> previous = pendingStates.get(entry.ref());
-        undo.add(new PendingUndo(entry.ref(), previous != null, previous));
         log.add(entry);
+        undo.add(new PendingUndo(entry.ref(), previous != null, previous));
         pendingStates.put(entry.ref(), entry.to());
     }
 
@@ -153,18 +153,6 @@ final class UnitOfWork {
             chains.computeIfAbsent(entry.ref(), (EntityRef ref) -> new ArrayList<>()).add(entry);
         }
         return chains;
-    }
-
-    /** Entities whose final state differs from the initial one, in order of first appearance. */
-    List<EntityRef> movedEntities() {
-        List<EntityRef> moved = new ArrayList<>();
-        for (Map.Entry<EntityRef, List<LogEntry>> entry : chains().entrySet()) {
-            List<LogEntry> chain = entry.getValue();
-            if (chain.get(0).from() != chain.get(chain.size() - 1).to()) {
-                moved.add(entry.getKey());
-            }
-        }
-        return List.copyOf(moved);
     }
 
     List<TransitionRecord<?, ?, ?>> records() {

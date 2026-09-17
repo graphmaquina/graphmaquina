@@ -31,7 +31,7 @@ public final class Graph<N> {
         this.successors = successors;
         // A plain HashMap, so that a graph built over whatever `of` admitted as a node stays buildable: an
         // immutable map would reject a null key here and narrow what `of` accepts, which is not this index's call.
-        Map<N, Integer> positions = new HashMap<>();
+        Map<N, Integer> positions = HashMap.newHashMap(nodes.size());
         int position = 0;
         for (N node : nodes) {
             positions.put(node, position);

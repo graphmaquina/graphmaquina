@@ -104,15 +104,22 @@ class CommitSummaryTest {
         List<EntityRef> refs = new ArrayList<>();
         List<Enum<?>> firsts = new ArrayList<>();
         List<Enum<?>> lasts = new ArrayList<>();
+        List<EntityRef> moved = new ArrayList<>();
         for (Map.Entry<EntityRef, List<LogEntry>> chain : uow.chains().entrySet()) {
+            List<LogEntry> entries = chain.getValue();
+            Enum<?> first = entries.get(0).from();
+            Enum<?> last = entries.get(entries.size() - 1).to();
             refs.add(chain.getKey());
-            firsts.add(chain.getValue().get(0).from());
-            lasts.add(chain.getValue().get(chain.getValue().size() - 1).to());
+            firsts.add(first);
+            lasts.add(last);
+            if (first != last) {
+                moved.add(chain.getKey());
+            }
         }
         assertEquals(refs, summary.changes().stream().map(CommitSummary.Change::ref).toList());
         assertEquals(firsts, summary.changes().stream().map((CommitSummary.Change change) -> change.first().from()).toList());
         assertEquals(lasts, summary.changes().stream().map((CommitSummary.Change change) -> change.last().to()).toList());
-        assertEquals(uow.movedEntities(), summary.movedEntities());
+        assertEquals(moved, summary.movedEntities());
         assertEquals(List.of(b), summary.movedEntities());
     }
 
