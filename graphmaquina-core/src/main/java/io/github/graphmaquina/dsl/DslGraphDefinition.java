@@ -3,6 +3,7 @@ package io.github.graphmaquina.dsl;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.TransitionKey;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.graph.DirectedEdge;
@@ -12,7 +13,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +34,7 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
     private final List<TransitionSpec<E, S, T>> transitions;
     @Getter
     private final DirectedGraph<S, T> graph;
-    private final Map<S, Map<T, TransitionSpec<E, S, T>>> index;
+    private final Map<TransitionKey<S, T>, TransitionSpec<E, S, T>> index;
     private final Map<S, List<TransitionSpec<E, S, T>>> outgoing;
     private final Map<S, StatePolicy<S, T>> policies;
     private final Map<S, WatchSpec<E, S, T, ?, ?, ?>> watches;
@@ -50,7 +50,7 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
         terminalCopy.addAll(terminals);
         this.terminals = Collections.unmodifiableSet(terminalCopy);
         this.transitions = List.copyOf(ordered);
-        Map<S, Map<T, TransitionSpec<E, S, T>>> byState = new EnumMap<>(key.states());
+        Map<TransitionKey<S, T>, TransitionSpec<E, S, T>> byKey = new LinkedHashMap<>();
         Map<S, List<TransitionSpec<E, S, T>>> leaving = new EnumMap<>(key.states());
         List<DirectedEdge<S, T>> edges = new ArrayList<>();
         boolean async = false;
@@ -58,16 +58,12 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
             leaving.put(state, new ArrayList<>());
         }
         for (TransitionSpec<E, S, T> spec : this.transitions) {
-            byState.computeIfAbsent(spec.from(), ignored -> new HashMap<>()).put(spec.transition(), spec);
+            byKey.put(spec.key(), spec);
             leaving.get(spec.from()).add(spec);
             edges.add(new DirectedEdge<>(spec.from(), spec.transition(), spec.to()));
             async = async || spec.isAsync();
         }
-        Map<S, Map<T, TransitionSpec<E, S, T>>> frozenIndex = new EnumMap<>(key.states());
-        for (Map.Entry<S, Map<T, TransitionSpec<E, S, T>>> entry : byState.entrySet()) {
-            frozenIndex.put(entry.getKey(), Collections.unmodifiableMap(entry.getValue()));
-        }
-        this.index = Collections.unmodifiableMap(frozenIndex);
+        this.index = Collections.unmodifiableMap(byKey);
         Map<S, List<TransitionSpec<E, S, T>>> frozen = new EnumMap<>(key.states());
         for (Map.Entry<S, List<TransitionSpec<E, S, T>>> entry : leaving.entrySet()) {
             frozen.put(entry.getKey(), List.copyOf(entry.getValue()));
@@ -90,7 +86,7 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
         if (!key.transitions().isInstance(transition)) {
             throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": " + transition);
         }
-        return Optional.ofNullable(index.getOrDefault(from, Map.of()).get(transition));
+        return Optional.ofNullable(index.get(new TransitionKey<>(from, transition)));
     }
 
     @Override
