@@ -129,6 +129,16 @@ class StrongComponentsTest {
         assertEquals("the component [A, Z] holds a node outside the graph", error.getMessage());
     }
 
+    @Test void aComponentWhoseMembershipDisagreesWithEqualsIsRejected() {
+        Graph<String> graph = Graph.of(List.of("A", "B"),
+                List.of(new GraphEdge<>("A", "B"), new GraphEdge<>("B", "A")));
+        Set<String> component = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        component.addAll(List.of("a", "b"));
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> StrongComponents.cycleWitness(graph, component));
+        assertEquals("the component [a, b] holds a node outside the graph", error.getMessage());
+    }
+
     @Test void aComponentWithoutACycleNamesTheWholeComponent() {
         Graph<String> graph = topology(List.of("A", "B"), List.of(edge("A", "B")));
         Set<String> component = new LinkedHashSet<>(List.of("A"));

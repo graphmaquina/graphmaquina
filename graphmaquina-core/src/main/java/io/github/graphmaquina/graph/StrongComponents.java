@@ -75,6 +75,11 @@ public final class StrongComponents {
      * yield the same witness.
      *
      * @throws IllegalArgumentException if the component is empty, holds no cycle, or is not part of {@code graph}
+     *
+     * <p>Membership is answered by the graph's own node set: {@code component} must be a subset of
+     * {@code graph.nodes()} under {@code equals}. A {@code Set} whose {@code contains} disagrees with
+     * {@code equals} (for example a case-insensitive {@code TreeSet}) is rejected as holding a node outside the
+     * graph; the former global scan asked the caller's set instead, which is the only observable difference.
      */
     public static <N> List<N> cycleWitness(@NonNull Graph<N> graph, @NonNull Set<N> component) {
         if (component.isEmpty()) {

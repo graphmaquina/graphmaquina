@@ -180,6 +180,35 @@ class WatchTest {
     }
 
     @Test
+    void theCommittedViewRejectsANullPeerBeforeAnyIdentityCall() {
+        List<String> calls = new ArrayList<>();
+        Doc peer = new Doc("peer", REVIEW);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)
+                .initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "submit").statePolicy(REVIEW, "publish").statePolicy(PUBLISHED, "archive")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .watch(PUBLISHED, DOCS, (Doc doc) -> List.of(peer), (Doc doc) -> Optional.<Doc>empty())
+                    .when("null peer", (Doc doc, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> {
+                        NullPointerException error = assertThrows(NullPointerException.class,
+                                () -> view.stateOf(null));
+                        assertEquals("peer is marked non-null but is null", error.getMessage());
+                        return false;
+                    }).execute(ARCHIVE)
+                .endWatch().build();
+        try (MachineRegistry docs = MachineRegistry.builder().add(StateMachines.from(graph)
+                .state(Doc::status, Doc::setStatus)
+                .identity((Doc doc) -> { calls.add("identity:" + doc.id()); return doc.id(); })).build()) {
+            Outcome.Ignored<?, ?, ?> outcome = assertInstanceOf(Outcome.Ignored.class,
+                    docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
+            assertEquals(IgnoreReason.NO_RULE_MATCHED, outcome.reason());
+            assertEquals(List.of(), calls);
+        }
+    }
+
+    @Test
     void theLastPackedItemShipsTheOrder() {
         Order order = new Order("o1", OrderStatus.PAID);
         new Item("i1", ItemStatus.PACKED, Optional.of(order));

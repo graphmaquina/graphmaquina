@@ -90,6 +90,7 @@ public final class Graph<N> {
         return declaration.position();
     }
 
+    /** Declaration-order position of a node and the instance the graph stores for it. */
     private record Declaration<N>(int position, N node) { }
 
     /** The original declared representative, even when the lookup uses an equal but distinct node. */

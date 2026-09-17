@@ -201,12 +201,11 @@ class GraphvizExporterTest {
         assertTrue(rendered.contains("n0 -> watch1 [style=dashed, arrowhead=none];"), rendered);
     }
 
-    // --- T10: DOT escaping in one pass (appendQuoted) -------------------------------------------------
+    // --- DOT escaping oracle (quote, restored to 278640e) -------------------------------------------------
 
     /**
-     * Verbatim copy of the {@code quote} helper {@link GraphvizExporter} used before it was replaced by the
-     * single-pass {@code appendQuoted}, kept here only as a test oracle so the two escaping strategies can be
-     * compared independently for the same input.
+     * Verbatim copy of {@link GraphvizExporter}'s {@code quote} helper at 278640e, kept as an oracle independent
+     * of production so the full public {@code render} is checked byte for byte against it for every corpus case.
      */
     private static String baseQuote(String text) {
         return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"")
@@ -229,14 +228,13 @@ class GraphvizExporterTest {
     }
 
     /**
-     * Differential test for T10: {@code appendQuoted} must escape exactly like the retired {@code quote}
-     * oracle, byte for byte, through the full public {@code render} (not the private helper in isolation).
-     * {@code text} is the only thing that varies per case; every other byte of the expected DOT is fixed by
-     * this view's shape, so a mismatch anywhere in it points straight at the escaping.
+     * Differential test kept from the withdrawn T10 experiment: production {@code quote} must escape exactly like
+     * this oracle through the full public {@code render}. {@code text} is the only thing that varies per case;
+     * every other byte of the expected DOT is fixed by this view's shape, so a mismatch points at the escaping.
      */
     @ParameterizedTest(name = "{0}")
     @MethodSource("dotEscapingCorpus")
-    void appendQuotedMatchesTheRetiredQuoteOracleThroughFullRender(String caseName, String text) {
+    void quoteMatchesTheInlineOracleThroughFullRender(String caseName, String text) {
         String rawTooltip = "otherwise: " + text;
         String rawLabel = text + " " + text + " [async] [if " + text + "] [onFailure " + text
                 + "] [watches " + text + "]";
