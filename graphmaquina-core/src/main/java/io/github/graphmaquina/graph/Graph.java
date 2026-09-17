@@ -23,7 +23,7 @@ public final class Graph<N> {
     private final Set<N> nodes;
     private final Set<GraphEdge<N>> edges;
     private final Map<N, Set<N>> successors;
-    private final Map<N, Integer> declarationIndex;
+    private final Map<N, Declaration<N>> declarationIndex;
 
     private Graph(Set<N> nodes, Set<GraphEdge<N>> edges, Map<N, Set<N>> successors) {
         this.nodes = nodes;
@@ -31,10 +31,10 @@ public final class Graph<N> {
         this.successors = successors;
         // A plain HashMap, so that a graph built over whatever `of` admitted as a node stays buildable: an
         // immutable map would reject a null key here and narrow what `of` accepts, which is not this index's call.
-        Map<N, Integer> positions = HashMap.newHashMap(nodes.size());
+        Map<N, Declaration<N>> positions = HashMap.newHashMap(nodes.size());
         int position = 0;
         for (N node : nodes) {
-            positions.put(node, position);
+            positions.put(node, new Declaration<>(position, node));
             position++;
         }
         this.declarationIndex = positions;
@@ -83,11 +83,22 @@ public final class Graph<N> {
      * @throws IllegalArgumentException if the node is not in this graph
      */
     int declarationIndex(N node) {
-        Integer position = declarationIndex.get(node);
-        if (position == null) {
+        Declaration<N> declaration = declarationIndex.get(node);
+        if (declaration == null) {
             throw new IllegalArgumentException("unknown node: " + node);
         }
-        return position;
+        return declaration.position();
+    }
+
+    private record Declaration<N>(int position, N node) { }
+
+    /** The original declared representative, even when the lookup uses an equal but distinct node. */
+    N declaredNode(N node) {
+        Declaration<N> declaration = declarationIndex.get(node);
+        if (declaration == null) {
+            throw new IllegalArgumentException("unknown node: " + node);
+        }
+        return declaration.node();
     }
 
     public Set<N> reachableFrom(@NonNull N origin) {

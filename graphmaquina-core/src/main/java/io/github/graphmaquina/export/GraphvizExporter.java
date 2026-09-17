@@ -35,34 +35,27 @@ public final class GraphvizExporter {
             policies.putIfAbsent(policy.state(), policy);
         }
 
-        StringBuilder out = new StringBuilder("digraph ");
-        appendQuoted(out, view.name());
-        out.append(" {\n");
+        StringBuilder out = new StringBuilder("digraph ").append(quote(view.name())).append(" {\n");
         out.append("    rankdir=LR;\n");
         out.append("    initial [shape=point, label=\"\"];\n");
         nodes.forEach((String state, String id) -> {
-            out.append("    ").append(id).append(" [label=");
-            appendQuoted(out, state);
-            out.append(", shape=").append(view.terminals().contains(state) ? "doublecircle" : "ellipse");
+            out.append("    ").append(id).append(" [label=").append(quote(state)).append(", shape=")
+                    .append(view.terminals().contains(state) ? "doublecircle" : "ellipse");
             PolicyView policy = policies.get(state);
             if (policy != null) {
-                out.append(", tooltip=");
-                appendQuoted(out, tooltip(policy));
+                out.append(", tooltip=").append(quote(tooltip(policy)));
             }
             out.append("];\n");
         });
         out.append("    initial -> ").append(nodes.get(view.initial())).append(";\n");
         for (TransitionView transition : view.transitions()) {
             out.append("    ").append(nodes.get(transition.from())).append(" -> ").append(nodes.get(transition.to()))
-                    .append(" [label=");
-            appendQuoted(out, label(transition));
-            out.append("];\n");
+                    .append(" [label=").append(quote(label(transition))).append("];\n");
         }
         for (int i = 0; i < view.watches().size(); i++) {
             WatchView watch = view.watches().get(i);
-            out.append("    watch").append(i).append(" [shape=note, label=");
-            appendQuoted(out, "watches " + watch.peerMachine());
-            out.append("];\n");
+            out.append("    watch").append(i).append(" [shape=note, label=")
+                    .append(quote("watches " + watch.peerMachine())).append("];\n");
             out.append("    ").append(nodes.get(watch.state())).append(" -> watch").append(i)
                     .append(" [style=dashed, arrowhead=none];\n");
         }
@@ -73,20 +66,10 @@ public final class GraphvizExporter {
         nodes.computeIfAbsent(state, ignored -> "n" + nodes.size());
     }
 
-    // Escapes backslashes and quotes, and collapses CRLF into a single \n (CR and LF alone become \n too), in
-    // one pass so user text cannot invoke Graphviz substitutions such as \N.
-    private static void appendQuoted(StringBuilder out, String text) {
-        out.append('"');
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c == '\\' || c == '"') out.append('\\').append(c);
-            else if (c == '\r') {
-                if (i + 1 < text.length() && text.charAt(i + 1) == '\n') i++;
-                out.append("\\n");
-            } else if (c == '\n') out.append("\\n");
-            else out.append(c);
-        }
-        out.append('"');
+    private static String quote(String text) {
+        // Escape backslashes first so user text cannot invoke Graphviz substitutions such as \N.
+        return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n") + "\"";
     }
 
     private static String tooltip(PolicyView policy) {

@@ -26,6 +26,16 @@ class OutlineIndexTest {
     }
 
     @Test
+    void keepsNonContiguousEdgesForTheSameStateInDeclarationOrder() {
+        TransitionOutline between = new TransitionOutline("B", "X", "C", TransitionKind.MOVE, Optional.empty());
+        MachineOutline outline = new MachineOutline("M", List.of("A", "B", "C"), List.of("X"), "A", Set.of(),
+                Set.of(), List.of(FIRST, between, SECOND), List.of(), List.of());
+        OutlineIndex index = new OutlineIndex(outline);
+        assertEquals(List.of(FIRST, SECOND), index.outgoing("A"));
+        assertEquals(List.of(between), index.outgoing("B"));
+    }
+
+    @Test
     void keepsEveryEdgeThatLeavesAStateInDeclarationOrder() {
         assertEquals(List.of(FIRST, SECOND), index().outgoing("A"));
     }

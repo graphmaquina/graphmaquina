@@ -2,6 +2,7 @@ package io.github.graphmaquina.graph;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -13,6 +14,44 @@ import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 
 class StrongComponentsTest {
+
+    /** Equality is by stable id; labels expose which equal instance the witness returns. */
+    private record LabelledNode(int id, String label) {
+        @Override public boolean equals(Object other) {
+            return other instanceof LabelledNode node && id == node.id;
+        }
+        @Override public int hashCode() { return id; }
+        @Override public String toString() { return label; }
+    }
+
+    @Test void nullDeclarationsPreserveComponentMembershipExceptions() {
+        Graph<String> graph = Graph.of(java.util.Arrays.asList("A", null), List.of(new GraphEdge<>("A", "A")));
+        assertTrue(graph.nodes().contains(null));
+        assertThrows(NullPointerException.class, () -> StrongComponents.cycleWitness(graph, Set.of("A")));
+        assertEquals(List.of("A", "A"),
+                StrongComponents.cycleWitness(graph, new LinkedHashSet<>(List.of("A"))));
+    }
+
+    @Test void witnessesStartWithTheFirstDeclaredEqualRepresentative() {
+        LabelledNode a = new LabelledNode(1, "declared A");
+        LabelledNode duplicate = new LabelledNode(1, "duplicate A");
+        LabelledNode b = new LabelledNode(2, "declared B");
+        LabelledNode callerA = new LabelledNode(1, "caller A");
+        LabelledNode callerB = new LabelledNode(2, "caller B");
+        for (boolean selfLoop : List.of(true, false)) {
+            Graph<LabelledNode> graph = Graph.of(List.of(a, duplicate, b), selfLoop
+                    ? List.of(new GraphEdge<>(a, a))
+                    : List.of(new GraphEdge<>(a, b), new GraphEdge<>(b, a)));
+            Set<LabelledNode> component = selfLoop ? Set.of(callerA) : Set.of(callerB, callerA);
+            List<LabelledNode> witness = StrongComponents.cycleWitness(graph, component);
+            assertSame(a, witness.getFirst());
+            assertEquals(selfLoop ? "[declared A, declared A]" : "[declared A, declared B, declared A]",
+                    witness.toString());
+            Set<LabelledNode> sorted = new TreeSet<>(Comparator.comparingInt(LabelledNode::id).reversed());
+            sorted.addAll(component);
+            assertEquals(witness.toString(), StrongComponents.cycleWitness(graph, sorted).toString());
+        }
+    }
 
     private static Graph<String> topology(List<String> nodes, List<DirectedEdge<String, String>> edges) {
         return DirectedGraph.of(nodes, edges).topology();

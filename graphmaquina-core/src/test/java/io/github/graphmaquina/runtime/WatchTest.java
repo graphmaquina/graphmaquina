@@ -128,6 +128,58 @@ class WatchTest {
     }
 
     @Test
+    void watchReadsCallIdentityBeforeEveryCommittedStateRead() {
+        List<String> calls = new ArrayList<>();
+        Doc peer = new Doc("peer", REVIEW);
+        boolean[] nullIdentity = {false};
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)
+                .initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "submit").statePolicy(REVIEW, "publish").statePolicy(PUBLISHED, "archive")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .watch(PUBLISHED, DOCS, (Doc doc) -> { calls.add("peers"); return List.of(peer); },
+                        (Doc doc) -> Optional.<Doc>empty())
+                    .when("first", (Doc doc, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> {
+                        calls.add("first");
+                        assertEquals(DOCS, view.key());
+                        assertEquals(REVIEW, view.stateOf(peer));
+                        peer.setStatus(PUBLISHED);
+                        assertEquals(PUBLISHED, view.stateOf(peer));
+                        return false;
+                    }).execute(ARCHIVE)
+                    .when("second", (Doc doc, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> {
+                        calls.add("second");
+                        assertEquals(PUBLISHED, view.stateOf(peer));
+                        return false;
+                    }).execute(ARCHIVE)
+                .endWatch().build();
+        try (MachineRegistry docs = MachineRegistry.builder().add(StateMachines.from(graph)
+                .state((Doc doc) -> { calls.add("state:" + doc.id()); return doc.status(); }, Doc::setStatus)
+                .identity((Doc doc) -> { calls.add("identity:" + doc.id()); return nullIdentity[0] ? null : doc.id(); })).build()) {
+            Outcome.Ignored<?, ?, ?> outcome = assertInstanceOf(Outcome.Ignored.class,
+                    docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
+            assertEquals(IgnoreReason.NO_RULE_MATCHED, outcome.reason());
+            assertEquals(List.of("state:owner", "peers", "first", "identity:peer", "state:peer",
+                    "identity:peer", "state:peer", "second", "identity:peer", "state:peer"), calls);
+            calls.clear();
+            nullIdentity[0] = true;
+            NullPointerException identityError = assertThrows(NullPointerException.class,
+                    () -> docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
+            assertEquals("identity of " + DOCS + " returned null", identityError.getMessage());
+            assertEquals(List.of("state:owner", "peers", "first", "identity:peer"), calls);
+            calls.clear();
+            nullIdentity[0] = false;
+            peer.setStatus(null);
+            assertThrows(UninitializedStateException.class,
+                    () -> docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
+            assertEquals(List.of("state:owner", "peers", "first", "identity:peer", "state:peer"), calls);
+        }
+    }
+
+    @Test
     void theLastPackedItemShipsTheOrder() {
         Order order = new Order("o1", OrderStatus.PAID);
         new Item("i1", ItemStatus.PACKED, Optional.of(order));
@@ -366,6 +418,12 @@ class WatchTest {
             assertEquals(List.of("peer:REVIEW"), writes);
             assertEquals(REVIEW, peer.status());
             assertEquals(PUBLISHED, observer.status());
+
+            Outcome.Applied<?, ?, ?> moved = assertInstanceOf(Outcome.Applied.class,
+                    docs.of(DOCS).execute(peer, PUBLISH));
+            assertEquals(1, moved.reactions().size());
+            assertEquals(PUBLISHED, peer.status());
+            assertEquals(ARCHIVED, observer.status());
         }
     }
 

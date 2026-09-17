@@ -75,6 +75,21 @@ class CycleEnumerationDifferentialTest {
     }
 
     @Test
+    void oneNodeAndDuplicateEdgesMatchTheOracle() {
+        GraphEdge<String> loop = new GraphEdge<>("A", "A");
+        for (List<GraphEdge<String>> edges : List.of(List.<GraphEdge<String>>of(), List.of(loop), List.of(loop, loop))) {
+            Graph<String> graph = Graph.of(List.of("A"), edges);
+            assertEquals(referenceCycles(graph), graph.cycles());
+            assertEquals(edges.isEmpty() ? List.of() : List.of(List.of("A")), graph.cycles());
+        }
+        Graph<String> duplicates = Graph.of(List.of("A", "B"), List.of(
+                new GraphEdge<>("A", "B"), new GraphEdge<>("A", "B"),
+                new GraphEdge<>("B", "A"), new GraphEdge<>("B", "A")));
+        assertEquals(List.of(List.of("A", "B")), duplicates.cycles());
+        assertEquals(referenceCycles(duplicates), duplicates.cycles());
+    }
+
+    @Test
     void matchesTheOracleOnEveryThreeNodeGraph() {
         List<String> names = List.of("A", "B", "C");
         int compared = 0;
@@ -123,8 +138,8 @@ class CycleEnumerationDifferentialTest {
         Graph<String> graph = Graph.of(List.of("A", "B", "C", "D"), List.of(
                 new GraphEdge<>("A", "C"), new GraphEdge<>("C", "A"),
                 new GraphEdge<>("B", "D"), new GraphEdge<>("D", "B"),
-                new GraphEdge<>("A", "B")));
-        assertEquals(List.of(List.of("A", "C"), List.of("B", "D")), graph.cycles());
+                new GraphEdge<>("A", "B"), new GraphEdge<>("C", "C")));
+        assertEquals(List.of(List.of("A", "C"), List.of("B", "D"), List.of("C")), graph.cycles());
     }
 
     @Test

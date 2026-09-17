@@ -80,6 +80,11 @@ public final class StrongComponents {
         if (component.isEmpty()) {
             throw new IllegalArgumentException("an empty component holds no cycle");
         }
+        // The original declaration scan queried component membership for null too. Preserve the
+        // exception of null-rejecting Sets on graphs that Graph.of legitimately accepts, without a scan.
+        if (graph.nodes().contains(null)) {
+            component.contains(null);
+        }
         N start = null;
         int first = Integer.MAX_VALUE;
         Set<N> members = new HashSet<>();
@@ -91,7 +96,7 @@ public final class StrongComponents {
             int position = graph.declarationIndex(node);
             if (position < first) {
                 first = position;
-                start = node;
+                start = graph.declaredNode(node);
             }
         }
         Map<N, N> parent = new HashMap<>();

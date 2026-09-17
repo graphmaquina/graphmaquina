@@ -128,8 +128,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */
     private <P, Q extends Enum<Q>, U extends Enum<U>> Optional<T> firstMatch(WatchSpec<E, S, T, P, Q, U> watch, E entity) {
         Collection<? extends P> peers = watch.peersOf().apply(entity);
-        PeerView<P, Q, U> view = new DefaultPeerView<>(() -> { },
-                new UnitOfWork(registry.maxCascadeDepth(), Long.MAX_VALUE), registry.machineFor(watch.peer()));
+        PeerView<P, Q, U> view = DefaultPeerView.committed(registry.machineFor(watch.peer()));
         for (WatchRule<E, S, T, P, Q, U> rule : watch.rules()) {
             if (rule.condition().condition().test(entity, peers, view)) {
                 return Optional.of(rule.transition());

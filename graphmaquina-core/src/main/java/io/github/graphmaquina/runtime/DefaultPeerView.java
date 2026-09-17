@@ -18,6 +18,22 @@ final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements 
     private final UnitOfWork uow;
     private final DefaultStateMachine<P, Q, U> machine;
 
+    /** A watch is outside a transaction, but identity validation still precedes each committed-state read. */
+    static <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> committed(
+            DefaultStateMachine<P, Q, U> machine) {
+        return new PeerView<>() {
+            @Override
+            public MachineKey<P, Q, U> key() { return machine.key(); }
+
+            @Override
+            public Q stateOf(@NonNull P peer) {
+                // Preserve custom identity callbacks and their exceptions, even with no pending state to query.
+                machine.refOf(peer);
+                return machine.readState(peer);
+            }
+        };
+    }
+
     @Override
     public MachineKey<P, Q, U> key() { return machine.key(); }
 
