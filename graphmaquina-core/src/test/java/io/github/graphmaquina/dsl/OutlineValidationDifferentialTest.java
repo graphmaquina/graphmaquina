@@ -64,7 +64,8 @@ class OutlineValidationDifferentialTest {
     void everyOutlineOfTheCorpusReportsWhatTheFrozenValidatorReports() {
         for (MachineOutline outline : CORPUS) {
             assertEquals(BaselineOutlineValidator.validate(outline),
-                         MachineOutlineValidator.validate(outline));
+                         MachineOutlineValidator.validate(outline),
+                         outline.name());
         }
     }
 

@@ -60,6 +60,21 @@ class PendingStateIndexTest {
         assertEquals(Optional.of(S.A), uow.pendingState(a));
     }
 
+    /**
+     * The value half of the same invariant: the discarded entry leaves C and the value to restore is B, so an
+     * undo that read {@code entry.from()} would answer C here while every other case in this file cannot tell.
+     */
+    @Test
+    void theRestoredValueIsTheEarlierPendingStateNotTheDiscardedOrigin() {
+        UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
+        EntityRef a = ref(1);
+        uow.append(hop(a, S.A, S.B));
+        int mark = uow.savepoint();
+        uow.append(hop(a, S.C, S.A));
+        uow.rollbackTo(mark);
+        assertEquals(Optional.of(S.B), uow.pendingState(a));
+    }
+
     @Test
     void noEntityIsPendingBeforeTheFirstAppend() {
         UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
@@ -144,6 +159,8 @@ class PendingStateIndexTest {
         assertEquals(1, uow.entries().size());
         uow.rollbackTo(1);
         assertEquals(Optional.of(S.B), uow.pendingState(a));
+        uow.rollbackTo(0);
+        assertEquals(Optional.empty(), uow.pendingState(a));
     }
 
     @Test
