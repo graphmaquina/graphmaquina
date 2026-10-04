@@ -99,33 +99,45 @@ final class UnitOfWork {
         }
     }
 
+    /**
+     * When the index exists it is updated before the log, so an identity whose equals or hashCode throws leaves the
+     * log, the index and undo as they were.
+     */
     void append(LogEntry entry) {
-        log.add(entry);
         if (pendingStates != null) {
-            index(entry);
+            index(pendingStates, undo, entry);
         }
+        log.add(entry);
     }
 
     /**
      * The first lookup that finds a non-empty log builds the index from it; append maintains it afterwards. The
+     * replay fills local collections and publishes them only once it completes, so an identity whose equals or
+     * hashCode throws midway leaves no partial index behind and the next lookup starts again from the log. The
      * replay is an indexed loop because a for-each allocates an iterator the JIT did not remove in the cascade
      * benchmark.
      */
     private Map<EntityRef, Enum<?>> index() {
         if (pendingStates == null) {
-            pendingStates = new HashMap<>();
-            undo = new ArrayList<>();
+            Map<EntityRef, Enum<?>> states = new HashMap<>();
+            List<PendingUndo> undoEntries = new ArrayList<>();
             for (int i = 0; i < log.size(); i++) {
-                index(log.get(i));
+                index(states, undoEntries, log.get(i));
             }
+            pendingStates = states;
+            undo = undoEntries;
         }
         return pendingStates;
     }
 
-    private void index(LogEntry entry) {
-        Enum<?> previous = pendingStates.get(entry.ref());
+    /**
+     * Indexes one entry. get and put run the identity's equals and hashCode, and HashMap.put changes the map only
+     * after they return; undo grows last. A throw therefore leaves both collections as they were.
+     */
+    private static void index(Map<EntityRef, Enum<?>> states, List<PendingUndo> undo, LogEntry entry) {
+        Enum<?> previous = states.get(entry.ref());
+        states.put(entry.ref(), entry.to());
         undo.add(new PendingUndo(entry.ref(), previous != null, previous));
-        pendingStates.put(entry.ref(), entry.to());
     }
 
     List<LogEntry> entries() { return List.copyOf(log); }

@@ -331,6 +331,53 @@ class PendingStateIndexTest {
     }
 
     /**
+     * An identity whose hashCode throws may do so while the first lookup builds the index or while an append
+     * maintains it. Nothing half-done survives either way: the failed build publishes nothing, so the next lookup
+     * rebuilds from the log, and the failed append leaves the log, the index and undo as they were.
+     */
+    @Test
+    void anIdentityThatThrowsLeavesTheIndexConsistent() {
+        UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
+        EntityRef a = ref(1);
+        EntityRef fragile = ref(new FragileId(2));
+        EntityRef b = ref(3);
+        LogEntry first = hop(a, S.A, S.B);
+        LogEntry second = hop(fragile, S.A, S.C);
+        LogEntry third = hop(b, S.A, S.B);
+        uow.append(first);
+        uow.append(second);
+        uow.append(third);
+        try {
+            FragileId.failing = true;
+            assertThrows(IllegalStateException.class, () -> uow.pendingState(a));
+            FragileId.failing = false;
+            assertEquals(Optional.of(S.B), uow.pendingState(a));
+            assertEquals(Optional.of(S.C), uow.pendingState(fragile));
+            assertEquals(Optional.of(S.B), uow.pendingState(b));
+            assertEquals(List.of(first, second, third), uow.entries());
+
+            FragileId.failing = true;
+            assertThrows(IllegalStateException.class, () -> uow.append(hop(fragile, S.C, S.A)));
+            FragileId.failing = false;
+            assertEquals(List.of(first, second, third), uow.entries());
+            assertEquals(3, uow.savepoint());
+            assertEquals(Optional.of(S.B), uow.pendingState(a));
+            assertEquals(Optional.of(S.C), uow.pendingState(fragile));
+            assertEquals(Optional.of(S.B), uow.pendingState(b));
+
+            uow.append(hop(fragile, S.C, S.A));
+            assertEquals(Optional.of(S.A), uow.pendingState(fragile));
+            uow.rollbackTo(1);
+            assertEquals(List.of(first), uow.entries());
+            assertEquals(Optional.of(S.B), uow.pendingState(a));
+            assertEquals(Optional.empty(), uow.pendingState(fragile));
+            assertEquals(Optional.empty(), uow.pendingState(b));
+        } finally {
+            FragileId.failing = false;
+        }
+    }
+
+    /**
      * The log is the specification: a pending state is the to of the last entry for an equal reference, found by
      * scanning the log from the end. Each fixed seed drives appends, lookups, savepoints and rollbacks, some to
      * savepoints that are no longer or never were valid, through equal but distinct references and identities
@@ -442,5 +489,19 @@ class PendingStateIndexTest {
 
         @Override
         public int hashCode() { return 7; }
+    }
+
+    /** Identity value whose hashCode throws while failing is set, the way a broken identity might. */
+    record FragileId(int value) {
+
+        static boolean failing;
+
+        @Override
+        public int hashCode() {
+            if (failing) {
+                throw new IllegalStateException("hashCode of FragileId " + value + " failed");
+            }
+            return value;
+        }
     }
 }
