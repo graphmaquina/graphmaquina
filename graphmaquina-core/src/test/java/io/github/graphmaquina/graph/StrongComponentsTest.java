@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -137,6 +139,18 @@ class StrongComponentsTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> StrongComponents.cycleWitness(graph, component));
         assertEquals("the component [a, b] holds a node outside the graph", error.getMessage());
+    }
+
+    @Test void anIdentityComponentWithEqualButDistinctMembersIsAccepted() {
+        String declaredA = "A";
+        Graph<String> graph = Graph.of(List.of(declaredA, "B"),
+                List.of(new GraphEdge<>("A", "B"), new GraphEdge<>("B", "A")));
+        Set<String> component = Collections.newSetFromMap(new IdentityHashMap<>());
+        component.add(new String("A"));
+        component.add("B");
+        List<String> witness = StrongComponents.cycleWitness(graph, component);
+        assertEquals(List.of("A", "B", "A"), witness);
+        assertSame(declaredA, witness.get(0));
     }
 
     @Test void aComponentWithoutACycleNamesTheWholeComponent() {
