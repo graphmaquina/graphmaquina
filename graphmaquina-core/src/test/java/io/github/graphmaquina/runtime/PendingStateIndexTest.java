@@ -11,8 +11,12 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.StateMachineException;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -239,6 +243,179 @@ class PendingStateIndexTest {
         assertEquals(Optional.of(S.B), uow.pendingState(ref(new CollidingId(1))));
         assertEquals(Optional.of(S.C), uow.pendingState(ref(new CollidingId(2))));
         assertEquals(Optional.empty(), uow.pendingState(ref(new CollidingId(3))));
+    }
+
+    @Test
+    void aRollbackBeforeAnyLookupOnlyTruncatesTheLog() {
+        UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
+        EntityRef a = ref(1);
+        EntityRef b = ref(2);
+        LogEntry first = hop(a, S.A, S.B);
+        uow.append(first);
+        uow.append(hop(b, S.A, S.C));
+        uow.append(hop(a, S.B, S.C));
+        uow.rollbackTo(1);
+        assertEquals(Optional.of(S.B), uow.pendingState(a));
+        assertEquals(Optional.empty(), uow.pendingState(b));
+        assertEquals(List.of(first), uow.entries());
+        assertEquals(1, uow.savepoint());
+    }
+
+    /**
+     * Hops appended through one reference and through an equal but distinct one move the same entity, both for
+     * a first lookup that comes after all of them and for the appends and nested rollbacks that follow it.
+     */
+    @Test
+    void theFirstLookupAfterSeveralAppendsSeesTheLastHopOfEachEntity() {
+        UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
+        EntityRef a = new EntityRef(FIRST, 1, new Object());
+        EntityRef sameAsA = new EntityRef(FIRST, 1, new Object());
+        EntityRef b = new EntityRef(FIRST, 2, new Object());
+        EntityRef c = new EntityRef(FIRST, 3, new Object());
+        uow.append(hop(a, S.A, S.B));
+        uow.append(hop(b, S.A, S.C));
+        uow.append(hop(sameAsA, S.B, S.C));
+        uow.append(hop(a, S.C, S.A));
+        uow.append(hop(b, S.C, S.B));
+        assertEquals(Optional.of(S.A), uow.pendingState(sameAsA));
+        assertEquals(Optional.of(S.A), uow.pendingState(a));
+        assertEquals(Optional.of(S.B), uow.pendingState(b));
+        assertEquals(Optional.empty(), uow.pendingState(c));
+        uow.append(hop(sameAsA, S.A, S.C));
+        int outer = uow.savepoint();
+        uow.append(hop(b, S.B, S.A));
+        int inner = uow.savepoint();
+        uow.append(hop(a, S.C, S.B));
+        uow.append(hop(c, S.A, S.B));
+        assertEquals(Optional.of(S.B), uow.pendingState(sameAsA));
+        assertEquals(Optional.of(S.A), uow.pendingState(b));
+        assertEquals(Optional.of(S.B), uow.pendingState(c));
+        uow.rollbackTo(inner);
+        assertEquals(Optional.of(S.C), uow.pendingState(a));
+        assertEquals(Optional.of(S.A), uow.pendingState(b));
+        assertEquals(Optional.empty(), uow.pendingState(c));
+        uow.rollbackTo(outer);
+        assertEquals(Optional.of(S.C), uow.pendingState(sameAsA));
+        assertEquals(Optional.of(S.B), uow.pendingState(b));
+        assertEquals(Optional.empty(), uow.pendingState(c));
+        uow.rollbackTo(0);
+        assertEquals(Optional.empty(), uow.pendingState(a));
+        assertEquals(Optional.empty(), uow.pendingState(b));
+        assertEquals(0, uow.savepoint());
+    }
+
+    @Test
+    void invalidSavepointsAreRejectedBeforeAndAfterTheFirstLookup() {
+        UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
+        EntityRef a = ref(1);
+        EntityRef b = ref(2);
+        LogEntry first = hop(a, S.A, S.B);
+        LogEntry second = hop(b, S.A, S.C);
+        uow.append(first);
+        uow.append(second);
+        assertThrows(IndexOutOfBoundsException.class, () -> uow.rollbackTo(-1));
+        assertThrows(IllegalArgumentException.class, () -> uow.rollbackTo(3));
+        assertEquals(List.of(first, second), uow.entries());
+        assertEquals(2, uow.savepoint());
+        assertEquals(Optional.of(S.B), uow.pendingState(a));
+        assertEquals(Optional.of(S.C), uow.pendingState(b));
+        assertThrows(IndexOutOfBoundsException.class, () -> uow.rollbackTo(-1));
+        assertThrows(IllegalArgumentException.class, () -> uow.rollbackTo(3));
+        assertEquals(List.of(first, second), uow.entries());
+        assertEquals(2, uow.savepoint());
+        assertEquals(Optional.of(S.B), uow.pendingState(a));
+        assertEquals(Optional.of(S.C), uow.pendingState(b));
+        uow.rollbackTo(1);
+        assertEquals(Optional.of(S.B), uow.pendingState(a));
+        assertEquals(Optional.empty(), uow.pendingState(b));
+    }
+
+    /**
+     * The log is the specification: a pending state is the to of the last entry for an equal reference, found by
+     * scanning the log from the end. Each fixed seed drives appends, lookups, savepoints and rollbacks, some to
+     * savepoints that are no longer or never were valid, through equal but distinct references and identities
+     * that share one hash. Lookups are withheld for a random prefix of each sequence, so the first lookup meets
+     * logs of many lengths, rolled back or not.
+     */
+    @Test
+    void theIndexMatchesAPlainLogScanOnRandomSequences() {
+        Object[] ids = { 1, 2, new CollidingId(1), new CollidingId(2), new CollidingId(3) };
+        S[] states = S.values();
+        for (long seed = 0; seed < 200; seed++) {
+            Random random = new Random(seed);
+            UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
+            List<LogEntry> log = new ArrayList<>();
+            Deque<Integer> savepoints = new ArrayDeque<>();
+            EntityRef[] canonical = new EntityRef[ids.length];
+            for (int i = 0; i < ids.length; i++) {
+                canonical[i] = new EntityRef(FIRST, ids[i], new Object());
+            }
+            int lookupsFrom = random.nextInt(150);
+            for (int step = 0; step < 300; step++) {
+                String where = "seed " + seed + ", step " + step;
+                int which = random.nextInt(ids.length);
+                EntityRef ref = random.nextBoolean()
+                        ? canonical[which]
+                        : new EntityRef(FIRST, ids[which], new Object());
+                int dice = random.nextInt(10);
+                if (dice < 4) {
+                    S from = states[random.nextInt(states.length)];
+                    S to = states[random.nextInt(states.length)];
+                    LogEntry entry = hop(ref, from, to);
+                    uow.append(entry);
+                    log.add(entry);
+                } else if (dice < 6) {
+                    if (step >= lookupsFrom) {
+                        assertEquals(lastHop(log, ref), uow.pendingState(ref), where);
+                    }
+                } else if (dice < 8) {
+                    savepoints.push(uow.savepoint());
+                } else {
+                    int target = savepoints.isEmpty() || random.nextBoolean()
+                            ? random.nextInt(log.size() + 3) - 1
+                            : savepoints.pop();
+                    assertEquals(truncate(log, target), thrownBy(uow, target), where + ", rollbackTo(" + target + ")");
+                }
+                assertEquals(log.size(), uow.savepoint(), where);
+                assertEquals(log, uow.entries(), where);
+            }
+            for (Object id : ids) {
+                EntityRef ref = new EntityRef(FIRST, id, new Object());
+                assertEquals(lastHop(log, ref), uow.pendingState(ref), "seed " + seed + ", final lookup of " + id);
+            }
+        }
+    }
+
+    /** The answer of a plain log: the to of its last entry for an equal reference. */
+    static Optional<Enum<?>> lastHop(List<LogEntry> log, EntityRef ref) {
+        for (int i = log.size() - 1; i >= 0; i--) {
+            if (log.get(i).ref().equals(ref)) {
+                return Optional.of(log.get(i).to());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** A plain log rolled back: the checks of subList, then the truncation. Null when the savepoint is valid. */
+    static Class<? extends RuntimeException> truncate(List<LogEntry> log, int savepoint) {
+        if (savepoint < 0) {
+            return IndexOutOfBoundsException.class;
+        }
+        if (savepoint > log.size()) {
+            return IllegalArgumentException.class;
+        }
+        log.subList(savepoint, log.size()).clear();
+        return null;
+    }
+
+    /** The exact class of what rollbackTo threw, or null when it returned. */
+    static Class<? extends RuntimeException> thrownBy(UnitOfWork uow, int savepoint) {
+        try {
+            uow.rollbackTo(savepoint);
+            return null;
+        } catch (RuntimeException e) {
+            return e.getClass();
+        }
     }
 
     /** Identity value with one hash per value that counts every equality comparison made against it. */
