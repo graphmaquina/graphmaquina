@@ -80,7 +80,9 @@ final class UnitOfWork {
     /**
      * Undoes the index hop by hop. The subList call rejects the savepoint exactly as the old rollback did, before
      * mutating. Before the index exists there is nothing to undo but the log: the discarded entries are cleared
-     * and the first lookup builds the index from what remains.
+     * and the first lookup builds the index from what remains. Each hop restores the map before its undo record and
+     * its log entry are removed, so an identity whose equals or hashCode throws stops the rollback with the three
+     * still in step, and the same rollback can be retried.
      */
     void rollbackTo(int savepoint) {
         List<LogEntry> discarded = log.subList(savepoint, log.size());
@@ -89,12 +91,13 @@ final class UnitOfWork {
             return;
         }
         while (log.size() > savepoint) {
-            PendingUndo old = undo.remove(undo.size() - 1);
+            PendingUndo old = undo.get(undo.size() - 1);
             if (old.present()) {
                 pendingStates.put(old.ref(), old.previous());
             } else {
                 pendingStates.remove(old.ref());
             }
+            undo.remove(undo.size() - 1);
             log.remove(log.size() - 1);
         }
     }
@@ -131,12 +134,11 @@ final class UnitOfWork {
     }
 
     /**
-     * Indexes one entry. get and put run the identity's equals and hashCode, and HashMap.put changes the map only
-     * after they return; undo grows last. A throw therefore leaves both collections as they were.
+     * Indexes one entry. put returns the earlier pending state, as get would, and runs the identity's equals and
+     * hashCode before it changes the map; undo grows last. A throw therefore leaves both collections as they were.
      */
     private static void index(Map<EntityRef, Enum<?>> states, List<PendingUndo> undo, LogEntry entry) {
-        Enum<?> previous = states.get(entry.ref());
-        states.put(entry.ref(), entry.to());
+        Enum<?> previous = states.put(entry.ref(), entry.to());
         undo.add(new PendingUndo(entry.ref(), previous != null, previous));
     }
 

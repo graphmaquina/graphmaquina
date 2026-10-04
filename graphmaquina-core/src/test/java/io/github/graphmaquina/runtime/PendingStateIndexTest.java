@@ -378,6 +378,57 @@ class PendingStateIndexTest {
     }
 
     /**
+     * A rollback undoes the log one entry at a time and an identity may throw at any of them, whether that entry is
+     * undone by removing the entity's pending state or by putting the earlier one back. The entries already undone
+     * stay undone, the failing one stays whole, and the same rollback succeeds once the identity recovers.
+     */
+    @Test
+    void aRollbackInterruptedByAThrowingIdentityCanBeRetried() {
+        UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
+        EntityRef a = ref(1);
+        EntityRef fragile = ref(new FragileId(2));
+        EntityRef b = ref(3);
+        LogEntry first = hop(a, S.A, S.B);
+        LogEntry second = hop(fragile, S.A, S.C);
+        uow.append(first);
+        uow.append(second);
+        uow.append(hop(b, S.A, S.B));
+        assertEquals(Optional.of(S.C), uow.pendingState(fragile));
+        try {
+            FragileId.failing = true;
+            assertThrows(IllegalStateException.class, () -> uow.rollbackTo(0));
+            FragileId.failing = false;
+            assertEquals(List.of(first, second), uow.entries());
+            assertEquals(2, uow.savepoint());
+            assertEquals(Optional.of(S.B), uow.pendingState(a));
+            assertEquals(Optional.of(S.C), uow.pendingState(fragile));
+            assertEquals(Optional.empty(), uow.pendingState(b));
+            uow.rollbackTo(0);
+            assertEquals(List.of(), uow.entries());
+            assertEquals(Optional.empty(), uow.pendingState(a));
+            assertEquals(Optional.empty(), uow.pendingState(fragile));
+
+            LogEntry fragileFirst = hop(fragile, S.A, S.C);
+            LogEntry fragileSecond = hop(fragile, S.C, S.B);
+            uow.append(fragileFirst);
+            uow.append(fragileSecond);
+            uow.append(hop(a, S.A, S.B));
+            FragileId.failing = true;
+            assertThrows(IllegalStateException.class, () -> uow.rollbackTo(1));
+            FragileId.failing = false;
+            assertEquals(List.of(fragileFirst, fragileSecond), uow.entries());
+            assertEquals(2, uow.savepoint());
+            assertEquals(Optional.of(S.B), uow.pendingState(fragile));
+            assertEquals(Optional.empty(), uow.pendingState(a));
+            uow.rollbackTo(1);
+            assertEquals(List.of(fragileFirst), uow.entries());
+            assertEquals(Optional.of(S.C), uow.pendingState(fragile));
+        } finally {
+            FragileId.failing = false;
+        }
+    }
+
+    /**
      * The log is the specification: a pending state is the to of the last entry for an equal reference, found by
      * scanning the log from the end. Each fixed seed drives appends, lookups, savepoints and rollbacks, some to
      * savepoints that are no longer or never were valid, through equal but distinct references and identities
