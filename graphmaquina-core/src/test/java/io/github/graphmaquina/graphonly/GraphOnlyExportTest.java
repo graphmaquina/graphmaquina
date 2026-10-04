@@ -3,7 +3,9 @@ package io.github.graphmaquina.graphonly;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.APPROVE;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.AUTO_APPROVE;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.BACK;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.FAIL;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.RETOUCH;
+import static io.github.graphmaquina.fixtures.GraphOnlyFixture.KEY;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.DONE;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.OPEN;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.REVIEW;
@@ -14,6 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.PeerView;
+import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.TransitionKind;
+import io.github.graphmaquina.api.TransitionSpec;
+import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.export.GraphView;
 import io.github.graphmaquina.export.GraphvizExporter;
 import io.github.graphmaquina.export.PolicyView;
@@ -22,8 +30,12 @@ import io.github.graphmaquina.fixtures.GraphOnlyFixture.Id;
 import io.github.graphmaquina.fixtures.GraphOnlyFixture.State;
 import io.github.graphmaquina.fixtures.GraphOnlyFixture.Ticket;
 import io.github.graphmaquina.fixtures.GraphOnlyFixture;
+import io.github.graphmaquina.graph.DirectedGraph;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class GraphOnlyExportTest {
@@ -118,5 +130,107 @@ class GraphOnlyExportTest {
         assertEquals(Optional.of("APPROVE"), auto.failureTransition());
         assertTrue(GraphvizExporter.render(GraphView.of(graph))
                 .contains("[label=\"AUTO_APPROVE auto [if ready] [onFailure APPROVE]\"]"));
+    }
+
+    /**
+     * T11 causal evidence (issue #9, F12): during a real {@code GraphView.of} conversion, {@code watch(REVIEW)}
+     * is fetched three times, once per outgoing edge of REVIEW, before the unrelated watches-summary loop
+     * fetches every state's watch exactly once. That is the E_s x W_s shape: REVIEW's five rules are rescanned
+     * once per edge instead of once per state. The wrapper below is test-only and delegates every
+     * {@link GraphDefinition} method; production code exposes no counters.
+     */
+    @Test void watchIsFetchedOncePerTransitionNotOncePerState() {
+        GraphDefinition<Ticket,State,Id> graph = repeatedWatchFixture();
+        WatchCountingDefinition<Ticket,State,Id> wrapper = new WatchCountingDefinition<>(graph);
+        GraphView.of(wrapper);
+        // First 4 calls: one per transition, in transitions() order (SUBMIT, APPROVE, AUTO_APPROVE, FAIL) --
+        // REVIEW appears three times because it has three outgoing edges. Last 3 calls: one per state (OPEN,
+        // REVIEW, DONE), from the unrelated watches-summary loop inside GraphView.of.
+        assertEquals(List.of(OPEN, REVIEW, REVIEW, REVIEW, OPEN, REVIEW, DONE), wrapper.watchCalls());
+    }
+
+    /** watchLabel joins repeated rule names in declaration order; the rest of the view is unaffected. */
+    @Test void watchLabelJoinsRepeatedRuleNamesInDeclarationOrder() {
+        GraphView view = GraphView.of(repeatedWatchFixture());
+        assertEquals(new TransitionView("REVIEW", "APPROVE", "DONE", TransitionKind.ACTION, Optional.of("manual"),
+                List.of(), false, Optional.empty(), Optional.of("Ticket: r0, r2, r4")), view.transitions().get(1));
+        assertEquals(new TransitionView("REVIEW", "AUTO_APPROVE", "DONE", TransitionKind.MOVE, Optional.empty(),
+                List.of(), false, Optional.empty(), Optional.of("Ticket: r1, r3")), view.transitions().get(2));
+    }
+
+    /** FAIL leaves REVIEW, which has a watch, but no rule executes FAIL: the label is absent, not merely empty. */
+    @Test void watchLabelIsEmptyWhenNoRuleMatchesTheTransitionId() {
+        TransitionView fail = GraphView.of(repeatedWatchFixture()).transitions().get(3);
+        assertEquals("FAIL", fail.transition());
+        assertEquals(Optional.empty(), fail.watch());
+    }
+
+    /** OPEN declares no watch at all; the same absent label represents that as it does a rule that never matches. */
+    @Test void watchLabelIsEmptyWhenTheStateHasNoWatchAtAll() {
+        TransitionView submit = GraphView.of(repeatedWatchFixture()).transitions().get(0);
+        assertEquals("SUBMIT", submit.transition());
+        assertEquals(Optional.empty(), submit.watch());
+    }
+
+    /**
+     * REVIEW has three outgoing edges (APPROVE, AUTO_APPROVE, FAIL) and a watch with five rules that repeat two
+     * of those identifiers (APPROVE three times, AUTO_APPROVE twice) and never target FAIL. OPEN keeps no watch
+     * at all. This single fixture exercises every shape T11 characterizes: several edges and several rules on
+     * one state, repeated ids to exercise label concatenation, a transition id no rule matches, and a state with
+     * no watch.
+     */
+    private static GraphDefinition<Ticket,State,Id> repeatedWatchFixture() {
+        Ticket peer = new Ticket(9, OPEN);
+        return GraphOnlyFixture.builder()
+                .transition(AUTO_APPROVE, REVIEW, DONE).endTransition()
+                .transition(FAIL, REVIEW, DONE).endTransition()
+                .watch(REVIEW, KEY, (Ticket ticket) -> List.of(peer), (Ticket owner) -> Optional.empty())
+                    .when("r0", (Ticket ticket, Collection<? extends Ticket> peers, PeerView<Ticket,State,Id> view) -> true)
+                        .execute(APPROVE)
+                    .when("r1", (Ticket ticket, Collection<? extends Ticket> peers, PeerView<Ticket,State,Id> view) -> true)
+                        .execute(AUTO_APPROVE)
+                    .when("r2", (Ticket ticket, Collection<? extends Ticket> peers, PeerView<Ticket,State,Id> view) -> true)
+                        .execute(APPROVE)
+                    .when("r3", (Ticket ticket, Collection<? extends Ticket> peers, PeerView<Ticket,State,Id> view) -> true)
+                        .execute(AUTO_APPROVE)
+                    .when("r4", (Ticket ticket, Collection<? extends Ticket> peers, PeerView<Ticket,State,Id> view) -> true)
+                        .execute(APPROVE)
+                .endWatch().build();
+    }
+
+    /**
+     * Test-only {@link GraphDefinition} that delegates every method to a real definition and records, in order,
+     * the states passed to {@link #watch}. It changes no production code and exposes no counters there; the
+     * sequence it records is the causal evidence for T11 (issue #9, F12).
+     */
+    private static final class WatchCountingDefinition<E, S extends Enum<S>, T extends Enum<T>> implements GraphDefinition<E,S,T> {
+        private final GraphDefinition<E,S,T> delegate;
+        private final List<S> watchCalls = new ArrayList<>();
+
+        private WatchCountingDefinition(GraphDefinition<E,S,T> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override public MachineKey<E,S,T> key() { return delegate.key(); }
+        @Override public S initial() { return delegate.initial(); }
+        @Override public Set<S> terminals() { return delegate.terminals(); }
+        @Override public DirectedGraph<S,T> graph() { return delegate.graph(); }
+        @Override public List<TransitionSpec<E,S,T>> transitions() { return delegate.transitions(); }
+        @Override public List<TransitionSpec<E,S,T>> outgoingFrom(S state) { return delegate.outgoingFrom(state); }
+
+        @Override public Optional<TransitionSpec<E,S,T>> findTransition(S from, T transition) {
+            return delegate.findTransition(from, transition);
+        }
+
+        @Override public StatePolicy<S,T> policy(S state) { return delegate.policy(state); }
+
+        @Override public Optional<WatchSpec<E,S,T,?,?,?>> watch(S state) {
+            watchCalls.add(state);
+            return delegate.watch(state);
+        }
+
+        @Override public boolean hasAsync() { return delegate.hasAsync(); }
+
+        List<S> watchCalls() { return List.copyOf(watchCalls); }
     }
 }

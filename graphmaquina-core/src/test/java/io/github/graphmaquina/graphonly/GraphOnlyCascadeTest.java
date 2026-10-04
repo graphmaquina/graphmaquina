@@ -226,4 +226,49 @@ class GraphOnlyCascadeTest {
             assertEquals(REVIEW, ticket.state);
         }
     }
+
+    /**
+     * A failure route restores what the discarded child had left pending on a peer, not the peer's committed
+     * state: the recovery reads REVIEW, which no entity holds yet, and the discarded hop runs no hook.
+     */
+    @Test void aFailureRouteRestoresThePendingStateAnEarlierCascadeGaveThePeer() {
+        List<String> hooks = new ArrayList<>();
+        List<String> seen = new ArrayList<>();
+        Ticket child = new Ticket(2, REVIEW);
+        GraphDefinition<Ticket,State,Id> graph = StateGraph.define(KEY).initial(OPEN).terminal(DONE)
+                .statePolicy(OPEN, "submit first").statePolicy(REVIEW, "review required")
+                .transition(SUBMIT, OPEN, REVIEW)
+                    .afterCommit("submitted", ticket -> hooks.add("submitted:" + ticket.id)).endTransition()
+                .transition(APPROVE, REVIEW, DONE)
+                    .action("approve", ctx -> {
+                        if (ctx.depth() == 0) {
+                            ctx.cascade(KEY, peer, SUBMIT);
+                            ctx.cascade(KEY, child, APPROVE);
+                            return ActionOutcome.ok();
+                        }
+                        ctx.cascade(KEY, peer, AUTO_APPROVE);
+                        return ActionOutcome.failed("declined");
+                    })
+                    .afterCommit("approved", ticket -> hooks.add("approved:" + ticket.id))
+                    .onFailure(FAIL).endTransition()
+                .transition(AUTO_APPROVE, REVIEW, DONE)
+                    .afterCommit("auto", ticket -> hooks.add("auto:" + ticket.id)).endTransition()
+                .transition(FAIL, REVIEW, DONE)
+                    .action("recover", ctx -> { seen.add(ctx.peer(KEY).stateOf(peer).name()); return ActionOutcome.ok(); })
+                    .afterCommit("recovered", ticket -> hooks.add("recovered:" + ticket.id)).endTransition()
+                .build();
+        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+            Ticket owner = new Ticket(1, REVIEW);
+            Outcome<Ticket,State,Id> result = registry.of(KEY).execute(owner, APPROVE);
+            assertInstanceOf(Outcome.Applied.class, result);
+            Outcome.Applied<Ticket,State,Id> applied = (Outcome.Applied<Ticket,State,Id>) result;
+            assertEquals(List.of("REVIEW"), seen);
+            assertEquals(DONE, owner.state);
+            assertEquals(DONE, child.state);
+            assertEquals(REVIEW, peer.state);
+            assertEquals(List.of("approved:1", "submitted:9", "recovered:2"), hooks);
+            assertEquals(List.of(APPROVE, SUBMIT, FAIL),
+                    applied.records().stream().map(record -> record.transition()).toList());
+        }
+    }
 }

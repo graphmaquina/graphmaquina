@@ -35,49 +35,53 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
         transitions = List.copyOf(transitions);
         policies = List.copyOf(policies);
         watches = List.copyOf(watches);
-        if (states.isEmpty() || new HashSet<>(states).size() != states.size()) {
+        Set<String> stateNames = new HashSet<>(states);
+        Set<String> transitionNames = new HashSet<>(catalog);
+        if (states.isEmpty() || stateNames.size() != states.size()) {
             throw new IllegalArgumentException(name + ": states must be non-empty and distinct");
         }
-        if (new HashSet<>(catalog).size() != catalog.size()) {
+        if (transitionNames.size() != catalog.size()) {
             throw new IllegalArgumentException(name + ": transition identifiers must be distinct");
         }
-        requireState(name, states, initial, "initial");
+        requireState(name, states, stateNames, initial, "initial");
         for (String terminal : terminals) {
-            requireState(name, states, terminal, "terminal");
+            requireState(name, states, stateNames, terminal, "terminal");
         }
         for (String state : cycleAllowed) {
-            requireState(name, states, state, "allowsCycle");
+            requireState(name, states, stateNames, state, "allowsCycle");
         }
         for (TransitionOutline edge : transitions) {
-            requireState(name, states, edge.from(), "transition.from");
-            requireState(name, states, edge.to(), "transition.to");
-            requireTransition(name, catalog, edge.transition(), "transition.id");
+            requireState(name, states, stateNames, edge.from(), "transition.from");
+            requireState(name, states, stateNames, edge.to(), "transition.to");
+            requireTransition(name, catalog, transitionNames, edge.transition(), "transition.id");
             if (edge.onFailure().isPresent()) {
-                requireTransition(name, catalog, edge.onFailure().get(), "transition.onFailure");
+                requireTransition(name, catalog, transitionNames, edge.onFailure().get(), "transition.onFailure");
             }
         }
         for (PolicyOutline policy : policies) {
-            requireState(name, states, policy.state(), "policy.state");
+            requireState(name, states, stateNames, policy.state(), "policy.state");
             for (String rejected : policy.rejections().keySet()) {
-                requireTransition(name, catalog, rejected, "policy.reject");
+                requireTransition(name, catalog, transitionNames, rejected, "policy.reject");
             }
         }
         for (WatchOutline watch : watches) {
-            requireState(name, states, watch.state(), "watch.state");
+            requireState(name, states, stateNames, watch.state(), "watch.state");
             for (String transition : watch.transitions()) {
-                requireTransition(name, catalog, transition, "watch.transition");
+                requireTransition(name, catalog, transitionNames, transition, "watch.transition");
             }
         }
     }
 
-    private static void requireState(String name, List<String> states, String state, String role) {
-        if (!states.contains(state)) {
+    private static void requireState(String name, List<String> states, Set<String> stateNames, String state,
+            String role) {
+        if (!stateNames.contains(state)) {
             throw new IllegalArgumentException(name + ": " + role + " " + state + " is not one of " + states);
         }
     }
 
-    private static void requireTransition(String name, List<String> catalog, String transition, String role) {
-        if (!catalog.contains(transition)) {
+    private static void requireTransition(String name, List<String> catalog, Set<String> transitionNames,
+            String transition, String role) {
+        if (!transitionNames.contains(transition)) {
             throw new IllegalArgumentException(name + ": " + role + " " + transition + " is not one of " + catalog);
         }
     }

@@ -99,6 +99,46 @@ class GraphOnlyWatchTest {
         }
     }
 
+    /**
+     * A self-loop is a hop with no net movement. It commits and its action runs, but the watch that would have
+     * re-evaluated the owner of the ticket is not notified; the move that follows notifies it, which is what
+     * proves the watch was wired to react.
+     */
+    @Test void aSelfLoopCommitsWithoutNotifyingTheWatchOfItsOwner() {
+        Ticket owner = new Ticket(7, REVIEW);
+        GraphDefinition<Ticket,State,Id> graph = StateGraph.define(KEY).initial(OPEN).terminal(DONE)
+                .allowsCycle(REVIEW)
+                .statePolicy(OPEN, "submit first").statePolicy(REVIEW, "review required")
+                .transition(SUBMIT, OPEN, REVIEW).endTransition()
+                .transition(APPROVE, REVIEW, DONE)
+                    .action("manual", ctx -> { ctx.entity().calls.add("manual"); return ActionOutcome.ok(); })
+                    .endTransition()
+                .transition(Id.RETOUCH, REVIEW, REVIEW)
+                    .action("touch", ctx -> { ctx.entity().calls.add("touch"); return ActionOutcome.ok(); })
+                    .endTransition()
+                .watch(REVIEW, KEY, (Ticket ticket) -> List.of(peer), (Ticket moved) -> Optional.of(owner))
+                    .when("always", (Ticket ticket, Collection<? extends Ticket> peers,
+                            PeerView<Ticket,State,Id> view) -> true)
+                        .execute(APPROVE)
+                    .endWatch().build();
+        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+            Ticket looping = new Ticket(1, REVIEW);
+            Outcome<Ticket,State,Id> result = registry.of(KEY).execute(looping, Id.RETOUCH);
+            assertInstanceOf(Outcome.Applied.class, result);
+            assertEquals(List.of(), ((Outcome.Applied<Ticket,State,Id>) result).reactions());
+            assertEquals(List.of("touch"), looping.calls);
+            assertEquals(REVIEW, looping.state);
+            assertEquals(REVIEW, owner.state);
+            assertTrue(owner.calls.isEmpty());
+
+            Ticket submitted = new Ticket(2, OPEN);
+            Outcome<Ticket,State,Id> moved = registry.of(KEY).execute(submitted, SUBMIT);
+            assertEquals(1, ((Outcome.Applied<Ticket,State,Id>) moved).reactions().size());
+            assertEquals(List.of("manual"), owner.calls);
+            assertEquals(DONE, owner.state);
+        }
+    }
+
     /** A self-loop selected by a rule is Applied like any other edge; a watch never loops on its own. */
     @Test void aSelfLoopSelectedByAWatchIsApplied() {
         GraphDefinition<Ticket,State,Id> graph = StateGraph.define(KEY).initial(OPEN).terminal(DONE)

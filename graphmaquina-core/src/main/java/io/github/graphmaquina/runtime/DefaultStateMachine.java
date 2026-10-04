@@ -128,8 +128,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */
     private <P, Q extends Enum<Q>, U extends Enum<U>> Optional<T> firstMatch(WatchSpec<E, S, T, P, Q, U> watch, E entity) {
         Collection<? extends P> peers = watch.peersOf().apply(entity);
-        PeerView<P, Q, U> view = new DefaultPeerView<>(() -> { },
-                new UnitOfWork(registry.maxCascadeDepth(), Long.MAX_VALUE), registry.machineFor(watch.peer()));
+        PeerView<P, Q, U> view = DefaultPeerView.committed(registry.machineFor(watch.peer()));
         for (WatchRule<E, S, T, P, Q, U> rule : watch.rules()) {
             if (rule.condition().condition().test(entity, peers, view)) {
                 return Optional.of(rule.transition());
@@ -164,14 +163,16 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         StepResult<S, T> step;
         List<TransitionRecord<?, ?, ?>> records;
         List<LogEntry> committed;
+        CommitSummary summary;
         try {
             step = body.apply(tx);
             boolean commits = step instanceof StepResult.Applied<S, T> || step instanceof StepResult.Failed<S, T>;
             if (commits) {
-                Commit.apply(registry, uow);
+                summary = Commit.apply(registry, uow);
                 records = uow.records();
                 committed = uow.entries();
             } else {
+                summary = CommitSummary.EMPTY;
                 records = List.of();
                 committed = List.of();
             }
@@ -180,7 +181,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             Reentrancy.exit();
         }
         runHooks(committed);
-        List<Reaction> reactions = committed.isEmpty() ? List.of() : registry.dispatchWatches(uow, chain);
+        List<Reaction> reactions = committed.isEmpty() ? List.of() : registry.dispatchWatches(summary, chain);
         return notify(switch (step) {
             case StepResult.Applied<S, T> applied ->
                     new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(), records, reactions);

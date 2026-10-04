@@ -3,6 +3,7 @@ package io.github.graphmaquina.graphonly;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.CascadePolicy;
@@ -122,6 +123,28 @@ class EnumBoundariesTest {
                 default -> throw new AssertionError(query);
             }
         });
+    }
+
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void findTransitionReportsTheExactTextForAWrongEnum() {
+        GraphDefinition raw = graph(new int[1]);
+        IllegalArgumentException wrongState = assertThrows(IllegalArgumentException.class,
+                () -> raw.findTransition(Foreign.OPEN, Id.GO));
+        assertEquals("state must belong to " + State.class.getName() + ": " + Foreign.OPEN, wrongState.getMessage());
+        IllegalArgumentException wrongTransition = assertThrows(IllegalArgumentException.class,
+                () -> raw.findTransition(State.OPEN, Foreign.GO));
+        assertEquals("transition must belong to " + Id.class.getName() + ": " + Foreign.GO,
+                wrongTransition.getMessage());
+    }
+
+    @Test void findTransitionRejectsNullArguments() {
+        GraphDefinition<Entity, State, Id> graph = graph(new int[1]);
+        NullPointerException noFrom = assertThrows(NullPointerException.class, () -> graph.findTransition(null, Id.GO));
+        assertTrue(noFrom.getMessage().startsWith("from"), noFrom.getMessage());
+        NullPointerException noTransition = assertThrows(NullPointerException.class,
+                () -> graph.findTransition(State.OPEN, null));
+        assertTrue(noTransition.getMessage().startsWith("transition"), noTransition.getMessage());
     }
 
     @ParameterizedTest

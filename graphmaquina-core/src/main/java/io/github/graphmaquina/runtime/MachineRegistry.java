@@ -121,12 +121,16 @@ public final class MachineRegistry implements AutoCloseable {
 
     /**
      * After the root commit: for each moved entity, every watcher of its machine resolves the owner;
-     * an owner is re-evaluated only once even if several of its peers moved.
+     * an owner is re-evaluated only once even if several of its peers moved. A registry that indexed no
+     * watcher answers before reading which entities moved, which is what most transactions pay.
      */
-    List<Reaction> dispatchWatches(UnitOfWork uow, int chain) {
+    List<Reaction> dispatchWatches(CommitSummary summary, int chain) {
+        if (watchers.isEmpty()) {
+            return List.of();
+        }
         Map<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> targets = new LinkedHashMap<>();
         List<Reaction> reactions = new ArrayList<>();
-        for (EntityRef moved : uow.movedEntities()) {
+        for (EntityRef moved : summary.movedEntities()) {
             for (Watcher<?, ?, ?, ?, ?, ?> watcher : watchers.getOrDefault(moved.key(), List.of())) {
                 try {
                     Optional<EntityRef> owner = watcher.ownerToReevaluate(moved.instance());

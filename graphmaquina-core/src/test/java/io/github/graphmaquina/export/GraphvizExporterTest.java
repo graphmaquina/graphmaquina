@@ -26,7 +26,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class GraphvizExporterTest {
 
@@ -195,6 +199,64 @@ class GraphvizExporterTest {
         assertTrue(rendered.contains("watch1 [shape=note, label=\"watches Peer2\"];"), rendered);
         assertTrue(rendered.contains("n0 -> watch0 [style=dashed, arrowhead=none];"), rendered);
         assertTrue(rendered.contains("n0 -> watch1 [style=dashed, arrowhead=none];"), rendered);
+    }
+
+    // --- DOT escaping oracle (quote, restored to 278640e) -------------------------------------------------
+
+    /**
+     * Verbatim copy of {@link GraphvizExporter}'s {@code quote} helper at 278640e, kept as an oracle independent
+     * of production so the full public {@code render} is checked byte for byte against it for every corpus case.
+     */
+    private static String baseQuote(String text) {
+        return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n") + "\"";
+    }
+
+    static Stream<Arguments> dotEscapingCorpus() {
+        return Stream.of(
+                Arguments.of("empty", ""),
+                Arguments.of("quotes", "say \"hi\" now"),
+                Arguments.of("backslashes", "a\\b\\\\c"),
+                Arguments.of("literal backslash-N", "before\\Nafter"),
+                Arguments.of("CR alone", "a\rb"),
+                Arguments.of("LF alone", "a\nb"),
+                Arguments.of("CRLF", "a\r\nb"),
+                Arguments.of("LFCR", "a\n\rb"),
+                Arguments.of("mixed triples", "a\r\n\rb\r\r\nc\n\r\nd\n\n\re"),
+                Arguments.of("unicode", "café 雪 😀"),
+                Arguments.of("control characters", "a\u0000\u0001\u001fb\u007f"));
+    }
+
+    /**
+     * Differential test kept from the withdrawn T10 experiment: production {@code quote} must escape exactly like
+     * this oracle through the full public {@code render}. {@code text} is the only thing that varies per case;
+     * every other byte of the expected DOT is fixed by this view's shape, so a mismatch points at the escaping.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("dotEscapingCorpus")
+    void quoteMatchesTheInlineOracleThroughFullRender(String caseName, String text) {
+        String rawTooltip = "otherwise: " + text;
+        String rawLabel = text + " " + text + " [async] [if " + text + "] [onFailure " + text
+                + "] [watches " + text + "]";
+        String rawWatchLabel = "watches " + text;
+        GraphView view = new GraphView(text, text, Set.of("n0"), List.of(text, "n0"),
+                List.of(new TransitionView(text, text, "n0", TransitionKind.ACTION, Optional.of(text),
+                        List.of(text), true, Optional.of(text), Optional.of(text))),
+                List.of(new PolicyView("n0", text, List.of())),
+                List.of(new WatchView(text, text, List.of())));
+
+        String rendered = GraphvizExporter.render(view);
+
+        assertEquals("digraph " + baseQuote(text) + " {\n"
+                + "    rankdir=LR;\n"
+                + "    initial [shape=point, label=\"\"];\n"
+                + "    n0 [label=" + baseQuote(text) + ", shape=ellipse];\n"
+                + "    n1 [label=\"n0\", shape=doublecircle, tooltip=" + baseQuote(rawTooltip) + "];\n"
+                + "    initial -> n0;\n"
+                + "    n0 -> n1 [label=" + baseQuote(rawLabel) + "];\n"
+                + "    watch0 [shape=note, label=" + baseQuote(rawWatchLabel) + "];\n"
+                + "    n0 -> watch0 [style=dashed, arrowhead=none];\n"
+                + "}\n", rendered);
     }
 
     private static TransitionView move(String from, String transition, String to) {
