@@ -51,7 +51,7 @@ val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     dependsOn(":graphmaquina-maven-plugin:publishMavenPublicationToAdapterTestsRepository")
     dependsOn(gradle.includedBuild("graphmaquina-gradle-plugin")
         .task(":publishAllPublicationsToAdapterTestsRepository"))
-    val readme = rootProject.layout.projectDirectory.file("README.md")
+    val readme = rootProject.layout.projectDirectory.file("docs/guide.md")
     val gradleExecutable = requireNotNull(gradle.gradleHomeDir).resolve(
         if (System.getProperty("os.name").startsWith("Windows")) "bin/gradle.bat" else "bin/gradle"
     )
