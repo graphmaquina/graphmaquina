@@ -27,12 +27,12 @@ find no manifest and refuse the compilation with SG602.
 Keep the runtime, generator, processor and adapter at the same version: the one you installed from a
 checkout, set once as the `graphmaquinaVersion` Gradle property or the `graphmaquina.version` Maven property. The processor emits `<Machine>Runtime` and `<Set>Runtime`. Generated
 types normalize underscores and nesting dots to PascalCase, preserving internal case and acronyms.
-See the [generated naming reference](../README.md#generated-names).
+See the [generated naming reference](guide.md#generated-names).
 
 Only `graphmaquina-core` is a dependency of the application. The generator and the processor are build-time only
 and never reach the runtime classpath.
 
-For the first machine, follow the [annotation generation walkthrough](../README.md#how-your-flow-annotations-are-generated).
+For the first machine, follow the [annotation generation walkthrough](guide.md#how-your-flow-annotations-are-generated).
 It shows how to generate vocabulary from a minimal interface before writing the flow, or build complete
 sources that already reference generated annotations. The generator reads source syntax before javac
 type-checks the application; no previously compiled machine is required.
@@ -42,7 +42,7 @@ type-checks the application; no previously compiled machine is required.
 The version comes from git tags: both builds read `-PgraphmaquinaVersion` when a release passes it and
 otherwise derive it from the most recent tag, so no file in the repository states a release version. A
 published version is immutable; the next publication is `2.0.0`, which every module carries at once. The
-[README](../README.md#release-to-maven-central) describes the release, the steps below among them.
+[README](guide.md#release-to-maven-central) describes the release, the steps below among them.
 
 Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD` to its passphrase, then run:
 
@@ -65,7 +65,7 @@ GraphMaquina is published to Maven Central under `io.github.graphmaquina`, which
 The rest of this section covers the other two cases: testing a build that is not released yet, and serving
 every component, including the Gradle implementation and its marker, from an internal repository. The source
 repository is private and requires authorized access; the published artifacts are public.
-See the [README](../README.md#configure-gradle) for a complete consumer configuration.
+See the [README](guide.md#configure-gradle) for a complete consumer configuration.
 
 To test local changes, publish from an authorized checkout of this repository:
 
@@ -417,7 +417,7 @@ to change:
 | `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
 | `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host). The message names the type and the declaration. |
 | `SG603` | generated names collide after PascalCase normalization, such as `id` / `_id`. The diagnostic names both source declarations; rename the conflict and its references, then regenerate. |
-| `SG609` | unsupported string-based declaration. Use `@GenerateGraphApi` and the [generated typed annotations](../README.md#annotation-and-binding-reference). |
+| `SG609` | unsupported string-based declaration. Use `@GenerateGraphApi` and the [generated typed annotations](guide.md#annotation-and-binding-reference). |
 | `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
 | "the StateGraph generator needs a Java 21 toolchain or later" | raise the Gradle toolchain to 21+, or point Maven's `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
 | "…is not on the `<annotationProcessorPaths>` …" | the processor is missing from the compiler's processor path; declare it after Lombok. |

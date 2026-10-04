@@ -1,8 +1,8 @@
 # Documentation illustrations
 
-The main README embeds these self-contained SVG images. They have a fixed dark background so labels and
+The guide embeds these self-contained SVG images. They have a fixed dark background so labels and
 connections retain their contrast in both GitHub themes. Each SVG contains a title and text description;
-the README also supplies alternative text and keeps the detailed semantics in ordinary text and tables.
+the guide also supplies alternative text and keeps the detailed semantics in ordinary text and tables.
 
 | Image | Purpose |
 | --- | --- |
