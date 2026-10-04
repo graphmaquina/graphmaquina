@@ -31,7 +31,12 @@ import org.junit.jupiter.api.Test;
  * caller might build it, in the opposite iteration order and with a fresh, equal instance per member. The second
  * presentation is what makes the choice of the first member and of the instance the witness starts from visible.
  * The inputs on which the two implementations are meant to differ, sets whose membership disagrees with
- * {@code equals}, are pinned in {@link StrongComponentsTest} and are not part of the corpus.
+ * {@code equals}, are not part of the corpus. Two of the four divergences listed in the
+ * {@link StrongComponents#cycleWitness} Javadoc are pinned in {@link StrongComponentsTest}: the rejection of a
+ * case-insensitive {@code TreeSet} ({@code aComponentWhoseMembershipDisagreesWithEqualsIsRejected}) and the
+ * acceptance of an identity-based set with equal but distinct members
+ * ({@code anIdentityComponentWithEqualButDistinctMembersIsAccepted}). The other two, a {@code contains} that would
+ * throw and a different exception message, are only documented there.
  *
  * <p>The corpora are those of {@link CycleEnumerationDifferentialTest}: every one of the 512 directed graphs over
  * three nodes under each of the six declaration orders, and a pseudorandom corpus of four- and six-node graphs
