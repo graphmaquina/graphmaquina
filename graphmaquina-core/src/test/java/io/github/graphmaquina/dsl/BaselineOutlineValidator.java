@@ -19,7 +19,10 @@ import java.util.Set;
  * {@code @NonNull} on the public entry point is dropped with its import because Lombok is not on the test
  * compile classpath, and this comment replaces the original's own. Nothing below it was touched, nothing here
  * may be copied back into production, and nothing here may be optimised: its whole value is that it still
- * computes the problems the way the base did.
+ * computes the problems the way the base did. The graph code it calls is not frozen: it builds and queries the
+ * live {@code Graph} and runs the live {@code StrongComponents.find} and {@code cycleWitness}, so the differential
+ * compares validator logic and not graph algorithms; the cycle search and the cycle witness have their own
+ * frozen-copy differentials ({@code CycleEnumerationDifferentialTest}, {@code CycleWitnessDifferentialTest}).
  *
  * @see MachineOutlineValidator the live validator this oracle is compared against
  */
