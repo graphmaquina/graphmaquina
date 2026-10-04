@@ -19,8 +19,8 @@ import java.util.Optional;
  * State of a root transaction. Local to the thread running the transition; no other thread touches it.
  * log answers what state each entity ends up in and is reverted by savepoint; pendingStates indexes that
  * answer by entity and undo puts it back entry by entry, so a rollback never rebuilds the index.
- * journal answers which actions actually ran and is never reverted. Both are created on the first append,
- * so a root that rejects or finds no transition allocates neither.
+ * pendingStates and undo are created on the first append, so a root that rejects or finds no transition
+ * allocates neither. journal answers which actions actually ran and is never reverted.
  */
 final class UnitOfWork {
 
@@ -59,7 +59,9 @@ final class UnitOfWork {
     /**
      * to of the last log entry for the entity, if any. An empty index has no mapping for any reference, so the
      * early return is the same answer without handing ref to the map: the reference stays local to the caller
-     * and the JIT can drop it, which is what a watch condition reading N peers before the first hop pays for.
+     * and the JIT can drop it. The calls that find the index empty are the first state read of every root, made
+     * by Transaction.currentState before anything is appended, and the reads of a guard that looks at peers
+     * through DefaultPeerView before that first append.
      */
     Optional<Enum<?>> pendingState(EntityRef ref) {
         if (pendingStates == null || pendingStates.isEmpty()) {
@@ -70,7 +72,10 @@ final class UnitOfWork {
 
     int savepoint() { return log.size(); }
 
-    /** Undoes the index hop by hop. The first call rejects the savepoint exactly as subList did, before mutating. */
+    /**
+     * Undoes the index hop by hop. The subList call rejects the savepoint exactly as the old rollback did, before
+     * mutating.
+     */
     void rollbackTo(int savepoint) {
         log.subList(savepoint, log.size());
         while (log.size() > savepoint) {
