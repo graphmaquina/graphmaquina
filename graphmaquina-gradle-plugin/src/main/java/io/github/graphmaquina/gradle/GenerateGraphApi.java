@@ -42,8 +42,10 @@ import java.util.List;
 public abstract class GenerateGraphApi extends DefaultTask {
 
     /**
-     * The original source roots of the source set, without the generated ones. Their contents are what the
-     * generator parses, so the task is out of date whenever any declaration under them changes.
+     * The original sources of the source set: its source directories other than the generated ones, each named
+     * whole, or file by file as the source set's include and exclude patterns select them when it has any,
+     * which is what javac compiles of them. They are what the generator parses, so the task is out of date
+     * whenever any of them changes, and it runs after every task those directories are built by.
      *
      * @return the original sources of this source set
      */
@@ -69,7 +71,8 @@ public abstract class GenerateGraphApi extends DefaultTask {
     public abstract ConfigurableFileCollection getGeneratorClasspath();
 
     /**
-     * The directory the compilation belongs to, which the generator reports diagnostics relative to.
+     * The directory the compilation belongs to, which the generator reports diagnostics relative to; by
+     * convention the project directory.
      *
      * @return the project directory
      */
@@ -77,7 +80,11 @@ public abstract class GenerateGraphApi extends DefaultTask {
     public abstract DirectoryProperty getProjectDirectory();
 
     /**
-     * Where the generated vocabulary is written; the compiler of this source set compiles it as extra source.
+     * Where the generated vocabulary is written. The plugin adds this directory to the java sources of the
+     * source set as a source directory set of its own, which the include and exclude patterns of the source set
+     * do not filter, so the compiler of the source set compiles all of what is written here, whatever location
+     * this property holds. By convention it is {@code build/generated/sources/graphmaquina/<sourceSet>}; a value a
+     * build sets wins whenever the build sets it.
      *
      * @return the generated source directory
      */
@@ -86,7 +93,9 @@ public abstract class GenerateGraphApi extends DefaultTask {
 
     /**
      * Where the annotation processor writes its own sources. It is an output of {@code JavaCompile}, not of
-     * this task, which only names it in the request.
+     * this task, which only names it in the request; the property follows the compilation's
+     * {@code options.generatedSourceOutputDirectory} and cannot be set here: a build that sets it is refused,
+     * whether it does so before or after the plugin configured this task.
      *
      * @return the annotation processor's source output directory
      */
@@ -95,7 +104,9 @@ public abstract class GenerateGraphApi extends DefaultTask {
 
     /**
      * Where javac writes the classes of this compilation. It is an output of {@code JavaCompile}, not of this
-     * task, which only names it in the request.
+     * task, which only names it in the request; the property follows the compilation's
+     * {@code destinationDirectory} and cannot be set here: a build that sets it is refused, whether it does so
+     * before or after the plugin configured this task.
      *
      * @return the class output directory
      */
@@ -104,7 +115,10 @@ public abstract class GenerateGraphApi extends DefaultTask {
 
     /**
      * The directory the manifests and the inventories of this compilation live in. Only the files this task
-     * writes there are its outputs; the directory itself is shared with the compilation lifecycle.
+     * writes there are its outputs; the directory itself is shared with the compilation lifecycle. Moving it
+     * moves the annotation manifest, the request unless it is set elsewhere, and the sealed inventory the
+     * compilation declares as an output. By convention it is {@code build/graphmaquina/<sourceSet>}; a value a
+     * build sets wins whenever the build sets it.
      *
      * @return the work directory of this compilation
      */
@@ -136,8 +150,9 @@ public abstract class GenerateGraphApi extends DefaultTask {
 
     /**
      * The identity of the compilation, spelled {@code group:name:sourceSet}, or {@code name:sourceSet} when the
-     * project declares no group. It never carries a path or a timestamp, so the same sources generate the same
-     * manifest wherever the build runs.
+     * project's group is empty. It never carries a path or a timestamp, so the same sources generate the same
+     * manifest wherever the build runs. Its convention reads the project's group when the value is needed, not
+     * when the task is realized, so it is the group the build script settled on.
      *
      * @return the compilation identity
      */
@@ -145,8 +160,8 @@ public abstract class GenerateGraphApi extends DefaultTask {
     public abstract Property<String> getCompilationId();
 
     /**
-     * The launcher the project's Java toolchain selected, which the generator runs under; it is not the JVM of
-     * the Gradle daemon unless the toolchain resolves to the very same installation.
+     * The launcher the generator runs under, by convention the one the project's Java toolchain selected; it is
+     * not the JVM of the Gradle daemon unless the toolchain resolves to the very same installation.
      *
      * @return the launcher of the generator process
      */
@@ -155,6 +170,9 @@ public abstract class GenerateGraphApi extends DefaultTask {
 
     /**
      * The manifest the generator writes for the compilation that follows, which javac passes to the processor.
+     * The generator always writes it into the work directory, so the property follows that directory and cannot
+     * be set apart from it: a build that sets it is refused, whether it does so before or after the plugin
+     * configured this task.
      *
      * @return the annotation manifest
      */
@@ -162,7 +180,8 @@ public abstract class GenerateGraphApi extends DefaultTask {
     public abstract RegularFileProperty getAnnotationManifest();
 
     /**
-     * The request this task writes and every step of the compilation lifecycle reads back.
+     * The request this task writes and every step of the compilation lifecycle reads back; by convention it is
+     * the {@code request.json} of the work directory.
      *
      * @return the request file
      */

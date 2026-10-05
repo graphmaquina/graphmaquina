@@ -8,6 +8,8 @@ import com.google.gson.JsonParser;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 
+import javax.tools.JavaCompiler;
+import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -205,6 +207,96 @@ public final class PluginFixture {
                     destinationDirectory = layout.buildDirectory.dir("%s")
                 }
                 """.formatted(relativePath), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Appends {@code snippet} to the build script, which is what a build script that carried it from the start
+     * declares last.
+     *
+     * @param snippet the Kotlin DSL to append
+     * @throws IOException if the build script cannot be rewritten
+     */
+    public void appendToBuildScript(String snippet) throws IOException {
+        Path script = directory.resolve("build.gradle.kts");
+        Files.writeString(script, Files.readString(script, StandardCharsets.UTF_8) + "\n" + snippet,
+                StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Replaces the one occurrence of {@code target} in the build script with {@code replacement}.
+     *
+     * @param target the text to replace, which the build script must carry exactly once
+     * @param replacement the text to put in its place
+     * @throws IOException if the build script cannot be rewritten
+     */
+    public void replaceInBuildScript(String target, String replacement) throws IOException {
+        Path script = directory.resolve("build.gradle.kts");
+        String content = Files.readString(script, StandardCharsets.UTF_8);
+        int index = content.indexOf(target);
+        if (index < 0 || content.indexOf(target, index + 1) >= 0) {
+            throw new IllegalStateException("the build script does not carry exactly one " + target);
+        }
+        Files.writeString(script, content.substring(0, index) + replacement
+                + content.substring(index + target.length()), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Writes {@code content} to {@code relativePath} under the project directory, creating its directory.
+     *
+     * @param relativePath the path of the file, relative to the project directory
+     * @param content the text of the file
+     * @throws IOException if the file cannot be written
+     */
+    public void writeFile(String relativePath, String content) throws IOException {
+        Path file = directory.resolve(relativePath);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, content, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Replaces the generator with a stand-in that only prints {@code line} on its error stream and exits with
+     * status {@code 0}, so a test can watch what the build does with a generator that completes while it
+     * reports something. The stand-in is compiled here and declared in the {@code graphmaquinaGenerator}
+     * configuration, which keeps the real generator out of it.
+     *
+     * @param line the line the stand-in prints, without quotes or backslashes
+     * @throws IOException if the stand-in cannot be compiled or packaged
+     */
+    public void replaceGeneratorWithOneThatReports(String line) throws IOException {
+        Path sources = Files.createDirectories(directory.resolve("stand-in-generator/src"));
+        Path classes = Files.createDirectories(directory.resolve("stand-in-generator/classes"));
+        Path main = sources.resolve("CodegenMain.java");
+        Files.writeString(main, """
+                package io.github.graphmaquina.codegen;
+
+                /** A stand-in generator that reports on its error stream and completes. */
+                public final class CodegenMain {
+
+                    private CodegenMain() {
+                    }
+
+                    public static void main(String[] arguments) {
+                        System.err.println("%s");
+                    }
+                }
+                """.formatted(line), StandardCharsets.UTF_8);
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        int status = compiler.run(null, null, null, "--release", "21", "-d", classes.toString(), main.toString());
+        if (status != 0) {
+            throw new IllegalStateException("the stand-in generator does not compile: status " + status);
+        }
+        String entry = "io/github/graphmaquina/codegen/CodegenMain.class";
+        try (ZipOutputStream out = new ZipOutputStream(
+                Files.newOutputStream(directory.resolve("stand-in-codegen.jar")), StandardCharsets.UTF_8)) {
+            out.putNextEntry(new ZipEntry(entry));
+            out.write(Files.readAllBytes(classes.resolve(entry)));
+            out.closeEntry();
+        }
+        appendToBuildScript("""
+                dependencies {
+                    "graphmaquinaGenerator"(files("stand-in-codegen.jar"))
+                }
+                """);
     }
 
     /** Writes the shared project with {@code testProcessors} and {@code extraConfiguration} spliced into it. */

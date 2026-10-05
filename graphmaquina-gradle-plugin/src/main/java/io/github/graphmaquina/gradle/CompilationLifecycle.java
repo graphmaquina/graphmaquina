@@ -1,15 +1,24 @@
 package io.github.graphmaquina.gradle;
 
 import org.gradle.api.Action;
+import org.gradle.api.GradleException;
 import org.gradle.api.Task;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.provider.Property;
+import org.gradle.api.tasks.compile.CompileOptions;
+import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.process.ExecOperations;
 
 import javax.inject.Inject;
 import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * The two steps a compilation runs around javac, as the actions the {@code JavaCompile} task carries.
@@ -21,11 +30,17 @@ import java.util.Set;
  * rejects runs only the first, leaving the pending inventory the next preparation consumes and no published
  * index at all.</p>
  *
+ * <p>That last guarantee needs a compilation that fails when javac rejects it and that writes classes when it
+ * succeeds, and one that compiles what the generation wrote. The preparation therefore refuses, before it
+ * retires anything, {@code options.failOnError = false}, {@code -proc:only}, and a compilation whose sources no
+ * longer include the generated ones.</p>
+ *
  * <p>Both actions are named classes holding provider values and the injected process service only. They never
  * capture a {@code Project}, so the compilation task stays serializable and the two steps run the very request
  * the generation task of the same source set wrote. An action of a compilation that takes no part finds no
  * request and does nothing, which is how the wiring can be added to every compilation and still leave the ones
- * that declare no StateGraph processor alone.</p>
+ * that declare no StateGraph processor alone. An action of a compilation that takes part, but whose request was
+ * never written, fails and says so.</p>
  */
 public final class CompilationLifecycle {
 
@@ -79,18 +94,45 @@ public final class CompilationLifecycle {
          */
         protected abstract String operation();
 
+        /**
+         * Checks, before the generator runs, that this step can do its work for {@code compilation}; the default
+         * checks nothing.
+         *
+         * @param compilation the compilation this step belongs to
+         * @throws GradleException if this step must not run for it
+         */
+        protected void verify(Task compilation) {
+        }
+
+        /**
+         * Runs this step for a compilation that takes part, and does nothing for one that does not.
+         *
+         * @param task the compilation this step belongs to
+         * @throws GradleException if the request of a compilation that takes part was never written, if
+         *         {@link #verify} refuses the compilation, or if the generator fails
+         */
         @Override
         public void execute(Task task) {
             Set<File> requests = getRequestFile().getFiles();
             if (requests.isEmpty()) {
                 return;
             }
+            Path request = requests.iterator().next().toPath();
+            if (!Files.isRegularFile(request)) {
+                throw new GradleException("the StateGraph request " + request + " does not exist, so '"
+                        + operation() + "' cannot run for " + task + ": the generation task of its source set"
+                        + " writes it, and it has not run");
+            }
+            verify(task);
             CodegenProcess.of(getJavaLauncher().get(), getGeneratorClasspath().getFiles(), execOperations)
-                .run(operation(), requests.iterator().next().toPath());
+                .run(operation(), request);
         }
     }
 
-    /** Retires the outputs of the previous cycle and invalidates the published index, before javac runs. */
+    /**
+     * Retires the outputs of the previous cycle and invalidates the published index, before javac runs, once it
+     * has checked that javac will compile what the generation wrote and either fail or write classes.
+     */
     public abstract static class PrepareCompilation extends LifecycleAction {
 
         /**
@@ -101,9 +143,100 @@ public final class CompilationLifecycle {
             super(execOperations);
         }
 
+        /**
+         * The directory the generation task of this source set writes the vocabulary into, or nothing when the
+         * source set takes no part.
+         *
+         * @return the generated source directory
+         */
+        public abstract ConfigurableFileCollection getGeneratedSources();
+
+        /**
+         * The name of the generation task of this source set, which a refusal names.
+         *
+         * @return the generation task's name
+         */
+        public abstract Property<String> getGenerationTask();
+
         @Override
         protected String operation() {
             return "prepare-compile";
+        }
+
+        /**
+         * Refuses a compilation that could end without the classes the completion step publishes, and one whose
+         * sources do not include what the generation wrote.
+         *
+         * @param compilation the {@code JavaCompile} task this step belongs to
+         * @throws GradleException if the compilation sets {@code options.failOnError = false}, passes
+         *         {@code -proc:only}, or does not compile a source of the generated directory
+         */
+        @Override
+        protected void verify(Task compilation) {
+            JavaCompile javaCompile = (JavaCompile) compilation;
+            CompileOptions options = javaCompile.getOptions();
+            if (!options.isFailOnError()) {
+                throw new GradleException("the StateGraph compilation of " + compilation + " cannot run with"
+                        + " options.failOnError = false: javac could reject its sources while the task still"
+                        + " succeeds, and the completion step would then publish classes javac never wrote."
+                        + " Remove options.failOnError = false from " + compilation + ".");
+            }
+            if (options.getAllCompilerArgs().contains("-proc:only")) {
+                throw new GradleException("the StateGraph compilation of " + compilation + " cannot run with"
+                        + " -proc:only: javac would run the annotation processors and write no class, so the"
+                        + " completion step would find nothing to publish. Remove -proc:only from the compiler"
+                        + " arguments of " + compilation + ".");
+            }
+            for (File directory : getGeneratedSources().getFiles()) {
+                List<File> generatedSources = javaSources(directory);
+                Set<File> compiled = generatedSources.isEmpty() ? Set.of() : javaCompile.getSource().getFiles();
+                for (File generated : generatedSources) {
+                    if (!compiled.contains(generated)) {
+                        throw new GradleException(notCompiled(compilation, generated, directory,
+                                getGenerationTask().get()));
+                    }
+                }
+            }
+        }
+
+        /**
+         * Why {@code compilation} does not compile {@code generated}, and the two ways back: adding directories
+         * instead of replacing them, or nesting the generated directory in the source set again, given for both
+         * build script languages with fully qualified names so either can be pasted as it is.
+         */
+        private static String notCompiled(Task compilation, File generated, File directory, String generation) {
+            String kotlin = "java.source(objects.sourceDirectorySet(\"graphmaquina\", \"StateGraph source\")"
+                    + ".srcDir(tasks.named(\"" + generation + "\","
+                    + " io.github.graphmaquina.gradle.GenerateGraphApi::class.java).flatMap { it.sourcesOutput }))";
+            String groovy = "java.source(objects.sourceDirectorySet('graphmaquina', 'StateGraph source')"
+                    + ".srcDir(tasks.named('" + generation + "',"
+                    + " io.github.graphmaquina.gradle.GenerateGraphApi).flatMap { it.sourcesOutput }))";
+            return compilation + " does not compile " + generated + ", which " + generation + " generated into "
+                    + directory + ". The StateGraph plugin adds that directory to the java sources of the source"
+                    + " set as a source directory set of its own, which the include and exclude patterns of the"
+                    + " source set do not filter: replacing the source set's java directories with"
+                    + " java.setSrcDirs(...) or java.srcDirs = [...] drops it, and so does a source or a pattern set"
+                    + " on " + compilation + " itself. Add directories with java.srcDir(...) instead of replacing"
+                    + " them, or add the generated directory again after the replacement, inside the source set's"
+                    + " block:" + System.lineSeparator()
+                    + "    Kotlin DSL: " + kotlin + System.lineSeparator()
+                    + "    Groovy DSL: " + groovy;
+        }
+
+        /** The Java sources under {@code directory}, in a stable order; none when it does not exist. */
+        private static List<File> javaSources(File directory) {
+            if (!directory.isDirectory()) {
+                return List.of();
+            }
+            try (Stream<Path> walk = Files.walk(directory.toPath())) {
+                return walk.filter(Files::isRegularFile)
+                        .filter((Path file) -> file.getFileName().toString().endsWith(".java"))
+                        .sorted()
+                        .map(Path::toFile)
+                        .toList();
+            } catch (IOException failure) {
+                throw new UncheckedIOException("cannot list the generated sources under " + directory, failure);
+            }
         }
     }
 

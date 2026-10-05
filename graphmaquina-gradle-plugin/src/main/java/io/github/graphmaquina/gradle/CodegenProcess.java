@@ -1,6 +1,8 @@
 package io.github.graphmaquina.gradle;
 
 import org.gradle.api.GradleException;
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
 import org.gradle.jvm.toolchain.JavaInstallationMetadata;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.process.ExecOperations;
@@ -26,7 +28,8 @@ import java.util.Objects;
  * daemon JVM and the generator's JVM stay independent. Its command line is fixed —
  * {@code <operation> --request <file>} — and so is its contract: status {@code 0} means the operation completed,
  * anything else means the build must fail rather than compile against the vocabulary of a previous run. Whatever
- * the generator wrote on its error stream becomes the message of the exception this class throws.</p>
+ * the generator wrote on its error stream is never dropped: it becomes the message of the exception this class
+ * throws when the operation failed, and a warning of the build log when the operation completed.</p>
  *
  * <p>The request itself is serialized here, by the small encoder below, rather than through the generator's own
  * codec: the plugin depends on the documented JSON shape, not on the {@code graphmaquina-codegen} classes. Strings
@@ -40,6 +43,9 @@ public final class CodegenProcess {
 
     /** The lowest Java feature release the generator and the compilation it prepares are supported on. */
     private static final int MINIMUM_LANGUAGE_VERSION = 21;
+
+    /** Where what a completed operation wrote on its error stream is reported. */
+    private static final Logger LOGGER = Logging.getLogger(CodegenProcess.class);
 
     private final File executable;
     private final List<File> generatorClasspath;
@@ -87,7 +93,8 @@ public final class CodegenProcess {
     }
 
     /**
-     * Runs {@code operation} over {@code requestFile}.
+     * Runs {@code operation} over {@code requestFile}. What a completed operation wrote on its error stream is
+     * logged as a warning.
      *
      * @param operation one of {@code generate}, {@code prepare-compile} and {@code complete-compile}
      * @param requestFile the request the generator reads
@@ -105,11 +112,16 @@ public final class CodegenProcess {
             spec.setErrorOutput(diagnostics);
             spec.setIgnoreExitValue(true);
         });
+        String reported = diagnostics.toString(StandardCharsets.UTF_8).strip();
         if (result.getExitValue() != 0) {
-            String reported = diagnostics.toString(StandardCharsets.UTF_8).strip();
             throw new GradleException("the StateGraph generator failed with status " + result.getExitValue()
                 + " running '" + operation + "' for " + requestFile
                 + (reported.isEmpty() ? "" : System.lineSeparator() + reported));
+        }
+        if (!reported.isEmpty()) {
+            // The operation completed, so this is not a failure; it is still the only place the generator has to
+            // report something a build should look at, and a silent error stream loses it.
+            LOGGER.warn("the StateGraph generator reported while running '" + operation + "': " + reported);
         }
     }
 
@@ -220,7 +232,8 @@ public final class CodegenProcess {
      * absolute execution path, written exactly as the build resolved it.
      *
      * @param projectDirectory the directory the compilation belongs to
-     * @param sources the original source roots, which never overlap an output directory
+     * @param sources the original sources, as source roots or, for a root the build filters, as the files
+     *         it selects; none of them overlaps an output directory
      * @param classpath the compile classpath the generator resolves headers and published indexes against
      * @param sourcesOutput where the generated vocabulary is written
      * @param processorSourcesOutput where the annotation processor writes its own sources
