@@ -23,13 +23,14 @@ import java.util.Objects;
 /**
  * Runs one operation of the StateGraph generator as a separate process and writes the request it reads.
  *
- * <p>The generator is never loaded into the plugin's own classloader: it runs under the launcher the project's
- * Java toolchain selected, over the classpath of the {@code graphmaquinaGenerator} configuration, so the build's
- * daemon JVM and the generator's JVM stay independent. Its command line is fixed —
- * {@code <operation> --request <file>} — and so is its contract: status {@code 0} means the operation completed,
- * anything else means the build must fail rather than compile against the vocabulary of a previous run. Whatever
- * the generator wrote on its error stream is never dropped: it becomes the message of the exception this class
- * throws when the operation failed, and a warning of the build log when the operation completed.</p>
+ * <p>The generator is never loaded into the plugin's own classloader: it runs under the launcher and over the
+ * classpath the generation task of the source set holds — by convention the launcher the project's Java toolchain
+ * selected and the {@code graphmaquinaGenerator} configuration — so the build's daemon JVM and the generator's
+ * JVM stay independent. Its command line is fixed — {@code <operation> --request <file>} — and so is its
+ * contract: status {@code 0} means the operation completed, anything else means the build must fail rather than
+ * compile against the vocabulary of a previous run. Whatever the generator wrote on its error stream is never
+ * dropped: it ends the message of the exception this class throws when the operation failed, and it is a warning
+ * of the build log when the operation completed.</p>
  *
  * <p>The request itself is serialized here, by the small encoder below, rather than through the generator's own
  * codec: the plugin depends on the documented JSON shape, not on the {@code graphmaquina-codegen} classes. Strings
@@ -66,11 +67,12 @@ public final class CodegenProcess {
     /**
      * The process for {@code launcher}, refusing a toolchain that cannot run this generator at all.
      *
-     * @param launcher the launcher the project's Java toolchain selected
+     * @param launcher the launcher to run the generator under
      * @param generatorClasspath the resolved runtime classpath of {@code graphmaquina-codegen}
      * @param execOperations the service that starts the process
      * @return a process bound to that launcher's executable
-     * @throws GradleException if the launcher is below Java 21 or carries no {@code jdk.compiler}
+     * @throws GradleException if the launcher is below Java 21, or if its installation has no {@code javac} in
+     *         {@code bin}, which marks a runtime without {@code jdk.compiler}
      */
     public static CodegenProcess of(JavaLauncher launcher, Iterable<File> generatorClasspath,
             ExecOperations execOperations) {
@@ -248,7 +250,8 @@ public final class CodegenProcess {
      * @param processorSourcesOutput where the annotation processor writes its own sources
      * @param classesOutput where javac writes the classes of this compilation
      * @param workDirectory where the manifests and the inventories of this compilation live
-     * @param compilationId the identity of the project and source set, as {@code group:name:sourceSet}
+     * @param compilationId the identity of the project and source set, by default {@code group:name:sourceSet},
+     *         or {@code name:sourceSet} when the project's group is empty
      * @param release the Java release javac compiles the source set at, or {@code null} when it is not known,
      *         which the generator reads as release 21
      * @param encoding the name of the charset javac reads the sources in, or {@code null} when the compilation

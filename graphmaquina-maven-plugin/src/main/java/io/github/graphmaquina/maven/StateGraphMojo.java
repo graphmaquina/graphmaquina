@@ -177,10 +177,11 @@ public abstract class StateGraphMojo extends AbstractMojo {
 
     /**
      * Refuses to generate for a compilation the compiler is not going to run the way this request describes:
-     * under another JDK, under a release the generated vocabulary does not compile with, without the
-     * annotation processor, without writing its classes or past a failure of javac, with includes or excludes
-     * that leave out the carrier of the compilation, over another annotation manifest, or writing the sources of
-     * the annotation processor somewhere this plugin does not own. Nothing has been written when this fails.
+     * under another JDK, under a release the generated vocabulary does not compile with, with annotation
+     * processing off or without the annotation processor on its processor path, without writing its classes or
+     * past a failure of javac, with includes or excludes that leave out the carrier of the compilation, over
+     * another annotation manifest, or writing the sources of the annotation processor somewhere this plugin does
+     * not own. Nothing has been written when this fails.
      *
      * @param execution the compiler execution this generation belongs to
      * @param request the request the generator is about to run over
@@ -201,14 +202,15 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * Retires everything the previous cycle of this compilation owned and leaves the compiler no choice but to
      * run again.
      *
-     * <p>The newest output of the previous compilation is read before the retirement, because the retirement is
-     * what removes it; the carrier the generation of this cycle emitted is dated past it afterwards, so the
+     * <p>The newest output of the previous compilation is read before the retirement, because the retirement may
+     * remove it; the carrier the generation of this cycle emitted is dated past it afterwards, so the
      * incremental compiler cannot mistake a compilation whose binaries have just been deleted for one that is
      * up to date. A goal whose compilation the build switched off never calls this: see {@code skips}.</p>
      *
-     * @param request the request the generation of this cycle wrote
-     * @throws MojoExecutionException if the generator failed, or the carrier of this generation cannot be found
-     *     or dated
+     * @param request the request of this compilation, as the calling goal builds it from the project model; it is
+     *     written again before the generator reads it
+     * @throws MojoExecutionException if {@link #run running} the generator fails, or the carrier of this
+     *     generation cannot be found or dated
      */
     protected final void prepare(Request request) throws MojoExecutionException {
         Path sourcesOutput = Path.of(request.sourcesOutput());
@@ -235,10 +237,14 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * {@code failOnError=false} and {@code proc=only}, the settings that would let a compilation without
      * classes through. A compilation javac never ran at all — one whose sources the compiler found up to date —
      * leaves no provisional index behind, and completing without one would be completing a compilation that
-     * did not happen: the step says so and does nothing.</p>
+     * did not happen: when no pending inventory is left either, the step says so and does nothing. A pending
+     * inventory without a provisional index means the previous outputs were retired and the annotation processor
+     * published nothing in their place: the step fails.</p>
      *
-     * @param request the request the generation of this cycle wrote
-     * @throws MojoExecutionException if the generator failed
+     * @param request the request of this compilation, as the calling goal builds it from the project model; it is
+     *     written again before the generator reads it
+     * @throws MojoExecutionException if {@link #run running} the generator fails, or if a pending inventory is
+     *     left without a provisional index
      */
     protected final void complete(Request request) throws MojoExecutionException {
         Path pendingIndex = request.pendingIndexFile();
@@ -266,7 +272,8 @@ public abstract class StateGraphMojo extends AbstractMojo {
      *
      * @param operation one of {@code generate}, {@code prepare-compile} and {@code complete-compile}
      * @param request the request of the compilation this goal belongs to
-     * @throws MojoExecutionException if the request cannot be written or the generator left a nonzero status
+     * @throws MojoExecutionException if the request cannot be written, if no {@code java} the generator can run on
+     *     is found, or if the generator cannot be started, is interrupted or leaves a nonzero status
      */
     protected final void run(String operation, Request request) throws MojoExecutionException {
         Path requestFile = Path.of(request.workDirectory()).resolve(REQUEST);
@@ -577,9 +584,10 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * @param processorSourcesOutput where the annotation processor writes its own sources
      * @param classesOutput where javac writes the classes of this compilation
      * @param workDirectory where the manifests and the inventories of this compilation live
-     * @param compilationId the identity of the project and source set, as {@code group:artifact:sourceSet}
+     * @param compilationId the identity of the project and source set: the configured one, else
+     *     {@code groupId:artifactId:sourceSet}
      * @param release the Java release javac compiles the source set at, or {@code null} when the compiler names
-     *     none, which the generator reads as release 21
+     *     none this plugin understands, which the generator reads as release 21
      * @param encoding the name of the charset javac reads the sources in, or {@code null} when the build names
      *     none, which the generator reads as UTF-8
      */
@@ -637,7 +645,8 @@ public abstract class StateGraphMojo extends AbstractMojo {
         }
 
         /**
-         * The provisional index of this compilation, which exists only between javac and completion.
+         * The provisional index of this compilation, which the annotation processor writes during javac and the
+         * completion, or else the next preparation, removes.
          *
          * @return the absolute path of the provisional index
          */
@@ -646,7 +655,8 @@ public abstract class StateGraphMojo extends AbstractMojo {
         }
 
         /**
-         * The inventory of what this cycle retired, which exists only between preparation and completion.
+         * The inventory of what this cycle retired, which the preparation writes before it retires anything and
+         * the completion removes; a cycle that never completes leaves it to the next preparation.
          *
          * @return the absolute path of the pending inventory
          */

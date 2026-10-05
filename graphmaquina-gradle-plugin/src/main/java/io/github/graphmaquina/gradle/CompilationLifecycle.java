@@ -26,9 +26,9 @@ import java.util.stream.Stream;
  * <p>{@code prepare-compile} runs first and retires everything the previous cycle owned, so a renamed or deleted
  * declaration cannot keep publishing the binaries javac no longer writes; {@code complete-compile} runs last and
  * publishes what javac accepted. Ordering them as a first and a last action of the compilation itself is what
- * makes the contract hold: a compilation Gradle skips as up to date runs neither, and a compilation javac
- * rejects runs only the first, leaving the pending inventory the next preparation consumes and no published
- * index at all.</p>
+ * makes the contract hold: a compilation Gradle skips as up to date runs neither, nor does one whose outputs,
+ * the sealed inventory included, Gradle restores from the build cache, and a compilation javac rejects runs only
+ * the first, leaving the pending inventory the next preparation consumes and no published index at all.</p>
  *
  * <p>That last guarantee needs a compilation that fails when javac rejects it and that writes classes when it
  * succeeds, and one that compiles what the generation wrote. The preparation therefore refuses, before it
@@ -111,7 +111,8 @@ public final class CompilationLifecycle {
          *
          * @param task the compilation this step belongs to
          * @throws GradleException if the request of a compilation that takes part was never written, if
-         *         {@link #verify} refuses the compilation, or if the generator fails
+         *         {@link #verify} refuses the compilation, if {@link CodegenProcess#of} refuses the launcher, or
+         *         if the generator fails
          */
         @Override
         public void execute(Task task) {

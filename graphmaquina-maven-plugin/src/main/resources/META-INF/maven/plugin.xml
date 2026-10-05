@@ -22,7 +22,7 @@
   <mojos>
     <mojo>
       <goal>generate</goal>
-      <description>Emits the typed StateGraph vocabulary of the main compilation and the manifest the annotation processor reads, and adds the generated directory as a compile source root. Does nothing in a project packaged as pom, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
+      <description>Emits the typed StateGraph vocabulary of the main compilation and the manifest the annotation processor reads, and adds the generated directory as a compile source root. Before it writes anything, it stops the build when the default-compile execution of maven-compiler-plugin is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path, or no manifest argument. Does nothing in a project packaged as pom, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
       <requiresDependencyResolution>compile</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -70,7 +70,7 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>
@@ -137,7 +137,7 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>
@@ -204,7 +204,7 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>
@@ -223,7 +223,7 @@
     </mojo>
     <mojo>
       <goal>generate-test</goal>
-      <description>Emits the typed StateGraph vocabulary of the test compilation and adds the generated directory as a test compile source root. Does nothing in a project packaged as pom, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
+      <description>Emits the typed StateGraph vocabulary of the test compilation and the manifest the annotation processor reads, and adds the generated directory as a test compile source root. Before it writes anything, it stops the build when the default-testCompile execution of maven-compiler-plugin is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path, or no manifest argument. Does nothing in a project packaged as pom, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
       <requiresDependencyResolution>test</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -271,7 +271,7 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>
@@ -338,7 +338,7 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>
@@ -405,7 +405,7 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>

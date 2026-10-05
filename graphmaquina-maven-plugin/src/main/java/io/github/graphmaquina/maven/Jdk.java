@@ -95,7 +95,10 @@ final class Jdk {
         }
     }
 
-    /** The first file named {@code name} on the {@code PATH}, searched the way the operating system searches it. */
+    /**
+     * The first regular file named {@code name}, or {@code name.exe}, in the entries of the {@code PATH}, taken in
+     * order, an empty entry or one that is no valid path skipped.
+     */
     private static Optional<Path> onPath(String name) {
         String search = System.getenv("PATH");
         if (search == null) {

@@ -43,21 +43,23 @@ import java.util.concurrent.Callable;
  * Gradle plugin that generates the StateGraph typed API for each Java source set that asks for it, and wires
  * that source set's compilation to the lifecycle the generated vocabulary needs.
  *
- * <p>A source set asks for it by declaring {@code graphmaquina-processor} in its own annotation processor
- * configuration — {@code annotationProcessor}, {@code testAnnotationProcessor}, and so on. That is the one
- * declaration the cycle cannot work without: the processor is what publishes the index of what javac accepted,
- * so a source set compiled without it could never complete a compilation this plugin prepared. Reading the same
- * declaration as the switch means a project never has to repeat itself, and a source set that compiles plain
- * Java — a test source set holding only JUnit tests, typically — is left as the {@code java} plugin configured
- * it: no generated source root, no annotation manifest and no lifecycle around javac, so no compiler warning
- * about a processor that claims none of its annotations. The one thing every compilation of the project gets is
- * {@code options.isIncremental = false}, which is not a lazy property and therefore cannot wait for an answer
- * that is only known once the build script has been read.</p>
+ * <p>A source set asks for it by declaring {@code graphmaquina-processor} in its annotation processor
+ * configuration — {@code annotationProcessor}, {@code testAnnotationProcessor}, and so on — or in a
+ * configuration that one extends, as a module or a project dependency: a file dependency on its jar names no
+ * coordinates and does not count. That is the one declaration the cycle cannot work without: the processor is
+ * what publishes the index of what javac accepted, so a source set compiled without it could never complete a
+ * compilation this plugin prepared. Reading the same declaration as the switch means a project never has to
+ * repeat itself, and a source set that compiles plain Java — a test source set holding only JUnit tests,
+ * typically — is left as the {@code java} plugin configured it: no generated source root, no annotation manifest
+ * and no lifecycle around javac, so no compiler warning about a processor that claims none of its annotations.
+ * The one thing the compilation of every source set gets is {@code options.isIncremental = false}, which is not
+ * a lazy property and therefore cannot wait for an answer that is only known once the build script has been
+ * read.</p>
  *
- * <p>Per participating source set the plugin registers one {@link GenerateGraphApi} task and makes that source
- * set's {@code JavaCompile} compile what it generated, pass it the annotation manifest and run the two steps of
- * {@link CompilationLifecycle} around javac. The generation task is registered for every source set whether or
- * not it participates, so it is always there to be named and to be listed, and skips itself with the
+ * <p>The plugin registers one {@link GenerateGraphApi} task per source set and, for a participating one, makes
+ * that source set's {@code JavaCompile} compile what it generated, pass it the annotation manifest and run the
+ * two steps of {@link CompilationLifecycle} around javac. The generation task is registered whether or not the
+ * source set participates, so it is always there to be named and to be listed, and skips itself with the
  * declaration it is waiting for as its reason.</p>
  *
  * <p>The generation parses what javac compiles of the source set: the files of every source directory but the
@@ -358,8 +360,9 @@ public final class StateGraphPlugin implements Plugin<Project> {
     }
 
     /**
-     * The StateGraph processor declarations of the annotation processor configuration of {@code sourceSet},
-     * counted as the build declares and removes dependencies there.
+     * The StateGraph processor declarations of the annotation processor configuration of {@code sourceSet}, those
+     * it inherits from the configurations it extends included, counted as the build declares and removes
+     * dependencies there.
      */
     private static ProcessorDeclarations processorDeclarations(Project project, SourceSet sourceSet) {
         ProcessorDeclarations declarations = new ProcessorDeclarations();

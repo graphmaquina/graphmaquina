@@ -32,7 +32,8 @@ import java.util.Set;
  * version. Nothing in Maven enforces that: the compiler is configured in the POM and the generator is started
  * by this plugin, so a project can quietly point one of them somewhere else. Rather than mutate the execution
  * plan Maven already built, every goal reads the effective configuration of the compiler execution it belongs
- * to and refuses to run when the two disagree, naming both sides and the configuration that would fix it.</p>
+ * to, and the {@code generate} and {@code generate-test} goals refuse to run when the two disagree, naming both
+ * sides and the configuration that would fix it.</p>
  *
  * <p>A setting is read the way Maven itself resolves a parameter: the effective configuration of the compiler
  * execution first — the one Maven merged the configuration the plugin declares for all of its executions into,
@@ -91,7 +92,7 @@ final class CompilerConfiguration {
      * @param project the project being built
      * @param session the session, which carries the properties the command line and the JVM set
      * @param execution the compiler execution the calling goal belongs to
-     * @return the configuration, empty when the project declares no compiler plugin and no property of its own
+     * @return the configuration, which reads only properties when the project model carries no compiler plugin
      */
     static CompilerConfiguration of(MavenProject project, MavenSession session, CompilerExecution execution) {
         Plugin compiler = project.getPlugin(COMPILER);
@@ -145,9 +146,9 @@ final class CompilerConfiguration {
      * Advice to configure {@code <release>} is given only where it fixes the compilation: a test release that is
      * set wins over it, so the refusal of one asks for {@code <testRelease>} instead.</p>
      *
-     * <p>An absent release is refused as well: {@code source} and {@code target} of
-     * {@code maven-compiler-plugin} default to {@code 1.8}, so a project that configures no release at all
-     * compiles the generated vocabulary at a version it does not parse.</p>
+     * <p>Without a release, a source or a target left unset is refused as well: {@code source} and {@code target}
+     * of {@code maven-compiler-plugin} default to {@code 1.8}, so a compilation that sets neither a release nor
+     * both of them compiles the generated vocabulary below Java 21.</p>
      */
     private void requireSupportedRelease() throws MojoExecutionException {
         Optional<Setting> testRelease = testSetting("testRelease", "maven.compiler.testRelease");
@@ -210,7 +211,8 @@ final class CompilerConfiguration {
      * {@code maven.compiler.testRelease} over the release, and {@code <testTarget>} or
      * {@code maven.compiler.testTarget} over the target, when they are set.
      *
-     * @return the release, empty when neither names one this plugin understands
+     * @return the release, empty when neither a release nor a target is set, or when the one read is not a release
+     *     this plugin understands
      */
     Optional<Integer> release() {
         Optional<Setting> release = testSetting("testRelease", "maven.compiler.testRelease")
@@ -264,12 +266,14 @@ final class CompilerConfiguration {
      * same directory, whatever path names them.</p>
      *
      * <p>The last case is exact when javac compiles inside Maven. A {@code <fork>} with neither an
-     * {@code <executable>} nor a toolchain makes plexus-compiler-javac look javac up itself: at
-     * {@code java.home/bin/javac} on macOS, at {@code java.home/../sh/javac} on AIX, and elsewhere at
-     * {@code java.home/../bin/javac}, or at {@code $JAVA_HOME/bin/javac} when that is no file. This check still
-     * compares the JDK running Maven. That is the JDK of the forked javac on macOS. Elsewhere it is so only when
-     * no javac lies beside {@code java.home} in that way and {@code JAVA_HOME} names the JDK running Maven, as it
-     * does when {@code mvn} starts Maven through it.</p>
+     * {@code <executable>} nor a toolchain makes plexus-compiler-javac look javac up itself: first at
+     * {@code java.home/bin/javac} on macOS, at {@code java.home/../sh/javac} on AIX and at
+     * {@code java.home/../bin/javac} elsewhere; then, on every one of these platforms, at
+     * {@code $JAVA_HOME/bin/javac} when that first location is no file; and last as a plain {@code javac} from the
+     * {@code PATH} when {@code JAVA_HOME} gives none either. This check still compares the JDK running Maven. That
+     * is the JDK of the forked javac when javac is found at {@code java.home/bin/javac}, which only the macOS lookup
+     * tries, or at {@code $JAVA_HOME/bin/javac} with {@code JAVA_HOME} naming the JDK running Maven, as it does
+     * when {@code mvn} starts Maven through it.</p>
      */
     private void requireSameJdk(String generatorJava, ToolchainManager toolchains, MavenSession session)
             throws MojoExecutionException {
@@ -323,12 +327,14 @@ final class CompilerConfiguration {
     }
 
     /**
-     * Refuses a compilation javac would run without the StateGraph annotation processor.
+     * Refuses a compilation that switches annotation processing off, or whose processor path does not carry the
+     * StateGraph annotation processor.
      *
      * <p>The processor is the only thing that publishes the index of what javac accepted. A compilation that
      * runs without it compiles the generated vocabulary, writes the carrier of the compilation into the class
      * output and publishes nothing — and since the preparation has already retired the index of the previous
-     * cycle, the build would package a jar carrying the carrier and no index at all.</p>
+     * cycle, the build would be left with no index at all, and the {@code complete} goal would fail only after
+     * javac ran.</p>
      *
      * @param project the project being built, whose resolved artifacts carry the processor when the compiler
      *     declares no processor path of its own
@@ -603,7 +609,10 @@ final class CompilerConfiguration {
         return child == null || child.getValue() == null ? null : child.getValue().strip();
     }
 
-    /** Every compiler argument the effective configuration of this execution passes to javac. */
+    /**
+     * The compiler arguments the effective configuration of this execution declares in {@code <compilerArgs>}
+     * and {@code <compilerArgument>}.
+     */
     private List<String> compilerArguments() {
         List<String> arguments = new ArrayList<>();
         Optional<Xpp3Dom> declared = element("compilerArgs");

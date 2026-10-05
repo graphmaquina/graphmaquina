@@ -28,13 +28,13 @@ import java.util.List;
 /**
  * Generates the StateGraph typed vocabulary of one Java source set, before its compiler runs.
  *
- * <p>The task writes the request the generator reads and runs {@code generate} over it under the project's Java
- * toolchain. What it produces is the generated source directory javac then compiles and the annotation manifest
- * javac passes to the processor; everything else the request names — the class output, the processor's source
- * output and the shared work directory — belongs to the compilation, not to this task, and is therefore
- * {@link Internal internal} here. The sealed inventory the compilation lifecycle writes into that same work
- * directory is registered as an output of {@code JavaCompile}, so no completion step can invalidate this task's
- * own snapshot and turn every build into a regeneration.</p>
+ * <p>The task writes the request the generator reads and runs {@code generate} over it under the launcher it
+ * holds, by convention the project's Java toolchain. What it produces is the generated source directory javac
+ * then compiles and the annotation manifest javac passes to the processor; everything else the request names —
+ * the class output, the processor's source output and the shared work directory — belongs to the compilation,
+ * not to this task, and is therefore {@link Internal internal} here. The sealed inventory the compilation
+ * lifecycle writes into that same work directory is registered as an output of {@code JavaCompile}, so no
+ * completion step can invalidate this task's own snapshot and turn every build into a regeneration.</p>
  *
  * <p>Application dependencies are tracked as a {@link Classpath} rather than a compile classpath because the
  * generator reads the {@code META-INF/graphmaquina/exports.json} each of them publishes: a dependency whose only
@@ -158,10 +158,10 @@ public abstract class GenerateGraphApi extends DefaultTask {
     public abstract Property<Boolean> getParticipates();
 
     /**
-     * The identity of the compilation, spelled {@code group:name:sourceSet}, or {@code name:sourceSet} when the
-     * project's group is empty. It never carries a path or a timestamp, so the same sources generate the same
-     * manifest wherever the build runs. Its convention reads the project's group when the value is needed, not
-     * when the task is realized, so it is the group the build script settled on.
+     * The identity of the compilation, by convention spelled {@code group:name:sourceSet}, or
+     * {@code name:sourceSet} when the project's group is empty. It never carries a path or a timestamp, so the
+     * same sources generate the same manifest wherever the build runs. Its convention reads the project's group
+     * when the value is needed, not when the task is realized, so it is the group the build script settled on.
      *
      * @return the compilation identity
      */
