@@ -178,10 +178,11 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /**
      * Refuses to generate for a compilation the compiler is not going to run the way this request describes:
      * under another JDK, under a release the generated vocabulary does not compile with, with annotation
-     * processing off or without the annotation processor on its processor path, without writing its classes or
-     * past a failure of javac, with includes or excludes that leave out the carrier of the compilation, over
-     * another annotation manifest, or writing the sources of the annotation processor somewhere this plugin does
-     * not own. Nothing has been written when this fails.
+     * processing off, without the annotation processor on its processor path or in the {@code -processor} list
+     * javac takes, without writing its classes or past a failure of javac, over only part of the module, with
+     * includes or excludes that leave out the carrier of the compilation, over another annotation manifest, or
+     * writing the sources of the annotation processor somewhere this plugin does not own. Nothing has been written
+     * when this fails.
      *
      * @param execution the compiler execution this generation belongs to
      * @param request the request the generator is about to run over
@@ -193,6 +194,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
         compiler.requireAgreementWith(javaExecutable(), toolchainManager, session);
         compiler.requireAnnotationProcessor(project);
         compiler.requireCompiledClasses();
+        compiler.requireWholeModuleCompilation();
         compiler.requireCarrierSelected(request);
         compiler.requireManifestArgument(request);
         compiler.requireProcessorSourcesOutput(request);
@@ -203,9 +205,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * run again.
      *
      * <p>The newest output of the previous compilation is read before the retirement, because the retirement may
-     * remove it; the carrier the generation of this cycle emitted is dated past it afterwards, so the
-     * incremental compiler cannot mistake a compilation whose binaries have just been deleted for one that is
-     * up to date. A goal whose compilation the build switched off never calls this: see {@code skips}.</p>
+     * remove it; the carrier the generation of this cycle emitted is dated past it afterwards, for the reason
+     * {@code CarrierTimestamp} gives. A goal whose compilation the build switched off never calls this: see
+     * {@code skips}.</p>
      *
      * @param request the request of this compilation, as the calling goal builds it from the project model; it is
      *     written again before the generator reads it
@@ -218,9 +220,10 @@ public abstract class StateGraphMojo extends AbstractMojo {
             FileTime newest = CarrierTimestamp.newestOutput(Path.of(request.classesOutput()));
             run("prepare-compile", request);
             if (CarrierTimestamp.refresh(sourcesOutput, newest).isEmpty()) {
-                throw new MojoExecutionException("the generation of " + request.compilationId()
-                    + " left no compilation carrier under " + sourcesOutput + ", so the compiler could read"
-                    + " the outputs this preparation retired as up to date; run the generator again");
+                throw new MojoExecutionException("there is no compilation carrier of " + request.compilationId()
+                    + " under " + sourcesOutput + ", although every generation emits one there: javac would compile"
+                    + " this compilation without it, and the completion, which needs the class of the carrier, would"
+                    + " fail. Run the generation of this compilation again.");
             }
         } catch (IOException failure) {
             throw new MojoExecutionException("cannot date the compilation carrier of "

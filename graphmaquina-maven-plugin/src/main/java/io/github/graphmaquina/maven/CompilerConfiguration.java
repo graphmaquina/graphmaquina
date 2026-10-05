@@ -10,11 +10,14 @@ import org.apache.maven.toolchain.Toolchain;
 import org.apache.maven.toolchain.ToolchainManager;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
+import javax.lang.model.SourceVersion;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -23,6 +26,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.TreeMap;
 
 /**
  * What {@code maven-compiler-plugin} is configured to do for one compilation, and everything a StateGraph goal
@@ -51,15 +55,18 @@ final class CompilerConfiguration {
     /** The processor option that tells the annotation processor which manifest describes this compilation. */
     private static final String MANIFEST_OPTION = "-Agraphmaquina.annotationManifest=";
 
-    /** The javac option that switches annotation processing off, which this plugin cannot work without. */
-    private static final String NO_PROCESSING = "-proc:none";
-
-    /** The javac option that runs the annotation processors and compiles nothing. */
-    private static final String ONLY_PROCESSING = "-proc:only";
+    /** The prefix of the javac options that say whether to run annotation processing; javac takes the last one. */
+    private static final String PROCESSING = "-proc:";
 
     /** The coordinates of the annotation processor that publishes the index of an accepted compilation. */
     private static final String PROCESSOR_GROUP = "io.github.graphmaquina";
     private static final String PROCESSOR_ARTIFACT = "graphmaquina-processor";
+
+    /** That annotation processor, as a {@code -processor} list names it. */
+    private static final String PROCESSOR_CLASS = "io.github.graphmaquina.processor.StateGraphProcessor";
+
+    /** The javac option whose list names the only annotation processors javac runs. */
+    private static final String PROCESSOR_LIST = "-processor";
 
     /** The lowest Java feature release the generated vocabulary compiles under. */
     private static final int MINIMUM_RELEASE = 21;
@@ -327,27 +334,35 @@ final class CompilerConfiguration {
     }
 
     /**
-     * Refuses a compilation that switches annotation processing off, or whose processor path does not carry the
-     * StateGraph annotation processor.
+     * Refuses a compilation that switches annotation processing off, that has javac run a list of annotation
+     * processors without the StateGraph one or with a name that is not a valid qualified class name, which javac
+     * cannot load, or whose processor path does not carry the StateGraph annotation processor. A well-formed name of
+     * a class that is not on the processor path, such as a misspelt one, is not refused: javac fails on it after the
+     * preparation, like any failed compilation, and the next preparation reads the pending inventory that
+     * compilation left to clean up after it.
      *
      * <p>The processor is the only thing that publishes the index of what javac accepted. A compilation that
-     * runs without it compiles the generated vocabulary, writes the carrier of the compilation into the class
-     * output and publishes nothing — and since the preparation has already retired the index of the previous
-     * cycle, the build would be left with no index at all, and the {@code complete} goal would fail only after
-     * javac ran.</p>
+     * runs without it publishes nothing, and since the preparation has already retired the index of the previous
+     * cycle by then, the build would be left with no index at all and would fail only after that retirement, in
+     * javac or in the {@code complete} goal.</p>
+     *
+     * <p>javac takes the last {@code -proc:} option it is given, and maven-compiler-plugin passes {@code <proc>}
+     * ahead of the compiler arguments, so a {@code -proc:} compiler argument wins over it. Given a {@code -processor}
+     * list, javac runs only the processors it names, and of several such lists it takes the last one;
+     * maven-compiler-plugin passes {@code <annotationProcessors>} as such a list ahead of the compiler arguments, even
+     * when it names nothing, so a {@code -processor} compiler argument wins over it as well.</p>
      *
      * @param project the project being built, whose resolved artifacts carry the processor when the compiler
      *     declares no processor path of its own
-     * @throws MojoExecutionException naming what switched the processor off or where it is missing
+     * @throws MojoExecutionException naming what switched the processor off, the list that leaves it out or holds a
+     *     name that is not a valid qualified class name, or where the processor is missing
      */
     void requireAnnotationProcessor(MavenProject project) throws MojoExecutionException {
-        Optional<Setting> proc = setting("proc", "maven.compiler.proc");
+        Optional<Setting> proc = processing();
         if (proc.isPresent() && "none".equalsIgnoreCase(proc.get().value())) {
             throw noProcessing(proc.get().toString());
         }
-        if (compilerArguments().contains(NO_PROCESSING)) {
-            throw noProcessing("the compiler argument " + NO_PROCESSING);
-        }
+        requireProcessorListed();
         Optional<Xpp3Dom> paths = element("annotationProcessorPaths");
         if (paths.isPresent()) {
             for (Xpp3Dom path : paths.get().getChildren()) {
@@ -378,21 +393,73 @@ final class CompilerConfiguration {
     }
 
     /**
+     * Refuses the {@code -processor} list javac takes when it holds a name that is not a valid qualified class name,
+     * such as an empty one or one with a space in it, which javac cannot load, or when it leaves out the StateGraph
+     * annotation processor.
+     *
+     * <p>The list is the last {@code -processor} compiler argument, else {@code <annotationProcessors>}, whose
+     * values maven-compiler-plugin 3.15.0 hands javac joined by commas, even when there is none, a value Maven left
+     * empty reaching javac as {@code null}. javac 21 splits the list on every comma, dropping the empty names at its
+     * end, though a list without a comma is one name, even when it is empty; it takes each name exactly as written
+     * and stops at the first one it cannot load. A well-formed name of a class that is not on the processor path,
+     * such as a misspelt one, passes this check, and javac fails on it after the preparation.</p>
+     */
+    private void requireProcessorListed() throws MojoExecutionException {
+        List<String> arguments = compilerArguments();
+        int option = arguments.lastIndexOf(PROCESSOR_LIST);
+        String list;
+        String gives;
+        String removal;
+        if (option >= 0 && option + 1 < arguments.size()) {
+            list = arguments.get(option + 1);
+            gives = "the compiler argument " + PROCESSOR_LIST + " of the " + execution.id()
+                + " execution of maven-compiler-plugin gives";
+            removal = "remove that argument";
+        } else {
+            Optional<List<String>> declared = parameterValues("annotationProcessors");
+            if (declared.isEmpty()) {
+                return;
+            }
+            list = String.join(",", declared.get());
+            gives = "the <annotationProcessors> of the " + execution.id() + " execution of maven-compiler-plugin give";
+            removal = "remove that list, so javac runs every processor on its processor path";
+        }
+        String[] names = list.split(",");
+        for (String name : names) {
+            if (!SourceVersion.isName(name)) {
+                throw new MojoExecutionException(gives + " javac the processor list '" + list + "', whose name '"
+                    + name + "' is not a valid qualified class name, so javac could not load a processor of that"
+                    + " name and would fail after the preparation retired the index of the previous compilation."
+                    + " javac splits that list on every comma and takes each name exactly as written, spaces"
+                    + " included. Correct or remove that name.");
+            }
+        }
+        if (!Arrays.asList(names).contains(PROCESSOR_CLASS)) {
+            throw new MojoExecutionException(gives + " javac the processor list '" + list + "', which leaves out "
+                + PROCESSOR_CLASS + ", and javac runs only the annotation processors that list names: "
+                + PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT + " is what publishes the index of what javac accepted,"
+                + " so this build would retire the index of the previous compilation and publish nothing in its"
+                + " place. Add " + PROCESSOR_CLASS + " to that list, after the processors of Lombok when the project"
+                + " uses Lombok, or " + removal + '.');
+        }
+    }
+
+    /**
      * Refuses a compilation that can end without the classes the completion publishes while the build goes on:
-     * {@code proc=only} runs the annotation processors and compiles nothing, and {@code failOnError=false} lets
-     * a compilation javac rejected reach the completion. Either way the preparation has retired the outputs of
-     * the previous cycle by then, and the completion would find no class of this compilation to publish.
+     * {@code proc=only}, as the last {@code -proc:} option javac takes, runs the annotation processors and compiles
+     * nothing, and {@code failOnError=false} lets a compilation javac rejected reach the completion. Either way the
+     * preparation has retired the outputs of the previous cycle by then, and the completion would find no class of
+     * this compilation to publish.
      *
      * @throws MojoExecutionException naming the setting that lets the compilation end without its classes
      */
     void requireCompiledClasses() throws MojoExecutionException {
-        Optional<Setting> proc = setting("proc", "maven.compiler.proc");
+        Optional<Setting> configured = setting("proc", "maven.compiler.proc");
+        Optional<Setting> proc = processing();
         if (proc.isPresent() && "only".equalsIgnoreCase(proc.get().value())) {
-            throw compilesNothing(proc.get().toString(), "Leave proc unset, or set it to full.");
-        }
-        if (compilerArguments().contains(ONLY_PROCESSING)) {
-            throw compilesNothing("the compiler argument " + ONLY_PROCESSING,
-                "Remove that argument from the configuration of that execution.");
+            throw compilesNothing(proc.get().toString(), proc.equals(configured)
+                ? "Leave proc unset, or set it to full."
+                : "Remove that argument from the configuration of that execution.");
         }
         Optional<Setting> failOnError = setting("failOnError", "maven.compiler.failOnError");
         if (failOnError.isPresent() && !Boolean.parseBoolean(failOnError.get().value())) {
@@ -401,6 +468,30 @@ final class CompilerConfiguration {
                 + " support: the preparation would retire the outputs of the previous compilation, and the"
                 + " completion would find no classes to publish in their place. Leave failOnError at its default,"
                 + " true.");
+        }
+    }
+
+    /**
+     * Refuses a compilation that compiles only part of its module. With {@code useIncrementalCompilation} false,
+     * maven-compiler-plugin 3.15.0 hands javac only the sources its stale-source scanner selects, those whose class
+     * file is missing or older than the source; with the default, {@code true}, it recompiles the whole module
+     * whenever it compiles at all. The preparation retires only the outputs the previous cycle owned, so over the
+     * class files of a previous build a compilation with the setting off would hand javac the generated sources
+     * whose classes were retired but not the unchanged hand-written sources, whose class files survive, while the
+     * annotation processor must see every declaration the index publishes.
+     *
+     * @throws MojoExecutionException naming the setting that switches {@code useIncrementalCompilation} off
+     */
+    void requireWholeModuleCompilation() throws MojoExecutionException {
+        Optional<Setting> incremental = setting("useIncrementalCompilation",
+            "maven.compiler.useIncrementalCompilation");
+        if (incremental.isPresent() && !Boolean.parseBoolean(incremental.get().value())) {
+            throw new MojoExecutionException(incremental.get() + " makes the " + execution.id() + " execution of"
+                + " maven-compiler-plugin compile only the sources whose class file is missing or older than the"
+                + " source, which StateGraph does not support: the preparation retires only the outputs the previous"
+                + " cycle owned, so over a previous build javac would compile the generated vocabulary without the"
+                + " unchanged hand-written sources, whose class files survive, and the annotation processor would"
+                + " miss declarations the index publishes. Leave useIncrementalCompilation at its default, true.");
         }
     }
 
@@ -487,13 +578,14 @@ final class CompilerConfiguration {
      * Refuses includes or excludes that leave out the carrier of this compilation. maven-compiler-plugin selects
      * the sources of every root with them, the root this plugin generates into included, so patterns that miss
      * the carrier would have javac compile the generated vocabulary without it, and the completion would find
-     * nothing of this compilation to publish. The carrier is matched under the very name the generator gives it:
+     * nothing of this compilation to publish. Includes that hold only empty values select no source at all, so
+     * javac would not run. The carrier is matched under the very name the generator gives it:
      * {@code GraphCompilation} and the first sixteen hexadecimal digits of the SHA-256 of the identity of the
      * compilation, in {@code io/github/graphmaquina/generated/bootstrap}.
      *
      * @param request the request the calling goal generates for
-     * @throws MojoExecutionException naming the pattern that leaves the carrier out and the configuration that
-     *     lets it in
+     * @throws MojoExecutionException naming the pattern that leaves the carrier out, or the includes that hold only
+     *     empty values, and the configuration that lets it in
      */
     void requireCarrierSelected(StateGraphMojo.Request request) throws MojoExecutionException {
         String carrier = CARRIER_PACKAGE + "/GraphCompilation" + carrierDigest(request.compilationId()) + ".java";
@@ -509,9 +601,17 @@ final class CompilerConfiguration {
                     + " nothing under io/github/graphmaquina/generated.");
             }
         }
+        // maven-compiler-plugin includes every source when the includes are empty.
+        if (parameterValues(execution.includesParameter()).orElse(List.of()).isEmpty()) {
+            return;
+        }
         List<String> includes = patterns(execution.includesParameter());
         if (includes.isEmpty()) {
-            return;
+            throw new MojoExecutionException("the <" + execution.includesParameter() + ">" + compiler + " hold only"
+                + " empty values, which Maven turns into null: maven-compiler-plugin then adds no default include,"
+                + " and the scanner of plexus-utils leaves the null out, so the compiler would select no source, "
+                + carrier + " included, javac would not run and the completion would find nothing of this compilation"
+                + " to publish. Remove those empty values, so that maven-compiler-plugin includes every source.");
         }
         for (String include : includes) {
             if (SourcePatterns.matches(include, carrier)) {
@@ -540,18 +640,45 @@ final class CompilerConfiguration {
         }
     }
 
-    /** The patterns one list parameter of this execution declares, one per child element. */
+    /** The patterns one list parameter of this execution declares, as Maven converts it, empty ones left out. */
     private List<String> patterns(String parameter) {
         List<String> patterns = new ArrayList<>();
-        Optional<Xpp3Dom> declared = element(parameter);
-        if (declared.isPresent()) {
-            for (Xpp3Dom pattern : declared.get().getChildren()) {
-                if (pattern.getValue() != null && !pattern.getValue().isBlank()) {
-                    patterns.add(pattern.getValue().strip());
-                }
+        for (String pattern : parameterValues(parameter).orElse(List.of())) {
+            if (pattern != null) {
+                patterns.add(pattern);
             }
         }
         return List.copyOf(patterns);
+    }
+
+    /**
+     * The values Maven gives one array or collection parameter of the effective configuration of this execution,
+     * as the sisu-plexus configurator of Maven 3.9.12 converts it: the text of the element split on every comma,
+     * empty parts included, when it has text, else the text of each child element, in order. A value that is empty
+     * becomes {@code null}. The text is read from the effective model, where Maven has interpolated the properties
+     * but not the expressions only that configurator evaluates, such as those of {@code ${session}}, which are read
+     * as written, as everywhere in this class.
+     *
+     * @return the values, empty when the configuration has no such element
+     */
+    private Optional<List<String>> parameterValues(String parameter) {
+        Optional<Xpp3Dom> declared = element(parameter);
+        if (declared.isEmpty()) {
+            return Optional.empty();
+        }
+        List<String> values = new ArrayList<>();
+        String text = declared.get().getValue();
+        if (text != null && !text.isEmpty()) {
+            for (String part : text.split(",", -1)) {
+                values.add(part.isEmpty() ? null : part);
+            }
+        } else {
+            for (Xpp3Dom child : declared.get().getChildren()) {
+                String value = child.getValue();
+                values.add(value == null || value.isEmpty() ? null : value);
+            }
+        }
+        return Optional.of(Collections.unmodifiableList(values));
     }
 
     /**
@@ -610,21 +737,67 @@ final class CompilerConfiguration {
     }
 
     /**
-     * The compiler arguments the effective configuration of this execution declares in {@code <compilerArgs>}
-     * and {@code <compilerArgument>}.
+     * The compiler arguments of the effective configuration of this execution, as maven-compiler-plugin 3.15.0
+     * adds them to the arguments of the compiler: the entries of the deprecated {@code <compilerArguments>} map, by
+     * key, each key once with its last value, since Maven converts that element into a sorted map; then
+     * {@code <compilerArgument>}; then the values of {@code <compilerArgs>}, as {@link #parameterValues} reads them,
+     * an empty one left out. The test compilation takes {@code <testCompilerArguments>} and
+     * {@code <testCompilerArgument>} over the first two when they are set. Each entry of the map gives its key,
+     * prefixed with a dash unless it starts with one, then its value unless that is empty; a key that then starts
+     * with {@code -A} and has a value gives the single argument {@code key=value} instead.
      */
     private List<String> compilerArguments() {
         List<String> arguments = new ArrayList<>();
-        Optional<Xpp3Dom> declared = element("compilerArgs");
-        if (declared.isPresent()) {
-            for (Xpp3Dom argument : declared.get().getChildren()) {
-                if (argument.getValue() != null) {
-                    arguments.add(argument.getValue().strip());
+        Optional<Xpp3Dom> testMap = execution == CompilerExecution.TEST
+            ? element("testCompilerArguments")
+            : Optional.empty();
+        Optional<Xpp3Dom> map = testMap.or(() -> element("compilerArguments"));
+        if (map.isPresent()) {
+            Map<String, String> entries = new TreeMap<>();
+            for (Xpp3Dom entry : map.get().getChildren()) {
+                entries.put(entry.getName(), entry.getValue() == null ? "" : entry.getValue());
+            }
+            for (Map.Entry<String, String> entry : entries.entrySet()) {
+                String key = entry.getKey().startsWith("-") ? entry.getKey() : '-' + entry.getKey();
+                if (key.startsWith("-A") && !entry.getValue().isEmpty()) {
+                    arguments.add(key + '=' + entry.getValue());
+                    continue;
+                }
+                arguments.add(key);
+                if (!entry.getValue().isEmpty()) {
+                    arguments.add(entry.getValue());
                 }
             }
         }
-        value("compilerArgument").ifPresent(arguments::add);
+        Optional<String> testArgument = execution == CompilerExecution.TEST
+            ? value("testCompilerArgument")
+            : Optional.empty();
+        testArgument.or(() -> value("compilerArgument")).ifPresent(arguments::add);
+        for (String argument : parameterValues("compilerArgs").orElse(List.of())) {
+            if (argument != null) {
+                arguments.add(argument);
+            }
+        }
         return List.copyOf(arguments);
+    }
+
+    /**
+     * The {@code -proc:} option javac takes for this compilation, the last one it is given: the last {@code -proc:}
+     * compiler argument, else {@code <proc>} or its property, which maven-compiler-plugin 3.15.0 passes as
+     * {@code -proc:<value>} ahead of the compiler arguments.
+     *
+     * @return how the build spells that option, and its value; empty when the build sets none
+     */
+    private Optional<Setting> processing() {
+        List<String> arguments = compilerArguments();
+        for (int index = arguments.size() - 1; index >= 0; index--) {
+            String argument = arguments.get(index);
+            if (argument.startsWith(PROCESSING)) {
+                return Optional.of(new Setting("the compiler argument " + argument,
+                    argument.substring(PROCESSING.length())));
+            }
+        }
+        return setting("proc", "maven.compiler.proc");
     }
 
     /** The requirements the compiler selects its own JDK with, empty when it selects none. */

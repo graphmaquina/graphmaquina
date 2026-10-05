@@ -22,7 +22,7 @@
   <mojos>
     <mojo>
       <goal>generate</goal>
-      <description>Emits the typed StateGraph vocabulary of the main compilation and the manifest the annotation processor reads, and adds the generated directory as a compile source root. Before it writes anything, it stops the build when the default-compile execution of maven-compiler-plugin is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path, or no manifest argument. Does nothing in a project packaged as pom, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
+      <description>Emits the typed StateGraph vocabulary of the main compilation and the manifest the annotation processor reads, and adds the generated directory as a compile source root. Before it writes anything, it stops the build when the default-compile execution of maven-compiler-plugin is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path or in the list of annotation processors javac runs, useIncrementalCompilation set to false, or no manifest argument. Does nothing in a project packaged as pom, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
       <requiresDependencyResolution>compile</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -223,7 +223,7 @@
     </mojo>
     <mojo>
       <goal>generate-test</goal>
-      <description>Emits the typed StateGraph vocabulary of the test compilation and the manifest the annotation processor reads, and adds the generated directory as a test compile source root. Before it writes anything, it stops the build when the default-testCompile execution of maven-compiler-plugin is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path, or no manifest argument. Does nothing in a project packaged as pom, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
+      <description>Emits the typed StateGraph vocabulary of the test compilation and the manifest the annotation processor reads, and adds the generated directory as a test compile source root. Before it writes anything, it stops the build when the default-testCompile execution of maven-compiler-plugin is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path or in the list of annotation processors javac runs, useIncrementalCompilation set to false, or no manifest argument. Does nothing in a project packaged as pom, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
       <requiresDependencyResolution>test</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>

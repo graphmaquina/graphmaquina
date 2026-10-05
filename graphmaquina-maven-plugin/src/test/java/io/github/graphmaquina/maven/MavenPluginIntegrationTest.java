@@ -26,6 +26,7 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -52,6 +53,14 @@ class MavenPluginIntegrationTest {
 
     /** The published index of the test compilation, beside its own classes. */
     private static final String TEST_EXPORTS = "target/test-classes/META-INF/graphmaquina/exports.json";
+
+    /** The two annotation processors Lombok registers, as a {@code -processor} list names them. */
+    private static final List<String> LOMBOK_PROCESSORS = List.of(
+            "lombok.launch.AnnotationProcessorHider$AnnotationProcessor",
+            "lombok.launch.AnnotationProcessorHider$ClaimingProcessor");
+
+    /** The StateGraph annotation processor, as a {@code -processor} list names it. */
+    private static final String STATEGRAPH_PROCESSOR = "io.github.graphmaquina.processor.StateGraphProcessor";
 
     /** The file repository the Gradle build published every StateGraph artifact of this version to. */
     private final Path fixtureRepository = Path.of(requireProperty("graphmaquina.fixtureRepository"));
@@ -204,12 +213,19 @@ class MavenPluginIntegrationTest {
     }
 
     /**
-     * A generation the sources make impossible stops the build where it happens: its diagnostic is in the output,
-     * no manifest is written for javac to consume, no index is published, and no jar is produced.
+     * A generation the sources make impossible stops the build where it happens, before the preparation: its
+     * diagnostic is in the output, no preparation started another cycle, the index and the sealed inventory of the
+     * previous build are as that build left them, and neither its manifest nor its jar is rewritten.
      */
     @Test
-    void failedGenerationLeavesNoManifestAndNoJar() throws IOException {
+    void failedGenerationLeavesThePreviousCycleAsItWas() throws IOException {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        Path manifest = fixture.projectDirectory().resolve("target/graphmaquina/main/annotation-manifest.json");
+        Path jar = fixture.projectDirectory().resolve("target/fixture-1.0.0.jar");
+        byte[] manifestBefore = Files.readAllBytes(manifest);
+        byte[] jarBefore = Files.readAllBytes(jar);
         Map<String, String> confused = MavenFixture.domainSources();
         confused.put("fx.Confused", """
                 package fx;
@@ -235,18 +251,23 @@ class MavenPluginIntegrationTest {
 
         assertNotEquals(0, result.exitCode(), result.output());
         assertTrue(result.output().contains("[SG604]"), result.output());
-        assertFalse(fixture.exists("target/graphmaquina/main/annotation-manifest.json"));
-        assertFalse(fixture.exists("target/classes/META-INF/graphmaquina/exports.json"));
-        assertFalse(fixture.exists("target/fixture-1.0.0.jar"));
+        assertNothingWasRetired(fixture, published);
+        assertArrayEquals(manifestBefore, Files.readAllBytes(manifest));
+        assertArrayEquals(jarBefore, Files.readAllBytes(jar));
     }
 
     /**
-     * A compilation javac rejects publishes nothing: the preparation left its pending inventory behind, the
-     * completion never ran, no index is published, and Maven produced no jar.
+     * A compilation javac rejects publishes nothing and leaves no stale index behind: the preparation retired the
+     * index the previous build published and left its pending inventory, the completion never ran, and Maven
+     * packaged nothing, so the jar is the one the previous build wrote.
      */
     @Test
-    void failedCompilationLeavesAPendingInventoryAndNoJar() throws IOException {
+    void failedCompilationLeavesAPendingInventoryAndNoStaleIndex() throws IOException {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        assertTrue(fixture.exists(MAIN_EXPORTS));
+        Path jar = fixture.projectDirectory().resolve("target/fixture-1.0.0.jar");
+        byte[] jarBefore = Files.readAllBytes(jar);
         Map<String, String> broken = MavenFixture.domainSources();
         broken.put("fx.Broken", """
                 package fx;
@@ -264,8 +285,8 @@ class MavenPluginIntegrationTest {
         assertNotEquals(0, result.exitCode(), result.output());
         assertTrue(fixture.exists("target/graphmaquina/main/owned-outputs.pending.json"));
         assertFalse(fixture.inventoryIsSealed("main"));
-        assertFalse(fixture.exists("target/classes/META-INF/graphmaquina/exports.json"));
-        assertFalse(fixture.exists("target/fixture-1.0.0.jar"));
+        assertFalse(fixture.exists(MAIN_EXPORTS));
+        assertArrayEquals(jarBefore, Files.readAllBytes(jar));
     }
 
     /**
@@ -463,26 +484,39 @@ class MavenPluginIntegrationTest {
     }
 
     /**
-     * {@code clean} is a complete migration path out of the retired release: with the whole target directory
-     * gone there is no inventory left to retire anything from, and the build regenerates the vocabulary,
-     * compiles it and publishes the same index again. The hand-written sources it was generated from are
-     * byte for byte what they were, since nothing of the deletion ever reaches {@code src}.
+     * {@code clean} is a complete migration path out of the retired release. Over stand-ins for the outputs a 1.x
+     * build left, a schema 1 manifest and a binary of the retired matrix vocabulary, the build stops with
+     * {@code SG602} before it generates anything and asks for {@code clean}; after {@code clean} the build
+     * regenerates the vocabulary, compiles it and publishes the index of the shared domain, the jar carries nothing
+     * of the retired vocabulary, and the hand-written sources are byte for byte what they were, since nothing of the
+     * deletion ever reaches {@code src}.
      */
     @Test
     void cleanIsACompleteMigrationPath() throws IOException {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
-        assertEquals(0, fixture.run("package").exitCode());
-        List<String> published = fixture.localExports();
+        fixture.writeFile("target/graphmaquina/main/annotation-manifest.json",
+                "{\n  \"schemaVersion\": 1\n}\n".getBytes(StandardCharsets.UTF_8));
+        fixture.writeFile("target/classes/fx/OrdersGraph$Row.class",
+                new byte[] {(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE});
         Map<String, String> sources = handWrittenSources(fixture);
+
+        MavenResult retired = fixture.run("package");
+
+        assertNotEquals(0, retired.exitCode(), retired.output());
+        assertTrue(retired.output().contains("[SG602]"), retired.output());
+        assertTrue(retired.output().contains("is the retired format of GraphMaquina 1.x; run clean"),
+                retired.output());
+        assertFalse(fixture.exists("target/generated-sources/graphmaquina"), retired.output());
 
         MavenResult result = fixture.run("clean", "package");
 
         assertEquals(0, result.exitCode(), result.output());
         assertTrue(fixture.inventoryIsSealed("main"));
-        assertEquals(published, fixture.localExports());
-        assertTrue(published.contains("fx.Orders"));
+        assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
+                fixture.localExports());
         assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
         assertTrue(fixture.jarContains("fx/OrdersRuntime.class"));
+        assertEquals(List.of(), fixture.retiredVocabularyEntries());
         assertFalse(fixture.jarContainsGraphCompilationCarrier());
         assertEquals(sources, handWrittenSources(fixture));
     }
@@ -608,6 +642,276 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * javac runs only the annotation processors a {@code -processor} list names. maven-compiler-plugin turns
+     * {@code <annotationProcessors>} into such a list ahead of the compiler arguments, even when it names nothing,
+     * and javac takes the last list it is given, so a {@code -processor} compiler argument wins over it. A list that
+     * leaves out the StateGraph processor, in either form and an empty {@code <annotationProcessors>} included, is
+     * refused by the generation before the preparation retires anything, naming the list javac would take; a list
+     * that names it builds and publishes the same index.
+     */
+    @Test
+    void aProcessorListWithoutTheStateGraphProcessorIsRefusedBeforeAnythingIsRetired() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        List<String> withStateGraph = new ArrayList<>(LOMBOK_PROCESSORS);
+        withStateGraph.add(STATEGRAPH_PROCESSOR);
+        String lombokOnly = String.join(",", LOMBOK_PROCESSORS);
+        fixture.editPom("<release>21</release>", "<release>21</release>\n          <annotationProcessors/>");
+
+        MavenResult empty = fixture.run("package");
+
+        assertNotEquals(0, empty.exitCode(), empty.output());
+        assertTrue(empty.output().contains("the <annotationProcessors> of the default-compile execution of"
+                + " maven-compiler-plugin give javac the processor list '', whose name '' is not a valid qualified"
+                + " class name"), empty.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("<annotationProcessors/>", "<annotationProcessors>" + annotationProcessors(LOMBOK_PROCESSORS)
+                + "</annotationProcessors>");
+
+        MavenResult listed = fixture.run("package");
+
+        assertNotEquals(0, listed.exitCode(), listed.output());
+        assertTrue(listed.output().contains("the <annotationProcessors> of the default-compile execution of"
+                + " maven-compiler-plugin give javac the processor list '" + lombokOnly + "', which leaves out "
+                + STATEGRAPH_PROCESSOR), listed.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom(annotationProcessors(LOMBOK_PROCESSORS), annotationProcessors(withStateGraph));
+
+        MavenResult named = fixture.run("package");
+
+        assertEquals(0, named.exitCode(), named.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        fixture.editPom("graphmaquina/main/annotation-manifest.json</arg>",
+                "graphmaquina/main/annotation-manifest.json</arg>\n                <arg>-processor</arg>\n"
+                        + "                <arg>" + lombokOnly + "</arg>");
+
+        MavenResult argument = fixture.run("package");
+
+        assertNotEquals(0, argument.exitCode(), argument.output());
+        assertTrue(argument.output().contains("the compiler argument -processor of the default-compile execution"
+                + " of maven-compiler-plugin gives javac the processor list '" + lombokOnly + "', which leaves out "
+                + STATEGRAPH_PROCESSOR), argument.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("<arg>" + lombokOnly + "</arg>", "<arg>" + String.join(",", withStateGraph) + "</arg>");
+
+        MavenResult argumentNamed = fixture.run("package");
+
+        assertEquals(0, argumentNamed.exitCode(), argumentNamed.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /**
+     * The list javac gets from {@code <annotationProcessors>} is the one Maven and maven-compiler-plugin build:
+     * Maven splits a text value on every comma into the names of the list, plexus joins the names with commas into
+     * one {@code -processor} value, and javac splits that value on every comma, dropping the empty names at its
+     * end, and takes each name exactly as written. So a text value and one element holding a comma-separated list
+     * that name the StateGraph processor build, the same forms without it are refused, a {@code -processor} list
+     * ending with a comma builds, and a name with a space in it, which is not a valid qualified class name, is refused
+     * before anything is retired.
+     */
+    @Test
+    void aProcessorListIsReadTheWayJavacGetsIt() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        String lombokOnly = String.join(",", LOMBOK_PROCESSORS);
+        fixture.editPom("<release>21</release>", "<release>21</release>\n          <annotationProcessors>"
+                + lombokOnly + "," + STATEGRAPH_PROCESSOR + "</annotationProcessors>");
+
+        MavenResult text = fixture.run("package");
+
+        assertEquals(0, text.exitCode(), text.output());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        assertTrue(published.contains("fx.Orders"), published::toString);
+
+        fixture.editPom("," + STATEGRAPH_PROCESSOR + "</annotationProcessors>", "</annotationProcessors>");
+
+        MavenResult textWithout = fixture.run("package");
+
+        assertNotEquals(0, textWithout.exitCode(), textWithout.output());
+        assertTrue(textWithout.output().contains("the <annotationProcessors> of the default-compile execution of"
+                + " maven-compiler-plugin give javac the processor list '" + lombokOnly + "', which leaves out "
+                + STATEGRAPH_PROCESSOR), textWithout.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("<annotationProcessors>" + lombokOnly + "</annotationProcessors>",
+                "<annotationProcessors><annotationProcessor>" + lombokOnly + "," + STATEGRAPH_PROCESSOR
+                        + "</annotationProcessor></annotationProcessors>");
+
+        MavenResult element = fixture.run("package");
+
+        assertEquals(0, element.exitCode(), element.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        fixture.editPom("," + STATEGRAPH_PROCESSOR + "</annotationProcessor>", "</annotationProcessor>");
+
+        MavenResult elementWithout = fixture.run("package");
+
+        assertNotEquals(0, elementWithout.exitCode(), elementWithout.output());
+        assertTrue(elementWithout.output().contains("give javac the processor list '" + lombokOnly + "', which"
+                + " leaves out " + STATEGRAPH_PROCESSOR), elementWithout.output());
+        assertNothingWasRetired(fixture, published);
+
+        String trailing = lombokOnly + "," + STATEGRAPH_PROCESSOR + ",";
+        fixture.editPom("<annotationProcessors><annotationProcessor>" + lombokOnly
+                + "</annotationProcessor></annotationProcessors>", "");
+        fixture.editPom("graphmaquina/main/annotation-manifest.json</arg>",
+                "graphmaquina/main/annotation-manifest.json</arg>\n                <arg>-processor</arg>\n"
+                        + "                <arg>" + trailing + "</arg>");
+
+        MavenResult trailingComma = fixture.run("package");
+
+        assertEquals(0, trailingComma.exitCode(), trailingComma.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        String spaced = LOMBOK_PROCESSORS.get(0) + ", " + STATEGRAPH_PROCESSOR;
+        fixture.editPom("<arg>" + trailing + "</arg>", "<arg>" + spaced + "</arg>");
+
+        MavenResult spaces = fixture.run("package");
+
+        assertNotEquals(0, spaces.exitCode(), spaces.output());
+        assertTrue(spaces.output().contains("the compiler argument -processor of the default-compile execution of"
+                + " maven-compiler-plugin gives javac the processor list '" + spaced + "', whose name ' "
+                + STATEGRAPH_PROCESSOR + "' is not a valid qualified class name"), spaces.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * javac takes the last {@code -proc:} option and the last {@code -processor} list it is given, and so do the
+     * checks: {@code -proc:none} followed by {@code -proc:full} builds, while {@code -proc:full} followed by
+     * {@code -proc:none} is refused, and a {@code -processor} list that names the StateGraph processor followed by
+     * one that does not is refused, each before anything is retired.
+     */
+    @Test
+    void theLastProcessingOptionAndTheLastProcessorListAreTheOnesJavacTakes() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        String manifest = "graphmaquina/main/annotation-manifest.json</arg>";
+        fixture.editPom(manifest,
+                manifest + "\n                <arg>-proc:none</arg>\n                <arg>-proc:full</arg>");
+
+        MavenResult full = fixture.run("package");
+
+        assertEquals(0, full.exitCode(), full.output());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        assertTrue(published.contains("fx.Orders"), published::toString);
+
+        fixture.editPom("<arg>-proc:none</arg>\n                <arg>-proc:full</arg>",
+                "<arg>-proc:full</arg>\n                <arg>-proc:none</arg>");
+
+        MavenResult none = fixture.run("package");
+
+        assertNotEquals(0, none.exitCode(), none.output());
+        assertTrue(none.output().contains("the compiler argument -proc:none switches annotation processing off for"
+                + " the default-compile execution of maven-compiler-plugin"), none.output());
+        assertNothingWasRetired(fixture, published);
+
+        String lombokOnly = String.join(",", LOMBOK_PROCESSORS);
+        fixture.editPom("<arg>-proc:full</arg>\n                <arg>-proc:none</arg>",
+                "<arg>-processor</arg>\n                <arg>" + lombokOnly + "," + STATEGRAPH_PROCESSOR + "</arg>\n"
+                        + "                <arg>-processor</arg>\n                <arg>" + lombokOnly + "</arg>");
+
+        MavenResult lists = fixture.run("package");
+
+        assertNotEquals(0, lists.exitCode(), lists.output());
+        assertTrue(lists.output().contains("gives javac the processor list '" + lombokOnly + "', which leaves out "
+                + STATEGRAPH_PROCESSOR), lists.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * Maven converts the deprecated {@code <compilerArguments>} map into a sorted map, so maven-compiler-plugin
+     * passes its entries by key, each key once with its last value, and the checks read them the same way: of two
+     * manifest arguments the last one is the one javac reads, and of {@code proc:none} and {@code proc:full},
+     * written in that order, javac gets {@code -proc:none} last, which is refused before anything is retired.
+     */
+    @Test
+    void theCompilerArgumentsMapIsReadByKeyWithTheLastValueOfEachKey() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<arg>-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/main/"
+                + "annotation-manifest.json</arg>\n", "");
+        fixture.editPom("<id>default-compile</id>\n            <configuration>",
+                "<id>default-compile</id>\n            <configuration>\n"
+                        + "              <compilerArguments>\n"
+                        + "                <Agraphmaquina.annotationManifest>${project.build.directory}/graphmaquina/"
+                        + "elsewhere/annotation-manifest.json</Agraphmaquina.annotationManifest>\n"
+                        + "                <Agraphmaquina.annotationManifest>${project.build.directory}/graphmaquina/"
+                        + "main/annotation-manifest.json</Agraphmaquina.annotationManifest>\n"
+                        + "              </compilerArguments>");
+
+        MavenResult last = fixture.run("compile");
+
+        assertEquals(0, last.exitCode(), last.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        assertTrue(published.contains("fx.Orders"), published::toString);
+
+        fixture.editPom("              </compilerArguments>",
+                "                <proc:none/>\n                <proc:full/>\n              </compilerArguments>");
+
+        MavenResult sorted = fixture.run("compile");
+
+        assertNotEquals(0, sorted.exitCode(), sorted.output());
+        assertTrue(sorted.output().contains("the compiler argument -proc:none switches annotation processing off"),
+                sorted.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * Maven also accepts a list parameter written as text, which it splits on every comma: {@code <compilerArgs>}
+     * holding the manifest argument and {@code -Werror} that way gives javac both arguments, so the manifest check
+     * reads it there and the compilation builds, and a {@code <testExcludes>} written that way, which leaves out the
+     * carrier of the test compilation, is refused by the generation of that compilation. {@code <includes>} holding
+     * nothing but empty values gets no default include from maven-compiler-plugin, so it selects no source, the
+     * carrier included, and is refused as well, before the preparation retires anything.
+     */
+    @Test
+    void listParametersWrittenAsTextAreReadAsMavenSplitsThem() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("""
+                              <compilerArgs>
+                                <arg>-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/main/\
+                annotation-manifest.json</arg>
+                                <arg>-Xlint:all,-serial</arg>
+                                <arg>-Werror</arg>
+                              </compilerArgs>
+                """, """
+                              <compilerArgs>-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/\
+                main/annotation-manifest.json,-Werror</compilerArgs>
+                """);
+
+        MavenResult text = fixture.run("compile");
+
+        assertEquals(0, text.exitCode(), text.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        fixture.editPom("<release>21</release>",
+                "<release>21</release>\n          <testExcludes>io/github/**</testExcludes>");
+
+        MavenResult excludes = fixture.run("test-compile");
+
+        assertNotEquals(0, excludes.exitCode(), excludes.output());
+        assertTrue(excludes.output().contains("the <testExcludes> pattern io/github/** of the default-testCompile"
+                + " execution of maven-compiler-plugin leaves out io/github/graphmaquina/generated/bootstrap/"
+                + "GraphCompilation"), excludes.output());
+
+        fixture.editPom("<testExcludes>io/github/**</testExcludes>", "<includes>,</includes>");
+
+        MavenResult empty = fixture.run("compile");
+
+        assertNotEquals(0, empty.exitCode(), empty.output());
+        assertTrue(empty.output().contains("the <includes> of the default-compile execution of maven-compiler-plugin"
+                + " hold only empty values"), empty.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
      * A compilation this build prepared but javac never published for is a failure, not a no-op: the outputs of
      * the previous cycle are already retired, so leaving the build green would package a jar with the carrier
      * of the compilation in it and no index at all.
@@ -721,6 +1025,50 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * maven-compiler-plugin still passes the entries of the deprecated {@code <compilerArguments>} map to javac,
+     * with a dash prepended to a key that has none, and the test compilation takes {@code <testCompilerArguments>}
+     * over that map.
+     * The checks of the generation read the same arguments: a manifest argument given only as an entry of the map
+     * is the one javac reads, so both compilations build, and a {@code proc:none} entry switches annotation
+     * processing off and is refused before anything is retired.
+     */
+    @Test
+    void theCompilerArgumentsMapIsReadTheWayTheCompilerReadsIt() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        for (String sourceSet : List.of("main", "test")) {
+            fixture.editPom("<arg>-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/"
+                    + sourceSet + "/annotation-manifest.json</arg>\n", "");
+        }
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <compilerArguments>\n"
+                + "            <Agraphmaquina.annotationManifest>${project.build.directory}/graphmaquina/main/"
+                + "annotation-manifest.json</Agraphmaquina.annotationManifest>\n"
+                + "          </compilerArguments>");
+        fixture.editPom("<id>default-testCompile</id>\n            <configuration>",
+                "<id>default-testCompile</id>\n            <configuration>\n"
+                        + "              <testCompilerArguments>\n"
+                        + "                <Agraphmaquina.annotationManifest>${project.build.directory}/graphmaquina/"
+                        + "test/annotation-manifest.json</Agraphmaquina.annotationManifest>\n"
+                        + "              </testCompilerArguments>");
+
+        MavenResult mapped = fixture.run("test-compile");
+
+        assertEquals(0, mapped.exitCode(), mapped.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.inventoryIsSealed("test"));
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        assertTrue(published.contains("fx.Orders"), published::toString);
+        fixture.editPom("<compilerArguments>\n", "<compilerArguments>\n            <proc:none/>\n");
+
+        MavenResult off = fixture.run("test-compile");
+
+        assertNotEquals(0, off.exitCode(), off.output());
+        assertTrue(off.output().contains("the compiler argument -proc:none switches annotation processing off for"
+                + " the default-compile execution of maven-compiler-plugin"), off.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
      * The two javac executions name the directory of the annotation processor's sources with two different
      * parameters, and each generation reads its own: a redirected test directory is reported by
      * {@code generate-test}, and a main directory set to its default is not reported by either.
@@ -754,9 +1102,31 @@ class MavenPluginIntegrationTest {
     }
 
     /**
-     * The preparation dates the carrier of this generation past everything the previous compilation left, so a
-     * compiler that decides by timestamp cannot read a class output it has just been emptied of as up to date.
-     * The bytes of the carrier are not touched, which is what keeps the generation deterministic.
+     * Every generation emits the carrier of its compilation, and the completion needs the class javac compiles from
+     * it. A preparation that finds no carrier under the generated sources, here because it was deleted after the
+     * generation, fails and says so, and asks for the generation to run again.
+     */
+    @Test
+    void aPreparationThatFindsNoCarrierAsksForTheGenerationAgain() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        String goal = "io.github.graphmaquina:graphmaquina-maven-plugin:" + VERSION + ':';
+        assertEquals(0, fixture.run(goal + "generate").exitCode());
+        Files.delete(fixture.carrierSource());
+
+        MavenResult result = fixture.run(goal + "prepare");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("there is no compilation carrier of fx.build:fixture:main under "),
+                result.output());
+        assertTrue(result.output().contains(", although every generation emits one there: javac would compile this"
+                + " compilation without it, and the completion, which needs the class of the carrier, would fail."
+                + " Run the generation of this compilation again."), result.output());
+    }
+
+    /**
+     * The preparation dates the carrier of this generation past everything the previous compilation left in the
+     * class output, even classes dated an hour ahead, and leaves the bytes of the carrier untouched, which is what
+     * keeps the generation deterministic.
      */
     @Test
     void preparationDatesTheCarrierPastTheNewestPreviousOutput() throws IOException {
@@ -861,6 +1231,50 @@ class MavenPluginIntegrationTest {
         assertTrue(argument.output().contains("Remove that argument from the configuration of that execution."),
                 argument.output());
         assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * With {@code useIncrementalCompilation} false, maven-compiler-plugin compiles only the sources whose class file
+     * is missing or older than the source, so a build over the outputs of a previous one would hand javac the
+     * vocabulary the preparation retired without the hand-written declarations the annotation processor must see.
+     * The setting is refused by the generation before the preparation retires anything, whether the configuration
+     * of the execution sets it or the {@code maven.compiler.useIncrementalCompilation} property does, and the
+     * default, {@code true}, builds.
+     */
+    @Test
+    void aCompilationOfStaleSourcesOnlyIsRefusedBeforeAnythingIsRetired() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        fixture.editPom("<useIncrementalCompilation>true</useIncrementalCompilation>",
+                "<useIncrementalCompilation>false</useIncrementalCompilation>");
+
+        MavenResult configured = fixture.run("package");
+
+        assertNotEquals(0, configured.exitCode(), configured.output());
+        assertTrue(fixture.exists(MAIN_EXPORTS), "the index of the previous build was retired:\n"
+                + configured.output());
+        assertNothingWasRetired(fixture, published);
+        assertTrue(configured.output().contains("<useIncrementalCompilation>false</useIncrementalCompilation> makes"
+                + " the default-compile execution of maven-compiler-plugin compile only the sources"),
+                configured.output());
+        assertTrue(configured.output().contains("Leave useIncrementalCompilation at its default, true."),
+                configured.output());
+
+        fixture.editPom("<useIncrementalCompilation>false</useIncrementalCompilation>", "");
+
+        MavenResult property = fixture.run("-Dmaven.compiler.useIncrementalCompilation=false", "package");
+
+        assertNotEquals(0, property.exitCode(), property.output());
+        assertTrue(property.output().contains("maven.compiler.useIncrementalCompilation=false makes the"
+                + " default-compile execution of maven-compiler-plugin compile only the sources"), property.output());
+        assertNothingWasRetired(fixture, published);
+
+        MavenResult defaulted = fixture.run("package");
+
+        assertEquals(0, defaulted.exitCode(), defaulted.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
     }
 
     /**
@@ -1158,22 +1572,33 @@ class MavenPluginIntegrationTest {
     /**
      * The {@code generate-test} goal checks the release of the test compilation alone: a {@code <testRelease>} of
      * Java 21 is what the test compilation compiles at, whatever older release the main compilation is configured
-     * with, so the {@code generate-test} goal accepts it, and the test request carries it.
+     * with, and so is a {@code <testTarget>} of Java 21 over an older {@code <target>}. The {@code generate-test}
+     * goal accepts both, and the test request carries 21 rather than the older release or target.
      */
     @Test
-    void theGenerateTestGoalAcceptsATestReleaseOfJava21OverAnOlderRelease() throws IOException {
-        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
-        fixture.editPom("<release>21</release>", "<release>17</release>\n          <testRelease>21</testRelease>");
-        for (Map.Entry<String, String> source : testDomain().entrySet()) {
-            fixture.writeTestSource(source.getKey(), source.getValue());
+    void theGenerateTestGoalAcceptsATestReleaseOrTestTargetOfJava21OverAnOlderOne() throws IOException {
+        MavenFixture released = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("released")),
+                fixtureRepository);
+        released.editPom("<release>21</release>", "<release>17</release>\n          <testRelease>21</testRelease>");
+        MavenFixture targeted = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("targeted")),
+                fixtureRepository);
+        targeted.editPom("<release>21</release>", "<source>17</source>\n"
+                + "          <target>17</target>\n"
+                + "          <testSource>21</testSource>\n"
+                + "          <testTarget>21</testTarget>");
+
+        for (MavenFixture fixture : List.of(released, targeted)) {
+            for (Map.Entry<String, String> source : testDomain().entrySet()) {
+                fixture.writeTestSource(source.getKey(), source.getValue());
+            }
+
+            MavenResult result = fixture.run("io.github.graphmaquina:graphmaquina-maven-plugin:" + VERSION
+                    + ":generate-test");
+
+            assertEquals(0, result.exitCode(), result.output());
+            assertEquals("21", fixture.requestValue("test", "release"));
+            assertTrue(fixture.exists("target/generated-test-sources/graphmaquina/fxt/TicketsGraph.java"));
         }
-
-        MavenResult result = fixture.run("io.github.graphmaquina:graphmaquina-maven-plugin:" + VERSION
-                + ":generate-test");
-
-        assertEquals(0, result.exitCode(), result.output());
-        assertEquals("21", fixture.requestValue("test", "release"));
-        assertTrue(fixture.exists("target/generated-test-sources/graphmaquina/fxt/TicketsGraph.java"));
     }
 
     /**
@@ -1326,6 +1751,15 @@ class MavenPluginIntegrationTest {
     private static void assertNothingWasRetired(MavenFixture fixture, List<String> published) {
         assertTrue(fixture.inventoryIsSealed("main"));
         assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /** One {@code <annotationProcessor>} element per name, as {@code <annotationProcessors>} lists them. */
+    private static String annotationProcessors(List<String> names) {
+        StringBuilder elements = new StringBuilder();
+        for (String name : names) {
+            elements.append("<annotationProcessor>").append(name).append("</annotationProcessor>");
+        }
+        return elements.toString();
     }
 
     /** A source javac refuses to parse, which only a build that excludes it can carry. */

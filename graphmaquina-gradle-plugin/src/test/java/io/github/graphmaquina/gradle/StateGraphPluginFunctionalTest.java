@@ -17,6 +17,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
@@ -27,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Functional tests driving the StateGraph Gradle plugin through TestKit over the shared adapter domain: one
@@ -43,11 +47,21 @@ class StateGraphPluginFunctionalTest {
     /** The published index of the test compilation, beside its own classes. */
     private static final String TEST_EXPORTS = "build/classes/java/test/META-INF/graphmaquina/exports.json";
 
+    /** The inventory the preparation of the main compilation writes before it retires anything. */
+    private static final String MAIN_PENDING_INVENTORY = "build/graphmaquina/main/owned-outputs.pending.json";
+
     /** Where a compilation publishes its index, relative to whatever class output it was given. */
     private static final String EXPORTS_ENTRY = "META-INF/graphmaquina/exports.json";
 
     /** The package the generator emits the carrier of every compilation into, as an archive path. */
     private static final String CARRIER_PACKAGE = "io/github/graphmaquina/generated/bootstrap/";
+
+    /** The two annotation processors Lombok registers, as a {@code -processor} list names them. */
+    private static final String LOMBOK_PROCESSORS = "lombok.launch.AnnotationProcessorHider$AnnotationProcessor,"
+            + "lombok.launch.AnnotationProcessorHider$ClaimingProcessor";
+
+    /** The StateGraph annotation processor, as a {@code -processor} list names it. */
+    private static final String STATEGRAPH_PROCESSOR = "io.github.graphmaquina.processor.StateGraphProcessor";
 
     @TempDir
     Path tempDirectory;
@@ -60,13 +74,31 @@ class StateGraphPluginFunctionalTest {
         assertTrue(result.getOutput().contains("generateTestStateGraphApi"));
     }
 
+    /**
+     * The jar carries the compiled vocabulary, an index that publishes the exports of this compilation alone and no
+     * compilation carrier, while neither the generator nor the processor reaches the runtime classpath. The project
+     * depends on the jar of another StateGraph compilation, whose index the generation reads as a dependency, as the
+     * annotation manifest shows, so an index that published more than the exports of this compilation would show it.
+     */
     @Test
     void compilesGeneratedVocabularyAndPublishesOnlyLocalExports() throws IOException {
-        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        PluginFixture producer = PluginFixture.basic(
+                Files.createDirectories(tempDirectory.resolve("producer")), FIXTURE_REPOSITORY);
+        producer.run("jar");
+        PluginFixture fixture = PluginFixture.basic(
+                Files.createDirectories(tempDirectory.resolve("consumer")), FIXTURE_REPOSITORY);
+        fixture.replaceInBuildScript("group = \"fx.build\"", "group = \"cx.build\"");
+        fixture.writeSources(testDomain());
+        fixture.writeFile("lib/producer.jar",
+                Files.readAllBytes(producer.projectDirectory().resolve("build/libs/fixture-1.0.0.jar")));
+
         BuildResult result = fixture.run("clean", "jar", "--stacktrace");
+
         assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
-        assertTrue(fixture.exists("build/graphmaquina/main/annotation-manifest.json"));
-        assertTrue(fixture.jarContains("META-INF/graphmaquina/exports.json"));
+        assertEquals(List.of("fx.build:fixture:main"), fixture.manifestDependencies("main"));
+        assertEquals(List.of("fxt.Tickets", "fxt.TicketActionsRefs.Resolve", "fxt.TicketRefs.Id",
+                "fxt.TicketRefs.Status"), fixture.localExports());
+        assertTrue(fixture.jarContains("fxt/TicketsGraph.class"));
         assertFalse(fixture.jarContainsGraphCompilationCarrier());
         assertFalse(fixture.runtimeClasspathContains("graphmaquina-codegen"));
         assertFalse(fixture.runtimeClasspathContains("graphmaquina-processor"));
@@ -302,21 +334,34 @@ class StateGraphPluginFunctionalTest {
 
     /**
      * The class output and the processor's source output are outputs of {@code JavaCompile}, so the generation
-     * task only names them in the request. A build that moves either of them must still write the request
-     * again, or the next lifecycle step would retire and publish under the paths of the previous layout. This
-     * test moves the class output.
+     * task only names them in the request. A build that moves either of them must still write the request again,
+     * or the next lifecycle step would retire and publish under the paths of the previous layout. This test moves
+     * the processor's source output alone, then the class output.
      */
     @Test
-    void movingTheClassOutputRewritesTheRequest() throws IOException {
+    void movingEitherOutputOfTheCompilationRewritesTheRequest() throws IOException {
         PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
         fixture.run("classes");
         assertEquals(TaskOutcome.UP_TO_DATE, fixture.run("classes").task(":generateStateGraphApi").getOutcome());
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    options.generatedSourceOutputDirectory = layout.buildDirectory.dir("elsewhere/annotations")
+                }
+                """);
+
+        BuildResult movedSources = fixture.run("classes", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, movedSources.task(":generateStateGraphApi").getOutcome());
+        String processorSourcesOutput = fixture.request("main").get("processorSourcesOutput").getAsString();
+        assertTrue(processorSourcesOutput.endsWith("/build/elsewhere/annotations"), processorSourcesOutput);
+        assertTrue(fixture.exists("build/elsewhere/annotations/fx/OrdersRuntime.java"), processorSourcesOutput);
+        assertTrue(fixture.inventoryIsSealed("main"));
 
         fixture.relocateClassOutput("elsewhere/classes");
 
-        BuildResult result = fixture.run("classes", "--stacktrace");
+        BuildResult movedClasses = fixture.run("classes", "--stacktrace");
 
-        assertEquals(TaskOutcome.SUCCESS, result.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, movedClasses.task(":generateStateGraphApi").getOutcome());
         String classesOutput = fixture.request("main").get("classesOutput").getAsString();
         assertTrue(classesOutput.endsWith("/build/elsewhere/classes"), classesOutput);
         assertTrue(fixture.exists("build/elsewhere/classes/" + EXPORTS_ENTRY), classesOutput);
@@ -401,12 +446,13 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * The generator runs under the launcher the project's Java toolchain selected, not under whatever JVM the
-     * Gradle daemon happens to be on: the task's own launcher is the one {@code launcherFor(java.toolchain)}
-     * reports, and the process the build started is that very executable.
+     * The generator runs under the launcher the project's Java toolchain selected: the generation task's own
+     * launcher is the one {@code launcherFor(java.toolchain)} reports, of the toolchain's Java 21, and the process
+     * the build started is that very executable. The daemon of the build may run on that same JDK, so this test
+     * cannot tell the toolchain from the daemon's JVM; {@code launchesSelectedToolchainInsteadOfDaemonJdk} can.
      */
     @Test
-    void launchesSelectedToolchainInsteadOfDaemonJdk() throws IOException {
+    void launchesTheLauncherOfTheSelectedToolchain() throws IOException {
         PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
         BuildResult generation = fixture.run("generateStateGraphApi", "--info");
         Map<String, String> reported = report(fixture.run("printGeneratorLauncher"));
@@ -419,6 +465,35 @@ class StateGraphPluginFunctionalTest {
                         + "; the daemon runs on " + reported.get("DAEMON_JAVA_HOME"));
         assertEquals("fx.build:fixture:main", fixture.request("main").get("compilationId").getAsString());
         assertTrue(fixture.exists("build/graphmaquina/main/annotation-manifest.json"));
+    }
+
+    /**
+     * The generator runs under the launcher the project's Java toolchain selected, not under the JVM the Gradle
+     * daemon runs on: with a toolchain of another language version than the daemon's, the generation task's own
+     * launcher is the toolchain's, of that version and outside the daemon's JDK, and the process the build started
+     * is that very executable. The test is skipped when Gradle detects no JDK 21 or later other than the daemon's.
+     */
+    @Test
+    void launchesSelectedToolchainInsteadOfDaemonJdk() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Toolchains toolchains = toolchains(fixture);
+        Optional<Integer> other = toolchains.detected().stream()
+                .filter((Integer version) -> version != toolchains.daemon())
+                .findFirst();
+        assumeTrue(other.isPresent(), "Gradle detects no JDK 21 or later other than the one its daemon runs on");
+        fixture.replaceInBuildScript("languageVersion = JavaLanguageVersion.of(21)",
+                "languageVersion = JavaLanguageVersion.of(" + other.get() + ")");
+
+        BuildResult generation = fixture.run("generateStateGraphApi", "--info");
+        Map<String, String> reported = report(fixture.run("printGeneratorLauncher"));
+
+        String launcher = reported.get("GENERATOR_LAUNCHER");
+        assertEquals(reported.get("TOOLCHAIN_LAUNCHER"), launcher);
+        assertEquals(String.valueOf(other.get()), reported.get("GENERATOR_LANGUAGE_VERSION"));
+        assertFalse(Path.of(launcher).startsWith(Path.of(reported.get("DAEMON_JAVA_HOME"))), reported::toString);
+        assertTrue(generation.getOutput().contains("Starting process 'command '" + launcher + "''"),
+                "the generator did not run under the toolchain launcher " + launcher
+                        + "; the daemon runs on " + reported.get("DAEMON_JAVA_HOME"));
     }
 
     @Test
@@ -872,8 +947,9 @@ class StateGraphPluginFunctionalTest {
 
     /**
      * The lifecycle completes only what javac wrote, so a compilation that can end without its classes is
-     * refused before javac runs: {@code failOnError = false} lets a rejected compilation succeed, and
-     * {@code -proc:only} runs the processors without writing a class at all.
+     * refused before the preparation starts, which leaves no pending inventory, and so before javac runs:
+     * {@code failOnError = false} lets a rejected compilation succeed, and {@code -proc:only} runs the processors
+     * without writing a class at all.
      */
     @Test
     void refusesACompilationThatCanEndWithoutItsClasses() throws IOException {
@@ -903,6 +979,7 @@ class StateGraphPluginFunctionalTest {
                 refusedLenient::getOutput);
         assertFalse(refusedLenient.getOutput().contains("-g:none"), refusedLenient::getOutput);
         assertFalse(refusedLenient.getOutput().contains("incompatible types"), "javac never ran");
+        assertFalse(lenient.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
 
         PluginFixture processorsOnly = PluginFixture.basic(
                 Files.createDirectories(tempDirectory.resolve("processors-only")), FIXTURE_REPOSITORY);
@@ -918,6 +995,116 @@ class StateGraphPluginFunctionalTest {
         assertTrue(refusedProcessorsOnly.getOutput().contains("cannot run with -proc:only"),
                 refusedProcessorsOnly::getOutput);
         assertFalse(refusedProcessorsOnly.getOutput().contains("-g:none"), refusedProcessorsOnly::getOutput);
+        assertFalse(processorsOnly.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+    }
+
+    /**
+     * javac runs no annotation processor under {@code -proc:none}, and given a {@code -processor} list it runs only
+     * the processors the last such list names. A compilation that would run without the StateGraph processor
+     * either way is refused before the preparation starts, so it leaves no pending inventory and javac never runs;
+     * a list that names the StateGraph processor builds and publishes the index the first build published.
+     */
+    @Test
+    void refusesACompilationThatRunsWithoutTheStateGraphProcessor() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.run("jar");
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    options.compilerArgs.addAll(listOf("-proc:none"))
+                }
+                """);
+
+        BuildResult off = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, off.task(":compileJava").getOutcome());
+        assertTrue(off.getOutput().contains("cannot run with -proc:none"), off::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+        assertFalse(off.getOutput().contains("complete-compile"), off::getOutput);
+
+        String lombokOnly = LOMBOK_PROCESSORS.replace("$", "\\$");
+        fixture.replaceInBuildScript("listOf(\"-proc:none\")", "listOf(\"-processor\", \"" + lombokOnly + "\")");
+
+        BuildResult unlisted = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, unlisted.task(":compileJava").getOutcome());
+        assertTrue(unlisted.getOutput().contains("cannot run with -processor '" + LOMBOK_PROCESSORS
+                + "', which leaves out " + STATEGRAPH_PROCESSOR), unlisted::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+        assertFalse(unlisted.getOutput().contains("No processor claimed"), "javac never ran");
+
+        fixture.replaceInBuildScript(lombokOnly, lombokOnly + "," + STATEGRAPH_PROCESSOR);
+
+        BuildResult listed = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, listed.task(":compileJava").getOutcome());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /**
+     * javac takes the last {@code -proc:} option, and Gradle's Java compiler takes the last {@code -processor} list,
+     * splits it on every comma, keeping empty names, and loads each name exactly as written; the preparation reads
+     * both the same way. {@code -proc:none} followed by {@code -proc:full} builds, while {@code -proc:full} followed
+     * by {@code -proc:none}, a {@code -processor} list that names the StateGraph processor followed by one that does
+     * not, and a list holding a name with a space in it or an empty name after its last comma, neither of them a
+     * valid qualified class name, are refused before the preparation starts.
+     */
+    @Test
+    void readsTheProcessingOptionsTheWayTheCompilationTakesThem() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        String lombokOnly = LOMBOK_PROCESSORS.replace("$", "\\$");
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    options.compilerArgs.addAll(listOf("-proc:none", "-proc:full"))
+                }
+                """);
+
+        BuildResult full = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, full.task(":compileJava").getOutcome());
+        assertTrue(fixture.inventoryIsSealed("main"));
+
+        fixture.replaceInBuildScript("listOf(\"-proc:none\", \"-proc:full\")",
+                "listOf(\"-proc:full\", \"-proc:none\")");
+
+        BuildResult none = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, none.task(":compileJava").getOutcome());
+        assertTrue(none.getOutput().contains("cannot run with -proc:none"), none::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("listOf(\"-proc:full\", \"-proc:none\")", "listOf(\"-processor\", \""
+                + lombokOnly + "," + STATEGRAPH_PROCESSOR + "\", \"-processor\", \"" + lombokOnly + "\")");
+
+        BuildResult lists = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, lists.task(":compileJava").getOutcome());
+        assertTrue(lists.getOutput().contains("cannot run with -processor '" + LOMBOK_PROCESSORS
+                + "', which leaves out " + STATEGRAPH_PROCESSOR), lists::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        String spaced = LOMBOK_PROCESSORS.substring(0, LOMBOK_PROCESSORS.indexOf(',')) + ", " + STATEGRAPH_PROCESSOR;
+        fixture.replaceInBuildScript("listOf(\"-processor\", \"" + lombokOnly + "," + STATEGRAPH_PROCESSOR
+                + "\", \"-processor\", \"" + lombokOnly + "\")",
+                "listOf(\"-processor\", \"" + spaced.replace("$", "\\$") + "\")");
+
+        BuildResult spaces = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, spaces.task(":compileJava").getOutcome());
+        assertTrue(spaces.getOutput().contains("cannot run with -processor '" + spaced + "', whose name ' "
+                + STATEGRAPH_PROCESSOR + "' is not a valid qualified class name"), spaces::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript(spaced.replace("$", "\\$"), lombokOnly + "," + STATEGRAPH_PROCESSOR + ",");
+
+        BuildResult trailing = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, trailing.task(":compileJava").getOutcome());
+        assertTrue(trailing.getOutput().contains("cannot run with -processor '" + LOMBOK_PROCESSORS + ","
+                + STATEGRAPH_PROCESSOR + ",', whose name '' is not a valid qualified class name"),
+                trailing::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
     }
 
     /**
@@ -979,12 +1166,13 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * A compilation that names no release compiles against the whole API of its toolchain's JDK, so the request
-     * carries the language version of that toolchain; one that names no encoding gives the request none, and the
-     * generator then reads UTF-8.
+     * A compilation that names no encoding gives the request none, and the generator then reads UTF-8. This one
+     * names no release either, so the request carries 21, the language version of the fixture's toolchain, which a
+     * constant 21 would match too; {@code passesTheReleaseOfTheToolchainWhenTheCompilationNamesNone} tells the two
+     * apart.
      */
     @Test
-    void passesTheReleaseOfTheToolchainWhenTheCompilationNamesNone() throws IOException {
+    void passesNoEncodingWhenTheCompilationNamesNone() throws IOException {
         PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
         fixture.replaceInBuildScript("options.encoding = \"UTF-8\"\n", "");
         fixture.replaceInBuildScript("options.release = 21\n", "");
@@ -995,6 +1183,30 @@ class StateGraphPluginFunctionalTest {
         JsonObject request = fixture.request("main");
         assertEquals(21, request.get("release").getAsInt(), request::toString);
         assertFalse(request.has("encoding"), request::toString);
+    }
+
+    /**
+     * A compilation that names no release compiles against the whole API of its toolchain's JDK, so the request
+     * carries the language version of that toolchain: with a toolchain above Java 21, that version and not 21. The
+     * test is skipped when Gradle detects no JDK above Java 21.
+     */
+    @Test
+    void passesTheReleaseOfTheToolchainWhenTheCompilationNamesNone() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Optional<Integer> later = toolchains(fixture).detected().stream()
+                .filter((Integer version) -> version > 21)
+                .findFirst();
+        assumeTrue(later.isPresent(), "Gradle detects no JDK above Java 21");
+        fixture.replaceInBuildScript("languageVersion = JavaLanguageVersion.of(21)",
+                "languageVersion = JavaLanguageVersion.of(" + later.get() + ")");
+        fixture.replaceInBuildScript("options.release = 21\n", "");
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        JsonObject request = fixture.request("main");
+        assertEquals(later.get().intValue(), request.get("release").getAsInt(), request::toString);
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
     }
 
     /**
@@ -1422,6 +1634,45 @@ class StateGraphPluginFunctionalTest {
                 }
                 """);
         return sources;
+    }
+
+    /**
+     * The JDKs Gradle detects on this machine for the build of {@code fixture}, as its {@code javaToolchains} report
+     * lists them, and the language version of the JVM the daemon of that build runs on. An installation counts as a
+     * JDK when its {@code bin} directory holds {@code javac}; a runtime without one is left out.
+     */
+    private static Toolchains toolchains(PluginFixture fixture) {
+        BuildResult result = fixture.run("javaToolchains", "printGeneratorLauncher");
+        Pattern location = Pattern.compile("\\| Location:\\s+(.+)");
+        Pattern version = Pattern.compile("\\| Language Version:\\s+(\\d+)");
+        Set<Integer> detected = new TreeSet<>();
+        Path installation = null;
+        for (String line : result.getOutput().lines().toList()) {
+            Matcher installed = location.matcher(line);
+            Matcher language = version.matcher(line);
+            if (installed.find()) {
+                installation = Path.of(installed.group(1).strip());
+            } else if (language.find() && installation != null) {
+                int feature = Integer.parseInt(language.group(1));
+                Path bin = installation.resolve("bin");
+                if (feature >= 21 && (Files.isRegularFile(bin.resolve("javac"))
+                        || Files.isRegularFile(bin.resolve("javac.exe")))) {
+                    detected.add(feature);
+                }
+            }
+        }
+        return new Toolchains(Integer.parseInt(report(result).get("DAEMON_LANGUAGE_VERSION")),
+                List.copyOf(detected));
+    }
+
+    /**
+     * The JDKs a build of a fixture can select as its toolchain.
+     *
+     * @param daemon the language version of the JVM the daemon of the build runs on
+     * @param detected the language versions, 21 or later, of the JDKs Gradle detects, those whose {@code bin}
+     *     directory holds {@code javac}, in ascending order
+     */
+    private record Toolchains(int daemon, List<Integer> detected) {
     }
 
     /** The {@code KEY=value} lines a reporting task of the fixture printed. */

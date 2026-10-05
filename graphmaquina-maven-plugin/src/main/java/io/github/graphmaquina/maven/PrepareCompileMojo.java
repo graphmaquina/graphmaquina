@@ -9,9 +9,10 @@ import org.apache.maven.plugin.MojoExecutionException;
  * and writes it before the generator runs.
  *
  * <p>It then dates the carrier of this generation past the newest file the class output held before the
- * retirement, so the incremental compiler recompiles the module it has just been left without. It retires
- * nothing at all, and says so, when the build compiles no main sources: in a project packaged as {@code pom}, or
- * when {@code maven.main.skip} or {@code <skipMain>} switches the main compilation off.</p>
+ * retirement, a safeguard for a compiler that decides by timestamps alone: maven-compiler-plugin 3.15.0 recompiles
+ * the module without it, since the preparation leaves the carrier without a class file. It retires nothing at
+ * all, and says so, when the build compiles no main sources: in a project packaged as {@code pom}, or when
+ * {@code maven.main.skip} or {@code <skipMain>} switches the main compilation off.</p>
  */
 public final class PrepareCompileMojo extends StateGraphMojo {
 

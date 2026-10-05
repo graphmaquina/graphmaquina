@@ -295,8 +295,9 @@ public final class StateGraphPlugin implements Plugin<Project> {
             task.dependsOn((Callable<Object>) () -> declarations.settle() ? generate : List.of());
             // The completion step enumerates every class file this compilation produced, which an incremental
             // recompilation of a subset would leave incomplete. Whether this compilation runs that step is only
-            // known once the build script has been read, and this switch is not a lazy property, so it is set
-            // for every compilation of a project that applies the plugin.
+            // known once the build script has been read, and this switch is not a lazy property, so it is set on
+            // the compile task of every source set, whether that source set takes part or not, and on no other
+            // compilation of the project.
             task.getOptions().setIncremental(false);
             task.getOptions().getCompilerArgumentProviders().add(manifestArguments);
             // Only the sealed inventory, never the whole work directory: the manifest is the generation's own

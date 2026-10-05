@@ -11,11 +11,13 @@ import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.process.ExecOperations;
 
 import javax.inject.Inject;
+import javax.lang.model.SourceVersion;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -31,9 +33,14 @@ import java.util.stream.Stream;
  * the first, leaving the pending inventory the next preparation consumes and no published index at all.</p>
  *
  * <p>That last guarantee needs a compilation that fails when javac rejects it and that writes classes when it
- * succeeds, and one that compiles what the generation wrote. The preparation therefore refuses, before it
- * retires anything, {@code options.failOnError = false}, {@code -proc:only}, and a compilation whose sources no
- * longer include the generated ones.</p>
+ * succeeds, and one that compiles what the generation wrote; the completion also needs javac to run the StateGraph
+ * annotation processor, which writes the provisional index the completion publishes. The preparation therefore
+ * refuses, before it retires anything, {@code options.failOnError = false}, {@code -proc:only} or {@code -proc:none}
+ * as the last {@code -proc:} option javac is given, a last {@code -processor} list that leaves out the StateGraph
+ * processor or holds a name that is not a valid qualified class name, and a compilation whose sources no longer
+ * include the generated ones. A well-formed name of a class that is not on the processor path, such as a misspelt
+ * one, is not refused: the compilation fails on it after the preparation, like any failed compilation, and the next
+ * preparation reads the pending inventory that compilation left to clean up after it.</p>
  *
  * <p>Both actions are named classes holding provider values and the injected process service only. They never
  * capture a {@code Project}, so the compilation task stays serializable and the two steps run the very request
@@ -134,9 +141,13 @@ public final class CompilationLifecycle {
 
     /**
      * Retires the outputs of the previous cycle and invalidates the published index, before javac runs, once it
-     * has checked that javac will compile what the generation wrote and either fail or write classes.
+     * has checked that javac will compile what the generation wrote, run the StateGraph annotation processor, and
+     * either fail or write classes.
      */
     public abstract static class PrepareCompilation extends LifecycleAction {
+
+        /** The StateGraph annotation processor, as a {@code -processor} list names it. */
+        private static final String PROCESSOR = "io.github.graphmaquina.processor.StateGraphProcessor";
 
         /**
          * @param execOperations the service that starts the generator process
@@ -167,12 +178,25 @@ public final class CompilationLifecycle {
         }
 
         /**
-         * Refuses a compilation that could end without the classes the completion step publishes, and one whose
-         * sources do not include what the generation wrote.
+         * Refuses a compilation that could end without the classes the completion step publishes, one that would
+         * run without the StateGraph annotation processor or with a processor name that is not a valid qualified
+         * class name, and one whose sources do not include what the generation wrote.
+         *
+         * <p>javac takes the last {@code -proc:} option it is given. Gradle 9.2.1's Java compiler, in process or in
+         * a forked compiler daemon, loads the annotation processors itself: it takes the last {@code -processor}
+         * list, splits it on every comma, keeping empty names, runs only the processors the list names, takes each
+         * name exactly as written and fails on the first one it cannot load. A javac Gradle starts from the command
+         * line, as it does when {@code options.fork} is set with {@code forkOptions.javaHome} or
+         * {@code forkOptions.executable}, reads the list itself and drops the empty names at its end, though a list
+         * without a comma stays one name, even when it is empty; this check refuses every empty name whichever javac
+         * runs. A well-formed name of a class that is not on the processor path, such as a misspelt one, passes this
+         * check, and the compilation fails on it.</p>
          *
          * @param compilation the {@code JavaCompile} task this step belongs to
          * @throws GradleException if the compilation sets {@code options.failOnError = false}, passes
-         *         {@code -proc:only}, or does not compile a source of the generated directory
+         *         {@code -proc:only} or {@code -proc:none} as its last {@code -proc:} option, passes a last
+         *         {@code -processor} list without the StateGraph processor or with a name that is not a valid
+         *         qualified class name, or does not compile a source of the generated directory
          */
         @Override
         protected void verify(Task compilation) {
@@ -184,11 +208,48 @@ public final class CompilationLifecycle {
                         + " succeeds, and the completion step would then publish classes javac never wrote."
                         + " Remove options.failOnError = false from " + compilation + ".");
             }
-            if (options.getAllCompilerArgs().contains("-proc:only")) {
+            List<String> arguments = options.getAllCompilerArgs();
+            String processing = "";
+            for (String argument : arguments) {
+                if (argument.startsWith("-proc:")) {
+                    processing = argument;
+                }
+            }
+            if (processing.equals("-proc:only")) {
                 throw new GradleException("the StateGraph compilation of " + compilation + " cannot run with"
                         + " -proc:only: javac would run the annotation processors and write no class, so the"
                         + " completion step would find nothing to publish. Remove -proc:only from the compiler"
                         + " arguments of " + compilation + ".");
+            }
+            if (processing.equals("-proc:none")) {
+                throw new GradleException("the StateGraph compilation of " + compilation + " cannot run with"
+                        + " -proc:none: javac would run no annotation processor, so the StateGraph processor would"
+                        + " write no index for the completion step to publish. Remove -proc:none from the compiler"
+                        + " arguments of " + compilation + ".");
+            }
+            int option = arguments.lastIndexOf("-processor");
+            if (option >= 0 && option + 1 < arguments.size()) {
+                String list = arguments.get(option + 1);
+                String[] names = list.split(",", -1);
+                for (String name : names) {
+                    if (!SourceVersion.isName(name)) {
+                        throw new GradleException("the StateGraph compilation of " + compilation + " cannot run"
+                                + " with -processor '" + list + "', whose name '" + name + "' is not a valid"
+                                + " qualified class name. Gradle's Java compiler, in process or in its compiler"
+                                + " daemon, splits that list on every comma, keeping empty names, and takes each name"
+                                + " exactly as written, spaces included, so it would fail to load a processor of that"
+                                + " name. Correct or remove that name in the compiler arguments of " + compilation
+                                + ".");
+                    }
+                }
+                if (!Arrays.asList(names).contains(PROCESSOR)) {
+                    throw new GradleException("the StateGraph compilation of " + compilation + " cannot run with"
+                            + " -processor '" + list + "', which leaves out " + PROCESSOR + ": javac would run only"
+                            + " the annotation processors that list names, so the StateGraph processor would write no"
+                            + " index for the completion step to publish. Add " + PROCESSOR + " to that list, after"
+                            + " the processors of Lombok when the project uses Lombok, or remove -processor and its"
+                            + " list from the compiler arguments of " + compilation + ".");
+                }
             }
             for (File directory : getGeneratedSources().getFiles()) {
                 List<File> generatedSources = javaSources(directory);

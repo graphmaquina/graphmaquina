@@ -437,6 +437,7 @@ public final class PluginFixture {
                                 + generator.get().metadata.languageVersion.asInt())
                         println("TOOLCHAIN_LAUNCHER=" + toolchain.get().executablePath.asFile.absolutePath)
                         println("DAEMON_JAVA_HOME=" + System.getProperty("java.home"))
+                        println("DAEMON_LANGUAGE_VERSION=" + Runtime.version().feature())
                     }
                 }
 
@@ -856,6 +857,23 @@ public final class PluginFixture {
      */
     public JsonObject request(String sourceSet) {
         return readJson(directory.resolve("build/graphmaquina/" + sourceSet + "/request.json"));
+    }
+
+    /**
+     * The identities of the dependency indexes the annotation manifest of {@code sourceSet} carries: the indexes
+     * the generation read from the compile classpath of that source set.
+     *
+     * @param sourceSet the name of the source set
+     * @return the compilation identities, in the order the manifest lists them
+     */
+    public List<String> manifestDependencies(String sourceSet) {
+        JsonObject manifest = readJson(
+                directory.resolve("build/graphmaquina/" + sourceSet + "/annotation-manifest.json"));
+        List<String> identities = new ArrayList<>();
+        for (JsonElement dependency : manifest.getAsJsonArray("dependencies")) {
+            identities.add(dependency.getAsJsonObject().get("compilationId").getAsString());
+        }
+        return List.copyOf(identities);
     }
 
     /** The names of every entry of the project's jar. */

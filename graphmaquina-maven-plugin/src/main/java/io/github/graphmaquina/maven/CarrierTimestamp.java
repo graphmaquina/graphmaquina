@@ -9,20 +9,21 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * Makes the generated carrier of a compilation newer than everything the previous compilation left in the
- * class output, so that the incremental compiler recompiles the whole module after a retirement.
+ * Dates the carrier sources a generation emitted past everything the previous compilation left in the class
+ * output, without changing a byte of them.
  *
- * <p>{@code maven-compiler-plugin} decides whether to run javac at all by comparing the timestamps of the
- * sources with the timestamps of the classes. Retirement deletes the binaries of the previous cycle, so the
- * compilation must run again; but the sources it must run over are byte-identical to the ones the previous
- * cycle compiled, and a build that finished within the resolution of the filesystem can leave them looking no
- * newer than the classes that survived. Touching the one source every generation emits — the carrier of this
- * compilation — is enough to make the comparison unambiguous, and it changes no byte of a generated file, so
- * the generation stays deterministic.</p>
+ * <p>The preparation reads the newest modification time of the class output before the generator retires
+ * anything, and afterwards gives every carrier source that time plus two seconds, unless the source is newer
+ * already. Two seconds rather than one millisecond, because filesystems still exist whose modification times have a
+ * resolution of a second or two. Only a modification time changes, so the generation stays deterministic.</p>
  *
- * <p>The margin is two seconds rather than one millisecond because filesystems still exist whose modification
- * times have a resolution of a second or two, and a timestamp that merely rounds to the same value as the
- * newest class file would leave the compilation looking up to date.</p>
+ * <p>The dating is meant for a compiler that decides by timestamps alone whether a module is up to date.
+ * maven-compiler-plugin 3.15.0, the version the checks of this plugin are written against, does not depend on it:
+ * its stale-source scanner counts a source whose class file is missing as stale, and the preparation leaves the
+ * carrier without a class file. The completion deletes that class file, and the preparation deletes it again, as a
+ * binary the sealed inventory excluded or, after a cycle that never completed, as a class file whose
+ * {@code SourceFile} attribute ties it to the carrier. The dating is kept because it is harmless; {@link #refresh}
+ * also returns the carriers it dated, and the preparation fails when there are none.</p>
  */
 final class CarrierTimestamp {
 
