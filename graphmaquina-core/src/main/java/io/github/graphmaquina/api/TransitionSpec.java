@@ -23,7 +23,8 @@ import lombok.NonNull;
  * @param failsOn exception types that turn an action's exception into a domain failure, routed like a failed outcome;
  *     the exception is unwrapped from CompletionException and ExecutionException first, and an Error or a
  *     CancellationException never matches, nor does a StateMachineException, which the engine rethrows as is,
- *     whichever root it comes from, and whose details then describe that root
+ *     whichever root it comes from; a TransitionAbortedException from another root keeps details that describe
+ *     that root
  * @param timeout longest wait for the asynchronous action's stage, counted from when the action returns it; it only
  *     shortens the root's deadline, and {@code Duration.ofNanos(Long.MAX_VALUE)} or more sets no limit of its own
  * @param afterCommit hook run once this edge is committed

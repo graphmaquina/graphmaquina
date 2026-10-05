@@ -261,12 +261,12 @@ class PoisonTest {
     }
 
     /**
-     * An unknown machine is one wiring error, whichever way a cascade names it and whatever its collection holds:
-     * cascade and cascadeAll, by key or by facade type, under either policy, over no element or one, refuse it and
-     * poison, so the root does not commit although its action catches the refusal.
+     * An unknown machine is one wiring error, whichever way a cascade names it and whatever valid elements its
+     * collection holds: cascade and cascadeAll, by key or by facade type, under either policy, over no element or one,
+     * refuse it and poison, so the root does not commit although its action catches the refusal.
      */
     @Test
-    void anUnknownMachineIsRefusedAndPoisonsWhateverTheCollectionHolds() {
+    void anUnknownMachineIsRefusedAndPoisonsWhateverValidElementsItsCollectionHolds() {
         Item item = new Item("i1", ItemStatus.PACKING, Optional.empty());
         Map<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades = new LinkedHashMap<>();
         cascades.put("cascade by key", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->

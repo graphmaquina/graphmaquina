@@ -111,8 +111,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * chain counts reaction -> transition -> reaction. Exceeding maxWatchChain throws WatchChainExceededException
      * after the reentrancy check and the state read, before any watch function runs. The state read and the watch
      * functions, peersOf and the conditions, run with the reentrancy marker set, so none of them can start a
-     * transition: a nested root would begin a chain of its own that maxWatchChain never counts. The marker is
-     * released before the selected edge runs as a root.
+     * transition on this thread: a nested root would begin a chain of its own that maxWatchChain never counts. The
+     * marker is released before the selected edge runs as a root.
      */
     Outcome<E, S, T> reevaluate(E entity, int chain) {
         S state;

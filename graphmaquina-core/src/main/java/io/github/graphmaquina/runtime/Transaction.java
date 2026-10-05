@@ -138,10 +138,11 @@ final class Transaction {
      * StateMachineException the action throws, or that completes its stage, bare or wrapped in CompletionException
      * or ExecutionException, is rethrown as is: an engine exception is never matched against failsOn. It propagates
      * unchanged even when it comes from another root, such as the failure of another machine's call that the action
-     * joined, and its details then describe that root, not this call. Any other Exception, thrown or completing the
-     * stage, checked ones included, which Kotlin or {@code @SneakyThrows} code can throw without declaring them,
-     * becomes an ActionFailure that failsOn classifies. An Error is never routed: thrown as itself, it propagates;
-     * wrapped in CompletionException or ExecutionException, it is unwrapped and aborts.
+     * joined: a TransitionAbortedException thrown that way carries details that describe that root, not this call.
+     * Any other Exception, thrown or completing the stage, checked ones included, which Kotlin or
+     * {@code @SneakyThrows} code can throw without declaring them, becomes an ActionFailure that failsOn classifies.
+     * An Error is never routed: thrown as itself, it propagates; wrapped in CompletionException or
+     * ExecutionException, it is unwrapped and aborts.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -187,9 +188,10 @@ final class Transaction {
     /**
      * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. A
      * StateMachineException the guard throws, or that completes its stage, bare or wrapped in CompletionException or
-     * ExecutionException, is rethrown as is, even one that comes from another root, whose details then describe that
-     * root. Any other exceptional completion of the stage, an Error included, and any other Exception the guard
-     * throws, checked ones included, are technical aborts; an Error thrown as itself propagates.
+     * ExecutionException, is rethrown as is, even one that comes from another root: a TransitionAbortedException
+     * thrown that way carries details that describe that root. Any other exceptional completion of the stage, an
+     * Error included, and any other Exception the guard throws, checked ones included, are technical aborts; an
+     * Error thrown as itself propagates.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> GuardResult evaluateGuard(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition, int depth,

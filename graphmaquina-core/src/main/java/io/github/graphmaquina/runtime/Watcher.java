@@ -16,7 +16,7 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
 
     /**
      * Owner of the moved peer, if any, and exactly in the watched state. ownerOf, the state read and the identity
-     * function run with the reentrancy marker set, so none of them can start a transition.
+     * function run with the reentrancy marker set, so none of them can start a transition on this thread.
      */
     Optional<EntityRef> ownerToReevaluate(Object movedInstance) {
         P peer = spec.peer().entity().cast(movedInstance);
@@ -37,10 +37,10 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
     }
 
     /**
-     * Re-evaluation as a new root transaction. It does not propagate an Exception, because the commit that triggered
-     * it already happened: any Exception becomes {@link Reaction.Aborted}, a checked one, which a watch condition can
-     * throw without declaring it, wrapped in UndeclaredThrowableException since Aborted carries a RuntimeException.
-     * An Error propagates unchanged.
+     * Re-evaluation of the owner: the edge its watch selects, if any, runs as a new root transaction. It does not
+     * propagate an Exception, because the commit that triggered it already happened: any Exception becomes
+     * {@link Reaction.Aborted}, a checked one, which a watch condition can throw without declaring it, wrapped in
+     * UndeclaredThrowableException since Aborted carries a RuntimeException. An Error propagates unchanged.
      */
     Reaction react(Object instance, int chain) {
         E entity = machine.key().entity().cast(instance);

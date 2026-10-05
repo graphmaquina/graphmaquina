@@ -60,8 +60,8 @@ import org.junit.jupiter.api.Test;
  * Checked exceptions that callbacks throw without declaring them, as Kotlin, Groovy and Lombok's
  * {@code @SneakyThrows} compile to. Each one takes the route an unchecked exception from the same callback takes.
  * An {@code Error} is never routed: thrown by a callback it propagates unchanged, while one that completes a stage
- * is the cause of a technical abort. An engine exception is never routed either: bare or wrapped, thrown or
- * completing a stage, it reaches the caller as it was thrown.
+ * is the cause of a technical abort. An engine exception from an action or a guard is never routed either: bare or
+ * wrapped, thrown or completing a stage, it reaches the caller as it was thrown.
  */
 class CheckedExceptionTest {
 
@@ -399,9 +399,10 @@ class CheckedExceptionTest {
     }
 
     /**
-     * An engine exception keeps its identity on every path that brings it back from a callback: thrown bare or in a
-     * CompletionException or an ExecutionException, by a synchronous or an asynchronous action or guard or by a
-     * recovery action, or completing a stage, it reaches the caller as it was thrown, never as the cause of an abort.
+     * An engine exception keeps its identity on every path that brings it back from an action or a guard: thrown
+     * bare or in a CompletionException or an ExecutionException, by a synchronous or an asynchronous action or guard
+     * or by a recovery action, or completing a stage, it reaches the caller as it was thrown, never as the cause of
+     * an abort.
      */
     @Test
     void anEngineExceptionReachesTheCallerAsItWasThrownOnEveryPath() {

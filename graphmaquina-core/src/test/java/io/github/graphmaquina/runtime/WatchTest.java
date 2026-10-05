@@ -61,7 +61,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Watches over the order and item fixtures, and over a doc machine that watches itself: which commits notify a watch,
  * the reactions an outcome carries, a failed or unreadable reaction, manual reevaluation, the bounded reaction chain,
- * the reads a rule makes, the input a reaction runs with, and the watch functions that cannot start a transition.
+ * the reads a rule makes, the input a reaction runs with, and the watch functions that cannot start a transition on
+ * the thread that runs them.
  */
 class WatchTest {
 
@@ -380,10 +381,10 @@ class WatchTest {
     }
 
     /**
-     * A watch's functions cannot start a transition, as a guard cannot. A peersOf, an ownerOf or a condition that
-     * calls execute is refused with ReentrantTransitionException: the reaction ends aborted, and the doc it tried to
-     * move and the observer stay where they were. A reevaluation called directly refuses peersOf and the condition
-     * the same way.
+     * A watch's functions cannot start a transition on the thread that runs them, as a guard cannot. A peersOf, an
+     * ownerOf or a condition that calls execute is refused with ReentrantTransitionException: the reaction ends
+     * aborted, and the doc it tried to move and the observer stay where they were. A reevaluation called directly
+     * refuses peersOf and the condition the same way.
      */
     @Test
     void aWatchFunctionThatStartsATransitionIsRefusedLikeAGuard() {

@@ -17,8 +17,8 @@ final class Unwrap {
     /**
      * The cause of what a callback threw or completed its stage with, once unwrapped. A StateMachineException found
      * there is thrown as is instead of being returned, so an engine exception reaches the caller unchanged whether it
-     * came bare or wrapped, thrown by the callback or through its stage, and whichever root it comes from: one from
-     * another root keeps details that describe that root.
+     * came bare or wrapped, thrown by the callback or through its stage, and whichever root it comes from: a
+     * TransitionAbortedException from another root keeps details that describe that root.
      */
     static Throwable foreignCause(Throwable error) {
         Throwable cause = unwrap(error);

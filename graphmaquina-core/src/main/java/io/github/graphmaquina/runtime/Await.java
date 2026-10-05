@@ -14,10 +14,10 @@ import java.util.concurrent.TimeoutException;
  * A deadline of Long.MAX_VALUE means no limit. Any other deadline is only ever subtracted from, so one that wrapped
  * past Long.MAX_VALUE when its budget was added still leaves the exact time remaining. A stage that completes with a
  * StateMachineException, bare or wrapped in CompletionException or ExecutionException, rethrows it as is, as the
- * engine does with one a callback throws, even one from another root, whose details then describe that root; any
- * other exceptional completion surfaces as an ActionFailure, an Error included: the engine learns of that Error only
- * through the stage, so it reports it as the cause of an abort, while an Error thrown as itself on the calling thread
- * propagates unchanged.
+ * engine does with one a callback throws, even one from another root: a TransitionAbortedException thrown that way
+ * carries details that describe that root. Any other exceptional completion surfaces as an ActionFailure, an Error
+ * included: the engine learns of that Error only through the stage, so it reports it as the cause of an abort, while
+ * an Error thrown as itself on the calling thread propagates unchanged.
  */
 final class Await {
 
