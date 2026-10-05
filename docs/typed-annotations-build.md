@@ -50,7 +50,7 @@ Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD
 ./gradlew centralBundle
 ```
 
-This stages the four library/Maven publications plus the Gradle plugin and its marker, then validates the
+This stages the five library and Maven publications plus the Gradle plugin and its marker, then validates the
 expected artifacts, POM metadata, signature files and MD5/SHA-1 checksums. Central staging refuses to run
 without `SIGNING_KEY`; local and adapter-test repositories still support unsigned development builds.
 The ZIP contains only the current release's expected files, excluding repository metadata and older releases.
@@ -177,6 +177,11 @@ Skipping task ':generateTestStateGraphApi' as task onlyIf 'the test source set d
 io.github.graphmaquina:graphmaquina-processor in testAnnotationProcessor' is false.
 ```
 
+The declarations are counted as the build adds and removes them, so one the build removes again no longer
+counts, and the answer is settled when the task graph is built. A processor that a `defaultDependencies` or
+`withDependencies` action adds only once javac's processor path is resolved does not count: javac then runs the
+processor without a manifest, and a compilation that declares graphs is refused with SG602.
+
 ### Tasks and outputs
 
 | Task | Source set |
@@ -189,7 +194,7 @@ All of them are in the `graphmaquina` task group.
 
 | Path | Content |
 | --- | --- |
-| `build/generated/sources/graphmaquina/<sourceSet>` | the generated vocabulary and symbol classes; registered as a source directory of the source set |
+| `build/generated/sources/graphmaquina/<sourceSet>` | the generated vocabulary and symbol classes; added to the java sources of the source set as a source directory set of its own |
 | `build/graphmaquina/<sourceSet>/request.json` | the request the adapter wrote for the generator |
 | `build/graphmaquina/<sourceSet>/annotation-manifest.json` | the manifest javac is pointed at |
 | `build/graphmaquina/<sourceSet>/annotation-manifest.pending.json` | recovery ownership during generation; retained on failure, removed after successful publication |
@@ -197,8 +202,31 @@ All of them are in the `graphmaquina` task group.
 | `build/graphmaquina/<sourceSet>/processor-inventory.json` | what the processor emitted, written during javac and read by the completion step |
 | `build/classes/java/<sourceSet>/META-INF/graphmaquina/exports.json` | the published index, packaged into the jar |
 
-The generated directory is added with `sourceSet.java.srcDir(...)`, not handed to `JavaCompile` alone, so an
-IDE import, a sources jar and a javadoc task all see it.
+The generated directory joins `sourceSet.java` as a source directory set of its own, not handed to
+`JavaCompile` alone, so an IDE import, a sources jar and a javadoc task all see it. The source set's include and
+exclude patterns filter the original sources only, so javac compiles everything the generation wrote. That
+includes the compilation carrier, `io/github/graphmaquina/generated/bootstrap/GraphCompilation<digest>.java`,
+which is tool-internal: `complete-compile` removes its class file, so the jar never carries it, and the plugin
+leaves its source out of the source set's sources jar and javadoc.
+
+### What the generator reads
+
+The generation task parses what javac compiles of the source set: every source directory but the generated
+ones, whole, or file by file as the source set's include and exclude patterns select them. Files Gradle leaves
+out of a source directory by default, such as `._*` copies and `.git` directories, are left out either way, and
+symbolic links are followed, a link that leads back into a directory being walked skipped.
+
+The task runs after every task those directories are built by, so a directory registered with the task that
+writes it, as `java.srcDir(generateOther)` registers the output of a `generateOther` task, is written before it
+is read. A directory added by path alone carries no such task, so nothing orders its writer before the
+generation: depending on the order Gradle picks, the build stops with Gradle's own error that the generation
+task uses an output of that task without declaring a dependency on it, or the generation reads the directory
+before it is written. Register such a directory with the task that writes it.
+
+The sources are parsed at the compilation's `options.release`, or, when that is not set, at the language
+version of its toolchain, and read in its `options.encoding`; the generated sources are written in that
+encoding, a character it cannot represent as a `\uXXXX` escape. Without `options.encoding` the generator reads
+and writes UTF-8.
 
 ### What the plugin does to the compilation
 
@@ -222,10 +250,26 @@ The annotation-processor path itself is never touched, so Lombok keeps running f
 The build is compatible with Gradle's configuration cache: nothing the plugin stores on a task holds a
 `Project`, a `Configuration` or a source set.
 
+Before it retires anything, `prepare-compile` refuses a compilation that could end without the classes the
+completion publishes, or that would not compile everything generated: `options.failOnError = false`,
+`-proc:only` among the compiler arguments, and a compilation whose sources leave out a generated file, as
+replacing the source set's java directories with `java.setSrcDirs(...)` does, or a source or a pattern set on
+the compile task itself. The refusal prints, for the Kotlin and the Groovy DSL, the line that adds the generated
+directory back after a replacement, and asks for a setting on the compile task to be removed.
+
+The generation task's `sourcesOutput`, `workDirectory`, `requestFile`, `javaLauncher`, `generatorClasspath`,
+`release`, `encoding` and `compilationId` are conventions: a value a build sets wins whenever it sets it, and
+the compilation follows what the task holds, from the source root, the manifest and the sealed inventory to the
+launcher and the classpath `prepare-compile` and `complete-compile` run with. Paths a build adds to
+`generatorClasspath` join the default only when they are added after the plugin configured the task; added
+before, they replace it. `classesOutput` and `processorSourcesOutput` follow the compile task, and
+`annotationManifest` follows the work directory: a build that sets any of the three is refused.
+
 ### Toolchain
 
-The generator runs as a separate process under the launcher of the project's Java toolchain, not under the
-Gradle daemon's JVM. The toolchain must be a **JDK 21 or later**; below that, or an installation with no
+The generator runs as a separate process under the generation task's `javaLauncher`, by convention the launcher
+of the project's Java toolchain, not under the Gradle daemon's JVM; `prepare-compile` and `complete-compile` run
+under the same launcher. The toolchain must be a **JDK 21 or later**; below that, or an installation with no
 `bin/javac`, the build fails before anything is generated:
 
 ```
@@ -246,7 +290,10 @@ dependencies { add("graphmaquinaGenerator", project(":graphmaquina-codegen")) } 
 ```
 
 Declaring any dependency on that configuration replaces the default, which is how `graphmaquina-example` runs
-against the sibling project instead of a published artifact.
+against the sibling project instead of a published artifact. Each generation task takes that configuration as
+the convention of its `generatorClasspath`; a classpath set on the task wins, and the `prepare-compile` and
+`complete-compile` of its source set run over it too. What a generator run that completes writes on its error
+stream is logged as a warning, as the Maven plugin logs it.
 
 ## Maven
 
@@ -334,7 +381,9 @@ resolvable, which for Central or a locally installed build means nothing further
 
 `<release>` does not have to be written out when a parent already sets it — the Spring Boot parent, for
 instance, derives `maven.compiler.release` from `java.version`, and the plugin resolves the setting the way
-Maven resolves a parameter. What matters is that the effective release is 21 or later.
+Maven resolves a parameter. What matters is that the effective release is 21 or later. The test compilation
+reads `<testRelease>`, `<testSource>` and `<testTarget>`, or their `maven.compiler.test*` properties, in place of
+`<release>`, `<source>` and `<target>` wherever they are set, as `maven-compiler-plugin` does.
 
 ### The six goals
 
@@ -349,6 +398,12 @@ Maven resolves a parameter. What matters is that the effective release is 21 or 
 
 The goal prefix is `graphmaquina`, so a goal can also be invoked directly, for example
 `mvn graphmaquina:generate`.
+
+A goal does nothing, and says so at info level (`StateGraph skips <compilationId>: …`), for a compilation the
+build switches off the way `maven-compiler-plugin` skips its own goal: `maven.main.skip` or `<skipMain>` for
+the three main goals, `maven.test.skip` or `<skip>` for the three test goals. Nothing is generated, retired or
+published then. All six do nothing in a project packaged as `pom`, such as the parent of a multi-module build
+whose modules inherit the executions.
 
 The observed order of a `mvn test-compile`, which the plugin's own suite asserts from real Maven output:
 
@@ -379,32 +434,69 @@ plugins a POM adds, and a POM declaration of a lifecycle plugin keeps that injec
 | `target/graphmaquina/test/…` | the same for the test compilation |
 | `target/classes/META-INF/graphmaquina/exports.json` | the published index, packaged into the jar |
 
+The compilation carrier, `io/github/graphmaquina/generated/bootstrap/GraphCompilation<digest>.java`, is
+tool-internal: `complete` removes its class file, so the jar never carries it. This plugin configures no other
+plugin, so a sources or javadoc plugin that reads the compile source roots may still pick up its source from
+`target/generated-sources/graphmaquina`. Leave `io/github/graphmaquina/generated/bootstrap/**` out in that
+plugin's configuration; for `maven-source-plugin`, that is its `<excludes>` list.
+
+### Sources, release and encoding
+
+A source root the execution does not narrow is passed to the generator whole; one its `<includes>` or
+`<excludes>` narrow (`<testIncludes>` or `<testExcludes>` for the tests) is passed as the files they select,
+without the files the compiler's scanner excludes by default, the list of plexus-utils, which leaves out `._*`
+copies and the directories of version control systems among others. The generator walks a whole root with
+Ant's shorter default list instead, so a `.java` file under such a root inside an `RCS`, `BitKeeper`,
+`ChangeSet`, `_darcs`, `.metadata`, `.arch-ids` or `.darcsrepo` directory, or one named `-darcs-backup*`, is
+read by the generator although javac never compiles it. Symbolic links are followed, and a link that leads back
+into a directory being walked is skipped.
+
+The request also carries the release the compiler compiles at, `<release>`, else `<target>`, or their
+properties, with the test settings for the test compilation, and the encoding it reads the sources in,
+`<encoding>`, else `project.build.sourceEncoding`. The generator parses at that release, reads in that encoding
+and writes the generated sources in it; without an encoding, it reads and writes UTF-8.
+
 ### Configuration parameters
 
 | Parameter | Property | Default |
 | --- | --- | --- |
-| `javaExecutable` | `graphmaquina.javaExecutable` | the selected `jdk` toolchain, and the JVM running Maven only when that is a JDK 21 or later |
+| `javaExecutable` | `graphmaquina.javaExecutable` | the `java` of the `jdk` toolchain selected for the build, else the `java` of the JVM running Maven; whichever it is must belong to a JDK 21 or later, the one javac compiles with |
 | `compilationId` | `graphmaquina.compilationId` | `groupId:artifactId:main`, and `groupId:artifactId:test` for the test source set |
 
 ### What the Maven adapter requires, and refuses
 
-Every one of these is checked in `generate-sources`, before anything is retired, and every failure names what
-to change:
+Every one of these is checked by `generate`, and by `generate-test` for the test compilation, before anything is
+written or retired, and every failure names what to change:
 
 - **A release of 21 or later.** Resolved from the execution's configuration, the plugin's configuration,
-  `maven.compiler.release`, `source`/`target` or their properties. No release at all is a failure too, because
-  `maven-compiler-plugin` would then fall back to its own default, which is below 21.
+  `maven.compiler.release`, `source`/`target` or their properties, a property given on the command line winning
+  over one of the JVM, and that over one of the project. The test compilation is checked against its own test
+  settings when they are set. No release at all is a failure too, because `maven-compiler-plugin` would then fall
+  back to its own default, which is below 21.
 - **The annotation processor on the compiler's processor path.** `<proc>none</proc>`,
   `${maven.compiler.proc}=none` and `-proc:none` are refused, and so is a compilation whose
   `<annotationProcessorPaths>` (or, when it declares none, whose resolved dependencies) does not carry
   `io.github.graphmaquina:graphmaquina-processor`.
+- **A compilation that writes its classes.** `<proc>only</proc>`, `${maven.compiler.proc}=only` and
+  `-proc:only` are refused, since javac would compile nothing, and so is `failOnError` set to false, since the
+  build would go on past a compilation javac rejected: either way the preparation would have retired the
+  previous outputs and the completion would find nothing to publish in their place.
+- **Includes and excludes that keep the carrier.** The compiler applies its `<includes>` and `<excludes>`
+  (`<testIncludes>` and `<testExcludes>` for the tests) to the generated source root too. Patterns that leave out
+  the compilation carrier are refused, naming the pattern; with includes, the remedy is
+  `<include>io/github/graphmaquina/generated/**</include>`.
 - **The manifest argument, per execution.** Every `-Agraphmaquina.annotationManifest=` the two scopes declare
   must name the manifest of that execution's own work directory. A missing or divergent one is refused with the
   exact argument to declare.
-- **The compiler and the generator on the same JDK.** A compiler forked at an `<executable>`, or a
-  `<jdkToolchain>` that selects a different `java`, is refused.
-- **No skipped compilation.** `<skipMain>`, `<skip>`, `maven.main.skip` and `maven.test.skip` are refused:
-  the build would retire everything the previous compilation published and compile nothing to replace it.
+- **The compiler and the generator on the same JDK.** javac's JDK is resolved as `maven-compiler-plugin`
+  resolves it: the `<executable>` it forks; else, unless an `<executable>` configured without a fork makes it
+  ignore toolchains, a `jdk` toolchain, the first one its `<jdkToolchain>` matches or else the one selected for
+  the build; else the JDK running Maven. Its home must be the home of the JDK the generator's `java` belongs to,
+  the directory above the `bin` holding that `java` once symbolic links are followed. A launcher outside a JDK's
+  `bin` directory, such as a wrapper script, has a home of its own and is refused, even when it starts the same
+  JDK.
+- **A JDK 21 or later for the generator.** Its `java` must exist, have a `javac` beside it, and belong to a JDK
+  whose `release` file, when it has one, declares 21 or later.
 - **The processor's own generated-sources directory left where GraphMaquina owns it.** A configured
   `<generatedSourcesDirectory>` / `<generatedTestSourcesDirectory>` must match the request's.
 
@@ -413,17 +505,25 @@ to change:
 | Symptom | Cause and remedy |
 | --- | --- |
 | `SG599` "could not write …" | the processor could not create or write an output. Follow the named type/path and underlying error using [processor output failures](#processor-output-failures-sg599), then rerun the full lifecycle after correcting the cause. |
-| `SG602` "…names no manifest at all" | javac ran without `-Agraphmaquina.annotationManifest=…`. In Maven, add the argument to that execution; in Gradle, the source set is not participating — declare `graphmaquina-processor` in its annotation-processor configuration. |
+| `SG602` "…names no annotation manifest…" | javac ran without `-Agraphmaquina.annotationManifest=…`. In Maven, add the argument to that execution; in Gradle, the source set is not participating — declare `graphmaquina-processor` in its annotation-processor configuration. |
 | `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
-| `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host). The message names the type and the declaration. |
-| `SG603` | generated names collide after PascalCase normalization, such as `id` / `_id`. The diagnostic names both source declarations; rename the conflict and its references, then regenerate. |
-| `SG609` | unsupported string-based declaration. Use `@GenerateGraphApi` and the [generated typed annotations](guide.md#annotation-and-binding-reference). |
+| `SG602` "…which this compilation never processed…" | javac compiled a machine implicitly, from the source path, and javac does not process such a source. Pass every source of the compilation to javac. |
+| `SG602` "…is still compiled from a previous compilation that nothing retired…" | javac ran again over a class output that still holds the previous companions. Run the lifecycle, whose preparation retires them, or clean the build. |
+| `SG602` "…no class file in … belongs to the carrier…" | javac's debug setting left the `SourceFile` attribute out of the class files, which the completion reads: `-g:none`, or a `-g:` list without `source` such as `-g:lines,vars`. Compile with javac's default, `-g`, or a `-g:` list that includes `source`. |
+| `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host), or could not parse an original source at the compilation's release. The message names the type and the declaration. |
+| `SG603` | a generated name collides or cannot be written: names that collide after PascalCase normalization, such as `id` / `_id`; a generated type an original source already declares, or one differing only in case where the volume does not tell names apart; or a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references, then regenerate. |
+| `SG609` | a declaration still uses the retired 1.x matrix vocabulary. The message names the typed declaration to write instead; see [migrating to 2.0](migration-2.0.md) and the [generated typed annotations](guide.md#annotation-and-binding-reference). |
 | `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
-| "the StateGraph generator needs a Java 21 toolchain or later" | raise the Gradle toolchain to 21+, or point Maven's `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
+| "the StateGraph generator needs a Java 21 toolchain or later" (Gradle), "…needs Java 21 or later, but … belongs to Java …" (Maven) | raise the Gradle toolchain to 21+, or point Maven's `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
+| "…The two must be the same JDK…" | the generator's `java` and javac belong to different JDK homes. Point `graphmaquina.javaExecutable` at the `java` in the `bin` directory of the JDK javac compiles with, not at a wrapper launcher, or have javac compile with the generator's JDK. |
 | "…is not on the `<annotationProcessorPaths>` …" | the processor is missing from the compiler's processor path; declare it after Lombok. |
 | "…switches annotation processing off…" | remove `proc=none` / `-proc:none`. |
+| "…run the annotation processors and compile nothing…", "…lets the build continue past a compilation…" | remove `proc=only` / `-proc:only`, or leave `failOnError` at its default, `true`. |
+| "…select no …/GraphCompilation….java…", "…leaves out …/GraphCompilation….java…" | the compiler's includes or excludes leave out the compilation carrier. Add `<include>io/github/graphmaquina/generated/**</include>`, or change the exclude so it matches nothing under `io/github/graphmaquina/generated`. |
 | "…reads the annotation manifest X, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. |
-| "…switches the main compilation off…" | drop `maven.main.skip` / `maven.test.skip` / `<skipMain>`, or drop the GraphMaquina plugin from that build. |
+| `[INFO] StateGraph skips <id>: …` | the project is packaged as `pom`, or `maven.main.skip` / `<skipMain>` / `maven.test.skip` / `<skip>` switches that compilation off. Nothing was generated, retired or published; this is not an error. |
+| "…cannot run with options.failOnError = false…", "…cannot run with -proc:only…" (Gradle) | remove that setting from the compile task. |
+| "task ':compileJava' does not compile …" (Gradle) | the compilation leaves out a generated file. Add directories with `java.srcDir(...)` instead of replacing them, or add the generated directory back with the line the message prints, or remove a source or pattern set on the compile task. |
 | `complete` fails naming `pending-exports.json` | javac ran but published no index: the processor was not on the path for that compilation. |
 | `[INFO] StateGraph completes nothing for <id>` | javac did not run at all in this invocation (for example `mvn generate-sources`). Nothing was retired; this is a no-op, not an error. |
 
@@ -460,3 +560,7 @@ what javac actually accepted, so:
 - **A watched pair must be generated by the same compilation.** `@GraphPeers` may only name machines this very
   compilation generates an API for, because watch vocabulary is typed with both machines' states; a peer that
   lives in another module or in a dependency jar is refused with SG608, and cross-jar watches are deferred.
+- **The generator parses without `--enable-preview`.** No member of the request carries it, whatever javac is
+  given. An original source using a preview feature that javac's parser checks, such as string templates on
+  JDK 21, is refused with SG601; one using a preview feature javac checks only after parsing, such as primitive
+  patterns at release 25, is read like any other source.

@@ -575,12 +575,15 @@ Merely declaring the plugin does not activate these goals. Use the executions ab
 `mvn verify` instead.
 
 The adapter validates the effective Java release, processor path, manifest paths and JDK alignment. It rejects
-`-proc:none`, missing processor configuration, divergent main/test manifests and skipped compilation such as
-`maven.main.skip` or `maven.test.skip`. Run the normal lifecycle when generating graphs.
+`-proc:none`, `proc=only` or `-proc:only`, `failOnError=false`, missing processor configuration, divergent
+main/test manifests, and compiler includes or excludes that leave out the compilation carrier the generator
+emits. A compilation the build switches off is skipped instead: `maven.main.skip` or `<skipMain>` makes the
+three main goals log that and do nothing, `maven.test.skip` or `<skip>` the three test goals, and a project
+packaged as `pom` skips all six. Run the normal lifecycle when generating graphs.
 
 | Optional property | Meaning |
 | --- | --- |
-| `graphmaquina.javaExecutable` | Explicit Java executable for generation; it must agree with the compiler JDK |
+| `graphmaquina.javaExecutable` | Explicit `java` executable for generation. It must belong to a JDK 21 or later, the one javac compiles with: the two are compared by JDK home after symbolic links are followed, so a wrapper launcher outside that JDK's `bin` directory is refused |
 | `graphmaquina.compilationId` | Override compilation identity; defaults distinguish artifact and main/test scope |
 
 See the [Maven adapter reference](typed-annotations-build.md#maven) for toolchains and custom compiler paths.
@@ -973,7 +976,7 @@ same identifier reaches different states from different origins, so there is no 
 ### Policies: every node answers
 
 Rejections are answers a node gives, not edges. Every state carries a `StatePolicy<S, T>` with a non-blank
-`otherwise` reason, and optionally a reason per identifier:
+`otherwise` reason, and optionally a non-blank reason per identifier:
 
 ```java
 @TicketsGraph.StatePolicy(state=TicketState.OPEN, otherwise="submit the ticket first")
@@ -1257,12 +1260,20 @@ declared on the interface itself:
 ```
 
 The corresponding async action calls a gateway and returns a stage. An exceptional completion with a matching
-`IOException` uses the declared failure route. The runtime unwraps completion/execution wrappers before
-classifying their cause. `failsOn` applies to action failures; a guard exception is a technical abort.
+`IOException` uses the declared failure route. The runtime unwraps `CompletionException` and
+`ExecutionException` before classifying their cause, and it classifies a checked exception that an action
+throws without declaring it, as Kotlin or `@SneakyThrows` code can, like any other. `failsOn` applies to action
+failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a guard
+or action throws or completes its stage with, bare or wrapped, is rethrown as it is and never matched against
+`failsOn`. An `Error` is never routed either: thrown as itself it propagates unchanged, and one that completes
+a stage, or that a wrapper carries, aborts.
 
-`failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, or a library engine
-exception. Declare specific foreign exception types. Timeout, interruption and cancellation are not a
-substitute for a returned domain failure. `@Timeout` is valid only for asynchronous actions.
+`failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine
+exception, or a `CancellationException` or one of its subtypes, which are never domain failures; nor
+`CompletionException` or `ExecutionException` themselves, which are unwrapped before matching, so declare the
+type of their cause. All of these are `SG302`. Declare specific foreign exception types. Timeout, interruption
+and cancellation are not a substitute for a returned domain failure. `@Timeout` is valid only for asynchronous
+actions.
 
 The full action implementation is in
 [OrderActions.java](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/order/OrderActions.java).
@@ -1303,7 +1314,8 @@ static String describe(Outcome<Ticket, TicketState, TicketTransition> outcome) {
 ```
 
 Technical failures throw instead of becoming a fifth outcome. Inspect the exception type and phase before
-retrying: after-commit failures occur after state was already written.
+retrying: an after-commit failure of a hook occurs after state was already written, and one of the listener
+says in its message whether the call wrote state.
 
 ### Records, journals and reactions
 
@@ -1316,7 +1328,9 @@ retrying: after-commit failures occur after state was already written.
   that actually ran. A journal is execution evidence, not an undo log for external side effects.
 - A watch produces `Reaction.Done`, carrying its own outcome, or `Reaction.Aborted`, carrying its exception.
   Inspect reactions even when the root operation succeeded. `Reaction.Aborted` can also report a hook/listener
-  failure after the reaction itself committed; it is not proof that the reaction left state unchanged.
+  failure after the reaction itself committed; it is not proof that the reaction left state unchanged. A
+  checked exception arrives wrapped in `UndeclaredThrowableException`. An `Error` is not caught: it propagates
+  to the caller whose commit triggered the reaction.
 
 ## Asynchronous work and timeouts
 
@@ -1617,8 +1631,11 @@ AsyncTicketMachines machines = AsyncTicketMachinesRuntime.builder(
 ```
 
 Close `machines` when its work is finished. The override is accepted only for an asynchronous machine in the
-set. A synchronous-only set such as `TicketMachines` has no timeout builder argument, even when you use its
-`async(...)` method to submit a synchronous operation.
+set; any other class throws `IllegalArgumentException`. A synchronous-only set such as `TicketMachines` has no
+timeout builder argument, even when you use its `async(...)` method to submit a synchronous operation.
+
+Any positive duration is accepted. One of `Duration.ofNanos(Long.MAX_VALUE)` or more means no limit, for a
+machine's budget and for an action's `@Timeout` alike.
 
 | Setting | When its clock starts | What it bounds |
 | --- | --- | --- |
@@ -1788,8 +1805,12 @@ not instantiate service classes or discover dependency-injection beans.
 | `asyncExecutor(Executor)` | Supply the executor used by `async` calls; otherwise each machine owns a virtual-thread executor |
 | `maxCascadeDepth(int)` | Bound nested cascades; default `10`, minimum `1`, root depth is `0` |
 | `maxWatchChain(int)` | Bound successive watch reactions; default `10`, minimum `1` |
-| `listener(TransitionListener)` | Observe outcomes across the set |
+| `listener(TransitionListener)` | Observe outcomes across the set; one listener per set |
 | `build()` | Construct the registry and facades |
+
+Each setting is checked where it is given: a second `listener(...)` throws `IllegalStateException`, and a
+`maxCascadeDepth` or `maxWatchChain` below `1` throws `IllegalArgumentException`. The builder is single-use:
+once `build()` succeeds, every method throws `IllegalStateException`.
 
 Close the set with try-with-resources or your application's shutdown lifecycle. `close()` closes executors
 owned by the set and waits for submitted operations to finish. An executor you supply remains your
@@ -1858,9 +1879,15 @@ from its pending state like any other.
 
 `COLLECT` is not partial commit. A nested transition that no edge carries, or that a guard rejected, is an
 abort rather than an ordinary root-level `Rejected` result. A handled domain failure can select the child's
-declared failure route. An engine failure poisons the unit of work; catching it in your action does not make
-the transaction safe to commit. Use `ctx.cascade` instead of calling another facade operation from inside an
-action: nested facade entry points violate the runtime's reentrancy rules.
+declared failure route. Any failure that leaves a cascade poisons the unit of work, whether it is an engine
+failure, an exception from a callback the engine does not wrap, such as an identity function, or an `Error`;
+catching it in your action does not make the transaction safe to commit. When the action then returns, or
+throws an exception its `failsOn` lists, the root throws that failure instead, commits nothing and runs no
+failure route; an `Error` or a callback exception arrives wrapped in a `TransitionAbortedException`. A cascade
+that names an unknown machine poisons too, by key or by facade type, even over an empty collection. A refused
+argument poisons nothing: a null peer, a null element, which `cascadeAll` refuses before any element runs, or
+an identifier from another machine's catalogue. Use `ctx.cascade` instead of calling another facade operation
+from inside an action: nested facade entry points violate the runtime's reentrancy rules.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.
@@ -1950,6 +1977,11 @@ original state. Intermediate hops that return a peer to its original state do no
 is currently in the watched state and deduplicates owners within that dispatch. Each reaction is a new root
 transaction. A reaction failure does not roll back the peer commit that triggered it.
 
+The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the
+engine evaluates the watch, before that root starts, and may not start a transition themselves: `execute` or
+`reevaluate` called from one of them throws `ReentrantTransitionException`, which a reaction reports as
+`Reaction.Aborted` and a direct `reevaluate` throws to its caller.
+
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
 
@@ -1990,10 +2022,11 @@ when the unit of work aborts.
 Use a `@GraphHook` when code must run after GraphMaquina has written state. The quickstart prints every
 committed hop from such a hook. The shop notifies its carrier after the shipping edge commits.
 
-Hooks run synchronously on the operation's thread. A hook runtime exception becomes `AfterCommitException`:
-the state is already committed. The exception stops the remaining normal post-commit sequence, so do not
-assume later hooks, watch dispatch or listener notification ran. Make externally visible notifications
-idempotent and choose durable delivery separately if your application needs it.
+Hooks run synchronously on the operation's thread. Any exception a hook throws, checked ones included, becomes
+`AfterCommitException`: the state is already committed. An `Error` propagates unchanged instead. Either stops
+the remaining normal post-commit sequence, so do not assume later hooks, watch dispatch or listener
+notification ran. Make externally visible notifications idempotent and choose durable delivery separately if
+your application needs it.
 
 A hook sees the entity's committed final state. When a cascade stages multiple hops for one entity, the setter
 writes its final destination once, while hooks still follow committed hop order.
@@ -2051,12 +2084,14 @@ TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
 
 Close `machines` through the application's lifecycle. A listener sees watch-reaction outcomes through their
 own calls; do not recursively emit them again from the parent's `reactions()` list. Reaction outcomes can
-arrive before the triggering root's notification. Technical aborts that never produce an outcome do not
-become listener outcome events.
+arrive before the triggering root's notification. A call that throws before it returns an outcome notifies
+nothing: a technical abort, a commit failure, a failing hook or an `Error` from a reaction.
 
-Listener runtime exceptions also surface as `AfterCommitException`. For an ignored or rejected outcome, no state
-change occurred; for an applied or handled-failure outcome, state has already committed. A listener exception
-must not be interpreted as proof that an operation never happened.
+Any exception a listener throws, checked ones included, also surfaces as `AfterCommitException`, and its
+message says whether the call wrote state. For an ignored or rejected outcome, no state change occurred, and the
+message reads `the call on ... wrote no state, and the post-commit step 'listener' failed`; for an applied or
+handled-failure outcome, state has already committed. An `Error` from the listener propagates unchanged. A
+listener exception must not be interpreted as proof that an operation never happened.
 
 ## Concurrency, identity and persistence
 
@@ -2376,10 +2411,12 @@ generate -> prepare-compile -> javac (Lombok if used, then GraphMaquina) -> comp
 ```
 
 The source-reading step uses `JavacTask.parse()` with annotation processing disabled; it does not type-check
-the original application or require its generated annotation classes. It resolves the headers and exported
-members needed for generation, then emits vocabulary plus a manifest. The processor verifies that the manifest
-matches the declarations javac accepted, resolves bindings, checks the graph and emits facades. Completion
-publishes the validated export index and records ownership of generated outputs.
+the original application or require its generated annotation classes. It parses the original sources at the
+compilation's release and in its source encoding, which the build adapters pass in the request, and it writes
+the generated sources in that encoding too. It resolves the headers and exported members needed for
+generation, then emits vocabulary plus a manifest. The processor verifies that the manifest matches the
+declarations javac accepted, resolves bindings, checks the graph and emits facades. Completion publishes the
+validated export index and records ownership of generated outputs.
 
 ### Generated files
 
@@ -2400,10 +2437,12 @@ Do not hand-edit, commit or copy these generated outputs into `src/main/java`. P
 packaging a producer JAR. Normal rebuilds retire owned outputs for renamed or deleted declarations without
 requiring `clean`; handwritten files in output locations are not silently adopted as generated files.
 
-Gradle registers generated vocabulary as a source-set root, so source archives and IDE imports can see it.
-The plugin disables javac incremental compilation for the project's Java tasks so partial javac output does
-not conflict with complete ownership inventories. Gradle task up-to-date checks and configuration-cache
-support are separate; unchanged builds can still skip work.
+Gradle adds generated vocabulary to the source set's java sources as a source directory set of its own, so
+source archives and IDE imports can see it; the source set's include and exclude patterns do not filter it, and
+the sources jar and javadoc of the source set leave out the compilation carrier. The plugin disables javac
+incremental compilation for the project's Java tasks so partial javac output does not conflict with complete
+ownership inventories. Gradle task up-to-date checks and configuration-cache support are separate; unchanged
+builds can still skip work.
 
 ### IDE workflow
 
@@ -2506,7 +2545,10 @@ public final class ProgrammaticTickets {
 Add `import io.github.graphmaquina.api.GuardResult;` for the guard above. Every stage names an identifier:
 `transition(id, from, to)` opens one edge and `endTransition()` closes it, `onFailure(id)` names the
 recovering edge, and `statePolicy` / `reject` word the answers a node gives. A state has exactly the edges
-you declare.
+you declare. An edge left open, or one that declares more than one action, `onFailure` or `timeout`, fails
+`build()` with `SG507`. An edge's stage refuses every further call with `IllegalStateException` once
+`endTransition()` closed it, and once `build()` has run, even a `build()` that failed, every stage refuses
+further declarations, and a second `build()`, the same way.
 
 The DSL exposes runtime functions directly, so this alternative does not need generated action symbols. It
 deliberately omits the quickstart's self-loop, auto-approval and commit hook; add them through the DSL when
@@ -2540,19 +2582,19 @@ code runs.
 | `SG204` | Unauthorised cycle: list an intentional cycle's state in `allowsCycle`. One witness is reported per cyclic strongly connected component, deterministically, rather than one message per elementary cycle. |
 | `SG205` | Unused cycle allowance: the named state belongs to no cycle. |
 | `SG301` | Invalid failure route: `onFailure` names this edge's own key, or no edge with that identifier leaves the same origin. |
-| `SG302` | Forbidden `failsOn` type: use a specific permitted foreign exception. |
+| `SG302` | Forbidden `failsOn` type: `Throwable`, `Exception`, `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, or exactly `CompletionException` or `ExecutionException`, which the runtime unwraps before matching. Use a specific foreign exception, or the type of the wrapped cause. |
 | `SG401` | A watch rule names an identifier with no edge from the watched state. |
 | `SG402` | A terminal state declares a watch. |
 | `SG403` | More than one watch on the same state. |
-| `SG404` | A watch has no rules. |
+| `SG404` | A watch has no rules. In the DSL, also a `when(...)` that no `execute(...)` follows, and an `execute(...)` with no pending `when(...)`. |
 | `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
 | `SG503` | Missing or incompatible public property accessor. |
-| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. |
-| `SG505` | Exported method does not uniquely fit the action, guard, hook or condition role, including the default `afterCommit` binding on `Definition`. |
-| `SG507` | Invalid transition elements: empty `from`, `onFailure` or `failsOn` without an action, or a timeout without an asynchronous action. |
+| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; and a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return. |
+| `SG505` | Exported method does not uniquely fit the action, guard, hook or condition role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
+| `SG507` | Invalid transition elements: empty `from`, `onFailure` or `failsOn` without an action, or a timeout without an asynchronous action. In the DSL, also an edge never closed with `endTransition()`, and an edge that declares more than one action, `onFailure` or `timeout`. |
 | `SG508` | Watch rule must choose exactly one supported predicate alternative. |
-| `SG509` | Invalid peer-machine type. |
-| `SG510` | Invalid set accessor, duplicate/missing machine or missing watched peer in the set. |
+| `SG509` | Invalid peer-machine type, a peer whose entity is a parameterized type, or a watched peer whose types the watcher's package cannot access. |
+| `SG510` | Invalid set accessor, duplicate/missing machine or missing watched peer in the set. Also an accessor the set inherits from another interface, two machines that write the same entity and state enum, a `builder()` accessor that collides with the companion's own `builder()`, and a machine whose types the set's package cannot access. |
 | `SG511` | Invalid timeout duration: it must be positive. |
 | `SG701` | A state declares no rejection policy. |
 | `SG702` | One `(from, transition)` key both declares an edge and rejects the identifier. |
@@ -2563,14 +2605,14 @@ code runs.
 | Code | Meaning / corrective action |
 | --- | --- |
 | `SG599` | The processor could not write a generated source, provisional export index or processor inventory. Inspect the named type/path and underlying error; correct the output path, permissions, available space or reported file collision, then rerun the full generation/compilation lifecycle. See [processor output failures](typed-annotations-build.md#processor-output-failures-sg599). |
-| `SG601` | Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. `Machine<E, S, T>` must resolve to a concrete entity type and **two distinct enums**, one for states and one for transition identifiers. |
-| `SG602` | Manifest or export index is missing, incompatible, stale, or written in the retired schema 1. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place needs one `clean`. |
-| `SG603` | Generated output or export collision, including names that normalize to the same PascalCase spelling. The diagnostic names both conflicting sources; rename a declaration and its references. |
-| `SG604` | Invalid or contradictory export/role. Check markers and exported signatures. |
+| `SG601` | Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. `Machine<E, S, T>` must resolve to a concrete entity type and **two distinct enums**, one for states and one for transition identifiers. Also a facade that declares type parameters, a parameterized entity type, a facade or enum the vocabulary's package cannot access, a marker whose annotation type is not on the generator's classpath, and an original source javac cannot parse at the compilation's release. |
+| `SG602` | Manifest or export index is missing, incompatible, stale, malformed, or written in the retired schema 1. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place needs one `clean`. Also a machine javac compiled implicitly, from the source path, which the processor never saw, reported where the index or a set names it: pass every source of the compilation to javac. A companion of a previous compilation that nothing retired is reported too: run the lifecycle, or clean. Completion reports a class output without the `SourceFile` attribute: compile with javac's default `-g`, or a `-g:` list that includes `source`. |
+| `SG603` | Generated output or export collision, or a name generated code cannot write. Two names normalize to the same PascalCase spelling; a generated type already exists as an original source, in the file it would overwrite or in another one, as a class of the classpath, or as a file of the generated directory the previous generation did not own; an original file or type differs from a generated one only in case where the volume does not tell names apart; an existing type takes a companion's name; or a type, member type or constant in the scope of a generated file takes over a name that file writes, such as a type of its package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references. |
+| `SG604` | Invalid or contradictory export/role, or a host its generated references container cannot access, such as a private nested class. Check markers and exported signatures. |
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |
-| `SG606` | Graph or watch vocabulary belongs to another machine or pair. |
+| `SG606` | Graph or watch vocabulary belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract operations. |
 | `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit` or `When.condition`. |
-| `SG608` | Invalid, duplicated or unused peer, or a watched peer outside this compilation. |
+| `SG608` | Invalid, duplicated or unused peer, a watched peer outside this compilation, or a peer whose types the owner's package cannot name. |
 | `SG609` | A retired 1.x graph annotation is still on the class path and still used. Replace it as [migrating to 2.0](migration-2.0.md) describes. |
 
 ### Runtime exceptions
@@ -2585,13 +2627,13 @@ code runs.
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
 | `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. |
-| `ReentrantTransitionException` | An action/guard entered another root operation; use context peer/cascade APIs. |
-| `PoisonedUnitOfWorkException` | Work continued after an earlier nested abort. |
+| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks and the listener may start transitions. |
+| `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. |
 | `StaleContextException` | A context or context-derived view was used after invalidation. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
 | `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. |
 | `CommitFailedException` | Pre-commit state check failed or a setter threw; inspect applied/pending entities before retrying. |
-| `AfterCommitException` | A hook or listener threw; inspect whether state already committed. |
+| `AfterCommitException` | A hook or the listener threw. After a hook, state is already written; a listener failure's message says whether the call wrote state. |
 | `InvalidGraphException` | Programmatic DSL definition failed validation; inspect its problem list. |
 
 A refused request is not an exception. `Rejected` with `RejectionKind.NO_TRANSITION` is the ordinary answer
@@ -2614,7 +2656,7 @@ API contract.
 | Generation task skips | That source set does not declare `graphmaquina-processor` on its annotation-processor configuration. |
 | Async graph cannot be built | Supply a positive default timeout through the generated set builder. |
 | Watch never triggers | Check relationship accessors, owner state, first-match rules, the named edge's guards and whether a peer transition actually committed. |
-| Strict lint reports unclaimed third-party annotations | Inspect the application's processor setup. GraphMaquina claims its own declarations; it is not a wildcard processor for Spring, Jakarta or test annotations. |
+| Strict lint reports unclaimed third-party annotations | Inspect the application's processor setup. GraphMaquina claims its own declarations; it is not a wildcard processor for Spring, Jakarta or test annotations. It does not claim `javax.annotation.processing.Generated` either, so another tool's `@Generated` that no processor claims gets javac's own `-Xlint:processing` warning that no processor claimed it, which `-Werror` turns into an error. GraphMaquina's companions carry its own `@GeneratedCompanion` instead. |
 
 For a reproducible issue, include JDK/build-tool versions, relevant build configuration, the minimal graph and
 binding declarations, the full diagnostic and whether the problem occurs on a clean build. Report issues at
@@ -2633,6 +2675,7 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 | External payments demo | Its strict-lint acceptance is still partial; it is outside this repository's library test totals. |
 | Durability and concurrent access | Application responsibilities; there is no automatic DB transaction, durable watch queue or entity lock. |
 | Async timeout | Stops waiting; does not terminate synchronous code or cancel a user's running stage. |
+| Preview language features | The generator parses the original sources without `--enable-preview`, whatever javac is given: a source using a preview feature that javac's parser checks is refused with `SG601`. See the [build guide](typed-annotations-build.md#limits). |
 | Public compatibility matrix | Java 21 is the baseline; no claim of verification across all newer JDKs or Gradle versions. |
 
 ## Build, verify and release this repository
