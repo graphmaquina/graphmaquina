@@ -575,11 +575,15 @@ Merely declaring the plugin does not activate these goals. Use the executions ab
 `mvn verify` instead.
 
 The adapter validates the effective Java release, processor path, manifest paths and JDK alignment. It rejects
-`-proc:none`, `proc=only` or `-proc:only`, `failOnError=false`, missing processor configuration, divergent
-main/test manifests, and compiler includes or excludes that leave out the compilation carrier the generator
-emits. A compilation the build switches off is skipped instead: `maven.main.skip` or `<skipMain>` makes the
-three main goals log that and do nothing, `maven.test.skip` or `<skip>` the three test goals, and a project
-packaged as `pom` skips all six. Run the normal lifecycle when generating graphs.
+`-proc:none` or `-proc:only` as the last `-proc:` option javac gets, whether from `proc` or from a compiler
+argument, `failOnError=false`, `useIncrementalCompilation=false`, missing processor configuration, a
+`-processor` list or `<annotationProcessors>` that leaves out
+`io.github.graphmaquina.processor.StateGraphProcessor` or holds a name javac cannot load, divergent main/test
+manifests, compiler includes or excludes that leave out the compilation carrier the generator emits, and
+includes that hold only empty values. A compilation the build switches off is skipped instead:
+`maven.main.skip` or `<skipMain>` makes the three main goals log that and do nothing, `maven.test.skip` or
+`<skip>` the three test goals, and a project packaged as `pom` skips all six. Run the normal lifecycle when
+generating graphs.
 
 | Optional property | Meaning |
 | --- | --- |
@@ -2439,10 +2443,10 @@ requiring `clean`; handwritten files in output locations are not silently adopte
 
 Gradle adds generated vocabulary to the source set's java sources as a source directory set of its own, so
 source archives and IDE imports can see it; the source set's include and exclude patterns do not filter it, and
-the sources jar and javadoc of the source set leave out the compilation carrier. The plugin disables javac
-incremental compilation for the project's Java tasks so partial javac output does not conflict with complete
-ownership inventories. Gradle task up-to-date checks and configuration-cache support are separate; unchanged
-builds can still skip work.
+the sources jar and javadoc of the source set leave out the compilation carrier. The plugin disables
+incremental compilation on the compile task of every source set so partial javac output does not conflict with
+complete ownership inventories. Gradle task up-to-date checks and configuration-cache support are separate;
+unchanged builds can still skip work.
 
 ### IDE workflow
 

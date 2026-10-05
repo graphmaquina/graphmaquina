@@ -515,7 +515,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `javax.annotation.processing.Generated`, which the processor no longer claims. A compilation whose only
   annotation is another tool's `@Generated` is no longer refused with `SG602`; under `-Xlint:processing`, javac
   itself warns that no processor claimed that annotation, and `-Werror` turns the warning into an error.
-- **Refused where they are declared.** Each of these used to be dropped without a word, reported under a
+- **Refused by the processor.** Each of these used to be dropped without a word, reported under a
   misleading diagnostic, refused by javac inside the generated companion, or accepted until the set's `build()`
   threw: vocabulary on a default, static or private method, or anywhere but a facade and its abstract operations
   (`SG504`, `SG606`); an abstract method a facade or set inherits from another interface (`SG504`, `SG510`); an
@@ -540,7 +540,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   encoding: the generator parses at that release, reads and writes in that encoding, and refuses syntax the
   release does not have with `SG601`. Gradle source-set patterns and Maven `<includes>` and `<excludes>` are
   honoured, files Ant's default excludes name, such as `._*` copies and `.git` directories, are left out (the
-  build guide gives Maven's longer list), and symbolic links are followed. See the
+  build guide says where Maven's longer list differs), and symbolic links are followed. See the
   [build guide](typed-annotations-build.md).
 - **New generator refusals:** a generic facade, a marker whose annotation type is not on the generator's
   classpath, and a facade, enum, host or peer that the generated code cannot access (`SG601`, `SG604`, `SG608`);
@@ -559,23 +559,37 @@ observe. Most items refuse up front what used to fail later, in generated code o
   not an exact integer, which used to be truncated.
 - **Maven.** `maven.main.skip`, `<skipMain>`, `maven.test.skip` and `<skip>` skip the goals of that compilation
   with an info line instead of failing, and a project packaged as `pom` skips all six. Refused before anything is
-  retired: `proc=only`, `-proc:only`, `failOnError=false`, includes or excludes that leave out the compilation
-  carrier, a test release below 21, a generator `java` with no `javac` beside it or whose JDK declares a release
-  below 21, from `javaExecutable` or a toolchain alike, and a generator `java` that is not the `java` of the JDK
-  javac compiles with, compared by JDK home, so a wrapper launcher outside that JDK's `bin` directory is refused.
-  A `<jdkToolchain>` that matches no toolchain falls back as the compiler does, properties given on the command
-  line or to the JVM win over those of the project, and an execution's `<compilerArgs>` replace the
-  plugin-level ones, as Maven merges them, where both used to be read. The plugin's descriptor declares Java 21
-  as the Java version it requires.
-- **Gradle.** Refused before anything is retired: `options.failOnError = false`, `-proc:only`, and a compilation
-  that no longer compiles every generated source. The generated directory joins the source set as a source
-  directory set of its own, which the source set's patterns do not filter, and the sources jar and javadoc leave
-  out the compilation carrier. The generation runs after the tasks that build the source set's other directories.
-  Its locations, launcher and generator classpath are conventions that `prepare-compile` and `complete-compile`
-  follow, and `classesOutput`, `processorSourcesOutput` and `annotationManifest` cannot be set. A processor
-  declaration the build removes no longer counts, and the compilation id reads the group the build script settles
-  on, even when something realized the generation task before the group was set. What a generator that
-  completes writes on its error stream is logged as a warning.
+  retired: `proc=only`, `-proc:only`, `failOnError=false`, `useIncrementalCompilation=false`, a `-processor`
+  list or `<annotationProcessors>` that leaves out `io.github.graphmaquina.processor.StateGraphProcessor` or
+  holds a name javac cannot load, includes or excludes that leave out the compilation carrier, includes that hold
+  only empty values, a test release below 21, a generator `java` with no `javac` beside it or whose JDK declares
+  a release below 21, from `javaExecutable` or a toolchain alike, and a generator `java` that is not the `java`
+  of the JDK javac compiles with, compared by JDK home, so a wrapper launcher outside that JDK's `bin` directory
+  is refused. Such a processor list used to fail only after the preparation had retired the previous outputs, in
+  javac or with `SG602`, and with `useIncrementalCompilation=false` a rebuild without `clean` could fail the same
+  way, with `SG602`. The last `-proc:` option decides, as for javac, so `-proc:none` followed by a `-proc:full`
+  argument is no longer refused, nor is `<proc>none</proc>` with a `-proc:full` argument. The deprecated
+  `<compilerArguments>` map, and for the test compilation `<testCompilerArguments>` and
+  `<testCompilerArgument>`, are read as `maven-compiler-plugin` 3.15.0 passes them, so a manifest argument given
+  only there is no longer refused, and `<compilerArgs>`, `<includes>`, `<excludes>`, `<testIncludes>` and
+  `<testExcludes>` written as comma-separated text are split as Maven splits them. A `<jdkToolchain>` that
+  matches no toolchain falls back as the compiler does, properties given on the command line or to the JVM win
+  over those of the project, and an execution's `<compilerArgs>` replace the plugin-level ones, as Maven merges
+  them, where both used to be read. The plugin's descriptor declares Java 21 as the Java version it requires.
+- **Gradle.** `prepare-compile` refuses, before it retires anything: `options.failOnError = false`, `-proc:only`
+  or `-proc:none` as the last `-proc:` option, a `-processor` list, the last one given, that leaves out the
+  StateGraph processor or holds a name that is not a valid qualified class name, an empty one after its last
+  comma included, and a compilation that no longer compiles every generated source. Adding one of the first
+  three changes the compile task's options, so Gradle's own full rebuild has already removed the previous
+  classes, index and sealed inventory when the preparation refuses: unlike Maven's, such a refusal does not keep
+  them. The generated directory joins the source set as a source directory set of its own, which the source
+  set's patterns do not filter, and the sources jar and javadoc leave out the compilation carrier. The generation
+  runs after the tasks that build the source set's other directories. Its locations, launcher and generator
+  classpath are conventions that `prepare-compile` and `complete-compile` follow, and `classesOutput`,
+  `processorSourcesOutput` and `annotationManifest` cannot be set. A processor declaration the build removes no
+  longer counts, and the compilation id reads the group the build script settles on, even when something
+  realized the generation task before the group was set. What a generator that completes writes on its error
+  stream is logged as a warning.
 
 ### Testing library
 
