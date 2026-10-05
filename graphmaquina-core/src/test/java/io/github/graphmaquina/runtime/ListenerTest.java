@@ -74,7 +74,7 @@ class ListenerTest {
     }
 
     @Test
-    void reactionsArriveInTheirOwnCallAfterTheRootCall() {
+    void reactionsArriveInTheirOwnCallBeforeTheRootOutcome() {
         try (MachineRegistry registry = registry(listener)) {
             Order order = new Order("o1", OrderStatus.PAID);
             Item item = new Item("i1", ItemStatus.PACKING, Optional.of(order));

@@ -177,7 +177,8 @@ public final class MachineRegistry implements AutoCloseable {
      * After the root commit: for each moved entity, every watcher of its machine resolves the owner;
      * an owner is re-evaluated only once even if several of its peers moved. A registry that indexed no
      * watcher answers before reading which entities moved, which is what most transactions pay. An owner lookup
-     * that throws an Exception is an aborted reaction, a checked one wrapped in UndeclaredThrowableException.
+     * that throws an Exception is an aborted reaction, a checked one wrapped in UndeclaredThrowableException. Each
+     * lookup runs with the reentrancy marker set, so one that calls execute or reevaluate ends that way too.
      */
     List<Reaction> dispatchWatches(CommitSummary summary, int chain) {
         if (watchers.isEmpty()) {

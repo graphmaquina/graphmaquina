@@ -2,6 +2,7 @@ package io.github.graphmaquina.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -78,14 +79,22 @@ class TransitionSpecTest {
         assertEquals(TransitionKind.ACTION, loop.kind());
     }
 
-    /** An edge without an action may carry a hook, and an edge built without one reports none. */
+    /**
+     * Every edge may carry a hook: a plain move, an edge with a synchronous action and one with an asynchronous
+     * action each keep the hook and their action. An edge built without a hook reports none.
+     */
     @Test
     void afterCommitIsAllowedOnEveryEdge() {
         HookRef<String, DayOfWeek, Month> hook = HookRef.of("H", (String e) -> { });
-        TransitionSpec<String, DayOfWeek, Month> move = new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY,
-                DayOfWeek.TUESDAY, Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(),
-                Optional.of(hook));
-        assertTrue(move.afterCommit().isPresent());
+        List<Optional<ActionRef<String, DayOfWeek, Month>>> actions = List.of(Optional.empty(), Optional.of(SYNC),
+                Optional.of(ASYNC));
+        for (Optional<ActionRef<String, DayOfWeek, Month>> action : actions) {
+            TransitionSpec<String, DayOfWeek, Month> edge = new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY,
+                    DayOfWeek.TUESDAY, action, List.of(), Optional.empty(), List.of(), Optional.empty(),
+                    Optional.of(hook));
+            assertSame(hook, edge.afterCommit().orElseThrow());
+            assertEquals(action, edge.action());
+        }
         assertTrue(spec(Optional.empty(), List.of(), Optional.empty(), Optional.empty()).afterCommit().isEmpty());
     }
 }

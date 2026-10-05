@@ -3,7 +3,11 @@ package io.github.graphmaquina.api;
 import java.util.Collection;
 import lombok.NonNull;
 
-/** Predicate of a watch rule over the entity, its peers, and a view that reads their states through the getter. */
+/**
+ * Predicate of a watch rule over the entity, its peers, and a view that reads their states through the getter. It
+ * runs while the thread evaluates the watch, where execute and reevaluate throw {@code ReentrantTransitionException},
+ * as they do in a guard.
+ */
 @FunctionalInterface
 public interface WatchCondition<E, P, Q extends Enum<Q>, U extends Enum<U>> {
 

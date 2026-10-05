@@ -31,6 +31,7 @@ import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.error.CommitFailedException;
+import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
@@ -41,9 +42,13 @@ import java.lang.reflect.UndeclaredThrowableException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Function;
@@ -55,7 +60,8 @@ import org.junit.jupiter.api.Test;
  * Checked exceptions that callbacks throw without declaring them, as Kotlin, Groovy and Lombok's
  * {@code @SneakyThrows} compile to. Each one takes the route an unchecked exception from the same callback takes.
  * An {@code Error} is never routed: thrown by a callback it propagates unchanged, while one that completes a stage
- * is the cause of a technical abort.
+ * is the cause of a technical abort. An engine exception is never routed either: bare or wrapped, thrown or
+ * completing a stage, it reaches the caller as it was thrown.
  */
 class CheckedExceptionTest {
 
@@ -390,6 +396,121 @@ class CheckedExceptionTest {
             assertEquals(REVIEW, watched.status());
             assertEquals(PUBLISHED, observer.status());
         }
+    }
+
+    /**
+     * An engine exception keeps its identity on every path that brings it back from a callback: thrown bare or in a
+     * CompletionException or an ExecutionException, by a synchronous or an asynchronous action or guard or by a
+     * recovery action, or completing a stage, it reaches the caller as it was thrown, never as the cause of an abort.
+     */
+    @Test
+    void anEngineExceptionReachesTheCallerAsItWasThrownOnEveryPath() {
+        StateMachineException engine = new StateMachineException("the ledger refused the entry");
+        Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths = new LinkedHashMap<>();
+        paths.put("sync action, bare", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw engine;
+                        })));
+        paths.put("sync action, in CompletionException", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw new CompletionException(engine);
+                        })));
+        paths.put("sync action, in ExecutionException", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw Sneaky.raise(new ExecutionException(engine));
+                        })));
+        paths.put("async action before its stage, in CompletionException", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw new CompletionException(engine);
+                        })));
+        paths.put("async action, completing its stage", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                CompletableFuture.failedFuture(engine))));
+        paths.put("async action, completing its stage in CompletionException", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                CompletableFuture.failedFuture(new CompletionException(engine)))));
+        paths.put("sync guard, bare", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw engine;
+                        })));
+        paths.put("sync guard, in CompletionException", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw new CompletionException(engine);
+                        })));
+        paths.put("async guard before its stage, in CompletionException", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw new CompletionException(engine);
+                        })));
+        paths.put("async guard, completing its stage", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                                CompletableFuture.failedFuture(engine))));
+        paths.put("recovery action, in CompletionException", StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                            ActionOutcome.failed("declined"))
+                    .onFailure(DISCARD).endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED)
+                    .action("Discard", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        throw new CompletionException(engine);
+                    }).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build());
+        List<String> ends = new ArrayList<>();
+        List<String> expected = new ArrayList<>();
+        for (Map.Entry<String, GraphDefinition<Doc, DocStatus, DocTransition>> path : paths.entrySet()) {
+            Doc doc = new Doc("1", DRAFT);
+            String end;
+            try {
+                end = standalone(path.getValue()).execute(doc, SUBMIT).getClass().getSimpleName();
+            } catch (StateMachineException thrown) {
+                end = thrown == engine ? "the engine exception itself" : thrown.getClass().getSimpleName()
+                        + " caused by " + (thrown.getCause() == engine ? "the engine exception" : thrown.getCause());
+            }
+            ends.add(path.getKey() + ": " + end + ", " + doc.status());
+            expected.add(path.getKey() + ": the engine exception itself, DRAFT");
+        }
+        assertEquals(expected, ends);
+    }
+
+    /**
+     * The same holds for an engine exception that comes from another root. An action that joins another machine's
+     * failing asynchronous call receives that root's abort in a CompletionException, and the caller of the action's
+     * own call gets that abort unchanged: its details describe the other root and its entity, not this call.
+     */
+    @Test
+    void anEngineExceptionFromAnotherRootKeepsTheDetailsOfThatRoot() {
+        IllegalStateException ledger = new IllegalStateException("ledger down");
+        StateMachine<Doc, DocStatus, DocTransition> other = standalone(docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw ledger;
+                        })));
+        Doc elsewhere = new Doc("2", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> machine = standalone(docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            other.async().execute(elsewhere, SUBMIT).join();
+                            return ActionOutcome.ok();
+                        })));
+        Doc doc = new Doc("1", DRAFT);
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
+        assertSame(elsewhere, error.details().entity());
+        assertSame(ledger, error.getCause());
+        assertEquals(DRAFT, doc.status());
+        assertEquals(DRAFT, elsewhere.status());
     }
 
     /**

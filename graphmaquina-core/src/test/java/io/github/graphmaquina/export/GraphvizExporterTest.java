@@ -8,8 +8,10 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionKind;
+import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
@@ -76,6 +78,43 @@ class GraphvizExporterTest {
         assertEquals(List.of(new WatchView("PAID", "Item", List.of("allIn PACKED → SHIP"))), view.watches());
         assertEquals("cannot ship without payment", view.policies().get(0).otherwise());
         assertEquals("terminal state SHIPPED accepts no transitions", view.policies().get(3).otherwise());
+    }
+
+    /** A catalogue whose four terminal states follow OPEN in one order. */
+    enum Ahead { OPEN, DONE, CANCELLED, EXPIRED, REJECTED }
+
+    /** The same state names as {@link Ahead}, with the terminal ones declared the other way round. */
+    enum Behind { OPEN, REJECTED, EXPIRED, CANCELLED, DONE }
+
+    /** The identifiers that lead from OPEN to each terminal state, in declaration order. */
+    enum Close { FIRST, SECOND, THIRD, FOURTH }
+
+    /** The view of a graph whose first state leads to every other one, each of them terminal. */
+    private static <S extends Enum<S>> GraphView everyOtherStateTerminal(Class<S> states) {
+        S[] declared = states.getEnumConstants();
+        GraphBuilder<Object, S, Close> graph = StateGraph.define(MachineKey.of(Object.class, states, Close.class))
+                .initial(declared[0]).statePolicy(declared[0], "closes once");
+        for (int i = 1; i < declared.length; i++) {
+            graph = graph.terminal(declared[i])
+                    .transition(Close.values()[i - 1], declared[0], declared[i]).endTransition();
+        }
+        return GraphView.of(graph.build());
+    }
+
+    /**
+     * The terminals keep the node order {@code of} gives them, as the states do. The two catalogues name their
+     * terminals alike in opposite orders. No two of these four names collide in the tables that {@code Set.copyOf}
+     * fills in JDK 21, so such a copy would iterate them in one order in both views and could not keep both.
+     */
+    @Test
+    void terminalsKeepTheNodeOrderOfTheGraph() {
+        GraphView ahead = everyOtherStateTerminal(Ahead.class);
+        GraphView behind = everyOtherStateTerminal(Behind.class);
+        assertEquals(List.of("OPEN", "DONE", "CANCELLED", "EXPIRED", "REJECTED"), ahead.states());
+        assertEquals(List.of("OPEN", "REJECTED", "EXPIRED", "CANCELLED", "DONE"), behind.states());
+        assertEquals(List.of(List.of("DONE", "CANCELLED", "EXPIRED", "REJECTED"),
+                        List.of("REJECTED", "EXPIRED", "CANCELLED", "DONE")),
+                List.of(List.copyOf(ahead.terminals()), List.copyOf(behind.terminals())));
     }
 
     /** Two edges between the same pair are two arrows, one per identifier. */

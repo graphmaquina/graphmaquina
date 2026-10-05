@@ -9,6 +9,7 @@ import static io.github.graphmaquina.fixtures.DocTransition.DISCARD;
 import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
+import static io.github.graphmaquina.fixtures.Keys.ITEMS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -24,14 +25,18 @@ import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
+import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UnknownFacadeException;
+import io.github.graphmaquina.error.UnknownPeerMachineException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.Facades;
 import io.github.graphmaquina.fixtures.GatewayException;
 import io.github.graphmaquina.fixtures.GuardProbe;
+import io.github.graphmaquina.fixtures.Item;
+import io.github.graphmaquina.fixtures.ItemStatus;
 import io.github.graphmaquina.fixtures.ItemTransition;
 import io.github.graphmaquina.fixtures.Probe;
 import io.github.graphmaquina.fixtures.Sneaky;
@@ -41,6 +46,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
@@ -254,6 +260,51 @@ class PoisonTest {
         }
     }
 
+    /**
+     * An unknown machine is one wiring error, whichever way a cascade names it and whatever its collection holds:
+     * cascade and cascadeAll, by key or by facade type, under either policy, over no element or one, refuse it and
+     * poison, so the root does not commit although its action catches the refusal.
+     */
+    @Test
+    void anUnknownMachineIsRefusedAndPoisonsWhateverTheCollectionHolds() {
+        Item item = new Item("i1", ItemStatus.PACKING, Optional.empty());
+        Map<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades = new LinkedHashMap<>();
+        cascades.put("cascade by key", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                ctx.cascade(ITEMS, item, ItemTransition.PACK));
+        cascades.put("cascade by facade", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                ctx.cascade(Facades.Items.class, item, ItemTransition.PACK));
+        for (CascadePolicy policy : CascadePolicy.values()) {
+            for (List<Item> peers : List.of(List.<Item>of(), List.of(item))) {
+                String over = policy + " over " + peers.size() + " element(s)";
+                cascades.put("cascadeAll by key, " + over, (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                        ctx.cascadeAll(ITEMS, peers, ItemTransition.PACK, policy));
+                cascades.put("cascadeAll by facade, " + over, (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                        ctx.cascadeAll(Facades.Items.class, peers, ItemTransition.PACK, policy));
+            }
+        }
+        List<String> ends = new ArrayList<>();
+        List<String> expected = new ArrayList<>();
+        for (Map.Entry<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascade
+                : cascades.entrySet()) {
+            StateMachine<Doc, DocStatus, DocTransition> machine = machine(false);
+            AtomicReference<Throwable> caught = new AtomicReference<>();
+            swallowing(caught, cascade.getValue());
+            Doc doc = new Doc("1", DRAFT);
+            String end;
+            try {
+                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+            } catch (StateMachineException error) {
+                end = error.getClass().getSimpleName() + (error == caught.get()
+                        ? ", the refusal the action caught" : ", the action caught " + caught.get());
+            }
+            ends.add(cascade.getKey() + ": " + end + ", " + doc.status() + ", " + item.status());
+            String refusal = cascade.getKey().contains("facade")
+                    ? UnknownFacadeException.class.getSimpleName() : UnknownPeerMachineException.class.getSimpleName();
+            expected.add(cascade.getKey() + ": " + refusal + ", the refusal the action caught, DRAFT, PACKING");
+        }
+        assertEquals(expected, ends);
+    }
+
     /** Pins the other half of the policy: a peer read stages nothing, so an unknown facade there does not poison. */
     @Test
     void anUnknownFacadeInAPeerReadDoesNotPoison() {
@@ -324,5 +375,125 @@ class PoisonTest {
                         + " publish ran 0, doc REVIEW, peer REVIEW",
                 "COLLECT: root Applied, caught java.lang.NullPointerException: peers contains a null element,"
                         + " publish ran 0, doc REVIEW, peer REVIEW"), ends);
+    }
+
+    /**
+     * A null element is an argument refusal, so cascadeAll refuses it before it resolves the machine and poisons
+     * nothing, whether it names an unknown machine by key or by facade type: an action that swallows the refusal lets
+     * its root commit.
+     */
+    @Test
+    void aNullElementIsRefusedBeforeAnUnknownMachineAndPoisonsNothing() {
+        List<Item> withNull = Arrays.asList(new Item("i1", ItemStatus.PACKING, Optional.empty()), null);
+        Map<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades = new LinkedHashMap<>();
+        for (CascadePolicy policy : CascadePolicy.values()) {
+            cascades.put("by key, " + policy, (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                    ctx.cascadeAll(ITEMS, withNull, ItemTransition.PACK, policy));
+            cascades.put("by facade, " + policy, (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                    ctx.cascadeAll(Facades.Items.class, withNull, ItemTransition.PACK, policy));
+        }
+        List<String> ends = new ArrayList<>();
+        List<String> expected = new ArrayList<>();
+        for (Map.Entry<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascade
+                : cascades.entrySet()) {
+            StateMachine<Doc, DocStatus, DocTransition> machine = machine(false);
+            AtomicReference<Throwable> caught = new AtomicReference<>();
+            swallowing(caught, cascade.getValue());
+            Doc doc = new Doc("1", DRAFT);
+            String end;
+            try {
+                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+            } catch (StateMachineException error) {
+                end = error.getClass().getSimpleName();
+            }
+            ends.add(cascade.getKey() + ": " + end + ", caught " + caught.get() + ", " + doc.status());
+            expected.add(cascade.getKey() + ": Applied, caught java.lang.NullPointerException: peers contains a null"
+                    + " element, REVIEW");
+        }
+        assertEquals(expected, ends);
+    }
+
+    /**
+     * An identifier from another catalogue, which only code that bypasses generics can pass, is refused without
+     * poisoning as soon as the catalogue of the machine the cascade names is known. A key carries that catalogue, so
+     * the identifier is refused before the machine is looked up, even for an unknown key, and the root commits. A
+     * facade type that names no machine has no catalogue to check the identifier against, so the unknown facade is
+     * refused first, and it poisons.
+     */
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void aForeignIdentifierIsRefusedAsSoonAsTheCatalogueOfItsMachineIsKnown() {
+        Item item = new Item("i1", ItemStatus.PACKING, Optional.empty());
+        Map<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades = new LinkedHashMap<>();
+        cascades.put("cascade by key", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                ((TransitionContext) ctx).cascade(ITEMS, item, PUBLISH));
+        cascades.put("cascadeAll by key", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                ((TransitionContext) ctx).cascadeAll(ITEMS, List.of(item), PUBLISH, CascadePolicy.FAIL_FAST));
+        cascades.put("cascade by facade", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                ((TransitionContext) ctx).cascade(Facades.Items.class, item, PUBLISH));
+        cascades.put("cascadeAll by facade", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                ((TransitionContext) ctx).cascadeAll(Facades.Items.class, List.of(item), PUBLISH,
+                        CascadePolicy.FAIL_FAST));
+        List<String> ends = new ArrayList<>();
+        for (Map.Entry<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascade
+                : cascades.entrySet()) {
+            StateMachine<Doc, DocStatus, DocTransition> machine = machine(false);
+            AtomicReference<Throwable> caught = new AtomicReference<>();
+            swallowing(caught, cascade.getValue());
+            Doc doc = new Doc("1", DRAFT);
+            String end;
+            try {
+                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+            } catch (StateMachineException error) {
+                end = error.getClass().getSimpleName();
+            }
+            ends.add(cascade.getKey() + ": " + end + ", caught " + caught.get().getClass().getSimpleName() + ", "
+                    + doc.status());
+        }
+        assertEquals(List.of("cascade by key: Applied, caught IllegalArgumentException, REVIEW",
+                "cascadeAll by key: Applied, caught IllegalArgumentException, REVIEW",
+                "cascade by facade: UnknownFacadeException, caught UnknownFacadeException, DRAFT",
+                "cascadeAll by facade: UnknownFacadeException, caught UnknownFacadeException, DRAFT"), ends);
+    }
+
+    /**
+     * A facade type that names a machine gives its catalogue once it resolves: an identifier from another catalogue,
+     * which only code that bypasses generics can pass, is then refused as it is with a key, before anything starts,
+     * and poisons nothing, for cascade and for cascadeAll under either policy.
+     */
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void aForeignIdentifierWithARegisteredFacadeIsRefusedWithoutPoisoning() {
+        Doc peer = new Doc("2", REVIEW);
+        Map<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades = new LinkedHashMap<>();
+        cascades.put("cascade", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                ((TransitionContext) ctx).cascade(Facades.Docs.class, peer, ItemTransition.PACK));
+        for (CascadePolicy policy : CascadePolicy.values()) {
+            cascades.put("cascadeAll " + policy, (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                    ((TransitionContext) ctx).cascadeAll(Facades.Docs.class, List.of(peer), ItemTransition.PACK,
+                            policy));
+        }
+        List<String> ends = new ArrayList<>();
+        List<String> expected = new ArrayList<>();
+        for (Map.Entry<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascade
+                : cascades.entrySet()) {
+            StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(machine(false).definition())
+                    .state(Doc::status, Doc::setStatus).as(Facades.Docs.class).build();
+            AtomicReference<Throwable> caught = new AtomicReference<>();
+            swallowing(caught, cascade.getValue());
+            publish.calls.clear();
+            Doc doc = new Doc("1", DRAFT);
+            String end;
+            try {
+                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+            } catch (StateMachineException error) {
+                end = error.getClass().getSimpleName() + " (" + error.getMessage() + ")";
+            }
+            ends.add(cascade.getKey() + ": " + end + ", caught " + caught.get() + ", publish ran "
+                    + publish.calls.size() + ", " + doc.status() + ", " + peer.status());
+            expected.add(cascade.getKey() + ": Applied, caught java.lang.IllegalArgumentException: transition must"
+                    + " belong to io.github.graphmaquina.fixtures.DocTransition: PACK, publish ran 0, REVIEW, REVIEW");
+        }
+        assertEquals(expected, ends);
     }
 }

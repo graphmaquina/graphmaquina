@@ -45,6 +45,10 @@ class PendingStateIndexTest {
                 Optional.empty(), Optional.empty()), 0);
     }
 
+    /**
+     * The lookups before the first rollback build the index, so each rollback undoes it entry by entry: b loses its
+     * pending state, and a gets back B, which its discarded hop, starting from C, could not restore.
+     */
     @Test
     void restoresPresenceAndEarlierStateAfterNestedRollback() {
         UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
@@ -53,7 +57,9 @@ class PendingStateIndexTest {
         uow.append(hop(a, S.A, S.B));
         int mark = uow.savepoint();
         uow.append(hop(b, S.A, S.C));
-        uow.append(hop(a, S.B, S.C));
+        uow.append(hop(a, S.C, S.A));
+        assertEquals(Optional.of(S.A), uow.pendingState(a));
+        assertEquals(Optional.of(S.C), uow.pendingState(b));
         uow.rollbackTo(mark);
         assertEquals(Optional.of(S.B), uow.pendingState(a));
         assertEquals(Optional.empty(), uow.pendingState(b));
@@ -66,8 +72,8 @@ class PendingStateIndexTest {
 
     /**
      * The pending state after a rollback is the one an earlier entry gave the entity, B, not the origin of the
-     * discarded entry, C. No lookup precedes the rollback, so it truncates the log and the first lookup indexes what
-     * remains.
+     * discarded entry, C. The lookup before the rollback builds the index, so the rollback undoes it entry by entry
+     * instead of only truncating the log.
      */
     @Test
     void theRestoredValueIsTheEarlierPendingStateNotTheDiscardedOrigin() {
@@ -76,6 +82,7 @@ class PendingStateIndexTest {
         uow.append(hop(a, S.A, S.B));
         int mark = uow.savepoint();
         uow.append(hop(a, S.C, S.A));
+        assertEquals(Optional.of(S.A), uow.pendingState(a));
         uow.rollbackTo(mark);
         assertEquals(Optional.of(S.B), uow.pendingState(a));
     }

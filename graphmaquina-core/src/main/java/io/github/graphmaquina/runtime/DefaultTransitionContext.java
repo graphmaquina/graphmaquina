@@ -65,30 +65,35 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
         return tx.cascadeAll(this, key, peers, transition, policy);
     }
 
-    /** A read stages nothing: an unknown facade throws here without poisoning the transaction. */
+    /**
+     * Checks this context and then the poison before it resolves the facade, as the cascades by facade do. A read
+     * stages nothing: an unknown facade throws here without poisoning the transaction.
+     */
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(@NonNull Class<M> peer) {
-        return peer(tx.keyFor(peer));
+        check();
+        return tx.peer(this, this::check, tx.peerKeyFor(this, peer));
     }
 
     /** An unknown facade poisons the transaction, as an unknown key does once the cascade looks its machine up. */
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(
-            @NonNull Class<M> peer, @NonNull P target, @NonNull U transition) {
+            @NonNull Class<M> peer, @NonNull P entity, @NonNull U transition) {
         check();
-        return tx.cascade(this, tx.cascadeKeyFor(this, peer), target, transition);
+        return tx.cascade(this, tx.cascadeKeyFor(this, peer), entity, transition);
     }
 
     /**
-     * An unknown facade poisons the transaction, as an unknown key does once a cascade looks its machine up. The
-     * facade is resolved first, so it throws even for an empty collection, where an unknown key is never looked up.
+     * An unknown facade poisons the transaction, as an unknown key does: either is refused whatever valid elements
+     * the collection holds, and an empty collection too. A null element is refused first, without poisoning, as it
+     * is for a key.
      */
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
             @NonNull Class<M> peer, @NonNull Collection<? extends P> peers, @NonNull U transition,
             @NonNull CascadePolicy policy) {
         check();
-        return tx.cascadeAll(this, tx.cascadeKeyFor(this, peer), peers, transition, policy);
+        return tx.cascadeAll(this, peer, peers, transition, policy);
     }
 
     /** Only from the thread running process(), and only while the transaction is alive. */

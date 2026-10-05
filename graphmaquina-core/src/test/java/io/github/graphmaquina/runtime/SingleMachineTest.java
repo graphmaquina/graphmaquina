@@ -466,7 +466,10 @@ class SingleMachineTest {
         assertEquals(DRAFT, raw.get());
     }
 
-    /** An explicit self-loop is a real edge: it is Applied, its action runs once and the entity stays where it was. */
+    /**
+     * An explicit self-loop is a real edge: it is Applied, its action runs once, and the commit writes its state
+     * through the setter once, although the entity stays where it was.
+     */
     @Test
     void anExplicitSelfLoopIsAppliedAndWritesItsState() {
         Probe retouch = new Probe();
@@ -480,12 +483,17 @@ class SingleMachineTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .build();
-        StateMachine<Doc, DocStatus, DocTransition> loops =
-                StateMachines.from(looping).state(Doc::status, Doc::setStatus).build();
+        StateMachine<Doc, DocStatus, DocTransition> loops = StateMachines.from(looping)
+                .state(Doc::status, (Doc written, DocStatus status) -> {
+                    writes.add(written.id() + ":" + status);
+                    written.setStatus(status);
+                })
+                .build();
         Doc doc = new Doc("1", REVIEW);
         Outcome<Doc, DocStatus, DocTransition> outcome = loops.execute(doc, RETOUCH);
         assertInstanceOf(Outcome.Applied.class, outcome);
         assertEquals(List.of("REVIEW-RETOUCH>REVIEW@0"), retouch.calls);
+        assertEquals(List.of("1:REVIEW"), writes);
         assertEquals(REVIEW, doc.status());
     }
 }

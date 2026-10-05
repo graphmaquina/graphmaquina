@@ -14,6 +14,7 @@ import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
+import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
@@ -174,8 +175,14 @@ class OperationInputTest {
         assertEquals(1, recoveries.get());
     }
 
-    /** A watch reevaluation opens a root of its own: the transition its rule selects runs with no input. */
+    /**
+     * A watch reaction opens a root of its own: the call that moves the peer passes an input, and the transition the
+     * owner's rule then selects runs without it.
+     */
     @Test void watchReevaluationRunsItsTransitionWithoutTheCallersInput() {
+        Entity owner = new Entity();
+        Entity peer = new Entity();
+        Verdict callers = new Verdict(true);
         List<Optional<?>> seen = new ArrayList<>();
         GraphDefinition<Entity, S, T> watched = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE).terminal(S.FAILED)
                 .statePolicy(S.OPEN, "closed")
@@ -185,7 +192,8 @@ class OperationInputTest {
                 .transition(T.WATCH_IT, S.OPEN, S.FAILED)
                     .action("watched", (TransitionContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); })
                     .endTransition()
-                .watch(S.OPEN, KEY, (Entity e) -> List.of(e), (Entity e) -> Optional.of(e))
+                .watch(S.OPEN, KEY, (Entity e) -> List.of(peer),
+                        (Entity moved) -> moved == peer ? Optional.of(owner) : Optional.<Entity>empty())
                     .when("always", (Entity e, Collection<? extends Entity> peers,
                             PeerView<Entity, S, T> view) -> true).execute(T.WATCH_IT)
                     .endWatch()
@@ -193,10 +201,13 @@ class OperationInputTest {
         try (MachineRegistry registry = MachineRegistry.builder()
                 .add(StateMachines.from(watched).state((Entity e) -> e.state, (Entity e, S s) -> e.state = s)
                         .identity(System::identityHashCode)).build()) {
-            Entity entity = new Entity();
-            assertInstanceOf(Outcome.Applied.class, registry.of(KEY).reevaluate(entity));
-            assertEquals(List.of(Optional.empty()), seen);
-            assertEquals(S.FAILED, entity.state);
+            Outcome.Applied<?, ?, ?> applied = assertInstanceOf(Outcome.Applied.class,
+                    registry.of(KEY).execute(peer, T.WORK, callers));
+            Reaction.Done reaction = assertInstanceOf(Reaction.Done.class, applied.reactions().getFirst());
+            assertInstanceOf(Outcome.Applied.class, reaction.outcome());
+            assertEquals(List.of(Optional.of(callers), Optional.empty()), seen);
+            assertEquals(S.DONE, peer.state);
+            assertEquals(S.FAILED, owner.state);
         }
     }
 

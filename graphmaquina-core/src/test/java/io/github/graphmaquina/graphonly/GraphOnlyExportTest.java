@@ -2,9 +2,7 @@ package io.github.graphmaquina.graphonly;
 
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.APPROVE;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.AUTO_APPROVE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.BACK;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.FAIL;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.RETOUCH;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.KEY;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.DONE;
 import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.OPEN;
@@ -22,6 +20,8 @@ import io.github.graphmaquina.api.StatePolicy;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
+import io.github.graphmaquina.dsl.GraphBuilder;
+import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.export.GraphView;
 import io.github.graphmaquina.export.GraphvizExporter;
 import io.github.graphmaquina.export.PolicyView;
@@ -91,25 +91,50 @@ class GraphOnlyExportTest {
                 dot.lines().filter((String line) -> line.contains("->") && !line.contains("initial ->")).count(), dot);
     }
 
+    /** States of a desk whose two first states reject every identifier but CLOSE. */
+    enum Desk { OPEN, CLOSED, DONE }
+
+    /** CLOSE moves the desk on; the ten others are only ever rejected. */
+    enum Request { CLOSE, ALPHA, BRAVO, CHARLIE, DELTA, ECHO, FOXTROT, GOLF, HOTEL, INDIA, JULIETT }
+
     /**
-     * The reasons a state gives are rendered in the order they were declared. The three identifiers below are
-     * declared in an order that is not the ordinal one (BACK is last in the catalogue, APPROVE second), so this
-     * fails if the chain reverts to an {@code EnumMap}, which sorts by ordinal, and on most runs if it reverts to
-     * {@code Map.copyOf}, whose iteration order is unspecified and salted per JVM.
+     * The reasons a state gives are rendered in the order they were declared. OPEN rejects ten identifiers in an
+     * order that is neither their ordinal nor their alphabetical one, and CLOSED rejects the same ten the other way
+     * round. An {@code EnumMap} would order both by ordinal. A hash map, {@code Map.copyOf} included, places the same
+     * keys in the same order in both maps except where collisions reorder them, and keeping both declared orders
+     * would take reordering every pair of the ten.
      */
     @Test void rejectionReasonsKeepTheirDeclaredOrderInTheRenderedTooltip() {
-        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
-                .reject(OPEN, BACK, "nothing to go back to")
-                .reject(OPEN, APPROVE, "approval requires review")
-                .reject(OPEN, RETOUCH, "nothing to retouch yet").build();
+        List<Request> declared = List.of(Request.HOTEL, Request.BRAVO, Request.JULIETT, Request.DELTA, Request.ALPHA,
+                Request.GOLF, Request.CHARLIE, Request.INDIA, Request.ECHO, Request.FOXTROT);
+        MachineKey<Object, Desk, Request> key = MachineKey.of(Object.class, Desk.class, Request.class);
+        GraphBuilder<Object, Desk, Request> desk = StateGraph.define(key)
+                .initial(Desk.OPEN).terminal(Desk.DONE)
+                .statePolicy(Desk.OPEN, "close it first").statePolicy(Desk.CLOSED, "close it again")
+                .transition(Request.CLOSE, Desk.OPEN, Desk.CLOSED).endTransition()
+                .transition(Request.CLOSE, Desk.CLOSED, Desk.DONE).endTransition();
+        for (Request request : declared) {
+            desk = desk.reject(Desk.OPEN, request, "no " + request.name() + " while open");
+        }
+        for (Request request : declared.reversed()) {
+            desk = desk.reject(Desk.CLOSED, request, "no " + request.name() + " once closed");
+        }
+        GraphDefinition<Object, Desk, Request> graph = desk.build();
+        assertEquals(List.of(declared, declared.reversed()),
+                List.of(List.copyOf(graph.policy(Desk.OPEN).rejectionReasons().keySet()),
+                        List.copyOf(graph.policy(Desk.CLOSED).rejectionReasons().keySet())));
+        List<String> open = new ArrayList<>();
+        List<String> closed = new ArrayList<>();
+        for (Request request : declared) {
+            open.add(request.name() + ": no " + request.name() + " while open");
+            closed.addFirst(request.name() + ": no " + request.name() + " once closed");
+        }
         GraphView view = GraphView.of(graph);
-        assertEquals(List.of("BACK", "APPROVE", "RETOUCH"),
-                graph.policy(OPEN).rejectionReasons().keySet().stream().map(Id::name).toList());
-        assertEquals(List.of("BACK: nothing to go back to", "APPROVE: approval requires review",
-                "RETOUCH: nothing to retouch yet"), view.policies().get(0).rejections());
+        assertEquals(List.of(open, closed),
+                List.of(view.policies().get(0).rejections(), view.policies().get(1).rejections()));
         String dot = GraphvizExporter.render(view);
-        assertTrue(dot.contains("tooltip=\"otherwise: submit first; BACK: nothing to go back to;"
-                + " APPROVE: approval requires review; RETOUCH: nothing to retouch yet\""), dot);
+        assertTrue(dot.contains("tooltip=\"otherwise: close it first; " + String.join("; ", open) + "\""), dot);
+        assertTrue(dot.contains("tooltip=\"otherwise: close it again; " + String.join("; ", closed) + "\""), dot);
     }
 
     /** A terminal gets the stable generated policy text when nobody declares one. */

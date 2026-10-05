@@ -1,6 +1,5 @@
 package io.github.graphmaquina.runtime;
 
-import io.github.graphmaquina.error.StateMachineException;
 import java.time.Duration;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -14,9 +13,11 @@ import java.util.concurrent.TimeoutException;
  * orTimeout, completeOnTimeout or cancel on anything belonging to the user. join() ignores interruption; get() does not.
  * A deadline of Long.MAX_VALUE means no limit. Any other deadline is only ever subtracted from, so one that wrapped
  * past Long.MAX_VALUE when its budget was added still leaves the exact time remaining. A stage that completes with a
- * StateMachineException rethrows it as is; any other exceptional completion surfaces as an ActionFailure, an Error
- * included: the engine learns of that Error only through the stage, so it reports it as the cause of an abort, while
- * an Error thrown as itself on the calling thread propagates unchanged.
+ * StateMachineException, bare or wrapped in CompletionException or ExecutionException, rethrows it as is, as the
+ * engine does with one a callback throws, even one from another root, whose details then describe that root; any
+ * other exceptional completion surfaces as an ActionFailure, an Error included: the engine learns of that Error only
+ * through the stage, so it reports it as the cause of an abort, while an Error thrown as itself on the calling thread
+ * propagates unchanged.
  */
 final class Await {
 
@@ -68,11 +69,7 @@ final class Await {
         } catch (CancellationException e) {
             throw new ActionFailure(e);
         } catch (ExecutionException e) {
-            Throwable cause = Unwrap.unwrap(e);
-            if (cause instanceof StateMachineException stateMachineError) {
-                throw stateMachineError;
-            }
-            throw new ActionFailure(cause);
+            throw new ActionFailure(Unwrap.foreignCause(e));
         }
     }
 }

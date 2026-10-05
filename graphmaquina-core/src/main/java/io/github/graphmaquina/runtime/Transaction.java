@@ -135,10 +135,13 @@ final class Transaction {
 
     /**
      * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. A
-     * StateMachineException the action throws, or that completes its stage, is rethrown as is. Any other Exception,
-     * thrown or completing the stage, checked ones included, which Kotlin or {@code @SneakyThrows} code can throw
-     * without declaring them, becomes an ActionFailure that failsOn classifies. An Error is never routed: thrown as
-     * itself, it propagates; wrapped in CompletionException or ExecutionException, it is unwrapped and aborts.
+     * StateMachineException the action throws, or that completes its stage, bare or wrapped in CompletionException
+     * or ExecutionException, is rethrown as is: an engine exception is never matched against failsOn. It propagates
+     * unchanged even when it comes from another root, such as the failure of another machine's call that the action
+     * joined, and its details then describe that root, not this call. Any other Exception, thrown or completing the
+     * stage, checked ones included, which Kotlin or {@code @SneakyThrows} code can throw without declaring them,
+     * becomes an ActionFailure that failsOn classifies. An Error is never routed: thrown as itself, it propagates;
+     * wrapped in CompletionException or ExecutionException, it is unwrapped and aborts.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -150,7 +153,7 @@ final class Transaction {
                 } catch (StateMachineException e) {
                     throw e;
                 } catch (Exception e) {
-                    throw new ActionFailure(e);
+                    throw new ActionFailure(Unwrap.foreignCause(e));
                 }
             }
             case ActionRef.Async<E, S, T> async -> {
@@ -161,7 +164,7 @@ final class Transaction {
                 } catch (StateMachineException e) {
                     throw e;
                 } catch (Exception e) {
-                    throw new ActionFailure(e);
+                    throw new ActionFailure(Unwrap.foreignCause(e));
                 }
                 if (stage == null) {
                     throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
@@ -183,9 +186,10 @@ final class Transaction {
 
     /**
      * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. A
-     * StateMachineException the guard throws, or that completes its stage, is rethrown as is. Any other exceptional
-     * completion of the stage, an Error included, and any other Exception the guard throws, checked ones included,
-     * are technical aborts; an Error thrown as itself propagates.
+     * StateMachineException the guard throws, or that completes its stage, bare or wrapped in CompletionException or
+     * ExecutionException, is rethrown as is, even one that comes from another root, whose details then describe that
+     * root. Any other exceptional completion of the stage, an Error included, and any other Exception the guard
+     * throws, checked ones included, are technical aborts; an Error thrown as itself propagates.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> GuardResult evaluateGuard(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition, int depth,
@@ -199,7 +203,7 @@ final class Transaction {
                 } catch (StateMachineException e) {
                     throw e;
                 } catch (Exception e) {
-                    Throwable cause = Unwrap.unwrap(e);
+                    Throwable cause = Unwrap.foreignCause(e);
                     throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                             "the guard " + guard.name() + " threw " + cause, Optional.of(cause));
                 }
@@ -211,7 +215,7 @@ final class Transaction {
                 } catch (StateMachineException e) {
                     throw e;
                 } catch (Exception e) {
-                    Throwable cause = Unwrap.unwrap(e);
+                    Throwable cause = Unwrap.foreignCause(e);
                     throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                             "the guard " + guard.name() + " threw " + cause, Optional.of(cause));
                 }
@@ -413,12 +417,22 @@ final class Transaction {
 
     /**
      * {@code guard} is the caller context's own check: the view stays as alive as the context that made it. A read
-     * stages nothing, so it never poisons: neither does an unknown key here, nor an unknown facade in keyFor.
+     * stages nothing, so it never poisons: neither does an unknown key here, nor an unknown facade in peerKeyFor.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(ContextHandle caller, Runnable guard,
                                                                      MachineKey<P, Q, U> key) {
         checkPoison(caller);
         return new DefaultPeerView<>(guard, uow, registry.machineFor(key));
+    }
+
+    /**
+     * Resolves the facade a peer read names once the poison is checked, in the order cascadeKeyFor follows. A read
+     * stages nothing, so an unknown facade throws here without poisoning.
+     */
+    <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> peerKeyFor(ContextHandle caller,
+                                                                           Class<? extends Machine<P, Q, U>> facade) {
+        checkPoison(caller);
+        return keyFor(facade);
     }
 
     /**
@@ -520,18 +534,44 @@ final class Transaction {
      * FAIL_FAST aborts at the first failure. COLLECT tries every element under its own savepoint, rolls back
      * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
      * COLLECT gathers transition aborts only: any other failure poisons and propagates at once. The arguments are
-     * refused before any element runs, as cascade refuses its own: an identifier from another catalogue or a null
-     * element stages nothing and poisons nothing.
+     * refused before any element runs, as cascade refuses its own, and the refusal stages nothing and poisons
+     * nothing: a null element first, then an identifier from another catalogue, which the key carries. The machine
+     * is looked up next, before any element runs, so an unknown key poisons whatever valid elements the collection
+     * holds, and an empty collection too, as it does in cascade.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(ContextHandle caller,
                                                                                 MachineKey<P, Q, U> key,
                                                                                 Collection<? extends P> peers, U id,
                                                                                 CascadePolicy policy) {
         checkPoison(caller);
-        requireTransition(key, id);
-        for (P peer : peers) {
+        requireElements(peers);
+        return cascadeEach(caller, key, peers, id, policy);
+    }
+
+    /**
+     * cascadeAll by facade type, in the same order as by key, except that the identifier is checked after the facade
+     * resolves: only a resolved facade gives the catalogue it is checked against. A null element is refused before the
+     * facade is resolved, so it never poisons, and an unknown facade then poisons.
+     */
+    <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(
+            ContextHandle caller, Class<? extends Machine<P, Q, U>> facade, Collection<? extends P> peers, U id,
+            CascadePolicy policy) {
+        checkPoison(caller);
+        requireElements(peers);
+        return cascadeEach(caller, cascadeKeyFor(caller, facade), peers, id, policy);
+    }
+
+    private static void requireElements(Collection<?> peers) {
+        for (Object peer : peers) {
             Objects.requireNonNull(peer, "peers contains a null element");
         }
+    }
+
+    /** The rest of cascadeAll once its elements are accepted: the identifier, the machine, then every element. */
+    private <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeEach(
+            ContextHandle caller, MachineKey<P, Q, U> key, Collection<? extends P> peers, U id, CascadePolicy policy) {
+        requireTransition(key, id);
+        requireMachine(key);
         List<Outcome<P, Q, U>> outcomes = new ArrayList<>();
         List<TransitionAbortedException> errors = new ArrayList<>();
         for (P peer : peers) {
@@ -557,6 +597,16 @@ final class Transaction {
             throw aggregate;
         }
         return List.copyOf(outcomes);
+    }
+
+    /** Looks the machine of a cascade up inside the poisoning scope: an unknown key poisons, as in cascadeOne. */
+    private void requireMachine(MachineKey<?, ?, ?> key) {
+        try {
+            registry.anyMachineFor(key);
+        } catch (StateMachineException e) {
+            uow.poison(e);
+            throw e;
+        }
     }
 
     private void checkPoison(ContextHandle caller) {

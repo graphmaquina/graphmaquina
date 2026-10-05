@@ -14,18 +14,26 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
         return new Watcher<>(machine, spec);
     }
 
-    /** Owner of the moved peer, if any, and exactly in the watched state. */
+    /**
+     * Owner of the moved peer, if any, and exactly in the watched state. ownerOf, the state read and the identity
+     * function run with the reentrancy marker set, so none of them can start a transition.
+     */
     Optional<EntityRef> ownerToReevaluate(Object movedInstance) {
         P peer = spec.peer().entity().cast(movedInstance);
-        Optional<E> owner = spec.ownerOf().apply(peer);
-        if (owner.isEmpty()) {
-            return Optional.empty();
+        Reentrancy.enter(spec.peer(), peer);
+        try {
+            Optional<E> owner = spec.ownerOf().apply(peer);
+            if (owner.isEmpty()) {
+                return Optional.empty();
+            }
+            E entity = owner.get();
+            if (machine.readState(entity) != spec.state()) {
+                return Optional.empty();
+            }
+            return Optional.of(machine.refOf(entity));
+        } finally {
+            Reentrancy.exit();
         }
-        E entity = owner.get();
-        if (machine.readState(entity) != spec.state()) {
-            return Optional.empty();
-        }
-        return Optional.of(machine.refOf(entity));
     }
 
     /**

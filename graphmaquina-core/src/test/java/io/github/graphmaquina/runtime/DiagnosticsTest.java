@@ -101,8 +101,8 @@ class DiagnosticsTest {
     }
 
     /**
-     * A guard has no cascade to turn to: the message names the callbacks that run inside a transition, and keeps the
-     * cascade advice for actions.
+     * A guard has no cascade to turn to: the message names the callbacks that cannot start a transition, those of a
+     * transition and those of a watch, and keeps the cascade advice for actions.
      */
     @Test
     void aReentrantCallFromAGuardIsNotToldToCascade() {
@@ -117,9 +117,10 @@ class DiagnosticsTest {
         self.set(machine);
         ReentrantTransitionException error = assertThrows(ReentrantTransitionException.class,
                 () -> machine.execute(new Doc("1", DRAFT), SUBMIT));
-        assertEquals("execute/reevaluate on Doc/DocStatus from within a transition already in progress on this thread:"
-                + " a guard, an action, a state accessor or an identity function cannot start another transition; an"
-                + " action moves its peers with ctx.cascade(...)", error.getMessage());
+        assertEquals("execute/reevaluate on Doc/DocStatus from within a transition or a watch evaluation already in"
+                + " progress on this thread: a guard, an action, a watch's peersOf, ownerOf or condition, a state"
+                + " accessor or an identity function cannot start another transition; an action moves its peers with"
+                + " ctx.cascade(...)", error.getMessage());
         assertEquals(DRAFT, other.status());
     }
 

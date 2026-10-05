@@ -109,21 +109,33 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /**
      * chain counts reaction -> transition -> reaction. Exceeding maxWatchChain throws WatchChainExceededException
-     * after the reentrancy check and the state read, before any watch function runs.
+     * after the reentrancy check and the state read, before any watch function runs. The state read and the watch
+     * functions, peersOf and the conditions, run with the reentrancy marker set, so none of them can start a
+     * transition: a nested root would begin a chain of its own that maxWatchChain never counts. The marker is
+     * released before the selected edge runs as a root.
      */
     Outcome<E, S, T> reevaluate(E entity, int chain) {
-        Reentrancy.check(key(), entity);
-        S state = readState(entity);
-        if (chain > registry.maxWatchChain()) {
-            AbortDetails details = new AbortDetails(key(), entity, state, Optional.empty(), Optional.empty(),
-                    Optional.empty(), List.of(), List.of());
-            throw new WatchChainExceededException(details, registry.maxWatchChain());
+        S state;
+        Optional<WatchSpec<E, S, T, ?, ?, ?>> watch;
+        Optional<T> selected = Optional.empty();
+        Reentrancy.enter(key(), entity);
+        try {
+            state = readState(entity);
+            if (chain > registry.maxWatchChain()) {
+                AbortDetails details = new AbortDetails(key(), entity, state, Optional.empty(), Optional.empty(),
+                        Optional.empty(), List.of(), List.of());
+                throw new WatchChainExceededException(details, registry.maxWatchChain());
+            }
+            watch = definition.watch(state);
+            if (watch.isPresent()) {
+                selected = firstMatch(watch.get(), entity);
+            }
+        } finally {
+            Reentrancy.exit();
         }
-        Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = definition.watch(state);
         if (watch.isEmpty()) {
             return notify(new Outcome.Ignored<>(entity, state, IgnoreReason.NO_WATCH));
         }
-        Optional<T> selected = firstMatch(watch.get(), entity);
         if (selected.isEmpty()) {
             return notify(new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
@@ -162,7 +174,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * Root transaction: new UoW with its deadline, reentrancy marker, step, phase 2, context invalidation.
      * Everything is prepared before the marker is set, so that from {@code Reentrancy.enter} on, the only way out
      * runs through the {@code finally} that releases it, whatever the step throws.
-     * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction.
+     * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
+     * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      */
     Outcome<E, S, T> runRoot(E entity, Function<Transaction, StepResult<S, T>> body, int chain) {
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), deadlineNanos());
