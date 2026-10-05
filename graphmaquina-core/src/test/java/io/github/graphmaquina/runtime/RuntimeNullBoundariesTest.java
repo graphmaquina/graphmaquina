@@ -16,6 +16,11 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+/**
+ * Runtime entry points refuse a null argument with a NullPointerException whose message is the parameter's name: the
+ * machine builder, a machine's {@code execute}, {@code transitionsFrom} and {@code supplyAsync}, and the registry
+ * builder and its lookup.
+ */
 class RuntimeNullBoundariesTest {
 
     private static final GraphDefinition<Doc, DocStatus, DocTransition> GRAPH = StateGraph.define(DOCS)

@@ -31,6 +31,12 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The registry's transition listener: it sees the outcome of every call once, a reaction's outcome reaches it in a call
+ * of its own before the outcome of the root call that triggered the reaction, a listener failure surfaces as an
+ * AfterCommitException from a root call and as an aborted reaction inside a reaction, and a registry takes one
+ * listener only.
+ */
 class ListenerTest {
 
     final List<String> seen = new ArrayList<>();

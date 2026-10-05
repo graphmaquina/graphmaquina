@@ -79,13 +79,12 @@ public final class StrongComponents {
      *
      * <p>Membership is decided by the graph: every element of {@code component} must be one of
      * {@code graph.nodes()} under the node type's {@code equals} and {@code hashCode}. The component's own
-     * {@code contains} is never consulted. A {@code Set} whose membership disagrees with {@code equals} can
-     * therefore behave differently than under the former global scan, in both directions. A case-insensitive
-     * {@code TreeSet} holding {@code "a"} for the graph node {@code "A"} is rejected as holding a node outside the
-     * graph. An identity-based set holding an equal but distinct instance of a graph node is accepted, and the
-     * witness uses the graph's declared instance. A {@code contains} that would throw, such as the natural order
-     * of a {@code TreeSet} over a graph whose nodes are not mutually comparable, is never reached. The message of
-     * the exception can differ as well.
+     * {@code contains} is never consulted, so a {@code Set} whose membership disagrees with {@code equals} is
+     * judged by {@code equals}, in both directions. A case-insensitive {@code TreeSet} holding {@code "a"} for the
+     * graph node {@code "A"} is rejected as holding a node outside the graph. An identity-based set holding an equal
+     * but distinct instance of a graph node is accepted, and the witness uses the graph's declared instance. A
+     * {@code contains} that would throw, such as the natural order of a {@code TreeSet} over a graph whose nodes are
+     * not mutually comparable, is never reached.
      *
      * @throws IllegalArgumentException if the component is empty, holds no cycle, or is not part of {@code graph}
      */

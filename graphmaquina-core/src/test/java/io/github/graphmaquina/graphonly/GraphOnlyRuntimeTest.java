@@ -34,6 +34,10 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Running graph-only machines by identifier: the selected parallel edge, rejections and their reasons, self-loops, the
+ * input of an invocation, moves and their records, reevaluation without a watch, and structural inspection.
+ */
 class GraphOnlyRuntimeTest {
 
     @Test void invokesTheSelectedParallelTransition() {
@@ -142,7 +146,7 @@ class GraphOnlyRuntimeTest {
         }
     }
 
-    /** Two guards reject with GUARD and name the one that stopped the request; the action never runs. */
+    /** A guard that rejects makes the call a GUARD rejection that names it; the action never runs. */
     @Test void aGuardRejectionNamesTheGuardAndSkipsTheAction() {
         GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
             .transition(AUTO_APPROVE, REVIEW, DONE)
@@ -174,7 +178,7 @@ class GraphOnlyRuntimeTest {
         }
     }
 
-    /** Structural inspection returns identifiers, not destinations, and evaluates no guard. */
+    /** Structural inspection returns the identifiers declared from a state, not destinations; a terminal gives none. */
     @Test void transitionsFromListsIdentifiers() {
         GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
             .transition(AUTO_APPROVE, REVIEW, DONE).endTransition().build();

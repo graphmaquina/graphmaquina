@@ -93,7 +93,11 @@ final class LegacyDeclarations {
         return Optional.empty();
     }
 
-    /** What to write instead of the retired header of {@code type}, spelled with the names generated for it. */
+    /**
+     * What to write instead of the retired header of {@code type}, with its vocabulary spelled as the simple name
+     * followed by {@code Graph}: the name the generator gives that vocabulary when normalizing the simple name to
+     * PascalCase leaves it unchanged.
+     */
     private static String describe(TypeElement type) {
         String graph = type.getSimpleName() + "Graph";
         return type.getQualifiedName() + " declares its graph with the retired matrix annotations, which this"

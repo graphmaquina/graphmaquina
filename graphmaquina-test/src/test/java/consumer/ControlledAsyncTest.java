@@ -47,8 +47,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Contract of the controlled asynchronous fixtures. Nothing here sleeps: the test resumes when the engine has
- * entered the action or the guard, and the engine resumes when the test answers that very invocation. Every
- * mismatch is read off the fields of the {@link GraphAssertionError}, not off its type.
+ * entered the action or the guard, and the engine resumes when the test answers that very invocation. A mismatch
+ * is read off the fields of the {@link GraphAssertionError}, not off its type, except in the two cases that
+ * only need an execution or a wait to fail as an assertion.
  */
 class ControlledAsyncTest {
 
@@ -879,11 +880,13 @@ class ControlledAsyncTest {
                 .build();
     }
 
+    /** States of the parcel machine: a parcel stays {@code NEW} until the gated send moves it to {@code SENT}. */
     private enum Status { NEW, SENT }
 
     /** Transition identifiers of the parcel machine. */
     private enum Move { SEND }
 
+    /** Entity of the parcel machine: an id and a mutable {@link Status}. */
     private static final class Parcel {
 
         private final String id;

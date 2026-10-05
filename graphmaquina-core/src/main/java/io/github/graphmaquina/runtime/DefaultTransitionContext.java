@@ -71,7 +71,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
         return peer(tx.keyFor(peer));
     }
 
-    /** An unknown facade poisons the transaction, exactly as an unknown key does. */
+    /** An unknown facade poisons the transaction, as an unknown key does once the cascade looks its machine up. */
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(
             @NonNull Class<M> peer, @NonNull P target, @NonNull U transition) {
@@ -79,7 +79,10 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
         return tx.cascade(this, tx.cascadeKeyFor(this, peer), target, transition);
     }
 
-    /** An unknown facade poisons the transaction, exactly as an unknown key does. */
+    /**
+     * An unknown facade poisons the transaction, as an unknown key does once a cascade looks its machine up. The
+     * facade is resolved first, so it throws even for an empty collection, where an unknown key is never looked up.
+     */
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
             @NonNull Class<M> peer, @NonNull Collection<? extends P> peers, @NonNull U transition,

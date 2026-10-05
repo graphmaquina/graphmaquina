@@ -11,10 +11,10 @@ import java.util.Objects;
  * Narrows a wildcard record or outcome to the machine it belongs to. The engine publishes its hops as
  * {@code TransitionRecord<?, ?, ?>} because one transaction may touch several machines, and a watch reaction
  * publishes its {@code Outcome<?, ?, ?>} because the machine that re-evaluated is not the one that committed,
- * so a typed view has to recover the triple {@code <E, S, T>} from a {@link MachineKey}. Every field the key
- * describes is checked against the key's own classes before the one cast this class exists to localize; a
- * value that does not match is a programming error in the calling test and raises
- * {@link IllegalArgumentException}.
+ * so a typed view has to recover the triple {@code <E, S, T>} from a {@link MachineKey}. Every entity, state
+ * and identifier the key describes is checked against the key's own classes before the one cast this class
+ * exists to localize, with one exception: the recovery identifier of a failed outcome is not checked. A value
+ * that does not match is a programming error in the calling test and raises {@link IllegalArgumentException}.
  */
 public final class CheckedTypes {
 
@@ -37,9 +37,10 @@ public final class CheckedTypes {
     }
 
     /**
-     * An outcome carries no key of its own, so every value it names is checked instead: the origin, the state
-     * it records as current, and the identifier it was asked for, which a rejected outcome reports without
-     * ever having run an edge and an ignored one does not report at all.
+     * An outcome carries no key of its own, so the values it names are checked instead: the entity, the origin,
+     * the state it records as current, the destination of an applied or failed outcome, and the identifier it
+     * was asked for, which a rejected outcome reports without ever having run an edge and an ignored one does
+     * not report at all. The recovery identifier of a failed outcome is the one value left unchecked.
      */
     public static <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> outcome(
             MachineKey<E, S, T> key, Outcome<?, ?, ?> outcome) {

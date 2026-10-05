@@ -15,13 +15,16 @@ import org.junit.jupiter.params.provider.ValueSource;
  *
  * <p>Those annotation types are gone from this release, so a project that has not been migrated only still
  * resolves them from the older release it compiles against. The fixtures supply them the way that classpath
- * would, and every one of them expects {@code SG609} at the declaration that carries it, and no companion at
- * all: half a migration is refused as loudly as none. A project whose imports no longer resolve is told by
+ * would, and every test expects {@code SG609}; the one that mixes the old vocabulary with the new also expects no
+ * companion: half a migration is refused as loudly as none. A project whose imports no longer resolve is told by
  * javac itself, and {@code docs/migration-2.0.md} supplies the replacement.</p>
  */
 class LegacyAnnotationsTest {
 
-    /** The retired annotation types as an older release still on the classpath declares them. */
+    /**
+     * The five retired annotation types the machine fixtures use, as an older release still on the classpath
+     * declares them.
+     */
     private static Map<String, String> retiredVocabulary() {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("io.github.graphmaquina.annotation.StateGraph", """
@@ -64,7 +67,10 @@ class LegacyAnnotationsTest {
         return sources;
     }
 
-    /** The entity and the host a retired facade binds, with neither markers nor generated references. */
+    /**
+     * The retired vocabulary, the state enum, the entity and the host a retired facade binds, with neither markers
+     * nor generated references.
+     */
     private static Map<String, String> domain() {
         Map<String, String> sources = retiredVocabulary();
         sources.put("fx.DocStatus", """
@@ -89,7 +95,7 @@ class LegacyAnnotationsTest {
         return sources;
     }
 
-    /** A complete machine of the retired vocabulary. {@code @StateGraph} is on line 6. */
+    /** A complete machine of the retired vocabulary. {@code @StateGraph} is on line 5. */
     private static final String LEGACY_DOCS = """
             package fx;
             import io.github.graphmaquina.annotation.Action;

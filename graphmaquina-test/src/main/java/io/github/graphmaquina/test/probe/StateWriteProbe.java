@@ -20,11 +20,12 @@ import java.util.function.BiConsumer;
  * <p>Every call is numbered as it is entered, and {@link #failOnCall} arms the failure of exactly one of
  * those numbers: that call throws the given exception instance and never reaches the wrapped setter, so the
  * entity keeps the state it had and the engine reports it as pending. A call is recorded as soon as it is
- * entered, as {@link WriteStatus#RUNNING}, and that same record is settled to {@code RETURNED} or
- * {@code THREW} when the call leaves; taking the number and recording the call happen together, so a call
- * never has a number the list does not yet carry. That is what lets a test thread read {@link #writes()}
- * while the engine writes: the list is complete and in entry order at every instant, and a call still
- * inside a blocked setter is listed in its own place rather than missing from the list.
+ * entered, as {@link WriteStatus#RUNNING}, and when the call leaves the probe replaces that record, in the
+ * same place, with one that says {@code RETURNED} or {@code THREW}; a record already handed out keeps the
+ * status it had. Taking the number and recording the call happen together, so a call never has a number the
+ * list does not yet carry. That is what lets a test thread read {@link #writes()} while the engine writes:
+ * the list is complete and in entry order at every instant, and a call still inside a blocked setter is
+ * listed in its own place rather than missing from the list.
  *
  * <p>The wrapped setter is invoked outside every lock this class takes, so a setter that blocks holds up
  * nothing but its own caller. Configuration is meant to finish before the probe reaches a machine.

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
+/** What the exception types carry and what their messages name, built by hand without running a machine. */
 class ExceptionsTest {
 
     private static final MachineKey<String, DayOfWeek, Month> KEY =

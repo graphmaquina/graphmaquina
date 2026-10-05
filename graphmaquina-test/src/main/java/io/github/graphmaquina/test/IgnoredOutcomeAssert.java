@@ -7,7 +7,7 @@ import java.util.Objects;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Ignored}, obtained from {@link
- * OutcomeAssert#isIgnored()}. A reevaluation selected no edge, so nothing ran and nothing moved: the
+ * OutcomeAssert#isIgnored()}. A reevaluation selected no edge, so no action ran and nothing moved: the
  * recorded state is the origin, no identifier was requested, and {@link #hasReason(IgnoreReason)} says
  * whether the state declared no watch at all or no rule of its watch held.
  *

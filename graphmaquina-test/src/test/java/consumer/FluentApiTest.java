@@ -32,8 +32,9 @@ import org.junit.jupiter.api.Test;
 /**
  * Contract of {@link GraphAssertions}. The facade adds no behaviour of its own, so every case here reads
  * the subject back through the view it returned: the overload that was chosen, the subject it was handed
- * and the argument checks it must not swallow. A null subject reaches the view untouched, because the view
- * is what turns it into an inspectable assertion failure.
+ * and the argument checks it must not swallow; the two cases that pin {@code captureFailure} itself read the
+ * exception it returns or the failure it raises instead. A null subject reaches the view untouched, because
+ * the view is what turns it into an inspectable assertion failure.
  */
 class FluentApiTest {
 

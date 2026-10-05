@@ -15,7 +15,8 @@ import lombok.NonNull;
  * @param <T> transition identifier enum
  * @param state the state this policy describes
  * @param otherwise the reason used for any identifier without its own
- * @param rejectionReasons reasons declared for specific identifiers, in the order they were declared
+ * @param rejectionReasons reasons declared for specific identifiers, in the iteration order of the given map, which
+ *     for the DSL is the order they were declared
  */
 public record StatePolicy<S extends Enum<S>, T extends Enum<T>>(@NonNull S state, @NonNull String otherwise,
                                                                 @NonNull Map<T, String> rejectionReasons) {

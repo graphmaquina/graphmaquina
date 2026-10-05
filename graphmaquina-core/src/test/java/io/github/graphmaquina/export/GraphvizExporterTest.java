@@ -32,6 +32,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+/**
+ * The Graphviz text of a {@code GraphView}: the golden output of the order graph, what the view carries, parallel
+ * edges, terminals and initial states, the escaping of user text, and watch notes.
+ */
 class GraphvizExporterTest {
 
     private static String golden(String name) throws IOException {

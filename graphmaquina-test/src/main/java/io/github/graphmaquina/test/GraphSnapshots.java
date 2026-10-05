@@ -12,9 +12,9 @@ import java.util.Objects;
 /**
  * Compares the structural snapshot of a graph against a checked-in golden resource, and rewrites that
  * resource when the run is in update mode. Where {@link GraphGoldens} pins what a diagram shows, this pins
- * everything the definition carries — transition identifiers, timeouts, recovery routes, guard modes, hooks,
- * policies — so a change no diagram would reveal still breaks the build, and it fails with the paths that
- * differ rather than with two files.
+ * everything the definition declares — transition identifiers, timeouts, recovery routes, guard modes, hooks,
+ * policies — by name and value, never by the code behind a name, so a change no diagram would reveal still
+ * breaks the build, and it fails with the paths that differ rather than with two files.
  *
  * <p>In read mode a stored snapshot of an unknown version or a broken format is a fixture problem, not a
  * mismatch: it is reported as such rather than compared. Update mode never reads the old text as a snapshot
@@ -39,9 +39,14 @@ public final class GraphSnapshots {
     }
 
     /**
-     * @throws GraphAssertionError if the definition is null, the resource is missing, or its snapshot
-     *     differs from the capture
-     * @throws IllegalArgumentException if the stored snapshot is not readable in read mode
+     * Compares the capture against {@code resource} through {@code options}. In update mode a missing or
+     * different snapshot is written instead of failing the check.
+     *
+     * @throws GraphAssertionError if the definition is null or, in read mode, the resource is missing, names
+     *     a directory or holds a snapshot that differs from the capture
+     * @throws IllegalArgumentException if the resource name is malformed, if in read mode the stored snapshot
+     *     is not readable, or if in update mode the resource resolves outside the source root
+     * @throws IllegalStateException if the golden cannot be read or decoded, or cannot be written
      */
     public static void assertMatches(GraphDefinition<?, ?, ?> definition, String resource,
             GoldenOptions options) {

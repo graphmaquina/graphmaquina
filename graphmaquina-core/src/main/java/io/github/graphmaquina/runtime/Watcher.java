@@ -5,7 +5,7 @@ import io.github.graphmaquina.api.WatchSpec;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.Optional;
 
-/** A machine that watches another from a state. Indexed by the peer's key. */
+/** A machine that watches a peer machine, possibly itself, from a state. Indexed by the peer's key. */
 record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>(
         DefaultStateMachine<E, S, T> machine, WatchSpec<E, S, T, P, Q, U> spec) {
 

@@ -13,8 +13,9 @@ import java.util.Set;
 import lombok.NonNull;
 
 /**
- * Structural checks over a {@link MachineOutline}: unique keys, reasons, terminals, reachability, cycles,
- * failure routes and watches. Shared by the DSL and the annotation processor, so both report the same codes.
+ * Structural checks over a {@link MachineOutline}: unique keys, policies and their reasons, terminals,
+ * reachability, cycles, failure routes and watches. Shared by the DSL and the annotation processor, so both report
+ * the same codes for these checks.
  */
 public final class MachineOutlineValidator {
 

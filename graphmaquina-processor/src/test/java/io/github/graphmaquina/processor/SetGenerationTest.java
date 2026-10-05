@@ -21,6 +21,12 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The companion generated for a {@code @StateGraphs} set: its builder, whose signature follows the dependencies and
+ * the asynchronous machines of the set and which refuses what the builders it mirrors refuse; which methods are
+ * accessors; the machines it holds and runs; and the names it keeps apart. A set with a machine that failed is not
+ * generated.
+ */
 class SetGenerationTest {
 
     @Test
@@ -184,7 +190,10 @@ class SetGenerationTest {
         }
     }
 
-    /** A package holding Status, Thing and a minimal Things machine over them: three simple names shared with every twin. */
+    /**
+     * A package holding Status, Step, Thing and a minimal Things machine over them: four simple names shared with
+     * every twin.
+     */
     private static void twin(Map<String, String> sources, String name) {
         sources.put(name + ".Status", "package " + name + ";\npublic enum Status { OPEN, DONE }\n");
         sources.put(name + ".Step", "package " + name + ";\npublic enum Step { FINISH }\n");

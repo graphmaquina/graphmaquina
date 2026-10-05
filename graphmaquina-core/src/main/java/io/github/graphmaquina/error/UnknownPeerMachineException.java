@@ -6,7 +6,10 @@ import java.util.Objects;
 import java.util.Set;
 import lombok.Getter;
 
-/** A watch or cascade referenced a peer machine that was never registered. */
+/**
+ * No machine of the registry has the requested key: {@code MachineRegistry.of(key)}, a context's {@code peer(key)}
+ * or a cascade to that key. A watch on such a machine is refused earlier, when the registry is built.
+ */
 @Getter
 public final class UnknownPeerMachineException extends StateMachineException {
 

@@ -87,7 +87,9 @@ public final class StateSnapshot {
         }
     }
 
+    /** An entity tracked under a machine, with the reader that gets its state through the tracking getter. */
     private record Tracked(MachineKey<?, ?, ?> key, Object entity, Supplier<Enum<?>> reader) { }
 
+    /** A tracked entity together with the state its reader returned when {@link Builder#capture()} froze it. */
     private record Captured(Tracked tracked, Enum<?> before) { }
 }

@@ -6,8 +6,10 @@ import lombok.NonNull;
 
 /**
  * Named post-commit hook of a transition. It runs on the calling thread after phase 2 wrote every state of the
- * transaction and before the watch reactions. If it throws, the states stay written in memory and the
- * transaction surfaces {@code AfterCommitException}: the application's own transaction decides what to do.
+ * transaction and before the watch reactions. If it throws an Exception, checked ones included, the states stay
+ * written in memory and the transaction surfaces {@code AfterCommitException}: the application's own transaction
+ * decides what to do. An Error propagates unchanged. Either way, the later hooks, the watch reactions and the
+ * listener of that call do not run.
  *
  * @param <E> entity type
  * @param <S> state enum

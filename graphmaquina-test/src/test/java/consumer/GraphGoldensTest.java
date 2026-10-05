@@ -31,8 +31,8 @@ import org.junit.jupiter.api.parallel.Resources;
 /**
  * Contract of the Graphviz DOT golden. Update writes the source file, read mode resolves the very same resource
  * through the class loader, and a second update over matching content writes nothing. The checked-in
- * {@code golden/simple.dot} pins the rendering of the fixture — every declared edge and nothing else — so the
- * example module's diagrams stay valid, and a mismatch reports the lines that moved.
+ * {@code golden/simple.dot} pins the rendering of the fixture — every declared edge and nothing else — and a
+ * mismatch reports the lines that moved.
  */
 class GraphGoldensTest {
 

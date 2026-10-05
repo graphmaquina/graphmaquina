@@ -14,6 +14,6 @@ public interface WatchBuilder<E, S extends Enum<S>, T extends Enum<T>, P, Q exte
 
     WatchRuleBuilder<E, S, T, P, Q, U> when(String name, WatchCondition<E, P, Q, U> condition);
 
-    /** Closes the watch and returns to the graph. */
+    /** Returns to the graph. It closes nothing: until {@code build()}, this stage still adds rules to the watch. */
     GraphBuilder<E, S, T> endWatch();
 }

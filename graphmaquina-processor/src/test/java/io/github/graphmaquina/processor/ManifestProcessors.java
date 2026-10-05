@@ -15,8 +15,9 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 
 /**
- * The processors {@link ManifestDiscoveryTest} runs instead of, or beside, the real one. They are public and
- * top-level because javac instantiates a processor reflectively from the name given to {@code -processor}.
+ * The processors {@link ManifestDiscoveryTest} runs instead of, or beside, the real one. Each is a public static
+ * class of this public top-level class because javac instantiates a processor reflectively from the name given to
+ * {@code -processor}.
  */
 public final class ManifestProcessors {
 
@@ -51,7 +52,7 @@ public final class ManifestProcessors {
             return List.copyOf(POLICIES);
         }
 
-        /** The action each {@code Transition} of {@code fx.Docs} names, in the order the machine spells them. */
+        /** The action each {@code Transition} on a method of {@code fx.Docs} names, in the order they are spelled. */
         static List<String> actions() {
             return List.copyOf(ACTIONS);
         }

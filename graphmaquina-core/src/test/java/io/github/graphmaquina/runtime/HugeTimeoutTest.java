@@ -36,17 +36,19 @@ import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
 /**
- * Timeouts too large for a long of nanoseconds, or whose deadline wraps past one. Each is a positive duration the
- * builders accept, and each means "no limit": it never throws, never switches the other limit off, and never leaves
- * the thread marked as running a transition. Every wait is timed, so that a limit cut short shows as well as one
- * switched off.
+ * Timeouts of {@code Duration.ofNanos(Long.MAX_VALUE)} or more, which saturate to "no limit", and one just below that,
+ * {@code Duration.ofNanos(Long.MAX_VALUE - 1)}, a finite budget of about 292 years whose deadline wraps past
+ * {@code Long.MAX_VALUE}. The builders accept every one of them, and none throws, switches the other limit off or
+ * leaves the thread marked as running a transition. Under each of them a 200 ms stage completes, and every wait is
+ * timed, so that a limit cut short shows as well as one switched off.
  */
 class HugeTimeoutTest {
 
     /**
      * How users write "forever". The first four saturate, being {@code Duration.ofNanos(Long.MAX_VALUE)} or more: the
-     * exact boundary, one whose nanoseconds overflow a long, the usual "1000 years", and the largest {@code Duration},
-     * which is what {@code @Timeout(seconds = Long.MAX_VALUE)} generates. The last stays one nanosecond below
+     * exact boundary, one whose nanoseconds overflow a long, the usual "1000 years", and {@code ChronoUnit.FOREVER},
+     * the largest {@code Duration}, {@code Duration.ofSeconds(Long.MAX_VALUE, 999_999_999)}, which
+     * {@code @Timeout(seconds = Long.MAX_VALUE, nanos = 999_999_999)} spells. The last stays one nanosecond below
      * saturation, so it is kept as a number, and the deadline it gives wraps past Long.MAX_VALUE as soon as
      * {@code System.nanoTime()} is above 1.
      */
@@ -120,8 +122,8 @@ class HugeTimeoutTest {
     }
 
     /**
-     * A huge asyncTimeout is no limit. A synchronous root applies, an asynchronous one waits the 200 ms its stage takes
-     * and applies, and the thread that ran them can still run a transition of another machine afterwards.
+     * With a huge asyncTimeout, a synchronous root applies, an asynchronous one waits the 200 ms its stage takes and
+     * applies, and the thread that ran them can still run a transition of another machine afterwards.
      */
     @Test
     void aHugeAsyncTimeoutMeansNoLimitAndLeavesTheThreadUsable() throws Exception {
@@ -162,7 +164,8 @@ class HugeTimeoutTest {
 
     /**
      * A huge edge timeout neither throws after the action started nor changes the root's 300 ms deadline: the wait
-     * ends when that deadline passes, not sooner and not later.
+     * ends in a timeout abort between 250 ms and 3 s after the call began, not at the stage's own five seconds, and
+     * nothing is written.
      */
     @Test
     void aHugeEdgeTimeoutLeavesTheRootDeadlineInCharge() throws Exception {

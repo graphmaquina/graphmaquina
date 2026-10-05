@@ -35,16 +35,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The per-call input of {@code execute(entity, id, input)}: guards, actions and the recovery of a failure route read
+ * the call's own value, an absent or null input reads as empty, and neither a cascaded call, a cascade's failure
+ * route nor a watch reevaluation inherits it. A wrong input type aborts the call, the value stays readable after the
+ * call and on another thread, and overlapping asynchronous calls keep theirs apart.
+ */
 class OperationInputTest {
 
+    /** States of the entity machine. */
     enum S { OPEN, DONE, FAILED }
 
+    /** Transition identifiers of the entity machine: WORK, its recovery, and the one a watch rule runs. */
     enum T { WORK, RECOVER, WATCH_IT }
 
+    /** The entity: a single mutable state, OPEN at the start. */
     static final class Entity {
         S state = S.OPEN;
     }
 
+    /** The value the tests pass as input: a record of one flag. */
     record Verdict(boolean eligible) { }
 
     static final MachineKey<Entity, S, T> KEY = MachineKey.of(Entity.class, S.class, T.class);
@@ -164,7 +174,7 @@ class OperationInputTest {
         assertEquals(1, recoveries.get());
     }
 
-    /** A watch reevaluation opens its own root: it never inherits the input of the call that moved the peer. */
+    /** A watch reevaluation opens a root of its own: the transition its rule selects runs with no input. */
     @Test void watchReevaluationRunsItsTransitionWithoutTheCallersInput() {
         List<Optional<?>> seen = new ArrayList<>();
         GraphDefinition<Entity, S, T> watched = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE).terminal(S.FAILED)

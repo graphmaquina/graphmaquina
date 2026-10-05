@@ -71,7 +71,10 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         return declareAsyncAction(Optional.of(name), action);
     }
 
-    /** Every declaration is counted, so a second action is reported at close instead of replacing the first. */
+    /**
+     * Every declaration is counted and the last one is stored, so a second action is reported at close and the
+     * edge is refused rather than built with either one.
+     */
     private TransitionDraft<E, S, T> declareAction(Optional<String> name, TransitionAction<E, S, T> action) {
         requireOpen();
         actions++;
@@ -173,7 +176,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         return from + " -" + transition + "-> " + to;
     }
 
-    /** A closed draft has already become its edge, and a built graph reads nothing more: a late call is lost. */
+    /** A closed draft has already become its edge, and a built graph reads nothing more: a late call is refused. */
     private void requireOpen() {
         if (closed) {
             throw new IllegalStateException("endTransition() was already called on " + where() + " in the graph "

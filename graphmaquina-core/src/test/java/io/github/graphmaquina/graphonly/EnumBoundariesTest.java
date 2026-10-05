@@ -28,9 +28,13 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /** Raw clients must fail at the boundary, before enum names erase the type or a transaction writes state. */
 class EnumBoundariesTest {
+    /** States of the entity machine; OPEN is a constant with a class body. */
     enum State { OPEN { }, DONE }
+    /** Transition identifiers of the entity machine; GO is a constant with a class body. */
     enum Id { GO { }, RECOVER }
+    /** An enum that is neither the states nor the identifiers of the machine, with constants named like both. */
     enum Foreign { OPEN, DONE, GO, RECOVER }
+    /** The entity: a single mutable state, OPEN at the start. */
     static final class Entity { State state = State.OPEN; }
     private static final MachineKey<Entity, State, Id> KEY = MachineKey.of(Entity.class, State.class, Id.class);
 

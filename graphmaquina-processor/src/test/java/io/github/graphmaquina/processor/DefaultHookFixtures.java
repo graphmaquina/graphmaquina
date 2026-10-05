@@ -2,7 +2,11 @@ package io.github.graphmaquina.processor;
 
 import java.util.Map;
 
-/** Source fixtures for the default afterCommit hook tests: a small Docs machine with parameterized hook declarations. */
+/**
+ * Source fixtures for the default afterCommit hook tests: a small Docs machine whose Definition and publish
+ * operation take the hook declarations they are given, the Recorder host of the default hook and a Library set
+ * that holds the machine.
+ */
 final class DefaultHookFixtures {
     private DefaultHookFixtures() { }
 

@@ -45,8 +45,14 @@ import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 
+/**
+ * The graph that {@code StateGraph.define} builds from valid declarations (edges, states, policies and their order,
+ * action names, afterCommit hooks, null arguments), and the refusals of a stage used after {@code endTransition()} or
+ * {@code build()}.
+ */
 class GraphBuilderTest {
 
+    /** A synchronous action that always succeeds, named after its class when no name is given. */
     static final class Publish implements TransitionAction<Doc, DocStatus, DocTransition> {
         @Override
         public ActionOutcome process(TransitionContext<Doc, DocStatus, DocTransition> ctx) {

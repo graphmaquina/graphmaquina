@@ -38,6 +38,10 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The view and the Graphviz export of graph-only definitions: only declared edges, parallel edges drawn separately,
+ * declaration order, policies as node attributes, labels, and the way {@code GraphView.of} fetches each state's watch.
+ */
 class GraphOnlyExportTest {
 
     @Test void exportContainsOnlyRealEdges() {
@@ -89,9 +93,9 @@ class GraphOnlyExportTest {
 
     /**
      * The reasons a state gives are rendered in the order they were declared. The three identifiers below are
-     * declared in neither ordinal order (BACK is last in the catalogue, APPROVE second) nor any hash order, so
-     * this fails if the chain reverts to an {@code EnumMap}, which sorts by ordinal, or to {@code Map.copyOf},
-     * whose iteration order is unspecified and salted per JVM.
+     * declared in an order that is not the ordinal one (BACK is last in the catalogue, APPROVE second), so this
+     * fails if the chain reverts to an {@code EnumMap}, which sorts by ordinal, and on most runs if it reverts to
+     * {@code Map.copyOf}, whose iteration order is unspecified and salted per JVM.
      */
     @Test void rejectionReasonsKeepTheirDeclaredOrderInTheRenderedTooltip() {
         GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()

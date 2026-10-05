@@ -8,9 +8,12 @@ import lombok.NonNull;
 
 /**
  * Structural model of a machine by names only: its states, its catalogue of transition identifiers, the edges
- * that were actually declared, the policies of every state and the watches. The DSL builds it from its drafts
- * and the annotation processor from the annotations, so the same validator runs in {@code build()} and in javac.
- * There is no expected number of pairs and no index by endpoints.
+ * that were actually declared, the policies and the watches. The DSL builds it from its drafts and the annotation
+ * processor from the annotations, so the same validator runs in {@code build()} and in javac, each time only once
+ * that producer has found no problem of its own. There is no expected number of pairs and no index by endpoints.
+ * The constructor refuses, with {@link IllegalArgumentException}, an empty state list, a repeated state or
+ * identifier and any name that is not one of them; everything else, invalid combinations included, is left for the
+ * validator to report.
  *
  * @param name the machine's display name
  * @param states state names, in declaration order
@@ -18,8 +21,10 @@ import lombok.NonNull;
  * @param initial the initial state
  * @param terminals states that accept no outgoing edge
  * @param cycleAllowed states authorised to take part in a cycle
- * @param transitions the declared edges, in public order
- * @param policies one policy per state
+ * @param transitions the declared edges, in the order the producer lists them: the DSL by origin, then
+ *     identifier, then destination
+ * @param policies the rejection policies; both producers give one to each state that declares one or is terminal,
+ *     and none to any other state
  * @param watches the declared watches
  */
 public record MachineOutline(@NonNull String name, @NonNull List<String> states, @NonNull List<String> catalog,
@@ -94,7 +99,7 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
         return catalog.indexOf(transition);
     }
 
-    /** The edges leaving {@code state}, in declaration order. */
+    /** The edges leaving {@code state}, in the order of {@link #transitions()}. */
     public List<TransitionOutline> outgoing(String state) {
         List<TransitionOutline> leaving = new ArrayList<>();
         for (TransitionOutline edge : transitions) {

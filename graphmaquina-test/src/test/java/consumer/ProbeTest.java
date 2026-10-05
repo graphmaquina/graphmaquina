@@ -54,7 +54,8 @@ import org.junit.jupiter.api.Test;
  * answers from an explicit script, so a test that forgot to program a response is told which probe and which
  * call ran out rather than seeing a machine misbehave. The shared {@link CallTrace} is the order in which the
  * callbacks were entered and nothing more: it does not certify that a response succeeded or that the hop
- * committed. Every mismatch is read off the fields of the {@link GraphAssertionError}, not off its type alone.
+ * committed. A mismatch is read off the fields of the {@link GraphAssertionError}, not off its type alone, except
+ * in the cases that only need an unscripted call to fail as an assertion.
  */
 class ProbeTest {
 
@@ -63,7 +64,10 @@ class ProbeTest {
     private static final TransitionGuard<Entity, State, Id> PASS_SECOND = context -> GuardResult.pass();
     private static final Consumer<Entity> NO_HOOK = entity -> { };
 
-    /** Every worker of the pairing tests makes this many calls, and every call is scripted its own response. */
+    /**
+     * The pairing tests start this many workers at once; each makes {@code CALLS_PER_WORKER} calls, and every
+     * one of the {@code PAIRED_CALLS} calls is scripted its own response.
+     */
     private static final int WORKERS = 8;
     private static final int CALLS_PER_WORKER = 1_500;
     private static final int PAIRED_CALLS = WORKERS * CALLS_PER_WORKER;

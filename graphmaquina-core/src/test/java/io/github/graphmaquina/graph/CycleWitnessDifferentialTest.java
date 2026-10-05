@@ -30,13 +30,15 @@ import org.junit.jupiter.api.Test;
  * <p>Each component is presented twice: as {@link StrongComponents#find} returns it, in declared order, and as a
  * caller might build it, in the opposite iteration order and with a fresh, equal instance per member. The second
  * presentation is what makes the choice of the first member and of the instance the witness starts from visible.
- * The inputs on which the two implementations are meant to differ, sets whose membership disagrees with
- * {@code equals}, are not part of the corpus. Two of the four divergences listed in the
- * {@link StrongComponents#cycleWitness} Javadoc are pinned in {@link StrongComponentsTest}: the rejection of a
- * case-insensitive {@code TreeSet} ({@code aComponentWhoseMembershipDisagreesWithEqualsIsRejected}) and the
- * acceptance of an identity-based set with equal but distinct members
- * ({@code anIdentityComponentWithEqualButDistinctMembersIsAccepted}). The other two, a {@code contains} that would
- * throw and a different exception message, are only documented there.
+ * The inputs on which the two implementations are meant to differ are not part of the corpus: sets whose
+ * membership disagrees with {@code equals}, and sets that are not one strongly connected component, which the base
+ * refuses when its first member reaches no cycle and the production method searches on from the next member
+ * ({@code aCycleTheFirstMemberDoesNotReachIsStillWitnessed} in {@link StrongComponentsTest}). Two of the four
+ * divergences listed in the {@link StrongComponents#cycleWitness} Javadoc are pinned in {@link StrongComponentsTest}:
+ * the rejection of a case-insensitive {@code TreeSet}
+ * ({@code aComponentWhoseMembershipDisagreesWithEqualsIsRejected}) and the acceptance of an identity-based set with
+ * equal but distinct members ({@code anIdentityComponentWithEqualButDistinctMembersIsAccepted}). The other two, a
+ * {@code contains} that would throw and a different exception message, are only documented there.
  *
  * <p>The corpora are those of {@link CycleEnumerationDifferentialTest}: every one of the 512 directed graphs over
  * three nodes under each of the six declaration orders, and a pseudorandom corpus of four- and six-node graphs
@@ -54,12 +56,12 @@ class CycleWitnessDifferentialTest {
     /**
      * The witness {@code StrongComponents.cycleWitness} carried before the declaration index, copied from
      * {@code graphmaquina-core/src/main/java/io/github/graphmaquina/graph/StrongComponents.java} at commit
-     * {@code 278640e} (the merge of pull request #17, the base of this branch), together with the two private
-     * helpers it calls, {@code close} and {@code inside}. The bodies are the original ones. Three edits and no
-     * others: the method is private and renamed, the Lombok {@code @NonNull} on its two parameters is dropped
-     * because Lombok is not on the test compile classpath and the corpus never passes null, and this comment
-     * replaces the original's own. Every call the original makes still exists on {@link Graph}, so nothing else
-     * had to be adapted.
+     * {@code 278640e} (the merge of pull request #17, the base the issue #9 work branched from), together with the
+     * two private helpers it calls, {@code close} and {@code inside}. The bodies are the original ones. Three edits
+     * and no others: the method is private and renamed, the Lombok {@code @NonNull} on its two parameters is
+     * dropped because Lombok is not on the test compile classpath and the corpus never passes null, and this
+     * comment replaces the original's own. Every call the original makes still exists on {@link Graph}, so nothing
+     * else had to be adapted.
      */
     private static <N> List<N> baseCycleWitness(Graph<N> graph, Set<N> component) {
         if (component.isEmpty()) {

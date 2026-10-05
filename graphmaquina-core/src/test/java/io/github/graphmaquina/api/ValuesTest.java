@@ -13,8 +13,13 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Contracts of the small API values: machine keys, action outcomes, guard results, action references, outcomes, state
+ * policies and named conditions.
+ */
 class ValuesTest {
 
+    /** A second transition catalogue over the same state enum, to tell two machine keys apart. */
     enum Other { A }
 
     @Test

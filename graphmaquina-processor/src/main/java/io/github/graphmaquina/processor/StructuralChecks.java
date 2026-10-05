@@ -29,9 +29,11 @@ import lombok.RequiredArgsConstructor;
  * the values it has already resolved and the anchor it wants the answer reported at, so a rule is stated once
  * and a diagnostic still points at the declaration the author wrote.</p>
  *
- * <p>Everything about the assembled graph — unique keys, policies, reachability, terminals, cycles, failure
- * routes and watches — is asked of {@link MachineOutlineValidator}, the very validator the DSL runs, so a
- * machine declared in either language is refused for the same reason under the same code.</p>
+ * <p>Everything about the assembled graph — policies, reachability, terminals, cycles, failure routes and watches —
+ * is asked of {@link MachineOutlineValidator}, the very validator the DSL runs, so a machine declared in either
+ * language is refused for the same reason under the same code. A key two edges claim, a state given two policies,
+ * a rejection declared twice and a blank reason never reach it: {@link TypedMachineModelBuilder} reports them
+ * first, as that validator's {@code SG102} and {@code SG103}, and builds no model.</p>
  */
 @RequiredArgsConstructor
 final class StructuralChecks {
@@ -154,7 +156,7 @@ final class StructuralChecks {
     /**
      * SG504 when {@code method}, which {@code facade} declares and which overrides {@code builtIn}, carries
      * vocabulary, since it would be an operation the companion cannot declare beside the implementation of
-     * {@code builtIn} it already has; and SG504 when it declares a result that the companion's {@code builtIn}
+     * {@code builtIn} it already has; otherwise SG504 when it declares a result that the companion's {@code builtIn}
      * cannot stand for, such as a subtype of the result {@code Machine} declares, since the companion would then
      * not implement it at all.
      */

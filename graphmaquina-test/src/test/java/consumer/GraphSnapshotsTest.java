@@ -31,11 +31,10 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 
 /**
- * Contract of the structural golden. It pins what the diagram leaves out, so a change of timeout or of
- * recovery identifier breaks the build with the path that differs instead of with two files; a stored
- * snapshot of an unknown version — the retired matrix format included — is reported as the fixture problem
- * it is and never silently rewritten by a read; and update replaces whatever was there with the current
- * version without reading the old one as a snapshot.
+ * Contract of the structural golden. It pins what the diagram leaves out, so a change of timeout breaks the
+ * build with the path that differs instead of with two files; a stored snapshot of an unknown version is
+ * reported as the fixture problem it is and never silently rewritten by a read; and update replaces
+ * whatever was there with the current version without reading the old one as a snapshot.
  */
 class GraphSnapshotsTest {
 
@@ -156,7 +155,10 @@ class GraphSnapshotsTest {
         }
     }
 
-    /** The promise above covers a stored text that is not even UTF-8, such as a snapshot saved as Latin-1. */
+    /**
+     * Update replaces whatever was there, so also a stored text that is not even UTF-8, such as a snapshot saved
+     * as Latin-1.
+     */
     @Test
     void updateReplacesASnapshotThatIsNotUtf8(@TempDir Path root) throws Exception {
         GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));

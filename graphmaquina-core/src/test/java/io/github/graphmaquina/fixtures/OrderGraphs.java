@@ -13,6 +13,11 @@ import io.github.graphmaquina.dsl.StateGraph;
 import java.io.IOException;
 import java.time.Duration;
 
+/**
+ * Graph definitions of the order and item fixture machines, with the actions and guards supplied by the caller.
+ * {@code order} watches its items from PAID and executes SHIP when all of them are PACKED, {@code orderWithoutWatch}
+ * leaves that watch out, and the item graph declares no watch.
+ */
 public final class OrderGraphs {
 
     private OrderGraphs() { }

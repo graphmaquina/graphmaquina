@@ -158,7 +158,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         return draft;
     }
 
-    /** Called by {@code endTransition()}: exactly one edge per closed draft. */
+    /** Called by {@code endTransition()}: a closed draft adds its one edge, or records its problems and adds none. */
     void close(TransitionDraft<E, S, T> draft) {
         draft.toSpec(problems).ifPresent(declared::add);
     }

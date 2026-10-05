@@ -43,7 +43,8 @@ import javax.lang.model.type.DeclaredType;
  * <p>What the processor learns is kept for the whole compilation, not for one round: a machine is resolved
  * once, its companion is handed to the {@code Filer} once, and a machine that failed is not built again by the
  * set that holds it. Each declaration is handled in the round it appears in, and the round that ends the
- * compilation publishes what the compilation verified, if nothing went wrong.</p>
+ * compilation publishes what the compilation verified, unless this processor reported an error or javac says the
+ * round before raised one.</p>
  *
  * <p>Every round reports the generated vocabulary written where no builder reads it, and the machine that
  * vocabulary belongs to is not generated, nor is a machine whose vocabulary sits on the facade of another machine,
@@ -158,9 +159,11 @@ public final class StateGraphProcessor extends AbstractProcessor {
     }
 
     /**
-     * Reserves the normalized runtime names of this round's declarations before any source of the round is written,
-     * refusing a name that is taken already, or whose companion would take a name that a companion written in an
-     * earlier round writes.
+     * Reserves the normalized runtime names of this round's top-level declarations before any source of the round is
+     * written, and answers whether every one was reserved. A declaration is refused, at the declaration itself, when
+     * its simple name does not normalize to a runtime name, when another declaration or an existing type takes that
+     * name already, or when its companion would take a name that a companion written in an earlier round writes;
+     * {@code process} then ends the round there, before any machine or set of it is built.
      */
     private boolean validateRuntimeNames(RoundEnvironment round) {
         Set<Element> declarations = new LinkedHashSet<>(round.getElementsAnnotatedWith(GenerateGraphApi.class));
@@ -211,7 +214,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     /**
      * Whether {@code existing} is what a previous compilation of this processor generated, still on the classpath
      * because nothing retired it: a type this round does not compile from source, which the inventory the
-     * previous run wrote lists. A source of the compilation that takes the generated name is a collision instead.
+     * previous run wrote lists. A source of this round that takes the generated name is a collision instead.
      */
     private boolean isStaleOutput(TypeElement existing, RoundEnvironment round) {
         Element topLevel = existing;
@@ -324,11 +327,12 @@ public final class StateGraphProcessor extends AbstractProcessor {
     }
 
     /**
-     * A machine's model, built once for the whole compilation; a machine from the classpath is built on demand
-     * and carries its companion in its own jar already. A machine whose vocabulary is written where no builder
-     * reads it, or on the facade of another machine, is still built, so every other problem of its declarations is
-     * reported, but without the checks of its graph as a whole, which misses that vocabulary, and it is never
-     * generated.
+     * A machine's model, built once for the whole compilation. Only a machine that is a root element of the round
+     * gets its companion generated; one that is not, such as a machine from the classpath, which carries its
+     * companion in its own jar already, is built on demand for the set that holds it. A machine whose vocabulary is
+     * written where no builder reads it, or on the facade of another machine, is still built, so every other problem
+     * of its declarations is reported, but without the checks of its graph as a whole, which misses that vocabulary,
+     * and it is never generated.
      */
     private Optional<MachineModel> resolve(TypeElement type, RoundEnvironment round) {
         String name = type.getQualifiedName().toString();
@@ -371,8 +375,10 @@ public final class StateGraphProcessor extends AbstractProcessor {
     }
 
     /**
-     * Publishes the provisional index of this compilation, once, in the round that ends it. An error of this
-     * processor or of javac leaves nothing published: what a compilation that failed exports is not known.
+     * Publishes the provisional index of this compilation, once, in the round that ends it, unless this processor
+     * reported an error or {@code round.errorRaised()} says the round before raised one: what a compilation that
+     * failed exports is not known. An error javac reports once processing is over, such as one in a generated
+     * source, comes after the publication and does not undo it.
      */
     private void publish(RoundEnvironment round) {
         if (!round.processingOver() || round.errorRaised() || diagnostics.errors() > 0) {

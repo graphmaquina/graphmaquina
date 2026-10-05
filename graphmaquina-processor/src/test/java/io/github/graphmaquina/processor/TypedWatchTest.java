@@ -171,7 +171,10 @@ class TypedWatchTest {
                 && error.contains("fx.Pages is declared twice as a peer of Docs")), result::describe);
     }
 
-    /** The watching fixture with a second machine over the same documents, so two pairs can watch one state. */
+    /**
+     * The watching fixture with a second peer machine, over notes of the same documents, so two pairs can watch one
+     * state.
+     */
     private static Map<String, String> notes(Map<String, String> sources) {
         Map<String, String> extended = new LinkedHashMap<>(sources);
         extended.put("fx.NoteStatus", """

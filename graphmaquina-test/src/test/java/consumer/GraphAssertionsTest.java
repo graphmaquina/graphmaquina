@@ -25,9 +25,9 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 /**
- * Contract of {@link GraphAssert}. Every expectation gets a match and a mismatch read off the fields of
- * the {@link GraphAssertionError}, every method gets its own null-subject case, and the edge selector is
- * pinned to the pair of an origin and an identifier — never to a destination.
+ * Contract of {@link GraphAssert}. Every expectation gets a match, a mismatch read off the fields of the
+ * {@link GraphAssertionError} and its own null-subject case, and the edge selector is pinned to the pair of an
+ * origin and an identifier — never to a destination.
  */
 class GraphAssertionsTest {
 
@@ -40,10 +40,16 @@ class GraphAssertionsTest {
     /** An enum that belongs to no graph under test, used to reach the selectors through raw types. */
     enum Foreign { OTHER }
 
-    /** States of a graph that cycles for ever and therefore declares no terminal. */
+    /**
+     * States of two small graphs: one that cycles for ever and therefore declares no terminal, and one whose
+     * two identifiers leave {@code A} for the terminal {@code B}.
+     */
     enum Cycle { A, B }
 
-    /** Transition identifiers of the cyclic graph. */
+    /**
+     * Transition identifiers of both graphs over {@link Cycle}; in the parallel one {@code BACK} also leaves
+     * {@code A} for {@code B}.
+     */
     enum CycleId { FORWARD, BACK }
 
     private static final Duration TIMEOUT = Duration.ofSeconds(1);

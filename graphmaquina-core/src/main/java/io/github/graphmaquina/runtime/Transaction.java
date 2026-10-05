@@ -51,7 +51,7 @@ final class Transaction {
         }
     }
 
-    /** Cascades and reevaluate keep calling this: no per-call input to carry. */
+    /** For reevaluate, which has no per-call input to carry; a cascade passes {@code null} to the full overload. */
     <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine, E entity,
                                                                           T id, int depth) {
         return transition(machine, entity, id, depth, null);
@@ -134,10 +134,11 @@ final class Transaction {
     }
 
     /**
-     * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. Whatever
-     * Exception the action throws, checked ones included, which Kotlin or {@code @SneakyThrows} code can throw without
-     * declaring them, becomes an ActionFailure that failsOn classifies. An Error is never routed: thrown as itself, it
-     * propagates; wrapped in CompletionException or ExecutionException, it is unwrapped and aborts.
+     * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. A
+     * StateMachineException the action throws, or that completes its stage, is rethrown as is. Any other Exception,
+     * thrown or completing the stage, checked ones included, which Kotlin or {@code @SneakyThrows} code can throw
+     * without declaring them, becomes an ActionFailure that failsOn classifies. An Error is never routed: thrown as
+     * itself, it propagates; wrapped in CompletionException or ExecutionException, it is unwrapped and aborts.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -181,8 +182,10 @@ final class Transaction {
     }
 
     /**
-     * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. Any
-     * Exception a guard throws, checked ones included, is a technical abort; an Error thrown as itself propagates.
+     * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. A
+     * StateMachineException the guard throws, or that completes its stage, is rethrown as is. Any other exceptional
+     * completion of the stage, an Error included, and any other Exception the guard throws, checked ones included,
+     * are technical aborts; an Error thrown as itself propagates.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> GuardResult evaluateGuard(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition, int depth,
@@ -490,7 +493,7 @@ final class Transaction {
         return outcomeOf(peer, transition(machine, peer, id, depth, null));
     }
 
-    /** The cascade path plus the entity that was re-entered, with the identity in flight and the one requested. */
+    /** The cascade path plus the entity that was re-entered, with the identifier in flight and the one requested. */
     private CascadeCycleException cascadeCycle(ContextHandle caller, InFlight flight, Enum<?> requested) {
         List<String> route = new ArrayList<>(uow.path());
         route.add(flight.ref().toString());

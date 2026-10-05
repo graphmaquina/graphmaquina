@@ -8,8 +8,10 @@ import java.util.function.Function;
 
 /**
  * Top-level stage of the DSL: declares the initial state, terminals, policies, edges and watches, then builds.
- * Single use: once {@code build()} has run, nothing reads a declaration any more, so this stage and the stages it
- * opened refuse every further declaration with {@link IllegalStateException}.
+ * Single use: once {@code build()} has run, even one that threw
+ * {@link io.github.graphmaquina.error.InvalidGraphException}, nothing reads a declaration any more, so this stage
+ * and the stages it opened refuse every further declaration, and a second {@code build()}, with
+ * {@link IllegalStateException}.
  */
 public interface GraphBuilder<E, S extends Enum<S>, T extends Enum<T>> {
 

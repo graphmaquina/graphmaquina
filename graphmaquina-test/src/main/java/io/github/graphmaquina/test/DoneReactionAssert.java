@@ -6,8 +6,8 @@ import io.github.graphmaquina.test.internal.CheckedTypes;
 
 /**
  * Chainable, typed assertion over a {@link Reaction.Done}, obtained from {@link ReactionAssert#isDone()}.
- * The re-evaluation ran, so everything it says is in its outcome — including that the re-evaluation moved
- * nothing, which is an ignored outcome rather than an absent one.
+ * The re-evaluation ran, so everything it says is in its outcome — including that the re-evaluation
+ * selected no edge, which is an ignored outcome rather than an absent one.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine

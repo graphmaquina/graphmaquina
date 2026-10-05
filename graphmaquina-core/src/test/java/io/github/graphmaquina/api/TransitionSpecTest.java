@@ -13,6 +13,10 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The checks {@link TransitionSpec} makes when an edge is built, and the kind, key and asynchrony it derives from its
+ * parts.
+ */
 class TransitionSpecTest {
 
     private static final ActionRef<String, DayOfWeek, Month> SYNC =
@@ -74,7 +78,7 @@ class TransitionSpecTest {
         assertEquals(TransitionKind.ACTION, loop.kind());
     }
 
-    /** A hook is allowed on every edge, with or without an action, and it receives the committed context. */
+    /** An edge without an action may carry a hook, and an edge built without one reports none. */
     @Test
     void afterCommitIsAllowedOnEveryEdge() {
         HookRef<String, DayOfWeek, Month> hook = HookRef.of("H", (String e) -> { });

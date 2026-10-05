@@ -5,10 +5,14 @@ import java.util.Objects;
 import lombok.Getter;
 
 /**
- * A post-commit step threw: an after-commit hook, or the registry listener. Nothing is rolled back; the caller's
- * transaction decides. A hook runs only for committed hops, so it always fails after phase 2 had written the states
- * in memory. The listener is notified of every outcome: after an Applied or Failed one, the states were written as
- * well; after a Rejected or Ignored one, nothing was written, and the message says so.
+ * A post-commit step threw an exception, checked ones included: an after-commit hook, or the registry listener; an
+ * Error propagates unchanged instead. Nothing is rolled back; the caller's transaction decides. A hook runs only for
+ * committed hops, so it always fails after phase 2 had written the states in memory, and the hooks after it, the
+ * watch reactions and the listener do not run. The listener is called with the outcome of each execute or
+ * reevaluate that reaches it, after that call's hooks and watch reactions; a call that throws first, such as one
+ * whose step aborts, whose commit fails, whose hook throws or whose reaction raises an Error, does not call it. When
+ * the listener fails after an Applied or Failed outcome, the states were written as well; after a Rejected or
+ * Ignored one, nothing was written, and the message says so.
  */
 @Getter
 public final class AfterCommitException extends StateMachineException {

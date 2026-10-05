@@ -41,9 +41,9 @@ public final class DirectedGraph<N, L> {
     }
 
     /**
-     * Builds a graph from its declared nodes and labeled edges, in one pass over each. Rejects
-     * {@code null} nodes, duplicate nodes, duplicate identical edges, and edges whose endpoints are not
-     * among the declared nodes.
+     * Builds a graph from its declared nodes and labeled edges, in a few linear passes over each. Rejects
+     * {@code null} nodes with {@link NullPointerException}, and duplicate nodes, duplicate identical edges and
+     * edges whose endpoints are not among the declared nodes with {@link IllegalArgumentException}.
      */
     public static <N, L> DirectedGraph<N, L> of(List<N> nodes, List<DirectedEdge<N, L>> edges) {
         Map<N,List<DirectedEdge<N,L>>> outgoing = new LinkedHashMap<>();

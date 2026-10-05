@@ -219,7 +219,7 @@ class PublishedGraphsTest {
         return jar;
     }
 
-    /** A machine, its entity and two exported actions, in a package of their own. */
+    /** A machine, its entity, two exported actions and a set holding the machine, in a package of their own. */
     private static Map<String, String> producer() {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("prod.BillStatus", """

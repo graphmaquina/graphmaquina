@@ -24,7 +24,9 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
 
 /**
- * Emits {@code <Interface>Runtime}: the graph factory built with the SPI DSL, and the facade that implements the interface.
+ * Emits {@code <Interface>Runtime}, whose name {@link SymbolNames#runtimeName} derives from the interface's simple
+ * name normalized to PascalCase: the graph factory built with the typed graph DSL, and the facade that implements the
+ * interface.
  *
  * <p>The companion is marked {@code @GeneratedCompanion}, which this processor owns, and suppresses the
  * {@code deprecation} and {@code removal} warnings of the members it calls: the author deprecates a bound member
@@ -77,10 +79,11 @@ public final class MachineGenerator {
     private MachineGenerator() { }
 
     /**
-     * The names the companion gives its variables. {@code reserved} holds every name none of them may take:
-     * the identifiers the file writes at the head of a type reference, which a variable would obscure, and the
-     * members and parameters the companion declares outside {@code graph(...)}; {@code parameters} are the
-     * parameters of {@code graph(...)}, and {@code entity} names the entity wherever a method or a lambda takes it.
+     * The names the companion gives its variables. {@code reserved} holds the names no later variable takes: the
+     * identifiers the file writes at the head of a type reference, which a variable would obscure, and the names
+     * {@code machine}, {@code call} and {@code state} hold, of its field and of the parameters of its constructor,
+     * {@code async} and {@code transitionsFrom}; {@code parameters} are the parameters of {@code graph(...)}, and
+     * {@code entity} names the entity wherever a method or a lambda takes it.
      */
     private record Variables(Set<String> reserved, String machine, String state, String call,
                              Map<String, String> parameters, String entity) {
@@ -349,8 +352,9 @@ public final class MachineGenerator {
     }
 
     /**
-     * Every type the companion names, each with the package that declares it, in the order it claims them: its
-     * own first, then the fixed ones, then the model's.
+     * Every type the companion writes through {@link Names}, each with the package that declares it, in the order it
+     * claims them: its own first, then the fixed ones, then the types of the watched peers, then {@code Duration},
+     * {@code Optional} and {@code WatchCondition} where an edge or a watch needs them, then the model's other types.
      */
     private static Map<String, String> types(MachineModel model) {
         Map<String, String> types = new LinkedHashMap<>();
@@ -420,10 +424,10 @@ public final class MachineGenerator {
     }
 
     /**
-     * The lambda that hands the arguments of the SPI's own functional interface to the exact method the binding
-     * selected: {@code owner} is the class for a static member and the injected parameter for an instance one.
+     * The lambda that hands the arguments of the functional interface the DSL takes to the exact method the binding
+     * selected: the receiver is the host class for a static member and the injected parameter for an instance one.
      * A lambda, rather than a method reference, because only a call can name the parameter types that keep the
-     * selected overload when the host declares another one that would also fit.
+     * selected overload when the host has another one that would also fit.
      */
     static String lambda(Binding binding, List<String> arguments, Map<String, String> parameters, Names names,
                          BoundInvocation invocations) {

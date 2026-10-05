@@ -15,7 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 import lombok.NonNull;
 
-/** Structural view of a graph by names only. The DSL produces it today; a processor produces it tomorrow. */
+/** Structural view of a graph by names only, built by {@link #of} from a {@link GraphDefinition}. */
 public record GraphView(@NonNull String name, @NonNull String initial, @NonNull Set<String> terminals,
                         @NonNull List<String> states, @NonNull List<TransitionView> transitions,
                         @NonNull List<PolicyView> policies, @NonNull List<WatchView> watches) {
@@ -28,7 +28,10 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
         watches = List.copyOf(watches);
     }
 
-    /** Builds the view of {@code definition}: every state as a node, every declared edge, and nothing else. */
+    /**
+     * Builds the view of {@code definition}: every state in the graph's node order, every declared edge in the
+     * definition's order, each state's policy, and the watches. A rejection is never an edge.
+     */
     public static <E, S extends Enum<S>, T extends Enum<T>> GraphView of(@NonNull GraphDefinition<E, S, T> definition) {
         List<String> states = new ArrayList<>();
         for (S state : definition.graph().nodes()) {

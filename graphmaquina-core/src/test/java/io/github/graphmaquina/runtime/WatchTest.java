@@ -54,6 +54,11 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Watches over the order and item fixtures, and over a doc machine that watches itself: which commits notify a watch,
+ * the reactions an outcome carries, a failed or unreadable reaction, manual reevaluation, the bounded reaction chain,
+ * the reads a rule makes, and the input a reaction runs with.
+ */
 class WatchTest {
 
     final Probe<Order, OrderStatus, OrderTransition> shipOrder = new Probe<>();

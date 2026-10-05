@@ -469,7 +469,10 @@ class TransitionRecorderTest {
                 recorder.snapshot().stream().map(RecordedTransition::projection).toList());
     }
 
-    /** A listener that throws reaches the caller as an after-commit failure, and the recorder before it kept its callback. */
+    /**
+     * A listener that throws reaches the caller as an after-commit failure, and the recorder before it kept its
+     * callback.
+     */
     @Test
     void aComposedListenerThatThrowsStillLeavesTheRecordingBehind() {
         TransitionRecorder recorder = TransitionRecorder.create();
@@ -498,7 +501,10 @@ class TransitionRecorderTest {
     private static final MachineKey<Parcel, ParcelStatus, Loading> PARCELS =
             MachineKey.of(Parcel.class, ParcelStatus.class, Loading.class);
 
-    /** A second state enum of {@link Twin}: one entity class belongs to as many machines as it has states. */
+    /**
+     * A second state enum of {@link Twin}, which makes it the entity of a second machine: a registry holds at most
+     * one machine per entity class and state enum.
+     */
     enum Flag { OFF, ON }
 
     /** Transition identifiers of the twin machines. */

@@ -16,10 +16,13 @@ import org.junit.jupiter.api.Test;
 
 /** The SPI defaults: a third-party implementation keeps working, and never silently drops a payload. */
 class OperationInputDefaultsTest {
+    /** The single state of the fixture machine. */
     enum S { OPEN }
 
+    /** The single transition identifier of the fixture machine. */
     enum T { GO }
 
+    /** A guard context that implements only its abstract methods, so {@code input()} reads the default. */
     static class PlainGuard implements GuardContext<Object, S, T> {
         public Object entity() { return this; }
         public S from() { return S.OPEN; }
@@ -32,6 +35,7 @@ class OperationInputDefaultsTest {
             throw new UnsupportedOperationException();
         }
     }
+    /** A transition context that implements only its abstract methods, so {@code input()} reads the default. */
     static class PlainAction implements TransitionContext<Object, S, T> {
         public Object entity() { return this; }
         public S from() { return S.OPEN; }
@@ -60,12 +64,14 @@ class OperationInputDefaultsTest {
             throw new UnsupportedOperationException();
         }
     }
+    /** An async machine that implements only its two abstract methods; both answer an Ignored outcome. */
     static class PlainAsync implements AsyncStateMachine<Object, S, T> {
         public CompletableFuture<Outcome<Object, S, T>> execute(Object e, T t) {
             return CompletableFuture.completedFuture(new Outcome.Ignored<>(e, S.OPEN, IgnoreReason.NO_WATCH));
         }
         public CompletableFuture<Outcome<Object, S, T>> reevaluate(Object e) { return execute(e, T.GO); }
     }
+    /** A machine that implements only its abstract methods, so the input overload of {@code execute} is the default. */
     static class PlainMachine implements StateMachine<Object, S, T> {
         public MachineKey<Object, S, T> key() { return MachineKey.of(Object.class, S.class, T.class); }
         public GraphDefinition<Object, S, T> definition() { throw new UnsupportedOperationException(); }

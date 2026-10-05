@@ -49,7 +49,7 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
         return pend(new NamedCondition<>(name, condition));
     }
 
-    /** A condition still waiting for its execute(...) is reported, never overwritten. */
+    /** A condition still waiting for its execute(...) is reported as SG404 before the new one takes its place. */
     private WatchDraft<E, S, T, P, Q, U> pend(NamedCondition<E, P, Q, U> condition) {
         reportPending(graph.problems());
         pending = Optional.of(condition);

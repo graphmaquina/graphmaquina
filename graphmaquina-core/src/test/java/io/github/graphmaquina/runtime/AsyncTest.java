@@ -58,8 +58,15 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Asynchronous guards and actions on the order and doc fixtures, and the async facade: how a stage is awaited under
+ * the asyncTimeout and under an edge timeout, how a failed, cancelled or never-completing stage ends, what a context
+ * does once its stage runs on another thread or the call is over, and what the facade does once the registry is
+ * closed.
+ */
 class AsyncTest {
 
+    /** An asynchronous action whose {@code behaviour} defaults to a stage already completed with ok. */
     static final class AsyncProbe implements AsyncTransitionAction<Order, OrderStatus, OrderTransition> {
         Function<TransitionContext<Order, OrderStatus, OrderTransition>, CompletionStage<ActionOutcome>> behaviour =
                 (TransitionContext<Order, OrderStatus, OrderTransition> ctx) ->

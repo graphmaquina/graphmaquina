@@ -26,8 +26,8 @@ import java.util.function.BiFunction;
  * {@link ClassLoader} of the options, against the text a test has just produced, and never writes. Update mode
  * never consults the class path: it works on the source file under the source root of the options, reads it
  * only to see whether it already holds the new text, and rewrites it when it does not. A stale copy of the
- * golden on the class path therefore cannot make a current source be rewritten, and a read that fails never
- * turns itself into a write.
+ * golden on the class path therefore cannot make a current source be rewritten, and an I/O failure while
+ * reading the source never turns itself into a write.
  *
  * <p>A write goes to a temporary file beside the file it replaces and is then moved over that file,
  * atomically where the file system supports it, so a reader never sees a half-written golden and no global
@@ -54,7 +54,8 @@ public final class GoldenStore {
      * @param diff renders the difference between expected and actual for the failure message
      * @throws GraphAssertionError in read mode when the resource is missing, names a directory or differs
      *     from {@code actual}
-     * @throws IllegalArgumentException if the resource name is not a relative, slash-separated path
+     * @throws IllegalArgumentException if the resource name is not a relative, slash-separated path, or, in
+     *     update mode, if the file it names resolves outside the source root
      * @throws IllegalStateException if the golden cannot be read or written
      */
     public static void assertMatches(String resource, String actual, GoldenOptions options,
@@ -172,7 +173,10 @@ public final class GoldenStore {
         options.reporter().accept(target);
     }
 
-    /** Rejects a target when any existing ancestor leaves the real source root through a symbolic link. */
+    /**
+     * Refuses a source root that is not a directory, and a target that leaves the real source root through a
+     * symbolic link, whether the link is the target itself or an existing ancestor of it under the root.
+     */
     private static void requireInside(String resource, Path root, Path target) throws IOException {
         if (!Files.isDirectory(root)) {
             throw new IllegalStateException("the source root <" + root + "> is not a directory");

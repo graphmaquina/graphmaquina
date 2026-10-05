@@ -21,7 +21,8 @@ import org.junit.jupiter.api.Test;
  * state that also rejects identifiers. The declared fixtures that follow carry what the enumeration cannot
  * express: duplicate keys, blank reasons, recoveries that are their own key, absent or without an action, a
  * watch on a terminal state, a watch on an identifier that leaves nowhere, and the fixtures of
- * {@link MachineOutlineValidatorTest}, large circulants included.
+ * {@link MachineOutlineValidatorTest}, large circulants included, except the four whose names hold a slash: the frozen
+ * validator keys an edge by its printed form and answers those differently from the live one.
  */
 class OutlineValidationDifferentialTest {
 
@@ -143,7 +144,10 @@ class OutlineValidationDifferentialTest {
         return outlines;
     }
 
-    /** The outlines {@link MachineOutlineValidatorTest} asserts on, so the oracle covers them edge for edge. */
+    /**
+     * The outlines {@link MachineOutlineValidatorTest} asserts on, so the oracle covers them edge for edge, except the
+     * four whose names hold a slash, which the frozen validator keys by their printed form and answers differently.
+     */
     private static List<MachineOutline> fixturesOfTheValidatorTest() {
         List<MachineOutline> outlines = new ArrayList<>();
         outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),

@@ -272,7 +272,7 @@ class TypedPropertiesTest {
                 List.of("-processor", TypedProcessors.Resolving.class.getName()));
     }
 
-    /** The states every fixture needs, and the entity whose properties are under test. */
+    /** The state and transition enums every fixture needs, and the entity whose properties are under test. */
     private static Map<String, String> entity(String doc) {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("fx.DocStatus", """

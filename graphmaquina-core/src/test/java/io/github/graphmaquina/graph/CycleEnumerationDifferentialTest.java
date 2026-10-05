@@ -34,9 +34,9 @@ class CycleEnumerationDifferentialTest {
     /**
      * The enumeration {@code Graph.cycles()} carried before the SCC pruning, copied from
      * {@code graphmaquina-core/src/main/java/io/github/graphmaquina/graph/Graph.java} at commit {@code 278640e}
-     * (the merge of pull request #17, the base of this branch). The body is the original one; only the reads of
-     * the two private fields became the public {@link Graph#nodes()} and {@link Graph#successors(Object)},
-     * because the copy lives outside the class.
+     * (the merge of pull request #17, the base the issue #9 work branched from). The body is the original one; only
+     * the reads of the two private fields became the public {@link Graph#nodes()} and
+     * {@link Graph#successors(Object)}, because the copy lives outside the class.
      */
     private static <N> List<List<N>> referenceCycles(Graph<N> graph) {
         List<N> order = new ArrayList<>(graph.nodes());

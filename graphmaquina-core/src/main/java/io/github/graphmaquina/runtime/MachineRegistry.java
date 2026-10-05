@@ -112,8 +112,8 @@ public final class MachineRegistry implements AutoCloseable {
     }
 
     /**
-     * Closes only the default executors of its machines. It blocks until the operations already
-     * submitted through {@code async()} terminate.
+     * Closes only the default executors of its machines, blocking until the operations they already accepted end.
+     * An executor the application supplied is neither closed nor awaited.
      */
     @Override
     public void close() {
@@ -143,7 +143,7 @@ public final class MachineRegistry implements AutoCloseable {
         return machine;
     }
 
-    /** Resolves a facade type to its key. The generics of the facade fix P and Q, so the cast is sound. */
+    /** Resolves a facade type to its key. The generics of the facade fix P, Q and U, so the cast is sound. */
     <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> keyFor(Class<? extends Machine<P, Q, U>> facade) {
         MachineKey<?, ?, ?> key = facades.get(facade);
         if (key == null) {
@@ -257,7 +257,10 @@ public final class MachineRegistry implements AutoCloseable {
             return this;
         }
 
-        /** One listener per registry, notified of every outcome. */
+        /**
+         * One listener per registry, notified of the outcome of each execute and reevaluate, except a call that
+         * throws before reaching it: see {@link TransitionListener}.
+         */
         public Builder listener(TransitionListener listener) {
             requireUnused();
             Objects.requireNonNull(listener, "listener");

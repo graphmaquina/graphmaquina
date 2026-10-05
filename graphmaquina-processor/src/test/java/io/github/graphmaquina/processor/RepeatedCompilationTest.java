@@ -30,14 +30,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Three compilations of the same project, in the same directories, as a developer runs them: the full graph,
- * a rename of a method, a property and an enum constant, and the deletion of the last export.
+ * Compilations of the same project, in the same directories, as a developer runs them, and what each leaves
+ * behind. The first test runs three: the full graph, a rename of a method, a property and two enum constants, and
+ * the deletion of the last export.
  *
- * <p>javac never removes a class file it no longer produces, so what proves the cycle correct is what is
+ * <p>javac never removes a class file it no longer produces, so what proves that cycle correct is what is
  * <em>absent</em> afterwards: the binaries of the previous names, the vocabulary of a machine that no longer
  * exists, and the carrier, which belongs to the compilation and never to the jar. The published index follows
  * the declarations down to the empty one, and the inventory that made the cleanup possible is sealed with no
  * pending file left behind.</p>
+ *
+ * <p>The other tests rerun javac over the same directories without the build's lifecycle, give its
+ * {@code prepare} step an inventory of the retired schema, and compile a half-finished rename that javac
+ * rejects.</p>
  */
 class RepeatedCompilationTest {
 
@@ -189,7 +194,10 @@ class RepeatedCompilationTest {
         assertFalse(Files.exists(request.classesOutput().resolve(PUBLISHED)));
     }
 
-    /** The fixture of {@link TypedFixtures#minimal()} with its action, its property and one state renamed. */
+    /**
+     * The fixture of {@link TypedFixtures#minimal()} with its action, its property, one state and its identifier
+     * renamed.
+     */
     private static Map<String, String> renamed() {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("fx.DocStatus", """

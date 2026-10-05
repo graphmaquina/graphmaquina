@@ -7,6 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * What a {@code @StateGraphs} set must hold. A set that is not a top-level interface extending {@code Machines} is
+ * refused as {@code SG502}. An accessor that takes an argument or returns no machine, a machine held twice, a
+ * watch whose peer the set lacks, two machines over one entity and state enum, a set without a machine and an
+ * accessor that would collide with the companion's own {@code builder()} are refused as {@code SG510}. A machine
+ * with errors adds no error to its set.
+ */
 class SetErrorsTest {
 
     private static Compilation.Result library(String source) {

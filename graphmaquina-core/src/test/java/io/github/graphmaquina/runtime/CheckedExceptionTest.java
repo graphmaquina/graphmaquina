@@ -54,7 +54,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Checked exceptions that callbacks throw without declaring them, as Kotlin, Groovy and Lombok's
  * {@code @SneakyThrows} compile to. Each one takes the route an unchecked exception from the same callback takes.
- * An {@code Error} is never routed: it propagates unchanged.
+ * An {@code Error} is never routed: thrown by a callback it propagates unchanged, while one that completes a stage
+ * is the cause of a technical abort.
  */
 class CheckedExceptionTest {
 
@@ -263,9 +264,9 @@ class CheckedExceptionTest {
     }
 
     /**
-     * A watch condition and an owner lookup run outside any transaction, so nothing wraps what they throw. A checked
-     * exception still ends as an aborted reaction, wrapped in UndeclaredThrowableException because
-     * {@code Reaction.Aborted} carries a RuntimeException.
+     * A watch condition and an owner lookup run outside any transaction, so no TransitionAbortedException wraps what
+     * they throw. A checked exception still ends as an aborted reaction, wrapped in UndeclaredThrowableException
+     * because {@code Reaction.Aborted} carries a RuntimeException.
      */
     @Test
     void aWatchConditionOrOwnerLookupThatThrowsACheckedExceptionIsAnAbortedReaction() {

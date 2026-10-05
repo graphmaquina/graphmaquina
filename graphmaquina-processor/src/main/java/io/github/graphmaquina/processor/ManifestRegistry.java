@@ -37,9 +37,9 @@ import javax.annotation.processing.ProcessingEnvironment;
  * declarations javac sees.
  *
  * <p>The set is enumerated, never a wildcard: a pattern would claim annotations of other tools that happen to
- * share a package, and it could not name a generated type at all. The fixed part is known before {@code init},
- * because javac may ask for the supported types of a processor it has not initialized; the union is published
- * only after a manifest has been read and checked.</p>
+ * share a package, and it could not name a generated type at all. The fixed part is known before {@code init}, so a
+ * processor asked for its supported types before it is initialized answers with it; the union is published only
+ * after a manifest has been read and checked.</p>
  *
  * <p>A manifest that cannot be read, that was written by another version of the tool or that no longer
  * describes the declarations of this compilation is not repaired and is not partially trusted: the registry
@@ -142,7 +142,7 @@ final class ManifestRegistry {
      * metadata the generator writes, the {@code @GeneratedCompanion} the processor marks its own companions
      * with, and the retired matrix vocabulary it only claims by name to report {@code SG609} at, so it coexists
      * with other processors instead of claiming a package. Nothing here belongs to another tool: the JDK's
-     * {@code @Generated}, which every source generator writes, is left to the processors that read it. The
+     * {@code @Generated}, which other source generators write, is left to the processors that read it. The
      * retired names are strings because those types no longer exist here; only a compilation that still
      * resolves one of them from an older release ever matches.
      */

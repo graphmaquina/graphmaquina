@@ -11,9 +11,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The shared fixture of the graph-only tests: a ticket machine with three states and a catalogue of six
- * identifiers, of which the base builder declares only two edges. Tests add the edges they need on top, which is
- * what makes absence, parallel edges and self-loops observable.
+ * The fixture of {@code GraphOnlyContractTest}: a ticket machine with three states and a catalogue of six
+ * identifiers, of which {@link #builder()} declares only two edges. It returns the builder unbuilt, so a test can
+ * add the edges it needs before building; until it does, four identifiers have no edge and absence stays
+ * observable.
  */
 public final class GraphOnlyFixture {
     private GraphOnlyFixture() { }
@@ -24,7 +25,10 @@ public final class GraphOnlyFixture {
     /** Catalogue of transition identifiers; the base builder leaves most of them without an edge. */
     public enum Id { SUBMIT, APPROVE, AUTO_APPROVE, RETOUCH, FAIL, BACK }
 
-    /** The entity: a mutable state plus the log its actions and hooks append to. */
+    /**
+     * The entity: a mutable state plus the log its actions append to; the base builder's action adds
+     * {@code "manual"}.
+     */
     public static final class Ticket {
         public final int id;
         public State state;

@@ -43,8 +43,9 @@ import javax.lang.model.type.TypeMirror;
  * already reported it precisely.</p>
  *
  * <p>Everything the model must hold beyond that is a rule about a graph and not about a declaration, so it is
- * asked of {@link StructuralChecks}: the signature of an operation, the duplicated keys and the full outline of
- * the graph.</p>
+ * asked of {@link StructuralChecks}: the signature of an operation and the full outline of the graph. A key two
+ * edges claim, a state given two policies, a rejection declared twice and a blank reason are reported here instead,
+ * as {@code SG102} and {@code SG103}, the codes the outline check gives a duplicate and a blank reason.</p>
  *
  * <p>Only what the companion can implement is accepted. The operations are the abstract methods the facade
  * declares itself, so an abstract method it inherits from another interface than {@code Machine} is refused as
@@ -86,10 +87,11 @@ final class TypedMachineModelBuilder {
     }
 
     /**
-     * Empty when the machine has errors; nothing is generated for it then. {@code complete} is false when part of
-     * the machine's vocabulary is written where no builder reads it, or on the facade of another machine, whose
-     * builder refuses it: every declaration is still checked, but no conclusion is drawn from the graph as a whole,
-     * since that graph misses what the author declared.
+     * Empty when the machine has an error this processor reports, or a value javac refused that the model cannot do
+     * without; nothing is generated for it then. {@code complete} is false when part of the machine's vocabulary is
+     * written where no builder reads it, or on the facade of another machine, whose builder refuses it: every
+     * declaration is still checked, but no conclusion is drawn from the graph as a whole, since that graph misses
+     * what the author declared.
      */
     Optional<MachineModel> build(TypeElement type, boolean complete) {
         int before = diagnostics.errors();
@@ -224,7 +226,10 @@ final class TypedMachineModelBuilder {
         return rejections;
     }
 
-    /** The edges the interface declares itself, which no operation of the facade executes. */
+    /**
+     * The edges the interface declares itself rather than on an operation; one of them may be a further branch, from
+     * another origin, of an identifier an operation executes.
+     */
     private List<TransitionModel> declared(TypeElement type, MachineTypes types, Optional<Binding> defaultAfterCommit) {
         List<TransitionModel> declared = new ArrayList<>();
         for (AnnotationMirror transition : own(type, VocabularyKind.TRANSITION, type)) {

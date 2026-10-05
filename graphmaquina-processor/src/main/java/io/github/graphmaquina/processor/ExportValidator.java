@@ -28,9 +28,11 @@ import javax.lang.model.type.TypeMirror;
  *
  * <p>An export is published: a dependent compilation reads it from the manifest and binds to it without seeing
  * these sources again. So the contract is verified where it is declared, not where it is used. What is
- * verified here is what a use cannot repair: the declaration is visible to generated code, its shape is the
- * one its role requires, and it does not contradict the role of the contract it overrides. Which entity and
- * which states it suits is a question about a machine, and belongs to the use.</p>
+ * verified here is what a use cannot repair: a marked method is public, since generated code may call it from
+ * another package, its shape is the one its role requires, and it does not contradict the role of the contract it
+ * overrides; a property is still declared as the field or the getter it was read from, and such a getter is a
+ * public instance method. Whether its host is accessible where a companion is generated, and which entity and
+ * which states it suits, are questions about a machine, and belong to the use.</p>
  */
 final class ExportValidator {
 
@@ -122,7 +124,7 @@ final class ExportValidator {
         return holds;
     }
 
-    /** Whether one marked declaration holds: visible to the generated code, shaped like its role, and true to its contract. */
+    /** Whether one marked declaration holds: public, shaped like its role, and true to its contract. */
     private boolean member(ExecutableElement method, TypeElement declaring, SymbolKind role) {
         int before = diagnostics.errors();
         DiagnosticAnchor anchor = DiagnosticAnchor.of(method, effective.marker(method).orElseThrow().mirror());

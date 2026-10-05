@@ -1,5 +1,6 @@
 package io.github.graphmaquina.fixtures;
 
+/** Test entity of the doc machine: an id and a mutable status. */
 public final class Doc {
 
     private final String id;

@@ -48,7 +48,10 @@ public final class JournalAssert {
         return this;
     }
 
-    /** The action names in order and with their multiplicity: one entry per run, retries included. */
+    /**
+     * The action names in order and with their multiplicity: one entry per run, so an action that ran twice
+     * appears twice.
+     */
     public JournalAssert hasActionsExactly(String... expected) {
         List<String> wanted = List.of(expected);
         List<ActionRecord> journal = Checks.subject(context, "actions", wanted, actual);

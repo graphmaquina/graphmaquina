@@ -40,7 +40,10 @@ public final class AppliedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
         return new TransitionRecordsAssert(context + ".records", applied.records());
     }
 
-    /** The watch re-evaluations this commit triggered; one that failed is reported here, never propagated. */
+    /**
+     * The watch re-evaluations this commit triggered; one that threw an exception is reported here as an
+     * aborted reaction instead of propagating, while an {@link Error} is not caught.
+     */
     public ReactionsAssert reactions() {
         return new ReactionsAssert(context + ".reactions", applied.reactions());
     }

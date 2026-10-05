@@ -16,12 +16,15 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
 
 /**
- * Emits {@code <Set>Runtime}: a builder that assembles the registry from the machines' companions and hands out the facades.
+ * Emits {@code <Set>Runtime}, named by {@link SymbolNames#runtimeName} as a machine's companion is: a builder that
+ * assembles the registry from the machines' companions and hands out the facades.
  *
  * <p>Like a machine's companion, it is marked {@code @GeneratedCompanion} and suppresses the {@code deprecation}
- * and {@code removal} warnings of the members it calls, and it writes its types and names its variables as
- * {@link MachineGenerator} describes, its own {@code Builder} counted among the member types of its scope;
- * {@link #emit} answers, beside the source, what the processor checks against that scope before writing it.</p>
+ * and {@code removal} warnings of the members it calls, and it writes its types and suffixes its variables as
+ * {@link MachineGenerator} describes, its own {@code Builder} counted among the member types of its scope; a
+ * variable is named after its role, after the accessor it serves, or after the class a parameter of
+ * {@code builder(...)} takes. {@link #emit} answers, beside the source, what the processor checks against that
+ * scope before writing it.</p>
  *
  * <p>Its {@code Builder} mirrors {@code MachineRegistry.Builder} and {@code StateMachines.Builder}: it creates
  * them when it is created and hands every setting to them as soon as it is given, so a setting they refuse is
@@ -49,7 +52,10 @@ public final class SetGenerator {
     /** The member types the set companion declares itself: its public {@code Builder}. */
     public static final Set<String> MEMBER_TYPES = Set.of("Builder");
 
-    /** The parameters of the {@code Builder}'s methods, by the role they play, which also is their usual name. */
+    /**
+     * The parameters of the {@code Builder}'s methods and the local variable of its {@code build()}, by the role
+     * they play, which also is their usual name.
+     */
     private static final List<String> SETTER_PARAMETERS = List.of("machine", "timeout", "executor", "depth", "chain",
             "listener", "built");
 
@@ -63,8 +69,9 @@ public final class SetGenerator {
      * that keeps the registry; {@code builders} names, by accessor, the field of the {@code Builder} that holds each
      * machine's own builder, beside {@code registryBuilder} and {@code used}. {@code parameters} maps the qualified
      * name of each parameter type of {@code builder(...)} to the parameter's name, the shared timeout first when
-     * the set has one, named {@code timeout}; {@code entity} and {@code state} name the parameters of the accessor
-     * lambdas, and {@code setters} the parameters of the {@code Builder}'s methods by role.</p>
+     * the set has one, whose name {@code timeout} holds as well; {@code entity} and {@code state} name the
+     * parameters of the accessor lambdas, and {@code setters}, by role, the parameters of the {@code Builder}'s
+     * methods and the local variable of its {@code build()}.</p>
      */
     private record Variables(Map<String, String> fields, String registry, Map<String, String> builders,
                              String registryBuilder, String used, Map<String, String> parameters, String timeout,
@@ -256,7 +263,8 @@ public final class SetGenerator {
 
     /**
      * The state reader and writer of {@code machine} as two lambdas, each calling the accessor the property
-     * selected; the writer's argument is pinned to the parameter type that keeps that writer selected.
+     * selected; the writer's argument is pinned, as {@link BoundInvocation} decides, to the parameter type that
+     * keeps that writer selected.
      */
     private static String accessors(MachineModel machine, Names names, BoundInvocation invocations, Variables variables) {
         String e = names.of(machine.types().entityElement().getQualifiedName().toString());
@@ -351,7 +359,10 @@ public final class SetGenerator {
         return names.qualifier(MachineGenerator.qualifiedName(accessor.machine()));
     }
 
-    /** Every type the set companion names, in the order it claims them: its own first, then the fixed ones, then the machines'. */
+    /**
+     * Every type the set companion writes through {@link Names}, in the order it claims them: its own first, then
+     * the fixed ones, then the machines'.
+     */
     private static Map<String, String> types(SetModel model) {
         Map<String, String> types = new LinkedHashMap<>();
         Names.claim(types, model.type());

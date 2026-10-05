@@ -62,8 +62,9 @@ public final class TopologyAssert<S extends Enum<S>> {
 
     /**
      * Every adjacent pair of the walk must be an edge, and the first step that is not one is reported by
-     * its own index. A single-node path asserts only that the node belongs to the graph; an empty one is
-     * an argument error.
+     * its own index. A single-node path has no pair to check, so it holds for any node of the graph. A node
+     * the graph does not have, anywhere in the walk, and an empty path are argument errors, not assertion
+     * failures.
      */
     public TopologyAssert<S> hasPath(List<S> path) {
         Objects.requireNonNull(path, "path");

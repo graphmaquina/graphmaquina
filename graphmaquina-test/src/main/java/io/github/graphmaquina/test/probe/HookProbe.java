@@ -34,7 +34,11 @@ public final class HookProbe<E> implements Consumer<E> {
         this.script = new ResponseScript<>(name);
     }
 
-    /** The name must be the one the graph gives this hook, since that is what the trace reports. */
+    /**
+     * The trace reports {@code name} exactly as given and nothing checks it against the graph, so pass the name
+     * the graph gives this hook if the trace is to read like the graph. A null argument raises
+     * {@link NullPointerException} and a blank name {@link IllegalArgumentException}.
+     */
     public static <E> HookProbe<E> create(String name, CallTrace trace) {
         Objects.requireNonNull(name, "name");
         Objects.requireNonNull(trace, "trace");
@@ -63,7 +67,10 @@ public final class HookProbe<E> implements Consumer<E> {
         return this;
     }
 
-    /** Replaces the side effect run on every call, with the entity the hook was handed. */
+    /**
+     * Replaces the side effect run on every call the script answers, a throwing response included but not a
+     * call the script no longer covers, with the entity the hook was handed.
+     */
     public HookProbe<E> onCall(Consumer<E> onCall) {
         this.onCall = Objects.requireNonNull(onCall, "onCall");
         return this;

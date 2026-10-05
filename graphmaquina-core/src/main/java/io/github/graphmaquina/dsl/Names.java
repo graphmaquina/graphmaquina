@@ -2,7 +2,7 @@ package io.github.graphmaquina.dsl;
 
 import java.util.Optional;
 
-/** Resolves the name used in diagnostics and rendering for an action, guard or condition instance. */
+/** Resolves the name used in diagnostics and rendering for an action or guard instance. */
 final class Names {
 
     private Names() { }

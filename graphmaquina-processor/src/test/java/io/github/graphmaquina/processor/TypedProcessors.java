@@ -27,10 +27,10 @@ import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 
 /**
- * The processor {@link TypedBindingsTest} and {@link TypedPropertiesTest} run instead of the real one: it asks
- * the typed resolvers for the symbols a test named, over the very elements javac gives it, and records what
- * came back. It is public and top-level because javac instantiates a processor reflectively from the name
- * given to {@code -processor}.
+ * The processor {@link TypedBindingsTest} and {@link TypedPropertiesTest} run instead of the real one,
+ * {@link Resolving}: it asks the typed resolvers for the symbols a test named, over the very elements javac gives
+ * it, and records what came back. It is a public static class of this public top-level class because javac
+ * instantiates a processor reflectively from the name given to {@code -processor}.
  */
 public final class TypedProcessors {
 
@@ -40,9 +40,10 @@ public final class TypedProcessors {
     public enum Use { ID, STATE, PEERS, OWNER }
 
     /**
-     * Resolves what the test asked for in the first round. A machine is written {@code entity/states}, the two
-     * qualified names the resolvers need; the facade of a request is the entity itself, because nothing these
-     * tests assert on reads it.
+     * Resolves what the test asked for in the first round. A machine is written {@code entity/states/transitions},
+     * the three qualified names the resolvers need; the facade of a request is the entity itself, which
+     * {@link SymbolResolver} reads for the package the companion would be generated in, and every fixture lives in
+     * package {@code fx}.
      */
     public static final class Resolving extends AbstractProcessor {
 
@@ -205,7 +206,10 @@ public final class TypedProcessors {
             };
         }
 
-        /** The host that owns the call, the declaration it selected and the signature that declaration has here. */
+        /**
+         * The host that owns the call, the declaration it selected and the signature that declaration has here,
+         * then {@code static} and {@code async} for a binding that is either.
+         */
         private static String describe(Binding binding) {
             TypeElement declaring = (TypeElement) binding.method().getEnclosingElement();
             StringJoiner parameters = new StringJoiner(", ", "(", ")");

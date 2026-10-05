@@ -46,8 +46,9 @@ import org.junit.jupiter.api.Test;
  * so the two questions a test asks — "did this commit's own re-evaluations abort?" and "did anything abort
  * anywhere below it?" — are kept apart and each is pinned here. Selection is by entity identity rather than
  * equality, an outcome published untyped is never cast without checking it against the key, every mismatch
- * is read off the fields of the {@link GraphAssertionError} rather than off its type alone, and every public
- * expectation whose subject can be null gets its own null-subject case.
+ * is read off the fields of the {@link GraphAssertionError} rather than off its type alone, except in the few
+ * cases that only need a check to fail, and every public expectation whose subject can be null gets its own
+ * null-subject case.
  */
 class ReactionAssertionsTest {
 
@@ -221,9 +222,9 @@ class ReactionAssertionsTest {
      * subtrees are isomorphic and no path, cause or verdict can tell "descended twice" from "descended
      * once". A shared-outcome chain is where the difference becomes measurable. Thirty levels, each one a
      * pair of reactions over the SAME child outcome, is 31 outcomes to visit with the identity set and
-     * 2^30 frames without it; and a {@code HashSet} in its place is no better, because hashing one of
-     * these outcomes walks the same doubling tree. Either mutation turns this assertion into a hang, so
-     * the deadline is what kills them.
+     * 2^31 - 1 reactions to visit without it; and a {@code HashSet} in its place is no better, because
+     * hashing one of these outcomes walks the same doubling tree. Either mutation turns this assertion into
+     * a hang, so the deadline is what kills them.
      */
     @Test
     void aSharedOutcomeIsDescendedIntoOnceSoADeepSharedGraphStaysLinear() {
@@ -431,9 +432,9 @@ class ReactionAssertionsTest {
     }
 
     /**
-     * One abort, found through three views, is named by the path each of them took to reach it. Reading the
-     * nested list of reaction 1 as if it were the root would name the abort {@code reactions[0]}, which in the
-     * root list is a reaction that did not abort.
+     * One abort, reached by the direct check of a narrowed nested list and by the recursive check of the root, is
+     * named by the path each of them took to reach it. Reading the nested list of reaction 1 as if it were the
+     * root would name the abort {@code reactions[0]}, which in the root list is a reaction that did not abort.
      */
     @Test
     void anAbortBelowANarrowedOutcomeIsNamedByThePathOfTheViewThatFoundIt() {
@@ -496,7 +497,8 @@ class ReactionAssertionsTest {
     /**
      * A failed outcome names three states that can diverge — its origin, the destination it was heading for
      * and the route it committed — and every outcome but an ignored one names the identifier it was asked
-     * for. Only a raw construction can carry a foreign enum in one of them, and each is checked on its own.
+     * for. Only a raw construction can carry a foreign enum in one of them: here one in the route of a failed
+     * outcome and one in the identifier of a rejected one, each checked on its own.
      */
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -562,7 +564,10 @@ class ReactionAssertionsTest {
         OutcomeAssert.assertThat(outcome).isApplied().reactions().isEmpty();
     }
 
-    /** A subject built by hand may hold a null; the view fails as an assertion, never as a crash. */
+    /**
+     * A subject built by hand may hold a null; the view skips it, since it is neither an aborted reaction, nor a
+     * source of nested ones, nor selected by any entity, and never crashes on it.
+     */
     @Test
     void aNullReactionInTheSubjectIsNeverACrash() {
         Entity entity = new Entity("e", State.READY);
@@ -741,7 +746,10 @@ class ReactionAssertionsTest {
     private static final MachineKey<Parcel, ParcelStatus, Loading> PARCELS =
             MachineKey.of(Parcel.class, ParcelStatus.class, Loading.class);
 
-    /** States of {@link Other}, an enum that belongs to no machine the assertions here narrow to. */
+    /**
+     * States of the machine over {@link Other}, whose key is not {@code TestDomain.KEY}: a selection by
+     * {@code TestDomain.KEY} skips its reactions, and a cast to that key refuses its outcomes.
+     */
     enum Flag { OFF, ON }
 
     /** Transition identifiers of the machine over {@link Flag}. */
@@ -750,7 +758,10 @@ class ReactionAssertionsTest {
     /** Entity of a second machine, so a selection has something of another key to skip. */
     record Other(String id) { }
 
-    /** A second state enum of {@link Entity}: one entity class belongs to as many machines as it has states. */
+    /**
+     * A second state enum of {@link Entity}, which makes it the entity of a second machine: a registry holds at
+     * most one machine per entity class and state enum.
+     */
     enum Shelf { OUT, IN }
 
     /** Transition identifiers of the machine over {@link Shelf}. */
@@ -860,7 +871,8 @@ class ReactionAssertionsTest {
 
     /**
      * {@code depth} nested outcomes where every level holds the SAME child outcome twice: linear to build
-     * and to visit once, and a tree of 2^depth reactions to anything that visits a shared outcome twice.
+     * and to visit once, and 2^depth paths down to the innermost outcome for anything that visits a shared
+     * outcome twice.
      */
     private static Outcome<Entity, State, Id> sharedChain(Entity entity, int depth) {
         Outcome<Entity, State, Id> level = applied(entity);

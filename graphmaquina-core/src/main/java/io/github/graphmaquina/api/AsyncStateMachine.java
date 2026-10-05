@@ -4,8 +4,9 @@ import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Asynchronous counterpart of {@link StateMachine}, returning outcomes as futures instead of blocking.
- * SPI: applications receive facades generated from their declarations; this type is what the generated code wraps.
+ * Asynchronous counterpart of {@link StateMachine}, returning outcomes as futures; {@link StateMachine#async()}
+ * submits each call to the machine's executor, which decides the thread it runs on.
+ * SPI: the generated facades do not use it; their {@code async(...)} goes through {@link StateMachine#supplyAsync}.
  */
 public interface AsyncStateMachine<E, S extends Enum<S>, T extends Enum<T>> {
 

@@ -28,9 +28,13 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
-/** Structural validation of a machine as the DSL assembles it: exits, reachability, cycles, routes and watches. */
+/**
+ * Structural validation of a machine as the DSL assembles it: exits, reachability, cycles, routes, watches and
+ * rejection policies.
+ */
 class MachineValidationTest {
 
+    /** A synchronous action that always succeeds. */
     static final class Publish implements TransitionAction<Doc, DocStatus, DocTransition> {
         @Override public ActionOutcome process(TransitionContext<Doc, DocStatus, DocTransition> ctx) {
             return ActionOutcome.ok();
@@ -175,7 +179,10 @@ class MachineValidationTest {
         assertTrue(error.problems().get(0).message().contains("unused cycle permission PUBLISHED"));
     }
 
-    /** Two unused permissions must be reported in declaration order, whatever set the outline copies them into. */
+    /**
+     * Two unused permissions are reported in the declaration order of their states, not in the order of the
+     * allowsCycle calls, whatever set the outline copies them into.
+     */
     @Test
     void sg205ReportsUnusedPermissionsInDeclarationOrder() {
         InvalidGraphException error = failing(policies(StateGraph.define(DOCS)

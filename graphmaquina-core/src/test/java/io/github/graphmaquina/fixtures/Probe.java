@@ -7,7 +7,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
-/** Test action with configurable behaviour and a record of every call, identity included. */
+/**
+ * Test action with configurable behaviour, which succeeds by default, and a record of every call as
+ * {@code entity:from-identifier>to@depth}.
+ */
 public final class Probe<E, S extends Enum<S>, T extends Enum<T>> implements TransitionAction<E, S, T> {
 
     public Function<TransitionContext<E, S, T>, ActionOutcome> behaviour =

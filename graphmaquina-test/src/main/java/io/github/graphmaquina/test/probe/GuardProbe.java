@@ -40,7 +40,11 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
         this.script = new ResponseScript<>(name);
     }
 
-    /** The name must be the one the graph gives this guard, since that is what the trace reports. */
+    /**
+     * The trace reports {@code name} exactly as given and nothing checks it against the graph, so pass the name
+     * the graph gives this guard if the trace is to read like the graph. A null argument raises
+     * {@link NullPointerException} and a blank name {@link IllegalArgumentException}.
+     */
     public static <E, S extends Enum<S>, T extends Enum<T>> GuardProbe<E, S, T> create(String name,
             CallTrace trace) {
         Objects.requireNonNull(name, "name");
@@ -73,8 +77,9 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
     }
 
     /**
-     * Replaces the side effect run on every call. It receives the live context, which the engine invalidates
-     * when the transaction ends, so read it now rather than storing it.
+     * Replaces the side effect run on every call the script answers, a throwing response included but not a
+     * call the script no longer covers. It receives the live context, which the engine invalidates when the
+     * transaction ends, so read it now rather than storing it.
      */
     public GuardProbe<E, S, T> onCall(Consumer<GuardContext<E, S, T>> onCall) {
         this.onCall = Objects.requireNonNull(onCall, "onCall");

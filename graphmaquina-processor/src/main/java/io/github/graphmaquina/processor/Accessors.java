@@ -13,7 +13,10 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import lombok.RequiredArgsConstructor;
 
-/** Resolves property accessors by the conventions of spec §4.2: p()/getP()/isP() and setP(x)/p(x). */
+/**
+ * Resolves property accessors by the naming conventions: readers p()/getP()/isP() and writers setP(x)/p(x), each
+ * in the order they are tried.
+ */
 @RequiredArgsConstructor
 final class Accessors {
 

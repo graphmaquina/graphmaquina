@@ -37,15 +37,22 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.Test;
 
-/** Problems a single draft carries: names, duplicates, forbidden failsOn types, watches and reasons. */
+/**
+ * What {@code build()} reports for the declarations of one graph, one code at a time: duplicates (SG102), blank
+ * reasons (SG103), guards declared twice and names that are missing or blank (SG105 to SG107), the initial state
+ * (SG201), forbidden failsOn types (SG302), watches (SG403, SG404), edge declarations that need an action, that are
+ * repeated or that are never closed (SG507), non-positive timeouts (SG511), and the order the problems come in.
+ */
 class DraftProblemsTest {
 
+    /** A synchronous action that always succeeds. */
     static final class Publish implements TransitionAction<Doc, DocStatus, DocTransition> {
         @Override public ActionOutcome process(TransitionContext<Doc, DocStatus, DocTransition> ctx) {
             return ActionOutcome.ok();
         }
     }
 
+    /** A guard that always passes. */
     static final class Approved implements TransitionGuard<Doc, DocStatus, DocTransition> {
         @Override public GuardResult test(GuardContext<Doc, DocStatus, DocTransition> ctx) { return GuardResult.pass(); }
     }

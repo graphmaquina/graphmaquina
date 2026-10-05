@@ -41,8 +41,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Contract of the transition-record and journal views. Selection is pinned to entity identity rather than
  * equality, order and multiplicity are pinned on every list expectation, each mismatch is read off the
- * fields of the {@link GraphAssertionError} rather than off its type alone, and every public expectation
- * whose subject can be null gets its own null-subject case.
+ * fields of the {@link GraphAssertionError} rather than off its type alone, except in the few cases that only
+ * need a check to fail, and every public expectation whose subject can be null gets its own null-subject case.
  */
 class RecordAssertionsTest {
 
@@ -354,8 +354,9 @@ class RecordAssertionsTest {
     // --- a subject built by hand may hold a null element --------------------------------------------
 
     /**
-     * A list the engine produced never holds a null, but a subject built by hand may. A view fails as an
-     * assertion over such a subject, instead of crashing when it is built or when it reads the element.
+     * A list the engine produced never holds a null, but a subject built by hand may. A view neither crashes
+     * when it is built nor when it reads the element: a selection by entity skips the null, and an expectation
+     * that compares the list reports it as a discrepancy.
      */
     @Test
     void aNullRecordInTheSubjectIsADiscrepancyAndNeverACrash() {
@@ -731,7 +732,10 @@ class RecordAssertionsTest {
     /** Transition identifiers of the machine over {@link Flag}. */
     enum Switch { FLIP }
 
-    /** A second state enum of {@link Entity}: one entity class belongs to as many machines as it has states. */
+    /**
+     * A second state enum of {@link Entity}, which makes it the entity of a second machine: a registry holds at
+     * most one machine per entity class and state enum.
+     */
     enum Shelf { OUT, IN }
 
     /** Transition identifiers of the machine over {@link Shelf}. */
@@ -773,7 +777,7 @@ class RecordAssertionsTest {
         void setState(Crate state) { this.state = state; }
     }
 
-    /** Peer entity of the engine cases: the cascade target that can ask its box to converge. */
+    /** Peer entity of the engine cases: the cascade target that holds its box, so it can cascade back into it. */
     static final class Tag {
 
         private final String id;

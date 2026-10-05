@@ -15,6 +15,10 @@ import java.util.Set;
 import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Components and cycle witnesses of a {@link Graph}: declaration order, membership decided by the graph, witnesses of
+ * sets that are not one component, large inputs and refusals; also {@code inducedSubgraph}.
+ */
 class StrongComponentsTest {
 
     /** Equality is by stable id; labels expose which equal instance the witness returns. */

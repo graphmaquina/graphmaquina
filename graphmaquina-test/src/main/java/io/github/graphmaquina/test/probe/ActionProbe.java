@@ -22,7 +22,8 @@ import java.util.function.Supplier;
  * one that was served the response of call p + 1, and this probe's own entries in the trace keep the order of
  * its calls, however the threads interleave. The side effect registered with {@link #onCall} runs on the
  * calling thread, after the response has been withdrawn and before it is returned or thrown, so it also runs
- * for a call whose response is an exception.
+ * for a call whose response is an exception, and does not run for a call the script no longer covers, which is
+ * recorded and then fails.
  *
  * @param <E> the entity type of the machine the action belongs to
  * @param <S> the state enum of that machine
@@ -44,7 +45,11 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
         this.script = new ResponseScript<>(name);
     }
 
-    /** The name must be the one the graph gives this action, since that is what the trace reports. */
+    /**
+     * The trace reports {@code name} exactly as given and nothing checks it against the graph, so pass the name
+     * the graph gives this action if the trace is to read like the graph. A null argument raises
+     * {@link NullPointerException} and a blank name {@link IllegalArgumentException}.
+     */
     public static <E, S extends Enum<S>, T extends Enum<T>> ActionProbe<E, S, T> create(String name,
             CallTrace trace) {
         Objects.requireNonNull(name, "name");
@@ -77,8 +82,9 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
     }
 
     /**
-     * Replaces the side effect run on every call. It receives the live context, which the engine invalidates
-     * when the transaction ends, so read it now rather than storing it.
+     * Replaces the side effect run on every call the script answers, a throwing response included but not a
+     * call the script no longer covers. It receives the live context, which the engine invalidates when the
+     * transaction ends, so read it now rather than storing it.
      */
     public ActionProbe<E, S, T> onCall(Consumer<TransitionContext<E, S, T>> onCall) {
         this.onCall = Objects.requireNonNull(onCall, "onCall");

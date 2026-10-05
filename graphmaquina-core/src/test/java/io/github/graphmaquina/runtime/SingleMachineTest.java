@@ -52,8 +52,17 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
+/**
+ * One standalone machine over the doc fixture: what each outcome writes, guard order, the failure route and its
+ * limits, aborts, the commit's pre-read and setter failures, reentrancy, how long and where a context and a peer
+ * view stay usable, and self-loops.
+ */
 class SingleMachineTest {
 
+    /**
+     * A transition action that records each call as {@code from-identifier>to@depth}, runs {@code onCall}, and answers
+     * with {@code behaviour}, ok by default.
+     */
     static final class Probe implements TransitionAction<Doc, DocStatus, DocTransition> {
         Supplier<ActionOutcome> behaviour = ActionOutcome::ok;
         Consumer<TransitionContext<Doc, DocStatus, DocTransition>> onCall =
@@ -68,6 +77,7 @@ class SingleMachineTest {
         }
     }
 
+    /** A transition guard that counts its calls and answers with {@code verdict}, pass by default. */
     static final class GuardProbe implements TransitionGuard<Doc, DocStatus, DocTransition> {
         Supplier<GuardResult> verdict = GuardResult::pass;
         int calls;
@@ -456,7 +466,7 @@ class SingleMachineTest {
         assertEquals(DRAFT, raw.get());
     }
 
-    /** An explicit self-loop is a real edge: it runs, it commits, and the setter still writes once. */
+    /** An explicit self-loop is a real edge: it is Applied, its action runs once and the entity stays where it was. */
     @Test
     void anExplicitSelfLoopIsAppliedAndWritesItsState() {
         Probe retouch = new Probe();

@@ -22,6 +22,11 @@ import java.lang.annotation.Target;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The shape of the annotation and symbol types: retention, targets and members of the markers and of the generated
+ * metadata annotations, the two fields of {@code Timeout}, the closed and ordered lists of {@code SymbolKind} and
+ * {@code VocabularyKind}, and symbol types that declare no method and extend nothing.
+ */
 class TypedContractsTest {
 
     @Test

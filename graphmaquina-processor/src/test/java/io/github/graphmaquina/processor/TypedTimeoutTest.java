@@ -7,8 +7,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * A timeout is declared as seconds and a nanosecond adjustment, the two fields {@link java.time.Duration} is
- * built from, so nothing is rounded on the way in. The representation is checked before the duration is built:
- * every combination the class refuses, and every one that would overflow, is reported as {@code SG511} instead.
+ * built from, so nothing is rounded on the way in. The pair is checked before the duration is built: a zero or
+ * negative timeout, and a nanosecond adjustment outside 0 to 999,999,999, are reported as {@code SG511}, and the
+ * longest pair a {@code Duration} holds is kept.
  */
 class TypedTimeoutTest {
 

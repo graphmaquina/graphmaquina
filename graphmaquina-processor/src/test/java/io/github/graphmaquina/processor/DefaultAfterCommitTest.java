@@ -152,7 +152,10 @@ class DefaultAfterCommitTest {
         assertFalse(result.hasGenerated("fx.LibraryRuntime"));
     }
 
-    /** An explicit self-loop is a real edge, so it commits and runs exactly the one hook in force on it. */
+    /**
+     * An explicit self-loop is a real edge, so the transition generated for it registers exactly the one hook in
+     * force on it; {@link DefaultAfterCommitRuntimeTest} runs it.
+     */
     @Test void explicitSelfLoopCarriesOneEffectiveHook() {
         Map<String, String> sources = DefaultHookFixtures.sources(DEFAULT, "");
         sources.compute("fx.Docs", (key, text) -> text.replace(

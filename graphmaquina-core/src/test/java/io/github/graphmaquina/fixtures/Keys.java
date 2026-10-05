@@ -2,6 +2,7 @@ package io.github.graphmaquina.fixtures;
 
 import io.github.graphmaquina.api.MachineKey;
 
+/** The machine keys of the doc, order and item fixture machines. */
 public final class Keys {
 
     public static final MachineKey<Doc, DocStatus, DocTransition> DOCS =

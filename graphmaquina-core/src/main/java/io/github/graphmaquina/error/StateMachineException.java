@@ -2,7 +2,12 @@ package io.github.graphmaquina.error;
 
 import java.util.Objects;
 
-/** Root of everything the library throws. Not meant to be serialized: it carries live domain objects. */
+/**
+ * Root of the exceptions the library defines, though not of everything it throws: an invalid argument is a
+ * {@code NullPointerException} or an {@code IllegalArgumentException}, a builder misused or left incomplete an
+ * {@code IllegalStateException}, and a context used off its thread a {@code WrongThreadException}. Not meant to be
+ * serialized: it carries live domain objects.
+ */
 public class StateMachineException extends RuntimeException {
 
     public StateMachineException(String message) {

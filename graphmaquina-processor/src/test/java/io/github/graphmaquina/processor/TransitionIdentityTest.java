@@ -9,8 +9,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * A transition is chosen by its identifier and its origin, never by where it ends. These are the declarations
- * that must be refused because two of them claim one key or one identifier, and the ones that must be accepted
- * because two edges only happen to share an endpoint.
+ * that must be refused because two of them claim one key or one identifier, or because an identifier is named
+ * where its machine or its state does not declare it, and the ones that must be accepted because two edges only
+ * happen to share an endpoint. A state with no policy is refused here too.
  */
 class TransitionIdentityTest {
 

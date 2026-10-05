@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
  */
 class MisplacedVocabularyTest {
 
-    /** A default method is no operation: the edge declared on it would silently be missing from the graph. */
+    /** A default, static or private method is no operation: the edge declared on it would silently be missing. */
     @Test
     void sg504VocabularyOnADefaultStaticOrPrivateMethodOfTheFacade() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY + """

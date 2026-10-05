@@ -8,6 +8,14 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * An after-commit hook takes the entity alone or the entity and a {@code CommitContext}. The companion registers
+ * the first with {@code afterCommit} and the second with {@code afterCommitWith}, and the second receives the
+ * origin, the destination, the kind and the terminality of each committed transition. A second parameter that is no
+ * {@code CommitContext}, a result that is not void and extra parameters are refused as {@code SG604} where the hook
+ * is exported; a context of other enums, a raw or wildcard one and two marked declarations that both fit are
+ * refused as {@code SG505} where it is bound.
+ */
 class CommitHookTest {
 
     private static final String CONTEXTUAL = "Doc doc, CommitContext<DocStatus, DocTransition> context";

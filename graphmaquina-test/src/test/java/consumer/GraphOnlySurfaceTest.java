@@ -27,12 +27,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The retired matrix contract as a consumer can still reach it, which is to say not at all. The other tests of
- * this module run against the classes Gradle compiled, and a type that is absent from that classpath may still
- * be shipped: a jar carries compiled classes, a sources jar carries the sources and a javadoc jar carries the
- * rendered pages, and each of the three is part of the product. So this test reads the published files from a
- * local Maven repository, compiles a consumer against those jars alone, runs it in a separate JVM whose
- * classpath holds nothing else, and separately walks the entries of every published jar of every module.
+ * The retired matrix contract as a consumer can still reach it, which is to say not at all. The tests of this
+ * module's {@code test} task run against the classes Gradle compiled, and a type that is absent from that
+ * classpath may still be shipped: a jar carries compiled classes, a sources jar carries the sources and a
+ * javadoc jar carries the rendered pages, and each of the three is part of the product. So this test reads the
+ * published files from a local Maven repository, compiles a consumer against those jars alone, runs it in a
+ * separate JVM whose classpath holds nothing else, and separately walks the entries of every published jar of
+ * every module.
  *
  * <p>{@code Class.forName} alone would prove too little, and a scan of entry names alone would prove too
  * little; the two together cover the compiled, the source and the documented form of every retired name. The
@@ -49,10 +50,10 @@ class GraphOnlySurfaceTest {
     private static final List<String> JARS = List.of(".jar", "-sources.jar", "-javadoc.jar");
 
     /**
-     * The qualified names of the retired contract: the total edge model, the row and cell builders and the
-     * whole string annotation vocabulary, its repeatable containers included. Kept in one list because the
-     * consumer below is written from it and the jar walk looks for each of them as a file, so a name added
-     * here is covered by both checks.
+     * The qualified names of the retired contract: the total edge model, the row builder and the cell and graph
+     * outlines of the matrix DSL, and the whole string annotation vocabulary, its repeatable containers included.
+     * Kept in one list because the consumer below is written from it and the jar walk looks for each of them as
+     * a file, so a name added here is covered by both checks.
      */
     private static final List<String> RETIRED = List.of(
             "io.github.graphmaquina.api.EdgeSpec",
@@ -179,10 +180,10 @@ class GraphOnlySurfaceTest {
     /**
      * Whether {@code entry} declares a retired type: its own file, one of its members, or a retired nesting.
      *
-     * <p>The three jars spell a nesting differently — a class file and a source file join the outer and inner
-     * names with {@code $}, a javadoc page joins them with {@code .} — so the extension comes off first and
-     * both separators are then read the same way. Only the segments after the first are nestings; a bare outer
-     * name is what the qualified list above already answers for.
+     * <p>The jars spell a nesting differently — a class file joins the outer and inner names with {@code $} and a
+     * javadoc page joins them with {@code .}, while a source file is named after its top-level type alone — so
+     * the extension comes off first and both separators are then read the same way. Only the segments after the
+     * first are nestings; a bare outer name is what the qualified list above already answers for.
      */
     private static boolean isRetired(String entry) {
         for (String retired : RETIRED) {

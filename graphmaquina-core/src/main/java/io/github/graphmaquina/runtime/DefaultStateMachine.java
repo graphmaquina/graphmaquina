@@ -36,7 +36,10 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import lombok.Getter;
 
-/** Runtime {@link StateMachine}: resolves edges by identity, runs a root transaction and commits in two phases. */
+/**
+ * Runtime {@link StateMachine}: runs a root transaction per call, which resolves the edge from the entity's current
+ * state and the identifier and commits in two phases; a reevaluation that selects no edge runs none.
+ */
 final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> implements StateMachine<E, S, T> {
 
     @Getter
@@ -104,7 +107,10 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         return reevaluate(entity, 0);
     }
 
-    /** chain counts reaction -> transition -> reaction. Exceeding maxWatchChain aborts before evaluating anything. */
+    /**
+     * chain counts reaction -> transition -> reaction. Exceeding maxWatchChain throws WatchChainExceededException
+     * after the reentrancy check and the state read, before any watch function runs.
+     */
     Outcome<E, S, T> reevaluate(E entity, int chain) {
         Reentrancy.check(key(), entity);
         S state = readState(entity);
@@ -197,9 +203,10 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     /**
-     * The registry listener sees every outcome of every call. Any Exception it throws, checked ones included, becomes
-     * an AfterCommitException that says whether the call wrote states: only Applied and Failed outcomes did. An Error
-     * propagates unchanged.
+     * The registry listener sees the outcome of every call that gets this far. A call that throws first notifies
+     * nothing, such as one whose step aborts, whose commit fails, whose hook throws or whose reaction raises an Error.
+     * Any Exception the listener throws, checked ones included, becomes an AfterCommitException that says whether the
+     * call wrote states: only Applied and Failed outcomes did. An Error propagates unchanged.
      */
     private Outcome<E, S, T> notify(Outcome<E, S, T> outcome) {
         Optional<TransitionListener> listener = registry.listener();

@@ -13,13 +13,14 @@ import java.util.Objects;
 import java.util.TreeMap;
 
 /**
- * The structure of a graph as a flat, versioned map of path to value: the machine identity, the states and
- * their order, the catalogue of transition identifiers, the initial and terminal states, every declared edge
- * under {@code /transitions/<from>/<id>} with its destination, kind, action, guards, recovery identifier,
- * timeout and hook, the rejection policy of every state, and the watches with their peers and rules. It
- * carries what a diagram leaves out, so two definitions that render identically still differ here, and it
- * carries only names and types, never lambdas or the identity of a callback, so a snapshot is stable across
- * runs.
+ * The structure of a graph as a flat, versioned map of path to value: the machine identity, whether any edge
+ * is asynchronous, the states and their order, the catalogue of transition identifiers, the initial and
+ * terminal states, every declared edge under {@code /transitions/<from>/<id>} with its destination, kind,
+ * action, guards, recovery identifier, the exception types treated as failures, timeout and hook, the
+ * rejection policy of every state, and the watches with their peers and rules. It carries what a diagram
+ * leaves out, so two definitions that render identically still differ here, and it carries names, types and
+ * declared values such as timeouts and rejection reasons, never lambdas or the identity of a callback, so a
+ * snapshot is stable across runs.
  *
  * <p>Absence is not recorded: a pair of an origin and an identifier with no edge has no path at all. What the
  * state would answer such a request with lives in its policy instead.
@@ -93,7 +94,10 @@ public final class GraphSnapshot {
         return new GraphSnapshot(fields);
     }
 
-    /** Everything the runtime would run, by name and mode only: nothing here is ever invoked. */
+    /**
+     * The action, guards and hook the runtime would run, by name and mode only, plus the failure types and the
+     * timeout of the edge: nothing here is ever invoked.
+     */
     private static <E, S extends Enum<S>, T extends Enum<T>> void captureCallbacks(
             Map<String, String> fields, TransitionSpec<E, S, T> transition, String path) {
         transition.action().ifPresent(action -> {

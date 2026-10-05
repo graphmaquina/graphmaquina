@@ -9,6 +9,10 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The default methods of {@link PeerView} over a view backed by a map, and the {@code allIn} and {@code noneIn}
+ * conditions that delegate to them.
+ */
 class PeerViewDefaultsTest {
 
     private static PeerView<String, DayOfWeek, Month> view(Map<String, DayOfWeek> states) {

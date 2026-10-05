@@ -17,15 +17,17 @@ import java.util.function.Consumer;
 /**
  * An {@link AsyncTransitionAction} that never answers on its own: every invocation parks on a stage of its
  * own and stays there until the test answers it through the {@link PendingInvocation} handed out by
- * {@link #awaitInvocation(Duration)}. That is what replaces sleeping — the test resumes exactly when the
- * engine has entered the action, and the engine resumes exactly when the test says so.
+ * {@link #awaitInvocation(Duration)}, or until the engine's own deadline aborts the transition and leaves the
+ * stage pending. That is what replaces sleeping — the test resumes when the engine has entered the action,
+ * and the engine resumes when the test says so.
  *
  * <p>Concurrent invocations are independent: each gets its own handle and its own stage. History records an
  * invocation when it enters, before the {@link #onCall} side effect runs. A handle is published only after
  * that side effect returns successfully, so {@link #awaitInvocation(Duration)} observes queue publication
  * order, which can differ from history entry order. This does not promise callback completion order because
  * a thread can pause before publishing its handle. If the side effect throws, the invocation remains in
- * history, but its exception settles the stage and its handle is not delivered.
+ * history, its exception settles the stage and is rethrown to the engine as well, and its handle is not
+ * delivered.
  *
  * <p>{@link #close()} is idempotent. It cancels the stages of this fixture's own pending invocations — never
  * a stage the test handed in from outside — so a worker blocked inside the action is released before a
@@ -74,6 +76,12 @@ public final class ControlledAsyncAction<E, S extends Enum<S>, T extends Enum<T>
      * expires, since a wait that was not met is a failed expectation of the test and not of the machine, and
      * at once when the fixture is closed, since nothing can arrive any more. A wait that is already blocked
      * when the fixture closes is woken by the close and fails the same way.
+     *
+     * <p>Interruption matters only when the call has to wait. A caller whose interrupt flag is set still
+     * receives a handle that is already queued, and the flag stays set; a caller that has to wait is released
+     * by the interrupt with a {@link GraphAssertionError}, and the flag is set again. A budget that is not
+     * positive, or that does not fit in nanoseconds, raises {@link IllegalArgumentException} and a null one
+     * {@link NullPointerException}, whatever the state of the fixture.
      */
     public PendingInvocation<ActionCall<E, S, T>, ActionOutcome> awaitInvocation(Duration budget) {
         long nanos = budgetNanos(budget);

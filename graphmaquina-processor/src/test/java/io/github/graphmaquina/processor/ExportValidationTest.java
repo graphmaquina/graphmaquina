@@ -15,8 +15,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * An exported member is a published contract, so it is checked against javac's own declarations whether or not
- * a graph of this compilation uses it. None of these fixtures declares a machine: what fails is the export
- * itself.
+ * a graph of this compilation uses it. Most of these fixtures declare no machine: what fails is the export
+ * itself. The last two declare machines, to show what a failing export leaves of the rest of the compilation.
  */
 class ExportValidationTest {
 
@@ -260,7 +260,7 @@ class ExportValidationTest {
         }
     }
 
-    /** The entity and its states, which every fixture needs, plus the host whose exports are under test. */
+    /** The entity and its state and transition enums, which every fixture needs, plus the host under test. */
     private static Map<String, String> exports(String name, String source) {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("fx.DocStatus", """

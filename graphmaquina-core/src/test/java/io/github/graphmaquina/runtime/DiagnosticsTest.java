@@ -40,7 +40,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
-/** What the runtime's diagnostics say must hold for every situation that produces them. */
+/**
+ * Diagnostics whose text has to be true where it is produced: the message of a listener failure after each kind of
+ * outcome, the reentrancy message for a call from a guard, the pre-check message when a concurrent transition moved
+ * the state, and the failure reason of an anonymous exception without a message.
+ */
 class DiagnosticsTest {
 
     /** DRAFT -SUBMIT-> REVIEW, shaped by {@code submit}; DRAFT -DISCARD-> ARCHIVED is the route a failure can take. */
@@ -121,7 +125,8 @@ class DiagnosticsTest {
 
     /**
      * Nothing serializes two roots on one entity: while one waits in its action, another commits, and the first
-     * one's pre-check finds the state moved. No action called the setter, and the message must not say one did.
+     * one's pre-check finds the state moved. No action called the setter, so the message has to name a concurrent
+     * transition among the causes, not blame the setter alone.
      */
     @Test
     void thePreCheckNamesAConcurrentTransitionAsWellAsTheSetter() throws Exception {

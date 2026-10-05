@@ -17,10 +17,9 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 /**
- * Characterizes the exact {@link IllegalArgumentException} messages, null handling and check order that
- * {@link MachineOutline}'s compact constructor already produces. These tests must pass unchanged both before and
- * after the constructor is rewritten to look up references in local {@link Set}s instead of {@link List#contains};
- * they exist to prove that swap does not alter any observable outcome.
+ * Characterizes the exact {@link IllegalArgumentException} messages, null handling and check order of
+ * {@link MachineOutline}'s compact constructor, which looks references up in local {@link Set}s instead of
+ * {@link List#contains}. These tests exist to prove that swap does not alter any observable outcome.
  */
 class MachineOutlineConstructionTest {
 

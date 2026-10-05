@@ -58,9 +58,9 @@ class PoisonTest {
     final GuardProbe<Doc, DocStatus, DocTransition> inStock = new GuardProbe<>();
 
     /**
-     * The root runs SUBMIT from DRAFT and cascades to peers in REVIEW, whose PUBLISH is guarded by {@code inStock}.
-     * DISCARD is SUBMIT's failure route for a GatewayException; it runs the {@code discard} action when
-     * {@code discardRuns}.
+     * SUBMIT runs the {@code submit} probe from DRAFT, and the tests make it cascade to peers in REVIEW, whose
+     * PUBLISH runs {@code publish} behind the guard {@code inStock}. DISCARD is SUBMIT's failure route for a
+     * GatewayException; it runs the {@code discard} action only when {@code discardRuns}.
      */
     private StateMachine<Doc, DocStatus, DocTransition> machine(boolean discardRuns) {
         TransitionBuilder<Doc, DocStatus, DocTransition> discarding = StateGraph.define(DOCS)

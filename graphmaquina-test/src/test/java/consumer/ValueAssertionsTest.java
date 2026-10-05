@@ -22,6 +22,13 @@ import java.io.StringWriter;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Contract of {@link ActionOutcomeAssert} and {@link GuardResultAssert}, and of the {@link GraphAssertionError}
+ * a failed check raises. Kind and reason are compared exactly; a null subject fails as an assertion while a
+ * null expected value stays an argument error, even over a null subject; two distinct instances that render
+ * alike are named by identity; a value whose {@code toString()} throws or returns null still fails as an
+ * assertion; and a throwable reported as the actual value is chained as the cause.
+ */
 class ValueAssertionsTest {
 
     @Test

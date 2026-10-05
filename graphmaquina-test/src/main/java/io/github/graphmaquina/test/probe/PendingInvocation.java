@@ -9,7 +9,8 @@ import java.util.concurrent.CompletionStage;
  * One invocation of a controlled asynchronous fixture, held open until the test answers it. The fixture
  * handed the engine the stage behind this handle and nothing else completes it, so the transition stays
  * parked inside the action or the guard until {@link #complete}, {@link #fail} or {@link #cancelStage} is
- * called — which is what lets a test observe the machine mid-flight without sleeping.
+ * called, or until the engine's own deadline aborts it and leaves the stage pending — which is what lets a
+ * test observe the machine mid-flight without sleeping.
  *
  * <p>Each invocation owns its own stage, so answering one never releases another. The three answering
  * methods return whether this very call settled the stage: a second answer, or one that arrives after the

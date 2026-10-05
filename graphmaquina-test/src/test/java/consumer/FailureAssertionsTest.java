@@ -50,9 +50,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Contract of the failure views: which phase of the engine a throwable came from, what that phase carries,
- * and what the capture helper does with a body that never failed. Every mismatch is read off the fields of
- * the {@link GraphAssertionError} rather than off its type alone, entities are pinned to identity rather
- * than equality, and every public expectation whose subject can be null gets its own null-subject case.
+ * and what the capture helper does with a body that never failed. A mismatch is read off the fields of the
+ * {@link GraphAssertionError} rather than off its type alone, except in the few cases that only need a check to
+ * fail; entities are pinned to identity rather than equality, and every public expectation whose subject can be
+ * null gets its own null-subject case.
  */
 class FailureAssertionsTest {
 
@@ -130,7 +131,10 @@ class FailureAssertionsTest {
                 "failure", "type", CommitFailedException.class, abort);
     }
 
-    /** The ruling of this task: narrowing follows Java's own hierarchy instead of contradicting it. */
+    /**
+     * Narrowing follows Java's own hierarchy instead of contradicting it: every abort subclass, the aggregate
+     * included, is an abort, and only the aggregate is a cascade abort.
+     */
     @Test
     void everyAbortSubclassIsAnAbortAndOnlyTheAggregateIsACascade() {
         TransitionAbortedException plain = new TransitionAbortedException(details(), "no");
@@ -286,7 +290,7 @@ class FailureAssertionsTest {
 
     /**
      * The engine aborts a chain of watch reactions that exceeds {@code maxWatchChain} before it reads any
-     * identifier, in valid use, so this is the abort the new expectation is for.
+     * identifier, in valid use, so this is the abort {@code atUnread} is for.
      */
     @Test
     void aWatchChainThatExceedsItsLimitAbortsBeforeAnyIdentifierWasRead() {
@@ -898,7 +902,10 @@ class FailureAssertionsTest {
 
     private static final MachineKey<Doc, Phase, Step> DOCS = MachineKey.of(Doc.class, Phase.class, Step.class);
 
-    /** States of {@link Doc}, whose two live ones watch each other. */
+    /**
+     * States of {@link Doc}; {@code DRAFT} and {@code REVIEW} each declare a watch that sends the document to
+     * the other.
+     */
     enum Phase { DRAFT, REVIEW, PUBLISHED, ARCHIVED }
 
     /** Transition identifiers of the document machine. */

@@ -39,7 +39,11 @@ class InheritedMembersTest {
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 
-    /** An operation declared on a base the facade extends is just as unread, with its edge, so no SG203 follows. */
+    /**
+     * An operation declared on a base the facade extends is refused too. The fixture leaves the operation and its
+     * edge out of the facade, so no state but the initial one is reachable, yet no SG203 follows: a machine with an
+     * error is not checked as a whole.
+     */
     @Test
     void sg504AnOperationDeclaredOnABaseOfTheFacade() {
         Map<String, String> sources = Fixtures.withDocs(Fixtures.DOCS_HEADER,
@@ -97,7 +101,7 @@ class InheritedMembersTest {
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 
-    /** A base that only redeclares a method of Machine, or adds default methods, leaves nothing to implement. */
+    /** A base that only redeclares methods of Machine or Object, or adds default ones, leaves nothing to implement. */
     @Test
     void aBaseWithNothingAbstractOfItsOwnIsAccepted() {
         Map<String, String> sources = Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY);
@@ -119,9 +123,9 @@ class InheritedMembersTest {
     }
 
     /**
-     * A super-interface that is no Machine may declare a method of Machine or of Object again, with a result the
-     * companion's own method can stand for: the companion implements it already, so the facade and the set are
-     * generated, and they run.
+     * A super-interface that is no Machine or Machines may declare again a method of Machine, Machines or Object,
+     * with a result the companion's own method can stand for: the companion implements it already, so the facade
+     * and the set are generated, and they run.
      */
     @Test
     void anUnrelatedBaseRedeclaringWhatTheCompanionImplementsIsAccepted() throws Exception {

@@ -9,7 +9,10 @@ import java.util.function.Supplier;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 
-/** Runs the whole operation on the machine's executor. Never runs, nor throws, on the caller's thread. */
+/**
+ * Submits the whole operation to the machine's executor, which decides the thread: one that runs tasks inline runs
+ * it on the caller's thread. A null argument throws on the caller's thread; a refused submission fails the future.
+ */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class DefaultAsyncStateMachine<E, S extends Enum<S>, T extends Enum<T>> implements AsyncStateMachine<E, S, T> {
 

@@ -6,11 +6,13 @@ import java.util.Objects;
  * Thrown by a typed assertion when its expectation is not met. Carries the context and property being
  * checked plus the expected and actual values, so a failure is inspectable without parsing its message.
  * When two distinct instances render the same text — the usual shape of an identity mismatch — the
- * message also names both instances, so it never reads as {@code expected <X> but was <X>}. A value whose
- * {@code toString()} throws, as a lazily loaded entity's does outside its session, or returns null is shown
- * by its class and identity together with what the call did, so a failed check over it still ends here.
- * Advice on how to fix the failure travels in the message alone: it is not part of what was observed, so it
- * never reaches {@link #actual()}.
+ * message also names both instances, so it never ends at {@code expected <X> but was <X>}. A value whose
+ * {@code toString()} throws a {@link RuntimeException}, as a lazily loaded entity's does outside its
+ * session, or returns null is shown by its class and identity together with what the call did, so a failed
+ * check over it still ends here. An {@link Error} thrown by {@code toString()} is not caught: it propagates
+ * out of the constructor, and so out of the check, instead. Advice passed to the five-argument constructor
+ * travels in the message alone: no field stores it, so it never reaches {@link #actual()}, which holds the
+ * value as the caller gave it.
  *
  * <p>An actual value that is a {@link Throwable} is the unexpected outcome itself, so it is also the cause
  * of this error: a test report then prints where it was thrown and not only what it was called.
@@ -65,7 +67,8 @@ public final class GraphAssertionError extends AssertionError {
 
     /**
      * What a message shows of a value: its rendering, or its class and identity when its {@code toString()}
-     * throws or returns null, which {@link String#valueOf(Object)} passes on as null.
+     * throws a {@link RuntimeException} or returns null, which {@link String#valueOf(Object)} passes on as
+     * null. An {@link Error} is not caught.
      */
     private static String describe(Object value) {
         String shown;

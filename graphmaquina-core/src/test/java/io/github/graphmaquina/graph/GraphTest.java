@@ -9,6 +9,10 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
+/**
+ * {@link Graph} over string nodes: declaration order, edge endpoints, reachability, shortest paths, cycle enumeration
+ * and its dense counts, immutable results, null nodes, induced subgraphs and the declaration index.
+ */
 class GraphTest {
 
     private static Graph<String> graph(List<String> nodes, String... edges) {

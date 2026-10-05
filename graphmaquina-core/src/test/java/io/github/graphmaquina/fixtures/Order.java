@@ -3,6 +3,7 @@ package io.github.graphmaquina.fixtures;
 import java.util.ArrayList;
 import java.util.List;
 
+/** Test entity of the order machine: an id, a status, its items and a count of payment attempts. */
 public final class Order {
 
     private final String id;

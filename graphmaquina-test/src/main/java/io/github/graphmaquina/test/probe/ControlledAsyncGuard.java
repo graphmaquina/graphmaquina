@@ -17,16 +17,17 @@ import java.util.function.Consumer;
 /**
  * An {@link AsyncTransitionGuard} that never answers on its own. It behaves as {@link ControlledAsyncAction}
  * does, with {@link GuardResult} in place of the action outcome and {@link GuardCall} in place of the action
- * call: every invocation parks on a stage of its own until the test answers it, and concurrent invocations
- * are independent. History records entry before {@link #onCall}; a handle is published only after that side
- * effect returns successfully, so delivery follows queue publication order and does not promise callback
- * completion order. A failed side effect remains in history but is not delivered. {@link #close()} is
- * idempotent, cancels this fixture's own pending stages, drops the handles nobody took and refuses further
- * invocations, and a {@link #awaitInvocation(Duration)} on a closed fixture fails at once with a
- * {@link GraphAssertionError}, a wait that was already blocked when the fixture closed included. The one
- * difference is how an invocation that reaches a closed fixture is refused: here with an
- * {@link IllegalStateException}, which aborts the transition, since a guard has no recovery route that could
- * commit it.
+ * call: every invocation parks on a stage of its own until the test answers it or the engine's own deadline
+ * aborts the transition, and concurrent invocations are independent. History records entry before
+ * {@link #onCall}; a handle is published only after that side effect returns successfully, so delivery
+ * follows queue publication order and does not promise callback completion order. A failed side effect
+ * remains in history, its exception settles the stage and is rethrown to the engine as well, and its handle
+ * is not delivered. {@link #close()} is idempotent, cancels this fixture's own pending stages, drops the
+ * handles nobody took and refuses further invocations, and a {@link #awaitInvocation(Duration)} on a closed
+ * fixture fails at once with a {@link GraphAssertionError}, a wait that was already blocked when the fixture
+ * closed included. The one difference is how an invocation that reaches a closed fixture is refused: here
+ * with an {@link IllegalStateException}, which aborts the transition, since a guard has no recovery route
+ * that could commit it.
  *
  * <p>The engine evaluates the guards of an edge in declaration order and stops at the first rejection, so a
  * controlled guard placed after a rejecting guard is never invoked at all, and a rejection answered here
@@ -69,6 +70,12 @@ public final class ControlledAsyncGuard<E, S extends Enum<S>, T extends Enum<T>>
      * expires, since a wait that was not met is a failed expectation of the test and not of the machine, and
      * at once when the fixture is closed, since nothing can arrive any more. A wait that is already blocked
      * when the fixture closes is woken by the close and fails the same way.
+     *
+     * <p>Interruption matters only when the call has to wait. A caller whose interrupt flag is set still
+     * receives a handle that is already queued, and the flag stays set; a caller that has to wait is released
+     * by the interrupt with a {@link GraphAssertionError}, and the flag is set again. A budget that is not
+     * positive, or that does not fit in nanoseconds, raises {@link IllegalArgumentException} and a null one
+     * {@link NullPointerException}, whatever the state of the fixture.
      */
     public PendingInvocation<GuardCall<E, S, T>, GuardResult> awaitInvocation(Duration budget) {
         long nanos = budgetNanos(budget);

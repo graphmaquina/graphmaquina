@@ -65,8 +65,9 @@ class PendingStateIndexTest {
     }
 
     /**
-     * The value half of the same invariant: the discarded entry leaves C and the value to restore is B, so an
-     * undo that read {@code entry.from()} would answer C here while every other case in this file cannot tell.
+     * The pending state after a rollback is the one an earlier entry gave the entity, B, not the origin of the
+     * discarded entry, C. No lookup precedes the rollback, so it truncates the log and the first lookup indexes what
+     * remains.
      */
     @Test
     void theRestoredValueIsTheEarlierPendingStateNotTheDiscardedOrigin() {

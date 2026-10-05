@@ -24,8 +24,10 @@ import org.junit.jupiter.api.Test;
  * variable the companion declares takes the name of a package the companion writes a qualified name of. What the
  * author's declarations take from it instead, a type wherever it heads a name and a field only where an expression
  * reads it, is refused as SG603 before the companion is written, and so is a companion of a later round that would
- * take a name of one already written; a type another processor brings in a later round is reported at the facade
- * whose written companion it takes a name from.
+ * take a name of one already written. A type another processor generates into the package after a companion is
+ * written is reported, at the next call of the processor, at the facade or set whose companion it takes a name
+ * from, unless it comes in the last round, the one whose {@code processingOver()} is true, which no call of the
+ * processor follows.
  */
 class GeneratedScopeTest {
 
@@ -154,9 +156,10 @@ class GeneratedScopeTest {
     }
 
     /**
-     * A qualified name starts with a package, which a type or a variable of the same name hides wherever it is in
-     * scope, and no spelling of the name gets past it. A companion that would write such a name is therefore
-     * refused where its facade is declared, with SG603 naming what takes the name, rather than left to fail javac.
+     * A qualified name starts with a package, which a type of the same name hides wherever the name heads one, and
+     * a variable only where an expression reads it; no spelling of the name gets past either. A companion that
+     * would write such a name is therefore refused where its facade is declared, with SG603 naming what takes the
+     * name, rather than left to fail javac.
      */
     @Test
     void sg603ATypeOfTheFacadesPackageNamedLikeAPackageTheCompanionWrites() {
@@ -603,7 +606,10 @@ class GeneratedScopeTest {
         return sources;
     }
 
-    /** A package holding Status, Step, Thing and a Things machine over them, every simple name shared with its twin. */
+    /**
+     * A package holding Status, Step, Thing and a Things machine over them, every simple name shared with its twin;
+     * {@code definition} is added to the machine's Definition.
+     */
     private static void twin(Map<String, String> sources, String name, String definition) {
         sources.put(name + ".Status", "package " + name + ";\npublic enum Status { OPEN, DONE }\n");
         sources.put(name + ".Step", "package " + name + ";\npublic enum Step { FINISH }\n");

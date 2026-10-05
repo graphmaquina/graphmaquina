@@ -33,6 +33,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Machines addressed by facade type: {@code peer(Class)}, {@code cascade(Class, ...)} and
+ * {@code cascadeAll(Class, ...)} resolve the machine registered with {@code as(...)}, an unregistered facade is an
+ * unknown facade, and {@code as(...)} twice is refused. Also {@code supplyAsync}, which runs off the calling thread
+ * and fails once the registry is closed.
+ */
 class PeerByTypeTest {
 
     final AtomicReference<Thread> guardThread = new AtomicReference<>();

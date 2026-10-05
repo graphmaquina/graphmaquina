@@ -7,6 +7,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The names the processor gives what it generates, and the ones it refuses. A facade or a set named with
+ * underscores, such as {@code _Docs}, gets a companion named from its PascalCase form, {@code DocsRuntime}, and the
+ * interface the author wrote is left as it is; a name that normalizes to nothing, two interfaces that normalize to
+ * one companion and a type that already has the companion's name are refused as {@code SG603}. In the unnamed
+ * package the companions live there too, and a qualified name of one of its types starts with a type, never with a
+ * package. A type name that decapitalizes to a keyword still names a legal parameter.
+ */
 class GeneratedNamingTest {
     private static final String LIBRARY = """
             package fx;
@@ -132,7 +140,7 @@ class GeneratedNamingTest {
     }
 
     /**
-     * A watched machine whose entity, action host and peer entity are named {@code Case}, {@code Default} and
+     * A watching machine whose entity, action host and peer entity are named {@code Case}, {@code Default} and
      * {@code Interface}, and a set holding both machines.
      */
     private static Map<String, String> keywordNamedDomain() {

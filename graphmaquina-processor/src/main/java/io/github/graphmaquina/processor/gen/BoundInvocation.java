@@ -16,10 +16,10 @@ import javax.lang.model.util.Types;
  *
  * <p>The processor picks an overload among the declarations a symbol exports; javac then picks one again, from
  * every declaration the host has, using the static types of the arguments the generated code passes. The two
- * answers agree on their own unless the host declares another overload of the same name and arity that could
- * take those arguments as well. Only then is a parameter type written out, and only at the positions where the
- * argument does not already have it: a cast to the type an expression already has is redundant, and the build
- * compiles its generated sources with {@code -Xlint:all -Werror}.</p>
+ * answers agree on their own unless the host has another overload that is not private, declared or inherited, of
+ * the same name and arity that could take those arguments as well. Only then is a parameter type written out, and
+ * only at the positions where the argument does not already have it: a cast to the type an expression already has
+ * is redundant, and a build that compiles the generated sources with {@code -Xlint:all -Werror} fails on it.</p>
  */
 public final class BoundInvocation {
 
@@ -55,7 +55,10 @@ public final class BoundInvocation {
         return casts;
     }
 
-    /** Whether another overload the host declares could take these arguments too. */
+    /**
+     * Whether another overload of the host that is not private, declared or inherited, could take these arguments
+     * too; never for a call that passes none.
+     */
     private boolean competes(Binding binding) {
         if (binding.arguments().isEmpty()) {
             return false;
@@ -78,7 +81,7 @@ public final class BoundInvocation {
         return false;
     }
 
-    /** Whether {@code other} would accept the arguments of the call, judged on erasures as overloading is. */
+    /** Whether {@code other} could take the arguments: each one's erasure is assignable to its parameter's erasure. */
     private boolean applies(Binding binding, ExecutableElement other) {
         for (int at = 0; at < binding.arguments().size(); at++) {
             if (!types.isAssignable(types.erasure(binding.arguments().get(at)),
@@ -90,9 +93,9 @@ public final class BoundInvocation {
     }
 
     /**
-     * The arguments, each one written with the parameter type it must have for this overload to win. The type is
-     * rendered by {@link TypeSource} as Java source, so its type annotations name their enum constants and their
-     * types fully qualified, and never as javac prints a type.
+     * The arguments, each one that does not already have the type of its parameter cast to that type, so this
+     * overload wins. The type is rendered by {@link TypeSource} as Java source, so its type annotations name their
+     * enum constants and their types fully qualified, and never as javac prints a type.
      */
     private List<String> pinned(Binding binding, List<String> arguments) {
         List<? extends TypeMirror> parameters = binding.effectiveType().getParameterTypes();

@@ -22,6 +22,11 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The companion generated for a machine: what its source writes for the key, the graph and the operations, how it
+ * keeps a strict build green and its parameter names apart, and that the graph it builds and the operations it
+ * implements run.
+ */
 class MachineGenerationTest {
 
     @Test
@@ -168,7 +173,7 @@ class MachineGenerationTest {
     }
 
     /**
-     * A watched machine whose entity type is named {@code entity}, so the entity's own lambda parameter takes
+     * A watching machine whose entity type is named {@code entity}, so the entity's own lambda parameter takes
      * the name one of the other two parameters of a condition would otherwise claim.
      */
     private static Map<String, String> watched(String entity) {

@@ -15,6 +15,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
+/**
+ * Public API values refuse a null component or argument with a NullPointerException whose message starts with the
+ * name of the parameter.
+ */
 class NullBoundariesTest {
 
     static Stream<Arguments> entries() {

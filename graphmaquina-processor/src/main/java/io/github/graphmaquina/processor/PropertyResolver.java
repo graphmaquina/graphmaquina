@@ -24,10 +24,11 @@ import javax.lang.model.type.TypeMirror;
  *
  * <p>A marker on a getter exports that reader and no other: the declaration it names is resolved on the type
  * that declares it and then read as a member of the entity, so an accessor inherited from a generic base is
- * seen with the entity's own arguments. A marker on a field exports the property its name spells, and the
- * accessors are searched by the conventions, readers as {@code p()}, {@code getP()}, {@code isP()} and writers
- * as {@code setP(x)} before {@code p(x)}. Within one writer alternative the most specific parameter wins;
- * two that no rule orders are reported rather than decided by the order the members are found in.</p>
+ * seen with the entity's own arguments. A marker on a field exports the property its name spells, and its readers
+ * are searched by the conventions, as {@code p()}, {@code getP()}, {@code isP()}. Writers are searched by the
+ * conventions whichever marker exported the property, as {@code setP(x)} before {@code p(x)}. Within one writer
+ * alternative the most specific parameter wins; two that no rule orders are reported rather than decided by the
+ * order the members are found in.</p>
  */
 final class PropertyResolver {
 

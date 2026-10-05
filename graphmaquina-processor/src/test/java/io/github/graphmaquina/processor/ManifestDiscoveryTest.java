@@ -391,7 +391,7 @@ class ManifestDiscoveryTest {
         return all;
     }
 
-    /** The annotation types of the local index with {@code added} appended, duplicates kept. */
+    /** The annotation types of the local index with {@code type} appended, duplicates kept. */
     private static List<String> added(CompileManifest manifest, String type) {
         List<String> types = new ArrayList<>(manifest.local().annotationTypes());
         types.add(type);

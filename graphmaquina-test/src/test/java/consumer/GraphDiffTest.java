@@ -22,11 +22,11 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
- * Contract of the structural diff. Every property the snapshot records is changed on its own in a pair of
- * graphs built with the real DSL, and the diff must name exactly the paths that changed — including the
- * ones no diagram shows, such as a timeout, an exception class or a hook, and including the identifier of
- * an edge, which no matrix could have recorded. A path present on one side only stays distinguishable from
- * a path present with an empty value.
+ * Contract of the structural diff. Each property {@link SnapshotGraphs} can vary is changed on its own in a
+ * pair of graphs built with the real DSL, and the diff must name exactly the paths that changed — including
+ * the ones no diagram shows, such as a timeout, an exception class or a hook, and including the identifier
+ * of an edge, which no matrix could have recorded. A path present on one side only stays distinguishable
+ * from a path present with an empty value.
  */
 class GraphDiffTest {
 

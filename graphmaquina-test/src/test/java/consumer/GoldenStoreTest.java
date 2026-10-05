@@ -41,8 +41,9 @@ import org.junit.jupiter.api.parallel.Resources;
  * Contract of the golden store and of its configuration. Reading resolves the resource through the class
  * loader and never writes; update resolves the file through the source root and never reads the class path,
  * so a stale build output cannot make a matching source be rewritten. Names that could steer a write out of
- * the root — absolute, relative, backslashed, or through a symbolic link — are refused before any file is
- * touched, and the failure of a comparison carries the rendered difference, not both documents.
+ * the root — absolute, backslashed, drive-prefixed, with an empty or relative segment, or reaching outside
+ * through a symbolic link — are refused before any file is touched, and the failure of a comparison carries
+ * the rendered difference, not both documents.
  */
 class GoldenStoreTest {
 

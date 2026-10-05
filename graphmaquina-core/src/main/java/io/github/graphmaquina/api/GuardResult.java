@@ -8,7 +8,7 @@ public sealed interface GuardResult permits GuardResult.Pass, GuardResult.Reject
     /** A guard that allows the transition to proceed. */
     record Pass() implements GuardResult { }
 
-    /** A guard that blocks the transition, carrying the reason it was rejected. */
+    /** A guard that blocks the transition, carrying the reason it was rejected, which must not be blank. */
     record Reject(@NonNull String reason) implements GuardResult {
         public Reject {
             if (reason.isBlank()) {

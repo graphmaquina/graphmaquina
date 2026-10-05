@@ -10,6 +10,10 @@ import java.util.Set;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 
+/**
+ * {@code DirectedGraph}: parallel edges and isolated nodes are kept; unknown, duplicate and null input is refused;
+ * the collections are unmodifiable; and the size follows the declared edges.
+ */
 class DirectedGraphTest {
 
     @Test void retainsParallelEdgesAndIsolatedNodes() {

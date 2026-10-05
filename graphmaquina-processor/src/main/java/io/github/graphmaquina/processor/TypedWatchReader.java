@@ -82,8 +82,8 @@ final class TypedWatchReader {
     private record Peers(Optional<AnnotationMirror> mirror, Map<String, TypeElement> declared, Set<String> usable) { }
 
     /**
-     * The watches {@code facade} declares, in the order it spells them; a watch with a problem is reported and
-     * left out, so the machine that carries it is refused as a whole by its own builder.
+     * The watches {@code facade} declares, in the order it spells them; a watch with a problem is left out, and one
+     * whose problem this processor reports makes the machine's own builder refuse the machine as a whole.
      */
     List<WatchModel> read(TypeElement facade, MachineTypes machine) {
         Peers peers = peers(facade);
@@ -111,9 +111,9 @@ final class TypedWatchReader {
     }
 
     /**
-     * The peers of {@code facade}, with {@code SG608} for one it names twice and for one that is not a machine
-     * this compilation generates an API for: watch vocabulary needs the peer's own states, which only such a
-     * machine declares.
+     * The peers of {@code facade}, with {@code SG608} for one it names twice and for one not marked
+     * {@code @GenerateGraphApi}: watch vocabulary is typed with the peer's own states, which only such a machine's
+     * generated API declares.
      */
     private Peers peers(TypeElement facade) {
         Optional<AnnotationMirror> mirror = annotations.find(facade, GraphPeers.class);

@@ -5,7 +5,7 @@ import java.util.Objects;
 import lombok.Getter;
 import lombok.NonNull;
 
-/** The entity's state field was null when the machine tried to read it. */
+/** The state getter returned null when the machine read the entity's state. */
 @Getter
 public final class UninitializedStateException extends StateMachineException {
 

@@ -27,7 +27,10 @@ public final class OrderActions {
     @NonNull
     private final Carrier carrier;
 
-    /** Domain failure is returned (declined) and a foreign failure is declared (IOException via failsOn). */
+    /**
+     * Domain failure is returned (declined) and a foreign failure is declared (IOException via failsOn). It counts the
+     * attempt on the order before calling the gateway, which {@code retryBudgetLeft} reads.
+     */
     @GraphAction
     public CompletionStage<ActionOutcome> charge(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {
         ctx.entity().countAttempt();
@@ -64,7 +67,9 @@ public final class OrderActions {
 
     /**
      * Single gate for cancellation: the cascade to items lives in one place. It names the item's own
-     * {@code CANCEL} identifier, not the {@code CANCELLED} state, because a cascade selects an edge.
+     * {@code CANCEL} identifier, not the {@code CANCELLED} state, because a cascade selects an edge. It uses
+     * {@code COLLECT}, so every item is tried and one that cannot be cancelled aborts the order's cancellation with
+     * all the item failures aggregated.
      */
     @GraphAction
     public ActionOutcome cancel(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {

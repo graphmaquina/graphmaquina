@@ -226,7 +226,7 @@ final class Fixtures {
         return sources;
     }
 
-    /** The valid Docs machine of the spec examples. */
+    /** The valid Docs machine: {@link #DOCS_HEADER} and {@link #DOCS_BODY} over the fx domain. */
     static Map<String, String> validDocs() {
         return withDocs(DOCS_HEADER, DOCS_BODY);
     }

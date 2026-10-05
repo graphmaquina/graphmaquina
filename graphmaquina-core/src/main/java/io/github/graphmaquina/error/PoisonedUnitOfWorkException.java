@@ -4,8 +4,9 @@ import java.util.Objects;
 import lombok.Getter;
 
 /**
- * A peer read or a cascade attempted in a transaction that an earlier failure already poisoned; {@code original()}
- * is that failure.
+ * A context's {@code peer(...)}, {@code cascade(...)} or {@code cascadeAll(...)} called in a transaction that an
+ * earlier failure already poisoned; {@code original()} is that failure. Only those calls check the poison: a
+ * {@code PeerView} obtained before it still reads.
  *
  * <p>A cascade, single or one element of {@code cascadeAll}, poisons its transaction when it fails after its
  * arguments were accepted. Whatever leaves it then poisons: an engine exception, such as an unknown machine key, an
@@ -17,8 +18,10 @@ import lombok.Getter;
  * a peer read stages nothing.
  *
  * <p>A poisoned transaction never commits. When the action that caught the failure returns, returns a failure or
- * throws an exception its failsOn lists, the poison is thrown instead: no failure route is taken, so no recovery
- * action runs.
+ * throws an exception its failsOn lists, the engine throws the failure that poisoned the transaction, the one
+ * {@code original()} reports, and never this exception: an engine exception as it was thrown, the abort that wraps
+ * an Error or an exception from a callback the engine does not wrap, or COLLECT's aggregate. No failure route is
+ * taken, so no recovery action runs.
  */
 @Getter
 public final class PoisonedUnitOfWorkException extends TransitionAbortedException {

@@ -31,8 +31,8 @@ import org.junit.jupiter.api.Test;
  * Contract of {@link TransitionAssert}. Every expectation gets a match and a mismatch, the mismatch is
  * read off the fields of the {@link GraphAssertionError} rather than off its type alone, and every method
  * gets its own null-subject case so that removing a single guard fails exactly one test. The subject is
- * always the edge keyed by an origin and an identifier; what a graph does NOT declare has no view here and
- * is asserted through {@code hasNoTransition} and the state's policy instead.
+ * always the edge keyed by an origin and an identifier; what a graph does NOT declare leaves the view without
+ * a subject, and is asserted through {@code hasNoTransition} and the state's policy instead.
  */
 class TransitionAssertionsTest {
 

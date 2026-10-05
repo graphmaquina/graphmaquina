@@ -35,12 +35,13 @@ import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 /**
- * Contract of the artifacts a consumer actually downloads. Everything else in this module is checked
- * against the classes Gradle compiled, which says nothing about what the published jar and POM contain:
- * so this test reads the files from a local Maven repository, compiles a consumer against those jars
- * alone and runs it in a separate JVM whose classpath holds nothing else — no JUnit, no project classes
- * and no test runtime. The repository and the release are passed as the {@code artifactRepository} and
- * {@code artifactVersion} system properties by the Gradle task that publishes them first.
+ * Contract of the artifacts a consumer actually downloads. The tests of this module's {@code test} task are
+ * checked against the classes Gradle compiled, which says nothing about what the published jar and POM
+ * contain: so this test, which {@code publishedArtifactTest} runs instead, reads the files from a local Maven
+ * repository, compiles a consumer against those jars alone and runs it in a separate JVM whose classpath holds
+ * nothing else — no JUnit, no project classes and no test runtime. The repository and the release are passed
+ * as the {@code artifactRepository} and {@code artifactVersion} system properties by the Gradle task that
+ * publishes them first.
  */
 class PublishedArtifactSmokeTest {
 

@@ -14,7 +14,8 @@ import java.util.Objects;
  * resource when the run is in update mode. A mismatch fails with the lines that changed, not with both
  * diagrams in full, so a review reads what moved.
  *
- * <p>The rendering draws the declared edges and nothing else: parallel identifiers between the same pair of
+ * <p>The rendering draws every state as a node, an arrow into the initial state, a note linked to the state
+ * of each watch and, between states, only the declared edges: parallel identifiers between the same pair of
  * states are separate arrows, and a rejection policy is an attribute of its node rather than an arrow. There
  * is no tabular or exhaustive mode, because absence has no diagram.
  *
@@ -38,8 +39,14 @@ public final class GraphGoldens {
     }
 
     /**
-     * @throws GraphAssertionError if the definition is null, the resource is missing, or its text differs
-     *     from the rendering
+     * Compares the rendering against {@code resource} through {@code options}. In update mode a missing or
+     * different golden is written instead of failing the check.
+     *
+     * @throws GraphAssertionError if the definition is null or, in read mode, the resource is missing, names
+     *     a directory or holds text that differs from the rendering
+     * @throws IllegalArgumentException if the resource name is malformed or, in update mode, resolves outside
+     *     the source root
+     * @throws IllegalStateException if the golden cannot be read or decoded, or cannot be written
      */
     public static void assertMatches(GraphDefinition<?, ?, ?> definition, String resource,
             GoldenOptions options) {

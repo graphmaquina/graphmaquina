@@ -30,9 +30,10 @@ import javax.tools.ToolProvider;
  * processor and the manifest the generator wrote.
  *
  * <p>Every stage works on real files, laid out the way a build does: {@code originals/} holds the fixture,
- * {@code bootstrap/} the sources the generator emits, {@code processor/} the ones the processor emits and
- * {@code classes/} the compiled result. Compilation always uses the project's own strict options,
- * {@code -Xlint:all,-serial -Werror}, so a fixture that only compiles under laxer rules is a failure here.</p>
+ * {@code bootstrap/} the sources the generator emits, {@code processor/} the ones the processor emits,
+ * {@code classes/} the compiled result and {@code work/} the manifest and the inventories. Compilation always uses
+ * the project's own strict options, {@code -Xlint:all,-serial -Werror}, so a fixture that only compiles under
+ * laxer rules is a failure here.</p>
  */
 final class Compilation {
 
@@ -41,7 +42,10 @@ final class Compilation {
     /** One prepared fixture: the request the generator ran for and what it produced, manifest included. */
     record Prepared(GenerationRequest request, GenerationResult generation) { }
 
-    /** What a compilation produced: diagnostics, the processor's source output, and a loader over the classes. */
+    /**
+     * What a compilation produced: whether it succeeded, its diagnostics, the processor's source output and a loader
+     * over the classes.
+     */
     record Result(boolean success, List<Diagnostic<? extends JavaFileObject>> diagnostics, Path output, ClassLoader classes) {
 
         List<String> errors() {

@@ -80,7 +80,8 @@ public final class GraphAssertions {
 
     /**
      * Runs {@code operation} and returns the exception it threw, for handing to {@link #assertThat(Throwable)}.
-     * It catches no {@link Error}, so an {@link AssertionError} raised inside the body propagates untouched.
+     * It catches no {@link Error}, so an {@link AssertionError} raised inside the body propagates untouched,
+     * and a body that completes normally fails with a {@link GraphAssertionError}.
      */
     public static Throwable captureFailure(ThrowingRunnable operation) {
         return TransitionFailureAssert.captureFailure(operation);

@@ -32,7 +32,7 @@ class MachineTransitionErrorsTest {
                 + elements + ")\n    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);\n";
     }
 
-    /** The type-level transition of the header, with {@code elements} appended to it. */
+    /** The header with {@code elements} appended to its type-level transition. */
     private static String declared(String elements) {
         return Fixtures.DOCS_HEADER.replace("@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT)",
                 "@DocsGraph.Transition(id = RETURN, from = REVIEW, to = DRAFT" + elements + ")");
@@ -161,7 +161,7 @@ class MachineTransitionErrorsTest {
         assertTrue(guardedMove.success(), guardedMove.describe());
     }
 
-    /** Two independent problems on one declaration, each reported once and not once per state it leaves. */
+    /** Two independent problems on one declaration, each reported once. */
     @Test
     void errorsAreCountedOncePerProblem() {
         Compilation.Result result = body(SUBMIT

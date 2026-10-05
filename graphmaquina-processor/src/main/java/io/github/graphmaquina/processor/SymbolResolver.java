@@ -184,8 +184,8 @@ final class SymbolResolver {
 
     /**
      * Whether {@code member} is one of the declarations {@code descriptor} exports: the declaration itself, or
-     * an override of it that the host inherits. An unexported method that only shares a name and a role with
-     * one is not reachable through the symbol.
+     * an override of it that the host declares or inherits. An unexported method that only shares a name and a
+     * role with one is not reachable through the symbol.
      */
     private boolean exported(Binding member, SymbolDescriptor descriptor, TypeElement host) {
         for (MemberDescriptor candidate : descriptor.candidates()) {
