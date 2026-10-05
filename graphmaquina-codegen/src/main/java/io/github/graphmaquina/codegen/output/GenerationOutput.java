@@ -6,7 +6,10 @@ import io.github.graphmaquina.codegen.GenerationResult;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
+import io.github.graphmaquina.codegen.source.Bootstrap;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.CharsetEncoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -15,10 +18,12 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.jar.JarFile;
@@ -32,14 +37,19 @@ import java.util.stream.Stream;
  *
  * <p>Only the files the previous manifest listed are removed, so a hand-written file that happens to live under
  * the generated source root is never touched, and a generated type an original source already declares, in the
- * file it would overwrite or in a file of another name, is refused instead. A publication that fails once it has
- * read the previous manifests deletes the manifest, so no build ever reads a manifest that does not describe the
- * sources on disk. A previous manifest that cannot be read at all, such as the retired format of GraphMaquina
- * 1.x, is left in place instead, so the refusal repeats until the user cleans the build rather than the next run
- * calling the files it owned unowned. A separate pending manifest retains ownership across failures, including a
- * partially published generation, so the next run can retire its files. Both manifests are written beside their
- * place and moved into it, so an interrupted run never leaves half of one. The files carry exactly the emitted
- * text in UTF-8 with LF endings, so a run that changes nothing writes byte-identical files.</p>
+ * file it would overwrite or in a file of another name, is refused instead. So is one whose file or class file a
+ * volume that does not tell names apart by case would take for an original's. The original sources it is checked
+ * against are the ones the generator read, as the one walk of {@link Bootstrap} read them. A publication that
+ * fails once it has read the previous manifests deletes the manifest, so no build ever reads a manifest that does
+ * not describe the sources on disk. A previous manifest that cannot be read at all, such as the retired format of
+ * GraphMaquina 1.x, is left in place instead, so the refusal repeats until the user cleans the build rather than
+ * the next run calling the files it owned unowned. A separate pending manifest retains ownership across failures,
+ * including a partially published generation, so the next run can retire its files. Both manifests are written
+ * beside their place and moved into it, so an interrupted run never leaves half of one.</p>
+ *
+ * <p>The files carry exactly the emitted text with LF endings, in the encoding of the compilation that reads
+ * them, so a run that changes nothing writes byte-identical files. A character that encoding cannot represent is
+ * written as the Unicode escape javac reads in any encoding.</p>
  */
 public final class GenerationOutput {
 
@@ -52,18 +62,52 @@ public final class GenerationOutput {
     }
 
     /**
-     * Writes {@code sources} under {@code request.sourcesOutput()} and {@code manifest} in the work directory.
+     * Writes {@code sources} under {@code request.sourcesOutput()} and {@code manifest} in the work directory,
+     * checking the generated types against the original sources of {@code request}. It reads those sources itself,
+     * as {@link Bootstrap#originals} reads them: it walks and parses them, and that reading resolves nothing and
+     * opens no classpath. The checks that follow are the ones of the four-argument form, which looks for a class a
+     * generated type would shadow in every entry of the classpath but the class output, opening each file there as
+     * an archive.
      *
-     * @throws CodegenException {@code SG603} if a generated type is already declared by an original source,
-     *     would shadow a class of the classpath or would overwrite a file the previous generation did not own;
-     *     {@code SG602} if a previous manifest cannot be read, which leaves that manifest in place
-     * @throws IOException if the staged sources, the previous manifest or the published files cannot be handled
+     * @throws CodegenException {@code SG603} if a generated type is already declared by an original source, or
+     *     takes the name of one where the volume does not tell names apart by case, would shadow a class of the
+     *     classpath or would overwrite a file the previous generation did not own; {@code SG602} if a previous
+     *     manifest cannot be read, which leaves that manifest in place; {@code SG601} if javac cannot read or parse
+     *     an original source, as when the file may not be read
+     * @throws java.io.UncheckedIOException if a source directory, or a directory below it, cannot be walked, or the
+     *     file manager javac read the original sources with cannot be closed
+     * @throws IOException if the staged sources, the previous manifest or the published files cannot be handled, or
+     *     the original sources and the class output the collision check looks up cannot be examined
      */
     public static GenerationResult publish(GenerationRequest request, List<GeneratedSource> sources,
             CompileManifest manifest) throws IOException {
         Objects.requireNonNull(request, "request");
+        return publish(request, sources, manifest, Bootstrap.originals(request));
+    }
+
+    /**
+     * Writes {@code sources} under {@code request.sourcesOutput()} and {@code manifest} in the work directory,
+     * checking the generated types against {@code originals}, the original sources the generation read.
+     *
+     * @param request the request the sources were generated for
+     * @param sources the generated sources
+     * @param manifest the manifest of the compilation that follows
+     * @param originals every original source the generation of {@code sources} read, as
+     *     {@link Bootstrap#read} and {@link Bootstrap#originals} report them
+     * @return the published sources and the manifest
+     * @throws CodegenException {@code SG603} if a generated type is already declared by an original source, or
+     *     takes the name of one where the volume does not tell names apart by case, would shadow a class of the
+     *     classpath or would overwrite a file the previous generation did not own; {@code SG602} if a previous
+     *     manifest cannot be read, which leaves that manifest in place
+     * @throws IOException if the staged sources, the previous manifest or the published files cannot be handled, or
+     *     the original sources and the class output the collision check looks up cannot be examined
+     */
+    public static GenerationResult publish(GenerationRequest request, List<GeneratedSource> sources,
+            CompileManifest manifest, List<Bootstrap.OriginalSource> originals) throws IOException {
+        Objects.requireNonNull(request, "request");
         Objects.requireNonNull(sources, "sources");
         Objects.requireNonNull(manifest, "manifest");
+        Objects.requireNonNull(originals, "originals");
         Path work = Files.createDirectories(request.workDirectory().toAbsolutePath());
         Path manifestPath = manifestPath(request);
         Path pending = work.resolve(PENDING);
@@ -81,7 +125,7 @@ public final class GenerationOutput {
             remember(pending, manifest, previouslyOwned);
             delete(staging);
             requireNoClasspathCollision(request, sources);
-            List<Path> staged = stage(request, sources, staging, previouslyOwned);
+            List<Path> staged = stage(request, sources, staging, previouslyOwned, originals);
             Path output = Files.createDirectories(request.sourcesOutput().toAbsolutePath());
             Set<String> publishing = new TreeSet<>(previouslyOwned);
             publishing.addAll(manifest.ownedSources());
@@ -111,21 +155,35 @@ public final class GenerationOutput {
     }
 
     /**
-     * Writes every source under {@code staging}, refusing one an original source already declares and one that
-     * would overwrite a file the previous generation did not own.
+     * Writes every source under {@code staging}, in the encoding of the compilation, refusing one an original
+     * source already declares, one that takes the name of an original source or type where the volume does not
+     * tell names apart by case, and one that would overwrite a file the previous generation did not own.
      */
     private static List<Path> stage(GenerationRequest request, List<GeneratedSource> sources, Path staging,
-            Set<String> previouslyOwned)
+            Set<String> previouslyOwned, List<Bootstrap.OriginalSource> originals)
             throws IOException {
-        Set<String> generated = new HashSet<>();
-        for (GeneratedSource source : sources) {
-            generated.add(source.qualifiedName());
+        List<Path> directories = new ArrayList<>();
+        for (Path source : request.sources()) {
+            if (Files.isDirectory(source)) {
+                directories.add(source);
+            }
         }
-        Map<String, String> declared = OriginalTypes.declaring(request, generated);
+        // Keyed by name in one case, so the names that differ from a generated one only in case are found as well.
+        Map<String, List<Bootstrap.OriginalSource>> standing = new HashMap<>();
+        Map<String, List<Declared>> declaring = new HashMap<>();
+        for (Bootstrap.OriginalSource original : originals) {
+            standing.computeIfAbsent(caseKey(original.path()), (String key) -> new ArrayList<>()).add(original);
+            for (String type : original.types()) {
+                declaring.computeIfAbsent(caseKey(type), (String key) -> new ArrayList<>())
+                        .add(new Declared(type, original.origin()));
+            }
+        }
         List<Path> staged = new ArrayList<>();
         for (GeneratedSource source : sources) {
             String relative = source.qualifiedName().replace('.', '/') + ".java";
-            requireNoOriginal(request, source.qualifiedName(), relative, declared);
+            requireNoOriginal(source.qualifiedName(), relative, directories,
+                    standing.getOrDefault(caseKey(relative), List.of()),
+                    declaring.getOrDefault(caseKey(source.qualifiedName()), List.of()), request.classesOutput());
             Path target = request.sourcesOutput().resolve(relative);
             if (Files.exists(target) && !ownedBefore(request.sourcesOutput(), target, relative, previouslyOwned)) {
                 throw new CodegenException(COLLISION, "the generated type " + source.qualifiedName()
@@ -133,10 +191,39 @@ public final class GenerationOutput {
             }
             Path file = staging.resolve(relative);
             Files.createDirectories(file.getParent());
-            Files.writeString(file, source.content(), StandardCharsets.UTF_8);
+            Files.write(file, encoded(source.content(), request.encoding()));
             staged.add(file);
         }
         return staged;
+    }
+
+    /**
+     * {@code text} in {@code encoding}, with every character that encoding cannot represent written as the Unicode
+     * escape javac reads in any encoding, so the compilation reads back exactly the emitted text. A generated source
+     * holds a backslash only inside the string literal of the carrier, where every backslash is escaped, so no
+     * escape written here follows a backslash that would turn it into plain text. An encoding that only decodes,
+     * such as {@code ISO-2022-CN}, reads ASCII as itself, so the text is then written in ASCII and escaped.
+     */
+    private static byte[] encoded(String text, Charset encoding) {
+        CharsetEncoder encoder = (encoding.canEncode() ? encoding : StandardCharsets.US_ASCII).newEncoder();
+        if (encoder.canEncode(text)) {
+            return text.getBytes(encoder.charset());
+        }
+        StringBuilder escaped = new StringBuilder(text.length());
+        int index = 0;
+        while (index < text.length()) {
+            int codePoint = text.codePointAt(index);
+            String character = Character.toString(codePoint);
+            if (encoder.canEncode(character)) {
+                escaped.append(character);
+            } else {
+                for (char unit : character.toCharArray()) {
+                    escaped.append(String.format(Locale.ROOT, "\\u%04x", (int) unit));
+                }
+            }
+            index += Character.charCount(codePoint);
+        }
+        return escaped.toString().getBytes(encoder.charset());
     }
 
     /**
@@ -156,29 +243,140 @@ public final class GenerationOutput {
     }
 
     /**
-     * Refuses a generated type an original source already declares: one whose file would overwrite an original
-     * source, or one that an original source declares as a top-level type in a file of another name, which javac
-     * would only report as a duplicate class.
+     * Refuses a generated type an original source already declares: one whose file would stand where an original
+     * source stands below its source root, or one that an original source declares as a top-level type in a file
+     * of another name, which javac would only report as a duplicate class.
      *
-     * @param declared the original source declaring each generated type that one declares, as
-     *     {@link OriginalTypes#declaring} finds it
+     * <p>Below a directory the request names, the generated file's path is looked up as the volume resolves it. A
+     * case-insensitive volume therefore also finds an original whose name differs only in case, and that original
+     * is refused, whatever it declares. When it declares a top-level type named like the generated type but for
+     * case, such as the type it is named after, javac compiling both would also write their two class files as one
+     * file and keep one of them: by default without saying so, while the {@code output-file-clash} lint, which
+     * {@code -Xlint:all} turns on, warns about it, and {@code -Werror} turns that warning into a failure. An original
+     * that declares no such type loses no class file. Every
+     * original source is also compared by the path it stands at, whole: for a file the request names itself, that
+     * is the path its package declaration gives it. An original source that merely ends like the generated file,
+     * in a package of another name, is therefore no collision.</p>
+     *
+     * <p>An original source whose path differs from the generated file's in the case of its file name alone, its
+     * directories spelled the same, is looked up under the generated file name in its own directory. Where its
+     * volume finds that very file there, the volume does not tell the two names apart, and the source is refused,
+     * named by its real path. A top-level type whose qualified name differs from the generated type's only in case
+     * is refused where the volume of the class output does not tell names apart by case: javac would write the two
+     * class files as one file there and keep one of them, by default without saying so.</p>
+     *
+     * @param relative the path of the generated file below the generated source root
+     * @param directories the directories the request names among its sources
+     * @param standing the original sources whose path below their source root, as
+     *     {@link Bootstrap.OriginalSource#path()} names it, is {@code relative} but for case
+     * @param declaring the top-level types the original sources declare whose qualified name is
+     *     {@code qualifiedName} but for case, with the source that declares each
+     * @param classesOutput the class output of the compilation
      * @throws CodegenException {@code SG603} naming the generated type and the original source
+     * @throws IOException if an original source found under another case, or the class output or a directory
+     *     above it, cannot be examined
      */
-    private static void requireNoOriginal(GenerationRequest request, String qualifiedName, String relative,
-            Map<String, String> declared) {
-        Path candidate = Path.of(relative);
-        for (Path source : request.sources()) {
-            Path original = Files.isDirectory(source) ? source.resolve(candidate) : source;
-            if (original.endsWith(candidate) && Files.isRegularFile(original)) {
+    private static void requireNoOriginal(String qualifiedName, String relative, List<Path> directories,
+            List<Bootstrap.OriginalSource> standing, List<Declared> declaring, Path classesOutput)
+            throws IOException {
+        for (Path directory : directories) {
+            Path original = directory.resolve(relative);
+            if (Files.isRegularFile(original)) {
                 throw new CodegenException(COLLISION, "the generated type " + qualifiedName
                     + " would overwrite the original source " + original);
             }
         }
-        String declaring = declared.get(qualifiedName);
-        if (declaring != null) {
-            throw new CodegenException(COLLISION, "the generated type " + qualifiedName
-                + " is already declared by the original source " + declaring);
+        for (Bootstrap.OriginalSource original : standing) {
+            if (original.path().equals(relative)) {
+                throw new CodegenException(COLLISION, "the generated type " + qualifiedName
+                    + " would overwrite the original source " + original.file());
+            }
         }
+        String fileName = relative.substring(relative.lastIndexOf('/') + 1);
+        for (Bootstrap.OriginalSource original : standing) {
+            if (!directories(original.path()).equals(directories(relative))) {
+                // The lookup asks the volume about the file name alone, and an original whose directories differ
+                // in case may carry the generated file name itself, which the lookup finds on any volume.
+                continue;
+            }
+            Path underGeneratedName = original.file().resolveSibling(fileName);
+            if (Files.exists(underGeneratedName) && Files.isSameFile(underGeneratedName, original.file())) {
+                throw new CodegenException(COLLISION, "the generated type " + qualifiedName
+                    + " would overwrite the original source " + original.file().toRealPath());
+            }
+        }
+        for (Declared declared : declaring) {
+            if (declared.type().equals(qualifiedName)) {
+                throw new CodegenException(COLLISION, "the generated type " + qualifiedName
+                    + " is already declared by the original source " + declared.origin());
+            }
+        }
+        if (!declaring.isEmpty() && foldsCase(classesOutput)) {
+            Declared declared = declaring.get(0);
+            throw new CodegenException(COLLISION, "the generated type " + qualifiedName + " differs only in case"
+                + " from " + declared.type() + ", which the original source " + declared.origin() + " declares,"
+                + " and the volume of the class output " + classesOutput + " does not tell their class files apart");
+        }
+    }
+
+    /** The directories of {@code path}, a path separated by {@code /}, with the last separator; empty for none. */
+    private static String directories(String path) {
+        return path.substring(0, path.lastIndexOf('/') + 1);
+    }
+
+    /**
+     * {@code name} with every character in one case, as {@link String#equalsIgnoreCase} compares characters, so
+     * two names that differ only in case have the same key.
+     */
+    private static String caseKey(String name) {
+        StringBuilder key = new StringBuilder(name.length());
+        name.codePoints().forEach((int codePoint) ->
+                key.appendCodePoint(Character.toLowerCase(Character.toUpperCase(codePoint))));
+        return key.toString();
+    }
+
+    /**
+     * Whether the volume of {@code classesOutput} does not tell names apart by case. The class output, or while it
+     * does not exist the nearest directory above it that does, is looked up under its own name with one letter in
+     * the other case, going further up while a name has no letter that has another case; the volume does not tell
+     * names apart when that lookup finds the very same directory. The directory asked is therefore the one that
+     * holds the directory looked up: the parent of the class output, or of the existing ancestor looked up instead.
+     */
+    private static boolean foldsCase(Path classesOutput) throws IOException {
+        Path probed = classesOutput.toAbsolutePath().normalize();
+        while (probed != null) {
+            Path name = probed.getFileName();
+            if (name != null && Files.exists(probed)) {
+                Optional<String> otherCase = otherCase(name.toString());
+                if (otherCase.isPresent()) {
+                    Path other = probed.resolveSibling(otherCase.get());
+                    return Files.exists(other) && Files.isSameFile(other, probed);
+                }
+            }
+            probed = probed.getParent();
+        }
+        return false;
+    }
+
+    /** {@code name} with its first letter that has another case in that case; empty when no letter has one. */
+    private static Optional<String> otherCase(String name) {
+        for (int index = 0; index < name.length(); index++) {
+            char letter = name.charAt(index);
+            char other = Character.isUpperCase(letter) ? Character.toLowerCase(letter) : Character.toUpperCase(letter);
+            if (other != letter) {
+                return Optional.of(name.substring(0, index) + other + name.substring(index + 1));
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * A top-level type an original source declares.
+     *
+     * @param type the qualified name of the type
+     * @param origin the original source that declares it, as diagnostics name it
+     */
+    private record Declared(String type, String origin) {
     }
 
     /**

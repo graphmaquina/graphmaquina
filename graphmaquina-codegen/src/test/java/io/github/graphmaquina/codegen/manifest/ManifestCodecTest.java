@@ -20,7 +20,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -316,6 +318,65 @@ class ManifestCodecTest {
         String json = Files.readString(file);
         assertEquals(1, json.chars().filter(character -> character == '{').count());
         assertEquals(request, ManifestCodec.readRequest(file));
+    }
+
+    /**
+     * The release and the encoding of the compilation are optional members: a request names them when the build
+     * knows them, and one that names neither, as every request did before they existed, is read at release 21 in
+     * UTF-8. Both are written back as they were read.
+     */
+    @Test
+    void generationRequestReadsTheReleaseAndTheEncodingItNamesAndDefaultsTheOthers() throws IOException {
+        Path older = Files.writeString(directory.resolve("older.json"), requestJson(""), StandardCharsets.UTF_8);
+        Path newer = Files.writeString(directory.resolve("newer.json"),
+                requestJson(",\n  \"release\": 25,\n  \"encoding\": \"ISO-8859-1\""), StandardCharsets.UTF_8);
+
+        GenerationRequest defaults = ManifestCodec.readRequest(older);
+        GenerationRequest named = ManifestCodec.readRequest(newer);
+
+        assertEquals(21, defaults.release());
+        assertEquals(StandardCharsets.UTF_8, defaults.encoding());
+        assertEquals(25, named.release());
+        assertEquals(StandardCharsets.ISO_8859_1, named.encoding());
+        Path written = directory.resolve("written.json");
+        ManifestCodec.writeRequest(written, named);
+        assertEquals(named, ManifestCodec.readRequest(written));
+    }
+
+    /** A release or an encoding the generator cannot use is refused as a malformed request, naming the member. */
+    @Test
+    void generationRequestRejectsAReleaseOrAnEncodingItCannotUse() throws IOException {
+        Map<String, String> members = new LinkedHashMap<>();
+        members.put("\"release\": \"25\"", "release");
+        members.put("\"release\": 21.5", "release");
+        members.put("\"encoding\": 8", "encoding");
+        members.put("\"encoding\": \"no-such-encoding\"", "encoding");
+        for (Map.Entry<String, String> member : members.entrySet()) {
+            Path file = Files.writeString(directory.resolve("request.json"),
+                    requestJson(",\n  " + member.getKey()), StandardCharsets.UTF_8);
+
+            CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readRequest(file));
+
+            assertEquals("SG602", failure.code(), member.getKey());
+            assertTrue(failure.getMessage().contains("'" + member.getValue() + "'"), failure.getMessage());
+            assertTrue(failure.getMessage().contains(file.toString()), failure.getMessage());
+        }
+    }
+
+    /** A request with the eight members every request carries, followed by {@code extra}, as JSON text. */
+    private String requestJson(String extra) {
+        return """
+            {
+              "projectDirectory": "%1$s",
+              "sources": ["%1$s/src"],
+              "classpath": [],
+              "sourcesOutput": "%1$s/generated",
+              "processorSourcesOutput": "%1$s/processor",
+              "classesOutput": "%1$s/classes",
+              "workDirectory": "%1$s/work",
+              "compilationId": "fx:demo:main"%2$s
+            }
+            """.formatted(directory.toString().replace("\\", "\\\\"), extra);
     }
 
     @Test

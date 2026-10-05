@@ -1,7 +1,9 @@
 package io.github.graphmaquina.codegen.source;
 
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.SourceLocation;
+import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -36,11 +38,22 @@ public final class DeclarationIndex implements AutoCloseable {
         this.classpath = classpath;
     }
 
-    /** Reads every declaration of {@code units} and opens the classpath headers they resolve against. */
+    /**
+     * Reads every declaration of {@code units} and opens the classpath headers they resolve against, at release
+     * {@value GenerationRequest#DEFAULT_RELEASE}.
+     */
     public static DeclarationIndex open(List<SourceUnit> units, List<Path> classpath) {
+        return open(units, classpath, GenerationRequest.DEFAULT_RELEASE, GenerationRequest.DEFAULT_ENCODING);
+    }
+
+    /**
+     * Reads every declaration of {@code units} and opens the classpath headers they resolve against, at the
+     * {@code release} and in the {@code encoding} of the compilation the units belong to.
+     */
+    static DeclarationIndex open(List<SourceUnit> units, List<Path> classpath, int release, Charset encoding) {
         Objects.requireNonNull(units, "units");
         Objects.requireNonNull(classpath, "classpath");
-        ClasspathDeclarations declarations = ClasspathDeclarations.open(classpath);
+        ClasspathDeclarations declarations = ClasspathDeclarations.open(classpath, release, encoding);
         try {
             Map<String, TypeHeader> sources = new LinkedHashMap<>();
             for (SourceUnit unit : units) {

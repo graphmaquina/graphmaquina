@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -90,29 +91,43 @@ public final class SourceFiles {
      * for example {@code -g:none}, which drops the attributes a class output is normally read back through.
      */
     public static Compilation compileStrict(List<Path> files, Path classes, List<String> extra) {
+        return compileStrict(files, classes, extra, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The same, reading every source in {@code encoding}, as javac reads the sources of a project that declares
+     * that encoding. The encoding is the file manager's own: javac lets it win over an {@code -encoding} option.
+     */
+    public static Compilation compileStrict(List<Path> files, Path classes, Charset encoding) {
+        return compileStrict(files, classes, List.of(), encoding);
+    }
+
+    private static Compilation compileStrict(List<Path> files, Path classes, List<String> extra, Charset encoding) {
         try {
             Files.createDirectories(classes);
             List<String> options =
                 new ArrayList<>(List.of("-proc:none", "-Xlint:all,-serial", "-Werror", "--release", "21"));
             options.addAll(extra);
-            return run(files, classes, options);
+            return run(files, classes, options, encoding);
         } catch (IOException failure) {
             throw new UncheckedIOException(failure);
         }
     }
 
     private static void compile(List<Path> files, Path classes) throws IOException {
-        Compilation compilation = run(files, classes, List.of("-proc:none", "--release", "21"));
+        Compilation compilation =
+                run(files, classes, List.of("-proc:none", "--release", "21"), StandardCharsets.UTF_8);
         if (!compilation.success()) {
             throw new IllegalStateException("fixture compilation failed: " + compilation.diagnostics());
         }
     }
 
-    private static Compilation run(List<Path> files, Path classes, List<String> options) throws IOException {
+    private static Compilation run(List<Path> files, Path classes, List<String> options, Charset encoding)
+            throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         try (StandardJavaFileManager fileManager =
-                compiler.getStandardFileManager(diagnostics, Locale.ROOT, StandardCharsets.UTF_8)) {
+                compiler.getStandardFileManager(diagnostics, Locale.ROOT, encoding)) {
             fileManager.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath());
             fileManager.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classes));
             JavaCompiler.CompilationTask task = compiler.getTask(null, fileManager, diagnostics, options, null,

@@ -9,19 +9,24 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
  * Functional tests driving the StateGraph Gradle plugin through TestKit over the shared adapter domain: one
@@ -40,6 +45,9 @@ class StateGraphPluginFunctionalTest {
 
     /** Where a compilation publishes its index, relative to whatever class output it was given. */
     private static final String EXPORTS_ENTRY = "META-INF/graphmaquina/exports.json";
+
+    /** The package the generator emits the carrier of every compilation into, as an archive path. */
+    private static final String CARRIER_PACKAGE = "io/github/graphmaquina/generated/bootstrap/";
 
     @TempDir
     Path tempDirectory;
@@ -946,6 +954,346 @@ class StateGraphPluginFunctionalTest {
         assertEquals(TaskOutcome.SUCCESS, remedied.task(":compileJava").getOutcome());
         assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
         assertTrue(fixture.inventoryIsSealed("main"));
+    }
+
+    /**
+     * javac reads the sources of a project in the encoding its compilation declares and at the release it
+     * compiles for, so the generator is told both: an accented identifier of a project kept in ISO-8859-1 reaches
+     * the generated vocabulary intact, and javac reads that vocabulary back in the same encoding.
+     */
+    @Test
+    void passesTheEncodingAndTheReleaseOfTheCompilationToTheGenerator() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.replaceInBuildScript("options.encoding = \"UTF-8\"", "options.encoding = \"ISO-8859-1\"");
+        fixture.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        JsonObject request = fixture.request("main");
+        assertEquals(21, request.get("release").getAsInt(), request::toString);
+        assertEquals("ISO-8859-1", request.get("encoding").getAsString(), request::toString);
+        assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), fixture.localExports()::toString);
+        assertTrue(fixture.jarContains("fx/ActionsRefs$ApproveRésumé.class"));
+    }
+
+    /**
+     * A compilation that names no release compiles against the whole API of its toolchain's JDK, so the request
+     * carries the language version of that toolchain; one that names no encoding gives the request none, and the
+     * generator then reads UTF-8.
+     */
+    @Test
+    void passesTheReleaseOfTheToolchainWhenTheCompilationNamesNone() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.replaceInBuildScript("options.encoding = \"UTF-8\"\n", "");
+        fixture.replaceInBuildScript("options.release = 21\n", "");
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        JsonObject request = fixture.request("main");
+        assertEquals(21, request.get("release").getAsInt(), request::toString);
+        assertFalse(request.has("encoding"), request::toString);
+    }
+
+    /**
+     * Gradle leaves out of every source directory the files the Ant-style default excludes name, such as the
+     * AppleDouble companion {@code ._Orders.java} a copy from macOS leaves beside a source, or anything inside
+     * the directory of a version control system. The generator leaves them out too, whether the source set hands
+     * it a filtered directory file by file or a whole directory to walk.
+     */
+    @Test
+    void skipsTheFilesABuildExcludesByDefault() throws IOException {
+        byte[] appleDouble = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ', 'O', 'S', ' ', 'X',
+            (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
+        for (String filter : List.of("exclude(\"fx/drafts/**\")", "")) {
+            PluginFixture fixture = PluginFixture.basic(Files.createDirectories(
+                    tempDirectory.resolve(filter.isEmpty() ? "whole" : "filtered")), FIXTURE_REPOSITORY);
+            fixture.writeFile("src/main/java/fx/._Orders.java", appleDouble);
+            fixture.writeFile("src/main/java/fx/CVS/Junk.java", appleDouble);
+            if (!filter.isEmpty()) {
+                fixture.appendToBuildScript("sourceSets.named(\"main\") {\n    java { " + filter + " }\n}\n");
+            }
+
+            BuildResult result = fixture.run("jar");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome(), filter);
+            assertTrue(fixture.jarContains("fx/OrdersGraph.class"), filter);
+        }
+    }
+
+    /**
+     * A source set filtered by a pattern hands the generator its files one by one. A hand-written type that only
+     * shares the file name of a generated source, in a package that merely ends like the generated one's, is no
+     * collision there either: a listed file stands where its package declaration puts it.
+     */
+    @Test
+    void aHandWrittenTypeNamedLikeAGeneratedOneIsNoCollisionInAFilteredSourceSet() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Map<String, String> sources = PluginFixture.domainSources();
+        sources.put("legacy.fx.OrderRefs", """
+                package legacy.fx;
+
+                /** A hand-written type named like the generated fx.OrderRefs, in another package. */
+                public final class OrderRefs {
+
+                    private OrderRefs() {
+                    }
+                }
+                """);
+        fixture.writeSources(sources);
+        fixture.appendToBuildScript("""
+                sourceSets.named("main") {
+                    java { exclude("fx/drafts/**") }
+                }
+                """);
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateStateGraphApi").getOutcome());
+        List<String> requested = requestedSources(fixture.request("main"));
+        assertTrue(requested.contains("legacy/fx/OrderRefs.java"), requested::toString);
+        assertTrue(fixture.jarContains("fx/OrderRefs$Status.class"));
+        assertTrue(fixture.jarContains("legacy/fx/OrderRefs.class"));
+    }
+
+    /**
+     * A source or a pattern set on the compile task itself filters the generated sources too, and no line added
+     * to the source set can undo that, so the refusal also says to remove that setting from the task.
+     */
+    @Test
+    void refusesACompilationTaskThatFiltersOutTheGeneratedSourcesAndSaysToRemoveThatFilter() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    exclude("io/github/graphmaquina/generated/**")
+                }
+                """);
+
+        BuildResult result = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, result.task(":compileJava").getOutcome());
+        assertTrue(result.getOutput().contains("does not compile"), result::getOutput);
+        assertTrue(result.getOutput().contains("remove that setting from task ':compileJava'"), result::getOutput);
+    }
+
+    /**
+     * The request file is a convention as well: a build that sets it on every generation task before a source set
+     * exists has that source set's request written there, and the compilation's lifecycle reads it from there.
+     */
+    @Test
+    void honorsARequestFileABuildSetsBeforeTheSourceSetExists() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        for (Map.Entry<String, String> source : testDomain().entrySet()) {
+            fixture.writeFile("src/extra/java/" + source.getKey().replace('.', '/') + ".java", source.getValue());
+        }
+        fixture.appendToBuildScript("""
+                tasks.withType<GenerateGraphApi>().configureEach {
+                    requestFile = layout.buildDirectory.file("custom/requests/" + name + ".json")
+                }
+                sourceSets.create("extra")
+                dependencies {
+                    "extraImplementation"("io.github.graphmaquina:graphmaquina-core:%1$s")
+                    "extraAnnotationProcessor"("io.github.graphmaquina:graphmaquina-processor:%1$s")
+                }
+                """.formatted(PluginFixture.version()));
+
+        BuildResult result = fixture.run("extraClasses");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileExtraJava").getOutcome());
+        assertTrue(fixture.exists("build/custom/requests/generateExtraStateGraphApi.json"));
+        assertFalse(fixture.exists("build/graphmaquina/extra/request.json"));
+        assertTrue(fixture.exists("build/graphmaquina/extra/owned-outputs.json"));
+        assertFalse(fixture.exists("build/graphmaquina/extra/owned-outputs.pending.json"));
+    }
+
+    /**
+     * A launcher a build gives the generation task runs every step of that compilation: the preparation and the
+     * completion around javac as well as the generation, so the three never run under two different JDKs.
+     */
+    @Test
+    void runsEveryStepUnderTheLauncherTheGenerationTaskWasGiven() throws IOException {
+        assumeFalse(System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows"),
+                "the logging launcher of this test is a POSIX shell script");
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Path log = fixture.projectDirectory().resolve("launcher.log");
+        Path java = Path.of(System.getProperty("java.home"), "bin", "java");
+        fixture.writeFile("logging-java", "#!/bin/sh\necho \"$*\" >> '" + log + "'\nexec '" + java + "' \"$@\"\n");
+        if (!fixture.projectDirectory().resolve("logging-java").toFile().setExecutable(true)) {
+            throw new IllegalStateException("cannot make the logging launcher executable");
+        }
+        fixture.appendToBuildScript("""
+                val toolchainLauncher = javaToolchains.launcherFor(java.toolchain)
+                val loggingJava = layout.projectDirectory.file("logging-java")
+                tasks.named<GenerateGraphApi>("generateStateGraphApi") {
+                    javaLauncher = toolchainLauncher.map { real ->
+                        object : JavaLauncher {
+                            override fun getMetadata(): JavaInstallationMetadata = real.metadata
+                            override fun getExecutablePath(): RegularFile = loggingJava
+                        }
+                    }
+                }
+                """);
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        List<String> launched = Files.readAllLines(log, StandardCharsets.UTF_8);
+        for (String operation : List.of("generate", "prepare-compile", "complete-compile")) {
+            assertTrue(launched.stream().anyMatch((String line) -> line.contains(" " + operation + " --request ")),
+                    operation + " did not run under the launcher of the generation task: " + launched);
+        }
+    }
+
+    /**
+     * A generator classpath a build gives the generation task runs every step of that compilation, as its launcher
+     * does: the preparation and the completion around javac run over the very classpath the generation ran over.
+     */
+    @Test
+    void runsEveryStepOverTheGeneratorClasspathTheGenerationTaskWasGiven() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        try (ZipOutputStream marker = new ZipOutputStream(
+                Files.newOutputStream(fixture.projectDirectory().resolve("marker.jar")))) {
+            marker.putNextEntry(new ZipEntry("marker.txt"));
+            marker.closeEntry();
+        }
+        fixture.appendToBuildScript("""
+                tasks.named<GenerateGraphApi>("generateStateGraphApi") {
+                    generatorClasspath.from(files("marker.jar"))
+                }
+                """);
+
+        BuildResult result = fixture.run("jar", "--info");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        for (String operation : List.of("generate", "prepare-compile", "complete-compile")) {
+            List<String> launches = result.getOutput().lines()
+                    .filter((String line) -> line.contains("CodegenMain " + operation + " --request"))
+                    .toList();
+            assertFalse(launches.isEmpty(), "no launch of " + operation + " was logged");
+            assertTrue(launches.stream().allMatch((String line) -> line.contains("marker.jar")),
+                    operation + " did not run over the generator classpath of the generation task: " + launches);
+        }
+    }
+
+    /**
+     * Whether a generation takes part and where its compilation writes are conventions of the task too, so values
+     * a build sets for them before the source set exists are kept rather than silently replaced.
+     */
+    @Test
+    void keepsTheParticipationAndTheOutputLocationsABuildSetsBeforeTheSourceSetExists() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript("""
+                tasks.withType<GenerateGraphApi>()
+                        .matching { it.name == "generateExtraStateGraphApi" }
+                        .configureEach {
+                            participates = false
+                            compilationOutputLocations = "set by the build"
+                        }
+                sourceSets.create("extra")
+                dependencies {
+                    "extraImplementation"("io.github.graphmaquina:graphmaquina-core:%1$s")
+                    "extraAnnotationProcessor"("io.github.graphmaquina:graphmaquina-processor:%1$s")
+                }
+                tasks.register("printExtraGeneration") {
+                    val generation = tasks.named<GenerateGraphApi>("generateExtraStateGraphApi")
+                    val participates = generation.flatMap { it.participates }
+                    val locations = generation.flatMap { it.compilationOutputLocations }
+                    doLast {
+                        println("EXTRA_PARTICIPATES=" + participates.get())
+                        println("EXTRA_LOCATIONS=" + locations.get())
+                    }
+                }
+                """.formatted(PluginFixture.version()));
+
+        Map<String, String> reported = report(fixture.run("printExtraGeneration"));
+
+        assertEquals("false", reported.get("EXTRA_PARTICIPATES"), reported::toString);
+        assertEquals("set by the build", reported.get("EXTRA_LOCATIONS"), reported::toString);
+    }
+
+    /**
+     * The generator classpath is a convention of the generation task too: a classpath a build sets on the
+     * generation task of a source set before that source set exists is the whole classpath, which the plugin's
+     * default does not join afterwards, while a generation task the build leaves alone keeps that default.
+     */
+    @Test
+    void keepsAGeneratorClasspathABuildSetsBeforeTheSourceSetExists() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript("""
+                tasks.withType<GenerateGraphApi>()
+                        .matching { it.name == "generateExtraStateGraphApi" }
+                        .configureEach {
+                            generatorClasspath.setFrom(files("set-by-the-build.jar"))
+                        }
+                sourceSets.create("extra")
+                tasks.register("printGeneratorClasspaths") {
+                    val extra = tasks.named<GenerateGraphApi>("generateExtraStateGraphApi")
+                    val main = tasks.named<GenerateGraphApi>("generateStateGraphApi")
+                    doLast {
+                        println("EXTRA_CLASSPATH=" + extra.get().generatorClasspath.files.map { it.name })
+                        println("MAIN_CLASSPATH=" + main.get().generatorClasspath.files.map { it.name })
+                    }
+                }
+                """);
+
+        Map<String, String> reported = report(fixture.run("printGeneratorClasspaths"));
+
+        assertEquals("[set-by-the-build.jar]", reported.get("EXTRA_CLASSPATH"), reported::toString);
+        assertTrue(reported.get("MAIN_CLASSPATH").contains("graphmaquina-codegen-" + PluginFixture.version() + ".jar"),
+                reported::toString);
+    }
+
+    /**
+     * The compilation carrier is tool-internal: the completion keeps its class out of the jar, and the plugin
+     * keeps its source out of the sources jar and the API documentation of the source set as well, so a
+     * published project never shows it.
+     */
+    @Test
+    void keepsTheCarrierOutOfThePublishedSourcesAndDocumentation() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript("""
+                java {
+                    withSourcesJar()
+                    withJavadocJar()
+                }
+                """);
+
+        BuildResult result = fixture.run("jar", "sourcesJar", "javadocJar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":javadoc").getOutcome());
+        List<String> sources = fixture.archiveEntries("build/libs/fixture-1.0.0-sources.jar");
+        List<String> documentation = fixture.archiveEntries("build/libs/fixture-1.0.0-javadoc.jar");
+        assertTrue(sources.contains("fx/OrdersGraph.java"), sources::toString);
+        assertTrue(documentation.contains("fx/OrdersGraph.html"), documentation::toString);
+        assertFalse(sources.stream().anyMatch((String entry) -> entry.startsWith(CARRIER_PACKAGE)),
+                sources::toString);
+        assertFalse(documentation.stream().anyMatch((String entry) -> entry.startsWith(CARRIER_PACKAGE)),
+                documentation::toString);
+        assertFalse(fixture.jarContainsGraphCompilationCarrier());
+    }
+
+    /** The domain with its action spelled with an accent, as a project kept in ISO-8859-1 may spell it. */
+    private static Map<String, String> accentedDomain() {
+        Map<String, String> sources = PluginFixture.domainSources();
+        sources.put("fx.Actions", """
+                package fx;
+
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+
+                /** The action host of the graph, whose action approves a résumé. */
+                public final class Actions {
+
+                    @GraphAction
+                    public ActionOutcome approveRésumé(TransitionContext<Order, Status, Transition> context) {
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
+        sources.put("fx.Orders", PluginFixture.orders("Orders", "ApproveRésumé", "approveRésumé"));
+        return sources;
     }
 
     /**

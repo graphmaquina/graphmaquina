@@ -15,6 +15,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -248,9 +249,21 @@ public final class PluginFixture {
      * @throws IOException if the file cannot be written
      */
     public void writeFile(String relativePath, String content) throws IOException {
+        writeFile(relativePath, content.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Writes {@code content} as it is to {@code relativePath} under the project directory, creating its directory,
+     * so a test can leave a file that is not text at all.
+     *
+     * @param relativePath the path of the file, relative to the project directory
+     * @param content the bytes of the file
+     * @throws IOException if the file cannot be written
+     */
+    public void writeFile(String relativePath, byte[] content) throws IOException {
         Path file = directory.resolve(relativePath);
         Files.createDirectories(file.getParent());
-        Files.writeString(file, content, StandardCharsets.UTF_8);
+        Files.write(file, content);
     }
 
     /**
@@ -534,11 +547,22 @@ public final class PluginFixture {
      * @throws IOException if the sources cannot be written
      */
     public void writeSources(Map<String, String> sources) throws IOException {
+        writeSources(sources, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The same, with every source written in {@code encoding}, as a project that declares that encoding keeps them.
+     *
+     * @param sources the compilation units, keyed by qualified name
+     * @param encoding the encoding the files are written in
+     * @throws IOException if the sources cannot be written
+     */
+    public void writeSources(Map<String, String> sources, Charset encoding) throws IOException {
         Path root = directory.resolve("src/main/java");
         deleteRecursively(root);
         Files.createDirectories(root);
         for (Map.Entry<String, String> source : sources.entrySet()) {
-            write(root, source.getKey(), source.getValue());
+            write(root, source.getKey(), source.getValue(), encoding);
         }
     }
 
@@ -550,13 +574,15 @@ public final class PluginFixture {
      * @throws IOException if the source cannot be written
      */
     public void writeTestSource(String qualifiedName, String content) throws IOException {
-        write(Files.createDirectories(directory.resolve("src/test/java")), qualifiedName, content);
+        write(Files.createDirectories(directory.resolve("src/test/java")), qualifiedName, content,
+                StandardCharsets.UTF_8);
     }
 
-    private static void write(Path root, String qualifiedName, String content) throws IOException {
+    private static void write(Path root, String qualifiedName, String content, Charset encoding)
+            throws IOException {
         Path file = root.resolve(qualifiedName.replace('.', '/') + ".java");
         Files.createDirectories(file.getParent());
-        Files.writeString(file, content, StandardCharsets.UTF_8);
+        Files.writeString(file, content, encoding);
     }
 
     /**
@@ -825,8 +851,19 @@ public final class PluginFixture {
 
     /** The names of every entry of the project's jar. */
     private List<String> jarEntries() {
+        return archiveEntries(directory.relativize(jar()).toString());
+    }
+
+    /**
+     * The names of every entry of the archive at {@code relativePath}, such as the sources jar or the javadoc jar
+     * a build assembles beside the binary one.
+     *
+     * @param relativePath the path of the archive, relative to the project directory
+     * @return the entry names, in the order the archive lists them
+     */
+    public List<String> archiveEntries(String relativePath) {
         List<String> entries = new ArrayList<>();
-        try (ZipFile jar = new ZipFile(jar().toFile(), StandardCharsets.UTF_8)) {
+        try (ZipFile jar = new ZipFile(directory.resolve(relativePath).toFile(), StandardCharsets.UTF_8)) {
             for (ZipEntry entry : jar.stream().toList()) {
                 entries.add(entry.getName());
             }

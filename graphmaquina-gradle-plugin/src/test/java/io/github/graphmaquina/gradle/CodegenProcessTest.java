@@ -42,6 +42,24 @@ class CodegenProcessTest {
                 List.copyOf(decoded.keySet()));
     }
 
+    /**
+     * The release and the encoding of the compilation follow the eight members when the build knows them: the
+     * release as a number and the encoding as the name of its charset.
+     */
+    @Test
+    void encodesTheReleaseAndTheEncodingOfTheCompilationWhenTheyAreKnown() {
+        CodegenProcess.Request known = new CodegenProcess.Request(AWKWARD, List.of(AWKWARD), List.of(), AWKWARD,
+                AWKWARD, AWKWARD, AWKWARD, "fx:main", 25, "ISO-8859-1");
+
+        JsonObject decoded = JsonParser.parseString(CodegenProcess.encode(known)).getAsJsonObject();
+
+        assertEquals(List.of("projectDirectory", "sources", "classpath", "sourcesOutput",
+                "processorSourcesOutput", "classesOutput", "workDirectory", "compilationId", "release", "encoding"),
+                List.copyOf(decoded.keySet()));
+        assertEquals(25, decoded.get("release").getAsInt());
+        assertEquals("ISO-8859-1", decoded.get("encoding").getAsString());
+    }
+
     @Test
     void roundTripsSpacesQuotesBackslashesAndNonAsciiText() {
         JsonObject decoded = JsonParser.parseString(CodegenProcess.encode(request())).getAsJsonObject();

@@ -1027,6 +1027,43 @@ class ExportDeclarationsTest {
     }
 
     /**
+     * Gradle and maven-compiler-plugin leave out of every source directory the files the Ant-style default
+     * excludes name: the AppleDouble companion {@code ._Name.java} a macOS copy leaves beside a source, an
+     * editor's lock file, and everything inside the directories of a version control system. javac never sees
+     * them, so the generator reads none of them either, whatever they hold.
+     */
+    @Test
+    void skipsTheFilesABuildExcludesByDefault() throws IOException {
+        Path sources = directory.resolve("src");
+        SourceFiles.write(sources, Map.of(
+                "fx.Order", ORDER,
+                "fx.PaymentActions", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphAction;
+                    public class PaymentActions {
+                        @GraphAction
+                        public void authorize(Order order) {}
+                    }
+                    """));
+        byte[] junk = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ', 'O', 'S', ' ', 'X',
+            (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
+        for (String excluded : List.of("fx/._PaymentActions.java", "fx/.#PaymentActions.java", ".git/fx/Junk.java",
+                "fx/.svn/Junk.java", "fx/.hg/Junk.java", "fx/.bzr/Junk.java", "fx/CVS/Junk.java",
+                "fx/SCCS/Junk.java")) {
+            Path file = sources.resolve(excluded);
+            Files.createDirectories(file.getParent());
+            Files.write(file, junk);
+        }
+
+        GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(sources),
+                SourceFiles.classpath(), directory.resolve("out/sources"), directory.resolve("out/processor"),
+                directory.resolve("out/classes"), directory.resolve("out/work"), "fx:demo:main"));
+
+        assertEquals(List.of("fx.PaymentActionsRefs.Authorize"),
+                model.symbols().stream().map(SymbolDescriptor::qualifiedName).toList());
+    }
+
+    /**
      * Without graphmaquina-core on the generator classpath no marker can be recognized; that is reported at the
      * first marker spelled like one, instead of generating nothing and leaving javac to fail later.
      */

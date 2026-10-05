@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Drives the packaged Maven plugin the way a consumer does: a real {@code mvn} process resolves it from the file
@@ -1063,6 +1064,250 @@ class MavenPluginIntegrationTest {
         assertFalse(Files.readString(runtime).contains(".afterCommit("));
     }
 
+    /**
+     * javac reads the sources of a project in the encoding the compiler is given, which defaults to
+     * {@code project.build.sourceEncoding}, and at the release it compiles for, so the generator is told both: an
+     * accented identifier of a project kept in ISO-8859-1 reaches the generated vocabulary intact.
+     */
+    @Test
+    void passesTheSourceEncodingAndTheReleaseOfTheProjectToTheGenerator() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>",
+                "<project.build.sourceEncoding>ISO-8859-1</project.build.sourceEncoding>");
+        fixture.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertEquals("21", fixture.requestValue("main", "release"));
+        assertEquals("ISO-8859-1", fixture.requestValue("main", "encoding"));
+        assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), result.output());
+    }
+
+    /**
+     * The encoding the compiler is configured with wins over the one of the project, and a compiler that names no
+     * release compiles for its target, so the generator is told those.
+     *
+     * <p>The javac of JDK 25 warns at {@code -source 21} without {@code --release} that the location of system
+     * modules is not set, since 21 is below its own release, and {@code -Werror} would turn that into a failure.
+     * Both compilations of this fixture therefore turn off javac's {@code options} lint, which that warning belongs
+     * to, so the test passes on JDK 25 as well.</p>
+     */
+    @Test
+    void passesTheEncodingAndTheTargetOfTheCompilerToTheGenerator() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "<source>21</source>\n"
+                + "          <target>21</target>\n"
+                + "          <encoding>ISO-8859-1</encoding>");
+        for (String sourceSet : List.of("main", "test")) {
+            String manifest = "graphmaquina/" + sourceSet + "/annotation-manifest.json</arg>\n";
+            fixture.editPom(manifest + "                <arg>-Xlint:all,-serial</arg>",
+                    manifest + "                <arg>-Xlint:all,-serial,-options</arg>");
+        }
+        fixture.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertEquals("21", fixture.requestValue("main", "release"));
+        assertEquals("ISO-8859-1", fixture.requestValue("main", "encoding"));
+        assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), result.output());
+    }
+
+    /**
+     * The test compilation of maven-compiler-plugin compiles at {@code <testRelease>} when one is set, else at
+     * {@code <release>}, and takes {@code <testSource>} and {@code <testTarget>} over {@code <source>} and
+     * {@code <target>} the same way. A test release or test source below Java 21 is therefore refused by the
+     * {@code generate-test} goal, the one goal of the test compilation that checks the compiler, before the test
+     * request is written, even when the main compilation is at Java 21, and the refusal names the setting that wins
+     * and one that fixes it. The two generation goals run on their own, so no javac runs, whatever JDK runs these
+     * tests.
+     */
+    @Test
+    void theGenerateTestGoalRefusesATestReleaseOrATestSourceBelowJava21() throws IOException {
+        String goal = "io.github.graphmaquina:graphmaquina-maven-plugin:" + VERSION + ':';
+        MavenFixture released = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("released")),
+                fixtureRepository);
+        released.editPom("<release>21</release>", "<release>21</release>\n          <testRelease>17</testRelease>");
+        MavenFixture targeted = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("targeted")),
+                fixtureRepository);
+        targeted.editPom("<release>21</release>", "<source>21</source>\n"
+                + "          <target>21</target>\n"
+                + "          <testSource>17</testSource>\n"
+                + "          <testTarget>17</testTarget>");
+
+        MavenResult release = released.run(goal + "generate", goal + "generate-test");
+        MavenResult source = targeted.run(goal + "generate", goal + "generate-test");
+
+        assertNotEquals(0, release.exitCode(), release.output());
+        assertTrue(release.output().contains("the default-testCompile execution of maven-compiler-plugin compiles"
+                + " with <testRelease>17</testRelease>"), release.output());
+        assertTrue(release.output().contains("Configure <testRelease>21</testRelease> for that execution."),
+                release.output());
+        assertNotEquals(0, source.exitCode(), source.output());
+        assertTrue(source.output().contains("the default-testCompile execution of maven-compiler-plugin compiles"
+                + " with <testSource>17</testSource>"), source.output());
+        assertTrue(source.output().contains("Configure <release>21</release> for that execution."),
+                source.output());
+        for (MavenFixture fixture : List.of(released, targeted)) {
+            assertEquals("21", fixture.requestValue("main", "release"));
+            assertFalse(fixture.exists("target/graphmaquina/test/request.json"));
+        }
+    }
+
+    /**
+     * The {@code generate-test} goal checks the release of the test compilation alone: a {@code <testRelease>} of
+     * Java 21 is what the test compilation compiles at, whatever older release the main compilation is configured
+     * with, so the {@code generate-test} goal accepts it, and the test request carries it.
+     */
+    @Test
+    void theGenerateTestGoalAcceptsATestReleaseOfJava21OverAnOlderRelease() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "<release>17</release>\n          <testRelease>21</testRelease>");
+        for (Map.Entry<String, String> source : testDomain().entrySet()) {
+            fixture.writeTestSource(source.getKey(), source.getValue());
+        }
+
+        MavenResult result = fixture.run("io.github.graphmaquina:graphmaquina-maven-plugin:" + VERSION
+                + ":generate-test");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertEquals("21", fixture.requestValue("test", "release"));
+        assertTrue(fixture.exists("target/generated-test-sources/graphmaquina/fxt/TicketsGraph.java"));
+    }
+
+    /**
+     * The request of the test compilation carries the release that compilation uses, {@code <testRelease>} over
+     * {@code <release>} and {@code <testTarget>} over {@code <target>}, while the main request keeps the main
+     * release. Both have to be Java 21 or later, so telling them apart needs a later release, and a JDK that
+     * compiles at it. The two generation goals run on their own, so no javac runs: on a later JDK, javac compiling
+     * the main sources of the second fixture at {@code -source 21} warns that the location of system modules is not
+     * set, and {@code -Werror} turns that into a failure.
+     */
+    @Test
+    void theTestRequestCarriesTheReleaseOfTheTestCompilation() throws IOException {
+        assumeTrue(Runtime.version().feature() >= 22, "a JDK 21 javac compiles at no release above 21");
+        String goal = "io.github.graphmaquina:graphmaquina-maven-plugin:" + VERSION + ':';
+        MavenFixture released = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("released")),
+                fixtureRepository);
+        released.editPom("<release>21</release>", "<release>21</release>\n          <testRelease>22</testRelease>");
+        MavenFixture targeted = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("targeted")),
+                fixtureRepository);
+        targeted.editPom("<release>21</release>", "<source>21</source>\n"
+                + "          <target>21</target>\n"
+                + "          <testSource>22</testSource>\n"
+                + "          <testTarget>22</testTarget>");
+
+        for (MavenFixture fixture : List.of(released, targeted)) {
+            MavenResult result = fixture.run(goal + "generate", goal + "generate-test");
+
+            assertEquals(0, result.exitCode(), result.output());
+            assertEquals("21", fixture.requestValue("main", "release"));
+            assertEquals("22", fixture.requestValue("test", "release"), result.output());
+        }
+    }
+
+    /**
+     * maven-compiler-plugin leaves out of every source root the files its scanner's default excludes name, such
+     * as the AppleDouble companion {@code ._Orders.java} a copy from macOS leaves beside a source, or anything
+     * inside the directory of a version control system, such as {@code CVS}. The generator leaves out these two,
+     * which Ant's default excludes name as well, whether this plugin hands it the files that includes and excludes
+     * select or a whole root to walk. Not every file the compiler leaves out is left out of a whole root: a root the
+     * execution does not narrow is handed to the generator whole, and the generator walks it with Ant's default
+     * excludes, not with plexus-utils' longer list.
+     */
+    @Test
+    void theGeneratorSkipsTheFilesTheCompilerExcludesByDefault() throws IOException {
+        byte[] appleDouble = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ', 'O', 'S', ' ', 'X',
+            (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
+        for (String excludes : List.of("<excludes><exclude>fx/drafts/**</exclude></excludes>", "")) {
+            MavenFixture fixture = MavenFixture.basic(Files.createDirectories(
+                    tempDirectory.resolve(excludes.isEmpty() ? "whole" : "filtered")), fixtureRepository);
+            if (!excludes.isEmpty()) {
+                fixture.editPom("<release>21</release>", "<release>21</release>\n          " + excludes);
+            }
+            fixture.writeFile("src/main/java/fx/._Orders.java", appleDouble);
+            fixture.writeFile("src/main/java/fx/CVS/Junk.java", appleDouble);
+
+            MavenResult result = fixture.run("package");
+
+            assertEquals(0, result.exitCode(), result.output());
+            assertTrue(fixture.jarContains("fx/OrdersGraph.class"), excludes);
+        }
+    }
+
+    /**
+     * Includes or excludes make this plugin hand the generator the files they select, one by one. A hand-written
+     * type that only shares the file name of a generated source, in a package that merely ends like the
+     * generated one's, is no collision there either: a listed file stands where its package declaration puts it.
+     */
+    @Test
+    void aHandWrittenTypeNamedLikeAGeneratedOneIsNoCollisionWhenTheCompilerFiltersItsSources()
+            throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <excludes><exclude>fx/drafts/**</exclude></excludes>");
+        Map<String, String> sources = MavenFixture.domainSources();
+        sources.put("legacy.fx.OrderRefs", """
+                package legacy.fx;
+
+                /** A hand-written type named like the generated fx.OrderRefs, in another package. */
+                public final class OrderRefs {
+
+                    private OrderRefs() {
+                    }
+                }
+                """);
+        fixture.writeSources(sources);
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.jarContains("fx/OrderRefs$Status.class"));
+        assertTrue(fixture.jarContains("legacy/fx/OrderRefs.class"));
+    }
+
+    /**
+     * {@code mvn} reads a {@code .mavenrc} from the home directory, which may export another {@code JAVA_HOME};
+     * every fixture build runs on the JDK of these tests whatever such a file says, since the JDK they reason
+     * about is that one.
+     */
+    @Test
+    void aMavenrcCannotReplaceTheJdkOfAFixtureBuild() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        Path home = Files.createDirectories(tempDirectory.resolve("home"));
+        Files.writeString(home.resolve(".mavenrc"), "echo MAVENRC-WAS-READ\nJAVA_HOME='"
+                + tempDirectory.resolve("no-such-jdk") + "'\n", StandardCharsets.UTF_8);
+
+        MavenResult result = fixture.run(Map.of("HOME", home.toString()), "compile");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertFalse(result.output().contains("MAVENRC-WAS-READ"), result.output());
+    }
+
+    /** The domain with its action spelled with an accent, as a project kept in ISO-8859-1 may spell it. */
+    private static Map<String, String> accentedDomain() {
+        Map<String, String> sources = MavenFixture.domainSources();
+        sources.put("fx.Actions", """
+                package fx;
+
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+
+                /** The action host of the graph, whose action approves a résumé. */
+                public final class Actions {
+
+                    @GraphAction
+                    public ActionOutcome approveRésumé(TransitionContext<Order, Status, Transition> context) {
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
+        sources.put("fx.Orders", MavenFixture.orders("Orders", "ApproveRésumé", "approveRésumé"));
+        return sources;
+    }
+
     /** Asserts that a build refused before the preparation left the previous cycle and the jar untouched. */
     private static void assertNothingWasRetiredOrPublished(MavenFixture fixture) {
         assertFalse(fixture.exists("target/graphmaquina/main/owned-outputs.pending.json"));
@@ -1138,7 +1383,6 @@ class MavenPluginIntegrationTest {
                 + "</toolchains>\n", StandardCharsets.UTF_8);
         return file;
     }
-
 
     /** Every hand-written source of {@code fixture}, keyed by its path relative to the source root. */
     private static Map<String, String> handWrittenSources(MavenFixture fixture) throws IOException {

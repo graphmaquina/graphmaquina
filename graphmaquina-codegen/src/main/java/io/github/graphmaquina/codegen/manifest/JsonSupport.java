@@ -22,6 +22,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
+import java.util.OptionalInt;
 
 /**
  * Strict JSON tree plumbing shared by {@link ManifestCodec} and {@link GenerationModelJson}: reading a document
@@ -229,6 +231,22 @@ final class JsonSupport {
             values.add(element.getAsString());
         }
         return values;
+    }
+
+    /** The member as {@link #requireInt} reads it, or empty when the member is absent or {@code null}. */
+    static OptionalInt optionalInt(JsonObject object, String name, Path file) {
+        JsonElement element = object.get(name);
+        return element == null || element.isJsonNull()
+                ? OptionalInt.empty()
+                : OptionalInt.of(requireInt(object, name, file));
+    }
+
+    /** The member as {@link #requireString} reads it, or empty when the member is absent or {@code null}. */
+    static Optional<String> optionalString(JsonObject object, String name, Path file) {
+        JsonElement element = object.get(name);
+        return element == null || element.isJsonNull()
+                ? Optional.empty()
+                : Optional.of(requireString(object, name, file));
     }
 
     static JsonObject optionalObject(JsonObject object, String name, Path file) {

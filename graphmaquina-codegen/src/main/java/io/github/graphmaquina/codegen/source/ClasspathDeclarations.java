@@ -3,10 +3,11 @@ package io.github.graphmaquina.codegen.source;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
 import com.sun.source.util.Trees;
+import io.github.graphmaquina.codegen.GenerationRequest;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -63,18 +64,31 @@ final class ClasspathDeclarations implements AutoCloseable {
         this.sourcePositions = sourcePositions;
     }
 
-    /** Opens a task over {@code classpath} whose element model stays usable until {@link #close()}. */
+    /**
+     * Opens a task over {@code classpath} at release {@value GenerationRequest#DEFAULT_RELEASE}, whose element
+     * model stays usable until {@link #close()}.
+     */
     static ClasspathDeclarations open(List<Path> classpath) {
+        return open(classpath, GenerationRequest.DEFAULT_RELEASE, GenerationRequest.DEFAULT_ENCODING);
+    }
+
+    /**
+     * Opens a task over {@code classpath} whose element model stays usable until {@link #close()}. It resolves the
+     * JDK types at {@code release}, as the compilation that follows resolves them, so a type the JDK added after
+     * an older release is a JDK type here exactly when it is one for javac; {@code encoding} is the one the
+     * original sources are read in, although this task reads none.
+     */
+    static ClasspathDeclarations open(List<Path> classpath, int release, Charset encoding) {
         Objects.requireNonNull(classpath, "classpath");
+        Objects.requireNonNull(encoding, "encoding");
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        StandardJavaFileManager fileManager =
-                compiler.getStandardFileManager(diagnostics, Locale.ROOT, StandardCharsets.UTF_8);
+        StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, Locale.ROOT, encoding);
         try {
             fileManager.setLocationFromPaths(StandardLocation.SOURCE_PATH, List.of());
             fileManager.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath);
             JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnostics,
-                    List.of("-proc:none", "--release", "21"), null, List.of(probe()));
+                    List.of("-proc:none", "--release", Integer.toString(release)), null, List.of(probe()));
             try {
                 task.analyze();
             } finally {

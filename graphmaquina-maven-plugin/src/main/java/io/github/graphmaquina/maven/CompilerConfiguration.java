@@ -138,18 +138,32 @@ final class CompilerConfiguration {
     /**
      * Refuses a compilation that would not run at Java 21 or later.
      *
-     * <p>An absent {@code release} is refused as well: {@code source} and {@code target} of
+     * <p>The settings are the ones this compilation reads, as maven-compiler-plugin 3.15.0 reads them: the test
+     * compilation takes {@code <testRelease>}, {@code <testSource>} and {@code <testTarget>}, or their
+     * {@code maven.compiler.test*} properties, over {@code <release>}, {@code <source>} and {@code <target>} when
+     * they are set. A release wins over a source and a target, so they are checked only when no release is set.
+     * Advice to configure {@code <release>} is given only where it fixes the compilation: a test release that is
+     * set wins over it, so the refusal of one asks for {@code <testRelease>} instead.</p>
+     *
+     * <p>An absent release is refused as well: {@code source} and {@code target} of
      * {@code maven-compiler-plugin} default to {@code 1.8}, so a project that configures no release at all
      * compiles the generated vocabulary at a version it does not parse.</p>
      */
     private void requireSupportedRelease() throws MojoExecutionException {
-        Optional<Setting> release = setting("release", "maven.compiler.release");
-        if (release.isPresent()) {
-            requireSupported(release.get());
+        Optional<Setting> testRelease = testSetting("testRelease", "maven.compiler.testRelease");
+        if (testRelease.isPresent()) {
+            requireSupported(testRelease.get(), "testRelease");
             return;
         }
-        Optional<Setting> source = setting("source", "maven.compiler.source");
-        Optional<Setting> target = setting("target", "maven.compiler.target");
+        Optional<Setting> release = setting("release", "maven.compiler.release");
+        if (release.isPresent()) {
+            requireSupported(release.get(), "release");
+            return;
+        }
+        Optional<Setting> source = testSetting("testSource", "maven.compiler.testSource")
+            .or(() -> setting("source", "maven.compiler.source"));
+        Optional<Setting> target = testSetting("testTarget", "maven.compiler.testTarget")
+            .or(() -> setting("target", "maven.compiler.target"));
         if (source.isEmpty() && target.isEmpty()) {
             throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin"
                 + " configures no release, so it compiles at the default source and target of that plugin,"
@@ -158,10 +172,10 @@ final class CompilerConfiguration {
                 + "</release> for that execution.");
         }
         if (source.isPresent()) {
-            requireSupported(source.get());
+            requireSupported(source.get(), "release");
         }
         if (target.isPresent()) {
-            requireSupported(target.get());
+            requireSupported(target.get(), "release");
         }
         if (source.isEmpty() || target.isEmpty()) {
             throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin"
@@ -172,15 +186,60 @@ final class CompilerConfiguration {
         }
     }
 
-    /** Refuses one release-shaped setting below what the generated vocabulary compiles with. */
-    private void requireSupported(Setting setting) throws MojoExecutionException {
+    /**
+     * Refuses one release-shaped setting below what the generated vocabulary compiles with.
+     *
+     * @param setting the setting this compilation compiles with
+     * @param fix the parameter whose value of Java 21 makes this compilation compile at Java 21
+     */
+    private void requireSupported(Setting setting, String fix) throws MojoExecutionException {
         int feature = featureVersion(setting.value());
         if (feature > 0 && feature < MINIMUM_RELEASE) {
             throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin"
                 + " compiles with " + setting + ", but the vocabulary the StateGraph generator emits needs"
-                + " Java " + MINIMUM_RELEASE + " or later. Configure <release>" + MINIMUM_RELEASE
-                + "</release> for that execution.");
+                + " Java " + MINIMUM_RELEASE + " or later. Configure <" + fix + '>' + MINIMUM_RELEASE
+                + "</" + fix + "> for that execution.");
         }
+    }
+
+    /**
+     * The release javac compiles this compilation at, which the generator parses the original sources at and
+     * resolves the JDK types they name against, read as maven-compiler-plugin 3.15.0 reads it: {@code <release>}
+     * or {@code maven.compiler.release}, else {@code <target>} or {@code maven.compiler.target}, as a feature
+     * release ({@code 1.8} is 8). The test compilation takes {@code <testRelease>} or
+     * {@code maven.compiler.testRelease} over the release, and {@code <testTarget>} or
+     * {@code maven.compiler.testTarget} over the target, when they are set.
+     *
+     * @return the release, empty when neither names one this plugin understands
+     */
+    Optional<Integer> release() {
+        Optional<Setting> release = testSetting("testRelease", "maven.compiler.testRelease")
+            .or(() -> setting("release", "maven.compiler.release"));
+        if (release.isEmpty()) {
+            release = testSetting("testTarget", "maven.compiler.testTarget")
+                .or(() -> setting("target", "maven.compiler.target"));
+        }
+        return release.map((Setting declared) -> featureVersion(declared.value()))
+            .filter((Integer feature) -> feature > 0);
+    }
+
+    /** One setting only the test compilation reads, as {@link #setting} reads it; empty for the main one. */
+    private Optional<Setting> testSetting(String parameter, String property) {
+        return execution == CompilerExecution.TEST ? setting(parameter, property) : Optional.empty();
+    }
+
+    /**
+     * The encoding javac reads the sources of this compilation in, which the generator reads the original sources
+     * in and writes the generated ones in: {@code <encoding>} or the {@code encoding} property, else
+     * {@code project.build.sourceEncoding}, the default maven-compiler-plugin gives that parameter.
+     *
+     * @return the name of the encoding, empty when the build names none. javac then reads the default charset of
+     *     the JVM it runs in, which is UTF-8 from Java 18 on unless {@code file.encoding} names another, while the
+     *     generator reads UTF-8.
+     */
+    Optional<String> encoding() {
+        return setting("encoding", "encoding").or(() -> property("project.build.sourceEncoding"))
+            .map(Setting::value);
     }
 
     /** The feature release {@code value} names, {@code 0} when it is not a release this plugin understands. */
@@ -458,7 +517,12 @@ final class CompilerConfiguration {
             + execution.includesParameter() + "> of that execution.");
     }
 
-    /** The digest that names the carrier of {@code compilationId}, derived the way the generator derives it. */
+    /**
+     * The digest that names the carrier of {@code compilationId}: the first sixteen hexadecimal digits of the
+     * SHA-256 of its UTF-8 bytes. It copies the rule of the generator's
+     * {@code io.github.graphmaquina.codegen.emit.CompilationMarkerEmitter}, whose classes this plugin does not
+     * load, so the two must change together.
+     */
     private static String carrierDigest(String compilationId) {
         try {
             byte[] hash = MessageDigest.getInstance("SHA-256")
@@ -506,6 +570,14 @@ final class CompilerConfiguration {
             return Optional.of(new Setting('<' + parameter + '>' + configured.get() + "</" + parameter + '>',
                 configured.get()));
         }
+        return property(property);
+    }
+
+    /**
+     * The value of one property, and where the build set it, from the command line, from the properties of the
+     * JVM and from the properties of the project, in that order.
+     */
+    private Optional<Setting> property(String property) {
         for (Properties candidates : properties) {
             String value = candidates.getProperty(property);
             if (value != null && !value.isBlank()) {

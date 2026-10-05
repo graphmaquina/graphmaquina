@@ -22,7 +22,10 @@ import org.gradle.api.provider.Provider;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.TaskProvider;
+import org.gradle.api.tasks.bundling.Jar;
 import org.gradle.api.tasks.compile.JavaCompile;
+import org.gradle.api.tasks.javadoc.Javadoc;
+import org.gradle.jvm.toolchain.JavaCompiler;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 
@@ -59,13 +62,25 @@ import java.util.concurrent.Callable;
  *
  * <p>The generation parses what javac compiles of the source set: the files of every source directory but the
  * generated ones, as the source set's include and exclude patterns filter them, and it runs after every task
- * those directories are built by. What it generates joins the source set's java sources as a source directory
- * set of its own, which those patterns do not filter, so javac compiles all of it. The locations the generation
- * task holds are the ones the compilation follows — the source root it writes, and the work directory the
- * manifest, the request and the sealed inventory live in — and a value a build sets for them wins whenever the
- * build sets it. The class output, the processor's source output and the annotation manifest are derived
- * instead: the first two stay the compiler's own, the manifest follows the work directory, and a build that
- * sets any of them on the generation task is refused.</p>
+ * those directories are built by. It parses them in the compilation's {@code options.encoding}, at the release
+ * javac resolves their JDK types at: {@code options.release}, else the language version of the compilation's
+ * toolchain, whose whole API javac compiles against when Gradle passes it {@code -source} and {@code -target}
+ * instead.
+ * What it generates joins the source set's java sources as a source directory set of its own, which those
+ * patterns do not filter, so javac compiles all of it. The locations the generation task holds are the ones the
+ * compilation follows — the source root it writes, and the work directory the manifest, the request and the
+ * sealed inventory live in — and so are the launcher and the generator classpath it holds, which run the
+ * preparation and the completion too.
+ * Each of them is a convention of the task, so a value a build sets for any of them wins whenever the build sets
+ * it, and so does one it sets for whether the task takes part or for the compilation's output locations it names.
+ * Paths a build adds to the generator classpath join the plugin's default only when they are added after the
+ * plugin configured the task, and replace it when they are added before. The class output, the processor's source
+ * output and the annotation manifest are derived instead: the first two stay the compiler's own, the manifest
+ * follows the work directory, and a build that sets any of them on the generation task is refused.</p>
+ *
+ * <p>The compilation carrier the generator emits is tool-internal. The completion removes its class from the
+ * class output, so the jar never carries it, and the plugin leaves its source out of the sources jar and the
+ * API documentation of the source set, when the build has those tasks.</p>
  *
  * <p>Nothing of that is decided while the build is configured. The sources, the classpaths and the toolchain
  * are all providers; the declared dependencies are counted as they are declared and removed rather than
@@ -131,6 +146,9 @@ public final class StateGraphPlugin implements Plugin<Project> {
     /** The request every step of one source set's cycle reads. */
     private static final String REQUEST = "request.json";
 
+    /** The package the generator emits the carrier of every compilation into, as a pattern of its sources. */
+    private static final String CARRIER_SOURCES = "io/github/graphmaquina/generated/bootstrap/**";
+
     @Override
     public void apply(Project project) {
         project.getPlugins().withType(JavaPlugin.class, plugin -> configure(project));
@@ -173,7 +191,7 @@ public final class StateGraphPlugin implements Plugin<Project> {
             task.setGroup("graphmaquina");
             task.setDescription("Generates the StateGraph API sources for the '" + sourceSet.getName()
                     + "' source set.");
-            task.getParticipates().set(participates);
+            task.getParticipates().convention(participates);
             task.onlyIf(declaresProcessor(sourceSet), new Participation());
             // Defaults a build may replace: conventions rather than values, so a value the build sets wins
             // whether it was set before this action ran — a block configuring every generation task ahead of a
@@ -186,6 +204,12 @@ public final class StateGraphPlugin implements Plugin<Project> {
             task.getProjectDirectory().convention(project.getLayout().getProjectDirectory());
             task.getJavaLauncher().convention(launcher);
             task.getCompilationId().convention(project.provider(() -> compilationId(project, sourceSet)));
+            // The generator reads the sources in the compilation's encoding, and at the release javac resolves
+            // their JDK types at. Both are read through a plain provider: one derived from the compile task would
+            // carry that task as its producer, and the generation, which the compilation depends on, would depend
+            // on it in turn.
+            task.getRelease().convention(project.provider(() -> release(compile.get())));
+            task.getEncoding().convention(project.provider(() -> compile.get().getOptions().getEncoding()));
             task.getSources().from(project.provider(() -> originalSources(objects, sourceSet, task)));
             // Those sources are plain locations, so the tasks that write them are declared here instead: every
             // task the source set's directories are built by, except this one.
@@ -193,7 +217,9 @@ public final class StateGraphPlugin implements Plugin<Project> {
                     declarations.settle() ? producers(sourceSet, task) : List.of());
             task.getApplicationClasspath().from(sourceSet.getCompileClasspath()
                     .filter(entry -> !entry.equals(classesOutput.get().getAsFile())));
-            task.getGeneratorClasspath().from(generatorClasspath);
+            // A convention too: a classpath the build sets replaces it, and paths the build adds once this action
+            // has run join it.
+            task.getGeneratorClasspath().convention(generatorClasspath);
             // Locations the task only names: javac's own outputs, which a build moves on the compilation, and the
             // manifest the generator always writes into the work directory, whatever this task says.
             derivedOnly(task, "processorSourcesOutput", task.getProcessorSourcesOutput(), processorSourcesOutput,
@@ -205,7 +231,7 @@ public final class StateGraphPlugin implements Plugin<Project> {
             derivedOnly(task, "annotationManifest", task.getAnnotationManifest(),
                     task.getWorkDirectory().file(ANNOTATION_MANIFEST),
                     "the generator writes it into the workDirectory of this task, which is where a build moves it");
-            task.getCompilationOutputLocations().set(locations(classesOutput, processorSourcesOutput));
+            task.getCompilationOutputLocations().convention(locations(classesOutput, processorSourcesOutput));
         });
 
         // The generated vocabulary is a source root of the source set, not extra source handed to one task:
@@ -242,7 +268,10 @@ public final class StateGraphPlugin implements Plugin<Project> {
                         .map((Directory work) -> work.file(SEALED_INVENTORY)));
         FileCollection generatedSources = whenParticipating(project, participates,
                 generate.flatMap(GenerateGraphApi::getSourcesOutput));
-        FileCollection lifecycleClasspath = whenParticipating(project, participates, generatorClasspath);
+        // The generator classpath the generation task holds, so the three steps of one compilation run the same
+        // generator, just as they share the launcher the task holds.
+        FileCollection lifecycleClasspath = whenParticipating(project, participates,
+                generate.map(GenerateGraphApi::getGeneratorClasspath));
 
         compile.configure(task -> {
             ManifestArguments manifestArguments = objects.newInstance(ManifestArguments.class);
@@ -252,7 +281,8 @@ public final class StateGraphPlugin implements Plugin<Project> {
             CompilationLifecycle.CompleteCompilation complete =
                     objects.newInstance(CompilationLifecycle.CompleteCompilation.class);
             for (CompilationLifecycle.LifecycleAction action : List.of(prepare, complete)) {
-                action.getJavaLauncher().set(launcher);
+                // The launcher the generation task holds, so the three steps of one compilation share one JDK.
+                action.getJavaLauncher().set(generate.flatMap(GenerateGraphApi::getJavaLauncher));
                 action.getGeneratorClasspath().from(lifecycleClasspath);
                 action.getRequestFile().from(request);
             }
@@ -272,6 +302,21 @@ public final class StateGraphPlugin implements Plugin<Project> {
             task.getOutputs().files(sealedInventory).withPropertyName("graphmaquinaOwnedOutputs");
             task.doFirst(prepare);
             task.doLast(complete);
+        });
+
+        // The compilation carrier is tool-internal: the completion removes its class from the class output, so the
+        // jar never carries it, and the sources jar and the API documentation of the source set leave its source
+        // out, whenever the build has those tasks. That package belongs to this plugin, so a source set that takes
+        // no part has nothing there to leave out.
+        project.getTasks().withType(Jar.class).configureEach((Jar jar) -> {
+            if (jar.getName().equals(sourceSet.getSourcesJarTaskName())) {
+                jar.exclude(CARRIER_SOURCES);
+            }
+        });
+        project.getTasks().withType(Javadoc.class).configureEach((Javadoc javadoc) -> {
+            if (javadoc.getName().equals(sourceSet.getJavadocTaskName())) {
+                javadoc.exclude(CARRIER_SOURCES);
+            }
         });
     }
 
@@ -351,6 +396,19 @@ public final class StateGraphPlugin implements Plugin<Project> {
         return classesOutput.flatMap(classes -> processorSourcesOutput.map(processorSources ->
                 classes.getAsFile().getAbsolutePath() + File.pathSeparator
                         + processorSources.getAsFile().getAbsolutePath()));
+    }
+
+    /**
+     * The release {@code compilation} resolves JDK types at: its {@code options.release}, or, when that is not set,
+     * the language version of its toolchain. Gradle then passes javac {@code -source} and {@code -target} from the
+     * source and target compatibility, which default to that version, and no {@code --release}, so javac compiles
+     * against the whole API of the toolchain's JDK.
+     */
+    private static Integer release(JavaCompile compilation) {
+        return compilation.getOptions().getRelease()
+                .orElse(compilation.getJavaCompiler().map((JavaCompiler compiler) ->
+                        compiler.getMetadata().getLanguageVersion().asInt()))
+                .getOrNull();
     }
 
     /**

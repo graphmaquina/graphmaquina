@@ -144,8 +144,9 @@ public final class CodegenProcess {
     }
 
     /**
-     * Encodes {@code request} as the flat JSON object documented by the generator's manifest codec: exactly the
-     * eight members of the request, in the order the codec lists them.
+     * Encodes {@code request} as the flat JSON object documented by the generator's manifest codec: the eight
+     * members every request carries, then the release and the encoding of the compilation when they are known, in
+     * the order the codec lists them.
      *
      * @param request the values of the request
      * @return the JSON document, ending with a newline
@@ -161,8 +162,16 @@ public final class CodegenProcess {
         member(json, "processorSourcesOutput", request.processorSourcesOutput()).append(",\n");
         member(json, "classesOutput", request.classesOutput()).append(",\n");
         member(json, "workDirectory", request.workDirectory()).append(",\n");
-        member(json, "compilationId", request.compilationId()).append('\n');
-        json.append("}\n");
+        member(json, "compilationId", request.compilationId());
+        if (request.release() != null) {
+            json.append(",\n  ");
+            string(json, "release").append(": ").append(request.release().intValue());
+        }
+        if (request.encoding() != null) {
+            json.append(",\n");
+            member(json, "encoding", request.encoding());
+        }
+        json.append("\n}\n");
         return json.toString();
     }
 
@@ -240,10 +249,14 @@ public final class CodegenProcess {
      * @param classesOutput where javac writes the classes of this compilation
      * @param workDirectory where the manifests and the inventories of this compilation live
      * @param compilationId the identity of the project and source set, as {@code group:name:sourceSet}
+     * @param release the Java release javac compiles the source set at, or {@code null} when it is not known,
+     *         which the generator reads as release 21
+     * @param encoding the name of the charset javac reads the sources in, or {@code null} when the compilation
+     *         names none, which the generator reads as UTF-8
      */
     public record Request(String projectDirectory, List<String> sources, List<String> classpath,
             String sourcesOutput, String processorSourcesOutput, String classesOutput, String workDirectory,
-            String compilationId) {
+            String compilationId, Integer release, String encoding) {
 
         /** Copies the two lists, so a request never reflects a later change of the collection it was built from. */
         public Request {
@@ -255,6 +268,25 @@ public final class CodegenProcess {
             Objects.requireNonNull(classesOutput, "classesOutput");
             Objects.requireNonNull(workDirectory, "workDirectory");
             Objects.requireNonNull(compilationId, "compilationId");
+        }
+
+        /**
+         * A request that names neither the release nor the encoding of the compilation.
+         *
+         * @param projectDirectory the directory the compilation belongs to
+         * @param sources the original sources
+         * @param classpath the compile classpath
+         * @param sourcesOutput where the generated vocabulary is written
+         * @param processorSourcesOutput where the annotation processor writes its own sources
+         * @param classesOutput where javac writes the classes of this compilation
+         * @param workDirectory where the manifests and the inventories of this compilation live
+         * @param compilationId the identity of the project and source set
+         */
+        public Request(String projectDirectory, List<String> sources, List<String> classpath,
+                String sourcesOutput, String processorSourcesOutput, String classesOutput, String workDirectory,
+                String compilationId) {
+            this(projectDirectory, sources, classpath, sourcesOutput, processorSourcesOutput, classesOutput,
+                    workDirectory, compilationId, null, null);
         }
     }
 }

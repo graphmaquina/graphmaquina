@@ -23,14 +23,18 @@ import com.sun.source.tree.WildcardTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.SourceLocation;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -49,7 +53,9 @@ import javax.tools.ToolProvider;
 /**
  * Reads the consumer's original sources with {@link JavacTask#parse()} only. The declarations, modifiers,
  * types and annotations of a unit are read syntactically; bodies are never visited and no expression is
- * evaluated, so a source may name a type this generator has not produced yet.
+ * evaluated, so a source may name a type this generator has not produced yet. javac still parses every body,
+ * so the sources are parsed at the release and in the encoding the compilation that follows reads them with:
+ * a source may use the syntax of that release anywhere, and characters of that encoding.
  */
 public final class SourceDeclarations {
 
@@ -59,26 +65,46 @@ public final class SourceDeclarations {
     }
 
     /**
-     * Parses {@code files} and anchors each unit at its path relative to {@code project}. The file manager is
-     * closed once the units are built; the parsed trees keep the syntax the declaration index still needs.
+     * Parses {@code files} at release {@value GenerationRequest#DEFAULT_RELEASE}, read in UTF-8, and anchors each
+     * unit at its path relative to {@code project}. The file manager is closed once the units are built; the parsed
+     * trees keep the syntax the declaration index still needs.
      */
     public static List<SourceUnit> parse(Path project, List<Path> files) {
+        return List.copyOf(new LinkedHashSet<>(parseEach(project, files, GenerationRequest.DEFAULT_RELEASE,
+                GenerationRequest.DEFAULT_ENCODING).values()));
+    }
+
+    /**
+     * Parses {@code files} as the compilation reads them, at {@code release} and in {@code encoding}, and returns
+     * the unit each of them was read into, in the order given. javac reads one file once whatever paths name it,
+     * so two paths to the same file map to the unit of the first.
+     */
+    static Map<Path, SourceUnit> parseEach(Path project, List<Path> files, int release, Charset encoding) {
         Objects.requireNonNull(project, "project");
         Objects.requireNonNull(files, "files");
+        Objects.requireNonNull(encoding, "encoding");
         if (files.isEmpty()) {
-            return List.of();
+            return Map.of();
         }
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        List<SourceUnit> units = new ArrayList<>();
+        Map<Path, SourceUnit> units = new LinkedHashMap<>();
         try (StandardJavaFileManager fileManager =
-                compiler.getStandardFileManager(diagnostics, Locale.ROOT, StandardCharsets.UTF_8)) {
+                compiler.getStandardFileManager(diagnostics, Locale.ROOT, encoding)) {
+            List<JavaFileObject> sources = new ArrayList<>();
+            for (JavaFileObject source : fileManager.getJavaFileObjectsFromPaths(files)) {
+                sources.add(source);
+            }
             JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnostics,
-                    List.of("-proc:none", "--release", "21"), null,
-                    fileManager.getJavaFileObjectsFromPaths(files));
+                    List.of("-proc:none", "--release", Integer.toString(release)), null, sources);
             try {
+                // A file object equals every other one of the same file, which is how javac read it only once.
+                Map<JavaFileObject, SourceUnit> parsed = new HashMap<>();
                 for (CompilationUnitTree tree : task.parse()) {
-                    units.add(new SourceUnit(tree, fileOrigin(project, tree)));
+                    parsed.put(tree.getSourceFile(), new SourceUnit(tree, fileOrigin(project, tree)));
+                }
+                for (int index = 0; index < files.size(); index++) {
+                    units.putIfAbsent(files.get(index), parsed.get(sources.get(index)));
                 }
             } finally {
                 // javac's own error is the one the user can act on, so it replaces whatever parsing threw.
@@ -87,7 +113,27 @@ public final class SourceDeclarations {
         } catch (IOException failure) {
             throw new UncheckedIOException("cannot read the original sources under " + project, failure);
         }
-        return List.copyOf(units);
+        return Collections.unmodifiableMap(units);
+    }
+
+    /** The package {@code unit} declares, as its declaration spells it; empty for the unnamed package. */
+    static String packageName(SourceUnit unit) {
+        ExpressionTree packageName = unit.tree().getPackageName();
+        return packageName == null ? "" : spell(packageName);
+    }
+
+    /** The qualified names of the top-level types {@code unit} declares, in declaration order. */
+    static List<String> topLevelTypes(SourceUnit unit) {
+        String packageName = packageName(unit);
+        List<String> types = new ArrayList<>();
+        for (Tree declaration : unit.tree().getTypeDecls()) {
+            if (declaration instanceof ClassTree type) {
+                types.add(packageName.isEmpty()
+                        ? type.getSimpleName().toString()
+                        : packageName + '.' + type.getSimpleName());
+            }
+        }
+        return List.copyOf(types);
     }
 
     /**

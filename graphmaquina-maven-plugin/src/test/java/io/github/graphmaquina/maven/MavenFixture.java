@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -317,12 +318,37 @@ public final class MavenFixture {
      * @throws IOException if the sources cannot be written
      */
     public void writeSources(Map<String, String> sources) throws IOException {
+        writeSources(sources, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The same, with every source written in {@code encoding}, as a project that declares that encoding keeps them.
+     *
+     * @param sources the compilation units, keyed by qualified name
+     * @param encoding the encoding the files are written in
+     * @throws IOException if the sources cannot be written
+     */
+    public void writeSources(Map<String, String> sources, Charset encoding) throws IOException {
         Path root = directory.resolve("src/main/java");
         deleteRecursively(root);
         Files.createDirectories(root);
         for (Map.Entry<String, String> source : sources.entrySet()) {
-            write(root, source.getKey(), source.getValue());
+            write(root, source.getKey(), source.getValue(), encoding);
         }
+    }
+
+    /**
+     * Writes {@code content} as it is to {@code relativePath} under the project directory, creating its directory,
+     * so a test can leave a file that is not text at all.
+     *
+     * @param relativePath the path of the file, relative to the project directory
+     * @param content the bytes of the file
+     * @throws IOException if the file cannot be written
+     */
+    public void writeFile(String relativePath, byte[] content) throws IOException {
+        Path file = directory.resolve(relativePath);
+        Files.createDirectories(file.getParent());
+        Files.write(file, content);
     }
 
     /**
@@ -333,13 +359,15 @@ public final class MavenFixture {
      * @throws IOException if the source cannot be written
      */
     public void writeTestSource(String qualifiedName, String content) throws IOException {
-        write(Files.createDirectories(directory.resolve("src/test/java")), qualifiedName, content);
+        write(Files.createDirectories(directory.resolve("src/test/java")), qualifiedName, content,
+                StandardCharsets.UTF_8);
     }
 
-    private static void write(Path root, String qualifiedName, String content) throws IOException {
+    private static void write(Path root, String qualifiedName, String content, Charset encoding)
+            throws IOException {
         Path file = root.resolve(qualifiedName.replace('.', '/') + ".java");
         Files.createDirectories(file.getParent());
-        Files.writeString(file, content, StandardCharsets.UTF_8);
+        Files.writeString(file, content, encoding);
     }
 
     /**
@@ -378,13 +406,28 @@ public final class MavenFixture {
      *
      * <p>Maven runs on the JDK running these tests, whatever {@code JAVA_HOME} the shell that started them
      * exported: javac compiles inside that JVM unless a build forks it, so this is the JDK every test reasons
-     * about when it compares the compiler with the generator.</p>
+     * about when it compares the compiler with the generator. {@code MAVEN_SKIP_RC} is set as well, so
+     * {@code mvn} reads no {@code mavenrc} file, such as a {@code ~/.mavenrc} exporting another
+     * {@code JAVA_HOME}.</p>
      *
      * @param goals the Maven goals and phases to run
      * @return the status and output of the build
      * @throws IOException if the process cannot be started or its output cannot be read
      */
     public MavenResult run(String... goals) throws IOException {
+        return run(Map.of(), goals);
+    }
+
+    /**
+     * The same, with {@code environment} added to the environment of the {@code mvn} process, so a test can give
+     * the build the surroundings of a developer machine, such as a home directory of its own.
+     *
+     * @param environment the variables to set for the process, on top of the ones the fixture always sets
+     * @param goals the Maven goals and phases to run
+     * @return the status and output of the build
+     * @throws IOException if the process cannot be started or its output cannot be read
+     */
+    public MavenResult run(Map<String, String> environment, String... goals) throws IOException {
         List<String> command = new ArrayList<>();
         command.add(System.getProperty("graphmaquina.mavenExecutable", "mvn"));
         command.add("-B");
@@ -395,7 +438,9 @@ public final class MavenFixture {
         ProcessBuilder builder = new ProcessBuilder(command)
                 .directory(directory.toFile())
                 .redirectErrorStream(true);
+        builder.environment().putAll(environment);
         builder.environment().put("JAVA_HOME", System.getProperty("java.home"));
+        builder.environment().put("MAVEN_SKIP_RC", "true");
         Process process = builder.start();
         String output;
         try (InputStream stream = process.getInputStream()) {

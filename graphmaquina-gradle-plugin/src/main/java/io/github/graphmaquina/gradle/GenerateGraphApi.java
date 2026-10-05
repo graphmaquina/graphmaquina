@@ -10,6 +10,7 @@ import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.InputFiles;
 import org.gradle.api.tasks.Internal;
 import org.gradle.api.tasks.Nested;
+import org.gradle.api.tasks.Optional;
 import org.gradle.api.tasks.OutputDirectory;
 import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.PathSensitive;
@@ -63,7 +64,13 @@ public abstract class GenerateGraphApi extends DefaultTask {
 
     /**
      * The runtime classpath of {@code graphmaquina-codegen}, resolved from the {@code graphmaquinaGenerator}
-     * configuration and never mixed into the application's own classpath.
+     * configuration and never mixed into the application's own classpath. The preparation and the completion
+     * around the compilation of this source set run the generator over it as well.
+     *
+     * <p>The plugin gives that configuration as the convention of this collection, so a classpath a build sets
+     * replaces it whenever the build sets it. Paths a build adds join it when they are added after the plugin
+     * configured this task, and replace it when they are added before, as by a block that configures every
+     * generation task ahead of a source set that does not exist yet.</p>
      *
      * @return the generator's classpath
      */
@@ -131,7 +138,8 @@ public abstract class GenerateGraphApi extends DefaultTask {
      *
      * <p>Both are {@link Internal internal} as directories, since they are outputs of {@code JavaCompile} and
      * not of this task, which leaves their locations untracked. Naming them here is what makes a build that
-     * moves the compiler's output write the request again instead of leaving the previous paths in it.</p>
+     * moves the compiler's output write the request again instead of leaving the previous paths in it. The plugin
+     * sets this value as a convention, so a value a build sets wins whenever the build sets it.</p>
      *
      * @return the class output and the processor's source output, as absolute paths
      */
@@ -141,7 +149,8 @@ public abstract class GenerateGraphApi extends DefaultTask {
     /**
      * Whether the source set this task belongs to declares the StateGraph processor, which is the condition of
      * this task's {@code onlyIf}. It is an input, so a source set that starts declaring it generates instead of
-     * staying up to date on a run that was skipped.
+     * staying up to date on a run that was skipped. The plugin sets it as a convention, so a value a build sets
+     * wins whenever the build sets it; the compilation's own wiring still follows the declarations.
      *
      * @return whether the source set takes part
      */
@@ -160,8 +169,37 @@ public abstract class GenerateGraphApi extends DefaultTask {
     public abstract Property<String> getCompilationId();
 
     /**
+     * The Java release the generator parses the original sources at and resolves the JDK types they name against.
+     *
+     * <p>By convention it is the compilation's {@code options.release}, which javac compiles at. When that is not
+     * set, it is the language version of the compilation's toolchain. Gradle then passes javac {@code -source} and
+     * {@code -target} from the compilation's source and target compatibility, which default to that version, and
+     * no {@code --release}, so javac resolves JDK types against the whole API of the toolchain's JDK: the API of
+     * that release. A source compatibility set lower makes javac parse at that lower level, where it accepts no
+     * syntax the generator does not parse.</p>
+     *
+     * @return the release of the compilation
+     */
+    @Input
+    @Optional
+    public abstract Property<Integer> getRelease();
+
+    /**
+     * The encoding the compilation of this source set reads its sources in, which the generator reads the original
+     * sources in and writes the generated ones in. By convention it is the compilation's {@code options.encoding}.
+     * Without one the generator reads UTF-8, while javac reads the default charset of the JVM that runs it, which is
+     * UTF-8 from Java 18 on unless {@code file.encoding} names another.
+     *
+     * @return the name of the source encoding of the compilation
+     */
+    @Input
+    @Optional
+    public abstract Property<String> getEncoding();
+
+    /**
      * The launcher the generator runs under, by convention the one the project's Java toolchain selected; it is
-     * not the JVM of the Gradle daemon unless the toolchain resolves to the very same installation.
+     * not the JVM of the Gradle daemon unless the toolchain resolves to the very same installation. The
+     * preparation and the completion around the compilation of this source set run under it as well.
      *
      * @return the launcher of the generator process
      */
@@ -206,7 +244,9 @@ public abstract class GenerateGraphApi extends DefaultTask {
             absolute(getProcessorSourcesOutput()),
             absolute(getClassesOutput()),
             absolute(getWorkDirectory()),
-            getCompilationId().get()));
+            getCompilationId().get(),
+            getRelease().getOrNull(),
+            getEncoding().getOrNull()));
         CodegenProcess.of(getJavaLauncher().get(), getGeneratorClasspath().getFiles(), getExecOperations())
             .run("generate", requestFile);
     }

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.graphmaquina.codegen.CodegenException;
@@ -12,12 +13,17 @@ import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.GenerationResult;
 import io.github.graphmaquina.codegen.StateGraphCodegen;
 import io.github.graphmaquina.codegen.ToolVersion;
+import io.github.graphmaquina.codegen.emit.ApiEmitter;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
+import io.github.graphmaquina.codegen.manifest.ManifestAssembler;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.manifest.OwnedOutputs;
+import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GenerationModel;
+import io.github.graphmaquina.codegen.source.Bootstrap;
 import io.github.graphmaquina.codegen.source.SourceFiles;
+import io.github.graphmaquina.codegen.source.SymbolicLinks;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -422,6 +428,209 @@ class GenerationOutputTest {
     }
 
     /**
+     * The check for generated types an original source declares reads the sources the generator read, as its one
+     * walk read them: a symbolic link back to a directory that contains it is skipped there, as Gradle skips it,
+     * so the publication does not stumble over it afterwards.
+     */
+    @Test
+    void publishesWhenASymbolicLinkLoopsBackIntoTheSourceDirectory() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        SymbolicLinks.create(sources().resolve("fx/again"), sources());
+
+        GenerationResult result = StateGraphCodegen.generate(request());
+
+        assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
+        assertTrue(Files.isRegularFile(result.annotationManifest()));
+    }
+
+    /** A generated type declared by a source reached through a linked source root is refused all the same. */
+    @Test
+    void refusesAGeneratedTypeDeclaredUnderASourceRootThatIsASymbolicLink() throws IOException {
+        Path shared = directory.resolve("shared");
+        SourceFiles.write(shared, ORIGINALS);
+        SourceFiles.write(shared, Map.of("fx.Helpers", """
+            package fx;
+            public class Helpers {}
+            final class DocRefs {}
+            """));
+        Files.createDirectories(sources().getParent());
+        SymbolicLinks.create(sources(), shared);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("fx.DocRefs"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("Helpers.java"), failure.getMessage());
+    }
+
+    /**
+     * A source the request lists as a file stands, below its source root, where its package declaration puts it.
+     * A hand-written type that only shares the file name of a generated source, in a package that merely ends
+     * like the generated one's, is therefore no collision, whether the build lists its sources one by one or
+     * names their directory.
+     */
+    @Test
+    void acceptsAListedSourceThatSharesTheFileNameOfAGeneratedSourceInAnotherPackage() throws IOException {
+        List<Path> listed = new ArrayList<>(SourceFiles.write(sources(), ORIGINALS));
+        listed.addAll(SourceFiles.write(sources(), Map.of("legacy.fx.DocsGraph", """
+            package legacy.fx;
+            public final class DocsGraph {}
+            """)));
+
+        StateGraphCodegen.generate(withSources(listed));
+
+        assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
+    }
+
+    /**
+     * On a case-insensitive volume a hand-written source whose name differs from a generated one only in case is the
+     * same file name to the volume. This one declares the type it is named after, so javac compiling both would also
+     * keep one class file of the two, by default without saying so. The directory the request names is asked the
+     * way the volume answers, so that source is refused, as it would be if it declared other types.
+     */
+    @Test
+    void refusesAnOriginalSourceNamedLikeAGeneratedSourceInAnotherCaseOnACaseInsensitiveVolume() throws IOException {
+        assumeTrue(caseInsensitive(directory), "only a case-insensitive volume finds a file under another case");
+        SourceFiles.write(sources(), ORIGINALS);
+        Path original = SourceFiles.write(sources(), Map.of("fx.Docsgraph", """
+            package fx;
+            final class Docsgraph {}
+            """)).get(0);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("fx.DocsGraph would overwrite the original source "
+                + original.resolveSibling("DocsGraph.java")), failure.getMessage());
+    }
+
+    /** A listed source that stands exactly where a generated source goes is refused, as one of a directory is. */
+    @Test
+    void refusesAListedSourceThatStandsWhereAGeneratedSourceGoes() throws IOException {
+        List<Path> listed = new ArrayList<>(SourceFiles.write(sources(), ORIGINALS));
+        listed.addAll(SourceFiles.write(sources(), Map.of("fx.DocsGraph", """
+            package fx;
+            final class Unrelated {}
+            """)));
+
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(withSources(listed)));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("would overwrite the original source "
+                + sources().resolve("fx/DocsGraph.java")), failure.getMessage());
+    }
+
+    /**
+     * A listed source whose name differs from a generated one only in case is the same file name to a volume that
+     * does not tell names apart by case. The listed file is looked up under the generated name in its own
+     * directory, so the volume that holds it decides, and the refusal names it as that volume spells it.
+     */
+    @Test
+    void refusesAListedSourceNamedLikeAGeneratedSourceInAnotherCaseOnACaseInsensitiveVolume() throws IOException {
+        assumeTrue(caseInsensitive(directory), "only a case-insensitive volume finds a file under another case");
+        List<Path> listed = new ArrayList<>(SourceFiles.write(sources(), ORIGINALS));
+        Path original = SourceFiles.write(sources(), Map.of("fx.Docsgraph", """
+            package fx;
+            final class Docsgraph {}
+            """)).get(0);
+        listed.add(original);
+
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(withSources(listed)));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("fx.DocsGraph would overwrite the original source "
+                + original.toRealPath()), failure.getMessage());
+    }
+
+    /**
+     * A top-level type an original source declares in a file of another name, named like a generated type but for
+     * case, compiles to a class file that a class output on a case-insensitive volume does not tell apart from the
+     * generated type's, and javac keeps one of the two, by default without saying so. It is refused there, naming
+     * both types.
+     */
+    @Test
+    void refusesATypeNamedLikeAGeneratedTypeInAnotherCaseOnACaseInsensitiveClassOutput() throws IOException {
+        assumeTrue(caseInsensitive(directory), "only a case-insensitive volume writes two class files as one");
+        SourceFiles.write(sources(), ORIGINALS);
+        SourceFiles.write(sources(), Map.of("fx.Helpers", """
+            package fx;
+            public class Helpers {}
+            final class Docsgraph {}
+            """));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("the generated type fx.DocsGraph differs only in case from"
+                + " fx.Docsgraph, which the original source sources/fx/Helpers.java declares"), failure.getMessage());
+        assertFalse(Files.exists(directory.resolve("work").resolve("annotation-manifest.json")));
+    }
+
+    /**
+     * On a volume that tells names apart by case, a listed source and a type whose names differ from generated ones
+     * only in case are other files and other class files, so neither is a collision.
+     */
+    @Test
+    void acceptsNamesThatDifferFromGeneratedOnesOnlyInCaseOnACaseSensitiveVolume() throws IOException {
+        assumeFalse(caseInsensitive(directory), "only a case-sensitive volume tells both names apart");
+        List<Path> listed = new ArrayList<>(SourceFiles.write(sources(), ORIGINALS));
+        listed.addAll(SourceFiles.write(sources(), Map.of("fx.Docsgraph", """
+            package fx;
+            final class Docsgraph {}
+            """, "fx.Helpers", """
+            package fx;
+            public class Helpers {}
+            final class Docrefs {}
+            """)));
+
+        StateGraphCodegen.generate(withSources(listed));
+
+        assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
+        assertTrue(Files.isRegularFile(output().resolve("fx/DocRefs.java")));
+    }
+
+    /**
+     * Publishing on its own reads the original sources only to check the generated types against them: it walks and
+     * parses them, and that reading resolves no declaration and opens no classpath. The check for a class a
+     * generated type would shadow still opens the archives of the request's classpath, which here are the jars on
+     * the class path of this test's JVM. An original source the model could no longer be read from therefore still
+     * lets the publication through, while a generated type an original source declares is still refused.
+     */
+    @Test
+    void publishesOnItsOwnAfterParsingTheOriginalSourcesWithoutResolvingThem() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        GenerationRequest request = request();
+        GenerationModel model = Bootstrap.inspect(request);
+        List<GeneratedSource> emitted = ApiEmitter.emit(model, request.compilationId());
+        CompileManifest manifest = ManifestAssembler.assemble(request, model, emitted, List.of());
+        SourceFiles.write(sources(), Map.of("fx.Unresolved", """
+            package fx;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.api.Machine;
+            @GenerateGraphApi
+            public interface Unresolved extends Machine<Doc, MissingStatus, DocTransition> {}
+            """));
+        assertThrows(CodegenException.class, () -> Bootstrap.inspect(request));
+
+        GenerationResult result = GenerationOutput.publish(request, emitted, manifest);
+
+        assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
+        assertTrue(Files.isRegularFile(result.annotationManifest()));
+        SourceFiles.write(sources(), Map.of("fx.Helpers", """
+            package fx;
+            public class Helpers {}
+            final class DocRefs {}
+            """));
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> GenerationOutput.publish(request, emitted, manifest));
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("fx.DocRefs is already declared by the original source"),
+                failure.getMessage());
+    }
+
+    /**
      * A caller may put this compilation's own class output on its classpath as the previous run left it. The
      * index published there describes this compilation, never a dependency of it, whatever version wrote it.
      */
@@ -451,6 +660,14 @@ class GenerationOutputTest {
         GenerationResult result = StateGraphCodegen.generate(withClasspathEntry(settings));
 
         assertTrue(Files.isRegularFile(result.annotationManifest()));
+    }
+
+    /** The request of {@link #request()} with {@code sources} as its sources instead. */
+    private GenerationRequest withSources(List<Path> sources) {
+        GenerationRequest original = request();
+        return new GenerationRequest(original.projectDirectory(), sources, original.classpath(),
+                original.sourcesOutput(), original.processorSourcesOutput(), original.classesOutput(),
+                original.workDirectory(), original.compilationId());
     }
 
     /** The request of {@link #request()} with {@code entry} appended to its classpath. */

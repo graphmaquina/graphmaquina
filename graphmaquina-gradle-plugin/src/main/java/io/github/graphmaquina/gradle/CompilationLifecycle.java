@@ -65,14 +65,16 @@ public final class CompilationLifecycle {
         }
 
         /**
-         * The launcher the project's Java toolchain selected.
+         * The launcher the generation task of this source set runs the generator under, by convention the one the
+         * project's Java toolchain selected, so every step of one compilation runs on the same JDK.
          *
          * @return the launcher of the generator process
          */
         public abstract Property<JavaLauncher> getJavaLauncher();
 
         /**
-         * The runtime classpath of {@code graphmaquina-codegen}.
+         * The classpath the generation task of this source set runs the generator over, by convention the
+         * {@code graphmaquinaGenerator} configuration, so every step of one compilation runs the same generator.
          *
          * @return the generator's classpath
          */
@@ -200,9 +202,11 @@ public final class CompilationLifecycle {
         }
 
         /**
-         * Why {@code compilation} does not compile {@code generated}, and the two ways back: adding directories
+         * Why {@code compilation} does not compile {@code generated}, and the ways back: adding directories
          * instead of replacing them, or nesting the generated directory in the source set again, given for both
-         * build script languages with fully qualified names so either can be pasted as it is.
+         * build script languages with fully qualified names so either can be pasted as it is. A source or a
+         * pattern set on the compilation itself filters the generated directory whatever the source set holds, so
+         * neither line undoes it: that setting has to be removed from the task.
          */
         private static String notCompiled(Task compilation, File generated, File directory, String generation) {
             String kotlin = "java.source(objects.sourceDirectorySet(\"graphmaquina\", \"StateGraph source\")"
@@ -220,7 +224,10 @@ public final class CompilationLifecycle {
                     + " them, or add the generated directory again after the replacement, inside the source set's"
                     + " block:" + System.lineSeparator()
                     + "    Kotlin DSL: " + kotlin + System.lineSeparator()
-                    + "    Groovy DSL: " + groovy;
+                    + "    Groovy DSL: " + groovy + System.lineSeparator()
+                    + "Neither line undoes a source or a pattern set on " + compilation + " itself, which filters"
+                    + " the generated directory whatever the source set holds: when that is what leaves the file"
+                    + " out, remove that setting from " + compilation + ".";
         }
 
         /** The Java sources under {@code directory}, in a stable order; none when it does not exist. */

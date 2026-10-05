@@ -120,7 +120,8 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /**
      * The request of the {@code main} compilation: the original sources of the project — its source roots, or
      * the files of them the includes and excludes of the compiler select — its compile classpath without its
-     * own class output, and the directories this plugin and the compiler write into.
+     * own class output, the directories this plugin and the compiler write into, and the release and the
+     * encoding the compiler reads the sources with.
      *
      * @return the request the generator reads for the main source set
      * @throws MojoExecutionException if Maven has not resolved the compile classpath of the project, or a source
@@ -131,6 +132,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
         Path sourcesOutput = build.resolve("generated-sources").resolve(WORK);
         Path processorSourcesOutput = build.resolve("generated-sources").resolve("annotations");
         Path classesOutput = absolute(project.getBuild().getOutputDirectory());
+        CompilerConfiguration compiler = CompilerConfiguration.of(project, session, CompilerExecution.MAIN);
         return new Request(
             project.getBasedir().getAbsolutePath(),
             originalSources(CompilerExecution.MAIN, project.getCompileSourceRoots(), sourcesOutput,
@@ -140,7 +142,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
             processorSourcesOutput.toString(),
             classesOutput.toString(),
             build.resolve(WORK).resolve("main").toString(),
-            compilationId("main"));
+            compilationId("main"),
+            compiler.release().orElse(null),
+            compiler.encoding().orElse(null));
     }
 
     /**
@@ -156,6 +160,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
         Path sourcesOutput = build.resolve("generated-test-sources").resolve(WORK);
         Path processorSourcesOutput = build.resolve("generated-test-sources").resolve("test-annotations");
         Path classesOutput = absolute(project.getBuild().getTestOutputDirectory());
+        CompilerConfiguration compiler = CompilerConfiguration.of(project, session, CompilerExecution.TEST);
         return new Request(
             project.getBasedir().getAbsolutePath(),
             originalSources(CompilerExecution.TEST, project.getTestCompileSourceRoots(), sourcesOutput,
@@ -165,7 +170,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
             processorSourcesOutput.toString(),
             classesOutput.toString(),
             build.resolve(WORK).resolve("test").toString(),
-            compilationId("test"));
+            compilationId("test"),
+            compiler.release().orElse(null),
+            compiler.encoding().orElse(null));
     }
 
     /**
@@ -411,9 +418,11 @@ public abstract class StateGraphMojo extends AbstractMojo {
 
     /**
      * The sources the generator parses: every source root the compilation declares except the two directories
-     * this build generates into, which its own outputs must never overlap. A root is given as it is, for the
-     * generator to read every Java source under it as javac compiles them all, unless the includes or excludes
-     * of the compiler narrow its sources: then the very files they select are given instead.
+     * this build generates into, which its own outputs must never overlap. A root the execution does not narrow
+     * is handed to the generator whole, and the generator walks it with Ant's default excludes, not with
+     * plexus-utils' longer list; {@code SourcePatterns} describes what that leaves in. A root the includes or
+     * excludes of the compiler narrow is handed over as the very files they select, with the compiler's own
+     * default excludes left out.
      */
     private List<String> originalSources(CompilerExecution execution, List<String> roots, Path sourcesOutput,
             Path processorSourcesOutput) throws MojoExecutionException {
@@ -480,8 +489,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
     }
 
     /**
-     * Encodes {@code request} as the flat JSON object documented by the generator's manifest codec: exactly the
-     * eight members of the request, in the order the codec lists them.
+     * Encodes {@code request} as the flat JSON object documented by the generator's manifest codec: the eight
+     * members every request carries, then the release and the encoding of the compilation when they are known, in
+     * the order the codec lists them.
      *
      * @param request the values of the request
      * @return the JSON document, ending with a newline
@@ -497,8 +507,16 @@ public abstract class StateGraphMojo extends AbstractMojo {
         member(json, "processorSourcesOutput", request.processorSourcesOutput()).append(",\n");
         member(json, "classesOutput", request.classesOutput()).append(",\n");
         member(json, "workDirectory", request.workDirectory()).append(",\n");
-        member(json, "compilationId", request.compilationId()).append('\n');
-        json.append("}\n");
+        member(json, "compilationId", request.compilationId());
+        if (request.release() != null) {
+            json.append(",\n  ");
+            string(json, "release").append(": ").append(request.release().intValue());
+        }
+        if (request.encoding() != null) {
+            json.append(",\n");
+            member(json, "encoding", request.encoding());
+        }
+        json.append("\n}\n");
         return json.toString();
     }
 
@@ -560,10 +578,14 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * @param classesOutput where javac writes the classes of this compilation
      * @param workDirectory where the manifests and the inventories of this compilation live
      * @param compilationId the identity of the project and source set, as {@code group:artifact:sourceSet}
+     * @param release the Java release javac compiles the source set at, or {@code null} when the compiler names
+     *     none, which the generator reads as release 21
+     * @param encoding the name of the charset javac reads the sources in, or {@code null} when the build names
+     *     none, which the generator reads as UTF-8
      */
     public record Request(String projectDirectory, List<String> sources, List<String> classpath,
             String sourcesOutput, String processorSourcesOutput, String classesOutput, String workDirectory,
-            String compilationId) {
+            String compilationId, Integer release, String encoding) {
 
         /** The file name the generator writes the manifest of a compilation under, in its work directory. */
         private static final String MANIFEST = "annotation-manifest.json";
@@ -584,6 +606,25 @@ public abstract class StateGraphMojo extends AbstractMojo {
             Objects.requireNonNull(classesOutput, "classesOutput");
             Objects.requireNonNull(workDirectory, "workDirectory");
             Objects.requireNonNull(compilationId, "compilationId");
+        }
+
+        /**
+         * A request that names neither the release nor the encoding of the compilation.
+         *
+         * @param projectDirectory the directory the compilation belongs to
+         * @param sources the original source roots, or the files of them the compiler selects
+         * @param classpath the compile classpath
+         * @param sourcesOutput where the generated vocabulary is written
+         * @param processorSourcesOutput where the annotation processor writes its own sources
+         * @param classesOutput where javac writes the classes of this compilation
+         * @param workDirectory where the manifests and the inventories of this compilation live
+         * @param compilationId the identity of the project and source set
+         */
+        public Request(String projectDirectory, List<String> sources, List<String> classpath,
+                String sourcesOutput, String processorSourcesOutput, String classesOutput, String workDirectory,
+                String compilationId) {
+            this(projectDirectory, sources, classpath, sourcesOutput, processorSourcesOutput, classesOutput,
+                workDirectory, compilationId, null, null);
         }
 
         /**

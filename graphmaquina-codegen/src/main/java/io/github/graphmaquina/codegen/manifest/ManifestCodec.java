@@ -6,7 +6,10 @@ import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
@@ -42,8 +45,8 @@ import java.util.List;
  *
  * <h2>{@code GenerationRequest} JSON (readRequest/writeRequest)</h2>
  *
- * <p>A flat JSON object whose members are exactly the record's components, so that a build plugin can produce
- * it with its own minimal JSON encoder without depending on this module:
+ * <p>A flat JSON object whose members are the record's components, so that a build plugin can produce it with
+ * its own minimal JSON encoder without depending on this module:
  *
  * <pre>{@code
  * {
@@ -54,9 +57,20 @@ import java.util.List;
  *   "processorSourcesOutput": "<string, Path.toString()>",
  *   "classesOutput": "<string, Path.toString()>",
  *   "workDirectory": "<string, Path.toString()>",
- *   "compilationId": "<string>"
+ *   "compilationId": "<string>",
+ *   "release": <number, optional: the Java release javac compiles at>,
+ *   "encoding": "<string, optional: the name of the charset javac reads the sources in>"
  * }
  * }</pre>
+ *
+ * <p>{@code release} and {@code encoding} are optional: a request without them, as every request was before they
+ * existed, is read at release {@value GenerationRequest#DEFAULT_RELEASE} in UTF-8. A {@code release} that is not
+ * an exact integer, and an {@code encoding} that names no charset of the running JVM, are rejected with
+ * {@code SG602}. {@link #writeRequest} always writes both. No member carries {@code --enable-preview}: the
+ * generator parses the original sources without it, whatever javac is given. An original source using a preview
+ * feature that javac's parser checks, such as string templates on JDK 21, is refused with {@code SG601}; one using
+ * a preview feature javac checks only after parsing, such as primitive patterns at release 25, is read like any
+ * other source.</p>
  *
  * <h2>{@code ExportIndex} JSON (readExports/writeExports)</h2>
  *
@@ -145,8 +159,11 @@ public final class ManifestCodec {
     }
 
     /**
-     * Reads a {@link GenerationRequest} from the flat JSON object at {@code path}.
+     * Reads a {@link GenerationRequest} from the flat JSON object at {@code path}; one that names no release or
+     * no encoding is read at release {@value GenerationRequest#DEFAULT_RELEASE} or in UTF-8.
      *
+     * @throws CodegenException {@code SG602} if a member is missing or malformed, the release included, or the
+     *     encoding names no charset of the running JVM
      * @throws IOException if {@code path} cannot be read
      */
     public static GenerationRequest readRequest(Path path) throws IOException {
@@ -159,8 +176,22 @@ public final class ManifestCodec {
         Path classesOutput = Path.of(JsonSupport.requireString(object, "classesOutput", path));
         Path workDirectory = Path.of(JsonSupport.requireString(object, "workDirectory", path));
         String compilationId = JsonSupport.requireString(object, "compilationId", path);
+        int release = JsonSupport.optionalInt(object, "release", path).orElse(GenerationRequest.DEFAULT_RELEASE);
+        Charset encoding = JsonSupport.optionalString(object, "encoding", path)
+            .map((String name) -> charset(name, path))
+            .orElse(GenerationRequest.DEFAULT_ENCODING);
         return new GenerationRequest(projectDirectory, sources, classpath, sourcesOutput,
-            processorSourcesOutput, classesOutput, workDirectory, compilationId);
+            processorSourcesOutput, classesOutput, workDirectory, compilationId, release, encoding);
+    }
+
+    /** The charset {@code name} names, refusing a name the running JVM supports no charset under. */
+    private static Charset charset(String name, Path file) {
+        try {
+            return Charset.forName(name);
+        } catch (IllegalCharsetNameException | UnsupportedCharsetException unknown) {
+            throw new CodegenException(JsonSupport.ERROR_CODE,
+                "member 'encoding' names no charset this JVM supports in " + file + ": " + name);
+        }
     }
 
     /**
@@ -181,6 +212,8 @@ public final class ManifestCodec {
             writer.name("classesOutput").value(request.classesOutput().toString());
             writer.name("workDirectory").value(request.workDirectory().toString());
             writer.name("compilationId").value(request.compilationId());
+            writer.name("release").value(request.release());
+            writer.name("encoding").value(request.encoding().name());
             writer.endObject();
         }
     }
