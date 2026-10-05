@@ -31,7 +31,10 @@ final class TypedTimeouts {
         this.diagnostics = diagnostics;
     }
 
-    /** The duration {@code timeout} spells, or empty after reporting {@code SG511} when it is not a positive one. */
+    /**
+     * The duration {@code timeout} spells, or empty after reporting {@code SG511} when it is not a positive one;
+     * empty too, with nothing reported, for a value javac has already refused.
+     */
     Optional<Duration> read(AnnotationMirror timeout, DiagnosticAnchor anchor) {
         if (!(annotations.value(timeout, "seconds").getValue() instanceof Long seconds)
                 || !(annotations.value(timeout, "nanos").getValue() instanceof Integer nanos)) {

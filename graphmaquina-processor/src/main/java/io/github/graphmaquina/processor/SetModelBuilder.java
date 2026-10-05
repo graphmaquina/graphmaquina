@@ -57,7 +57,11 @@ final class SetModelBuilder {
     private final Diagnostics diagnostics;
     private final BoundInvocation invocations;
 
-    /** {@code machines} resolves a machine to its model, or empty when that type has errors (already reported). */
+    /**
+     * {@code machines} resolves a machine to its model, or empty, with the reason already reported: when that type
+     * has errors, or as {@code SG602} at the set when the index of this compilation names it but no round handed it
+     * to the processor.
+     */
     Optional<SetModel> build(TypeElement type, Function<TypeElement, Optional<MachineModel>> machines) {
         int before = diagnostics.errors();
         AnnotationMirror set = annotations.find(type, StateGraphs.class).orElseThrow();

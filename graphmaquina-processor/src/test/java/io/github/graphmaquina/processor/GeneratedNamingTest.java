@@ -14,11 +14,12 @@ import org.junit.jupiter.api.Test;
  * The names the processor gives what it generates, and the ones it refuses. A facade or a set named with
  * underscores, such as {@code _Docs}, gets a companion named from its PascalCase form, {@code DocsRuntime}, and the
  * interface the author wrote is left as it is; an interface whose name normalizes to nothing, the second of two
- * interfaces that normalize to one companion and an interface whose companion name a type already has are refused
- * as {@code SG603}, which withholds only what depends on that interface, while every declaration of the round is
- * still checked. In the unnamed package the companions live there too, and a qualified name of one of its types
- * starts with a type, never with a package. A type name that decapitalizes to a keyword still names a legal
- * parameter.
+ * interfaces that normalize to one companion and an interface whose companion name a type already has are
+ * refused, which withholds only what depends on that interface, while every declaration of the round is still
+ * checked. Each refusal is {@code SG603}, but {@code SG602} when the type that has the companion's name is the
+ * processor's own output of a previous compilation, which nothing retired. In the unnamed package the companions
+ * live there too, and a qualified name of one of its types starts with a type, never with a package. A type name
+ * that decapitalizes to a keyword still names a legal parameter.
  */
 class GeneratedNamingTest {
     private static final String LIBRARY = """
@@ -89,8 +90,8 @@ class GeneratedNamingTest {
     }
 
     /**
-     * A refused companion name ends nothing but that companion: the round still reports a declaration of the retired
-     * vocabulary, a machine and a set with problems of their own, each once.
+     * A refused companion name withholds only what depends on it, here that companion alone: the round still reports
+     * a declaration of the retired vocabulary, a machine and a set with problems of their own, each once.
      */
     @Test
     void aRefusedRuntimeNameDoesNotHideTheOtherProblemsOfItsRound() {

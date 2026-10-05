@@ -46,7 +46,10 @@ class GeneratedScopeTest {
             @StateGraphs public interface Shop extends Machines { Orders orders(); }
             """;
 
-    /** The first bytes of an AppleDouble file, which no Java compiler can read as a source. */
+    /**
+     * The first 16 bytes of an AppleDouble file as macOS writes one, followed by bytes that are not valid UTF-8: no
+     * Java compiler can read the whole as a source.
+     */
     private static final byte[] APPLE_DOUBLE = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ',
         'O', 'S', ' ', 'X', (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
 
@@ -187,8 +190,8 @@ class GeneratedScopeTest {
     /**
      * A build may give javac only some files of the facade's package while its source path holds them all, as
      * Maven does with an AppleDouble file it never compiles or with a file the build's excludes name. The processor
-     * looks up only the names the companions write, so javac reads neither file: the build compiles without a word
-     * about them and writes no class for them.
+     * looks the types of the package up by name and never lists the package, so javac reads neither file: the build
+     * compiles without a word about them and writes no class for them.
      */
     @Test
     void theProcessorReadsNoFileOfThePackageTheBuildLeavesOut() throws IOException {

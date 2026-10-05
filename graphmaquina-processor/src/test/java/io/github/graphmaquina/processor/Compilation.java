@@ -193,8 +193,9 @@ final class Compilation {
     /**
      * Prepares the outputs of {@code prepared} and runs javac the way a build that hands it only some sources
      * does: the originals named by {@code explicit} and the generated bootstrap are given to javac, and every
-     * other original is found through the source path, so javac compiles it without processing it. Completion
-     * does not run: the test observes what javac and the processor did.
+     * other original is left to the source path, from which javac compiles, under {@code -implicit:class}, the
+     * ones the compilation needs, without processing them. Completion does not run: the test observes what javac
+     * and the processor did.
      */
     static Result compileWithImplicitSources(Prepared prepared, List<String> explicit) {
         return compileWithSourcePath(prepared, explicit, List.of("-implicit:class"));
@@ -212,7 +213,10 @@ final class Compilation {
         return compileWithSourcePath(prepared, listed, List.of());
     }
 
-    /** Runs javac over {@code explicit} and the bootstrap, with the source path and then {@code extra}. */
+    /**
+     * Prepares the outputs of {@code prepared}, then runs javac over {@code explicit} and the bootstrap, with the
+     * source path and then {@code extra}.
+     */
     private static Result compileWithSourcePath(Prepared prepared, List<String> explicit, List<String> extra) {
         GenerationRequest request = prepared.request();
         try {

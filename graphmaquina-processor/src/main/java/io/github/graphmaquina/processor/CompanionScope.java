@@ -39,15 +39,15 @@ import javax.lang.model.util.Elements;
  * so, but a field of that name takes it where an expression reads it all the same.</p>
  *
  * <p>The types of the companion's package include the companions this processor reserves there, in the round that
- * checks the companion or an earlier one, though they are not written yet. A companion reserved in a later round
- * is checked against the companions of its package written before it, and refused where its facade or set is
- * declared when it would take a name one of them writes. A type that another processor generates into the package,
- * in the round that writes the companion or a later one, can still take such a name. The companion is written by
- * then, and from then on the name means that type in it, which javac may refuse, as it refuses a class named like
- * a package the companion writes, or may not, as it accepts an annotation type named {@code Override} in place of
- * {@code java.lang.Override}. The next call of the processor reports, at the companion's facade or set, which name
- * the type took. A type generated in the last round, the one whose {@code processingOver()} is true, is not
- * checked: no call of the processor follows that round.</p>
+ * checks the companion or an earlier one, though they are not written yet, and the companion of a refused declaration
+ * never is. A companion reserved in a later round is checked against the companions of its package written before it,
+ * and refused where its facade or set is declared when it would take a name one of them writes. A type that another
+ * processor generates into the package, in the round that writes the companion or a later one, can still take such a
+ * name. The companion is written by then, and from then on the name means that type in it, which javac may refuse, as
+ * it refuses a class named like a package the companion writes, or may not, as it accepts an annotation type named
+ * {@code Override} in place of {@code java.lang.Override}. The next call of the processor reports, at the companion's
+ * facade or set, which name the type took. A type generated in the last round, the one whose {@code processingOver()}
+ * is true, is not checked: no call of the processor follows that round.</p>
  *
  * <p>What takes a name is a declaration of the build, a type, member type or constant of the author's or of a
  * library the facade or the set extends, a companion named after a facade or a set, or a type another processor
@@ -151,13 +151,14 @@ final class CompanionScope {
 
     /**
      * {@code SG603} at the facade or set of every companion already written whose package now holds a top-level
-     * type, other than a companion of this processor, that takes a name the companion writes. No such type was a
-     * member of the package when the companion was checked, so another processor generated it since. The companion
-     * is written already and the name means that type in it now, whether javac refuses that or not, so this says
-     * so, once. It looks up, in the package itself, each name the companion writes that such a type could take,
-     * as {@link #topLevelType} looks it up, rather than searching a round's root elements: once a type a round
-     * brings breaks a source of the compilation, javac may run only the last round next, whose root elements are
-     * empty. A type generated in that last round is never seen: no call of the processor follows it.
+     * type, other than a companion of this processor, that takes a name the companion writes. No lookup found such
+     * a type when the companion was checked, so it is new since: another processor generated it, or javac has since
+     * read the file that declares it as an auxiliary class. The companion is written already and the name means
+     * that type in it now, whether javac refuses that or not, so this says so, once. It looks up, in the package
+     * itself, each name the companion writes that such a type could take, as {@link #topLevelType} looks it up,
+     * rather than searching a round's root elements: once a type a round brings breaks a source of the
+     * compilation, javac may run only the last round next, whose root elements are empty. A type generated in that
+     * last round is never seen: no call of the processor follows it.
      */
     void checkLaterTypes() {
         for (Map.Entry<String, List<WrittenCompanion>> ofPackage : written.entrySet()) {

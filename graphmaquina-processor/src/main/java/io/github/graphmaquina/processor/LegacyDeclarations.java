@@ -119,7 +119,7 @@ final class LegacyDeclarations {
 
     /**
      * What to write instead of the retired header of {@code type}, its vocabulary named as the generator names it;
-     * a nested {@code type} is told first to become a top-level interface.
+     * for a nested {@code type}, the author is told first to make it a top-level interface.
      */
     private static String describe(TypeElement type) {
         String graph = vocabulary(type);
@@ -136,7 +136,7 @@ final class LegacyDeclarations {
 
     /**
      * What to write instead of the retired declaration of one operation, in the vocabulary of {@code type}; when
-     * {@code type} is nested, it is told first to become a top-level interface.
+     * {@code type} is nested, the author is told first to make it a top-level interface.
      */
     private static String describe(TypeElement type, Element member) {
         String graph = vocabulary(type);

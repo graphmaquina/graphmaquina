@@ -23,8 +23,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 class LegacyAnnotationsTest {
 
     /**
-     * The five retired annotation types the machine fixtures use, as an older release still on the classpath
-     * declares them.
+     * The five retired annotation types the machine fixtures use, declared under the qualified names and with the
+     * targets an older release still on the classpath gives them.
      */
     private static Map<String, String> retiredVocabulary() {
         Map<String, String> sources = new LinkedHashMap<>();
@@ -131,9 +131,9 @@ class LegacyAnnotationsTest {
 
     /**
      * The vocabulary {@code SG609} tells the author to write is the one the generator writes once the facade is
-     * marked: named after the facade's simple name, normalized to PascalCase, so {@code docs_api} is told
-     * {@code DocsApiGraph}. A name with no PascalCase form, which the generator refuses, is told a placeholder rather
-     * than a type nothing generates.
+     * marked: named after the facade's simple name, normalized to PascalCase, so the author of {@code docs_api} is
+     * told {@code DocsApiGraph}. For a name with no PascalCase form, which the generator refuses, the author is told
+     * a placeholder rather than a type nothing generates.
      */
     @Test
     void spellsTheVocabularyWithTheNameTheGeneratorGivesIt() {
@@ -276,7 +276,7 @@ class LegacyAnnotationsTest {
         assertEquals(1, result.countError("SG609"), () -> retired + "\n" + result.describe());
     }
 
-    /** One retired annotation type, as an older release still on the classpath declares it. */
+    /** One retired annotation type, without elements, under the name and target an older release gives it. */
     private static String marker(String name, String target) {
         return """
                 package io.github.graphmaquina.annotation;
