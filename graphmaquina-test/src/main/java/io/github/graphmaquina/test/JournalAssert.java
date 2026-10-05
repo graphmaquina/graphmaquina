@@ -4,6 +4,8 @@ import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.test.internal.Checks;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -13,46 +15,53 @@ import java.util.Objects;
  * commits nothing and still journals everything it started — so the two views answer different questions.
  * {@link ActionStatus#THREW} is reported as the engine wrote it and is never translated: the engine also marks
  * an action THREW when it was still in flight while an abort unwound, not only when the action itself threw.
- * The list is copied when the view is built, so later edits to the caller's collection are not seen.
+ * The list is copied when the view is built, so later edits to the caller's collection are not seen. A null
+ * element, which only a subject built by hand can hold, matches no entry, and an expectation that lists the
+ * actions or the statuses shows it as null.
  */
 public final class JournalAssert {
 
-    private static final String CONTEXT = "journal";
+    private static final String ROOT = "journal";
 
+    private final String context;
     private final List<ActionRecord> actual;
 
-    private JournalAssert(List<ActionRecord> actual) {
-        this.actual = actual == null ? null : List.copyOf(actual);
+    /** The view of a journal that came from a failure view, which names it as that view's own. */
+    JournalAssert(String context, List<ActionRecord> actual) {
+        this.context = context;
+        this.actual = actual == null ? null : Collections.unmodifiableList(new ArrayList<>(actual));
     }
 
     public static JournalAssert assertThat(List<ActionRecord> actual) {
-        return new JournalAssert(actual);
+        return new JournalAssert(ROOT, actual);
     }
 
     public JournalAssert hasSize(int expected) {
-        List<ActionRecord> journal = Checks.subject(CONTEXT, "size", expected, actual);
-        Checks.equal(CONTEXT, "size", expected, journal.size());
+        List<ActionRecord> journal = Checks.subject(context, "size", expected, actual);
+        Checks.equal(context, "size", expected, journal.size());
         return this;
     }
 
     public JournalAssert isEmpty() {
-        List<ActionRecord> journal = Checks.subject(CONTEXT, "size", 0, actual);
-        Checks.equal(CONTEXT, "size", 0, journal.size());
+        List<ActionRecord> journal = Checks.subject(context, "size", 0, actual);
+        Checks.equal(context, "size", 0, journal.size());
         return this;
     }
 
     /** The action names in order and with their multiplicity: one entry per run, retries included. */
     public JournalAssert hasActionsExactly(String... expected) {
         List<String> wanted = List.of(expected);
-        List<ActionRecord> journal = Checks.subject(CONTEXT, "actions", wanted, actual);
-        Checks.equal(CONTEXT, "actions", wanted, journal.stream().map(ActionRecord::action).toList());
+        List<ActionRecord> journal = Checks.subject(context, "actions", wanted, actual);
+        Checks.equal(context, "actions", wanted,
+                journal.stream().map((ActionRecord entry) -> entry == null ? null : entry.action()).toList());
         return this;
     }
 
     public JournalAssert hasStatusesExactly(ActionStatus... expected) {
         List<ActionStatus> wanted = List.of(expected);
-        List<ActionRecord> journal = Checks.subject(CONTEXT, "statuses", wanted, actual);
-        Checks.equal(CONTEXT, "statuses", wanted, journal.stream().map(ActionRecord::status).toList());
+        List<ActionRecord> journal = Checks.subject(context, "statuses", wanted, actual);
+        Checks.equal(context, "statuses", wanted,
+                journal.stream().map((ActionRecord entry) -> entry == null ? null : entry.status()).toList());
         return this;
     }
 
@@ -72,12 +81,13 @@ public final class JournalAssert {
         Objects.requireNonNull(action, "action");
         Objects.requireNonNull(status, "status");
         ActionRecord wanted = new ActionRecord(key, entity, from, transition, to, action, depth, status);
-        List<ActionRecord> journal = Checks.subject(CONTEXT, "entry", wanted, actual);
-        boolean found = journal.stream().anyMatch(entry -> entry.key().equals(key) && entry.entity() == entity
+        List<ActionRecord> journal = Checks.subject(context, "entry", wanted, actual);
+        boolean found = journal.stream().anyMatch((ActionRecord entry) -> entry != null
+                && entry.key().equals(key) && entry.entity() == entity
                 && entry.from() == from && entry.transition() == transition && entry.to() == to
                 && entry.action().equals(action) && entry.depth() == depth && entry.status() == status);
         if (!found) {
-            Checks.fail(CONTEXT, "entry", wanted, journal);
+            Checks.fail(context, "entry", wanted, journal);
         }
         return this;
     }

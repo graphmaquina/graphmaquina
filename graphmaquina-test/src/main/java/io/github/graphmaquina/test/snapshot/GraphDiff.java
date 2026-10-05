@@ -48,7 +48,9 @@ public final class GraphDiff {
     /**
      * One line per change, each terminated by a line feed, with the escapes of the snapshot format. A
      * present value is quoted — so an empty one reads as {@code ""} — and an absent one reads as
-     * {@code <absent>}. An empty difference renders as the empty string.
+     * {@code <absent>}. A quote inside a value is escaped as {@code \"} as well, since the quotes are what
+     * delimit it; the snapshot format itself does not escape it. An empty difference renders as the empty
+     * string.
      */
     public String render() {
         StringBuilder text = new StringBuilder();
@@ -62,7 +64,8 @@ public final class GraphDiff {
     }
 
     private static String render(Optional<String> value) {
-        return value.map(present -> "\"" + SnapshotCodec.escape(present) + "\"").orElse("<absent>");
+        return value.map((String present) ->
+                "\"" + SnapshotCodec.escape(present).replace("\"", "\\\"") + "\"").orElse("<absent>");
     }
 
     /**

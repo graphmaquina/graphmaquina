@@ -89,6 +89,18 @@ class GraphGoldensTest {
         }
     }
 
+    @Test
+    void aDiagramSavedWithAByteOrderMarkIsReadLikeAnyOther(@TempDir Path root) throws Exception {
+        String checkedIn = Files.readString(
+                Path.of(GraphGoldensTest.class.getClassLoader().getResource(RESOURCE).toURI()));
+        Files.createDirectories(root.resolve("golden"));
+        Files.writeString(root.resolve(RESOURCE), "\uFEFF" + checkedIn);
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {
+            GraphGoldens.assertMatches(TestDomain.graph(Duration.ofSeconds(1)), RESOURCE,
+                    GoldenOptions.readOnly(loader));
+        }
+    }
+
     // --- the checked-in fixture ----------------------------------------------------------------------
 
     @Test
@@ -163,6 +175,31 @@ class GraphGoldensTest {
         assertNull(error.actual());
     }
 
+    /**
+     * A malformed name is an error of the calling test whatever else is wrong, so the two-argument entry point
+     * reports it before it reads a system property that may be wrong too.
+     */
+    @Test
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    void aMalformedNameIsReportedBeforeTheSystemProperties() {
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
+        String previousUpdate = System.getProperty(GoldenOptions.UPDATE_PROPERTY);
+        String previousRoot = System.getProperty(GoldenOptions.ROOT_PROPERTY);
+        try {
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "yes");
+            assertEquals("the resource </abs.dot> must be relative", assertThrows(IllegalArgumentException.class,
+                    () -> GraphGoldens.assertMatches(graph, "/abs.dot")).getMessage());
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "true");
+            System.clearProperty(GoldenOptions.ROOT_PROPERTY);
+            assertEquals("the resource <../x.dot> carries an empty or relative segment",
+                    assertThrows(IllegalArgumentException.class,
+                            () -> GraphGoldens.assertMatches(graph, "../x.dot")).getMessage());
+        } finally {
+            restore(GoldenOptions.UPDATE_PROPERTY, previousUpdate);
+            restore(GoldenOptions.ROOT_PROPERTY, previousRoot);
+        }
+    }
+
     @Test
     void aNullDefinitionFailsTheThreeArgumentAssertion() {
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
@@ -181,5 +218,13 @@ class GraphGoldensTest {
                 () -> GraphGoldens.assertMatches(graph, RESOURCE, null)).getMessage());
         assertThrows(IllegalArgumentException.class,
                 () -> GraphGoldens.assertMatches(graph, "../escape.dot", READ_ONLY));
+    }
+
+    private static void restore(String key, String value) {
+        if (value == null) {
+            System.clearProperty(key);
+        } else {
+            System.setProperty(key, value);
+        }
     }
 }

@@ -5,12 +5,12 @@ import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.test.GraphAssertionError;
 import java.time.Duration;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletionStage;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -29,8 +29,13 @@ import java.util.function.Consumer;
  *
  * <p>{@link #close()} is idempotent. It cancels the stages of this fixture's own pending invocations — never
  * a stage the test handed in from outside — so a worker blocked inside the action is released before a
- * registry waits for it, and it refuses further invocations. Closing is the fixture's own teardown and is
- * meant to run before the registry is closed.
+ * registry waits for it, and it refuses further invocations. A cancelled handle is nothing to answer: one
+ * that nobody took, or that was still being published, is dropped, and a {@link #awaitInvocation(Duration)}
+ * on a closed fixture fails at once with a {@link GraphAssertionError}, a wait that was already blocked when
+ * the fixture closed included. An invocation that reaches a closed fixture is refused with that same error,
+ * which is an {@link Error} so that no {@code failsOn} route of the edge can take the refusal for a failure
+ * of the action and commit a recovery. Closing is the fixture's own teardown and is meant to run before the
+ * registry is closed.
  *
  * @param <E> the entity type of the machine the action belongs to
  * @param <S> the state enum of that machine
@@ -41,9 +46,10 @@ public final class ControlledAsyncAction<E, S extends Enum<S>, T extends Enum<T>
 
     private static final String CONTEXT = "controlled async action";
 
-    private final BlockingQueue<PendingInvocation<ActionCall<E, S, T>, ActionOutcome>> arrivals =
-            new LinkedBlockingQueue<>();
     private final List<PendingInvocation<ActionCall<E, S, T>, ActionOutcome>> invocations = new ArrayList<>();
+    // The handles published and not yet taken, and the flag below, are guarded by the monitor of invocations,
+    // which is also what a waiting awaitInvocation sleeps on, so that close can wake it.
+    private final Deque<PendingInvocation<ActionCall<E, S, T>, ActionOutcome>> arrivals = new ArrayDeque<>();
     private volatile Consumer<TransitionContext<E, S, T>> onCall = context -> { };
     private boolean closed;
 
@@ -65,21 +71,35 @@ public final class ControlledAsyncAction<E, S extends Enum<S>, T extends Enum<T>
     /**
      * Waits up to {@code budget} for the next invocation nobody has taken yet, and hands out its handle. An
      * invocation that arrived earlier is returned at once. Raises {@link GraphAssertionError} when the budget
-     * expires, since a wait that was not met is a failed expectation of the test and not of the machine.
+     * expires, since a wait that was not met is a failed expectation of the test and not of the machine, and
+     * at once when the fixture is closed, since nothing can arrive any more. A wait that is already blocked
+     * when the fixture closes is woken by the close and fails the same way.
      */
     public PendingInvocation<ActionCall<E, S, T>, ActionOutcome> awaitInvocation(Duration budget) {
         long nanos = budgetNanos(budget);
-        try {
-            PendingInvocation<ActionCall<E, S, T>, ActionOutcome> arrival =
-                    arrivals.poll(nanos, TimeUnit.NANOSECONDS);
-            if (arrival == null) {
-                throw new GraphAssertionError(
-                        CONTEXT, "invocation", "within " + budget, "no invocation arrived");
+        long start = System.nanoTime();
+        synchronized (invocations) {
+            while (true) {
+                if (closed) {
+                    throw closedFixture();
+                }
+                PendingInvocation<ActionCall<E, S, T>, ActionOutcome> arrival = arrivals.pollFirst();
+                if (arrival != null) {
+                    return arrival;
+                }
+                long remaining = nanos - (System.nanoTime() - start);
+                if (remaining <= 0) {
+                    throw new GraphAssertionError(
+                            CONTEXT, "invocation", "within " + budget, "no invocation arrived");
+                }
+                try {
+                    TimeUnit.NANOSECONDS.timedWait(invocations, remaining);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new GraphAssertionError(
+                            CONTEXT, "invocation", "an invocation", "test thread interrupted");
+                }
             }
-            return arrival;
-        } catch (InterruptedException interrupted) {
-            Thread.currentThread().interrupt();
-            throw new GraphAssertionError(CONTEXT, "invocation", "an invocation", "test thread interrupted");
         }
     }
 
@@ -101,7 +121,7 @@ public final class ControlledAsyncAction<E, S extends Enum<S>, T extends Enum<T>
                         context.depth(), context.input()));
         synchronized (invocations) {
             if (closed) {
-                throw new IllegalStateException("the controlled action is closed and takes no more invocations");
+                throw closedFixture();
             }
             invocations.add(pending);
         }
@@ -111,7 +131,12 @@ public final class ControlledAsyncAction<E, S extends Enum<S>, T extends Enum<T>
             pending.fail(failure);
             throw failure;
         }
-        arrivals.add(pending);
+        synchronized (invocations) {
+            if (!closed) {
+                arrivals.addLast(pending);
+                invocations.notifyAll();
+            }
+        }
         return pending.stage();
     }
 
@@ -123,11 +148,17 @@ public final class ControlledAsyncAction<E, S extends Enum<S>, T extends Enum<T>
                 return;
             }
             closed = true;
+            arrivals.clear();
+            invocations.notifyAll();
             entered = List.copyOf(invocations);
         }
         for (PendingInvocation<ActionCall<E, S, T>, ActionOutcome> pending : entered) {
             pending.cancelStage();
         }
+    }
+
+    private static GraphAssertionError closedFixture() {
+        return new GraphAssertionError(CONTEXT, "invocation", "an open fixture", "closed");
     }
 
     private static long budgetNanos(Duration budget) {

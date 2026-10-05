@@ -2,6 +2,7 @@ package consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -235,6 +236,32 @@ class GraphDiffTest {
                 GraphSnapshot.parse("graphmaquina-snapshot-v2\n/one\ttwo\\tlines\\nhere\n/two\t\n"));
         assertEquals("/one: expected \"plain\" but was \"two\\tlines\\nhere\"\n"
                 + "/two: expected <absent> but was \"\"\n", diff.render());
+    }
+
+    /**
+     * Quotes delimit a value, so a quote inside one is escaped: without that, a value that contains the
+     * words {@code " but was "} makes two different changes render as the very same line.
+     */
+    @Test
+    void renderEscapesTheQuotesOfAValueSoDifferentChangesNeverReadTheSame() {
+        GraphDiff first = GraphDiff.compare(
+                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\ta\" but was \"b\n"),
+                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\tc\n"));
+        GraphDiff second = GraphDiff.compare(
+                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\ta\n"),
+                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\tb\" but was \"c\n"));
+        assertEquals("/p: expected \"a\\\" but was \\\"b\" but was \"c\"\n", first.render());
+        assertEquals("/p: expected \"a\" but was \"b\\\" but was \\\"c\"\n", second.render());
+        assertNotEquals(first.render(), second.render());
+    }
+
+    /** A backslash is doubled and a quote gets one in front, so {@code x\"y} and {@code x"y} stay apart. */
+    @Test
+    void renderKeepsABackslashBeforeAQuoteApartFromTheQuoteAlone() {
+        GraphDiff diff = GraphDiff.compare(
+                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\tx\\\\\"y\n"),
+                GraphSnapshot.parse("graphmaquina-snapshot-v2\n/p\tx\"y\n"));
+        assertEquals("/p: expected \"x\\\\\\\"y\" but was \"x\\\"y\"\n", diff.render());
     }
 
     @Test

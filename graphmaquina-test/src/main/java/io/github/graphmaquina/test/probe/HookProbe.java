@@ -24,6 +24,7 @@ public final class HookProbe<E> implements Consumer<E> {
     private final CallTrace trace;
     private final ProbeCalls<E> calls;
     private final ResponseScript<Boolean> script;
+    private final Object entry = new Object();
     private volatile Consumer<E> onCall = entity -> { };
 
     private HookProbe(String name, CallTrace trace) {
@@ -74,9 +75,12 @@ public final class HookProbe<E> implements Consumer<E> {
 
     @Override
     public void accept(E entity) {
-        calls.record(entity);
-        trace.record(name, entity);
-        Supplier<Boolean> response = script.next();
+        Supplier<Boolean> response;
+        synchronized (entry) {
+            calls.record(entity);
+            trace.record(name, entity);
+            response = script.next();
+        }
         onCall.accept(entity);
         response.get();
     }

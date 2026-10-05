@@ -255,6 +255,23 @@ class OutcomeAssertionsTest {
                 "applied outcome", "moved to", State.DONE, State.READY);
     }
 
+    /** A list opened from a narrowed outcome names the outcome it came from, not just what it lists. */
+    @Test
+    void aListOpenedFromANarrowedOutcomeNamesTheOutcomeItCameFrom() {
+        Entity entity = new Entity("e", State.NEW);
+        AppliedOutcomeAssert<Entity, State, Id> applied = OutcomeAssert.assertThat(applied(entity)).isApplied();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> applied.records().hasSize(1)),
+                "applied outcome.records", "size", 1, 0);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> applied.reactions().hasSize(1)),
+                "applied outcome.reactions", "size", 1, 0);
+        FailedOutcomeAssert<Entity, State, Id> failed =
+                OutcomeAssert.assertThat(failed(entity, Optional.empty())).isFailed();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> failed.records().hasSize(1)),
+                "failed outcome.records", "size", 1, 0);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> failed.reactions().hasSize(1)),
+                "failed outcome.reactions", "size", 1, 0);
+    }
+
     // --- failed ------------------------------------------------------------------------------------
 
     @Test

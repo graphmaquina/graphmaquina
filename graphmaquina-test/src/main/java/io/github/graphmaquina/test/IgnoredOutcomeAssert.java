@@ -20,8 +20,8 @@ public final class IgnoredOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
 
     private final Outcome.Ignored<E, S, T> ignored;
 
-    IgnoredOutcomeAssert(Outcome.Ignored<E, S, T> ignored) {
-        super("ignored outcome", ignored);
+    IgnoredOutcomeAssert(String context, Outcome.Ignored<E, S, T> ignored) {
+        super(context, ignored);
         this.ignored = ignored;
     }
 

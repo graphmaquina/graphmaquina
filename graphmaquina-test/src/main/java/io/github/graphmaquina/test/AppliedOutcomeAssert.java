@@ -18,8 +18,8 @@ public final class AppliedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
 
     private final Outcome.Applied<E, S, T> applied;
 
-    AppliedOutcomeAssert(Outcome.Applied<E, S, T> applied) {
-        super("applied outcome", applied);
+    AppliedOutcomeAssert(String context, Outcome.Applied<E, S, T> applied) {
+        super(context, applied);
         this.applied = applied;
     }
 
@@ -37,11 +37,11 @@ public final class AppliedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
 
     /** The hops this transaction committed, which may belong to several machines when it cascaded. */
     public TransitionRecordsAssert records() {
-        return TransitionRecordsAssert.assertThat(applied.records());
+        return new TransitionRecordsAssert(context + ".records", applied.records());
     }
 
     /** The watch re-evaluations this commit triggered; one that failed is reported here, never propagated. */
     public ReactionsAssert reactions() {
-        return ReactionsAssert.assertThat(applied.reactions());
+        return new ReactionsAssert(context + ".reactions", applied.reactions());
     }
 }

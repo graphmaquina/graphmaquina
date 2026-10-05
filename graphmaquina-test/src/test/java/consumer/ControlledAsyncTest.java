@@ -3,6 +3,7 @@ package consumer;
 import static io.github.graphmaquina.test.fixtures.TestDomain.KEY;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -12,9 +13,11 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.AsyncTransitionGuard;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
@@ -256,6 +259,85 @@ class ControlledAsyncTest {
     }
 
     @Test
+    void aClosedGuardFixtureHandsOutNoHandleAndFailsItsWaitAtOnce() {
+        CountDownLatch entered = new CountDownLatch(1);
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.<Parcel, Status, Move>create()
+                .onCall((GuardContext<Parcel, Status, Move> context) -> entered.countDown());
+        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
+        MachineRegistry registry = gatedRegistry(gate, send);
+        try (registry; gate; send) {
+            Parcel parcel = new Parcel("p", Status.NEW);
+            CompletableFuture<Outcome<Parcel, Status, Move>> result =
+                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
+            awaitLatch(entered, "the guard was not entered");
+            gate.close();
+            GraphAssertionError error =
+                    assertThrows(GraphAssertionError.class, () -> gate.awaitInvocation(GENEROUS));
+            assertEquals("controlled async guard", error.context());
+            assertEquals("invocation", error.property());
+            assertEquals("an open fixture", error.expected());
+            assertEquals("closed", error.actual());
+            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(CancellationException.class);
+        }
+    }
+
+    @Test
+    void aGuardInvocationInItsSideEffectWhenTheFixtureClosesIsNotPublishedAfterwards() {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.<Parcel, Status, Move>create()
+                .onCall((GuardContext<Parcel, Status, Move> context) -> {
+                    entered.countDown();
+                    awaitLatch(release, "the side effect was not released");
+                });
+        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
+        MachineRegistry registry = gatedRegistry(gate, send);
+        try (registry; gate; send) {
+            Parcel parcel = new Parcel("p", Status.NEW);
+            CompletableFuture<Outcome<Parcel, Status, Move>> result =
+                    registry.of(PARCEL).async().execute(parcel, Move.SEND);
+            awaitLatch(entered, "the guard was not entered");
+            gate.close();
+            release.countDown();
+            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(CancellationException.class);
+            GraphAssertionError error =
+                    assertThrows(GraphAssertionError.class, () -> gate.awaitInvocation(BUDGET));
+            assertEquals("closed", error.actual());
+            assertEquals(1, gate.invocations().size());
+            assertTrue(gate.invocations().get(0).isCancelled());
+        }
+    }
+
+    @Test
+    void closingTheGuardFixtureWakesAWaiterThatIsAlreadyBlocked() throws Exception {
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
+        CompletableFuture<Throwable> ended = new CompletableFuture<>();
+        Thread waiter = new Thread(() -> {
+            try {
+                gate.awaitInvocation(Duration.ofSeconds(30));
+                ended.complete(null);
+            } catch (RuntimeException | Error failure) {
+                ended.complete(failure);
+            }
+        }, "guard-waiter");
+        waiter.setDaemon(true);
+        waiter.start();
+        try {
+            awaitBlocked(waiter);
+            gate.close();
+            GraphAssertionError error =
+                    assertInstanceOf(GraphAssertionError.class, ended.get(2, TimeUnit.SECONDS));
+            assertEquals("controlled async guard", error.context());
+            assertEquals("invocation", error.property());
+            assertEquals("an open fixture", error.expected());
+            assertEquals("closed", error.actual());
+        } finally {
+            waiter.interrupt();
+            waiter.join(2_000);
+        }
+    }
+
+    @Test
     void aGuardSideEffectThatThrowsSettlesItsOwnInvocation() {
         IllegalStateException boom = new IllegalStateException("gate hook down");
         ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.create();
@@ -374,9 +456,134 @@ class ControlledAsyncTest {
             Entity entity = new Entity("e", State.NEW);
             CompletableFuture<Outcome<Entity, State, Id>> result =
                     registry.of(KEY).async().execute(entity, Id.PREPARE);
-            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(IllegalStateException.class);
+            ExecutionException raised =
+                    assertThrows(ExecutionException.class, () -> result.get(2, TimeUnit.SECONDS));
+            GraphAssertionError refusal = assertInstanceOf(GraphAssertionError.class, raised.getCause());
+            assertEquals("controlled async action", refusal.context());
+            assertEquals("invocation", refusal.property());
+            assertEquals("an open fixture", refusal.expected());
+            assertEquals("closed", refusal.actual());
             assertEquals(List.of(), action.invocations());
             assertEquals(State.NEW, entity.state());
+        }
+    }
+
+    /**
+     * A refusal that commits a state change is not a refusal. The edge below recovers from any
+     * {@link IllegalStateException}, which is what the refusal used to be, so a test that executed through a
+     * closed fixture would have passed on the recovery route; the refusal is an assertion failure now, and
+     * the engine routes no {@link Error}.
+     */
+    @Test
+    void aClosedActionFixtureIsNeverTakenForAFailureTheEdgeRecoversFrom() {
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
+        action.close();
+        GraphDefinition<Entity, State, Id> graph = StateGraph.define(KEY).initial(State.NEW)
+                .terminal(State.DONE).terminal(State.FAILED)
+                .statePolicy(State.NEW, "prepare first").statePolicy(State.READY, "finish only")
+                .transition(Id.PREPARE, State.NEW, State.READY).asyncAction("prepare", action)
+                    .onFailure(Id.RECOVER).failsOn(IllegalStateException.class).endTransition()
+                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
+                .transition(Id.FINISH, State.READY, State.DONE).endTransition()
+                .build();
+        MachineRegistry registry = TestDomain.registry(graph);
+        try (registry; action) {
+            Entity entity = new Entity("e", State.NEW);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
+            ExecutionException raised =
+                    assertThrows(ExecutionException.class, () -> result.get(2, TimeUnit.SECONDS));
+            assertInstanceOf(GraphAssertionError.class, raised.getCause());
+            assertEquals(State.NEW, entity.state());
+            assertEquals(List.of(), action.invocations());
+        }
+    }
+
+    /**
+     * Closing cancels the invocations the fixture holds, and a cancelled handle is nothing to answer any more:
+     * the one that was queued or still being published when the fixture closed is not handed out afterwards,
+     * and a wait on a closed fixture fails at once instead of after its whole budget.
+     */
+    @Test
+    void aClosedActionFixtureHandsOutNoHandleAndFailsItsWaitAtOnce() {
+        CountDownLatch entered = new CountDownLatch(1);
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.<Entity, State, Id>create()
+                .onCall((TransitionContext<Entity, State, Id> context) -> entered.countDown());
+        MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(30), action));
+        try (registry; action) {
+            Entity entity = new Entity("e", State.NEW);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
+            awaitLatch(entered, "the action was not entered");
+            action.close();
+            GraphAssertionError error =
+                    assertThrows(GraphAssertionError.class, () -> action.awaitInvocation(GENEROUS));
+            assertEquals("controlled async action", error.context());
+            assertEquals("invocation", error.property());
+            assertEquals("an open fixture", error.expected());
+            assertEquals("closed", error.actual());
+            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(CancellationException.class);
+        }
+    }
+
+    @Test
+    void anActionInvocationInItsSideEffectWhenTheFixtureClosesIsNotPublishedAfterwards() {
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.<Entity, State, Id>create()
+                .onCall((TransitionContext<Entity, State, Id> context) -> {
+                    entered.countDown();
+                    awaitLatch(release, "the side effect was not released");
+                });
+        MachineRegistry registry = TestDomain.registry(TestDomain.graph(Duration.ofSeconds(30), action));
+        try (registry; action) {
+            Entity entity = new Entity("e", State.NEW);
+            CompletableFuture<Outcome<Entity, State, Id>> result =
+                    registry.of(KEY).async().execute(entity, Id.PREPARE);
+            awaitLatch(entered, "the action was not entered");
+            action.close();
+            release.countDown();
+            // The engine holds the stage only once the action returned it, which is after it was published or
+            // refused, so the history below is final when the failure arrives.
+            AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCause(CancellationException.class);
+            GraphAssertionError error =
+                    assertThrows(GraphAssertionError.class, () -> action.awaitInvocation(BUDGET));
+            assertEquals("closed", error.actual());
+            assertEquals(1, action.invocations().size());
+            assertTrue(action.invocations().get(0).isCancelled());
+        }
+    }
+
+    /**
+     * A wait that is already blocked when the fixture closes is woken by the close and fails like any wait on a
+     * closed fixture, instead of sitting out its whole budget and then reporting that nothing arrived.
+     */
+    @Test
+    void closingTheActionFixtureWakesAWaiterThatIsAlreadyBlocked() throws Exception {
+        ControlledAsyncAction<Entity, State, Id> action = ControlledAsyncAction.create();
+        CompletableFuture<Throwable> ended = new CompletableFuture<>();
+        Thread waiter = new Thread(() -> {
+            try {
+                action.awaitInvocation(Duration.ofSeconds(30));
+                ended.complete(null);
+            } catch (RuntimeException | Error failure) {
+                ended.complete(failure);
+            }
+        }, "action-waiter");
+        waiter.setDaemon(true);
+        waiter.start();
+        try {
+            awaitBlocked(waiter);
+            action.close();
+            GraphAssertionError error =
+                    assertInstanceOf(GraphAssertionError.class, ended.get(2, TimeUnit.SECONDS));
+            assertEquals("controlled async action", error.context());
+            assertEquals("invocation", error.property());
+            assertEquals("an open fixture", error.expected());
+            assertEquals("closed", error.actual());
+        } finally {
+            waiter.interrupt();
+            waiter.join(2_000);
         }
     }
 
@@ -633,6 +840,17 @@ class ControlledAsyncTest {
             assertFalse(call.isCancelled());
             AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCauseSameAs(boom);
             assertEquals(State.NEW, entity.state());
+        }
+    }
+
+    /** Waits until the thread sits in a timed wait, which is where a blocked {@code awaitInvocation} is. */
+    private static void awaitBlocked(Thread thread) {
+        long start = System.nanoTime();
+        while (thread.getState() != Thread.State.TIMED_WAITING) {
+            if (System.nanoTime() - start > TimeUnit.SECONDS.toNanos(2)) {
+                throw new AssertionError("the waiter never blocked, it is " + thread.getState());
+            }
+            Thread.onSpinWait();
         }
     }
 

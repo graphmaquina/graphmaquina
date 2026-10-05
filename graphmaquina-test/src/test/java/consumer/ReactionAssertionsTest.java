@@ -36,6 +36,7 @@ import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -116,6 +117,16 @@ class ReactionAssertionsTest {
         assertEquals("aborted reaction", error.property());
         assertEquals("none", error.expected());
         assertSame(cause, error.actual());
+    }
+
+    @Test
+    void hasNoAbortedChainsTheCauseOfTheAbortItNames() {
+        Entity entity = new Entity("e", State.READY);
+        IllegalStateException cause = new IllegalStateException("down");
+        ReactionsAssert view =
+                ReactionsAssert.assertThat(List.of(new Reaction.Aborted(TestDomain.KEY, entity, cause)));
+        GraphAssertionError error = assertThrows(GraphAssertionError.class, view::hasNoAborted);
+        assertSame(cause, error.getCause());
     }
 
     @Test
@@ -399,6 +410,65 @@ class ReactionAssertionsTest {
                 TransitionAbortedException.class, cause);
     }
 
+    // --- a narrowed view keeps where it came from -------------------------------------------------------
+
+    @Test
+    void aNestedOutcomeNamesThePathToTheReactionItCameFrom() {
+        Entity entity = new Entity("e", State.READY);
+        ReactionAssert<Entity, State, Id> reaction = single(done(entity, applied(entity)), entity);
+        String where = "reactions for " + TestDomain.KEY + "[0].outcome";
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reaction.isDone().outcome().from(State.READY)), where, "from", State.READY, State.NEW);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reaction.isDone().outcome().isApplied().movedTo(State.NEW)),
+                where + " (applied)", "moved to", State.NEW, State.READY);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reaction.isDone().outcome().isApplied().reactions().hasSize(1)),
+                where + " (applied).reactions", "size", 1, 0);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reaction.isDone().outcome().isApplied().records().hasSize(1)),
+                where + " (applied).records", "size", 1, 0);
+    }
+
+    /**
+     * One abort, found through three views, is named by the path each of them took to reach it. Reading the
+     * nested list of reaction 1 as if it were the root would name the abort {@code reactions[0]}, which in the
+     * root list is a reaction that did not abort.
+     */
+    @Test
+    void anAbortBelowANarrowedOutcomeIsNamedByThePathOfTheViewThatFoundIt() {
+        Entity entity = new Entity("e", State.READY);
+        IllegalStateException cause = new IllegalStateException("nested boom");
+        Outcome.Applied<Entity, State, Id> aborting = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE,
+                State.READY, List.of(), List.of(new Reaction.Aborted(TestDomain.KEY, entity, cause)));
+        List<Reaction> root = List.of(
+                done(entity, new Outcome.Ignored<>(entity, State.READY, IgnoreReason.NO_RULE_MATCHED)),
+                done(entity, aborting));
+        String nested = "reactions for " + TestDomain.KEY + "[1].outcome (applied).reactions";
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> ReactionsAssert.assertThat(root).forEntity(TestDomain.KEY, entity).atIndex(1)
+                                .isDone().outcome().isApplied().reactions().hasNoAborted()),
+                nested + "[0]", "aborted reaction", "none", cause);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> ReactionsAssert.assertThat(root).hasNoAbortedRecursively()),
+                "reactions[1].outcome.reactions[0]", "aborted reaction", "none", cause);
+    }
+
+    @Test
+    void theRecursiveCheckOfANestedListStartsFromThePathOfThatList() {
+        Entity entity = new Entity("e", State.READY);
+        IllegalStateException cause = new IllegalStateException("deepest");
+        Outcome.Applied<Entity, State, Id> grandchild = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE,
+                State.READY, List.of(), List.of(new Reaction.Aborted(TestDomain.KEY, entity, cause)));
+        Outcome.Applied<Entity, State, Id> child = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE,
+                State.READY, List.of(), List.of(done(entity, grandchild)));
+        ReactionsAssert nested = ReactionsAssert.assertThat(List.of(done(entity, child)))
+                .forEntity(TestDomain.KEY, entity).single().isDone().outcome().isApplied().reactions();
+        assertFailure(assertThrows(GraphAssertionError.class, nested::hasNoAbortedRecursively),
+                "reactions for " + TestDomain.KEY + "[0].outcome (applied).reactions[0].outcome.reactions[0]",
+                "aborted reaction", "none", cause);
+    }
+
     // --- the localized cast ---------------------------------------------------------------------------
 
     @Test
@@ -490,6 +560,18 @@ class ReactionAssertionsTest {
         Outcome<Entity, State, Id> outcome = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
                 List.of(), List.of());
         OutcomeAssert.assertThat(outcome).isApplied().reactions().isEmpty();
+    }
+
+    /** A subject built by hand may hold a null; the view fails as an assertion, never as a crash. */
+    @Test
+    void aNullReactionInTheSubjectIsNeverACrash() {
+        Entity entity = new Entity("e", State.READY);
+        ReactionsAssert view =
+                ReactionsAssert.assertThat(new ArrayList<>(Arrays.asList(done(entity, applied(entity)), null)));
+        assertSame(view, view.hasSize(2));
+        assertSame(view, view.hasNoAborted());
+        assertSame(view, view.hasNoAbortedRecursively());
+        view.forEntity(TestDomain.KEY, entity).single().isDone().outcome().isApplied().movedTo(State.READY);
     }
 
     // --- null subjects: one case per expectation whose subject can be absent --------------------------

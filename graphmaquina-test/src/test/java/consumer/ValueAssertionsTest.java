@@ -2,16 +2,24 @@ package consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.test.ActionOutcomeAssert;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.GuardResultAssert;
+import io.github.graphmaquina.test.OutcomeAssert;
+import io.github.graphmaquina.test.fixtures.TestDomain.Id;
+import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.internal.Checks;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class ValueAssertionsTest {
@@ -229,6 +237,124 @@ class ValueAssertionsTest {
                 message);
         assertTrue(message.contains(Integer.toHexString(System.identityHashCode(first))), message);
         assertTrue(message.contains(Integer.toHexString(System.identityHashCode(second))), message);
+    }
+
+    // --- a value that cannot be rendered, and a throwable that is the discrepancy ---------------------
+
+    /**
+     * A lazily loaded entity fails its {@code toString()} outside a session. A check over such a value that
+     * fails must still report itself as an assertion, naming the instance, instead of surfacing that failure.
+     */
+    @Test
+    void aValueWhoseToStringThrowsStillFailsAsAnAssertion() {
+        Unprintable expected = new Unprintable();
+        Unprintable actual = new Unprintable();
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> Checks.same("entity", "identity", expected, actual));
+        assertEquals("entity", error.context());
+        assertEquals("identity", error.property());
+        assertSame(expected, error.expected());
+        assertSame(actual, error.actual());
+        String message = error.getMessage();
+        assertTrue(message.contains(Unprintable.class.getName() + "@"
+                + Integer.toHexString(System.identityHashCode(expected))), message);
+        assertTrue(message.contains(Unprintable.class.getName() + "@"
+                + Integer.toHexString(System.identityHashCode(actual))), message);
+        assertTrue(message.contains("toString() threw java.lang.IllegalStateException: " + Unprintable.FAILURE),
+                message);
+    }
+
+    /**
+     * {@code String.valueOf(value)} is null when {@code value.toString()} returns null, so a rendering that
+     * trusted it threw a {@link NullPointerException} while it compared the two renderings of a failed check.
+     */
+    @Test
+    void aValueWhoseToStringReturnsNullStillFailsAsAnAssertion() {
+        NullPrinting expected = new NullPrinting();
+        NullPrinting actual = new NullPrinting();
+        GraphAssertionError both = assertThrows(GraphAssertionError.class,
+                () -> Checks.same("entity", "identity", expected, actual));
+        assertSame(expected, both.expected());
+        assertSame(actual, both.actual());
+        assertTrue(both.getMessage().contains(NullPrinting.shown(expected)), both.getMessage());
+        assertTrue(both.getMessage().contains(NullPrinting.shown(actual)), both.getMessage());
+        GraphAssertionError onlyExpected = assertThrows(GraphAssertionError.class,
+                () -> Checks.same("entity", "identity", expected, "text"));
+        assertEquals("entity: identity expected <" + NullPrinting.shown(expected) + "> but was <text>",
+                onlyExpected.getMessage());
+        GraphAssertionError onlyActual = assertThrows(GraphAssertionError.class,
+                () -> Checks.equal("entity", "name", "text", actual));
+        assertEquals("entity: name expected <text> but was <" + NullPrinting.shown(actual) + ">",
+                onlyActual.getMessage());
+    }
+
+    @Test
+    void aViewFailsAsAnAssertionOverAnEntityThatCannotBeRendered() {
+        Unprintable loaded = new Unprintable();
+        Unprintable other = new Unprintable();
+        Outcome<Unprintable, State, Id> outcome = new Outcome.Applied<>(loaded, State.NEW, Id.PREPARE,
+                State.READY, List.of(), List.of());
+        OutcomeAssert.assertThat(outcome).hasEntitySameAs(loaded);
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(outcome).hasEntitySameAs(other));
+        assertEquals("outcome", error.context());
+        assertEquals("entity", error.property());
+        assertSame(other, error.expected());
+        assertSame(loaded, error.actual());
+    }
+
+    /**
+     * An unexpected throwable is the discrepancy, and it is also why the check failed, so it is chained as the
+     * cause: a test report prints where it was thrown instead of only what it was called.
+     */
+    @Test
+    void aThrowableReportedAsTheActualValueIsChainedAsTheCause() {
+        RuntimeException thrown = deepInsideTheAction();
+        GraphAssertionError error = new GraphAssertionError("async test", "outcome", "normal result", thrown);
+        assertSame(thrown, error.actual());
+        assertSame(thrown, error.getCause());
+        StringWriter printed = new StringWriter();
+        error.printStackTrace(new PrintWriter(printed));
+        assertTrue(printed.toString().contains("Caused by: " + thrown), printed.toString());
+        assertTrue(printed.toString().contains("deepInsideTheAction"), printed.toString());
+    }
+
+    @Test
+    void anActualValueThatIsNotAThrowableChainsNoCause() {
+        assertNull(new GraphAssertionError("c", "p", "expected", "actual").getCause());
+        assertNull(new GraphAssertionError("c", "p", new IllegalStateException("only expected"), "actual")
+                .getCause());
+        assertNull(new GraphAssertionError("c", "p", "expected", null).getCause());
+    }
+
+    private static RuntimeException deepInsideTheAction() {
+        return new IllegalStateException("customer.address is null");
+    }
+
+    /** An entity whose {@code toString()} returns null, which {@code String.valueOf} hands on as null. */
+    private static final class NullPrinting {
+
+        /** What a message is expected to show for one: its class and identity, and that it printed nothing. */
+        static String shown(NullPrinting value) {
+            return NullPrinting.class.getName() + "@" + Integer.toHexString(System.identityHashCode(value))
+                    + " (toString() returned null)";
+        }
+
+        @Override
+        public String toString() {
+            return null;
+        }
+    }
+
+    /** An entity whose rendering fails, as a persistence proxy's does once its session is gone. */
+    private static final class Unprintable {
+
+        static final String FAILURE = "could not initialize proxy - no Session";
+
+        @Override
+        public String toString() {
+            throw new IllegalStateException(FAILURE);
+        }
     }
 
     private static void assertFailure(GraphAssertionError error, String context, String property,

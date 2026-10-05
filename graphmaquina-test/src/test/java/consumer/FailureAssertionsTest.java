@@ -2,6 +2,7 @@ package consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -13,6 +14,9 @@ import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.PeerView;
+import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
@@ -23,6 +27,7 @@ import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UnhandledFailureException;
+import io.github.graphmaquina.error.WatchChainExceededException;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
 import io.github.graphmaquina.test.AbortAssert;
@@ -37,6 +42,7 @@ import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
@@ -230,6 +236,76 @@ class FailureAssertionsTest {
                 "abort", "to", Optional.of(Flag.ON), Optional.empty());
     }
 
+    /**
+     * An abort can be raised before any identifier was read, so that it names neither an identifier nor a
+     * destination. {@code at} and {@code atUnresolved} both compare the identifier, which is why
+     * {@code atUnread} exists: it locates such an abort by machine, entity and origin and requires the rest absent.
+     */
+    @Test
+    void anAbortBeforeAnyIdentifierWasReadIsLocatedByMachineEntityAndOrigin() {
+        Other entity = new Other("o");
+        Other twin = new Other("o");
+        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(
+                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.empty(), Optional.empty(), Optional.empty(),
+                        List.of(), List.of()), "chain too long")).isAbort();
+        assertSame(view, view.atUnread(OTHERS, entity, Flag.OFF));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> view.atUnread(TestDomain.KEY, new Entity("e", State.NEW), State.NEW)),
+                "abort", "key", TestDomain.KEY, OTHERS);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.atUnread(OTHERS, twin, Flag.OFF)),
+                "abort", "entity", twin, entity);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.atUnread(OTHERS, entity, Flag.ON)),
+                "abort", "from", Flag.ON, Flag.OFF);
+    }
+
+    @Test
+    void anAbortThatReadAnIdentifierIsNotOneThatReadNone() {
+        Other entity = new Other("o");
+        AbortAssert resolved = TransitionFailureAssert.assertThat(new TransitionAbortedException(
+                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.of(Flag.ON),
+                        Optional.empty(), List.of(), List.of()), "no")).isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> resolved.atUnread(OTHERS, entity, Flag.OFF)),
+                "abort", "transition", Optional.empty(), Optional.of(Switch.FLIP));
+        AbortAssert unresolved = TransitionFailureAssert.assertThat(new TransitionAbortedException(
+                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.empty(),
+                        Optional.empty(), List.of(), List.of()), "no edge")).isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> unresolved.atUnread(OTHERS, entity, Flag.OFF)),
+                "abort", "transition", Optional.empty(), Optional.of(Switch.FLIP));
+    }
+
+    @Test
+    void aNullRequiredArgumentOfAtUnreadIsAnArgumentError() {
+        Other entity = new Other("o");
+        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(
+                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.empty(), Optional.empty(), Optional.empty(),
+                        List.of(), List.of()), "chain too long")).isAbort();
+        assertThrows(NullPointerException.class, () -> view.atUnread(null, entity, Flag.OFF));
+        assertThrows(NullPointerException.class, () -> view.atUnread(OTHERS, null, Flag.OFF));
+        assertThrows(NullPointerException.class, () -> view.atUnread(OTHERS, entity, null));
+    }
+
+    /**
+     * The engine aborts a chain of watch reactions that exceeds {@code maxWatchChain} before it reads any
+     * identifier, in valid use, so this is the abort the new expectation is for.
+     */
+    @Test
+    void aWatchChainThatExceedsItsLimitAbortsBeforeAnyIdentifierWasRead() {
+        try (MachineRegistry registry = pingPong(1)) {
+            Doc doc = new Doc("d1", Phase.DRAFT);
+            Outcome<Doc, Phase, Step> root = registry.of(DOCS).execute(doc, Step.SUBMIT);
+            Reaction.Done first = (Reaction.Done) ((Outcome.Applied<?, ?, ?>) root).reactions().get(0);
+            Outcome.Applied<?, ?, ?> nested = (Outcome.Applied<?, ?, ?>) first.outcome();
+            RuntimeException cause = ((Reaction.Aborted) nested.reactions().get(0)).cause();
+            assertInstanceOf(WatchChainExceededException.class, cause);
+            AbortAssert view = TransitionFailureAssert.assertThat(cause).isAbort();
+            assertSame(view, view.atUnread(DOCS, doc, Phase.DRAFT));
+            view.hasNoAction().hasCascadePathExactly(List.of());
+            for (Step step : Step.values()) {
+                assertThrows(GraphAssertionError.class, () -> view.atUnresolved(DOCS, doc, Phase.DRAFT, step));
+            }
+        }
+    }
+
     @Test
     void aKeyThatEqualsTheFailuresKeyMatchesEvenAsAFreshInstance() {
         Other entity = new Other("o");
@@ -291,6 +367,29 @@ class FailureAssertionsTest {
                         Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran)),
                 "no")).isAbort().journal();
         journal.hasSize(1).hasActionsExactly("prepare").hasStatusesExactly(ActionStatus.THREW);
+    }
+
+    /**
+     * A journal says which failure it was read from. The aggregate's own journal and the journal of one of
+     * its collected elements are different lists, and a failure over either must not read the same.
+     */
+    @Test
+    void aJournalNamesTheFailureItWasReadFrom() {
+        Entity entity = new Entity("e", State.NEW);
+        ActionRecord ran = new ActionRecord(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY,
+                "prepare", 0, ActionStatus.THREW);
+        AbortDetails withJournal = new AbortDetails(TestDomain.KEY, entity, State.NEW, Optional.of(Id.PREPARE),
+                Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran));
+        AbortAssert abort = TransitionFailureAssert.assertThat(new TransitionAbortedException(withJournal, "no"))
+                .isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> abort.journal().hasSize(2)),
+                "abort.journal", "size", 2, 1);
+        CascadeAbortAssert cascade = TransitionFailureAssert.assertThat(
+                new CascadeException(withJournal, List.of(elementAbort(new Other("a"))))).isCascadeAbort();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> cascade.journal().hasSize(2)),
+                "cascade abort.journal", "size", 2, 1);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> cascade.error(0).journal().hasSize(2)),
+                "cascade abort[0].journal", "size", 2, 0);
     }
 
     // --- the collected cascade ----------------------------------------------------------------------
@@ -794,6 +893,59 @@ class FailureAssertionsTest {
         return MachineRegistry.builder()
                 .add(StateMachines.from(parcels).state(Parcel::status, Parcel::setStatus).identity(Parcel::id))
                 .add(StateMachines.from(labels).state(Label::status, Label::setStatus).identity(Label::id))
+                .build();
+    }
+
+    private static final MachineKey<Doc, Phase, Step> DOCS = MachineKey.of(Doc.class, Phase.class, Step.class);
+
+    /** States of {@link Doc}, whose two live ones watch each other. */
+    enum Phase { DRAFT, REVIEW, PUBLISHED, ARCHIVED }
+
+    /** Transition identifiers of the document machine. */
+    enum Step { SUBMIT, SEND_BACK, PUBLISH, ARCHIVE }
+
+    /** Entity of the ping-pong machine. */
+    static final class Doc {
+
+        private final String id;
+        private Phase phase;
+
+        Doc(String id, Phase phase) {
+            this.id = id;
+            this.phase = phase;
+        }
+
+        String id() { return id; }
+
+        Phase phase() { return phase; }
+
+        void setPhase(Phase phase) { this.phase = phase; }
+    }
+
+    /**
+     * A document in DRAFT or REVIEW watches itself and always executes the edge to the other one, so every
+     * commit triggers a reaction that commits again, and {@code maxWatchChain} is the only thing that ends it.
+     */
+    private static MachineRegistry pingPong(int maxWatchChain) {
+        GraphDefinition<Doc, Phase, Step> graph = StateGraph.define(DOCS)
+                .initial(Phase.DRAFT).terminal(Phase.ARCHIVED).allowsCycle(Phase.REVIEW)
+                .statePolicy(Phase.DRAFT, "x").statePolicy(Phase.REVIEW, "x").statePolicy(Phase.PUBLISHED, "x")
+                .transition(Step.SUBMIT, Phase.DRAFT, Phase.REVIEW).endTransition()
+                .transition(Step.SEND_BACK, Phase.REVIEW, Phase.DRAFT).endTransition()
+                .transition(Step.PUBLISH, Phase.REVIEW, Phase.PUBLISHED).endTransition()
+                .transition(Step.ARCHIVE, Phase.PUBLISHED, Phase.ARCHIVED).endTransition()
+                .watch(Phase.DRAFT, DOCS, (Doc doc) -> List.of(doc), (Doc doc) -> Optional.of(doc))
+                    .when("always", (Doc doc, Collection<? extends Doc> peers, PeerView<Doc, Phase, Step> view) -> true)
+                        .execute(Step.SUBMIT)
+                    .endWatch()
+                .watch(Phase.REVIEW, DOCS, (Doc doc) -> List.of(doc), (Doc doc) -> Optional.of(doc))
+                    .when("always", (Doc doc, Collection<? extends Doc> peers, PeerView<Doc, Phase, Step> view) -> true)
+                        .execute(Step.SEND_BACK)
+                    .endWatch()
+                .build();
+        return MachineRegistry.builder()
+                .add(StateMachines.from(graph).state(Doc::phase, Doc::setPhase).identity(Doc::id))
+                .maxWatchChain(maxWatchChain)
                 .build();
     }
 

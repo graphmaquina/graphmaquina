@@ -22,8 +22,8 @@ public final class RejectedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>
 
     private final Outcome.Rejected<E, S, T> rejected;
 
-    RejectedOutcomeAssert(Outcome.Rejected<E, S, T> rejected) {
-        super("rejected outcome", rejected);
+    RejectedOutcomeAssert(String context, Outcome.Rejected<E, S, T> rejected) {
+        super(context, rejected);
         this.rejected = rejected;
     }
 

@@ -8,7 +8,10 @@
  * {@link io.github.graphmaquina.test.GraphSnapshots} compare a graph against a checked-in resource.
  * The {@code probe} package scripts guards, actions, hooks, the state setter and asynchronous callbacks.
  * Every unmet expectation raises {@link io.github.graphmaquina.test.GraphAssertionError}; invalid fixture
- * configuration raises {@code IllegalArgumentException} or {@code IllegalStateException}.
+ * configuration raises {@code IllegalArgumentException} or {@code IllegalStateException}. A controlled
+ * asynchronous fixture that is invoked after it was closed refuses instead: the action with a
+ * {@code GraphAssertionError}, which no {@code failsOn} route of an edge can take for a failure of the
+ * action, and the guard with an {@code IllegalStateException}, which aborts the transition.
  *
  * <p>The guide, with installation, what each entry point checks and what each check does not prove, is
  * {@code docs/testing.md} in the repository.

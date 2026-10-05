@@ -15,7 +15,9 @@ import java.util.Optional;
  *
  * <p>{@link #at(MachineKey, Object, Enum, Enum, Enum)} describes an abort that had already resolved its
  * edge; {@link #atUnresolved(MachineKey, Object, Enum, Enum)} describes one raised before an edge was
- * resolved, which has no destination to report because the identifier matched none from that state.
+ * resolved, which has no destination to report because the identifier matched none from that state; and
+ * {@link #atUnread(MachineKey, Object, Enum)} describes one raised before any identifier was read, such as
+ * a chain of watch reactions that exceeds its limit, which reports neither.
  */
 public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
 
@@ -65,6 +67,24 @@ public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
         return this;
     }
 
+    /**
+     * The abort that was raised before any identifier was read, so that it reports neither an identifier nor a
+     * destination: the machine, the entity by reference and the state it was in are all there is to locate it.
+     * An abort that did read an identifier does not satisfy it.
+     */
+    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnread(MachineKey<E, S, T> key, E entity,
+            S from) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(from, "from");
+        Checks.equal(context, "key", key, abort.key());
+        Checks.same(context, "entity", entity, abort.entity());
+        Checks.equal(context, "from", from, abort.from());
+        Checks.equal(context, "transition", Optional.empty(), abort.transition());
+        Checks.equal(context, "to", Optional.empty(), abort.to());
+        return this;
+    }
+
     /** The action that was running when the transition aborted, which an edge without one never names. */
     public AbortAssert hasActionNamed(String expected) {
         Objects.requireNonNull(expected, "expected");
@@ -87,6 +107,6 @@ public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
 
     /** The actions that ran before the abort, which survive it even though nothing was committed. */
     public JournalAssert journal() {
-        return JournalAssert.assertThat(abort.journal());
+        return new JournalAssert(context + ".journal", abort.journal());
     }
 }

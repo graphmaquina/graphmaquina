@@ -29,8 +29,12 @@ public final class GraphSnapshots {
 
     private GraphSnapshots() { }
 
-    /** Compares against {@code resource} with the default options. */
+    /**
+     * Compares against {@code resource} with the default options. A malformed resource name is reported before
+     * the system properties are read, so it is never hidden by a mistake in them.
+     */
     public static void assertMatches(GraphDefinition<?, ?, ?> definition, String resource) {
+        GoldenStore.validateResource(resource);
         assertMatches(definition, resource, GoldenOptions.defaults());
     }
 

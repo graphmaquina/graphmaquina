@@ -21,8 +21,8 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
 
     private final Outcome.Failed<E, S, T> failed;
 
-    FailedOutcomeAssert(Outcome.Failed<E, S, T> failed) {
-        super("failed outcome", failed);
+    FailedOutcomeAssert(String context, Outcome.Failed<E, S, T> failed) {
+        super(context, failed);
         this.failed = failed;
     }
 
@@ -83,11 +83,11 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
 
     /** The hops this transaction committed, the recovery edge included, since a failed outcome still commits. */
     public TransitionRecordsAssert records() {
-        return TransitionRecordsAssert.assertThat(failed.records());
+        return new TransitionRecordsAssert(context + ".records", failed.records());
     }
 
     /** The watch re-evaluations this commit triggered; the recovery edge is a commit, so it triggers them too. */
     public ReactionsAssert reactions() {
-        return ReactionsAssert.assertThat(failed.reactions());
+        return new ReactionsAssert(context + ".reactions", failed.reactions());
     }
 }

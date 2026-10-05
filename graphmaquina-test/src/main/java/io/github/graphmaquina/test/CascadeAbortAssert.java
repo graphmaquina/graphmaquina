@@ -43,6 +43,6 @@ public final class CascadeAbortAssert extends BaseFailureAssert<CascadeAbortAsse
 
     /** The parent transaction's journal: every action that ran, the collected elements' included. */
     public JournalAssert journal() {
-        return JournalAssert.assertThat(cascade.journal());
+        return new JournalAssert(context + ".journal", cascade.journal());
     }
 }

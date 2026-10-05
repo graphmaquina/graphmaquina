@@ -95,6 +95,27 @@ class GoldenStoreTest {
         }
     }
 
+    /**
+     * A class-path directory answers a stream of its own entry names, which the comparison would otherwise
+     * take for the golden and report as a content difference.
+     */
+    @Test
+    void aResourceThatNamesADirectoryIsNotAGolden(@TempDir Path root) throws Exception {
+        Files.createDirectories(root.resolve("golden/sub"));
+        Files.writeString(root.resolve("golden/a.dot"), "digraph {}\n", StandardCharsets.UTF_8);
+        try (URLClassLoader loader = loader(root)) {
+            GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                    () -> GoldenStore.assertMatches("golden", "digraph {}\n",
+                            GoldenOptions.readOnly(loader), DIFF));
+            assertEquals("golden", error.context());
+            assertEquals("content", error.property());
+            assertEquals("an existing golden resource", error.expected());
+            assertEquals("a directory", error.actual());
+            assertEquals("golden: content expected <an existing golden resource> but was <a directory>",
+                    error.getMessage());
+        }
+    }
+
     // --- what counts as equal -----------------------------------------------------------------------
 
     @Test
@@ -104,6 +125,19 @@ class GoldenStoreTest {
             GoldenOptions options = GoldenOptions.readOnly(loader);
             GoldenStore.assertMatches("x.dot", "a\nb\n", options, DIFF);
             GoldenStore.assertMatches("x.dot", "a\rb\r", options, DIFF);
+        }
+    }
+
+    /** An editor may save a UTF-8 golden with a byte order mark; the mark is no part of the text it holds. */
+    @Test
+    void aByteOrderMarkIsNotPartOfTheGolden(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve("x.dot"), "\uFEFFa\nb\n", StandardCharsets.UTF_8);
+        try (URLClassLoader loader = loader(root)) {
+            GoldenOptions options = GoldenOptions.readOnly(loader);
+            GoldenStore.assertMatches("x.dot", "a\nb\n", options, DIFF);
+            GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                    () -> GoldenStore.assertMatches("x.dot", "a\nc\n", options, DIFF));
+            assertEquals("<a\nb\n|a\nc\n>", error.actual());
         }
     }
 
@@ -181,6 +215,22 @@ class GoldenStoreTest {
             GoldenStore.assertMatches("x.dot", "a\n", GoldenOptions.updating(stale, root, written::add), DIFF);
             assertEquals(List.of(), written);
             assertEquals("a\n", Files.readString(root.resolve("x.dot"), StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * Update mode is the one path meant to repair a golden, so a source file that cannot be decoded — saved as
+     * Latin-1, say — is replaced like any other differing one. Only a read refuses it.
+     */
+    @Test
+    void updateReplacesASourceThatIsNotUtf8(@TempDir Path root) throws Exception {
+        Files.write(root.resolve("x.dot"), "caf\u00e9\n".getBytes(StandardCharsets.ISO_8859_1));
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            GoldenStore.assertMatches("x.dot", "a\n", GoldenOptions.updating(loader, root, written::add), DIFF);
+            assertEquals(List.of(root.resolve("x.dot")), written);
+            assertEquals("a\n", Files.readString(root.resolve("x.dot"), StandardCharsets.UTF_8));
+            GoldenStore.assertMatches("x.dot", "a\n", GoldenOptions.readOnly(loader), DIFF);
         }
     }
 
@@ -342,6 +392,36 @@ class GoldenStoreTest {
         assertEquals(List.of(root.resolve("alias/nested/x.dot")), written);
         try (Stream<Path> entries = Files.list(inside.resolve("nested"))) {
             assertEquals(List.of(inside.resolve("nested/x.dot")), entries.toList());
+        }
+    }
+
+    /**
+     * The store accepts a link that stays inside the root, so an update has to write through a link that is
+     * the golden itself: replacing it would leave the shared file stale and the golden a copy of its own.
+     */
+    @Test
+    void aSymbolicLinkToAFileInsideTheRootIsWrittenThroughAndKept(@TempDir Path root) throws Exception {
+        Path shared = Files.createDirectory(root.resolve("shared"));
+        Path module = Files.createDirectory(root.resolve("module"));
+        Path target = Files.writeString(shared.resolve("x.dot"), "old\n");
+        Path link = Files.createSymbolicLink(module.resolve("x.dot"), Path.of("../shared/x.dot"));
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            GoldenStore.assertMatches("module/x.dot", "new\n",
+                    GoldenOptions.updating(loader, root, written::add), DIFF);
+            GoldenStore.assertMatches("module/x.dot", "new\n",
+                    GoldenOptions.updating(loader, root, written::add), DIFF);
+            GoldenStore.assertMatches("module/x.dot", "new\n", GoldenOptions.readOnly(loader), DIFF);
+        }
+        assertTrue(Files.isSymbolicLink(link), "the link must survive the update");
+        assertEquals(Path.of("../shared/x.dot"), Files.readSymbolicLink(link));
+        assertEquals("new\n", Files.readString(target));
+        assertEquals(List.of(link), written, "the path that was named is the one reported, once");
+        try (Stream<Path> entries = Files.list(shared)) {
+            assertEquals(List.of(target), entries.toList());
+        }
+        try (Stream<Path> entries = Files.list(module)) {
+            assertEquals(List.of(link), entries.toList());
         }
     }
 

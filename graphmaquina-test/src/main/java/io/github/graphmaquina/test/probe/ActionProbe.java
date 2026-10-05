@@ -17,9 +17,12 @@ import java.util.function.Supplier;
  * covers raises a {@link GraphAssertionError} naming the probe and the ordinal of the call.
  *
  * <p>Configuration is meant to finish before the probe reaches a machine; after that, invoking it from several
- * threads is safe and each thread is served a different queued response. The side effect registered with
- * {@link #onCall} runs on the calling thread, after the response has been withdrawn and before it is returned
- * or thrown, so it also runs for a call whose response is an exception.
+ * threads is safe and each thread is served a different queued response. Recording a call, adding it to the
+ * trace and withdrawing its response are one step, so the invocation at position p of {@link #calls()} is the
+ * one that was served the response of call p + 1, and this probe's own entries in the trace keep the order of
+ * its calls, however the threads interleave. The side effect registered with {@link #onCall} runs on the
+ * calling thread, after the response has been withdrawn and before it is returned or thrown, so it also runs
+ * for a call whose response is an exception.
  *
  * @param <E> the entity type of the machine the action belongs to
  * @param <S> the state enum of that machine
@@ -31,6 +34,7 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
     private final CallTrace trace;
     private final ProbeCalls<ActionCall<E, S, T>> calls;
     private final ResponseScript<ActionOutcome> script;
+    private final Object entry = new Object();
     private volatile Consumer<TransitionContext<E, S, T>> onCall = context -> { };
 
     private ActionProbe(String name, CallTrace trace) {
@@ -89,9 +93,12 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
     public ActionOutcome process(TransitionContext<E, S, T> context) {
         ActionCall<E, S, T> call = new ActionCall<>(context.entity(), context.from(), context.transition(),
                 context.to(), context.depth(), context.input());
-        calls.record(call);
-        trace.record(name, call);
-        Supplier<ActionOutcome> response = script.next();
+        Supplier<ActionOutcome> response;
+        synchronized (entry) {
+            calls.record(call);
+            trace.record(name, call);
+            response = script.next();
+        }
         onCall.accept(context);
         return response.get();
     }

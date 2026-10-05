@@ -15,6 +15,9 @@ import io.github.graphmaquina.test.TransitionFailureAssert;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CancellationException;
@@ -63,6 +66,20 @@ class AsyncAssertionsTest {
         assertEquals("outcome", error.property());
         assertEquals("normal result", error.expected());
         assertSame(boom, error.actual());
+    }
+
+    /** The throwable is the reason the check failed, so a test report must be able to print where it was thrown. */
+    @Test
+    void awaitChainsTheThrowableItReportsAsTheCauseOfTheFailure() {
+        IllegalStateException boom = new IllegalStateException("engine down");
+        CompletableFuture<Outcome<Entity, State, Id>> failed = CompletableFuture.failedFuture(boom);
+        assertSame(boom, assertThrows(GraphAssertionError.class,
+                () -> AsyncAssertions.await(failed, Duration.ofSeconds(2))).getCause());
+        CompletableFuture<Outcome<Entity, State, Id>> cancelled = new CompletableFuture<>();
+        assertTrue(cancelled.cancel(false));
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> AsyncAssertions.await(cancelled, Duration.ofSeconds(2)));
+        assertSame(error.actual(), error.getCause());
     }
 
     @Test
@@ -162,6 +179,65 @@ class AsyncAssertionsTest {
         assertFalse(stage.isDone());
     }
 
+    // --- a stage that cannot be converted to a future ---------------------------------------------------
+
+    /**
+     * {@code CompletionStage#toCompletableFuture} lets a stage refuse the conversion. The engine waits on any
+     * stage through its own callbacks, and so do these waits: such a stage is awaited, not crashed on.
+     */
+    @Test
+    void awaitReadsAStageThatCannotBeConvertedToAFuture() {
+        Entity entity = new Entity("e", State.NEW);
+        CompletionStage<Outcome<Entity, State, Id>> stage =
+                isolated(CompletableFuture.completedFuture(applied(entity)));
+        assertThrows(UnsupportedOperationException.class, stage::toCompletableFuture);
+        AsyncAssertions.await(stage, Duration.ofSeconds(2))
+                .isApplied().movedTo(State.READY).hasEntitySameAs(entity);
+    }
+
+    @Test
+    void awaitReportsTheFailureOfAStageThatCannotBeConvertedToAFuture() {
+        IllegalStateException boom = new IllegalStateException("engine down");
+        CompletionStage<Outcome<Entity, State, Id>> failed = isolated(CompletableFuture.failedFuture(boom));
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> AsyncAssertions.await(failed, Duration.ofSeconds(2)));
+        assertEquals("outcome", error.property());
+        assertEquals("normal result", error.expected());
+        assertSame(boom, error.actual());
+        CompletableFuture<Outcome<Entity, State, Id>> cancelledInside = new CompletableFuture<>();
+        assertTrue(cancelledInside.cancel(false));
+        GraphAssertionError cancelled = assertThrows(GraphAssertionError.class,
+                () -> AsyncAssertions.await(isolated(cancelledInside), Duration.ofSeconds(2)));
+        assertInstanceOf(CancellationException.class, cancelled.actual());
+    }
+
+    @Test
+    void awaitFailureHandsOnTheCauseOfAStageThatCannotBeConvertedToAFuture() {
+        IllegalStateException boom = new IllegalStateException("engine down");
+        CompletionStage<Outcome<Entity, State, Id>> failed = isolated(CompletableFuture.failedFuture(boom));
+        TransitionFailureAssert failure = AsyncAssertions.awaitFailure(failed, Duration.ofSeconds(2));
+        assertSame(boom, assertThrows(GraphAssertionError.class, failure::isAbort).actual());
+        CompletableFuture<Outcome<Entity, State, Id>> cancelledInside = new CompletableFuture<>();
+        assertTrue(cancelledInside.cancel(false));
+        AsyncAssertions.awaitFailure(isolated(cancelledInside), Duration.ofSeconds(2)).hasNoCause();
+        CompletionStage<Outcome<Entity, State, Id>> completed =
+                isolated(CompletableFuture.completedFuture(applied(new Entity("e", State.NEW))));
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> AsyncAssertions.awaitFailure(completed, Duration.ofSeconds(2)));
+        assertEquals("an exception", error.expected());
+    }
+
+    @Test
+    void anExpiredBudgetLeavesAStageThatCannotBeConvertedToAFutureUntouched() {
+        CompletableFuture<Outcome<Entity, State, Id>> inside = new CompletableFuture<>();
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> AsyncAssertions.await(isolated(inside), BUDGET));
+        assertEquals("test wait expired", error.actual());
+        assertFalse(inside.isDone());
+        assertFalse(inside.isCancelled());
+        assertTrue(inside.complete(applied(new Entity("e", State.NEW))));
+    }
+
     // --- the null subject, one case per public wait ----------------------------------------------------
 
     @Test
@@ -216,5 +292,21 @@ class AsyncAssertionsTest {
                         () -> AsyncAssertions.await(stage, tooLong)).getCause());
         assertThrows(IllegalArgumentException.class,
                 () -> AsyncAssertions.awaitFailure(stage, tooLong));
+    }
+
+    /** A stage that answers only through its own callbacks, as the interface allows: it refuses the conversion. */
+    @SuppressWarnings("unchecked")
+    private static <T> CompletionStage<T> isolated(CompletableFuture<T> inside) {
+        return (CompletionStage<T>) Proxy.newProxyInstance(AsyncAssertionsTest.class.getClassLoader(),
+                new Class<?>[] {CompletionStage.class}, (Object proxy, Method method, Object[] arguments) -> {
+                    if (method.getName().equals("toCompletableFuture")) {
+                        throw new UnsupportedOperationException("this stage does not interoperate");
+                    }
+                    try {
+                        return method.invoke(inside, arguments);
+                    } catch (InvocationTargetException failure) {
+                        throw failure.getCause();
+                    }
+                });
     }
 }

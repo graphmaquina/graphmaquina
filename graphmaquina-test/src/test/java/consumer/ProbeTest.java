@@ -1,11 +1,13 @@
 package consumer;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
@@ -26,9 +28,16 @@ import io.github.graphmaquina.test.probe.CallTrace;
 import io.github.graphmaquina.test.probe.GuardCall;
 import io.github.graphmaquina.test.probe.GuardProbe;
 import io.github.graphmaquina.test.probe.HookProbe;
+import io.github.graphmaquina.test.probe.ProbeCalls;
 import io.github.graphmaquina.test.probe.TraceEvent;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -36,6 +45,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.ToIntFunction;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -51,6 +62,12 @@ class ProbeTest {
     private static final TransitionGuard<Entity, State, Id> PASS_FIRST = context -> GuardResult.pass();
     private static final TransitionGuard<Entity, State, Id> PASS_SECOND = context -> GuardResult.pass();
     private static final Consumer<Entity> NO_HOOK = entity -> { };
+
+    /** Every worker of the pairing tests makes this many calls, and every call is scripted its own response. */
+    private static final int WORKERS = 8;
+    private static final int CALLS_PER_WORKER = 1_500;
+    private static final int PAIRED_CALLS = WORKERS * CALLS_PER_WORKER;
+    private static final String RESPONSE = "response ";
 
     // --- the premise of this task: the engine's short-circuit is visible in the probes -----------------
 
@@ -491,7 +508,149 @@ class ProbeTest {
         assertEquals("scripted response for call " + (total + 1), error.property());
     }
 
+    /**
+     * Recording the call, tracing it and withdrawing its response are one step, so the invocation at position
+     * p of {@code calls()} is the one the script served as call p + 1, which is the pairing {@link ProbeCalls}
+     * documents. Under a lock of its own for each of the three, a thread preempted between the steps lets later
+     * threads withdraw its ordinal, and the test reads another call's answer off its own position. The same
+     * gap lets the probe's own entries in the shared trace run in another order than its calls.
+     */
+    @Test
+    void concurrentHookCallsAreServedTheResponseOfTheirOwnPosition() throws Exception {
+        CallTrace trace = CallTrace.create();
+        HookProbe<Entity> hook = HookProbe.create("audit", trace);
+        for (int ordinal = 1; ordinal <= PAIRED_CALLS; ordinal++) {
+            hook.thenThrow(new IllegalStateException(RESPONSE + ordinal));
+        }
+        Map<Entity, Integer> served = serveConcurrently((Entity entity) -> {
+            IllegalStateException response =
+                    assertThrows(IllegalStateException.class, () -> hook.accept(entity));
+            return ordinalOf(response.getMessage());
+        });
+        assertEveryCallWasServedItsOwnPosition(hook.calls(), trace, (Entity call) -> call, served);
+    }
+
+    @Test
+    void concurrentGuardCallsAreServedTheVerdictOfTheirOwnPosition() throws Exception {
+        CallTrace trace = CallTrace.create();
+        GuardProbe<Entity, State, Id> guard = GuardProbe.create("gate", trace);
+        for (int ordinal = 1; ordinal <= PAIRED_CALLS; ordinal++) {
+            guard.thenReturn(GuardResult.reject(RESPONSE + ordinal));
+        }
+        Map<Entity, Integer> served = serveConcurrently((Entity entity) -> {
+            GuardResult.Reject verdict = (GuardResult.Reject) guard.test(guardContext(entity));
+            return ordinalOf(verdict.reason());
+        });
+        assertEveryCallWasServedItsOwnPosition(guard.calls(), trace, GuardCall::entity, served);
+    }
+
+    @Test
+    void concurrentActionCallsAreServedTheOutcomeOfTheirOwnPosition() throws Exception {
+        CallTrace trace = CallTrace.create();
+        ActionProbe<Entity, State, Id> action = ActionProbe.create("prepare", trace);
+        for (int ordinal = 1; ordinal <= PAIRED_CALLS; ordinal++) {
+            action.thenReturn(ActionOutcome.failed(RESPONSE + ordinal));
+        }
+        Map<Entity, Integer> served = serveConcurrently((Entity entity) -> {
+            ActionOutcome.Failed outcome = (ActionOutcome.Failed) action.process(actionContext(entity));
+            return ordinalOf(outcome.reason());
+        });
+        assertEveryCallWasServedItsOwnPosition(action.calls(), trace, ActionCall::entity, served);
+    }
+
     // --- fixtures -------------------------------------------------------------------------------------
+
+    /**
+     * Starts every worker at once, each calling the probe for entities of its own, and returns the ordinal of
+     * the scripted response every entity was served.
+     */
+    private static Map<Entity, Integer> serveConcurrently(ToIntFunction<Entity> call) throws Exception {
+        Map<Entity, Integer> served = new ConcurrentHashMap<>();
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(WORKERS);
+        try {
+            List<Future<?>> workers = new ArrayList<>();
+            for (int worker = 0; worker < WORKERS; worker++) {
+                int id = worker;
+                workers.add(pool.submit(() -> {
+                    start.await();
+                    for (int index = 0; index < CALLS_PER_WORKER; index++) {
+                        Entity entity = new Entity(id + "/" + index, State.NEW);
+                        served.put(entity, call.applyAsInt(entity));
+                    }
+                    return null;
+                }));
+            }
+            start.countDown();
+            for (Future<?> worker : workers) {
+                worker.get(30, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        return served;
+    }
+
+    private static int ordinalOf(String response) {
+        return Integer.parseInt(response.substring(RESPONSE.length()));
+    }
+
+    /** Position p of the probe's own list must have been served call p + 1, and sit at p in its own trace. */
+    private static <C> void assertEveryCallWasServedItsOwnPosition(ProbeCalls<C> calls, CallTrace trace,
+            Function<C, Entity> entityOf, Map<Entity, Integer> served) {
+        List<C> recorded = calls.snapshot();
+        List<TraceEvent> events = trace.events();
+        assertEquals(PAIRED_CALLS, recorded.size());
+        assertEquals(PAIRED_CALLS, events.size());
+        int misPaired = 0;
+        int outOfTraceOrder = 0;
+        String firstMisPaired = "none";
+        for (int position = 0; position < recorded.size(); position++) {
+            int ordinal = served.get(entityOf.apply(recorded.get(position)));
+            if (ordinal != position + 1) {
+                misPaired++;
+                if (misPaired == 1) {
+                    firstMisPaired = "position " + position + " was served call " + ordinal;
+                }
+            }
+            if (events.get(position).call() != recorded.get(position)) {
+                outOfTraceOrder++;
+            }
+        }
+        int misPairedCalls = misPaired;
+        int outOfOrderEvents = outOfTraceOrder;
+        String first = firstMisPaired;
+        assertAll(
+                () -> assertEquals(0, misPairedCalls,
+                        "positions that were served the response of another call; the first: " + first),
+                () -> assertEquals(0, outOfOrderEvents,
+                        "trace entries of this probe that are not at the position of their call"));
+    }
+
+    /** A context that answers what a probe reads on entry and refuses everything else. */
+    private static InvocationHandler contextOf(Entity entity) {
+        return (Object proxy, Method method, Object[] arguments) -> switch (method.getName()) {
+            case "entity" -> entity;
+            case "from" -> State.NEW;
+            case "transition" -> Id.PREPARE;
+            case "to" -> State.READY;
+            case "depth" -> 0;
+            case "input" -> Optional.empty();
+            default -> throw new UnsupportedOperationException(method.getName());
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private static GuardContext<Entity, State, Id> guardContext(Entity entity) {
+        return (GuardContext<Entity, State, Id>) Proxy.newProxyInstance(ProbeTest.class.getClassLoader(),
+                new Class<?>[] {GuardContext.class}, contextOf(entity));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static TransitionContext<Entity, State, Id> actionContext(Entity entity) {
+        return (TransitionContext<Entity, State, Id>) Proxy.newProxyInstance(ProbeTest.class.getClassLoader(),
+                new Class<?>[] {TransitionContext.class}, contextOf(entity));
+    }
 
     /**
      * NEW moves to READY through the action {@code prepare}, guarded by {@code first} and {@code second} and

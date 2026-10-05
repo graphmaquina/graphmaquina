@@ -33,6 +33,7 @@ import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -348,6 +349,42 @@ class RecordAssertionsTest {
                 () -> CheckedTypes.record(TestDomain.KEY, corrupt));
         assertEquals("record does not belong to the machine: states expected " + State.class
                 + " but was " + List.of(Flag.OFF, Flag.ON), error.getMessage());
+    }
+
+    // --- a subject built by hand may hold a null element --------------------------------------------
+
+    /**
+     * A list the engine produced never holds a null, but a subject built by hand may. A view fails as an
+     * assertion over such a subject, instead of crashing when it is built or when it reads the element.
+     */
+    @Test
+    void aNullRecordInTheSubjectIsADiscrepancyAndNeverACrash() {
+        Entity entity = new Entity("e", State.NEW);
+        TransitionRecord<Entity, State, Id> hop = hop(entity, State.NEW, State.READY, 0);
+        TransitionRecordsAssert view =
+                TransitionRecordsAssert.assertThat(new ArrayList<>(Arrays.asList(hop, null)));
+        assertSame(view, view.hasSize(2));
+        view.forEntity(TestDomain.KEY, entity).single().hasTransition(Id.PREPARE);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.containsExactly(List.of(hop, hop))),
+                "transition records[1]", "record", hop, null);
+    }
+
+    @Test
+    void aNullEntryInTheJournalIsADiscrepancyAndNeverACrash() {
+        Entity entity = new Entity("e", State.NEW);
+        JournalAssert view = JournalAssert.assertThat(
+                new ArrayList<>(Arrays.asList(entry(entity, ActionStatus.OK), null)));
+        assertSame(view, view.hasSize(2));
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasActionsExactly("prepare", "prepare")),
+                "journal", "actions", List.of("prepare", "prepare"), Arrays.asList("prepare", null));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> view.hasStatusesExactly(ActionStatus.OK, ActionStatus.OK)),
+                "journal", "statuses", List.of(ActionStatus.OK, ActionStatus.OK),
+                Arrays.asList(ActionStatus.OK, null));
+        assertSame(view, view.hasEntry(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY, "prepare", 1,
+                ActionStatus.OK));
+        assertThrows(GraphAssertionError.class, () -> view.hasEntry(TestDomain.KEY, entity, State.NEW,
+                Id.PREPARE, State.READY, "prepare", 1, ActionStatus.THREW));
     }
 
     // --- the journal -------------------------------------------------------------------------------

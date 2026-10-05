@@ -30,6 +30,7 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
     private final CallTrace trace;
     private final ProbeCalls<GuardCall<E, S, T>> calls;
     private final ResponseScript<GuardResult> script;
+    private final Object entry = new Object();
     private volatile Consumer<GuardContext<E, S, T>> onCall = context -> { };
 
     private GuardProbe(String name, CallTrace trace) {
@@ -88,9 +89,12 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
     public GuardResult test(GuardContext<E, S, T> context) {
         GuardCall<E, S, T> call = new GuardCall<>(context.entity(), context.from(), context.transition(),
                 context.to(), context.input());
-        calls.record(call);
-        trace.record(name, call);
-        Supplier<GuardResult> response = script.next();
+        Supplier<GuardResult> response;
+        synchronized (entry) {
+            calls.record(call);
+            trace.record(name, call);
+            response = script.next();
+        }
         onCall.accept(context);
         return response.get();
     }

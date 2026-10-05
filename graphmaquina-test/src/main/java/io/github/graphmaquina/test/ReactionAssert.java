@@ -27,7 +27,7 @@ public final class ReactionAssert<E, S extends Enum<S>, T extends Enum<T>> {
     }
 
     public DoneReactionAssert<E, S, T> isDone() {
-        return new DoneReactionAssert<>(key, (Reaction.Done) narrow("Done"));
+        return new DoneReactionAssert<>(context, key, (Reaction.Done) narrow("Done"));
     }
 
     public AbortedReactionAssert<E, S, T> isAborted() {
