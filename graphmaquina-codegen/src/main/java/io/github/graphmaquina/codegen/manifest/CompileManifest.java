@@ -4,9 +4,9 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * The combined manifest for one compilation: the local {@link ExportIndex} being produced, the dependency
- * indexes it was resolved against, where the annotation processor's own inventory lives, and the source files
- * this compilation owns (relative to their source root).
+ * The combined manifest for one compilation: the local {@link ExportIndex} being produced, the indexes its
+ * classpath publishes, which the annotation processor resolves the compilation against, where the annotation
+ * processor's own inventory lives, and the source files this compilation owns (relative to their source root).
  */
 public record CompileManifest(int schemaVersion, String toolVersion,
         ExportIndex local, List<ExportIndex> dependencies,

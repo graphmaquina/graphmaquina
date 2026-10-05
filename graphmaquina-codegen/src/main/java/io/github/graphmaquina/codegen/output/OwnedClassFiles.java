@@ -51,7 +51,8 @@ final class OwnedClassFiles {
     }
 
     /**
-     * Every class file under {@code classesOutput} that belongs to one of {@code ownedTopLevelNames}, sorted.
+     * Every candidate class file under {@code classesOutput} whose outermost class, as {@link ClassFile#outermost()}
+     * traces it, is one of {@code ownedTopLevelNames} and whose {@code SourceFile} is that unit's own file, sorted.
      *
      * @param classesOutput the class output of the compilation; an absent directory contributes nothing
      * @param ownedTopLevelNames the canonical names of the top-level types this compilation owns
@@ -146,19 +147,22 @@ final class OwnedClassFiles {
     /**
      * What one class file says about its identity.
      *
-     * @param thisClass the canonical name of the class this file declares
+     * @param thisClass the binary name of the class this file declares, with dots for slashes, such as
+     *     {@code fx.DocsGraph$Definition}
      * @param sourceFile the value of the {@code SourceFile} attribute, empty when the file carries none
      * @param outerOf every nested class the file names, mapped to its outer class or to {@link #NO_OUTER}
-     * @param enclosing the canonical name of the class {@code EnclosingMethod} names, empty when there is none
+     * @param enclosing the binary name of the class {@code EnclosingMethod} names, empty when there is none
      */
     private record ClassFile(String thisClass, String sourceFile, Map<String, String> outerOf,
             String enclosing) {
 
         /**
-         * The top-level class this file belongs to, followed outwards through {@code InnerClasses} and, for an
-         * anonymous, local or synthetic class those entries name no outer class for, through
-         * {@code EnclosingMethod}. A chain that leads nowhere yields the last name reached, which matches no
-         * owned unit, so such a file is left alone rather than deleted on a guess.
+         * The top-level class this file belongs to, followed outwards through {@code InnerClasses} and, when this
+         * file's own class is an anonymous, local or synthetic class those entries name no outer class for, through
+         * its {@code EnclosingMethod}, which a file carries for its own class only. A chain that leads nowhere
+         * yields the last name reached, which matches no owned unit, so such a file is left alone rather than
+         * deleted on a guess. That includes a chain that reaches another anonymous or local class, as from a class
+         * declared inside one: a member class of a local class, or a local class inside an anonymous one.
          */
         String outermost() {
             String current = thisClass;

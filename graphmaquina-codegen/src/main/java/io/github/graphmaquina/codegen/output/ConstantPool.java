@@ -64,7 +64,10 @@ record ConstantPool(String[] utf8, int[] classNameIndex) {
         return utf8[index];
     }
 
-    /** The canonical name of the class the {@code CONSTANT_Class} entry at {@code index} names. */
+    /**
+     * The binary name of the class the {@code CONSTANT_Class} entry at {@code index} names, with dots for slashes,
+     * such as {@code fx.DocsGraph$Definition}.
+     */
     String className(int index, Path file) throws IOException {
         if (index <= 0 || index >= classNameIndex.length || classNameIndex[index] == 0) {
             throw new IOException("constant pool entry " + index + " is not a class in " + file);

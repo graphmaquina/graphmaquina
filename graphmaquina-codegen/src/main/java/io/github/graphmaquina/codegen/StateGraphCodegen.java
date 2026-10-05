@@ -36,8 +36,12 @@ public final class StateGraphCodegen {
      * classpath as its previous run left it, and its index describes this compilation, never a dependency of
      * it.</p>
      *
-     * @throws CodegenException if the request's sources, its classpath indexes or its outputs are not usable
-     * @throws IOException if the sources or the manifests cannot be read or written
+     * @throws CodegenException if the request's sources, its classpath indexes or its outputs are not usable, an
+     *     original source that javac cannot read or parse included
+     * @throws java.io.UncheckedIOException if a source directory cannot be walked, or a file manager javac reads
+     *     with cannot be opened or closed
+     * @throws IOException if a classpath entry, a manifest or a generated source cannot be read or written, or an
+     *     original source or the class output the collision checks look up cannot be examined
      */
     public static GenerationResult generate(GenerationRequest request) throws IOException {
         Objects.requireNonNull(request, "request");

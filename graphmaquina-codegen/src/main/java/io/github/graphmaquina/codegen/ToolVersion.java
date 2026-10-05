@@ -8,8 +8,10 @@ import java.util.Properties;
 /**
  * The version of this generator, as the build stamped it into {@code io/github/graphmaquina/codegen/version.properties}.
  *
- * <p>Every manifest this tool writes carries it, and every index it reads back is refused when it was written by
- * another version, so a stale artifact is diagnosed instead of being interpreted with the wrong rules.</p>
+ * <p>The compile manifest and every export index this tool writes carry it; the inventories and the request do not.
+ * Of what it reads back, only the export index a classpath entry publishes is compared with it: one written by
+ * another version is refused, so a stale artifact is diagnosed instead of being interpreted with the wrong rules.
+ * The manifests and inventories of its own work directory are read whatever tool version wrote them.</p>
  */
 public final class ToolVersion {
 

@@ -33,9 +33,12 @@ public final class DependencyExports {
 
     /**
      * The indexes published on {@code classpath}, ordered by {@code compilationId}. An entry that does not exist,
-     * or that is neither a directory nor an archive, carries nothing and is skipped.
+     * that is neither a directory nor a regular file, or that holds no published index carries nothing and is
+     * skipped, and so is a regular file that does not open as an archive, unless its name ends in {@code .jar} or
+     * {@code .zip}: such a file cannot be read.
      *
-     * @throws CodegenException {@code SG602} if an entry carries an index this tool cannot read, naming that entry
+     * @throws CodegenException {@code SG602} if an entry carries an index this tool cannot read or that another
+     *     tool version wrote, naming that entry
      * @throws IOException if an entry exists but cannot be read, naming that entry
      */
     public static List<ExportIndex> read(List<Path> classpath) throws IOException {

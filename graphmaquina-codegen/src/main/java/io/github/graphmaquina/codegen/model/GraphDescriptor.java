@@ -12,10 +12,11 @@ import java.util.Objects;
  * unnamed package. It is carried here because a canonical name alone cannot be split into a package and a
  * nested type name without guessing, and the generated vocabulary of the machine must land in that package.</p>
  *
- * <p>{@code stateType} and {@code transitionType} are always two distinct concrete enums: the states a machine
- * moves between and the identifiers of the edges it moves along. {@code states} and {@code transitions} keep
- * the declaration order of their enums, which is the order the generated vocabulary and every view depend
- * on.</p>
+ * <p>{@code stateType} and {@code transitionType} name the states a machine moves between and the identifiers of the
+ * edges it moves along. The bootstrap resolves them to two distinct enums, but this record checks only that no
+ * component is null. {@code states} and {@code transitions} keep the declaration order of their enums; the
+ * annotation processor refuses a manifest whose lists no longer equal, in that order, the constants those enums
+ * declare.</p>
  */
 public record GraphDescriptor(String facade, String packageName, String entityType, String stateType,
         List<String> states, String transitionType, List<String> transitions, List<String> peers,

@@ -28,8 +28,9 @@ import java.util.Set;
  * <p>The original sources are only parsed; their headers, the classpath headers and the marked declarations
  * they carry are enough to resolve every machine and every exported symbol. They are parsed at the release and
  * in the encoding the request names, which are the ones the compilation that follows reads them with. Machines
- * and symbols are produced in a deterministic order, so two runs over the same sources give the same model
- * whatever order the build happened to list its files in.</p>
+ * are ordered by canonical name and symbols by qualified name, so the order the build happened to list its files
+ * in changes neither order. It only decides which declaration is kept when two declare one canonical name, and
+ * under which path a file reached through two paths is recorded.</p>
  *
  * <p>The sources are walked once. What that walk read is kept beside the model — every file, the path it stands
  * at below its source root and the top-level types it declares — so the publication can check a generated type
@@ -51,8 +52,10 @@ public final class Bootstrap {
 
     /**
      * The graphs and symbols {@code request} declares, resolved against its sources and its classpath. A
-     * declaration the generated vocabulary or references could not name from where they are generated is
-     * refused here, before anything is emitted.
+     * declaration the generated vocabulary or references could not name from where they are generated, because it
+     * is not accessible there or a type of that package or of {@code java.lang} takes its name over, is refused
+     * here, before anything is emitted. One whose name a type the generator itself creates takes over is refused
+     * later, by {@link io.github.graphmaquina.codegen.emit.ApiEmitter#emit}.
      */
     public static GenerationModel inspect(GenerationRequest request) {
         return read(request).model();
@@ -121,15 +124,17 @@ public final class Bootstrap {
 
     /**
      * Expands the requested sources, in the order the request names them: a file is read as it is given, a
-     * directory is walked recursively for its {@code .java} files in sorted order, following symbolic links as
-     * Gradle's walk of a source set does. An entry that does not exist contributes nothing, so a source set whose
-     * directory the build has not created yet is not a failure. An entry that leads back into a directory the walk
-     * is already inside is skipped, as Gradle skips it, so the walk always ends. Every other link is followed
-     * wherever it points, and a link out of the directory brings in the sources it reaches. A file reached through
-     * two paths is still one file to javac, which parses it once, through the first of those paths in the order of
-     * the walk: the order the request names its sources in, and sorted order within one directory. Its declarations
-     * are recorded under that path, and each path the walk reached it through remains one of the original sources
-     * it reports.
+     * directory is walked recursively, following symbolic links as Gradle's walk of a source set does, for its
+     * {@code .java} files, which are then sorted by path. An entry that does not exist contributes nothing, so a
+     * source set whose directory the build has not created yet is not a failure. A link that leads back to a
+     * directory on the path the walk is following, the requested directory or one between it and the link, is
+     * skipped, as Gradle skips it, so the walk always ends. Every other link is followed wherever it points: a link
+     * out of the directory brings in the sources it reaches, and a link to a directory the walk visits elsewhere
+     * reaches its files a second time. A file reached through two paths by way of symbolic links is still one file
+     * to javac, which parses it once, through the first of those paths in the order of the walk: the order the
+     * request names its sources in and, below each directory it names, the sorted order of the paths. Its
+     * declarations are recorded under that path, and each path the walk reached it through remains one of the
+     * original sources it reports. A file with two hard links is two files to javac, which parses each of them.
      *
      * <p>Below a directory, the walk leaves out what Ant's default excludes leave out, which is what Gradle leaves
      * out of every source directory, so javac never compiles any of it: a file named {@code ._*}, {@code .DS_Store},
@@ -268,8 +273,8 @@ public final class Bootstrap {
      * One original source the walk reached.
      *
      * @param file the file, as the walk reached it through the paths the request names
-     * @param origin the path diagnostics name the file by: relative to the project directory, separated by
-     *     {@code /}
+     * @param origin the path diagnostics name the file by: relative to the project directory, or absolute for a
+     *     file on another root, separated by {@code /}
      * @param path where the file stands below its source root, separated by {@code /}: below the directory the
      *     request names when the walk found it there; for a file the request names itself, in the directories of
      *     the package it declares, which is where javac and every build place it

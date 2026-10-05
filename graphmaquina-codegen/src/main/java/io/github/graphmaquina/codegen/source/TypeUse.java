@@ -6,9 +6,9 @@ import java.util.Optional;
 import java.util.StringJoiner;
 
 /**
- * One use of a type inside a declaration header: a supertype, a type argument, a parameter type or a return
- * type. A use is read syntactically from an original source or materialized from a classpath header, so it
- * carries no attribution beyond the names its declaration spells.
+ * One use of a type inside a declaration header: a supertype, a type argument, a parameter type, a return type or
+ * the type of a field. A use is read syntactically from an original source or materialized from a classpath header,
+ * so it carries no attribution beyond the names its declaration spells.
  */
 public sealed interface TypeUse {
 

@@ -17,8 +17,9 @@ import javax.lang.model.element.Modifier;
  * @param canonicalName the canonical name of the declaration, for example {@code fx.Holder.Status}
  * @param kind the declaration kind, one of {@code CLASS}, {@code INTERFACE}, {@code ENUM}, {@code RECORD} or
  *     {@code ANNOTATION_TYPE}
- * @param modifiers the modifiers of the declaration as javac records them: for a source, the written ones plus
- *     the ones the language implies for a nested declaration, such as {@code static} on a nested enum
+ * @param modifiers the modifiers of the declaration: for a classpath header, as javac records them; for a source,
+ *     the written ones plus the {@code public} and {@code static} the language implies for a nested declaration,
+ *     such as {@code static} on a nested enum, but no other implied modifier
  * @param typeParameters the simple names of the declared type parameters, in declaration order
  * @param supertypes the direct supertypes, in declaration order, still spelled in this header's scope when
  *     the header comes from a source

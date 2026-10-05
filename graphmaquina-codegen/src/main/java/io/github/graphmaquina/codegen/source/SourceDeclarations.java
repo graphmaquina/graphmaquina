@@ -66,8 +66,8 @@ public final class SourceDeclarations {
 
     /**
      * Parses {@code files} at release {@value GenerationRequest#DEFAULT_RELEASE}, read in UTF-8, and anchors each
-     * unit at its path relative to {@code project}. The file manager is closed once the units are built; the parsed
-     * trees keep the syntax the declaration index still needs.
+     * unit at its path relative to {@code project}, or at its absolute path for a file on another root. The file
+     * manager is closed once the units are built; the parsed trees keep the syntax the declaration index still needs.
      */
     public static List<SourceUnit> parse(Path project, List<Path> files) {
         return List.copyOf(new LinkedHashSet<>(parseEach(project, files, GenerationRequest.DEFAULT_RELEASE,
@@ -76,8 +76,9 @@ public final class SourceDeclarations {
 
     /**
      * Parses {@code files} as the compilation reads them, at {@code release} and in {@code encoding}, and returns
-     * the unit each of them was read into, in the order given. javac reads one file once whatever paths name it,
-     * so two paths to the same file map to the unit of the first.
+     * the unit each of them was read into, in the order given. javac compares files by their real paths, so it reads
+     * a file once however many paths lead to it through symbolic links, and those paths map to the unit of the
+     * first; the hard links of one file have different real paths, so each is read into a unit of its own.
      */
     static Map<Path, SourceUnit> parseEach(Path project, List<Path> files, int release, Charset encoding) {
         Objects.requireNonNull(project, "project");
@@ -137,9 +138,10 @@ public final class SourceDeclarations {
     }
 
     /**
-     * Fails when javac reported an error for one run, naming the file, the position and the javac message.
-     * A tooling failure stops the task: a truncated tree is never read as if it were a valid declaration.
-     * Only the first error is described, followed by the number of further errors of the same run.
+     * Fails when javac reported an error for one run, naming the javac message and, when the error is in a file and
+     * {@code project} is given, that file and the position. A tooling failure stops the task: a truncated tree is
+     * never read as if it were a valid declaration. Only the first error is described, followed by the number of
+     * further errors of the same run.
      *
      * @param project the directory diagnostics are anchored against, empty when the run has no original
      *     sources of its own
@@ -177,8 +179,9 @@ public final class SourceDeclarations {
     }
 
     /**
-     * Reads every type declaration of {@code unit}, nested declarations included, in declaration order. Each
-     * header carries the modifiers javac records for the declaration, the implied ones included.
+     * Reads every type declaration of {@code unit}, nested declarations included: each one after the declarations
+     * nested in it, and otherwise in source order. Each header carries the modifiers written on the declaration
+     * plus the {@code public} and {@code static} the language implies for a nested one.
      */
     static List<TypeHeader> declarations(SourceUnit unit, SourcePositions positions) {
         TypeHeader.Scope scope = scope(unit.tree());

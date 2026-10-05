@@ -23,9 +23,10 @@ import java.util.List;
  *
  * <p>Nothing is caught and continued. An operation this tool cannot run leaves status {@code 1} and a message on
  * the error stream naming the operation, the request file and the cause, with its SG code when it has one and
- * the original source location the diagnostic is anchored to when it has one; arguments this tool does not
- * accept leave status {@code 2}. A build that ignored either status would compile against the vocabulary of a
- * previous run, so the status is the whole contract.</p>
+ * the original source location the diagnostic is anchored to when it has one; only a {@link VirtualMachineError}
+ * other than a {@link StackOverflowError} is left to the JVM, which reports it its own way and also exits with
+ * status {@code 1}. Arguments this tool does not accept leave status {@code 2}. A build that ignored either status
+ * would compile against the vocabulary of a previous run, so the status is the whole contract.</p>
  */
 public final class CodegenMain {
 
@@ -55,9 +56,10 @@ public final class CodegenMain {
      *
      * <p>A failure is reported, never thrown: an exception or an {@link Error} the operation raises, such as a
      * {@link StackOverflowError} or the {@link LinkageError} of a runtime without {@code jdk.compiler}, is printed
-     * as one line and returns {@code 1}. Only a {@link VirtualMachineError} that leaves the JVM unfit to report
-     * anything, such as an {@link OutOfMemoryError}, propagates, and ends the process with status {@code 1}
-     * all the same.</p>
+     * as one report, on one line unless a message it quotes breaks lines as some javac diagnostics do, and returns
+     * {@code 1}. Only a {@link VirtualMachineError} other than a {@link StackOverflowError}, such as an
+     * {@link OutOfMemoryError}, after which the JVM cannot be trusted to report anything, propagates, and ends the
+     * process with status {@code 1} all the same.</p>
      */
     public static int run(String[] args) {
         if (args.length != 3) {
@@ -116,8 +118,9 @@ public final class CodegenMain {
     }
 
     /**
-     * One link of the chain: the SG code when the generator assigned one, followed by
-     * {@code (at path:line:column)} when the diagnostic is anchored to an original source; the type otherwise.
+     * One link of the chain: the SG code in brackets and the message when the generator assigned a code, followed by
+     * {@code (at path:line:column)} when the diagnostic is anchored to an original source; the type and the message
+     * otherwise.
      */
     private static String headline(Throwable failure) {
         if (failure instanceof CodegenException diagnosed) {

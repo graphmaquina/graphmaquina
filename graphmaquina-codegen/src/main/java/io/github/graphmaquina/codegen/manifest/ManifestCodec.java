@@ -16,9 +16,11 @@ import java.util.Comparator;
 import java.util.List;
 
 /**
- * Reads and writes the generator's manifests as deterministic, UTF-8, LF-terminated JSON. This is the only JSON
- * boundary of the {@code io.github.graphmaquina.codegen} module: every other type in this package and in
- * {@code io.github.graphmaquina.codegen.model} is a plain value read or written only through this class.
+ * Reads and writes the generator's manifests as deterministic UTF-8 JSON, indented by two spaces with LF line
+ * breaks; only the processor inventory ends with one. This is the only public JSON boundary of the
+ * {@code io.github.graphmaquina.codegen} module, with two package-private helpers behind it: the manifests of this
+ * package and the model of {@code io.github.graphmaquina.codegen.model} are plain values, read and written as JSON
+ * only through this class.
  *
  * <p>Schema 2 is the only schema this tool reads, including inventories of owned outputs. A schema 1 document
  * is refused with a message asking the user to clean the build, then regenerate and recompile producer and
@@ -29,17 +31,19 @@ import java.util.List;
  * unknown {@code schemaVersion} values, a missing mandatory member, a member of the wrong JSON type, a number
  * member that is not an exact integer of its range (a fraction, or a value beyond 32 bits for
  * {@code schemaVersion} and 64 bits for an origin's {@code line} and {@code column}), a duplicate key at any
- * nesting level, and an inventory path ({@link CompileManifest#ownedSources()}) that is absolute or escapes its
- * root through a {@code ..} segment are all rejected with a {@link CodegenException} carrying code
- * {@code SG602} and naming the file. A genuine I/O failure (the file cannot be opened, read or written) is
- * reported as an {@link IOException} instead, exactly as declared.
+ * nesting level, and an inventory path ({@link CompileManifest#ownedSources()}) that is absolute or holds a
+ * {@code ..} segment are all rejected with a {@link CodegenException} carrying code {@code SG602} and naming the
+ * file. A genuine I/O failure (the file cannot be opened, read or written) is reported as an {@link IOException}
+ * instead, exactly as declared.
  *
  * <p>Every write method sorts identity lists (a model's graphs by {@code facade}, its symbols by
- * {@code qualifiedName}, a symbol's {@code kinds} and {@code candidates} by name, an index's
- * {@code annotationTypes}, a manifest's {@code dependencies} by {@code compilationId} and its
- * {@code ownedSources}) so that two equal values always serialize to byte-identical files; a graph's
- * {@code states}, its {@code transitions} and a member's {@code parameterTypes} keep the order they were given
- * in, since that order is semantically significant. A
+ * {@code qualifiedName}, a graph's {@code peers}, a symbol's {@code kinds} by name and its {@code candidates} by
+ * name, then by their parameter types, an index's {@code annotationTypes}, a manifest's {@code dependencies} by
+ * {@code compilationId} and its {@code ownedSources}, the four lists of an owned-outputs inventory and the
+ * processor inventory's {@code generatedTypes}) so that two equal values always serialize to byte-identical files;
+ * a graph's {@code states}, its {@code transitions}, a member's {@code parameterTypes} and a request's
+ * {@code sources} and {@code classpath} keep the order they were given in, since that order is semantically
+ * significant. A
  * {@link io.github.graphmaquina.codegen.model.SymbolDescriptor#property()} that is empty is omitted from the
  * JSON entirely, never written as {@code null}.
  *
@@ -164,6 +168,8 @@ public final class ManifestCodec {
      *
      * @throws CodegenException {@code SG602} if a member is missing or malformed, the release included, or the
      *     encoding names no charset of the running JVM
+     * @throws IllegalArgumentException if a path member is not a valid path, or if {@link GenerationRequest}
+     *     refuses the request: a blank {@code compilationId}, or a source that overlaps an output
      * @throws IOException if {@code path} cannot be read
      */
     public static GenerationRequest readRequest(Path path) throws IOException {
@@ -263,6 +269,8 @@ public final class ManifestCodec {
     /**
      * Writes {@code manifest} to {@code path}, in the canonical order documented on this class.
      *
+     * @throws CodegenException {@code SG602} if an owned source is absolute or holds a {@code ..} segment, as
+     *     {@link #readCompile} would refuse it; nothing is written then
      * @throws IOException if {@code path} cannot be written
      */
     public static void writeCompile(Path path, CompileManifest manifest) throws IOException {

@@ -69,7 +69,10 @@ public final class DeclarationIndex implements AutoCloseable {
         }
     }
 
-    /** Every header read from the original sources, in the order the units declared them. */
+    /**
+     * Every header read from the original sources, in the order the units declared them; of two declarations of
+     * one canonical name, only the one read first is kept.
+     */
     public List<TypeHeader> sourceHeaders() {
         return List.copyOf(sources.values());
     }

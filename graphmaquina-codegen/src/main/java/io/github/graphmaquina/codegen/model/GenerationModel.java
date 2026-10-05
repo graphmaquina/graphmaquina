@@ -3,7 +3,10 @@ package io.github.graphmaquina.codegen.model;
 import java.util.List;
 import java.util.Objects;
 
-/** Everything one compilation unit's generator run resolved: its graphs and the symbols they need. */
+/**
+ * Everything one generator run resolved for its compilation: the graph of every machine and the symbol of every
+ * member its hosts export, whether or not a graph refers to it.
+ */
 public record GenerationModel(List<GraphDescriptor> graphs, List<SymbolDescriptor> symbols) {
 
     public GenerationModel {

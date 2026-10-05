@@ -14,8 +14,14 @@ import java.util.Locale;
  *
  * <p>The carrier is emitted for every run, including one whose model is empty, so the annotation processor always
  * sees the compilation it belongs to and can publish an empty index when the last machine or member is deleted.
- * Its name is derived from the compilation identifier, so a project and source set always claims the same type
- * and two of them never claim one another's.</p>
+ * Its name ends with the first sixteen hexadecimal digits of the SHA-256 of the compilation identifier, so two
+ * compilations claim the same carrier exactly when they are given the same identifier, as the Maven plugin gives its
+ * main and its test compilation once {@code graphmaquina.compilationId} is set, or when two different identifiers
+ * have digests whose first 64 bits are equal. Neither this generator nor the annotation processor compares
+ * identifiers. While the other compilation's carrier class is still on the classpath, outside this compilation's
+ * own class output, the generation refuses its own carrier with {@code SG603} as a type that would shadow that
+ * class; once the other compilation's {@code complete-compile} has deleted it, both compilations go through, and
+ * the other's export index, read from the classpath as a dependency, carries this compilation's own identifier.</p>
  *
  * <p>The documentation it carries says where it can be seen: {@code complete-compile} removes its class file from
  * the class output, so the binary jar never contains it; the Gradle plugin also keeps its source out of the

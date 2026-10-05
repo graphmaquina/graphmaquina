@@ -14,9 +14,11 @@ import java.util.Set;
 import javax.lang.model.element.ElementKind;
 
 /**
- * Specializes one machine interface to the {@code Machine<E, S, T>} it ultimately extends. The supertype chain
- * is walked by declaration identity, substituting each type argument into the parameters the supertype declares,
- * so a generic base contributes its specialization whether it is an original source or a classpath binary.
+ * Specializes one machine, the facade marked {@code @GenerateGraphApi}, to the {@code Machine<E, S, T>} it
+ * ultimately extends. The supertype chain is walked by declaration identity, substituting each type argument into
+ * the parameters the supertype declares, so a generic base contributes its specialization whether it is an original
+ * source or a classpath binary. The facade's kind is not checked here, so a class facade is specialized like an
+ * interface; the annotation processor is what refuses it, with {@code SG502}.
  */
 public final class MachineHeaders {
 

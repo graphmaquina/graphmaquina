@@ -23,11 +23,11 @@ import java.util.Set;
  *
  * <p>Every name a container writes is qualified, except that a host of the unnamed package can only be written by
  * its simple name. Each name is read through its first segment, and any type in scope in the container under that
- * simple name takes the name over: a symbol type of the container shadows it, and a type of the host's package, a
- * top-level type generated in that package, the container included, or a public type of {@code java.lang} obscures
- * the package it starts with (JLS 6.4.2). The bootstrap refuses a host whose names a type of its package or of
- * {@code java.lang} would take; a container whose host a symbol type or a generated type would take is refused
- * here. Both refusals are {@code SG603}.</p>
+ * simple name takes the name over: a symbol type of the container shadows a type of that name (JLS 6.4.1) and
+ * obscures a package of that name, and a type of the host's package, a top-level type generated in that package,
+ * the container included, or a public type of {@code java.lang} obscures the package it starts with (JLS 6.4.2).
+ * The bootstrap refuses a host whose names a type of its package or of {@code java.lang} would take; a container
+ * whose host a symbol type or a generated type would take is refused here. Both refusals are {@code SG603}.</p>
  */
 final class SymbolEmitter {
 
@@ -47,8 +47,9 @@ final class SymbolEmitter {
     }
 
     /**
-     * The containers of {@code symbols}, one compilation unit per host, in the order the symbols are given; every
-     * symbol of one host shares the container its qualified name spells, so grouping never reorders them.
+     * The containers of {@code symbols}, one compilation unit per host, in the order their first symbols are given,
+     * each holding its symbols in the order they are given. Every symbol of one host shares the container its
+     * qualified name spells, so symbols sorted by qualified name, as the bootstrap gives them, are never reordered.
      *
      * @param generated the simple names of the top-level types generated in each package
      * @throws io.github.graphmaquina.codegen.CodegenException {@code SG603} if a symbol type of a container, or a
@@ -69,7 +70,8 @@ final class SymbolEmitter {
 
     /**
      * One container. A container is a top-level type whose simple name joins the host's enclosing names in
-     * PascalCase, so the last dot of its canonical name separates its package from its simple name exactly.
+     * PascalCase, followed by {@code Refs}, so the last dot of its canonical name separates its package from its
+     * simple name exactly; the canonical name of a container of the unnamed package has no dot.
      */
     private static GeneratedSource emit(String container, List<SymbolDescriptor> symbols,
             Map<String, Set<String>> generated) {

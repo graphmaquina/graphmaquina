@@ -20,11 +20,12 @@ import java.util.Set;
  * shadow a name this file uses, and no name this file claims can collide with an import.</p>
  *
  * <p>Each name is still read through its first segment, and any type in scope inside this file under that simple
- * name takes the name over. An annotation nested here shadows it. A type of the machine's package, a top-level type
- * generated in that package, this file included, or a public type of {@code java.lang}, which every compilation unit
- * imports on demand, obscures the package the name starts with (JLS 6.4.2). The bootstrap refuses a declaration whose
- * name a type of the package or of {@code java.lang} would take, and {@link #emit} one whose name a nested annotation
- * or a generated type would take, all with {@code SG603} and before anything is written.</p>
+ * name takes the name over. An annotation nested here shadows a type of that name (JLS 6.4.1) and obscures a package
+ * of that name. A type of the machine's package, a top-level type generated in that package, this file included, or
+ * a public type of {@code java.lang}, which every compilation unit imports on demand, obscures the package the name
+ * starts with (JLS 6.4.2). The bootstrap refuses a declaration whose name a type of the package or of
+ * {@code java.lang} would take, and {@link #emit} one whose name a nested annotation or a generated type would take,
+ * all with {@code SG603} and before anything is written.</p>
  */
 final class MachineVocabularyEmitter {
 

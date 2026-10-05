@@ -6,6 +6,9 @@ package io.github.graphmaquina.codegen.emit;
  *
  * <p>No method here infers a package from a canonical name: the package is always given, because only the
  * declaration that was read knows where it ends and the nested type names begin.</p>
+ *
+ * <p>Every name normalized here must come out as a Java identifier that is neither a keyword nor a literal: one that
+ * does not, such as {@code _1}, which normalizes to {@code 1}, is refused with an {@link IllegalArgumentException}.</p>
  */
 public final class SymbolNames {
 
@@ -16,7 +19,8 @@ public final class SymbolNames {
      * Returns {@code canonicalName} without the {@code packageName} it is declared in, so a nested type keeps
      * the dots joining its enclosing simple names and can be passed to {@link #hostName(String)}.
      *
-     * @throws IllegalArgumentException if {@code canonicalName} is not declared in {@code packageName}
+     * @throws IllegalArgumentException if {@code packageName} is not empty and {@code canonicalName} does not start
+     *     with it followed by a dot; nothing else about where the name is declared is checked
      */
     public static String nameWithin(String packageName, String canonicalName) {
         if (packageName.isEmpty()) {
@@ -49,8 +53,9 @@ public final class SymbolNames {
     }
 
     /**
-     * Normalizes a member name to PascalCase without inventing collision escapes. The declaration collector
-     * rejects members that normalize to the same symbol or to their references container.
+     * Normalizes a member name to PascalCase without inventing collision escapes; {@code hostSimpleName} does not
+     * take part in the result. The declaration collector rejects members that normalize to the same symbol or to
+     * their references container.
      */
     public static String typeName(String hostSimpleName, String memberName) {
         return normalize(memberName);

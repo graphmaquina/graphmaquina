@@ -11,12 +11,17 @@ import java.util.Objects;
  * writes generated sources and its manifests, the identity of the project and source set it runs for, and the
  * release and the encoding of the compilation that follows it.
  *
- * <p>{@code compilationId} identifies a project and source set, for example {@code io.github.graphmaquina:example:main};
- * it never carries paths or timestamps. Every path here is an execution path and may be absolute; the paths
- * published in an {@link io.github.graphmaquina.codegen.manifest.ExportIndex} are relative instead. The directories in
- * {@code sources} must not overlap {@code sourcesOutput}, {@code processorSourcesOutput}, {@code classesOutput}
- * or {@code workDirectory}; they are compared as absolute, normalized paths, a relative one resolved against the
- * working directory as every other use of it is, so spelling one side relatively cannot hide an overlap.</p>
+ * <p>{@code compilationId} identifies a project and source set, for example
+ * {@code io.github.graphmaquina:example:main}. It names the compilation carrier through its digest and is published
+ * in the export index, so a path or a timestamp in it would make both differ from one machine or run to the next;
+ * only a blank one is refused, with an {@link IllegalArgumentException}. Every path here is an execution path and
+ * may be absolute; the paths published in an {@link io.github.graphmaquina.codegen.manifest.ExportIndex} are
+ * relative to {@code projectDirectory} instead, except that a source on another root, such as another drive, keeps
+ * its absolute path. The entries of {@code sources} must not overlap {@code sourcesOutput},
+ * {@code processorSourcesOutput}, {@code classesOutput} or {@code workDirectory}, or an
+ * {@link IllegalArgumentException} is thrown; they are compared as absolute, normalized paths, a relative one
+ * resolved against the working directory as every other use of it is, so spelling one side relatively cannot hide
+ * an overlap.</p>
  *
  * <p>{@code release} and {@code encoding} are the ones javac compiles the sources with. The generator parses the
  * original sources at that release and resolves the JDK types they name against it, reads them in that encoding,

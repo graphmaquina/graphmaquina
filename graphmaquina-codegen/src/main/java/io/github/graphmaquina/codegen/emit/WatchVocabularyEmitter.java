@@ -18,11 +18,11 @@ import java.util.Set;
  * written qualified, so the pair's name can never collide with an import, as {@code RetentionPolicy} would.</p>
  *
  * <p>Each name is still read through its first segment, and any type in scope here under that simple name takes the
- * name over: an annotation nested here shadows it, and a type of the owner's package, a top-level type generated in
- * that package, this file included, or a public type of {@code java.lang} obscures the package it starts with
- * (JLS 6.4.2). The bootstrap refuses a declaration whose name a type of the package or of {@code java.lang} would
- * take, and {@link #emit} one whose name a nested annotation or a generated type would take, all with
- * {@code SG603}.</p>
+ * name over: an annotation nested here shadows a type of that name (JLS 6.4.1) and obscures a package of that name,
+ * and a type of the owner's package, a top-level type generated in that package, this file included, or a public
+ * type of {@code java.lang} obscures the package it starts with (JLS 6.4.2). The bootstrap refuses a declaration
+ * whose name a type of the package or of {@code java.lang} would take, and {@link #emit} one whose name a nested
+ * annotation or a generated type would take, all with {@code SG603}.</p>
  */
 final class WatchVocabularyEmitter {
 

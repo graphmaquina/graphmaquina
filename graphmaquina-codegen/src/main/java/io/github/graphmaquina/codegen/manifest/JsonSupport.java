@@ -46,7 +46,10 @@ final class JsonSupport {
     private JsonSupport() {
     }
 
-    /** Opens a UTF-8, LF-terminated, two-space-indented writer for {@code path}. */
+    /**
+     * Opens a strict, UTF-8, two-space-indented writer for {@code path}, which breaks lines with LF and adds none
+     * after the document.
+     */
     static JsonWriter newWriter(Path path) throws IOException {
         return newWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8));
     }
@@ -273,7 +276,10 @@ final class JsonSupport {
         }
     }
 
-    /** Rejects an inventory path that is absolute or escapes its root through a {@code ..} segment. */
+    /**
+     * Rejects an inventory path that is absolute or holds a {@code ..} segment, whether or not that segment leads
+     * out of its root.
+     */
     static void requireRelativeInventoryPath(String value, Path file) {
         Path candidate = Path.of(value);
         if (candidate.isAbsolute()) {

@@ -35,14 +35,15 @@ import java.util.stream.Stream;
  * Publishes one generation as a coherent set: every source is staged first, the whole set replaces the sources
  * the previous run owned, and the manifest is written last.
  *
- * <p>Only the files the previous manifest listed are removed, so a hand-written file that happens to live under
- * the generated source root is never touched, and a generated type an original source already declares, in the
- * file it would overwrite or in a file of another name, is refused instead. So is one whose file or class file a
- * volume that does not tell names apart by case would take for an original's. The original sources it is checked
- * against are the ones the generator read, as the one walk of {@link Bootstrap} read them. A publication that
- * fails once it has read the previous manifests deletes the manifest, so no build ever reads a manifest that does
- * not describe the sources on disk. A previous manifest that cannot be read at all, such as the retired format of
- * GraphMaquina 1.x, is left in place instead, so the refusal repeats until the user cleans the build rather than
+ * <p>Only the files the previous manifest and the pending one listed are removed, so a hand-written file that
+ * happens to live under the generated source root is never touched, and a generated type an original source already
+ * declares, in the file it would overwrite or in a file of another name, is refused instead. So is one whose file or
+ * class file a volume that does not tell names apart by case would take for an original's. The original sources it
+ * is checked against are the ones the generator read, as the one walk of {@link Bootstrap} read them; below every
+ * directory the request names, a file standing where a generated file would stand is refused as well. A publication
+ * that fails once it has read the previous manifests deletes the manifest, so no build ever reads a manifest that
+ * does not describe the sources on disk. A previous manifest that cannot be read at all, such as the retired format
+ * of GraphMaquina 1.x, is left in place instead, so the refusal repeats until the user cleans the build rather than
  * the next run calling the files it owned unowned. A separate pending manifest retains ownership across failures,
  * including a partially published generation, so the next run can retire its files. Both manifests are written
  * beside their place and moved into it, so an interrupted run never leaves half of one.</p>
@@ -76,8 +77,9 @@ public final class GenerationOutput {
      *     an original source, as when the file may not be read
      * @throws java.io.UncheckedIOException if a source directory, or a directory below it, cannot be walked, or the
      *     file manager javac read the original sources with cannot be closed
-     * @throws IOException if the staged sources, the previous manifest or the published files cannot be handled, or
-     *     the original sources and the class output the collision check looks up cannot be examined
+     * @throws IOException if the staged sources, the previous manifest or the published files cannot be handled, a
+     *     file of the classpath cannot be read, or the original sources and the class output the collision check
+     *     looks up cannot be examined
      */
     public static GenerationResult publish(GenerationRequest request, List<GeneratedSource> sources,
             CompileManifest manifest) throws IOException {
@@ -99,8 +101,9 @@ public final class GenerationOutput {
      *     takes the name of one where the volume does not tell names apart by case, would shadow a class of the
      *     classpath or would overwrite a file the previous generation did not own; {@code SG602} if a previous
      *     manifest cannot be read, which leaves that manifest in place
-     * @throws IOException if the staged sources, the previous manifest or the published files cannot be handled, or
-     *     the original sources and the class output the collision check looks up cannot be examined
+     * @throws IOException if the staged sources, the previous manifest or the published files cannot be handled, a
+     *     file of the classpath cannot be read, or the original sources and the class output the collision check
+     *     looks up cannot be examined
      */
     public static GenerationResult publish(GenerationRequest request, List<GeneratedSource> sources,
             CompileManifest manifest, List<Bootstrap.OriginalSource> originals) throws IOException {
@@ -200,9 +203,10 @@ public final class GenerationOutput {
     /**
      * {@code text} in {@code encoding}, with every character that encoding cannot represent written as the Unicode
      * escape javac reads in any encoding, so the compilation reads back exactly the emitted text. A generated source
-     * holds a backslash only inside the string literal of the carrier, where every backslash is escaped, so no
-     * escape written here follows a backslash that would turn it into plain text. An encoding that only decodes,
-     * such as {@code ISO-2022-CN}, reads ASCII as itself, so the text is then written in ASCII and escaped.
+     * holds a backslash only inside the string literal of the carrier, where each backslash belongs to one of its
+     * escape sequences, so no escape written here follows a backslash that would turn it into plain text. An encoding
+     * that only decodes, such as {@code ISO-2022-CN}, reads ASCII as itself, so the text is then written in ASCII and
+     * escaped.
      */
     private static byte[] encoded(String text, Charset encoding) {
         CharsetEncoder encoder = (encoding.canEncode() ? encoding : StandardCharsets.US_ASCII).newEncoder();
@@ -247,16 +251,16 @@ public final class GenerationOutput {
      * source stands below its source root, or one that an original source declares as a top-level type in a file
      * of another name, which javac would only report as a duplicate class.
      *
-     * <p>Below a directory the request names, the generated file's path is looked up as the volume resolves it. A
-     * case-insensitive volume therefore also finds an original whose name differs only in case, and that original
-     * is refused, whatever it declares. When it declares a top-level type named like the generated type but for
-     * case, such as the type it is named after, javac compiling both would also write their two class files as one
-     * file and keep one of them: by default without saying so, while the {@code output-file-clash} lint, which
+     * <p>Below a directory the request names, the generated file's path is looked up as the volume of that directory
+     * resolves it. A case-insensitive source volume therefore also finds an original whose name differs only in
+     * case, and that original is refused, whatever it declares. When it declares a top-level type named like the
+     * generated type but for case, such as the type it is named after, and the volume of the class output does not
+     * tell names apart by case either, javac compiling both would also write their two class files as one file there
+     * and keep one of them: by default without saying so, while the {@code output-file-clash} lint, which
      * {@code -Xlint:all} turns on, warns about it, and {@code -Werror} turns that warning into a failure. An original
-     * that declares no such type loses no class file. Every
-     * original source is also compared by the path it stands at, whole: for a file the request names itself, that
-     * is the path its package declaration gives it. An original source that merely ends like the generated file,
-     * in a package of another name, is therefore no collision.</p>
+     * that declares no such type loses no class file. Every original source is also compared by the path it stands
+     * at, whole: for a file the request names itself, that is the path its package declaration gives it. An original
+     * source that merely ends like the generated file, in a package of another name, is therefore no collision.</p>
      *
      * <p>An original source whose path differs from the generated file's in the case of its file name alone, its
      * directories spelled the same, is looked up under the generated file name in its own directory. Where its
@@ -382,8 +386,9 @@ public final class GenerationOutput {
     /**
      * javac allows a source to shadow a dependency class, so reject that collision before publishing sources. A
      * directory entry is searched for the class file of each generated type, and so is a regular file that opens
-     * as an archive. A regular file that does not open as one, whatever its name, is skipped, since no class can
-     * be read from it; this run's own class output is skipped too.
+     * as an archive. A regular file that is not an archive, whatever its name, is skipped, since no class can be
+     * read from it, while one that cannot be read at all fails with an {@link IOException}; this run's own class
+     * output is skipped too.
      */
     private static void requireNoClasspathCollision(GenerationRequest request, List<GeneratedSource> sources)
             throws IOException {
@@ -417,7 +422,10 @@ public final class GenerationOutput {
                 + " would shadow a class from " + entry);
     }
 
-    /** Atomically retains ownership without making an incomplete generation usable by the compiler. */
+    /**
+     * Retains ownership in the pending manifest, which {@link #replace} moves into place atomically where the file
+     * system supports that, without making an incomplete generation usable by the compiler.
+     */
     private static void remember(Path pending, CompileManifest manifest, Set<String> owned) throws IOException {
         replace(pending, new CompileManifest(manifest.schemaVersion(), manifest.toolVersion(),
             manifest.local(), manifest.dependencies(), manifest.processorInventory(), List.copyOf(owned)));

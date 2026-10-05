@@ -23,20 +23,21 @@ import java.util.stream.Stream;
  *
  * <p>javac never deletes a class file it no longer produces, so a compilation that renames or removes a graph
  * member would keep publishing the binaries of the previous one. {@code prepare} retires them, and it does so
- * from an inventory rather than from a name prefix: only the exact files a previous cycle recorded are removed,
- * so {@code fx/OldRefs$Manual.class} written by hand survives a run that retires {@code fx/OldRefs.class}. It
+ * from an inventory rather than from a name prefix: it removes the exact files a previous cycle recorded and,
+ * after an interrupted cycle, the class files that reading them attributes to a unit an inventory or the manifest
+ * names, so {@code fx/OldRefs$Manual.class} written by hand survives a run that retires {@code fx/OldRefs.class}. It
  * also removes the published index and the provisional one, so no consumer and no packager can read what this
  * compilation has not yet verified.</p>
  *
  * <p>Between the two steps the inventory of what is being retired lives in
- * {@code <workDirectory>/owned-outputs.pending.json}, written before the first deletion by atomic replacement,
- * so a preparation that is itself interrupted leaves the previous inventory whole. A compilation that
- * javac rejects, or that never finishes, leaves that file behind: {@code complete} is not called, so nothing is
- * published, and the next {@code prepare} consumes the evidence and cleans up what the interrupted run left.
- * {@code complete} enumerates the class files the compilation really produced for the units it owns, keeps the
- * carrier out of the jar by deleting its exact binaries, promotes the provisional index to
- * {@code META-INF/graphmaquina/exports.json} byte for byte and seals
- * {@code <workDirectory>/owned-outputs.json} by atomic replacement.</p>
+ * {@code <workDirectory>/owned-outputs.pending.json}, written before the first deletion to a file beside it that
+ * is then moved into place, atomically where the file system supports that, so a preparation that is itself
+ * interrupted leaves the previous inventory whole. A compilation that javac rejects, or that never finishes, leaves
+ * that file behind: {@code complete} is not called, so nothing is published, and the next {@code prepare} consumes
+ * the evidence and cleans up what the interrupted run left. {@code complete} enumerates the class files the
+ * compilation really produced for the units it owns, keeps the carrier out of the jar by deleting its exact
+ * binaries, promotes the provisional index to {@code META-INF/graphmaquina/exports.json} byte for byte and seals
+ * {@code <workDirectory>/owned-outputs.json}, moved into place the same way.</p>
  *
  * <p>That enumeration reads the {@code SourceFile} attribute of each class file, so a class output compiled
  * without it — under {@code -g:none}, or a {@code -g:} list that leaves {@code source} out such as
@@ -68,11 +69,12 @@ public final class CompilationOutputs {
      * <p>When a pending inventory is already there, the cycle it belongs to was interrupted: javac may have
      * written class files for its units that no inventory could list, since only {@code complete} enumerates
      * them. Those are retired too, by asking {@link OwnedClassFiles} which binaries belong to the units that
-     * generation owned; a class file the enumeration does not attribute to one of them is never touched.</p>
+     * generation owned, as the inventories and the current manifest name them; a class file the enumeration does
+     * not attribute to one of them is never touched.</p>
      *
      * @throws CodegenException {@code SG602} if the generator wrote no manifest for this compilation, or
      *     {@code SG603} if an inventory names a path outside the root it belongs to
-     * @throws IOException if an inventory cannot be read, a class file cannot be read, the pending inventory
+     * @throws IOException if the manifest, an inventory or a class file cannot be read, the pending inventory
      *     cannot be written or an output cannot be removed
      */
     public static void prepare(GenerationRequest request) throws IOException {
@@ -121,10 +123,12 @@ public final class CompilationOutputs {
     /**
      * Publishes what javac accepted: the index, the inventory of the outputs it produced, and no carrier.
      *
-     * @throws CodegenException {@code SG602} if this compilation was never prepared, carries no provisional
-     *     index, no processor inventory or no class file for its carrier, or {@code SG603} if a path of the new
-     *     inventory escapes its root
-     * @throws IOException if a class file cannot be read or an output cannot be written
+     * @throws CodegenException {@code SG602} if the generator wrote no manifest for this compilation, if it was
+     *     never prepared or was prepared for another generation, or if it carries no provisional index, no processor
+     *     inventory or no class file for its carrier, or {@code SG603} if a path of the new inventory escapes its
+     *     root
+     * @throws IOException if the manifest, an inventory or a class file cannot be read, or an output cannot be
+     *     written or removed
      */
     public static void complete(GenerationRequest request) throws IOException {
         Objects.requireNonNull(request, "request");
@@ -233,8 +237,8 @@ public final class CompilationOutputs {
     }
 
     /**
-     * Refuses an inventory path that is blank, that is absolute or that lands outside {@code root} once
-     * resolved. A blank entry resolves to the root itself, which would hand the whole output directory to a
+     * Refuses an inventory path that is blank, that is absolute or that lands on {@code root} itself or outside it
+     * once resolved. A blank entry resolves to the root itself, which would hand the whole output directory to a
      * step that only ever deletes the files one compilation owns.
      *
      * @throws CodegenException {@code SG603} naming the entry, since an inventory may only claim files the

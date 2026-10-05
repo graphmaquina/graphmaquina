@@ -27,12 +27,13 @@ import javax.lang.model.element.Modifier;
  * Discovers the members and properties the original sources export, one symbol per host and member name.
  *
  * <p>A host exports its own marked declarations; a host that also carries {@code @GraphBindings} exports the
- * marked declarations it inherits, from a source or a binary supertype, under its own name. Every marked
- * declaration is kept as its own candidate, with the type that declares it, the role that declaration spells
- * and its own origin. Nothing here decides an override: the bootstrap cannot see a source host from the binary
- * task, so a role is never transferred onto a same-name local declaration and a family is never rejected for
- * mixing roles. Resolving overrides and effective signatures is the processor's work, once javac has the real
- * elements.</p>
+ * marked declarations it inherits, from a source or a binary supertype, under its own name. Every marked method
+ * is kept as its own candidate, with the type that declares it, the role that declaration spells and its own
+ * origin, or the host's for one read from a binary. A property keeps only the first declaration of its logical
+ * name, the host's own before inherited ones, and two the host declares itself are refused with {@code SG603}.
+ * Nothing here decides an override: the bootstrap cannot see a source host from the binary task, so a role is never
+ * transferred onto a same-name local declaration and a family is never rejected for mixing roles. Resolving
+ * overrides and effective signatures is the processor's work, once javac has the real elements.</p>
  */
 public final class ExportDeclarations {
 
@@ -222,10 +223,10 @@ public final class ExportDeclarations {
     }
 
     /**
-     * One candidate, kept exactly as its declaration spells it. Type variables are canonicalized but never
-     * substituted: the host's specialization is the processor's to apply. A declaration read from a binary has
-     * no original source, so it is anchored at the host that exports it while {@code declaringType} keeps its
-     * provenance.
+     * One candidate, typed as its declaration spells it, with every type name the index resolves replaced by its
+     * canonical name. Type variables are kept, never substituted: the host's specialization is the processor's to
+     * apply. A declaration read from a binary has no original source, so it is anchored at the host that exports it
+     * while {@code declaringType} keeps its provenance.
      */
     private static MemberDescriptor candidate(DeclarationIndex index, TypeHeader host,
             Declaration declaration) {
