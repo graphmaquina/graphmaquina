@@ -81,10 +81,11 @@ class GraphOnlySurfaceTest {
 
     /**
      * The simple names of the retired annotations the generator once nested inside a machine's own vocabulary,
-     * apart from their repeatable containers {@code Rows}, {@code Cells} and {@code Forbids}. A published
+     * their repeatable containers {@code Rows}, {@code Cells} and {@code Forbids} included. A published
      * artifact declares a nested type of none of them, whatever outer type it belongs to.
      */
-    private static final List<String> RETIRED_NESTED = List.of("Row", "Cell", "Forbid", "Action", "Move");
+    private static final List<String> RETIRED_NESTED = List.of("Row", "Rows", "Cell", "Cells", "Forbid", "Forbids",
+            "Action", "Move");
 
     /**
      * What a consumer sees of the retired contract, written as a consumer writes it and run from the jars: the

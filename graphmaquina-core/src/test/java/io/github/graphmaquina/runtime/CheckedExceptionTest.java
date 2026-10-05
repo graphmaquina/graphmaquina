@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
@@ -37,7 +38,11 @@ import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.Sneaky;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -61,7 +66,8 @@ import org.junit.jupiter.api.Test;
  * {@code @SneakyThrows} compile to. Each one takes the route an unchecked exception from the same callback takes.
  * An {@code Error} is never routed: thrown by a callback it propagates unchanged, while one that completes a stage
  * is the cause of a technical abort. An engine exception from an action or a guard is never routed either: bare or
- * wrapped, thrown or completing a stage, it reaches the caller as it was thrown.
+ * wrapped however deeply, thrown or completing a stage, it reaches the caller as it was thrown. An action that
+ * throws a chain of wrappers looping back on itself still ends in a technical abort.
  */
 class CheckedExceptionTest {
 
@@ -124,6 +130,42 @@ class CheckedExceptionTest {
                 }
                 return ends;
             }).get();
+        }
+    }
+
+    /** Nests {@code inner} in {@code depth} CompletionExceptions, each named after its level; returns the outermost. */
+    private static CompletionException nested(int depth, Throwable inner) {
+        CompletionException wrapped = new CompletionException("level 1", inner);
+        for (int level = 2; level <= depth; level++) {
+            wrapped = new CompletionException("level " + level, wrapped);
+        }
+        return wrapped;
+    }
+
+    /**
+     * Two CompletionExceptions, each the cause of the other. No public constructor leaves the cause unset for
+     * initCause to close the loop later, and a subclass is not the exact class the engine unwraps, so the pair is
+     * written with the inner one's cause replaced by the outer one and read back: the stream refers to the outer one
+     * again, which closes the loop.
+     */
+    private static CompletionException cycle() throws IOException, ClassNotFoundException {
+        RuntimeException placeholder = new RuntimeException("stands for the outer wrapper");
+        CompletionException outer = new CompletionException("outer", new CompletionException("inner", placeholder));
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        try (ObjectOutputStream out = new ObjectOutputStream(bytes) {
+            {
+                enableReplaceObject(true);
+            }
+
+            @Override
+            protected Object replaceObject(Object written) {
+                return written == placeholder ? outer : written;
+            }
+        }) {
+            out.writeObject(outer);
+        }
+        try (ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+            return (CompletionException) in.readObject();
         }
     }
 
@@ -512,6 +554,95 @@ class CheckedExceptionTest {
         assertSame(ledger, error.getCause());
         assertEquals(DRAFT, doc.status());
         assertEquals(DRAFT, elsewhere.status());
+    }
+
+    /**
+     * An engine exception keeps its identity however deeply it is wrapped. Inside 10,000 nested CompletionExceptions,
+     * far more than the 16 hops the unwrap was once bounded to, it still reaches the caller as it was thrown: thrown by
+     * a synchronous or an asynchronous action or guard or by a recovery action, or completing a stage.
+     */
+    @Test
+    void anEngineExceptionReachesTheCallerAsItWasThrownHoweverDeeplyItIsWrapped() {
+        StateMachineException engine = new StateMachineException("the ledger refused the entry");
+        CompletionException deep = nested(10_000, engine);
+        Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths = new LinkedHashMap<>();
+        paths.put("sync action", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw deep;
+                        })));
+        paths.put("async action before its stage", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw deep;
+                        })));
+        paths.put("async action, completing its stage", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                CompletableFuture.failedFuture(deep))));
+        paths.put("sync guard", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw deep;
+                        })));
+        paths.put("async guard before its stage", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw deep;
+                        })));
+        paths.put("async guard, completing its stage", docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                                CompletableFuture.failedFuture(deep))));
+        paths.put("recovery action", StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                            ActionOutcome.failed("declined"))
+                    .onFailure(DISCARD).endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED)
+                    .action("Discard", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        throw deep;
+                    }).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build());
+        List<String> ends = new ArrayList<>();
+        List<String> expected = new ArrayList<>();
+        for (Map.Entry<String, GraphDefinition<Doc, DocStatus, DocTransition>> path : paths.entrySet()) {
+            Doc doc = new Doc("1", DRAFT);
+            String end;
+            try {
+                end = standalone(path.getValue()).execute(doc, SUBMIT).getClass().getSimpleName();
+            } catch (StateMachineException thrown) {
+                end = thrown == engine ? "the engine exception itself" : thrown.getClass().getSimpleName()
+                        + " caused by " + (thrown.getCause() == engine ? "the engine exception" : thrown.getCause());
+            }
+            ends.add(path.getKey() + ": " + end + ", " + doc.status());
+            expected.add(path.getKey() + ": the engine exception itself, DRAFT");
+        }
+        assertEquals(expected, ends);
+    }
+
+    /**
+     * A chain of wrappers that loops back on itself still ends the unwrap, at the first wrapper the walk reaches a
+     * second time: here the one the action threw, which becomes the cause of a technical abort. The call runs under a
+     * timeout, so an unwrap that never ends fails the test instead of hanging the build.
+     */
+    @Test
+    void aCycleOfWrappersStillEndsAsATechnicalAbort() throws Exception {
+        CompletionException cycle = cycle();
+        assertSame(cycle, cycle.getCause().getCause(), "the two wrappers must be each other's cause");
+        StateMachine<Doc, DocStatus, DocTransition> machine = standalone(docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw cycle;
+                        })));
+        Doc doc = new Doc("1", DRAFT);
+        TransitionAbortedException error = assertTimeoutPreemptively(Duration.ofSeconds(10),
+                () -> assertThrows(TransitionAbortedException.class, () -> machine.execute(doc, SUBMIT)));
+        assertSame(cycle, error.getCause());
+        assertEquals(DRAFT, doc.status());
     }
 
     /**
