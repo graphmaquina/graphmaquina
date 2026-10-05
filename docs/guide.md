@@ -1260,20 +1260,20 @@ declared on the interface itself:
 ```
 
 The corresponding async action calls a gateway and returns a stage. An exceptional completion with a matching
-`IOException` uses the declared failure route. The runtime unwraps `CompletionException` and
-`ExecutionException` before classifying their cause, and it classifies a checked exception that an action
-throws without declaring it, as Kotlin or `@SneakyThrows` code can, like any other. `failsOn` applies to action
-failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a guard
-or action throws or completes its stage with, bare or wrapped, is rethrown as it is and never matched against
-`failsOn`. An `Error` is never routed either: thrown as itself it propagates unchanged, and one that completes
-a stage, or that a wrapper carries, aborts.
+`IOException` uses the declared failure route. The runtime unwraps a `CompletionException` or
+`ExecutionException` that carries a cause before classifying that cause, and it classifies a checked exception
+that an action throws without declaring it, as Kotlin or `@SneakyThrows` code can, like any other. `failsOn`
+applies to action failures; a guard exception is a technical abort. A library exception, a
+`StateMachineException`, that a guard or action throws or completes its stage with, bare or wrapped, is rethrown
+as it is and never matched against `failsOn`. An `Error` is never routed either: thrown as itself it propagates
+unchanged, and one that completes a stage, or that a wrapper carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine
 exception, or a `CancellationException` or one of its subtypes, which are never domain failures; nor
-`CompletionException` or `ExecutionException` themselves, which are unwrapped before matching, so declare the
-type of their cause. All of these are `SG302`. Declare specific foreign exception types. Timeout, interruption
-and cancellation are not a substitute for a returned domain failure. `@Timeout` is valid only for asynchronous
-actions.
+`CompletionException` or `ExecutionException` themselves, which are unwrapped before matching whenever they
+carry a cause, so declare the type of their cause. All of these are `SG302`. Declare specific foreign exception
+types. Timeout, interruption and cancellation are not a substitute for a returned domain failure. `@Timeout` is
+valid only for asynchronous actions.
 
 The full action implementation is in
 [OrderActions.java](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/order/OrderActions.java).
@@ -2582,7 +2582,7 @@ code runs.
 | `SG204` | Unauthorised cycle: list an intentional cycle's state in `allowsCycle`. One witness is reported per cyclic strongly connected component, deterministically, rather than one message per elementary cycle. |
 | `SG205` | Unused cycle allowance: the named state belongs to no cycle. |
 | `SG301` | Invalid failure route: `onFailure` names this edge's own key, or no edge with that identifier leaves the same origin. |
-| `SG302` | Forbidden `failsOn` type: `Throwable`, `Exception`, `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, or exactly `CompletionException` or `ExecutionException`, which the runtime unwraps before matching. Use a specific foreign exception, or the type of the wrapped cause. |
+| `SG302` | Forbidden `failsOn` type: `Throwable`, `Exception`, `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, or exactly `CompletionException` or `ExecutionException`, which the runtime unwraps before matching whenever they carry a cause. Use a specific foreign exception, or the type of the wrapped cause. |
 | `SG401` | A watch rule names an identifier with no edge from the watched state. |
 | `SG402` | A terminal state declares a watch. |
 | `SG403` | More than one watch on the same state. |
@@ -2606,11 +2606,11 @@ code runs.
 | --- | --- |
 | `SG599` | The processor could not write a generated source, provisional export index or processor inventory. Inspect the named type/path and underlying error; correct the output path, permissions, available space or reported file collision, then rerun the full generation/compilation lifecycle. See [processor output failures](typed-annotations-build.md#processor-output-failures-sg599). |
 | `SG601` | Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. `Machine<E, S, T>` must resolve to a concrete entity type and **two distinct enums**, one for states and one for transition identifiers. Also a facade that declares type parameters, a parameterized entity type, a facade or enum the vocabulary's package cannot access, a marker whose annotation type is not on the generator's classpath, and an original source javac cannot parse at the compilation's release. |
-| `SG602` | Manifest or export index is missing, incompatible, stale, malformed, or written in the retired schema 1. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place needs one `clean`. Also a machine javac compiled implicitly, from the source path, which the processor never saw, reported where the index or a set names it: pass every source of the compilation to javac. A companion of a previous compilation that nothing retired is reported too: run the lifecycle, or clean. Completion reports a class output without the `SourceFile` attribute: compile with javac's default `-g`, or a `-g:` list that includes `source`. |
+| `SG602` | Manifest or export index is missing, incompatible, stale, malformed, or written in the retired schema 1. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place needs one `clean`. Also a machine javac compiled implicitly, from the source path, which the processor never saw, reported where the index or a set names it: pass every source of the compilation to javac. A companion of a previous compilation that nothing retired is reported too: run the lifecycle, or clean. Completion reports a class output without the `SourceFile` attribute: compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. |
 | `SG603` | Generated output or export collision, or a name generated code cannot write. Two names normalize to the same PascalCase spelling; a generated type already exists as an original source, in the file it would overwrite or in another one, as a class of the classpath, or as a file of the generated directory the previous generation did not own; an original file or type differs from a generated one only in case where the volume does not tell names apart; an existing type takes a companion's name; or a type, member type or constant in the scope of a generated file takes over a name that file writes, such as a type of its package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references. |
 | `SG604` | Invalid or contradictory export/role, or a host its generated references container cannot access, such as a private nested class. Check markers and exported signatures. |
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |
-| `SG606` | Graph or watch vocabulary belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract operations. |
+| `SG606` | Graph or watch vocabulary belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract operations. On a default, static or private method of its own facade it is `SG504`. |
 | `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit` or `When.condition`. |
 | `SG608` | Invalid, duplicated or unused peer, a watched peer outside this compilation, or a peer whose types the owner's package cannot name. |
 | `SG609` | A retired 1.x graph annotation is still on the class path and still used. Replace it as [migrating to 2.0](migration-2.0.md) describes. |
@@ -2620,7 +2620,7 @@ code runs.
 | Exception | What to investigate |
 | --- | --- |
 | `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. |
-| `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `transition()` and `to()` are `Optional`: an abort before any edge was resolved reports neither. |
+| `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `transition()` and `to()` are `Optional`: an abort before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither. |
 | `UnhandledFailureException` | An action failed without an `onFailure` route. |
 | `CascadeException` | Collected nested transition errors; inspect `errors()` and the journal. |
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
@@ -2701,9 +2701,10 @@ build, while the Maven adapter's integration suite drives actual Maven builds. H
 The example applies the included plugin and uses the sibling generator project.
 
 `./gradlew test` runs the ordinary suites for core, processor, codegen, example, Maven adapter and testing
-support. In `graphmaquina-test`, it excludes `PublishedArtifactSmokeTest` and `ReadmeQuickstartTest`.
-`./gradlew build` reaches both through `check` → `:graphmaquina-test:publishedArtifactTest`, which stages
-core, testing support, generator, processor, Gradle plugin and its marker into the local file repository.
+support. In `graphmaquina-test`, it excludes `PublishedArtifactSmokeTest`, `ReadmeQuickstartTest` and
+`GraphOnlySurfaceTest`. `./gradlew build` reaches all three through `check` →
+`:graphmaquina-test:publishedArtifactTest`, which stages core, testing support, generator, processor, Maven
+plugin, Gradle plugin and its marker into the local file repository.
 The published-artifact task also runs independently with the command above. Its external README consumer
 resolves dependencies offline, so third-party dependencies must already be cached.
 

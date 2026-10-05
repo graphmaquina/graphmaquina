@@ -219,9 +219,9 @@ symbolic links are followed, a link that leads back into a directory being walke
 The task runs after every task those directories are built by, so a directory registered with the task that
 writes it, as `java.srcDir(generateOther)` registers the output of a `generateOther` task, is written before it
 is read. A directory added by path alone carries no such task, so nothing orders its writer before the
-generation: depending on the order Gradle picks, the build stops with Gradle's own error that the generation
-task uses an output of that task without declaring a dependency on it, or the generation reads the directory
-before it is written. Register such a directory with the task that writes it.
+generation: depending on the order the two tasks run in, the build stops with Gradle's own error that the
+generation task uses an output of that task without declaring a dependency on it, or the generation reads the
+directory before it is written. Register such a directory with the task that writes it.
 
 The sources are parsed at the compilation's `options.release`, or, when that is not set, at the language
 version of its toolchain, and read in its `options.encoding`; the generated sources are written in that
@@ -436,9 +436,26 @@ plugins a POM adds, and a POM declaration of a lifecycle plugin keeps that injec
 
 The compilation carrier, `io/github/graphmaquina/generated/bootstrap/GraphCompilation<digest>.java`, is
 tool-internal: `complete` removes its class file, so the jar never carries it. This plugin configures no other
-plugin, so a sources or javadoc plugin that reads the compile source roots may still pick up its source from
-`target/generated-sources/graphmaquina`. Leave `io/github/graphmaquina/generated/bootstrap/**` out in that
-plugin's configuration; for `maven-source-plugin`, that is its `<excludes>` list.
+plugin, and `generate` adds `target/generated-sources/graphmaquina` to the compile source roots, which
+`maven-source-plugin` and `maven-javadoc-plugin` read: the carrier's source lands in the sources jar and its page
+in the javadoc unless their configuration leaves it out. In the `<configuration>` of `maven-javadoc-plugin`
+3.12.0, either of these settings leaves it out:
+
+```xml
+<sourceFileExcludes>
+  <sourceFileExclude>io/github/graphmaquina/generated/bootstrap/**</sourceFileExclude>
+</sourceFileExcludes>
+<!-- or -->
+<excludePackageNames>io.github.graphmaquina.generated.bootstrap</excludePackageNames>
+```
+
+In the `<configuration>` of `maven-source-plugin` 3.4.0, this one does:
+
+```xml
+<excludes>
+  <exclude>io/github/graphmaquina/generated/bootstrap/**</exclude>
+</excludes>
+```
 
 ### Sources, release and encoding
 
@@ -483,7 +500,7 @@ written or retired, and every failure names what to change:
   previous outputs and the completion would find nothing to publish in their place.
 - **Includes and excludes that keep the carrier.** The compiler applies its `<includes>` and `<excludes>`
   (`<testIncludes>` and `<testExcludes>` for the tests) to the generated source root too. Patterns that leave out
-  the compilation carrier are refused, naming the pattern; with includes, the remedy is
+  the compilation carrier are refused, naming the exclude, or the include list; with includes, the remedy is
   `<include>io/github/graphmaquina/generated/**</include>`.
 - **The manifest argument, per execution.** Every `-Agraphmaquina.annotationManifest=` the two scopes declare
   must name the manifest of that execution's own work directory. A missing or divergent one is refused with the
@@ -509,12 +526,13 @@ written or retired, and every failure names what to change:
 | `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
 | `SG602` "…which this compilation never processed…" | javac compiled a machine implicitly, from the source path, and javac does not process such a source. Pass every source of the compilation to javac. |
 | `SG602` "…is still compiled from a previous compilation that nothing retired…" | javac ran again over a class output that still holds the previous companions. Run the lifecycle, whose preparation retires them, or clean the build. |
-| `SG602` "…no class file in … belongs to the carrier…" | javac's debug setting left the `SourceFile` attribute out of the class files, which the completion reads: `-g:none`, or a `-g:` list without `source` such as `-g:lines,vars`. Compile with javac's default, `-g`, or a `-g:` list that includes `source`. |
+| `SG602` "…no class file in … belongs to the carrier…" | javac's debug setting left the `SourceFile` attribute out of the class files, which the completion reads: `-g:none`, or a `-g:` list without `source` such as `-g:lines,vars`. Compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. |
 | `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host), or could not parse an original source at the compilation's release. The message names the type and the declaration. |
 | `SG603` | a generated name collides or cannot be written: names that collide after PascalCase normalization, such as `id` / `_id`; a generated type an original source already declares, or one differing only in case where the volume does not tell names apart; or a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references, then regenerate. |
 | `SG609` | a declaration still uses the retired 1.x matrix vocabulary. The message names the typed declaration to write instead; see [migrating to 2.0](migration-2.0.md) and the [generated typed annotations](guide.md#annotation-and-binding-reference). |
 | `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
 | "the StateGraph generator needs a Java 21 toolchain or later" (Gradle), "…needs Java 21 or later, but … belongs to Java …" (Maven) | raise the Gradle toolchain to 21+, or point Maven's `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
+| "…needs the jdk.compiler module…" | the Gradle toolchain, or Maven's `graphmaquina.javaExecutable` or `jdk` toolchain, has no `javac` beside its `java`: it is a runtime, or, in Maven, a launcher outside a JDK's `bin` directory. Point it at a full JDK 21 or later, in Maven at the `java` in that JDK's `bin`. |
 | "…The two must be the same JDK…" | the generator's `java` and javac belong to different JDK homes. Point `graphmaquina.javaExecutable` at the `java` in the `bin` directory of the JDK javac compiles with, not at a wrapper launcher, or have javac compile with the generator's JDK. |
 | "…is not on the `<annotationProcessorPaths>` …" | the processor is missing from the compiler's processor path; declare it after Lombok. |
 | "…switches annotation processing off…" | remove `proc=none` / `-proc:none`. |

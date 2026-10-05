@@ -539,7 +539,9 @@ what checks the change.
 
 ### Reading and updating
 
-The two directions deliberately resolve differently, and neither can overwrite the other's file:
+The two directions resolve differently. Read mode never writes, and update mode writes only under the source
+root. Nothing compares that root with the class path, so point it at the source directory, never at a
+class-path output:
 
 | Mode | Resource resolved through | Written to |
 | --- | --- | --- |
