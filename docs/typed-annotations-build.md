@@ -241,10 +241,10 @@ Every one of those is wired lazily: which source sets take part is only known on
 read, so each piece carries an empty value until then. A build script that configures `compileTestJava` before
 the `dependencies` block that declares its processor therefore gets the same build as one that does not.
 
-`options.isIncremental = false` is the exception, because it is not a lazy property: the completion enumerates
-the class files the compilation produced for the units it owns, which an incremental recompilation of only some
-sources would leave incomplete, and the switch is set on the compile task of **every** source set,
-participating or not, and on no other compilation of the project.
+`options.isIncremental = false` is the exception. The completion enumerates the class files the compilation
+produced for the units it owns, which an incremental recompilation of only some sources would leave incomplete,
+and the switch is not a lazy property, so it is set on the compile task of **every** source set, participating or
+not, and on no other compilation of the project.
 
 The annotation-processor path itself is never touched, so Lombok keeps running first, exactly as declared.
 
@@ -259,9 +259,9 @@ index the completion publishes, or that would not compile everything generated:
 - `-proc:only` or `-proc:none` as the last `-proc:` option among the compiler arguments, the one javac takes;
 - a `-processor` list, the last one among the compiler arguments, that leaves out
   `io.github.graphmaquina.processor.StateGraphProcessor` or holds a name that is not a valid qualified class
-  name, such as an empty one or one with spaces around it. Gradle's compiler, in process or in its compiler
-  daemon, keeps empty names when it splits the list on its commas, so an empty name is refused wherever it
-  stands, after the last comma included;
+  name, such as an empty one or one with spaces around it. The Java compiler of Gradle 9.2.1, in process or in
+  its compiler daemon, keeps empty names when it splits the list on its commas, so an empty name is refused
+  wherever it stands, after the last comma included;
 - a compilation whose sources leave out a generated file, as replacing the source set's java directories with
   `java.setSrcDirs(...)` does, or a source or a pattern set on the compile task itself. The refusal prints, for
   the Kotlin and the Groovy DSL, the line that adds the generated directory back after a replacement, and asks
@@ -563,11 +563,17 @@ the deprecated `<compilerArguments>` map, sorted by key, each key once with its 
 that map; then `<compilerArgument>`; then the values of `<compilerArgs>`. The test compilation takes
 `<testCompilerArguments>` and `<testCompilerArgument>` over the first two when they are set. A list parameter
 written as comma-separated text, such as `<compilerArgs>-Xlint:all,-Werror</compilerArgs>`, is split on every
-comma, as Maven splits it, and so are `<includes>`, `<excludes>`, `<testIncludes>` and `<testExcludes>`, for
-these checks and for the sources passed to the generator.
+comma, as Maven splits it, and so are `<annotationProcessors>`, `<includes>`, `<excludes>`, `<testIncludes>`
+and `<testExcludes>`, for these checks and, for the four lists of patterns, for the sources passed to the
+generator. `<annotationProcessors>` can therefore name its processors as text,
+`<annotationProcessors>p.First,p.Second</annotationProcessors>`, or in one element that holds a comma list,
+`<annotationProcessor>p.First,p.Second</annotationProcessor>`, as well as one name per element: javac gets the
+names joined by commas and splits them on every comma again.
 
-Two mistakes in a processor list are left to javac: a well-formed name of a class that is on no processor path,
-such as a misspelt one, and a `-processor` argument with nothing after it. The compilation then fails after the
+The processor-list check refuses only a list that leaves out the StateGraph processor or holds a name that is
+not a valid qualified class name. Other mistakes in a processor list are javac's to report, such as a
+well-formed name of a class that is on no processor path, a misspelt one for instance, a name of a class that is
+no annotation processor, or a `-processor` argument with nothing after it: the compilation then fails after the
 preparation, like any compilation javac rejects, and the next preparation cleans up after it from the pending
 inventory it left.
 
@@ -577,12 +583,15 @@ inventory it left.
 | --- | --- |
 | `SG599` "could not write …" | the processor could not create or write an output. Follow the named type/path and underlying error using [processor output failures](#processor-output-failures-sg599), then rerun the full lifecycle after correcting the cause. |
 | `SG602` "…names no annotation manifest…" | javac ran without `-Agraphmaquina.annotationManifest=…`. In Maven, add the argument to that execution; in Gradle, the source set is not participating — declare `graphmaquina-processor` in its annotation-processor configuration. |
-| `SG602` "…does not exist" / stale manifest | the generation step did not run before javac. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
+| `SG602` "the annotation manifest … does not exist", "…there is no manifest at …" / stale manifest | the generation step did not run before javac or before the preparation. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
 | `SG602` "…which this compilation never processed…" | javac compiled a machine implicitly, from the source path, and javac does not process such a source. Pass every source of the compilation to javac. |
 | `SG602` "…is still compiled from a previous compilation that nothing retired…" | javac ran again over a class output that still holds the previous companions. Run the lifecycle, whose preparation retires them, or clean the build. |
 | `SG602` "…no class file in … belongs to the carrier…" | javac's debug setting left the `SourceFile` attribute out of the class files, which the completion reads: `-g:none`, or a `-g:` list without `source` such as `-g:lines,vars`. Compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. |
+| `SG602` "inventory path '…' …" | a manifest of the work directory lists an owned source that is not a relative path to a file: one that no path can spell, such as one holding a NUL character, one that is absolute or has a root, one with a `..` segment, or one that names the directory itself, such as `.`. Clean the build. |
 | `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host), or could not parse an original source at the compilation's release. The message names the type and the declaration. |
-| `SG603` | a generated name collides or cannot be written: names that collide after PascalCase normalization, such as `id` / `_id`; a generated type an original source already declares, or one differing only in case where the volume does not tell names apart; or a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references, then regenerate. |
+| `SG603` | a generated name collides or cannot be written: names that collide after PascalCase normalization, such as `id` / `_id`; a generated type that an original source already declares, that would shadow a class of the classpath or overwrite a file of the generated directory the previous generation did not own, or that differs from an original only in case where the volume does not tell names apart; or a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references, then regenerate. |
+| `SG603` "…which a symbolic link takes out of …", "…would be written through a symbolic link that leads out of …" | a symbolic link inside an output directory, the class output or a generated source directory, leads out of it, and the step would remove or write a file outside it through that link. Nothing outside the directory is touched. Remove the link, then run the lifecycle again. |
+| `SG603` "…claims '…', which is not a file under …" | an inventory of the work directory names an entry that is not a file under its output root: a blank one, one that no path can spell, such as one holding a NUL character, or one that is absolute, has a root, names the root itself or leads out of it. Clean the build. |
 | `SG609` | a declaration still uses the retired 1.x matrix vocabulary. The message names the typed declaration to write instead; see [migrating to 2.0](migration-2.0.md) and the [generated typed annotations](guide.md#annotation-and-binding-reference). |
 | `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
 | "the StateGraph generator needs a Java 21 toolchain or later" (Gradle), "…needs Java 21 or later, but … belongs to Java …" (Maven) | raise the Gradle toolchain to 21+, or point Maven's `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
@@ -591,7 +600,7 @@ inventory it left.
 | "…is not on the `<annotationProcessorPaths>` …" | the processor is missing from the compiler's processor path; declare it after Lombok. |
 | "…switches annotation processing off…" | remove `proc=none` / `-proc:none`. |
 | "…which leaves out io.github.graphmaquina.processor.StateGraphProcessor…" | the `-processor` list javac gets, from a compiler argument or, in Maven, from `<annotationProcessors>`, leaves out the StateGraph processor, and javac runs only the processors such a list names. Add `io.github.graphmaquina.processor.StateGraphProcessor` to it, after Lombok's processors when the project uses Lombok, or remove the list so javac runs every processor on its processor path. |
-| "…whose name '…' is not a valid qualified class name…" | that list holds a name the compiler cannot load: an empty or blank one, one with spaces around it, or, in Maven, a value of `<annotationProcessors>` left empty. Correct or remove that name. |
+| "…whose name '…' is not a valid qualified class name…" | that list holds a name that is not a valid qualified class name, which the compiler cannot load: an empty or blank one, one with spaces around it, or, in Maven, a value of `<annotationProcessors>` left empty. Correct or remove that name. |
 | "…run the annotation processors and compile nothing…", "…lets the build continue past a compilation…" | remove `proc=only` / `-proc:only`, or leave `failOnError` at its default, `true`. |
 | "…compile only the sources whose class file is missing or older than the source…" | `useIncrementalCompilation` is set to false. Leave it at its default, `true`. |
 | "…select no …/GraphCompilation….java…", "…leaves out …/GraphCompilation….java…" | the compiler's includes or excludes leave out the compilation carrier. Add `<include>io/github/graphmaquina/generated/**</include>`, or change the exclude so it matches nothing under `io/github/graphmaquina/generated`. |
@@ -600,7 +609,8 @@ inventory it left.
 | `[INFO] StateGraph skips <id>: …` | the project is packaged as `pom`, or `maven.main.skip` / `<skipMain>` / `maven.test.skip` / `<skip>` switches that compilation off. Nothing was generated, retired or published; this is not an error. |
 | "…cannot run with options.failOnError = false…", "…cannot run with -proc:only…", "…cannot run with -proc:none…" (Gradle) | remove that setting from the compile task. |
 | "task ':compileJava' does not compile …" (Gradle) | the compilation leaves out a generated file. Add directories with `java.srcDir(...)` instead of replacing them, or add the generated directory back with the line the message prints, or remove a source or pattern set on the compile task. |
-| `complete` fails naming `pending-exports.json` | javac ran but published no index: the processor was not on the path for that compilation. |
+| "…there is no compilation carrier of … under …, although every generation emits one there…" | the carrier source the generation emitted was missing when `prepare` or `prepare-test` ran, as when it was deleted after `generate`. Run the lifecycle again, so that `generate` or `generate-test` emits it before the preparation. |
+| `complete` (Maven) or `complete-compile` (Gradle, `SG602`) fails naming `pending-exports.json` | javac ran but the annotation processor published no index: it was not on the processor path of that compilation, or did not run. |
 | `[INFO] StateGraph completes nothing for <id>` | javac did not run at all in this invocation (for example `mvn generate-sources`). Nothing was retired; this is a no-op, not an error. |
 
 ### Processor output failures (SG599)

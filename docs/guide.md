@@ -578,12 +578,12 @@ The adapter validates the effective Java release, processor path, manifest paths
 `-proc:none` or `-proc:only` as the last `-proc:` option javac gets, whether from `proc` or from a compiler
 argument, `failOnError=false`, `useIncrementalCompilation=false`, missing processor configuration, a
 `-processor` list or `<annotationProcessors>` that leaves out
-`io.github.graphmaquina.processor.StateGraphProcessor` or holds a name javac cannot load, divergent main/test
-manifests, compiler includes or excludes that leave out the compilation carrier the generator emits, and
-includes that hold only empty values. A compilation the build switches off is skipped instead:
-`maven.main.skip` or `<skipMain>` makes the three main goals log that and do nothing, `maven.test.skip` or
-`<skip>` the three test goals, and a project packaged as `pom` skips all six. Run the normal lifecycle when
-generating graphs.
+`io.github.graphmaquina.processor.StateGraphProcessor` or holds a name that is not a valid qualified class name,
+divergent main/test manifests, compiler includes or excludes that leave out the compilation carrier the
+generator emits, and includes that hold only empty values. A compilation the build switches off is skipped
+instead: `maven.main.skip` or `<skipMain>` makes the three main goals log that and do nothing,
+`maven.test.skip` or `<skip>` the three test goals, and a project packaged as `pom` skips all six. Run the
+normal lifecycle when generating graphs.
 
 | Optional property | Meaning |
 | --- | --- |
@@ -1265,12 +1265,14 @@ declared on the interface itself:
 
 The corresponding async action calls a gateway and returns a stage. An exceptional completion with a matching
 `IOException` uses the declared failure route. The runtime unwraps a `CompletionException` or
-`ExecutionException` that carries a cause before classifying that cause, and it classifies a checked exception
-that an action throws without declaring it, as Kotlin or `@SneakyThrows` code can, like any other. `failsOn`
-applies to action failures; a guard exception is a technical abort. A library exception, a
-`StateMachineException`, that a guard or action throws or completes its stage with, bare or wrapped, is rethrown
-as it is and never matched against `failsOn`. An `Error` is never routed either: thrown as itself it propagates
-unchanged, and one that completes a stage, or that a wrapper carries, aborts.
+`ExecutionException` that carries a cause before classifying that cause. It unwraps exactly those two classes:
+an exception of a subclass of either is classified as itself, not through its cause. It also classifies a
+checked exception that an action throws without declaring it, as Kotlin or `@SneakyThrows` code can, like any
+other. `failsOn` applies to action failures; a guard exception is a technical abort. A library exception, a
+`StateMachineException`, that a guard or action throws or completes its stage with, bare or wrapped in one of
+those two classes, is rethrown as it is and never matched against `failsOn`. An `Error` is never routed either:
+thrown as itself it propagates unchanged, and one that completes a stage, or that one of those two classes
+carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine
 exception, or a `CancellationException` or one of its subtypes, which are never domain failures; nor
@@ -2610,8 +2612,8 @@ code runs.
 | --- | --- |
 | `SG599` | The processor could not write a generated source, provisional export index or processor inventory. Inspect the named type/path and underlying error; correct the output path, permissions, available space or reported file collision, then rerun the full generation/compilation lifecycle. See [processor output failures](typed-annotations-build.md#processor-output-failures-sg599). |
 | `SG601` | Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. `Machine<E, S, T>` must resolve to a concrete entity type and **two distinct enums**, one for states and one for transition identifiers. Also a facade that declares type parameters, a parameterized entity type, a facade or enum the vocabulary's package cannot access, a marker whose annotation type is not on the generator's classpath, and an original source javac cannot parse at the compilation's release. |
-| `SG602` | Manifest or export index is missing, incompatible, stale, malformed, or written in the retired schema 1. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place needs one `clean`. Also a machine javac compiled implicitly, from the source path, which the processor never saw, reported where the index or a set names it: pass every source of the compilation to javac. A companion of a previous compilation that nothing retired is reported too: run the lifecycle, or clean. Completion reports a class output without the `SourceFile` attribute: compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. |
-| `SG603` | Generated output or export collision, or a name generated code cannot write. Two names normalize to the same PascalCase spelling; a generated type already exists as an original source, in the file it would overwrite or in another one, as a class of the classpath, or as a file of the generated directory the previous generation did not own; an original file or type differs from a generated one only in case where the volume does not tell names apart; an existing type takes a companion's name; or a type, member type or constant in the scope of a generated file takes over a name that file writes, such as a type of its package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references. |
+| `SG602` | A manifest, an inventory or an export index is missing, incompatible, stale, malformed, or written in the retired schema 1. A manifest is also malformed when an owned source it lists is not a relative path to a file: one that no path can spell, such as one holding a NUL character, one that is absolute or has a root, one with a `..` segment, or one that names the directory itself, such as `.`. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place, or one whose manifest is malformed, needs one `clean`. Also a machine javac compiled implicitly, from the source path, which the processor never saw, reported where the index or a set names it: pass every source of the compilation to javac. A companion of a previous compilation that nothing retired is reported too: run the lifecycle, or clean. Completion reports a class output without the `SourceFile` attribute: compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. |
+| `SG603` | Generated output or export collision, a name generated code cannot write, or an output path the generator may not use. Two names normalize to the same PascalCase spelling; a generated type already exists as an original source, in the file it would overwrite or in another one, as a class of the classpath, or as a file of the generated directory the previous generation did not own; an original file or type differs from a generated one only in case where the volume does not tell names apart; an existing type takes a companion's name; or a type, member type or constant in the scope of a generated file takes over a name that file writes, such as a type of its package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references. The generator's steps also refuse an inventory entry that is not a file under its output root, such as a blank one, one that no path can spell, as with a NUL character, or one that is absolute, has a root, names the root itself or leads out of it; an inventory entry whose file they would remove through a symbolic link inside its output root that leads out of it; and a generated source that would be written through such a link. Remove the link; clean a build whose inventory holds such an entry. |
 | `SG604` | Invalid or contradictory export/role, or a host its generated references container cannot access, such as a private nested class. Check markers and exported signatures. |
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |
 | `SG606` | Graph or watch vocabulary belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract operations. On a default, static or private method of its own facade it is `SG504`. |

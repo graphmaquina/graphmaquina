@@ -545,8 +545,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **New generator refusals:** a generic facade, a marker whose annotation type is not on the generator's
   classpath, and a facade, enum, host or peer that the generated code cannot access (`SG601`, `SG604`, `SG608`);
   a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or
-  like a `java.lang` type (`SG603`); and a generated type that an original source declares in a file of another
-  name, or that differs from one only in case where the volume does not tell names apart (`SG603`).
+  like a `java.lang` type (`SG603`); a generated type that an original source declares in a file of another
+  name, or that differs from one only in case where the volume does not tell names apart (`SG603`); and an
+  inventory entry whose file the generator's steps would remove through a symbolic link inside its output root
+  that leads out of it, a generated source that would be written through such a link, and an inventory entry
+  that no path can spell, such as one holding a NUL character (`SG603`).
 - **Declarations the generator misread.** An inner class that extends a sibling inner class, which overflowed the
   stack, a member class of a generic interface, a type named in a declaration's header like a member type the
   declaration declares or inherits, an on-demand import of a type the source cannot access, and a sibling type in
@@ -556,26 +559,29 @@ observe. Most items refuse up front what used to fail later, in generated code o
   unreadable `.class` file, which stopped `prepare-compile` and `complete-compile`, now build.
 - **Manifests.** A schema 1 manifest is left in place and refused on every build until `clean`; malformed JSON
   in a manifest or an index is `SG602` naming the file, and so is a `schemaVersion` or a source position that is
-  not an exact integer, which used to be truncated.
+  not an exact integer, which used to be truncated. So is an owned source of a manifest that no path can spell,
+  such as one holding a NUL character, that has a root, as `\x` and `C:x` have on Windows, or that names the
+  directory itself, such as `.`.
 - **Maven.** `maven.main.skip`, `<skipMain>`, `maven.test.skip` and `<skip>` skip the goals of that compilation
   with an info line instead of failing, and a project packaged as `pom` skips all six. Refused before anything is
   retired: `proc=only`, `-proc:only`, `failOnError=false`, `useIncrementalCompilation=false`, a `-processor`
   list or `<annotationProcessors>` that leaves out `io.github.graphmaquina.processor.StateGraphProcessor` or
-  holds a name javac cannot load, includes or excludes that leave out the compilation carrier, includes that hold
-  only empty values, a test release below 21, a generator `java` with no `javac` beside it or whose JDK declares
-  a release below 21, from `javaExecutable` or a toolchain alike, and a generator `java` that is not the `java`
-  of the JDK javac compiles with, compared by JDK home, so a wrapper launcher outside that JDK's `bin` directory
-  is refused. Such a processor list used to fail only after the preparation had retired the previous outputs, in
-  javac or with `SG602`, and with `useIncrementalCompilation=false` a rebuild without `clean` could fail the same
-  way, with `SG602`. The last `-proc:` option decides, as for javac, so `-proc:none` followed by a `-proc:full`
-  argument is no longer refused, nor is `<proc>none</proc>` with a `-proc:full` argument. The deprecated
-  `<compilerArguments>` map, and for the test compilation `<testCompilerArguments>` and
-  `<testCompilerArgument>`, are read as `maven-compiler-plugin` 3.15.0 passes them, so a manifest argument given
-  only there is no longer refused, and `<compilerArgs>`, `<includes>`, `<excludes>`, `<testIncludes>` and
-  `<testExcludes>` written as comma-separated text are split as Maven splits them. A `<jdkToolchain>` that
-  matches no toolchain falls back as the compiler does, properties given on the command line or to the JVM win
-  over those of the project, and an execution's `<compilerArgs>` replace the plugin-level ones, as Maven merges
-  them, where both used to be read. The plugin's descriptor declares Java 21 as the Java version it requires.
+  holds a name that is not a valid qualified class name, includes or excludes that leave out the compilation
+  carrier, includes that hold only empty values, a test release below 21, a generator `java` with no `javac`
+  beside it or whose JDK declares a release below 21, from `javaExecutable` or a toolchain alike, and a generator
+  `java` that is not the `java` of the JDK javac compiles with, compared by JDK home, so a wrapper launcher outside
+  that JDK's `bin` directory is refused. A `-processor` list or `<annotationProcessors>` refused this way used to
+  fail only after the preparation had retired the previous outputs, in javac or in the `complete` goal, and so
+  could a rebuild without `clean` under `useIncrementalCompilation=false`. The last `-proc:` option decides, as
+  for javac, so `-proc:none` followed by a `-proc:full` argument is no longer refused, nor is `<proc>none</proc>`
+  with a `-proc:full` argument. The deprecated `<compilerArguments>` map, and for the test compilation
+  `<testCompilerArguments>` and `<testCompilerArgument>`, are read as `maven-compiler-plugin` 3.15.0 passes them,
+  so a manifest argument given only there is no longer refused, and `<compilerArgs>`, `<annotationProcessors>`,
+  `<includes>`, `<excludes>`, `<testIncludes>` and `<testExcludes>` written as comma-separated text are split as
+  Maven splits them. A `<jdkToolchain>` that matches no toolchain falls back as the compiler does, properties
+  given on the command line or to the JVM win over those of the project, and an execution's `<compilerArgs>`
+  replace the plugin-level ones, as Maven merges them, where both used to be read. The plugin's descriptor
+  declares Java 21 as the Java version it requires.
 - **Gradle.** `prepare-compile` refuses, before it retires anything: `options.failOnError = false`, `-proc:only`
   or `-proc:none` as the last `-proc:` option, a `-processor` list, the last one given, that leaves out the
   StateGraph processor or holds a name that is not a valid qualified class name, an empty one after its last
