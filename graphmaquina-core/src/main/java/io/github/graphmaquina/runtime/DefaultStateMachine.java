@@ -153,13 +153,15 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     /**
-     * Root transaction: reentrancy marker, new UoW, step, phase 2, context invalidation.
+     * Root transaction: new UoW with its deadline, reentrancy marker, step, phase 2, context invalidation.
+     * Everything is prepared before the marker is set, so that from {@code Reentrancy.enter} on, the only way out
+     * runs through the {@code finally} that releases it, whatever the step throws.
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction.
      */
     Outcome<E, S, T> runRoot(E entity, Function<Transaction, StepResult<S, T>> body, int chain) {
-        Reentrancy.enter(key(), entity);
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), deadlineNanos());
         Transaction tx = new Transaction(registry, uow);
+        Reentrancy.enter(key(), entity);
         StepResult<S, T> step;
         List<TransitionRecord<?, ?, ?>> records;
         List<LogEntry> committed;
@@ -194,7 +196,11 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         });
     }
 
-    /** The registry listener sees every outcome of every call. */
+    /**
+     * The registry listener sees every outcome of every call. Any Exception it throws, checked ones included, becomes
+     * an AfterCommitException that says whether the call wrote states: only Applied and Failed outcomes did. An Error
+     * propagates unchanged.
+     */
     private Outcome<E, S, T> notify(Outcome<E, S, T> outcome) {
         Optional<TransitionListener> listener = registry.listener();
         if (listener.isEmpty()) {
@@ -202,13 +208,18 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         }
         try {
             listener.get().onOutcome(key(), outcome);
-        } catch (RuntimeException e) {
-            throw new AfterCommitException(key(), outcome.entity(), outcome.from(), outcome.current(), "listener", e);
+        } catch (Exception e) {
+            boolean written = outcome instanceof Outcome.Applied<E, S, T> || outcome instanceof Outcome.Failed<E, S, T>;
+            throw new AfterCommitException(key(), outcome.entity(), outcome.from(), outcome.current(), "listener",
+                    written, e);
         }
         return outcome;
     }
 
-    /** Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected. */
+    /**
+     * Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected. Any
+     * Exception a hook throws, checked ones included, becomes an AfterCommitException; an Error propagates unchanged.
+     */
     private void runHooks(List<LogEntry> committed) {
         for (LogEntry entry : committed) {
             runHook(registry.anyMachineFor(entry.ref().key()), entry);
@@ -226,7 +237,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 owner.definition().terminals().contains(spec.to()));
         try {
             hook.run(target, context);
-        } catch (RuntimeException e) {
+        } catch (Exception e) {
             throw new AfterCommitException(owner.key(), target, spec.from(), spec.to(), hook.name(), e);
         }
     }
@@ -260,11 +271,17 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         setter.accept(key().entity().cast(instance), key().states().cast(state));
     }
 
+    /**
+     * The root's deadline, or Long.MAX_VALUE for no limit: no asyncTimeout, or one of
+     * {@code Duration.ofNanos(Long.MAX_VALUE)} or more. It never throws. A sum that wraps past Long.MAX_VALUE stays
+     * exact for Await, which only subtracts from it.
+     */
     long deadlineNanos() {
         if (asyncTimeout.isEmpty()) {
             return Long.MAX_VALUE;
         }
-        return System.nanoTime() + asyncTimeout.get().toNanos();
+        long budget = Await.budgetNanos(asyncTimeout.get());
+        return budget == Long.MAX_VALUE ? Long.MAX_VALUE : System.nanoTime() + budget;
     }
 
     void closeIfOwned() {

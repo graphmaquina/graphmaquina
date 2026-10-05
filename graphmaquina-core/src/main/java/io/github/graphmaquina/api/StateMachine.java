@@ -7,7 +7,14 @@ import java.util.function.Supplier;
 
 /**
  * Governs the state S of entity E through the transitions T it declares. Does not protect an entity against
- * concurrent transitions: that is the caller's responsibility.
+ * concurrent transitions: that is the caller's responsibility. Two calls on one entity from different threads are
+ * not serialized, and the check that runs before phase 2 writes catches only the interleavings that leave the entity
+ * in another state than the call started from.
+ * A call's asynchronous waits, those of the peers it cascades to included, are bounded by the asyncTimeout of this
+ * machine, never by a peer's own. When this machine declares no asyncTimeout, the waits of its cascaded peers are
+ * unbounded, whatever their own asyncTimeout: only an edge that declares a timeout of its own still bounds its
+ * action's wait. A machine built standalone runs in a registry of its own that is internal and unreachable, so nothing
+ * can close it, and its default executor is never closed.
  * SPI: applications receive facades generated from their declarations; this type is what the generated code wraps.
  */
 public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {

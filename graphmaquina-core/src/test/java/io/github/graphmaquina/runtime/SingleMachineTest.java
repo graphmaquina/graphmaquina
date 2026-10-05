@@ -307,7 +307,8 @@ class SingleMachineTest {
         CommitFailedException error = assertThrows(CommitFailedException.class, () -> machine.execute(doc, SUBMIT));
         assertEquals(List.of(), error.applied());
         assertEquals(List.of(doc), error.pending());
-        assertTrue(error.getMessage().contains("an action must not call the setter"));
+        assertTrue(error.getMessage().contains(
+                "an action called the setter, or a concurrent transition on the same entity wrote it first"));
     }
 
     /**
@@ -329,7 +330,8 @@ class SingleMachineTest {
         assertEquals(List.of(doc, peer), error.pending());
         assertEquals(List.of(), writes);
         assertEquals(DRAFT, doc.status());
-        assertTrue(error.getMessage().contains("an action must not call the setter"));
+        assertTrue(error.getMessage().contains(
+                "an action called the setter, or a concurrent transition on the same entity wrote it first"));
     }
 
     /** A setter that throws stops phase 2 where it stood: what was written is applied, the rest stays pending. */

@@ -24,6 +24,7 @@ import io.github.graphmaquina.error.UnhandledFailureException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionStage;
@@ -106,6 +107,11 @@ final class Transaction {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
             Throwable cause = failure.getCause();
             if (matchesFailsOn(transition, cause)) {
+                // A poisoned unit of work never commits, and the failure route commits: the poison is thrown before
+                // any recovery action can run, as it is when the action returns.
+                if (uow.isPoisoned()) {
+                    throw uow.poison().orElseThrow();
+                }
                 return failureRoute(machine, ref, entity, transition, depth, savepoint, describe(cause),
                         Optional.of(cause), input);
             }
@@ -127,7 +133,12 @@ final class Transaction {
         return new StepResult.Applied<>(transition.from(), transition.transition(), transition.to());
     }
 
-    /** Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. */
+    /**
+     * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. Whatever
+     * Exception the action throws, checked ones included, which Kotlin or {@code @SneakyThrows} code can throw without
+     * declaring them, becomes an ActionFailure that failsOn classifies. An Error is never routed: thrown as itself, it
+     * propagates; wrapped in CompletionException or ExecutionException, it is unwrapped and aborts.
+     */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
             ActionRef<E, S, T> action, DefaultTransitionContext<E, S, T> ctx) {
@@ -137,17 +148,18 @@ final class Transaction {
                     yield sync.action().process(ctx);
                 } catch (StateMachineException e) {
                     throw e;
-                } catch (RuntimeException e) {
+                } catch (Exception e) {
                     throw new ActionFailure(e);
                 }
             }
             case ActionRef.Async<E, S, T> async -> {
+                long edgeBudget = edgeBudgetNanos(transition);
                 CompletionStage<ActionOutcome> stage;
                 try {
                     stage = async.action().process(ctx);
                 } catch (StateMachineException e) {
                     throw e;
-                } catch (RuntimeException e) {
+                } catch (Exception e) {
                     throw new ActionFailure(e);
                 }
                 if (stage == null) {
@@ -157,7 +169,7 @@ final class Transaction {
                 }
                 yield await(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
                         Optional.of(action.name()), ctx.depth(), "the action " + action.name(), stage,
-                        edgeDeadline(transition));
+                        edgeDeadline(edgeBudget));
             }
         };
         if (outcome == null) {
@@ -168,7 +180,10 @@ final class Transaction {
         return outcome;
     }
 
-    /** Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. */
+    /**
+     * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. Any
+     * Exception a guard throws, checked ones included, is a technical abort; an Error thrown as itself propagates.
+     */
     private <E, S extends Enum<S>, T extends Enum<T>> GuardResult evaluateGuard(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition, int depth,
             GuardRef<E, S, T> guard, DefaultGuardContext<E, S, T> ctx) {
@@ -180,7 +195,7 @@ final class Transaction {
                     yield sync.guard().test(ctx);
                 } catch (StateMachineException e) {
                     throw e;
-                } catch (RuntimeException e) {
+                } catch (Exception e) {
                     Throwable cause = Unwrap.unwrap(e);
                     throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                             "the guard " + guard.name() + " threw " + cause, Optional.of(cause));
@@ -192,7 +207,7 @@ final class Transaction {
                     stage = async.guard().test(ctx);
                 } catch (StateMachineException e) {
                     throw e;
-                } catch (RuntimeException e) {
+                } catch (Exception e) {
                     Throwable cause = Unwrap.unwrap(e);
                     throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                             "the guard " + guard.name() + " threw " + cause, Optional.of(cause));
@@ -232,13 +247,30 @@ final class Transaction {
         }
     }
 
-    /** The edge's timeout can only shorten the transaction's deadline, never extend it. */
-    private <E, S extends Enum<S>, T extends Enum<T>> long edgeDeadline(TransitionSpec<E, S, T> transition) {
+    /**
+     * The edge's own budget in nanoseconds, Long.MAX_VALUE when it sets no limit. It is converted before the action
+     * runs, although its clock only starts once the action returns its stage; the conversion saturates and never throws.
+     */
+    private static long edgeBudgetNanos(TransitionSpec<?, ?, ?> transition) {
+        return transition.timeout().isEmpty() ? Long.MAX_VALUE : Await.budgetNanos(transition.timeout().get());
+    }
+
+    /**
+     * The edge's timeout can only shorten the transaction's deadline, never extend it: the wait ends at the earlier
+     * of the two. The edge's clock starts now, after the action returned its stage. The budgets left are compared
+     * rather than the deadlines, because a deadline may have wrapped past Long.MAX_VALUE, and Long.MAX_VALUE on
+     * either side means that side sets no limit.
+     */
+    private long edgeDeadline(long edgeBudget) {
         long base = uow.deadlineNanos();
-        if (transition.timeout().isEmpty()) {
+        if (edgeBudget == Long.MAX_VALUE) {
             return base;
         }
-        return Math.min(base, System.nanoTime() + transition.timeout().get().toNanos());
+        long now = System.nanoTime();
+        if (base != Long.MAX_VALUE && base - now <= edgeBudget) {
+            return base;
+        }
+        return now + edgeBudget;
     }
 
     /**
@@ -333,9 +365,14 @@ final class Transaction {
         return false;
     }
 
+    /**
+     * The reason a failsOn match reports: the exception's simple name and its message. An anonymous class has an empty
+     * simple name, so its binary name stands in: a reason is never blank.
+     */
     private static String describe(Throwable cause) {
         String message = cause.getMessage();
-        return cause.getClass().getSimpleName() + (message == null ? "" : ": " + message);
+        String type = cause.getClass().getSimpleName();
+        return (type.isEmpty() ? cause.getClass().getName() : type) + (message == null ? "" : ": " + message);
     }
 
     private TransitionAbortedException abort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
@@ -371,22 +408,65 @@ final class Transaction {
 
     // Peers and cascading.
 
-    /** {@code guard} is the caller context's own check: the view stays as alive as the context that made it. */
+    /**
+     * {@code guard} is the caller context's own check: the view stays as alive as the context that made it. A read
+     * stages nothing, so it never poisons: neither does an unknown key here, nor an unknown facade in keyFor.
+     */
     <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(ContextHandle caller, Runnable guard,
                                                                      MachineKey<P, Q, U> key) {
         checkPoison(caller);
         return new DefaultPeerView<>(guard, uow, registry.machineFor(key));
     }
 
-    /** Cascade to a single peer. Any failure poisons the UnitOfWork: the parent cannot carry on as if nothing happened. */
-    <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(ContextHandle caller, MachineKey<P, Q, U> key,
-                                                                       P peer, U id) {
+    /**
+     * Resolves the facade a cascade names inside the poisoning scope: an unknown facade poisons, as an unknown key
+     * does once the cascade looks its machine up.
+     */
+    <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> cascadeKeyFor(ContextHandle caller,
+                                                                              Class<? extends Machine<P, Q, U>> facade) {
         checkPoison(caller);
         try {
-            return cascadeOne(caller, key, peer, id);
+            return keyFor(facade);
         } catch (StateMachineException e) {
             uow.poison(e);
             throw e;
+        }
+    }
+
+    /**
+     * Cascade to a single peer. An identifier from another catalogue is refused before anything starts, as the context
+     * refuses a null argument before calling this: such a refusal stages nothing and poisons nothing. Once the cascade
+     * starts, any failure poisons the UnitOfWork: the parent cannot carry on as if nothing happened. The failure itself
+     * reaches the parent unchanged, an Error included.
+     */
+    <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(ContextHandle caller, MachineKey<P, Q, U> key,
+                                                                       P peer, U id) {
+        checkPoison(caller);
+        requireTransition(key, id);
+        try {
+            return cascadeOne(caller, key, peer, id);
+        } catch (Throwable error) {
+            poison(caller, key, error);
+            throw error;
+        }
+    }
+
+    /** Refuses an identifier from another machine's catalogue, which only a caller that bypasses generics can pass. */
+    private static void requireTransition(MachineKey<?, ?, ?> key, Enum<?> id) {
+        if (!key.transitions().isInstance(id)) {
+            throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": " + id);
+        }
+    }
+
+    /**
+     * An engine failure is the poison itself. Anything else, an Error or an exception from a callback the engine does
+     * not wrap such as an identity function, poisons through an abort that names the cascade and carries it as cause.
+     */
+    private void poison(ContextHandle caller, MachineKey<?, ?, ?> key, Throwable error) {
+        if (error instanceof StateMachineException engine) {
+            uow.poison(engine);
+        } else {
+            uow.poison(new TransitionAbortedException(details(caller), "the cascade to " + key + " failed: " + error, error));
         }
     }
 
@@ -436,14 +516,18 @@ final class Transaction {
     /**
      * FAIL_FAST aborts at the first failure. COLLECT tries every element under its own savepoint, rolls back
      * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
+     * COLLECT gathers transition aborts only: any other failure poisons and propagates at once. The arguments are
+     * refused before any element runs, as cascade refuses its own: an identifier from another catalogue or a null
+     * element stages nothing and poisons nothing.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(ContextHandle caller,
                                                                                 MachineKey<P, Q, U> key,
                                                                                 Collection<? extends P> peers, U id,
                                                                                 CascadePolicy policy) {
         checkPoison(caller);
-        if (!key.transitions().isInstance(id)) {
-            throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": " + id);
+        requireTransition(key, id);
+        for (P peer : peers) {
+            Objects.requireNonNull(peer, "peers contains a null element");
         }
         List<Outcome<P, Q, U>> outcomes = new ArrayList<>();
         List<TransitionAbortedException> errors = new ArrayList<>();
@@ -459,9 +543,9 @@ final class Transaction {
                 uow.rollbackTo(savepoint);
                 uow.clearPoison();
                 errors.add(e);
-            } catch (StateMachineException e) {
-                uow.poison(e);
-                throw e;
+            } catch (Throwable error) {
+                poison(caller, key, error);
+                throw error;
             }
         }
         if (!errors.isEmpty()) {

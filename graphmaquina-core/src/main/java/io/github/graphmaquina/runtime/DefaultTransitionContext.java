@@ -65,22 +65,27 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
         return tx.cascadeAll(this, key, peers, transition, policy);
     }
 
+    /** A read stages nothing: an unknown facade throws here without poisoning the transaction. */
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(@NonNull Class<M> peer) {
         return peer(tx.keyFor(peer));
     }
 
+    /** An unknown facade poisons the transaction, exactly as an unknown key does. */
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(
             @NonNull Class<M> peer, @NonNull P target, @NonNull U transition) {
-        return cascade(tx.keyFor(peer), target, transition);
+        check();
+        return tx.cascade(this, tx.cascadeKeyFor(this, peer), target, transition);
     }
 
+    /** An unknown facade poisons the transaction, exactly as an unknown key does. */
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
             @NonNull Class<M> peer, @NonNull Collection<? extends P> peers, @NonNull U transition,
             @NonNull CascadePolicy policy) {
-        return cascadeAll(tx.keyFor(peer), peers, transition, policy);
+        check();
+        return tx.cascadeAll(this, tx.cascadeKeyFor(this, peer), peers, transition, policy);
     }
 
     /** Only from the thread running process(), and only while the transaction is alive. */

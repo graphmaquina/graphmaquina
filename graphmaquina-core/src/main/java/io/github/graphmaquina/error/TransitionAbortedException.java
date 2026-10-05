@@ -7,7 +7,16 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.Getter;
 
-/** ABORT: nothing moved and the UnitOfWork was discarded. */
+/**
+ * ABORT: nothing moved and the UnitOfWork was discarded.
+ *
+ * <p>When a guard or an action failed, the cause is what it threw, checked exceptions included, once unwrapped from
+ * CompletionException and ExecutionException. An {@code Error} is never routed: thrown as itself by a callback on the
+ * calling thread, it propagates unchanged rather than as this exception. It becomes the cause of one only when it
+ * did not reach the engine as itself: when it completed the stage of an asynchronous action or guard, when a guard or
+ * an action threw it wrapped in CompletionException or ExecutionException, or when an action swallowed it from a
+ * cascade and the poison it left aborted the root.
+ */
 public class TransitionAbortedException extends StateMachineException {
 
     @Getter

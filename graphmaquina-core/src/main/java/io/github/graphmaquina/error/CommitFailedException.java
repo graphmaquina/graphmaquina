@@ -4,7 +4,13 @@ import java.util.List;
 import java.util.Objects;
 import lombok.Getter;
 
-/** Phase 2 failed to write. If applied() is not empty, the system was left inconsistent. */
+/**
+ * Phase 2 failed to write. If applied() is not empty, the system was left inconsistent. Before its first write,
+ * phase 2 checks that every entity is still in the state the transaction started from. One that is not was written
+ * while the transaction ran, by an action that called the setter or by a concurrent writer of the same entity,
+ * typically another transition, and nothing is written. Afterwards, a setter that throws an exception, checked ones
+ * included, stops phase 2 where it stood; a setter's Error propagates unchanged instead of this exception.
+ */
 @Getter
 public final class CommitFailedException extends StateMachineException {
 
