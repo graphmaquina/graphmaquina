@@ -15,9 +15,11 @@ import io.github.graphmaquina.codegen.model.PropertyDescriptor;
 import io.github.graphmaquina.codegen.model.SourceLocation;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -25,6 +27,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Verifies the manifest codec: what schema 2 writes and reads back, and how a document of the retired semantic
@@ -92,6 +96,107 @@ class ManifestCodecTest {
             }
             """);
         assertThrows(CodegenException.class, () -> ManifestCodec.readExports(file));
+    }
+
+    /**
+     * A number member is read exactly: a fraction or a value beyond the member's range is refused, never
+     * truncated into a schema this tool reads with the wrong rules or called a schema it is not.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"2.9", "4294967298", "1.5"})
+    void rejectsASchemaVersionThatIsNotAnExactInteger(String schemaVersion) throws IOException {
+        Path file = directory.resolve("inexact.json");
+        Files.writeString(file, """
+            {
+              "schemaVersion": %s,
+              "toolVersion": "0.3.0-SNAPSHOT",
+              "compilationId": "fx:empty:main",
+              "model": { "graphs": [], "symbols": [] },
+              "annotationTypes": []
+            }
+            """.formatted(schemaVersion));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readExports(file));
+
+        assertEquals("SG602", failure.code());
+        assertEquals("member 'schemaVersion' must be a 32-bit integer in " + file + ", but is " + schemaVersion,
+            failure.getMessage());
+    }
+
+    @Test
+    void rejectsAnOriginPositionThatIsNotAnExactInteger() throws IOException {
+        GraphDescriptor graph = new GraphDescriptor("fx.Orders", "fx", "fx.Order", "fx.Status",
+            List.of("NEW", "DONE"), "fx.OrderTransition", List.of("SUBMIT"), List.of(), origin());
+        Path file = directory.resolve("origin.json");
+        ManifestCodec.writeExports(file, new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+            new GenerationModel(List.of(graph), List.of()), List.of()));
+        Files.writeString(file, Files.readString(file).replace("\"line\": 10", "\"line\": 10.5"));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readExports(file));
+
+        assertEquals("SG602", failure.code());
+        assertEquals("member 'line' must be a 64-bit integer in " + file + ", but is 10.5", failure.getMessage());
+    }
+
+    /** The branch that names content after the document is the one a reader sees, not the parser's advice. */
+    @Test
+    void reportsContentAfterTheDocumentAsTrailingContent() throws IOException {
+        Path file = directory.resolve("request.json");
+        ManifestCodec.writeRequest(file, new GenerationRequest(directory.resolve("project"),
+            List.of(directory.resolve("project/src")), List.of(), directory.resolve("generated"),
+            directory.resolve("processor"), directory.resolve("classes"), directory.resolve("work"),
+            "fx:demo:main"));
+        Files.writeString(file, Files.readString(file) + " {\"extra\": true}");
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readRequest(file));
+
+        assertEquals("SG602", failure.code());
+        assertEquals("unexpected trailing content in " + file, failure.getMessage());
+    }
+
+    /** What an interrupted write leaves behind is reported against the file, so a user knows what to delete. */
+    @Test
+    void namesTheFileOfADocumentThatEndsEarly() throws IOException {
+        Path file = directory.resolve("owned-outputs.pending.json");
+        Files.writeString(file, "{\n  \"schemaVersion\": 2,\n  \"sources\": [\n    \"fx/DocsGraph.java\",\n");
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readOwned(file));
+
+        assertEquals("SG602", failure.code());
+        assertEquals("malformed JSON in " + file + ": End of input at line 5 column 1 path $.sources[1]",
+            failure.getMessage());
+    }
+
+    /** A write cut off inside a multi-byte character leaves bytes that are not UTF-8, reported against the file. */
+    @Test
+    void namesTheFileOfADocumentCutOffInsideAMultiByteCharacter() throws IOException {
+        Path file = directory.resolve("owned-outputs.pending.json");
+        byte[] document = "{\n  \"schemaVersion\": 2,\n  \"sources\": [\n    \"fx/Café"
+            .getBytes(StandardCharsets.UTF_8);
+        Files.write(file, Arrays.copyOf(document, document.length - 1));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readOwned(file));
+
+        assertEquals("SG602", failure.code());
+        assertEquals("malformed JSON in " + file + ": bytes that are not UTF-8 text", failure.getMessage());
+    }
+
+    /**
+     * A strict reader describes a comment as something a lenient mode would accept; nobody reading these files
+     * can choose that mode, so the description keeps the position and drops the advice and its link.
+     */
+    @Test
+    void namesTheFileOfADocumentThatIsNotStrictJsonWithoutAdviceItsReaderCannotFollow() throws IOException {
+        Path file = directory.resolve("commented.json");
+        Files.writeString(file, "{\"schemaVersion\": 2, // the current schema\n \"generatedTypes\": []}\n");
+
+        CodegenException failure =
+            assertThrows(CodegenException.class, () -> ManifestCodec.readProcessorInventory(file));
+
+        assertEquals("SG602", failure.code());
+        assertEquals("malformed JSON in " + file
+            + ": content that strict JSON does not allow at line 1 column 23 path $.schemaVersion",
+            failure.getMessage());
     }
 
     @Test
@@ -237,6 +342,27 @@ class ManifestCodecTest {
             directory.resolve("build/generated-sources/graphmaquina-processor"),
             directory.resolve("build/classes/java/main"),
             directory.resolve("build/graphmaquina"),
+            "io.github.graphmaquina:example:main"));
+    }
+
+    /**
+     * A relative path names the directory it resolves to from the working directory, so the overlap between a
+     * source directory and an output directory is the same whether either of them is spelled relatively.
+     */
+    @Test
+    void generationRequestRejectsAnOverlapSpelledOnceRelativelyAndOnceAbsolutely() {
+        Path relative = Path.of("build", "overlap", "src", "main", "java");
+        Path absolute = relative.toAbsolutePath();
+
+        assertThrows(IllegalArgumentException.class, () -> new GenerationRequest(
+            directory.resolve("project"), List.of(relative), List.of(), absolute,
+            directory.resolve("build/generated-sources/graphmaquina-processor"),
+            directory.resolve("build/classes/java/main"), directory.resolve("build/graphmaquina"),
+            "io.github.graphmaquina:example:main"));
+        assertThrows(IllegalArgumentException.class, () -> new GenerationRequest(
+            directory.resolve("project"), List.of(absolute), List.of(), relative.resolve("generated"),
+            directory.resolve("build/generated-sources/graphmaquina-processor"),
+            directory.resolve("build/classes/java/main"), directory.resolve("build/graphmaquina"),
             "io.github.graphmaquina:example:main"));
     }
 

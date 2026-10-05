@@ -9,10 +9,13 @@ import com.google.gson.Strictness;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonToken;
 import com.google.gson.stream.JsonWriter;
+import com.google.gson.stream.MalformedJsonException;
 import io.github.graphmaquina.codegen.CodegenException;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.Writer;
 import java.math.BigDecimal;
+import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,7 +26,9 @@ import java.util.List;
 /**
  * Strict JSON tree plumbing shared by {@link ManifestCodec} and {@link GenerationModelJson}: reading a document
  * into a {@link JsonObject} tree while rejecting duplicate keys, and typed, null-checked member access that
- * reports every violation as a {@link CodegenException} with code {@value #ERROR_CODE}.
+ * reports every violation as a {@link CodegenException} with code {@value #ERROR_CODE}. A document that is not
+ * well-formed strict JSON, holds bytes that are not UTF-8 text or carries content after its end is reported the
+ * same way, naming its file.
  *
  * <p>Package-private: {@link ManifestCodec} is the only public JSON boundary of this package.
  */
@@ -32,6 +37,9 @@ final class JsonSupport {
     static final String ERROR_CODE = "SG602";
     static final int SCHEMA_VERSION = 2;
     static final int RETIRED_SCHEMA_VERSION = 1;
+    /** What a strict reader says about syntax only its lenient mode accepts. */
+    private static final String LENIENT_ADVICE =
+        "Use JsonReader.setStrictness(Strictness.LENIENT) to accept malformed JSON";
 
     private JsonSupport() {
     }
@@ -49,16 +57,57 @@ final class JsonSupport {
         return writer;
     }
 
-    /** Reads {@code path} as a single strict JSON object, rejecting duplicate keys anywhere in the document. */
+    /**
+     * Reads {@code path} as a single strict JSON object, rejecting duplicate keys anywhere in the document.
+     *
+     * @throws CodegenException {@value #ERROR_CODE} naming {@code path} if the document is not well-formed
+     *     strict JSON, for example because a write was interrupted, holds bytes that are not UTF-8 text, as a
+     *     write cut off inside a multi-byte character leaves, or carries content after its end
+     * @throws IOException if {@code path} cannot be opened or read
+     */
     static JsonObject readObject(Path path) throws IOException {
         try (JsonReader reader = new JsonReader(Files.newBufferedReader(path, StandardCharsets.UTF_8))) {
             reader.setStrictness(Strictness.STRICT);
-            JsonElement element = parseStrict(reader, path);
-            if (reader.peek() != JsonToken.END_DOCUMENT) {
-                throw new CodegenException(ERROR_CODE, "unexpected trailing content in " + path);
+            JsonElement element;
+            try {
+                element = parseStrict(reader, path);
+                requireEndOfDocument(reader, path);
+            } catch (MalformedJsonException | EOFException malformed) {
+                throw new CodegenException(ERROR_CODE, "malformed JSON in " + path + ": " + describe(malformed));
+            } catch (CharacterCodingException undecodable) {
+                // The reader decodes a whole buffer ahead of the token it reads, so no position would be exact.
+                throw new CodegenException(ERROR_CODE, "malformed JSON in " + path + ": bytes that are not UTF-8 text");
             }
             return asObject(element, path);
         }
+    }
+
+    /**
+     * Refuses anything but whitespace after the document. A strict reader reports such content as a syntax
+     * error of its own rather than as a token, so both are read here as the same trailing content.
+     */
+    private static void requireEndOfDocument(JsonReader reader, Path file) throws IOException {
+        boolean ended;
+        try {
+            ended = reader.peek() == JsonToken.END_DOCUMENT;
+        } catch (MalformedJsonException trailing) {
+            ended = false;
+        }
+        if (!ended) {
+            throw new CodegenException(ERROR_CODE, "unexpected trailing content in " + file);
+        }
+    }
+
+    /**
+     * The reader's own description of a syntax error, which ends with its position: only its first line, since
+     * the next one links a troubleshooting guide, and without the advice to accept the document leniently,
+     * which nobody reading these files can follow.
+     */
+    private static String describe(IOException malformed) {
+        String message = String.valueOf(malformed.getMessage());
+        int lineBreak = message.indexOf('\n');
+        String firstLine = lineBreak < 0 ? message : message.substring(0, lineBreak);
+        return firstLine.replace(LENIENT_ADVICE, "content that strict JSON does not allow");
     }
 
     private static JsonElement parseStrict(JsonReader reader, Path file) throws IOException {
@@ -113,20 +162,34 @@ final class JsonSupport {
         return element.getAsString();
     }
 
+    /** The member as an {@code int}, refusing a fraction or a value outside that range instead of truncating it. */
     static int requireInt(JsonObject object, String name, Path file) {
-        JsonElement element = requireMember(object, name, file);
-        if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isNumber()) {
-            throw new CodegenException(ERROR_CODE, "member '" + name + "' must be a number in " + file);
+        BigDecimal value = requireNumber(object, name, file);
+        try {
+            return value.intValueExact();
+        } catch (ArithmeticException inexact) {
+            throw new CodegenException(ERROR_CODE,
+                "member '" + name + "' must be a 32-bit integer in " + file + ", but is " + value);
         }
-        return element.getAsInt();
     }
 
+    /** The member as a {@code long}, refusing a fraction or a value outside that range instead of truncating it. */
     static long requireLong(JsonObject object, String name, Path file) {
+        BigDecimal value = requireNumber(object, name, file);
+        try {
+            return value.longValueExact();
+        } catch (ArithmeticException inexact) {
+            throw new CodegenException(ERROR_CODE,
+                "member '" + name + "' must be a 64-bit integer in " + file + ", but is " + value);
+        }
+    }
+
+    private static BigDecimal requireNumber(JsonObject object, String name, Path file) {
         JsonElement element = requireMember(object, name, file);
         if (!element.isJsonPrimitive() || !element.getAsJsonPrimitive().isNumber()) {
             throw new CodegenException(ERROR_CODE, "member '" + name + "' must be a number in " + file);
         }
-        return element.getAsLong();
+        return element.getAsBigDecimal();
     }
 
     static boolean requireBoolean(JsonObject object, String name, Path file) {

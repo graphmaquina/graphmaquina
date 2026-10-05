@@ -35,15 +35,20 @@ public final class DependencyExports {
      * The indexes published on {@code classpath}, ordered by {@code compilationId}. An entry that does not exist,
      * or that is neither a directory nor an archive, carries nothing and is skipped.
      *
-     * @throws CodegenException {@code SG602} if an entry carries an index this tool cannot read
-     * @throws IOException if an entry exists but cannot be read
+     * @throws CodegenException {@code SG602} if an entry carries an index this tool cannot read, naming that entry
+     * @throws IOException if an entry exists but cannot be read, naming that entry
      */
     public static List<ExportIndex> read(List<Path> classpath) throws IOException {
         Objects.requireNonNull(classpath, "classpath");
         String toolVersion = ToolVersion.current();
         List<ExportIndex> indexes = new ArrayList<>();
         for (Path entry : classpath) {
-            Optional<ExportIndex> index = read(entry);
+            Optional<ExportIndex> index;
+            try {
+                index = read(entry);
+            } catch (IOException failure) {
+                throw new IOException("cannot read the classpath entry " + entry, failure);
+            }
             if (index.isPresent()) {
                 indexes.add(compatible(index.get(), entry, toolVersion));
             }

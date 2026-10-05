@@ -12,7 +12,8 @@ import java.util.Objects;
  * it never carries paths or timestamps. Every path here is an execution path and may be absolute; the paths
  * published in an {@link io.github.graphmaquina.codegen.manifest.ExportIndex} are relative instead. The directories in
  * {@code sources} must not overlap {@code sourcesOutput}, {@code processorSourcesOutput}, {@code classesOutput}
- * or {@code workDirectory}.
+ * or {@code workDirectory}; they are compared as absolute, normalized paths, a relative one resolved against the
+ * working directory as every other use of it is, so spelling one side relatively cannot hide an overlap.
  */
 public record GenerationRequest(
         Path projectDirectory,
@@ -43,9 +44,9 @@ public record GenerationRequest(
 
     private static void requireNoOverlap(List<Path> sources, Path... outputs) {
         for (Path source : sources) {
-            Path normalizedSource = source.normalize();
+            Path normalizedSource = source.toAbsolutePath().normalize();
             for (Path output : outputs) {
-                Path normalizedOutput = output.normalize();
+                Path normalizedOutput = output.toAbsolutePath().normalize();
                 if (normalizedSource.equals(normalizedOutput)
                         || normalizedSource.startsWith(normalizedOutput)
                         || normalizedOutput.startsWith(normalizedSource)) {

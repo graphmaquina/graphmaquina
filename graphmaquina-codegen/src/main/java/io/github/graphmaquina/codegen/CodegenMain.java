@@ -22,9 +22,10 @@ import java.util.List;
  * the last one after a failed compilation.</p>
  *
  * <p>Nothing is caught and continued. An operation this tool cannot run leaves status {@code 1} and a message on
- * the error stream naming the operation, the request file and the cause, with its SG code when it has one;
- * arguments this tool does not accept leave status {@code 2}. A build that ignored either status would compile
- * against the vocabulary of a previous run, so the status is the whole contract.</p>
+ * the error stream naming the operation, the request file and the cause, with its SG code when it has one and
+ * the original source location the diagnostic is anchored to when it has one; arguments this tool does not
+ * accept leave status {@code 2}. A build that ignored either status would compile against the vocabulary of a
+ * previous run, so the status is the whole contract.</p>
  */
 public final class CodegenMain {
 
@@ -51,6 +52,12 @@ public final class CodegenMain {
      * Runs one operation over one request file and returns the status a build must act on: {@code 0} when the
      * operation completed, {@code 1} when it failed, {@code 2} when the arguments are not the ones this tool
      * accepts.
+     *
+     * <p>A failure is reported, never thrown: an exception or an {@link Error} the operation raises, such as a
+     * {@link StackOverflowError} or the {@link LinkageError} of a runtime without {@code jdk.compiler}, is printed
+     * as one line and returns {@code 1}. Only a {@link VirtualMachineError} that leaves the JVM unfit to report
+     * anything, such as an {@link OutOfMemoryError}, propagates, and ends the process with status {@code 1}
+     * all the same.</p>
      */
     public static int run(String[] args) {
         if (args.length != 3) {
@@ -77,16 +84,26 @@ public final class CodegenMain {
             }
             return 0;
         } catch (IOException | RuntimeException failure) {
-            System.err.println("graphmaquina: " + operation + " failed for " + requestFile + ": "
-                + describe(failure));
-            return FAILED;
+            return failed(operation, requestFile, failure);
+        } catch (Error failure) {
+            // An exhausted heap or a broken JVM cannot be trusted to print anything; uncaught, it still exits 1.
+            if (failure instanceof VirtualMachineError && !(failure instanceof StackOverflowError)) {
+                throw failure;
+            }
+            return failed(operation, requestFile, failure);
         }
     }
 
+    /** Reports an operation that could not run and returns the status that says exactly that. */
+    private static int failed(String operation, String requestFile, Throwable failure) {
+        System.err.println("graphmaquina: " + operation + " failed for " + requestFile + ": " + describe(failure));
+        return FAILED;
+    }
+
     /**
-     * The failure as a build should read it: the SG code when the generator assigned one, followed by every
-     * cause underneath it, since the outermost message alone usually says what the tool was doing and not what
-     * went wrong.
+     * The failure as a build should read it: the SG code when the generator assigned one, with the original source
+     * location the diagnostic is anchored to when it has one, followed by every cause underneath it, since the
+     * outermost message alone usually says what the tool was doing and not what went wrong.
      */
     static String describe(Throwable failure) {
         StringBuilder description = new StringBuilder(headline(failure));
@@ -98,10 +115,15 @@ public final class CodegenMain {
         return description.toString();
     }
 
-    /** One link of the chain: the SG code when the generator assigned one, the type otherwise. */
+    /**
+     * One link of the chain: the SG code when the generator assigned one, followed by
+     * {@code (at path:line:column)} when the diagnostic is anchored to an original source; the type otherwise.
+     */
     private static String headline(Throwable failure) {
         if (failure instanceof CodegenException diagnosed) {
-            return "[" + diagnosed.code() + "] " + diagnosed.getMessage();
+            return "[" + diagnosed.code() + "] " + diagnosed.getMessage() + diagnosed.location()
+                .map(anchor -> " (at " + anchor.path() + ':' + anchor.line() + ':' + anchor.column() + ')')
+                .orElse("");
         }
         return failure.getClass().getName() + ": " + failure.getMessage();
     }

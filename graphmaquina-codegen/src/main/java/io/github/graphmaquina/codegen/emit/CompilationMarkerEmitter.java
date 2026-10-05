@@ -6,6 +6,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Emits the carrier of one compilation: a tool-internal type in {@code io.github.graphmaquina.generated.bootstrap} that
@@ -63,8 +64,23 @@ final class CompilationMarkerEmitter {
         }
     }
 
-    /** {@code compilationId} as the body of a Java string literal, so any quoting it carries survives. */
+    /**
+     * {@code compilationId} as the body of a Java string literal, so any quoting it carries survives: a quote and a
+     * backslash are escaped, and every control character, U+0000 to U+001F, U+007F and U+0080 to U+009F, becomes
+     * an octal escape, since a line break would end the literal and none of them belongs in source text.
+     */
     private static String escaped(String compilationId) {
-        return compilationId.replace("\\", "\\\\").replace("\"", "\\\"");
+        StringBuilder literal = new StringBuilder(compilationId.length());
+        for (int index = 0; index < compilationId.length(); index++) {
+            char character = compilationId.charAt(index);
+            if (character == '\\' || character == '"') {
+                literal.append('\\').append(character);
+            } else if (Character.isISOControl(character)) {
+                literal.append(String.format(Locale.ROOT, "\\%03o", (int) character));
+            } else {
+                literal.append(character);
+            }
+        }
+        return literal.toString();
     }
 }

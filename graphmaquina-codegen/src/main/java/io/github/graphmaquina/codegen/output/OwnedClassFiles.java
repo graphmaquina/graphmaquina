@@ -6,14 +6,19 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
+import javax.lang.model.SourceVersion;
 
 /**
  * Links the class files a compilation really produced to the compilation units that own them, by reading what
@@ -21,15 +26,19 @@ import java.util.stream.Stream;
  *
  * <p>A build must retire the binaries of a generated type that no longer exists, and javac never does that for
  * it. Deleting by name prefix would be wrong: {@code fx/OldRefs$Manual.class} may well be an application class
- * that has nothing to do with {@code fx.OldRefs}. So every {@code .class} file under the class output is parsed
- * and kept only when its outermost class is one of the owned units and its {@code SourceFile} attribute is that
- * unit's own file name. Nothing is loaded, initialized or resolved: the parser reads the constant pool and the
- * {@code SourceFile}, {@code InnerClasses} and {@code EnclosingMethod} attributes, and stops there.</p>
+ * that has nothing to do with {@code fx.OldRefs}. javac writes every binary of a top-level type {@code p.T},
+ * nested, local and anonymous classes included, as {@code p/T.class} or {@code p/T$….class}, so only the files
+ * named that way in an owned unit's package directory are candidates. Each candidate is parsed and kept only when
+ * its outermost class is one of the owned units and its {@code SourceFile} attribute is that unit's own file
+ * name. Any other file under the class output, a resource that merely ends in {@code .class} or the binary of an
+ * unrelated type, is never opened. Nothing is loaded, initialized or resolved: the parser reads the constant
+ * pool and the {@code SourceFile}, {@code InnerClasses} and {@code EnclosingMethod} attributes, and stops
+ * there.</p>
  *
  * <p>{@code java.lang.classfile} is not available at {@code --release 21} and this module carries no bytecode
  * library, so the format is read directly, with {@link ConstantPool} reading the pool this walk resolves its
- * names through. A file that is not a class file at all, or that ends before its structure does, is an
- * {@link IOException} naming it: a build cannot decide what it owns from a class output it cannot read.</p>
+ * names through. A candidate that is not a class file at all, or that ends before its structure does, is an
+ * {@link IOException} naming it: a build cannot decide what it owns from a binary it cannot read.</p>
  */
 final class OwnedClassFiles {
 
@@ -46,7 +55,8 @@ final class OwnedClassFiles {
      *
      * @param classesOutput the class output of the compilation; an absent directory contributes nothing
      * @param ownedTopLevelNames the canonical names of the top-level types this compilation owns
-     * @throws IOException if the class output cannot be walked or one of its class files cannot be read
+     * @throws IOException if a package directory of an owned unit cannot be listed or a class file named after
+     *     an owned unit cannot be read
      */
     static List<Path> enumerate(Path classesOutput, Set<String> ownedTopLevelNames) throws IOException {
         Objects.requireNonNull(classesOutput, "classesOutput");
@@ -55,7 +65,7 @@ final class OwnedClassFiles {
             return List.of();
         }
         List<Path> owned = new ArrayList<>();
-        for (Path file : classFiles(classesOutput)) {
+        for (Path file : candidates(classesOutput, ownedTopLevelNames)) {
             ClassFile parsed = read(file);
             String outermost = parsed.outermost();
             if (ownedTopLevelNames.contains(outermost) && parsed.sourceFile().equals(fileNameOf(outermost))) {
@@ -65,14 +75,67 @@ final class OwnedClassFiles {
         return List.copyOf(owned);
     }
 
-    /** The {@code .class} files under {@code root}, in a stable order. */
-    private static List<Path> classFiles(Path root) throws IOException {
-        try (Stream<Path> walk = Files.walk(root)) {
-            return walk.filter(Files::isRegularFile)
-                    .filter(file -> file.getFileName().toString().endsWith(SUFFIX))
-                    .sorted()
-                    .toList();
+    /**
+     * The files javac can have written for one of {@code ownedTopLevelNames}, in a stable order: those named
+     * {@code T.class} or {@code T$….class} in the package directory of an owned {@code p.T}. A package directory
+     * is only looked for through real directories below the class output, as a walk of it would reach them.
+     */
+    private static List<Path> candidates(Path classesOutput, Set<String> ownedTopLevelNames) throws IOException {
+        Map<Path, Set<String>> simpleNamesByDirectory = new HashMap<>();
+        for (String name : ownedTopLevelNames) {
+            int separator = name.lastIndexOf('.');
+            String packageName = separator < 0 ? "" : name.substring(0, separator);
+            Optional<Path> directory = packageDirectory(classesOutput, packageName);
+            if (directory.isPresent()) {
+                simpleNamesByDirectory.computeIfAbsent(directory.get(), unused -> new HashSet<>())
+                        .add(name.substring(separator + 1));
+            }
         }
+        List<Path> candidates = new ArrayList<>();
+        for (Map.Entry<Path, Set<String>> entry : simpleNamesByDirectory.entrySet()) {
+            try (Stream<Path> files = Files.list(entry.getKey())) {
+                files.filter(file -> namedAfter(file, entry.getValue()))
+                        .filter(Files::isRegularFile)
+                        .forEach(candidates::add);
+            }
+        }
+        candidates.sort(Comparator.naturalOrder());
+        return candidates;
+    }
+
+    /**
+     * The directory of {@code packageName} under {@code root}, absent when one of its segments is not a Java
+     * identifier, so no name can lead outside the class output, or is not a directory of its own there.
+     */
+    private static Optional<Path> packageDirectory(Path root, String packageName) {
+        Path directory = root;
+        if (!packageName.isEmpty()) {
+            for (String segment : packageName.split("\\.", -1)) {
+                if (!SourceVersion.isIdentifier(segment)) {
+                    return Optional.empty();
+                }
+                directory = directory.resolve(segment);
+                if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
+                    return Optional.empty();
+                }
+            }
+        }
+        return Optional.of(directory);
+    }
+
+    /** Whether {@code file} is named {@code T.class} or {@code T$….class} for one of {@code simpleNames}. */
+    private static boolean namedAfter(Path file, Set<String> simpleNames) {
+        String fileName = file.getFileName().toString();
+        if (!fileName.endsWith(SUFFIX)) {
+            return false;
+        }
+        String binaryName = fileName.substring(0, fileName.length() - SUFFIX.length());
+        for (String simpleName : simpleNames) {
+            if (binaryName.equals(simpleName) || binaryName.startsWith(simpleName + "$")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The simple source file name a top-level type is declared in, for example {@code DocsGraph.java}. */

@@ -21,12 +21,15 @@ import java.util.List;
  * is refused with a message asking the user to clean the build, then regenerate and recompile producer and
  * consumer. There is no conversion, partial model reading or cleanup using retired inventories.
  *
- * <p>Every read method parses the document with a strict {@link com.google.gson.stream.JsonReader}: unknown
- * {@code schemaVersion} values, a missing mandatory member, a member of the wrong JSON type, a duplicate key at
- * any nesting level, and an inventory path ({@link CompileManifest#ownedSources()}) that is absolute or escapes
- * its root through a {@code ..} segment are all rejected with a {@link CodegenException} carrying code
- * {@code SG602}. A genuine I/O failure (the file cannot be read or written, or its low-level JSON is malformed)
- * is reported as an {@link IOException} instead, exactly as declared.
+ * <p>Every read method parses the document with a strict {@link com.google.gson.stream.JsonReader}: a document
+ * that is not well-formed strict JSON, holds bytes that are not UTF-8 text or carries content after its end,
+ * unknown {@code schemaVersion} values, a missing mandatory member, a member of the wrong JSON type, a number
+ * member that is not an exact integer of its range (a fraction, or a value beyond 32 bits for
+ * {@code schemaVersion} and 64 bits for an origin's {@code line} and {@code column}), a duplicate key at any
+ * nesting level, and an inventory path ({@link CompileManifest#ownedSources()}) that is absolute or escapes its
+ * root through a {@code ..} segment are all rejected with a {@link CodegenException} carrying code
+ * {@code SG602} and naming the file. A genuine I/O failure (the file cannot be opened, read or written) is
+ * reported as an {@link IOException} instead, exactly as declared.
  *
  * <p>Every write method sorts identity lists (a model's graphs by {@code facade}, its symbols by
  * {@code qualifiedName}, a symbol's {@code kinds} and {@code candidates} by name, an index's

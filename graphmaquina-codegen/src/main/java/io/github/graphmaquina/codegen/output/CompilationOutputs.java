@@ -29,7 +29,8 @@ import java.util.stream.Stream;
  * compilation has not yet verified.</p>
  *
  * <p>Between the two steps the inventory of what is being retired lives in
- * {@code <workDirectory>/owned-outputs.pending.json}, written before the first deletion. A compilation that
+ * {@code <workDirectory>/owned-outputs.pending.json}, written before the first deletion by atomic replacement,
+ * so a preparation that is itself interrupted leaves the previous inventory whole. A compilation that
  * javac rejects, or that never finishes, leaves that file behind: {@code complete} is not called, so nothing is
  * published, and the next {@code prepare} consumes the evidence and cleans up what the interrupted run left.
  * {@code complete} enumerates the class files the compilation really produced for the units it owns, keeps the
@@ -38,7 +39,8 @@ import java.util.stream.Stream;
  * {@code <workDirectory>/owned-outputs.json} by atomic replacement.</p>
  *
  * <p>That enumeration reads the {@code SourceFile} attribute of each class file, so a class output compiled
- * without it — {@code -g:none} — would look empty. Since every generation emits a carrier, a class output that
+ * without it — under {@code -g:none}, or a {@code -g:} list that leaves {@code source} out such as
+ * {@code -g:lines,vars} — would look empty. Since every generation emits a carrier, a class output that
  * yields no carrier binary is refused with {@code SG602} rather than sealed: publishing an inventory that
  * claims the compilation produced nothing would put the carrier in the jar and leave every stale binary behind,
  * silently.</p>
@@ -90,7 +92,7 @@ public final class CompilationOutputs {
             union(previous.stream().map(OwnedOutputs::binaries).toList(), List.of()),
             union(previous.stream().map(OwnedOutputs::resources).toList(), List.of()),
             union(previous.stream().map(OwnedOutputs::excludedBinaries).toList(), List.of()));
-        ManifestCodec.writeOwned(pendingInventory, retiring);
+        replace(pendingInventory, retiring);
 
         Set<String> generated = Set.copyOf(manifest.ownedSources());
         List<Path> retired = new ArrayList<>();
@@ -172,7 +174,9 @@ public final class CompilationOutputs {
                 + request.compilationId() + ": no class file in " + classes + " belongs to the carrier "
                 + String.join(", ", carrier) + ", which every compilation of this generator produces."
                 + " StateGraph links a binary to the unit that declared it through the SourceFile attribute"
-                + " of the class file, which javac omits under -g:none");
+                + " of the class file, which javac omits when its debug setting leaves source out: under -g:none,"
+                + " or under a -g: list without source such as -g:lines,vars. Compile with javac's default"
+                + " setting, -g, or a -g: list that includes source, such as -g:source,lines");
         }
         List<Path> binaries = new ArrayList<>(OwnedClassFiles.enumerate(classes, owned));
         binaries.removeAll(carrierBinaries);
@@ -364,11 +368,14 @@ public final class CompilationOutputs {
         return false;
     }
 
-    /** Writes {@code sealed} beside {@code target} and moves it into place, so no build reads a half file. */
-    private static void replace(Path target, OwnedOutputs sealed) throws IOException {
+    /**
+     * Writes {@code inventory} beside {@code target} and moves it into place, so no build reads a half file and
+     * an interrupted write leaves the previous inventory whole.
+     */
+    private static void replace(Path target, OwnedOutputs inventory) throws IOException {
         Path staged = Files.createTempFile(target.getParent(), "owned-outputs", ".json");
         try {
-            ManifestCodec.writeOwned(staged, sealed);
+            ManifestCodec.writeOwned(staged, inventory);
             try {
                 Files.move(staged, target, StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING);

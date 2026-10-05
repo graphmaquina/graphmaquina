@@ -20,6 +20,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -145,6 +146,38 @@ class CompilationOutputsTest {
         assertEquals(List.of(PUBLISHED), pending.resources());
         assertEquals(List.of("io/github/graphmaquina/generated/bootstrap/GraphCompilation_fedcba9876543210.class"),
                 pending.excludedBinaries());
+    }
+
+    /**
+     * The pending inventory is the evidence an interrupted cycle leaves, so it is replaced whole, never rewritten
+     * where it lies: a second link to the previous file still reads what that file said before.
+     */
+    @Test
+    void replacesThePendingInventoryInsteadOfRewritingItInPlace() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        Path pending = workDirectory.resolve(PENDING_INVENTORY);
+        ManifestCodec.writeOwned(pending,
+                new OwnedOutputs(2, List.of(CARRIER_SOURCE), List.of(), List.of(), List.of()));
+        byte[] interrupted = Files.readAllBytes(pending);
+        Path snapshot = Files.createLink(workDirectory.resolve("snapshot.json"), pending);
+
+        CompilationOutputs.prepare(request());
+
+        assertArrayEquals(interrupted, Files.readAllBytes(snapshot));
+        assertEquals(List.of("fx/DocsGraph.java", CARRIER_SOURCE), ManifestCodec.readOwned(pending).sources());
+    }
+
+    /** A truncated pending inventory names itself, so the user knows which file stands in the way. */
+    @Test
+    void namesAPendingInventoryThatIsNotWellFormedJson() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        Path pending = workDirectory.resolve(PENDING_INVENTORY);
+        Files.writeString(pending, "{\n  \"schemaVersion\": 2,\n  \"sources\": [\n", StandardCharsets.UTF_8);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
+
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().startsWith("malformed JSON in " + pending + ": "), failure.getMessage());
     }
 
     @Test
@@ -286,6 +319,65 @@ class CompilationOutputsTest {
         assertTrue(Files.isRegularFile(classesOutput.resolve("fx/DocsGraph.class")));
         assertTrue(Files.isRegularFile(classesOutput.resolve("fx/Manual.class")));
         assertArrayEquals(index, Files.readAllBytes(classesOutput.resolve(PENDING)));
+    }
+
+    /**
+     * {@code -g:none} is not the only setting that leaves the {@code SourceFile} attribute out: a {@code -g:} list
+     * without {@code source} does too, and the refusal names that case as well.
+     */
+    @Test
+    void namesEveryDebugSettingThatLeavesTheSourceFileAttributeOut() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileOwnedAndManualSources(List.of("-g:lines,vars"));
+        writeProvisionalIndex();
+        writeProcessorInventory(List.of("fx.Docs_"));
+
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> CompilationOutputs.complete(request()));
+
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().contains("-g:lines,vars"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("-g:source"), failure.getMessage());
+    }
+
+    /**
+     * A class file the interrupted cycle cannot own, here one javac left truncated, is never read: only the files
+     * named after an owned unit, in that unit's package directory, can be its binaries.
+     */
+    @Test
+    void retiresAnInterruptedCompilationWithoutReadingClassFilesItCannotOwn() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileOwnedAndManualSources();
+        Path unrelated = classesOutput.resolve("fx/Manual.class");
+        byte[] truncated = Arrays.copyOf(Files.readAllBytes(unrelated), 30);
+        Files.write(unrelated, truncated);
+
+        CompilationOutputs.prepare(request());
+
+        assertFalse(Files.exists(classesOutput.resolve(CARRIER_BINARY)));
+        assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph$Transition.class")));
+        assertArrayEquals(truncated, Files.readAllBytes(unrelated));
+    }
+
+    /** A resource that merely ends in {@code .class}, as Maven may copy into the class output, is never read. */
+    @Test
+    void sealsTheInventoryWithoutReadingAResourceNamedLikeAClassFile() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileOwnedAndManualSources();
+        byte[] text = "plain text fixture\n".getBytes(StandardCharsets.UTF_8);
+        Path resource = write(classesOutput.resolve("samples/legacy.class"), text);
+        writeProvisionalIndex();
+        writeProcessorInventory(List.of("fx.Docs_"));
+
+        CompilationOutputs.complete(request());
+
+        assertEquals(new TreeSet<>(List.of("fx/DocsGraph.class", "fx/DocsGraph$Transition.class", "fx/Docs_.class")),
+                new TreeSet<>(ManifestCodec.readOwned(workDirectory.resolve(INVENTORY)).binaries()));
+        assertArrayEquals(text, Files.readAllBytes(resource));
     }
 
     @Test

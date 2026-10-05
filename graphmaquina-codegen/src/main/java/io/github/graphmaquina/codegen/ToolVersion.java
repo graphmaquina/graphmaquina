@@ -22,7 +22,8 @@ public final class ToolVersion {
      * The version of the running generator.
      *
      * @throws IllegalStateException if the resource is missing or carries no {@code version}, which means the
-     *     tool was packaged without its own build stamp
+     *     tool was packaged without its own build stamp; a value that still holds the unexpanded
+     *     {@code ${version}} placeholder, as resources the build never filtered do, carries no version either
      */
     public static String current() {
         Properties properties = new Properties();
@@ -39,6 +40,11 @@ public final class ToolVersion {
         if (version == null || version.isBlank()) {
             throw new IllegalStateException("the StateGraph generator resource io/github/graphmaquina/codegen/" + RESOURCE
                 + " declares no version; this tool jar is incomplete");
+        }
+        if (version.contains("${")) {
+            throw new IllegalStateException("the StateGraph generator resource io/github/graphmaquina/codegen/"
+                + RESOURCE + " declares " + version + ", a placeholder its build never replaced, instead of a"
+                + " version; this tool runs from resources that carry no build stamp");
         }
         return version;
     }

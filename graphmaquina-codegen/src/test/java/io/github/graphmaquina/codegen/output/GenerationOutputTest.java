@@ -1,9 +1,11 @@
 package io.github.graphmaquina.codegen.output;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
@@ -11,8 +13,10 @@ import io.github.graphmaquina.codegen.GenerationResult;
 import io.github.graphmaquina.codegen.StateGraphCodegen;
 import io.github.graphmaquina.codegen.ToolVersion;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
+import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.manifest.OwnedOutputs;
+import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.source.SourceFiles;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -21,12 +25,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Verifies that one generation is published as a coherent set: the manifest describes exactly the files on disk,
@@ -282,6 +289,180 @@ class GenerationOutputTest {
         }
     }
 
+    /**
+     * A previous manifest this run cannot read, here the one GraphMaquina 1.x left under the same name, stays
+     * where it is: the refusal repeats until the user cleans the build, instead of the next run calling the
+     * files that manifest owned unowned.
+     */
+    @Test
+    void keepsAPreviousManifestItCannotReadSoTheRefusalRepeats() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        StateGraphCodegen.generate(request());
+        Path manifest = directory.resolve("work").resolve("annotation-manifest.json");
+        String retired = Files.readString(manifest).replaceFirst("\"schemaVersion\": 2", "\"schemaVersion\": 1");
+        Files.writeString(manifest, retired);
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            CodegenException failure =
+                    assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+            assertEquals("SG602", failure.code());
+            assertTrue(failure.getMessage().startsWith("the schema 1 of " + manifest), failure.getMessage());
+            assertEquals(retired, Files.readString(manifest));
+        }
+    }
+
+    /**
+     * The manifest is replaced whole, never rewritten where it lies, so an interrupted write cannot leave half a
+     * manifest that every later run would refuse: a second link to the previous file still reads what it said.
+     */
+    @Test
+    void replacesTheManifestInsteadOfRewritingItInPlace() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        GenerationResult first = StateGraphCodegen.generate(request());
+        byte[] previous = Files.readAllBytes(first.annotationManifest());
+        Path snapshot = Files.createLink(directory.resolve("snapshot.json"), first.annotationManifest());
+        Files.delete(sources().resolve("fx/DocActions.java"));
+
+        GenerationResult second = StateGraphCodegen.generate(request());
+
+        assertArrayEquals(previous, Files.readAllBytes(snapshot));
+        assertFalse(Arrays.equals(previous, Files.readAllBytes(second.annotationManifest())));
+    }
+
+    /**
+     * On a case-insensitive volume a machine renamed only in case finds its previous vocabulary under the old
+     * spelling. That file is this generator's own, so it is replaced rather than refused as somebody else's.
+     */
+    @Test
+    void replacesItsOwnVocabularyWhenAMachineIsRenamedOnlyInCase() throws IOException {
+        assumeTrue(caseInsensitive(directory), "only a case-insensitive volume finds a file under another case");
+        SourceFiles.write(sources(), withMachine("HtmlDocs"));
+        StateGraphCodegen.generate(request());
+        assertEquals(List.of("HtmlDocsGraph.java"), vocabularies());
+        Files.delete(sources().resolve("fx/HtmlDocs.java"));
+        SourceFiles.write(sources(), withMachine("HTMLDocs"));
+
+        GenerationResult result = StateGraphCodegen.generate(request());
+
+        assertEquals(List.of("HTMLDocsGraph.java"), vocabularies());
+        List<String> owned = ManifestCodec.readCompile(result.annotationManifest()).ownedSources();
+        assertTrue(owned.contains("fx/HTMLDocsGraph.java"), owned.toString());
+        assertFalse(owned.contains("fx/HtmlDocsGraph.java"), owned.toString());
+    }
+
+    /**
+     * Reading a file's own name on disk resolves no link: a symbolic link somebody placed in the generated
+     * directory stays theirs, even when it points at a file the generation owns.
+     */
+    @Test
+    void refusesToReplaceALinkPlacedInTheGeneratedSourceDirectory() throws IOException {
+        Map<String, String> withoutActions = new LinkedHashMap<>(ORIGINALS);
+        withoutActions.remove("fx.DocActions");
+        SourceFiles.write(sources(), withoutActions);
+        StateGraphCodegen.generate(request());
+        Path link = SymbolicLinks.create(output().resolve("fx/DocActionsRefs.java"),
+                output().resolve("fx/DocsGraph.java"));
+        SourceFiles.write(sources(), ORIGINALS);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(Files.isSymbolicLink(link));
+        assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
+    }
+
+    /** javac accepts a top-level type in a file of any name, so a generated type collides with it all the same. */
+    @Test
+    void refusesAGeneratedTypeAnOriginalSourceDeclaresInAFileOfAnotherName() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        SourceFiles.write(sources(), Map.of("fx.Helpers", """
+            package fx;
+            public class Helpers {}
+            final class DocRefs {}
+            """));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("fx.DocRefs"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("Helpers.java"), failure.getMessage());
+        assertFalse(Files.exists(directory.resolve("work").resolve("annotation-manifest.json")));
+    }
+
+    /** A Unicode escape spells the same name to javac, so it hides no collision either. */
+    @Test
+    void refusesAGeneratedTypeAnOriginalSourceSpellsWithAUnicodeEscape() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        SourceFiles.write(sources(), Map.of("fx.Helpers", """
+            package fx;
+            public class Helpers {}
+            final class \\u0044ocRefs {}
+            """));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("fx.DocRefs"), failure.getMessage());
+    }
+
+    /** Only a top-level declaration collides: a member type that shares the simple name is another type. */
+    @Test
+    void acceptsAMemberTypeThatSharesTheSimpleNameOfAGeneratedType() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        SourceFiles.write(sources(), Map.of("fx.Helpers", """
+            package fx;
+            public class Helpers {
+                static final class DocRefs {}
+            }
+            """));
+
+        StateGraphCodegen.generate(request());
+
+        assertTrue(Files.isRegularFile(output().resolve("fx/DocRefs.java")));
+    }
+
+    /**
+     * A caller may put this compilation's own class output on its classpath as the previous run left it. The
+     * index published there describes this compilation, never a dependency of it, whatever version wrote it.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void ignoresTheIndexItsOwnClassOutputPublishedInAPreviousRun(boolean writtenByThisVersion) throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        GenerationRequest request = withClasspathEntry(request().classesOutput());
+        Path published = Files.createDirectories(request.classesOutput().resolve("META-INF/graphmaquina"))
+                .resolve("exports.json");
+        ManifestCodec.writeExports(published, new ExportIndex(2,
+                writtenByThisVersion ? ToolVersion.current() : "0.0.1-OTHER", request.compilationId(),
+                new GenerationModel(List.of(), List.of()), List.of("fx.DocsGraph.Definition")));
+
+        GenerationResult result = StateGraphCodegen.generate(request);
+
+        assertEquals(List.of(), ManifestCodec.readCompile(result.annotationManifest()).dependencies());
+    }
+
+    /** javac reads past a classpath file that is not an archive, and so does the check for shadowed classes. */
+    @Test
+    void ignoresAClasspathEntryThatIsNeitherADirectoryNorAnArchive() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        Path settings = Files.writeString(Files.createDirectories(directory.resolve("libs"))
+                .resolve("settings.properties"), "mode=strict\n", StandardCharsets.UTF_8);
+
+        GenerationResult result = StateGraphCodegen.generate(withClasspathEntry(settings));
+
+        assertTrue(Files.isRegularFile(result.annotationManifest()));
+    }
+
+    /** The request of {@link #request()} with {@code entry} appended to its classpath. */
+    private GenerationRequest withClasspathEntry(Path entry) {
+        GenerationRequest original = request();
+        List<Path> classpath = new ArrayList<>(original.classpath());
+        classpath.add(entry);
+        return new GenerationRequest(original.projectDirectory(), original.sources(), classpath,
+                original.sourcesOutput(), original.processorSourcesOutput(), original.classesOutput(),
+                original.workDirectory(), original.compilationId());
+    }
+
     private GenerationRequest request() {
         return new GenerationRequest(directory, List.of(sources()), SourceFiles.classpath(),
                 directory.resolve("generated"), directory.resolve("processor-generated"),
@@ -290,6 +471,32 @@ class GenerationOutputTest {
 
     private Path sources() {
         return directory.resolve("sources");
+    }
+
+    /** The originals of {@link #ORIGINALS} with their machine declared as {@code fx.<facade>} instead. */
+    private static Map<String, String> withMachine(String facade) {
+        Map<String, String> sources = new LinkedHashMap<>(ORIGINALS);
+        sources.remove("fx.Docs");
+        sources.put("fx." + facade, ORIGINALS.get("fx.Docs").replace("interface Docs ", "interface " + facade + " "));
+        return sources;
+    }
+
+    /** The vocabularies in the generated {@code fx} directory, under the names the volume itself reports. */
+    private List<String> vocabularies() throws IOException {
+        try (Stream<Path> files = Files.list(output().resolve("fx"))) {
+            return files.map(file -> file.getFileName().toString()).filter(name -> name.endsWith("Graph.java"))
+                    .sorted().toList();
+        }
+    }
+
+    /** Whether {@code directory} finds a file under a name that differs from the one it was written with in case. */
+    private static boolean caseInsensitive(Path directory) throws IOException {
+        Path probe = Files.writeString(directory.resolve("case-probe"), "", StandardCharsets.UTF_8);
+        try {
+            return Files.exists(directory.resolve("CASE-PROBE"));
+        } finally {
+            Files.delete(probe);
+        }
     }
 
     private Path output() {
