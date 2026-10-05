@@ -104,7 +104,8 @@ class SourcePatternsTest {
 
     /**
      * A symbolic link that leads back into a directory the walk is already inside is skipped, as the generator's
-     * own walk skips it, so the walk ends and selects every source once.
+     * own walk skips it, so the walk ends and selects every source once. The test is aborted where symbolic links
+     * cannot be created.
      */
     @Test
     void skipsALinkThatLeadsBackIntoADirectoryTheWalkIsInside(@TempDir Path root) throws IOException {

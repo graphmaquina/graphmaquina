@@ -204,8 +204,8 @@ class MavenPluginIntegrationTest {
     }
 
     /**
-     * A generation the sources make impossible stops the build where it happens: no manifest is written for
-     * javac to consume, nothing is retired, and no artifact is produced.
+     * A generation the sources make impossible stops the build where it happens: its diagnostic is in the output,
+     * no manifest is written for javac to consume, no index is published, and no jar is produced.
      */
     @Test
     void failedGenerationLeavesNoManifestAndNoJar() throws IOException {
@@ -242,7 +242,7 @@ class MavenPluginIntegrationTest {
 
     /**
      * A compilation javac rejects publishes nothing: the preparation left its pending inventory behind, the
-     * completion never ran, the index is gone rather than stale, and Maven produced no jar.
+     * completion never ran, no index is published, and Maven produced no jar.
      */
     @Test
     void failedCompilationLeavesAPendingInventoryAndNoJar() throws IOException {
@@ -322,9 +322,8 @@ class MavenPluginIntegrationTest {
     /**
      * maven-compiler-plugin applies its includes and excludes to the directory the generator writes into as well,
      * so patterns that leave out the carrier of a compilation would let javac compile the vocabulary without it.
-     * They are refused by the generation, before anything is retired, naming the pattern and the include that
-     * mends it: main includes that select only the packages of the project, and a test exclude that drops the
-     * carrier package.
+     * They are refused by the generation, before anything is retired, naming the pattern and what mends it: main
+     * includes that select only the packages of the project, and a test exclude that drops the carrier package.
      */
     @Test
     void patternsThatLeaveOutTheCarrierAreRefusedBeforeAnythingIsRetired() throws IOException {
@@ -629,9 +628,10 @@ class MavenPluginIntegrationTest {
     }
 
     /**
-     * A compiler configured entirely through {@code maven.compiler.*} properties is checked the same way as one
-     * configured in XML, and a project that configures no release at all is refused as well: the default source
-     * and target of {@code maven-compiler-plugin} are far below what the generated vocabulary parses.
+     * A compiler setting that comes from a {@code maven.compiler.*} property is checked the same way as one
+     * configured in XML, whether it is a release below Java 21 or a javac forked at another JDK, and a project
+     * that configures no release at all is refused as well: the default source and target of
+     * {@code maven-compiler-plugin} are far below what the generated vocabulary parses.
      */
     @Test
     void propertyConfiguredCompilerSettingsAreCheckedToo() throws IOException {
@@ -723,7 +723,7 @@ class MavenPluginIntegrationTest {
     /**
      * The two javac executions name the directory of the annotation processor's sources with two different
      * parameters, and each generation reads its own: a redirected test directory is reported by
-     * {@code generate-test}, and a main directory left at its default is not reported by either.
+     * {@code generate-test}, and a main directory set to its default is not reported by either.
      */
     @Test
     void eachCompilationChecksItsOwnGeneratedSourcesDirectory() throws IOException {
@@ -1182,7 +1182,8 @@ class MavenPluginIntegrationTest {
      * release. Both have to be Java 21 or later, so telling them apart needs a later release, and a JDK that
      * compiles at it. The two generation goals run on their own, so no javac runs: on a later JDK, javac compiling
      * the main sources of the second fixture at {@code -source 21} warns that the location of system modules is not
-     * set, and {@code -Werror} turns that into a failure.
+     * set, and {@code -Werror} turns that into a failure. The test is skipped on a JDK below 22, since a javac of
+     * JDK 21 compiles at no release above 21.
      */
     @Test
     void theTestRequestCarriesTheReleaseOfTheTestCompilation() throws IOException {
@@ -1308,7 +1309,10 @@ class MavenPluginIntegrationTest {
         return sources;
     }
 
-    /** Asserts that a build refused before the preparation left the previous cycle and the jar untouched. */
+    /**
+     * Asserts that a build refused before the preparation, in a project that had not been built before, left no
+     * pending inventory, no published index and no jar.
+     */
     private static void assertNothingWasRetiredOrPublished(MavenFixture fixture) {
         assertFalse(fixture.exists("target/graphmaquina/main/owned-outputs.pending.json"));
         assertFalse(fixture.exists(MAIN_EXPORTS));
@@ -1558,7 +1562,7 @@ class MavenPluginIntegrationTest {
         assertTrue(before < after, first + " did not run before " + second + ": " + executions);
     }
 
-    /** The position of the single execution whose name ends with {@code suffix}, or {@code -1}. */
+    /** The position of the first execution whose name ends with {@code suffix}, or {@code -1}. */
     private static int indexOf(List<String> executions, String suffix) {
         for (int index = 0; index < executions.size(); index++) {
             if (executions.get(index).endsWith(suffix)) {

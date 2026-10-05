@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  The consumer project every Maven integration test builds: the shared adapter domain, Lombok before the
+  The consumer project the Maven integration tests build: the shared adapter domain, Lombok before the
   StateGraph annotation processor, and the strict compiler options of this repository.
 
   This is the supported consumer configuration, and it is the one Task 13 applies to the payments demo. The six

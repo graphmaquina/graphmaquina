@@ -28,12 +28,14 @@ import java.util.zip.ZipFile;
  * builds it with a real {@code mvn} process. This is test-support code, not a production API.
  *
  * <p>Nothing here instantiates a Mojo: every assertion is made about what the packaged plugin did when Maven
- * looked it up in a file repository, resolved its descriptor and ran one of its goals. The build never reads or
- * writes the developer's {@code ~/.m2}: it runs with an explicit settings file naming the fixture repository and
- * with {@code -Dmaven.repo.local} pointing at one local repository shared by every test of this module.</p>
+ * looked it up in a file repository, resolved its descriptor and ran one of its goals. The build uses neither the
+ * developer's settings file nor the developer's local repository: it runs with an explicit settings file naming
+ * the fixture repository and with {@code -Dmaven.repo.local} pointing at one local repository shared by every test
+ * of this module.</p>
  *
- * <p>The project directory carries a space and a non-ASCII character in its name, so every build also exercises
- * the request encoding and the process invocation over a path that is not plain ASCII.</p>
+ * <p>Every project lives under a directory whose name carries a space and a non-ASCII character, either
+ * {@code fixture project ñ} or {@code consumer project ñ}, so every build also exercises the request encoding and
+ * the process invocation over a path that is not plain ASCII.</p>
  */
 public final class MavenFixture {
 
@@ -69,6 +71,7 @@ public final class MavenFixture {
      * @param repository the file Maven repository the StateGraph artifacts were published to
      * @return a fixture bound to the written project
      * @throws IOException if the project cannot be written
+     * @throws IllegalStateException if {@code repository} is not an existing directory
      */
     public static MavenFixture basic(Path directory, Path repository) throws IOException {
         MavenFixture fixture = write(directory, "fixture project ñ", "/it/basic/pom.xml", "fixture",
@@ -86,6 +89,7 @@ public final class MavenFixture {
      * @param repository the file Maven repository the StateGraph artifacts were published to
      * @return a fixture bound to the written project
      * @throws IOException if the project cannot be written
+     * @throws IllegalStateException if {@code repository} is not an existing directory
      */
     public static MavenFixture consumer(Path directory, Path repository) throws IOException {
         return write(directory, "consumer project ñ", "/it/consumer/pom.xml", "consumer", repository);
@@ -97,7 +101,8 @@ public final class MavenFixture {
      * way a multi-module build configures them once. The shared domain moves into the module, so the parent
      * itself has nothing to compile.
      *
-     * @return a fixture bound to the module; {@link #run} on this fixture builds the parent and the module
+     * @return a fixture bound to the module; {@link #run} on the fixture this method was called on builds the
+     *     parent and the module
      * @throws IOException if the projects cannot be rewritten
      */
     public MavenFixture module() throws IOException {
@@ -377,6 +382,7 @@ public final class MavenFixture {
      * @param literal the text to replace, which must occur exactly once
      * @param replacement the text to write in its place
      * @throws IOException if the POM cannot be rewritten
+     * @throws IllegalStateException if the POM does not carry {@code literal} exactly once
      */
     public void editPom(String literal, String replacement) throws IOException {
         Path pom = directory.resolve("pom.xml");
@@ -389,8 +395,8 @@ public final class MavenFixture {
     }
 
     /**
-     * Replaces the sources with the one type that carries no StateGraph marker, so the next build generates and
-     * publishes nothing while still compiling the project.
+     * Replaces the sources with the one type that carries no StateGraph marker, so the next build generates no
+     * vocabulary and publishes an empty index while still compiling the project.
      *
      * @throws IOException if the sources cannot be rewritten
      */
@@ -413,6 +419,8 @@ public final class MavenFixture {
      * @param goals the Maven goals and phases to run
      * @return the status and output of the build
      * @throws IOException if the process cannot be started or its output cannot be read
+     * @throws IllegalStateException if {@code graphmaquina.mavenLocalRepository} is not set, or if the thread is
+     *     interrupted while Maven runs, in which case the process is destroyed
      */
     public MavenResult run(String... goals) throws IOException {
         return run(Map.of(), goals);
@@ -422,10 +430,13 @@ public final class MavenFixture {
      * The same, with {@code environment} added to the environment of the {@code mvn} process, so a test can give
      * the build the surroundings of a developer machine, such as a home directory of its own.
      *
-     * @param environment the variables to set for the process, on top of the ones the fixture always sets
+     * @param environment the variables to add to the environment of the process; {@code JAVA_HOME} and
+     *     {@code MAVEN_SKIP_RC}, which the fixture always sets, keep the fixture's values
      * @param goals the Maven goals and phases to run
      * @return the status and output of the build
      * @throws IOException if the process cannot be started or its output cannot be read
+     * @throws IllegalStateException if {@code graphmaquina.mavenLocalRepository} is not set, or if the thread is
+     *     interrupted while Maven runs, in which case the process is destroyed
      */
     public MavenResult run(Map<String, String> environment, String... goals) throws IOException {
         List<String> command = new ArrayList<>();
@@ -486,7 +497,7 @@ public final class MavenFixture {
     }
 
     /**
-     * Whether the generator wrote the carrier of this compilation into the generated source directory: the
+     * Whether the generator wrote the carrier of the main compilation into the generated source directory: the
      * tool-internal type that holds {@code @GraphCompilation} and that the annotation processor reads.
      *
      * @return {@code true} if a generated source carries the compilation marker
@@ -513,6 +524,7 @@ public final class MavenFixture {
      * timestamp the preparation dates past the outputs it retired.
      *
      * @return the carrier source of the main compilation
+     * @throws IllegalStateException if the generation left more or fewer than one carrier source
      */
     public Path carrierSource() {
         Path carriers = directory.resolve("target/generated-sources/graphmaquina").resolve(CARRIER_PACKAGE);
@@ -545,6 +557,7 @@ public final class MavenFixture {
      * which is the compilation carrier every generation produces.
      *
      * @return {@code true} if one of the excluded binaries reached the jar
+     * @throws IllegalStateException if the sealed inventory excluded no binary, which leaves nothing to look for
      */
     public boolean jarContainsGraphCompilationCarrier() {
         JsonArray excluded = readJson(directory.resolve("target/graphmaquina/main/owned-outputs.json"))
@@ -587,6 +600,7 @@ public final class MavenFixture {
      *
      * @param facade the canonical name of the machine
      * @return {@code <transitionType>.<id>} for every identifier of that machine, in declaration order
+     * @throws IllegalStateException if the jar carries no index, or the index declares no graph for {@code facade}
      */
     public List<String> transitionsOf(String facade) {
         for (JsonElement graph : readJarJson(EXPORTS).getAsJsonObject("model").getAsJsonArray("graphs")) {
@@ -636,11 +650,12 @@ public final class MavenFixture {
     }
 
     /**
-     * The value of one string member of the request the goals of {@code sourceSet} wrote.
+     * The value of one member of the request the goals of {@code sourceSet} wrote, as text: a number such as
+     * {@code release} reads as its digits.
      *
      * @param sourceSet the name of the source set, {@code main} or {@code test}
      * @param member the name of the member
-     * @return the value the plugin encoded
+     * @return the value the plugin encoded, as text
      */
     public String requestValue(String sourceSet, String member) {
         return readJson(directory.resolve("target/graphmaquina/" + sourceSet + "/request.json"))

@@ -12,8 +12,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Pins how {@link Jdk} finds an executable and the home and release of the JDK it belongs to, which is what the
- * same-JDK check of the compiler and the JDK check of the generator compare.
+ * Pins how {@link Jdk} finds an executable and the home and release of the JDK it belongs to: the same-JDK check
+ * of the compiler compares homes, and the JDK check of the generator reads the release of the home of the
+ * {@code java} it is given.
  */
 class JdkTest {
 

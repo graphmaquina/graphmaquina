@@ -303,7 +303,8 @@ class StateGraphPluginFunctionalTest {
     /**
      * The class output and the processor's source output are outputs of {@code JavaCompile}, so the generation
      * task only names them in the request. A build that moves either of them must still write the request
-     * again, or the next lifecycle step would retire and publish under the paths of the previous layout.
+     * again, or the next lifecycle step would retire and publish under the paths of the previous layout. This
+     * test moves the class output.
      */
     @Test
     void movingTheClassOutputRewritesTheRequest() throws IOException {
@@ -325,9 +326,9 @@ class StateGraphPluginFunctionalTest {
      * The build is configuration-cache compatible: nothing the plugin puts on a task holds a {@code Project}, a
      * {@code Configuration} or a source set, so the whole cycle stores an entry and the next run reuses it.
      *
-     * <p>Gradle keys an entry by the tasks that were requested, so the clean build and the runs that follow it
-     * are asked for the same task twice: the second of them is the one that both reuses the entry and finds
-     * every step of the cycle up to date.</p>
+     * <p>Gradle keys an entry by the tasks that were requested, so after a {@code clean} run the test asks for
+     * {@code jar} twice: the second of them is the one that both reuses the entry and finds every step of the
+     * cycle up to date.</p>
      */
     @Test
     void reusesTheConfigurationCache() throws IOException {
@@ -567,8 +568,8 @@ class StateGraphPluginFunctionalTest {
     /**
      * A source directory the source set takes whole is still handed to the generator as a directory, so a
      * hand-written type that shares its simple name with a generated one, in a package that merely ends like
-     * the generated one's, is no collision: the generator only refuses a generated type whose own path under a
-     * source root an original file already holds.
+     * the generated one's, is no collision: the generator compares a generated type with the original sources by
+     * the path each stands at below its source root and by the types it declares, not by how that path ends.
      */
     @Test
     void aWholeSourceDirectoryStaysADirectoryOfTheRequest() throws IOException {
@@ -871,7 +872,7 @@ class StateGraphPluginFunctionalTest {
 
     /**
      * The lifecycle completes only what javac wrote, so a compilation that can end without its classes is
-     * refused before anything is retired: {@code failOnError = false} lets a rejected compilation succeed, and
+     * refused before javac runs: {@code failOnError = false} lets a rejected compilation succeed, and
      * {@code -proc:only} runs the processors without writing a class at all.
      */
     @Test
@@ -1109,7 +1110,8 @@ class StateGraphPluginFunctionalTest {
 
     /**
      * A launcher a build gives the generation task runs every step of that compilation: the preparation and the
-     * completion around javac as well as the generation, so the three never run under two different JDKs.
+     * completion around javac as well as the generation, so the three never run under two different JDKs. The
+     * launcher of the test is a POSIX shell script, so the test is skipped on Windows.
      */
     @Test
     void runsEveryStepUnderTheLauncherTheGenerationTaskWasGiven() throws IOException {
@@ -1297,7 +1299,8 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * The sources a request lists, each relative to the {@code src/main/java} root it lies under.
+     * The sources a request lists, each relative to the {@code src/main/java} root it lies under; a source that
+     * lies under no such root fails the calling test.
      *
      * @param request the parsed request
      * @return the relative paths, sorted

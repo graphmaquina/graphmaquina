@@ -19,14 +19,15 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * The plugin writes the generator's request with its own encoder rather than with the generator's codec, so the
- * escaping that encoder applies is what these tests pin: a request whose paths and identity carry spaces,
- * backslashes, quotes, control characters and non-ASCII text must come back out of a strict JSON reader exactly
- * as it went in.
+ * The plugin writes the generator's request with its own encoder rather than with the generator's codec, so these
+ * tests pin what that encoder produces: the members of the request in the order the codec lists them, the release
+ * and the encoding after them when the build knows them, and the escaping of a request whose paths and identity
+ * carry spaces, backslashes, quotes, control characters and non-ASCII text, which must come back out of a JSON
+ * reader exactly as it went in, and out of a strict one from the UTF-8 file {@code write} produces.
  */
 class CodegenProcessTest {
 
-    /** A path with a space, a quote, a backslash and a non-ASCII character in every segment. */
+    /** A path that carries a space, a non-ASCII character, quotes and a backslash. */
     private static final String AWKWARD = "/tmp/fixture project ñ/\"quoted\"\\segment";
 
     @TempDir
