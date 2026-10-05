@@ -13,11 +13,12 @@ import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import lombok.NonNull;
 
-/** Immutable directed graph, generic over nodes. Works equally well with enums and names. */
+/** Immutable directed graph, generic over nodes, none of them null. Works equally well with enums and names. */
 public final class Graph<N> {
 
     private final Set<N> nodes;
@@ -29,8 +30,6 @@ public final class Graph<N> {
         this.nodes = nodes;
         this.edges = edges;
         this.successors = successors;
-        // A plain HashMap, so that a graph built over whatever `of` admitted as a node stays buildable: an
-        // immutable map would reject a null key here and narrow what `of` accepts, which is not this index's call.
         Map<N, Declaration<N>> positions = HashMap.newHashMap(nodes.size());
         int position = 0;
         for (N node : nodes) {
@@ -40,8 +39,19 @@ public final class Graph<N> {
         this.declarationIndex = positions;
     }
 
+    /**
+     * The graph over {@code nodes}, in their declared order with repeats collapsed to the first appearance, and
+     * {@code edges}.
+     *
+     * @throws NullPointerException if a node is {@code null}: no search of this class could walk it
+     * @throws IllegalArgumentException if an edge has an endpoint outside the declared nodes
+     */
     public static <N> Graph<N> of(@NonNull Collection<? extends N> nodes, @NonNull Collection<? extends GraphEdge<N>> edges) {
-        Set<N> nodeSet = Collections.unmodifiableSet(new LinkedHashSet<N>(nodes));
+        Set<N> declared = new LinkedHashSet<>();
+        for (N node : nodes) {
+            declared.add(Objects.requireNonNull(node, "node"));
+        }
+        Set<N> nodeSet = Collections.unmodifiableSet(declared);
         Map<N, Set<N>> mutableSuccessors = new LinkedHashMap<>();
         for (N node : nodeSet) {
             mutableSuccessors.put(node, new LinkedHashSet<>());
@@ -164,15 +174,21 @@ public final class Graph<N> {
 
     /**
      * The subgraph over {@code kept}: those nodes, and only the edges whose two endpoints are both among them.
-     * The declared order of the kept nodes is preserved.
+     * The kept nodes keep the order this graph declares them in, whatever the iteration order of {@code kept}.
      *
      * @throws IllegalArgumentException if a node of {@code kept} is not in this graph
      */
     public Graph<N> inducedSubgraph(@NonNull Collection<? extends N> kept) {
-        Set<N> retained = new LinkedHashSet<>();
+        Set<N> wanted = new HashSet<>();
         for (N node : kept) {
             requireNode(node);
-            retained.add(node);
+            wanted.add(node);
+        }
+        Set<N> retained = new LinkedHashSet<>();
+        for (N node : nodes) {
+            if (wanted.contains(node)) {
+                retained.add(node);
+            }
         }
         List<GraphEdge<N>> inside = new ArrayList<>();
         for (GraphEdge<N> edge : edges) {

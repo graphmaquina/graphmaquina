@@ -5,6 +5,7 @@ import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
 import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
 import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
+import static io.github.graphmaquina.fixtures.DocTransition.DISCARD;
 import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
 import static io.github.graphmaquina.fixtures.DocTransition.RETOUCH;
 import static io.github.graphmaquina.fixtures.DocTransition.SEND_BACK;
@@ -15,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.TransitionAction;
@@ -29,6 +31,10 @@ import io.github.graphmaquina.fixtures.DocTransition;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.Test;
 
 /** Problems a single draft carries: names, duplicates, forbidden failsOn types, watches and reasons. */
@@ -137,6 +143,46 @@ class DraftProblemsTest {
         }
     }
 
+    /** A cancellation all the same: refused like its parent. */
+    static final class Cancelled extends CancellationException { }
+
+    /** Not the wrapper itself, so never unwrapped: the engine matches it like any foreign exception. */
+    static final class Completed extends CompletionException { }
+
+    /** Not the wrapper itself, so never unwrapped: the engine matches it like any foreign exception. */
+    static final class Executed extends ExecutionException { }
+
+    /**
+     * The engine never routes a cancellation through failsOn, and it unwraps CompletionException and
+     * ExecutionException before matching, so declaring one of them would leave the recovery route dead.
+     */
+    @Test
+    void sg302RefusesCancellationAndTheWrappersUnwrappedBeforeMatching() {
+        InvalidGraphException cancellation = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).failsOn(CancellationException.class)
+                .endTransition()));
+        assertEquals(List.of("SG302"), cancellation.codes());
+        assertEquals("DRAFT -SUBMIT-> REVIEW: failsOn does not allow CancellationException; only exceptions foreign to"
+                + " the library, and never Throwable, Exception, RuntimeException, an Error or a CancellationException,"
+                + " which are never domain failures, nor CompletionException or ExecutionException, which are unwrapped"
+                + " before matching: declare the type of their cause", cancellation.problems().get(0).message());
+        for (Class<? extends Throwable> type : List.of(Cancelled.class, CompletionException.class,
+                ExecutionException.class)) {
+            assertEquals(List.of("SG302"), failing(tail(head()
+                    .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).failsOn(type).endTransition())).codes(),
+                    type.getSimpleName());
+        }
+    }
+
+    /** Only the wrappers themselves are unwrapped: their subclasses, and IllegalStateException, stay matchable. */
+    @Test
+    void failsOnStillAcceptsTheWrappersSubclassesAndIllegalStateException() {
+        assertEquals(List.of(IllegalStateException.class, Completed.class, Executed.class), tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).failsOn(IllegalStateException.class)
+                .failsOn(Completed.class).failsOn(Executed.class).endTransition())
+                .build().findTransition(DRAFT, SUBMIT).orElseThrow().failsOn());
+    }
+
     @Test
     void sg403TwoWatchesOnOneState() {
         InvalidGraphException error = failing(tail(head()
@@ -156,6 +202,57 @@ class DraftProblemsTest {
         assertEquals(List.of("SG404"), error.codes());
     }
 
+    /** A valid machine whose DRAFT can leave through SUBMIT and RETOUCH, ready for a watch on DRAFT. */
+    private static GraphBuilder<Doc, DocStatus, DocTransition> watchable() {
+        return tail(head().transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(RETOUCH, DRAFT, ARCHIVED).endTransition());
+    }
+
+    private static WatchBuilder<Doc, DocStatus, DocTransition, Doc, DocStatus, DocTransition> watchOnDraft(
+            GraphBuilder<Doc, DocStatus, DocTransition> builder) {
+        return builder.watch(DRAFT, DOCS, (Doc d) -> List.of(), (Doc d) -> Optional.empty());
+    }
+
+    /** A condition left without its execute(...) is a rule the author started: build() names it. */
+    @Test
+    void sg404AWhenLeftWithoutExecute() {
+        GraphBuilder<Doc, DocStatus, DocTransition> builder = watchable();
+        WatchBuilder<Doc, DocStatus, DocTransition, Doc, DocStatus, DocTransition> watch = watchOnDraft(builder);
+        watch.when(WatchCondition.allIn(REVIEW)).execute(SUBMIT);
+        watch.when(WatchCondition.anyIn(ARCHIVED));
+        watch.endWatch();
+        InvalidGraphException error = failing(builder);
+        assertEquals(List.of("SG404"), error.codes());
+        assertEquals("the watch of DRAFT declares when(anyIn ARCHIVED) without execute(...)",
+                error.problems().get(0).message());
+    }
+
+    @Test
+    void sg404ASecondWhenBeforeTheFirstOneExecutes() {
+        GraphBuilder<Doc, DocStatus, DocTransition> builder = watchable();
+        WatchBuilder<Doc, DocStatus, DocTransition, Doc, DocStatus, DocTransition> watch = watchOnDraft(builder);
+        watch.when(WatchCondition.allIn(REVIEW));
+        watch.when(WatchCondition.anyIn(ARCHIVED)).execute(RETOUCH);
+        watch.endWatch();
+        InvalidGraphException error = failing(builder);
+        assertEquals(List.of("SG404"), error.codes());
+        assertEquals("the watch of DRAFT declares when(allIn REVIEW) without execute(...)",
+                error.problems().get(0).message());
+    }
+
+    @Test
+    void sg404AnExecuteWithoutAPendingWhen() {
+        GraphBuilder<Doc, DocStatus, DocTransition> builder = watchable();
+        WatchRuleBuilder<Doc, DocStatus, DocTransition, Doc, DocStatus, DocTransition> rule =
+                watchOnDraft(builder).when(WatchCondition.allIn(REVIEW));
+        rule.execute(SUBMIT);
+        rule.execute(RETOUCH).endWatch();
+        InvalidGraphException error = failing(builder);
+        assertEquals(List.of("SG404"), error.codes());
+        assertEquals("the watch of DRAFT declares execute(RETOUCH) without when(...)",
+                error.problems().get(0).message());
+    }
+
     @Test
     void sg507ElementsThatNeedAnActionAndSg511ADurationThatIsNotPositive() {
         assertEquals(List.of("SG507"), failing(tail(head()
@@ -170,6 +267,74 @@ class DraftProblemsTest {
                     .asyncAction("slow", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
                             java.util.concurrent.CompletableFuture.completedFuture(ActionOutcome.ok()))
                     .timeout(Duration.ZERO).endTransition())).codes());
+    }
+
+    /**
+     * An edge runs one action. A second one is reported rather than swapped in, so no edge can run one action
+     * under the name another one was given.
+     */
+    @Test
+    void sg507TwoActionsOnOneEdge() {
+        InvalidGraphException sync = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).action("charge", new Publish()).action(new Publish())
+                .endTransition()));
+        assertEquals(List.of("SG507"), sync.codes());
+        assertEquals("DRAFT -SUBMIT-> REVIEW declares 2 actions, but an edge runs at most one",
+                sync.problems().get(0).message());
+
+        assertEquals(List.of("SG507"), failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).asyncAction("slow", slow()).asyncAction("slower", slow())
+                .endTransition())).codes());
+
+        InvalidGraphException mixed = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).asyncAction("slow", slow()).endTransition()));
+        assertEquals(List.of("SG507"), mixed.codes());
+        assertEquals("DRAFT -SUBMIT-> REVIEW declares both a synchronous and an asynchronous action",
+                mixed.problems().get(0).message());
+    }
+
+    @Test
+    void sg507TwoOnFailureRoutes() {
+        InvalidGraphException routes = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).onFailure(RETOUCH).onFailure(DISCARD)
+                .endTransition()
+                .transition(RETOUCH, DRAFT, ARCHIVED).endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()));
+        assertEquals(List.of("SG507"), routes.codes());
+        assertEquals("DRAFT -SUBMIT-> REVIEW declares 2 onFailure routes, but an edge has at most one",
+                routes.problems().get(0).message());
+    }
+
+    @Test
+    void sg507TwoTimeouts() {
+        InvalidGraphException timeouts = failing(tail(head()
+                .transition(SUBMIT, DRAFT, REVIEW).asyncAction("slow", slow())
+                .timeout(Duration.ofSeconds(1)).timeout(Duration.ofSeconds(9)).endTransition()));
+        assertEquals(List.of("SG507"), timeouts.codes());
+        assertEquals("DRAFT -SUBMIT-> REVIEW declares 2 timeouts, but an edge has at most one",
+                timeouts.problems().get(0).message());
+    }
+
+    private static AsyncTransitionAction<Doc, DocStatus, DocTransition> slow() {
+        return (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                CompletableFuture.completedFuture(ActionOutcome.ok());
+    }
+
+    /** A draft never closed is an edge the author declared: build() names it instead of dropping it. */
+    @Test
+    void sg507ADraftNeverClosed() {
+        GraphBuilder<Doc, DocStatus, DocTransition> builder =
+                tail(head().transition(SUBMIT, DRAFT, REVIEW).endTransition());
+        builder.transition(RETOUCH, DRAFT, ARCHIVED).action(new Publish());
+        InvalidGraphException alongside = failing(builder);
+        assertEquals(List.of("SG507"), alongside.codes());
+        assertEquals("the graph Doc/DocStatus has 1 problem(s):\n"
+                + "  [SG507] DRAFT -RETOUCH-> ARCHIVED was never closed with endTransition()", alongside.getMessage());
+
+        // The only edge out of DRAFT left open: its absence must not surface as SG202/SG203 about the shape.
+        GraphBuilder<Doc, DocStatus, DocTransition> only = head();
+        only.transition(SUBMIT, DRAFT, REVIEW);
+        assertEquals(List.of("SG507"), failing(tail(only)).codes());
     }
 
     @Test

@@ -11,7 +11,10 @@ import java.util.function.Consumer;
 
 /**
  * Stage of one edge. Every combination is accepted here and validated when the edge is closed: an edge with no
- * action is a plain move, and {@code onFailure}, {@code failsOn} and {@code timeout} require one.
+ * action is a plain move, and {@code onFailure}, {@code failsOn} and {@code timeout} require one. An edge runs at
+ * most one action and declares at most one {@code onFailure} and one {@code timeout}: a second one is reported as
+ * SG507 rather than swapped in. Once the edge is closed, or the graph built, the stage refuses every call with
+ * {@link IllegalStateException}.
  */
 public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
 
@@ -34,7 +37,13 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     /** The identifier of the edge that recovers from a domain failure, resolved from this edge's origin. */
     TransitionBuilder<E, S, T> onFailure(T transition);
 
-    /** One per call, chainable. */
+    /**
+     * One per call, chainable. SG302 accepts only exceptions foreign to the library. It refuses {@code Throwable},
+     * {@code Exception} and {@code RuntimeException} as too broad, an {@code Error} or a
+     * {@code CancellationException} as never a domain failure, and {@code CompletionException} or
+     * {@code ExecutionException} themselves because they are unwrapped before matching: declare the type of their
+     * cause instead.
+     */
     TransitionBuilder<E, S, T> failsOn(Class<? extends Throwable> type);
 
     TransitionBuilder<E, S, T> timeout(Duration timeout);

@@ -100,6 +100,33 @@ class ValuesTest {
         assertThrows(IllegalArgumentException.class, () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, " ", Map.of()));
     }
 
+    /** A reason declared for one identifier is read like the default one, so it is refused blank the same way. */
+    @Test
+    void statePolicyRefusesABlankReasonForAnIdentifier() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, "not from here",
+                        Map.of(Month.JANUARY, "  ")));
+        assertEquals("the policy of MONDAY has a blank reason", error.getMessage());
+    }
+
+    /** The reason is what the caller reads about a refusal: a blank one says nothing. */
+    @Test
+    void rejectedRefusesABlankReason() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new Outcome.Rejected<String, DayOfWeek, Month>("e", DayOfWeek.MONDAY, Month.JANUARY, " ",
+                        RejectionKind.NO_TRANSITION, Optional.empty()));
+        assertEquals("reason must not be blank", error.getMessage());
+    }
+
+    /** The reason is what the caller reads about a routed failure: a blank one says nothing. */
+    @Test
+    void failedRefusesABlankReason() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new Outcome.Failed<String, DayOfWeek, Month>("e", DayOfWeek.MONDAY, Month.JANUARY,
+                        DayOfWeek.TUESDAY, Month.MARCH, DayOfWeek.SUNDAY, "", Optional.empty(), List.of(), List.of()));
+        assertEquals("reason must not be blank", error.getMessage());
+    }
+
     @Test
     void namedConditionHelpersCarryTheirName() {
         NamedCondition<String, String, DayOfWeek, Month> all = WatchCondition.allIn(DayOfWeek.FRIDAY);

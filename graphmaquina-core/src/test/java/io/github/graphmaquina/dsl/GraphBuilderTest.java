@@ -16,21 +16,34 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.AsyncTransitionAction;
+import io.github.graphmaquina.api.AsyncTransitionGuard;
 import io.github.graphmaquina.api.CommitContext;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
+import io.github.graphmaquina.api.TransitionGuard;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionSpec;
+import io.github.graphmaquina.api.WatchCondition;
+import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.graph.DirectedEdge;
+import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 class GraphBuilderTest {
 
@@ -40,6 +53,16 @@ class GraphBuilderTest {
             return ActionOutcome.ok();
         }
     }
+
+    private static final AsyncTransitionAction<Doc, DocStatus, DocTransition> SLOW =
+            (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                    CompletableFuture.completedFuture(ActionOutcome.ok());
+
+    private static final TransitionGuard<Doc, DocStatus, DocTransition> PASS =
+            (GuardContext<Doc, DocStatus, DocTransition> ctx) -> GuardResult.pass();
+
+    private static final AsyncTransitionGuard<Doc, DocStatus, DocTransition> ASYNC_PASS =
+            (GuardContext<Doc, DocStatus, DocTransition> ctx) -> CompletableFuture.completedFuture(GuardResult.pass());
 
     static GraphBuilder<Doc, DocStatus, DocTransition> base() {
         return StateGraph.define(DOCS)
@@ -125,6 +148,83 @@ class GraphBuilderTest {
         GraphBuilder<Doc, DocStatus, DocTransition> builder = base();
         builder.build();
         assertThrows(IllegalStateException.class, builder::build);
+    }
+
+    /** endTransition() turns the draft into its edge once: a later call on that stage could only be lost. */
+    @Test
+    void aClosedEdgeRefusesEveryFurtherCall() {
+        GraphBuilder<Doc, DocStatus, DocTransition> builder = StateGraph.define(DOCS).initial(DRAFT);
+        TransitionBuilder<Doc, DocStatus, DocTransition> submit = builder.transition(SUBMIT, DRAFT, REVIEW);
+        submit.endTransition();
+        IllegalStateException twice = assertThrows(IllegalStateException.class, submit::endTransition);
+        assertEquals("endTransition() was already called on DRAFT -SUBMIT-> REVIEW in the graph Doc/DocStatus",
+                twice.getMessage());
+        List<Executable> late = List.of(
+                () -> submit.action(new Publish()),
+                () -> submit.action("publish", new Publish()),
+                () -> submit.asyncAction(SLOW),
+                () -> submit.asyncAction("slow", SLOW),
+                () -> submit.guard(PASS),
+                () -> submit.guard("pass", PASS),
+                () -> submit.asyncGuard(ASYNC_PASS),
+                () -> submit.asyncGuard("pass", ASYNC_PASS),
+                () -> submit.onFailure(RETOUCH),
+                () -> submit.failsOn(IOException.class),
+                () -> submit.timeout(Duration.ofSeconds(1)),
+                () -> submit.afterCommit("audit", (Doc doc) -> { }),
+                () -> submit.afterCommitWith("audit",
+                        (Doc doc, CommitContext<DocStatus, DocTransition> commit) -> { }));
+        for (Executable call : late) {
+            assertEquals(twice.getMessage(), assertThrows(IllegalStateException.class, call).getMessage());
+        }
+    }
+
+    /** build() reads every declaration once: after it, a declaration on any stage could only be lost. */
+    @Test
+    void everyStageRefusesDeclarationsAfterBuild() {
+        GraphBuilder<Doc, DocStatus, DocTransition> builder = base();
+        WatchBuilder<Doc, DocStatus, DocTransition, Doc, DocStatus, DocTransition> watch =
+                builder.watch(REVIEW, DOCS, (Doc doc) -> List.of(), (Doc doc) -> Optional.empty());
+        WatchRuleBuilder<Doc, DocStatus, DocTransition, Doc, DocStatus, DocTransition> rule =
+                watch.when(WatchCondition.allIn(PUBLISHED));
+        rule.execute(PUBLISH).endWatch();
+        builder.build();
+        List<Executable> onTheGraph = List.of(
+                () -> builder.initial(REVIEW),
+                () -> builder.terminal(PUBLISHED),
+                () -> builder.allowsCycle(DRAFT),
+                () -> builder.statePolicy(ARCHIVED, "archived"),
+                () -> builder.reject(DRAFT, PUBLISH, "not yet"),
+                () -> builder.transition(RETOUCH, DRAFT, ARCHIVED),
+                () -> builder.watch(DRAFT, DOCS, (Doc doc) -> List.of(), (Doc doc) -> Optional.empty()),
+                builder::build);
+        for (Executable call : onTheGraph) {
+            assertEquals("build() was already called on the graph Doc/DocStatus",
+                    assertThrows(IllegalStateException.class, call).getMessage());
+        }
+        List<Executable> onTheWatch = List.of(
+                () -> watch.when(WatchCondition.anyIn(ARCHIVED)),
+                () -> watch.when("stalled", (Doc doc, Collection<? extends Doc> peers,
+                        PeerView<Doc, DocStatus, DocTransition> view) -> true),
+                () -> rule.execute(SEND_BACK));
+        for (Executable call : onTheWatch) {
+            assertEquals("build() was already called on the graph Doc/DocStatus, so the watch of REVIEW can no longer"
+                    + " change", assertThrows(IllegalStateException.class, call).getMessage());
+        }
+    }
+
+    /** A draft still open when build() fails is refused too: retrying it would only feed a spent builder. */
+    @Test
+    void anOpenEdgeRefusesEveryCallOnceBuildHasFailed() {
+        GraphBuilder<Doc, DocStatus, DocTransition> builder = base();
+        TransitionBuilder<Doc, DocStatus, DocTransition> retouch = builder.transition(RETOUCH, DRAFT, ARCHIVED);
+        assertEquals(List.of("SG507"), assertThrows(InvalidGraphException.class, builder::build).codes());
+        for (Executable call : List.<Executable>of(() -> retouch.guard(PASS), retouch::endTransition)) {
+            assertEquals("build() was already called on the graph Doc/DocStatus, so DRAFT -RETOUCH-> ARCHIVED can no"
+                    + " longer change", assertThrows(IllegalStateException.class, call).getMessage());
+        }
+        assertEquals("build() was already called on the graph Doc/DocStatus",
+                assertThrows(IllegalStateException.class, builder::build).getMessage());
     }
 
     @Test

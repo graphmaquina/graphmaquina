@@ -3,7 +3,11 @@ package io.github.graphmaquina.dsl;
 import io.github.graphmaquina.api.NamedCondition;
 import io.github.graphmaquina.api.WatchCondition;
 
-/** Stage that declares the rules of a watch, one condition at a time. */
+/**
+ * Stage that declares the rules of a watch, one condition at a time. Each {@code when(...)} needs its
+ * {@code execute(...)}: a condition left without one is reported as SG404 rather than dropped or replaced. Once
+ * the graph is built, {@code when(...)} and {@code execute(...)} throw {@link IllegalStateException}.
+ */
 public interface WatchBuilder<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>> {
 
     WatchRuleBuilder<E, S, T, P, Q, U> when(NamedCondition<E, P, Q, U> condition);

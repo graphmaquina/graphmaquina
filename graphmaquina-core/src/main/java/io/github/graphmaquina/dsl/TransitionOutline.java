@@ -18,7 +18,10 @@ import lombok.NonNull;
 public record TransitionOutline(@NonNull String from, @NonNull String transition, @NonNull String to,
                                 @NonNull TransitionKind kind, @NonNull Optional<String> onFailure) {
 
-    /** The key that must be unique within the machine. */
+    /**
+     * The key that must be unique within the machine, as diagnostics print it: {@code FROM/ID}. Uniqueness is
+     * decided on the pair, not on this text, which two distinct pairs share when a name holds a {@code /}.
+     */
     public String key() {
         return from + "/" + transition;
     }

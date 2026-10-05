@@ -55,12 +55,16 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * No edge leaves {@code from} with that identifier, or a guard rejected. Nothing ran, and there is no
-     * destination to report: the same identifier may reach different states from different origins.
+     * destination to report: the same identifier may reach different states from different origins. The reason
+     * is never blank.
      */
     record Rejected<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from, @NonNull T transition,
                                                              @NonNull String reason, @NonNull RejectionKind kind,
                                                              @NonNull Optional<String> guard) implements Outcome<E, S, T> {
         public Rejected {
+            if (reason.isBlank()) {
+                throw new IllegalArgumentException("reason must not be blank");
+            }
             if (kind == RejectionKind.NO_TRANSITION && guard.isPresent()) {
                 throw new IllegalArgumentException("a NO_TRANSITION rejection carries no guard");
             }
@@ -80,13 +84,19 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         }
     }
 
-    /** Domain-level failure routed through {@code failureTransition}. Commits: the entity is at {@code movedTo}. */
+    /**
+     * Domain-level failure routed through {@code failureTransition}. Commits: the entity is at {@code movedTo}.
+     * The reason is never blank.
+     */
     record Failed<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from, @NonNull T transition,
                                                            @NonNull S to, @NonNull T failureTransition, @NonNull S movedTo,
                                                            @NonNull String reason, @NonNull Optional<Throwable> cause,
                                                            @NonNull List<TransitionRecord<?, ?, ?>> records,
                                                            @NonNull List<Reaction> reactions) implements Outcome<E, S, T> {
         public Failed {
+            if (reason.isBlank()) {
+                throw new IllegalArgumentException("reason must not be blank");
+            }
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
         }
