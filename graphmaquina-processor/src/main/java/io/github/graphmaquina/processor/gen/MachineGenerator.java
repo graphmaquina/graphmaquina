@@ -22,6 +22,7 @@ import java.util.Set;
 import javax.lang.model.SourceVersion;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Elements;
 
 /**
  * Emits {@code <Interface>Runtime}, whose name {@link SymbolNames#runtimeName} derives from the interface's simple
@@ -129,7 +130,7 @@ public final class MachineGenerator {
      */
     public static Emitted emit(MachineModel model, BoundInvocation invocations) {
         TypeElement facadeType = model.types().facade();
-        Names names = names(model);
+        Names names = names(model, invocations.elements());
         Written rendered = rendered(model, invocations);
         Variables variables = variables(model, names.written().and(rendered));
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
@@ -201,9 +202,10 @@ public final class MachineGenerator {
     }
 
     /** How the companion of {@code model} writes its types, from what it claims and what its scope holds already. */
-    private static Names names(MachineModel model) {
+    private static Names names(MachineModel model, Elements elements) {
         TypeElement facade = model.types().facade();
-        return new Names(model.packageName(), types(model), Names.Scope.of(Names.packageOf(facade), facade, Map.of()));
+        return new Names(model.packageName(), types(model),
+                Names.Scope.of(elements, Names.packageOf(facade), facade, Map.of()));
     }
 
     /**

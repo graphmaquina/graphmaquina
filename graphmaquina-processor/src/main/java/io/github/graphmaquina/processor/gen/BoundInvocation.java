@@ -31,6 +31,11 @@ public final class BoundInvocation {
         this.types = types;
     }
 
+    /** The element utilities of the compilation, with which a generator also looks up a type by its qualified name. */
+    Elements elements() {
+        return elements;
+    }
+
     /** {@code receiver.method(arguments)}, with the parameter types that keep this exact overload selected. */
     public String emit(Binding binding, String receiver, List<String> arguments) {
         List<String> written = competes(binding) ? pinned(binding, arguments) : arguments;

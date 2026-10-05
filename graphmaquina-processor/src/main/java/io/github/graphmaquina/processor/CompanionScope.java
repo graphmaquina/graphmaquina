@@ -4,11 +4,11 @@ import io.github.graphmaquina.processor.gen.Written;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import javax.lang.model.element.Element;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.element.VariableElement;
@@ -154,18 +154,24 @@ final class CompanionScope {
      * type, other than a companion of this processor, that takes a name the companion writes. No such type was a
      * member of the package when the companion was checked, so another processor generated it since. The companion
      * is written already and the name means that type in it now, whether javac refuses that or not, so this says
-     * so, once. It looks at the package itself rather than at a round's root elements: once a type a round brings
-     * breaks a source of the compilation, javac may run only the last round next, whose root elements are empty. A
-     * type generated in that last round is never seen: no call of the processor follows it.
+     * so, once. It looks up, in the package itself, each name the companion writes that such a type could take,
+     * as {@link #topLevelType} looks it up, rather than searching a round's root elements: once a type a round
+     * brings breaks a source of the compilation, javac may run only the last round next, whose root elements are
+     * empty. A type generated in that last round is never seen: no call of the processor follows it.
      */
     void checkLaterTypes() {
-        for (List<WrittenCompanion> ofPackage : written.values()) {
-            for (WrittenCompanion earlier : ofPackage) {
+        for (Map.Entry<String, List<WrittenCompanion>> ofPackage : written.entrySet()) {
+            for (WrittenCompanion earlier : ofPackage.getValue()) {
                 TypeElement declaration = elements.getTypeElement(earlier.declaration());
-                for (TypeElement type : ElementFilter.typesIn(elements.getPackageOf(declaration).getEnclosedElements())) {
-                    String simple = type.getSimpleName().toString();
+                Set<String> names = new LinkedHashSet<>(earlier.written().roots().keySet());
+                names.addAll(earlier.written().simpleNames().keySet());
+                for (String simple : names) {
                     Optional<String> taken = earlier.takenBy(simple);
-                    if (taken.isEmpty() || companions.containsKey(type.getQualifiedName().toString())
+                    if (taken.isEmpty()) {
+                        continue;
+                    }
+                    TypeElement type = topLevelType(ofPackage.getKey(), simple);
+                    if (type == null || companions.containsKey(type.getQualifiedName().toString())
                             || !reported.add(earlier.name() + " " + type.getQualifiedName())) {
                         continue;
                     }
@@ -193,14 +199,14 @@ final class CompanionScope {
      */
     boolean admits(TypeElement declaration, String companion, Set<String> memberTypes, Set<String> fields, Written written) {
         Map<String, Taker> types = types(declaration, companion, memberTypes, written);
-        Map<String, Taker> packageTypes = packageTypes(declaration);
+        Map<String, Taker> packageTypes = packageTypes(declaration, written.roots().keySet());
         Map<String, Taker> variables = variables(declaration, companion, fields);
         String prefix = "the companion " + companion + " of " + declaration.getQualifiedName() + " writes ";
         boolean admitted = true;
         for (Map.Entry<String, String> root : written.roots().entrySet()) {
             String name = root.getKey();
             Taker taker = first(name, List.of(types, packageTypes));
-            if (taker == null && elements.getTypeElement("java.lang." + name) != null) {
+            if (taker == null && topLevelType("java.lang", name) != null) {
                 taker = new Taker("the type java.lang." + name, "");
             }
             if (taker != null) {
@@ -283,25 +289,47 @@ final class CompanionScope {
     }
 
     /**
-     * The simple name of every top-level type of the package of {@code declaration}, each with its qualified name,
-     * and of every companion the processor reserves in that package, each with what it is for.
+     * Each of the simple names {@code names} that a top-level type of the package of {@code declaration} takes,
+     * with that type's qualified name, and each that a companion the processor reserves in that package takes,
+     * with what the companion is for. Each name is looked up alone, as {@link #topLevelType} looks it up, never by
+     * listing the package.
      */
-    private Map<String, Taker> packageTypes(TypeElement declaration) {
+    private Map<String, Taker> packageTypes(TypeElement declaration, Set<String> names) {
         PackageElement own = elements.getPackageOf(declaration);
         Map<String, Taker> types = new LinkedHashMap<>();
-        for (Element member : own.getEnclosedElements()) {
-            if (member instanceof TypeElement type) {
-                types.put(type.getSimpleName().toString(), new Taker("the type " + type.getQualifiedName(), "rename that type"));
+        for (String name : names) {
+            TypeElement type = topLevelType(own.getQualifiedName().toString(), name);
+            if (type != null) {
+                types.put(name, new Taker("the type " + type.getQualifiedName(), "rename that type"));
             }
         }
         for (Map.Entry<String, TypeElement> companion : companions.entrySet()) {
-            if (elements.getPackageOf(companion.getValue()).equals(own)) {
-                String name = companion.getKey().substring(companion.getKey().lastIndexOf('.') + 1);
+            String name = companion.getKey().substring(companion.getKey().lastIndexOf('.') + 1);
+            if (names.contains(name) && elements.getPackageOf(companion.getValue()).equals(own)) {
                 types.put(name, new Taker("the companion " + companion.getKey() + " this processor reserves for "
                         + companion.getValue().getQualifiedName(), ""));
             }
         }
         return types;
+    }
+
+    /**
+     * The top-level type {@code simple} of the package {@code packageName}, or {@code null} when the lookup below
+     * finds none. The lookup by qualified name finds such a type wherever javac finds it when it resolves
+     * {@code simple} as a type of that package: among the sources it compiles, on the source path or on the class
+     * path. A type declared in a source file named after another type, an auxiliary class, is found only once
+     * javac has read that file, which may come after this lookup. The qualified name can also resolve to a member
+     * type, when a class of the unnamed package is named like the first segment of the package and nests a type of
+     * that canonical name; that is no type of the package, so it yields {@code null}. For a package of another
+     * module, such as {@code java.lang}, a member type of that canonical name is answered even when the package has
+     * a type of that name, which the lookup then misses. Unlike a listing of the package's members, the lookup does
+     * not make javac read every file of the package that the source path holds, among them files the build leaves
+     * out of the compilation.
+     */
+    private TypeElement topLevelType(String packageName, String simple) {
+        TypeElement type = elements.getTypeElement(packageName.isEmpty() ? simple : packageName + "." + simple);
+        return type != null && type.getEnclosingElement() instanceof PackageElement owner
+                && owner.getQualifiedName().contentEquals(packageName) ? type : null;
     }
 
     /** The name of every field in the companion's scope that it does not choose, each with what declares it. */

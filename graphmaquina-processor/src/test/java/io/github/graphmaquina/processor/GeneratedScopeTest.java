@@ -6,9 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.Machine;
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,6 +45,10 @@ class GeneratedScopeTest {
             import io.github.graphmaquina.api.Machines;
             @StateGraphs public interface Shop extends Machines { Orders orders(); }
             """;
+
+    /** The first bytes of an AppleDouble file, which no Java compiler can read as a source. */
+    private static final byte[] APPLE_DOUBLE = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ',
+        'O', 'S', ' ', 'X', (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
 
     /**
      * A record of the facade's package named {@code Override} would capture a bare {@code @Override}, and a
@@ -176,6 +184,67 @@ class GeneratedScopeTest {
         assertFalse(typed.hasGenerated("shop.OrdersRuntime"), typed.describe());
     }
 
+    /**
+     * A build may give javac only some files of the facade's package while its source path holds them all, as
+     * Maven does with an AppleDouble file it never compiles or with a file the build's excludes name. The processor
+     * looks up only the names the companions write, so javac reads neither file: the build compiles without a word
+     * about them and writes no class for them.
+     */
+    @Test
+    void theProcessorReadsNoFileOfThePackageTheBuildLeavesOut() throws IOException {
+        Map<String, String> sources = shop("PaymentsRefs.Charge.class", "");
+        sources.put("shop.Shop", SHOP);
+        Compilation.Prepared prepared = Compilation.prepare(sources);
+        Path shop = prepared.request().sources().get(0).resolve("shop");
+        Files.write(shop.resolve("._Orders.java"), APPLE_DOUBLE);
+        Files.writeString(shop.resolve("Excluded.java"), "package shop;\npublic final class Excluded {\n",
+                StandardCharsets.UTF_8);
+
+        Compilation.Result result = Compilation.compileWithSourcePath(prepared, List.copyOf(sources.keySet()));
+
+        assertTrue(result.success(), result.describe());
+        assertTrue(result.hasGenerated("shop.OrdersRuntime") && result.hasGenerated("shop.ShopRuntime"),
+                result.describe());
+        List<String> files = new ArrayList<>();
+        for (Diagnostic<? extends JavaFileObject> diagnostic : result.diagnostics()) {
+            if (diagnostic.getSource() != null) {
+                files.add(Path.of(diagnostic.getSource().getName()).getFileName().toString());
+            }
+        }
+        assertFalse(files.contains("._Orders.java") || files.contains("Excluded.java"), result.describe());
+        Path classes = prepared.request().classesOutput().resolve("shop");
+        assertFalse(Files.exists(classes.resolve("_Orders.class")), result.describe());
+        assertFalse(Files.exists(classes.resolve("Excluded.class")), result.describe());
+    }
+
+    /**
+     * A type of the facade's package that only the source path holds takes a name the companion writes as surely
+     * as one the build compiles, since javac resolves that name against the source path too. The facade is
+     * refused with the same SG603 either way.
+     */
+    @Test
+    void sg603ATypeOfTheFacadesPackageThatOnlyTheSourcePathHolds() {
+        Map<String, String> sources = shop("PaymentsRefs.Charge.class", "");
+        sources.put("billing.Payment", "package billing;\npublic record Payment(long cents) { }\n");
+        sources.put("shop.billing", "package shop;\npublic final class billing { }\n");
+        sources.put("shop.Orders", sources.get("shop.Orders")
+                .replace("import static shop.OrderStatus.*;", "import billing.Payment;\nimport static shop.OrderStatus.*;")
+                .replace("pay(Order order);", "pay(Order order, Payment payment);"));
+        List<String> withoutTaker = new ArrayList<>(sources.keySet());
+        withoutTaker.remove("shop.billing");
+
+        Compilation.Result listed = Compilation.compileWithSourcePath(Compilation.prepare(sources),
+                List.copyOf(sources.keySet()));
+        Compilation.Result unlisted = Compilation.compileWithSourcePath(Compilation.prepare(sources), withoutTaker);
+
+        assertEquals(List.of("[SG603] the companion OrdersRuntime of shop.Orders writes billing.Payment, but in its"
+                + " scope billing names the type shop.billing, not a package: rename that type or the package"
+                + " billing"), listed.errors(), listed.describe());
+        assertEquals(listed.errors(), unlisted.errors(), unlisted.describe());
+        assertEquals("Orders.java", source(unlisted, "SG603"), unlisted.describe());
+        assertFalse(unlisted.hasGenerated("shop.OrdersRuntime"), unlisted.describe());
+    }
+
     /** A constant of the facade, which the companion inherits, hides a package in every expression of its body. */
     @Test
     void sg603AConstantOfTheFacadeNamedLikeAPackageTheCompanionWrites() {
@@ -288,6 +357,120 @@ class GeneratedScopeTest {
         assertTrue(result.errors().get(0).contains("fx.b") && result.errors().get(0).contains("Both"), result.describe());
         assertFalse(result.hasGenerated("fx.BothRuntime"), result.describe());
         assertTrue(result.hasGenerated("b.ThingsRuntime"), result.describe());
+    }
+
+    /**
+     * A class {@code fx} of the unnamed package declares member types {@code b} and {@code Override}, whose
+     * canonical names {@code fx.b} and {@code fx.Override} are the very names top-level types of the package
+     * {@code fx} would have. They are no types of that package, so they take nothing from the set's companion,
+     * which writes {@code b.Things} qualified and a bare {@code @Override}, and compiles. A top-level type
+     * {@code fx.b} beside them still takes the name.
+     */
+    @Test
+    void memberTypesOfAClassNamedLikeTheSetsPackageTakeNothing() {
+        Map<String, String> sources = both();
+        sources.put("fx", """
+                public final class fx {
+                    public static final class b { }
+                    public static final class Override { }
+                }
+                """);
+
+        Compilation.Result memberTypes = Compilation.compileTyped(sources);
+        sources.put("fx.b", "package fx;\npublic final class b { }\n");
+        Compilation.Result topLevelType = Compilation.compileTyped(sources);
+
+        assertTrue(memberTypes.success(), memberTypes.describe());
+        String set = memberTypes.generated("fx.BothRuntime");
+        assertTrue(set.contains("@Override") && !set.contains("@java.lang.Override"), set);
+        assertEquals(List.of("[SG603] the companion BothRuntime of fx.Both writes b.Things, but in its scope b names"
+                + " the type fx.b, not a package: rename that type or the package b"), topLevelType.errors(),
+                topLevelType.describe());
+        assertFalse(topLevelType.hasGenerated("fx.BothRuntime"), topLevelType.describe());
+    }
+
+    /**
+     * javac's Filer looks up the name of a type it is asked to create as {@code Elements.getTypeElement} does, which
+     * answers a member type whose canonical name it is: here a member type {@code BothRuntime} of a class {@code fx}
+     * of the unnamed package. Given that class's source, the Filer refuses to create the set's companion
+     * {@code fx.BothRuntime}, as it refuses over a top-level type of that name, so both are refused as SG603 where
+     * the set is declared, before the companion is written.
+     */
+    @Test
+    void sg603ATypeWhoseCanonicalNameIsTheSetsCompanions() {
+        Map<String, String> memberType = both();
+        memberType.put("fx", "public final class fx {\n    public static final class BothRuntime { }\n}\n");
+        Map<String, String> topLevelType = both();
+        topLevelType.put("fx.BothRuntime", "package fx;\npublic final class BothRuntime { }\n");
+
+        Compilation.Result member = Compilation.compileTyped(memberType);
+        Compilation.Result topLevel = Compilation.compileTyped(topLevelType);
+
+        List<String> refused = List.of("[SG603] the generated runtime fx.BothRuntime for fx.Both conflicts with"
+                + " existing type fx.BothRuntime");
+        assertEquals(refused, member.errors(), member.describe());
+        assertFalse(member.hasGenerated("fx.BothRuntime"), member.describe());
+        assertEquals(refused, topLevel.errors(), topLevel.describe());
+    }
+
+    /** The packages {@code a} and {@code b} of twin machines, and the set {@code fx.Both} holding one of each. */
+    private static Map<String, String> both() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        twin(sources, "a", "");
+        twin(sources, "b", "");
+        sources.put("fx.Both", """
+                package fx;
+                import b.Things;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                @StateGraphs
+                public interface Both extends Machines {
+                    a.Things first();
+                    Things second();
+                }
+                """);
+        return sources;
+    }
+
+    /**
+     * {@code java.lang}, imported on demand into the companion, takes the name of a package the companion writes
+     * qualified when it has a type of that name: here the package {@code Thread} of an input type. A class
+     * {@code java} of the unnamed package nesting {@code lang.billing}, whose canonical name
+     * {@code java.lang.billing} is the very name a type {@code billing} of {@code java.lang} would have, is no type
+     * of {@code java.lang}, so it takes nothing from a companion that writes {@code billing.Payment}.
+     */
+    @Test
+    void sg603AJavaLangTypeNamedLikeAPackageTheCompanionWrites() {
+        Map<String, String> nested = paidWith("billing");
+        nested.put("java", """
+                public final class java {
+                    public static final class lang {
+                        public static final class billing { }
+                    }
+                }
+                """);
+
+        Compilation.Result javaLang = Compilation.compileTyped(paidWith("Thread"));
+        Compilation.Result nestedInJava = Compilation.compileTyped(nested);
+
+        assertEquals(List.of("[SG603] the companion OrdersRuntime of shop.Orders writes Thread.Payment, but in its"
+                + " scope Thread names the type java.lang.Thread, not a package: rename the package Thread"),
+                javaLang.errors(), javaLang.describe());
+        assertFalse(javaLang.hasGenerated("shop.OrdersRuntime"), javaLang.describe());
+        assertTrue(nestedInJava.success(), nestedInJava.describe());
+        assertTrue(nestedInJava.generated("shop.OrdersRuntime").contains("billing.Payment"),
+                nestedInJava.generated("shop.OrdersRuntime"));
+    }
+
+    /** The shop domain whose operation {@code pay} takes a {@code <root>.Payment}, which the companion writes. */
+    private static Map<String, String> paidWith(String root) {
+        Map<String, String> sources = shop("PaymentsRefs.Charge.class", "");
+        sources.put(root + ".Payment", "package " + root + ";\npublic record Payment(long cents) { }\n");
+        sources.put("shop.Orders", sources.get("shop.Orders")
+                .replace("import static shop.OrderStatus.*;",
+                        "import " + root + ".Payment;\nimport static shop.OrderStatus.*;")
+                .replace("pay(Order order);", "pay(Order order, Payment payment);"));
+        return sources;
     }
 
     /**

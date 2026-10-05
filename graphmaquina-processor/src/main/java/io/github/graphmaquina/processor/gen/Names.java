@@ -4,11 +4,13 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Elements;
 
 /**
  * How one generated file writes the types it needs.
@@ -62,8 +64,8 @@ final class Names {
             } else if (topLevel && owner.equals(packageName)) {
                 render(qualified, owner, true);
             } else if (topLevel && owner.equals("java.lang")) {
-                render(qualified, owner, !scope.packageTypes().contains(simple));
-            } else if (owner.isEmpty() || (packageName.isEmpty() && scope.packageTypes().contains(simple))) {
+                render(qualified, owner, !scope.packageTypes().test(simple));
+            } else if (owner.isEmpty() || (packageName.isEmpty() && scope.packageTypes().test(simple))) {
                 render(qualified, owner, false);
             } else {
                 imports.add(qualified);
@@ -74,7 +76,7 @@ final class Names {
 
     /**
      * The scope a generated class sees besides its imports: the member types it declares or inherits, by simple
-     * name, and the simple names of the top-level types of its package.
+     * name, and whether a top-level type of its package takes a simple name.
      *
      * <p>A simple name that two different member types of the interface the class implements or of its
      * superinterfaces take, wherever they are in that hierarchy, maps to no qualified name a type could equal, so
@@ -83,30 +85,44 @@ final class Names {
      * where the name resolves to the hiding one: a qualified name is correct in both. A member type the class
      * declares itself takes its name whatever the interfaces hold.</p>
      */
-    record Scope(Map<String, String> members, Set<String> packageTypes) {
+    record Scope(Map<String, String> members, Predicate<String> packageTypes) {
 
         private static final String AMBIGUOUS = "";
 
         Scope {
             members = Map.copyOf(members);
-            packageTypes = Set.copyOf(packageTypes);
         }
 
         /**
          * The scope of a class of {@code packageElement} that implements {@code implemented} and declares the
          * member types {@code declared}, simple name to qualified name, which hide the ones it inherits.
+         *
+         * <p>Whether a top-level type of the package takes a simple name is asked of {@code elements} by that
+         * type's qualified name, for that name alone and only when the file needs to know: for a {@code java.lang}
+         * type it writes and, in a file of the unnamed package, for every type it would import. That lookup finds
+         * the type wherever javac finds it when it resolves the simple name as a type of that package: among the
+         * sources it compiles, on the source path or on the class path. A type declared in a source file named
+         * after another type, an auxiliary class, is found only once javac has read that file, which may come
+         * after this lookup. A member type the qualified name resolves to, as it does when a class of the unnamed
+         * package is named like the first segment of the package and nests a type of that canonical name, is no
+         * type of the package and does not count.</p>
+         *
+         * <p>Unlike a listing of the package's members, the lookup does not make javac read every file of the
+         * package that the source path holds, among them files the build leaves out of the compilation. It does
+         * read a file named after a type it asks for, which in the unnamed package can be one that javac would not
+         * read to compile the file: a file named like a type the file imports.</p>
          */
-        static Scope of(PackageElement packageElement, TypeElement implemented, Map<String, String> declared) {
+        static Scope of(Elements elements, PackageElement packageElement, TypeElement implemented,
+                        Map<String, String> declared) {
             Map<String, String> members = new LinkedHashMap<>();
             inherit(implemented, members, new LinkedHashSet<>());
             members.putAll(declared);
-            Set<String> packageTypes = new LinkedHashSet<>();
-            for (Element member : packageElement.getEnclosedElements()) {
-                if (member instanceof TypeElement type) {
-                    packageTypes.add(type.getSimpleName().toString());
-                }
-            }
-            return new Scope(members, packageTypes);
+            String packageName = packageElement.getQualifiedName().toString();
+            return new Scope(members, (String simple) -> {
+                TypeElement type = elements.getTypeElement(packageName.isEmpty() ? simple : packageName + '.' + simple);
+                return type != null && type.getEnclosingElement() instanceof PackageElement owner
+                        && owner.getQualifiedName().contentEquals(packageName);
+            });
         }
 
         /**

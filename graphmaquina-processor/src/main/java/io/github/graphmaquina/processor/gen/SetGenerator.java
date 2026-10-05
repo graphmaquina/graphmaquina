@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.Elements;
 
 /**
  * Emits {@code <Set>Runtime}, named by {@link SymbolNames#runtimeName} as a machine's companion is: a builder that
@@ -98,7 +99,7 @@ public final class SetGenerator {
      */
     public static Emitted emit(SetModel model, BoundInvocation invocations) {
         String companion = SymbolNames.runtimeName(model.setName());
-        Names names = names(model);
+        Names names = names(model, invocations.elements());
         Written rendered = rendered(model, invocations);
         Variables variables = variables(model, names.written().and(rendered));
         String set = names.of(model.type().getQualifiedName().toString());
@@ -339,9 +340,9 @@ public final class SetGenerator {
     }
 
     /** How the set companion writes its types, from what it claims and what its scope holds already, its own Builder included. */
-    private static Names names(SetModel model) {
-        return new Names(model.packageName(), types(model), Names.Scope.of(Names.packageOf(model.type()), model.type(),
-                Map.of("Builder", qualifiedName(model) + ".Builder")));
+    private static Names names(SetModel model, Elements elements) {
+        return new Names(model.packageName(), types(model), Names.Scope.of(elements, Names.packageOf(model.type()),
+                model.type(), Map.of("Builder", qualifiedName(model) + ".Builder")));
     }
 
     /** How this file writes the machine's facade interface. */

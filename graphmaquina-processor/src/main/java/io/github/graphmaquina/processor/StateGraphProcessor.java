@@ -174,6 +174,13 @@ public final class StateGraphProcessor extends AbstractProcessor {
      * would take a name that a companion written in an earlier round writes. A refused declaration is still
      * checked like every other declaration of the round, so all their problems are reported together, but its
      * companion is never written, nor is the companion of a set that holds it, which would name that companion.
+     *
+     * <p>The existing type is looked up by the companion's qualified name as javac's {@code Filer} looks up a type
+     * it is asked to create, so a member type whose canonical name that is takes the name too, as one nested in a
+     * class of the unnamed package named like the first segment of the package does. The {@code Filer} refuses to
+     * create a type over one declared in a source the compilation was given, over one a processor created in it
+     * already, or over a class it was given by name; it warns of any other existing type under
+     * {@code -Xlint:processing}.</p>
      */
     private void validateRuntimeNames(RoundEnvironment round) {
         Set<Element> declarations = new LinkedHashSet<>(round.getElementsAnnotatedWith(GenerateGraphApi.class));
@@ -427,9 +434,9 @@ public final class StateGraphProcessor extends AbstractProcessor {
 
     /**
      * Writes one generated source, and only once: the Filer refuses a name it has already created a file for. Once
-     * the source is written, the companion's scope checks every type of its package that a later round brings
-     * against what it writes; a companion whose source could not be written is reported as {@code SG599}, and
-     * nothing is checked against it.
+     * the source is written, the companion's scope checks what it writes against the types of its package that a
+     * later round brings; a companion whose source could not be written is reported as {@code SG599}, and nothing
+     * is checked against it.
      */
     private void write(String qualifiedName, Emitted companion, TypeElement origin) {
         if (!generated.add(qualifiedName)) {

@@ -197,6 +197,23 @@ final class Compilation {
      * does not run: the test observes what javac and the processor did.
      */
     static Result compileWithImplicitSources(Prepared prepared, List<String> explicit) {
+        return compileWithSourcePath(prepared, explicit, List.of("-implicit:class"));
+    }
+
+    /**
+     * Prepares the outputs of {@code prepared} and runs javac the way Maven's compiler plugin does: the originals
+     * named by {@code listed} and the generated bootstrap are given to javac, the source path holds the originals
+     * and the bootstrap, and no {@code -implicit} policy is set. Any other file under the originals stands for one
+     * the build leaves out of the compilation. Should javac read such a file, it reports what is wrong in it, or
+     * else warns that it compiled a file no processor saw, which {@code -Werror} turns into a failure. Completion
+     * does not run.
+     */
+    static Result compileWithSourcePath(Prepared prepared, List<String> listed) {
+        return compileWithSourcePath(prepared, listed, List.of());
+    }
+
+    /** Runs javac over {@code explicit} and the bootstrap, with the source path and then {@code extra}. */
+    private static Result compileWithSourcePath(Prepared prepared, List<String> explicit, List<String> extra) {
         GenerationRequest request = prepared.request();
         try {
             CompilationOutputs.prepare(request);
@@ -211,8 +228,8 @@ final class Compilation {
         files.addAll(javaFiles(request.sourcesOutput()));
         List<String> options = new ArrayList<>(standardOptions(request));
         options.add("-Agraphmaquina.annotationManifest=" + prepared.generation().annotationManifest());
-        options.addAll(List.of("-sourcepath", originals + File.pathSeparator + request.sourcesOutput(),
-                "-implicit:class"));
+        options.addAll(List.of("-sourcepath", originals + File.pathSeparator + request.sourcesOutput()));
+        options.addAll(extra);
         return run(files, options, request);
     }
 
