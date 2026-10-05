@@ -39,6 +39,8 @@ public final class ExportDeclarations {
     private static final String COLLISION = "SG603";
     private static final String INVALID_ROLE = "SG604";
     private static final String BINDINGS = "io.github.graphmaquina.annotation.GraphBindings";
+    /** The package of the StateGraph types every references container writes by qualified name. */
+    private static final String STATEGRAPH_PACKAGE = "io.github.graphmaquina";
     private static final Map<String, SymbolKind> ROLES = roles();
 
     private ExportDeclarations() {
@@ -46,7 +48,11 @@ public final class ExportDeclarations {
 
     /**
      * Every symbol the original sources of {@code index} export, ordered by qualified name so that neither the
-     * order of the files nor the order of a hash table can change the result.
+     * order of the files nor the order of a hash table can change the result. A host its references container
+     * cannot name, because it is private or nested in a private type, is refused with {@code SG604}. A host is
+     * refused with {@code SG603} when a qualified name its container writes, StateGraph's {@code io} package or the
+     * host's own name, starts with the simple name of a type the host's package declares or of a public type of
+     * {@code java.lang}: inside the container that type obscures the package.
      */
     public static List<SymbolDescriptor> collect(DeclarationIndex index) {
         Objects.requireNonNull(index, "index");
@@ -60,6 +66,17 @@ public final class ExportDeclarations {
                 continue;
             }
             String container = container(host);
+            String packageName = host.scope().packageName();
+            Optional<String> inaccessible = index.inaccessibility(host, packageName);
+            if (inaccessible.isPresent()) {
+                throw new CodegenException(INVALID_ROLE, "the host " + host.canonicalName()
+                    + " is not accessible to its references container " + container + ": " + inaccessible.get(),
+                    origin(host));
+            }
+            index.requireUnobscured(packageName, "the references container generated for the host "
+                + host.canonicalName() + " in " + (packageName.isEmpty() ? "the unnamed package" : "package "
+                + packageName), packageName.isEmpty() ? List.of(STATEGRAPH_PACKAGE)
+                : List.of(STATEGRAPH_PACKAGE, host.canonicalName()), origin(host));
             TypeHeader previous = containers.putIfAbsent(container, host);
             if (previous != null) {
                 throw sharedContainer(container, previous, host);
@@ -130,7 +147,7 @@ public final class ExportDeclarations {
         List<Declaration> declarations = new ArrayList<>();
         Set<String> signatures = new LinkedHashSet<>();
         declare(index, host, host, true, declarations, signatures);
-        if (host.markers().stream().anyMatch(marker -> index.marks(host, marker, BINDINGS))) {
+        if (host.markers().stream().anyMatch(marker -> index.marksInHeader(host, marker, BINDINGS))) {
             for (TypeHeader ancestor : ancestors(index, host)) {
                 declare(index, host, ancestor, false, declarations, signatures);
             }
@@ -181,7 +198,7 @@ public final class ExportDeclarations {
                 if (!(supertype instanceof TypeUse.Declared declared)) {
                     continue;
                 }
-                Optional<TypeHeader> resolved = index.resolve(current, declared.name());
+                Optional<TypeHeader> resolved = index.resolveInHeader(current, declared.name());
                 if (resolved.isEmpty() || !visited.add(resolved.get().canonicalName())) {
                     continue;
                 }

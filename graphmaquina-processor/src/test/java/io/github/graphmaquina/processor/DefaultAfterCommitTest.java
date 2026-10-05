@@ -37,7 +37,8 @@ class DefaultAfterCommitTest {
         Compilation.Prepared prepared = Compilation.prepare(sources);
         Path vocabulary = prepared.request().sourcesOutput().resolve("fx/DocsGraph.java");
         String generated = Files.readString(vocabulary);
-        String member = "Class<? extends HookSymbol>[] afterCommit() default {};";
+        String member =
+            "java.lang.Class<? extends io.github.graphmaquina.symbol.HookSymbol>[] afterCommit() default {};";
         int definition = generated.indexOf("@interface Definition {");
         assertTrue(definition >= 0, generated);
         int at = generated.indexOf(member, definition);

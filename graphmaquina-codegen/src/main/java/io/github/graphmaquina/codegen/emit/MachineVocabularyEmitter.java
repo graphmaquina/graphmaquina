@@ -4,6 +4,8 @@ import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Emits the typed vocabulary of one machine: the top-level {@code <Machine>Graph} holding {@code Definition},
@@ -11,27 +13,26 @@ import java.util.List;
  *
  * <p>Every element that names a state is declared with the machine's own state enum and every element that
  * names an edge is declared with its own transition enum, so a constant of another machine, or a state written
- * where an identifier belongs, is a javac error before any processor runs. The enums, the hosts and the machine
- * itself are written with their qualified names and only StateGraph and {@code java.lang.annotation} types are
- * imported, so no simple name of the application can collide with a name this file claims.</p>
+ * where an identifier belongs, is a javac error before any processor runs.</p>
+ *
+ * <p>Nothing is imported: the enums, the machine, the StateGraph types and even {@code java.lang} types are written
+ * with their qualified names, so a type of the machine's own package named {@code Class} or {@code String} cannot
+ * shadow a name this file uses, and no name this file claims can collide with an import.</p>
+ *
+ * <p>Each name is still read through its first segment, and any type in scope inside this file under that simple
+ * name takes the name over. An annotation nested here shadows it. A type of the machine's package, a top-level type
+ * generated in that package, this file included, or a public type of {@code java.lang}, which every compilation unit
+ * imports on demand, obscures the package the name starts with (JLS 6.4.2). The bootstrap refuses a declaration whose
+ * name a type of the package or of {@code java.lang} would take, and {@link #emit} one whose name a nested annotation
+ * or a generated type would take, all with {@code SG603} and before anything is written.</p>
  */
 final class MachineVocabularyEmitter {
 
-    private static final List<String> IMPORTS = List.of(
-        "io.github.graphmaquina.annotation.Timeout",
-        "io.github.graphmaquina.annotation.internal.GeneratedVocabulary",
-        "io.github.graphmaquina.annotation.internal.VocabularyKind",
-        "io.github.graphmaquina.symbol.ActionSymbol",
-        "io.github.graphmaquina.symbol.GuardSymbol",
-        "io.github.graphmaquina.symbol.HookSymbol",
-        "io.github.graphmaquina.symbol.PropertySymbol",
-        "java.lang.annotation.ElementType",
-        "java.lang.annotation.Repeatable",
-        "java.lang.annotation.Retention",
-        "java.lang.annotation.RetentionPolicy",
-        "java.lang.annotation.Target");
-
-    private static final String EDGE_TARGETS = "{ElementType.TYPE, ElementType.METHOD}";
+    private static final List<String> ANNOTATIONS = List.of("Definition", "StatePolicy", "StatePolicies",
+        "Transition", "Transitions", "Reject", "Rejects");
+    private static final String TYPE_TARGET = "java.lang.annotation.ElementType.TYPE";
+    private static final String EDGE_TARGETS =
+        "{java.lang.annotation.ElementType.TYPE, java.lang.annotation.ElementType.METHOD}";
 
     private MachineVocabularyEmitter() {
     }
@@ -54,20 +55,32 @@ final class MachineVocabularyEmitter {
     /** The canonical names of every annotation the vocabulary of {@code graph} declares, in declaration order. */
     static List<String> annotationTypes(GraphDescriptor graph) {
         String vocabulary = vocabularyName(graph);
-        return List.of("Definition", "StatePolicy", "StatePolicies", "Transition", "Transitions", "Reject",
-                "Rejects").stream().map(name -> vocabulary + '.' + name).toList();
+        return ANNOTATIONS.stream().map(name -> vocabulary + '.' + name).toList();
     }
 
-    /** The compilation unit carrying the vocabulary of {@code graph}. */
-    static GeneratedSource emit(GraphDescriptor graph) {
+    /**
+     * The compilation unit carrying the vocabulary of {@code graph}.
+     *
+     * @param generated the simple names of the top-level types generated in each package
+     * @throws CodegenException {@code SG603} if a nested annotation of the vocabulary, or a top-level type generated
+     *     in its package, takes over the first segment of the machine or of one of its enums
+     */
+    static GeneratedSource emit(GraphDescriptor graph, Map<String, Set<String>> generated) {
         String vocabulary = vocabularyName(graph);
         String simpleName = SymbolNames.nameWithin(graph.packageName(), vocabulary);
         String machine = graph.facade();
         String state = graph.stateType();
         String transition = graph.transitionType();
+        String unit = "the vocabulary " + simpleName;
+        Map<String, String> meanings = ApiEmitter.meanings(simpleName, graph.packageName(), ANNOTATIONS, generated);
+        ApiEmitter.requireNameable(unit, meanings, "the machine " + machine, machine, graph.origin());
+        ApiEmitter.requireNameable(unit, meanings, "the state type " + state + " of " + machine, state,
+            graph.origin());
+        ApiEmitter.requireNameable(unit, meanings, "the transition type " + transition + " of " + machine,
+            transition, graph.origin());
 
         JavaSource source = new JavaSource();
-        source.header(graph.packageName(), IMPORTS);
+        source.header(graph.packageName(), List.of());
         source.javadoc("Typed graph vocabulary generated for {@link " + machine + "}.",
             "",
             "<p>Generated by the StateGraph code generator. Do not edit.</p>");
@@ -94,31 +107,31 @@ final class MachineVocabularyEmitter {
         describe(source, "Declares the graph of {@link " + machine + "}: its initial state, its terminal states,",
             "the states a cycle may return to, the properties reading the entity's identity and state,",
             "and the default hook edges inherit unless they declare their own.");
-        annotation(source, machine, "DEFINITION", "ElementType.TYPE", null, "Definition");
+        annotation(source, machine, "DEFINITION", TYPE_TARGET, null, "Definition");
         source.line(state + " initial();");
         source.line(state + "[] terminals() default {};");
         source.line(state + "[] allowsCycle() default {};");
-        source.line("Class<? extends PropertySymbol> state();");
-        source.line("Class<? extends PropertySymbol> id();");
+        source.line(symbolClass("PropertySymbol") + " state();");
+        source.line(symbolClass("PropertySymbol") + " id();");
         source.line("/** Default hook for ACTION/MOVE edges; an edge hook replaces it. Empty inherits on an edge. */");
-        source.line("Class<? extends HookSymbol>[] afterCommit() default {};");
+        source.line(symbolClass("HookSymbol") + "[] afterCommit() default {};");
         close(source);
     }
 
     private static void statePolicy(JavaSource source, String vocabulary, String machine, String state) {
         describe(source, "Gives one state of {@link " + machine + "} the reason every identifier it declares",
             "no edge for is refused with.");
-        annotation(source, machine, "STATE_POLICY", "ElementType.TYPE", vocabulary + ".StatePolicies",
+        annotation(source, machine, "STATE_POLICY", TYPE_TARGET, vocabulary + ".StatePolicies",
             "StatePolicy");
         source.line(state + " state();");
-        source.line("String otherwise();");
+        source.line("java.lang.String otherwise();");
         close(source);
     }
 
     private static void statePolicies(JavaSource source, String vocabulary, String machine) {
         describe(source, "Holds the repeated {@link " + vocabulary + ".StatePolicy} declarations of {@link "
             + machine + "}.");
-        annotation(source, machine, "STATE_POLICIES", "ElementType.TYPE", null, "StatePolicies");
+        annotation(source, machine, "STATE_POLICIES", TYPE_TARGET, null, "StatePolicies");
         source.line(vocabulary + ".StatePolicy[] value();");
         close(source);
     }
@@ -131,12 +144,12 @@ final class MachineVocabularyEmitter {
         source.line(transition + " id();");
         source.line(state + "[] from();");
         source.line(state + " to();");
-        source.line("Class<? extends ActionSymbol>[] action() default {};");
-        source.line("Class<? extends GuardSymbol>[] guards() default {};");
+        source.line(symbolClass("ActionSymbol") + "[] action() default {};");
+        source.line(symbolClass("GuardSymbol") + "[] guards() default {};");
         source.line(transition + "[] onFailure() default {};");
-        source.line("Class<? extends Throwable>[] failsOn() default {};");
-        source.line("Timeout[] timeout() default {};");
-        source.line("Class<? extends HookSymbol>[] afterCommit() default {};");
+        source.line("java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};");
+        source.line("io.github.graphmaquina.annotation.Timeout[] timeout() default {};");
+        source.line(symbolClass("HookSymbol") + "[] afterCommit() default {};");
         close(source);
     }
 
@@ -152,17 +165,17 @@ final class MachineVocabularyEmitter {
             String transition) {
         describe(source, "Refuses one identifier of {@link " + machine + "} from one state, with an explicit",
             "reason that overrides that state's policy.");
-        annotation(source, machine, "REJECT", "ElementType.TYPE", vocabulary + ".Rejects", "Reject");
+        annotation(source, machine, "REJECT", TYPE_TARGET, vocabulary + ".Rejects", "Reject");
         source.line(state + " from();");
         source.line(transition + " transition();");
-        source.line("String reason();");
+        source.line("java.lang.String reason();");
         close(source);
     }
 
     private static void rejects(JavaSource source, String vocabulary, String machine) {
         describe(source, "Holds the repeated {@link " + vocabulary + ".Reject} declarations of {@link " + machine
             + "}.");
-        annotation(source, machine, "REJECTS", "ElementType.TYPE", null, "Rejects");
+        annotation(source, machine, "REJECTS", TYPE_TARGET, null, "Rejects");
         source.line(vocabulary + ".Reject[] value();");
         close(source);
     }
@@ -176,14 +189,20 @@ final class MachineVocabularyEmitter {
     /** Writes the metadata, target, retention and repeatability of one nested annotation and opens its body. */
     private static void annotation(JavaSource source, String machine, String kind, String target,
             String container, String name) {
-        source.line("@GeneratedVocabulary(machine = " + machine + ".class, value = VocabularyKind." + kind + ")");
-        source.line("@Target(" + target + ")");
-        source.line("@Retention(RetentionPolicy.CLASS)");
+        source.line("@io.github.graphmaquina.annotation.internal.GeneratedVocabulary(machine = " + machine
+            + ".class, value = io.github.graphmaquina.annotation.internal.VocabularyKind." + kind + ")");
+        source.line("@java.lang.annotation.Target(" + target + ")");
+        source.line("@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)");
         if (container != null) {
-            source.line("@Repeatable(" + container + ".class)");
+            source.line("@java.lang.annotation.Repeatable(" + container + ".class)");
         }
         source.line("public @interface " + name + " {");
         source.indent();
+    }
+
+    /** The type of an element naming a generated symbol of {@code category}, a StateGraph symbol interface. */
+    static String symbolClass(String category) {
+        return "java.lang.Class<? extends io.github.graphmaquina.symbol." + category + ">";
     }
 
     private static void close(JavaSource source) {

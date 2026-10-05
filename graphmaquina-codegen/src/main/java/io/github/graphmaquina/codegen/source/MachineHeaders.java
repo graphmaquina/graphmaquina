@@ -23,13 +23,20 @@ public final class MachineHeaders {
     private static final String MACHINE = "io.github.graphmaquina.api.Machine";
     private static final String GRAPH_PEERS = "io.github.graphmaquina.annotation.GraphPeers";
     private static final String UNRESOLVED = "SG601";
+    private static final String UNUSABLE_PEER = "SG608";
+    /** The packages of the StateGraph and JDK types every vocabulary writes by qualified name. */
+    private static final List<String> VOCABULARY_PACKAGES = List.of("io.github.graphmaquina", "java.lang");
 
     private MachineHeaders() {
     }
 
     /**
      * Resolves the entity, the state enum, the transition enum, the constants of both and the declared peers
-     * of {@code facade}.
+     * of {@code facade}. The vocabulary generated for it is a top-level type of the facade's package that names
+     * the facade and both enums, so a generic facade, or a facade or enum that package cannot access, is refused
+     * with {@code SG601}. A type of that package, or a public type of {@code java.lang}, named like the first segment
+     * of a qualified name the vocabulary writes would obscure it there, which is refused with {@code SG603}; the
+     * types generated in that package are checked by the emitters.
      */
     public static GraphDescriptor resolve(DeclarationIndex index, String facade) {
         Objects.requireNonNull(index, "index");
@@ -38,6 +45,15 @@ public final class MachineHeaders {
                 "the machine interface " + facade + " is not declared"));
         SourceLocation origin = header.origin().orElseThrow(() -> new CodegenException(UNRESOLVED,
                 "the machine interface " + facade + " is not an original source declaration"));
+        if (!header.typeParameters().isEmpty()) {
+            // The vocabulary names its machine by a class literal, and a raw literal of a generic type is not a
+            // Class<? extends Machine<?, ?, ?>>, so nothing generated for such a facade could compile.
+            throw new CodegenException(UNRESOLVED, "the machine " + facade + " declares the type parameters <"
+                    + String.join(", ", header.typeParameters()) + ">; a @GenerateGraphApi machine cannot be generic",
+                    origin);
+        }
+        String packageName = header.scope().packageName();
+        requireAccessible(index, "the machine interface " + facade, header, packageName, origin);
 
         Map<TypeParameterKey, TypeUse> arguments =
                 specialization(index, header, Map.of(), new HashSet<>())
@@ -60,18 +76,95 @@ public final class MachineHeaders {
         }
         TypeUse.Declared transition = declared(arguments.get(new TypeParameterKey(MACHINE, 2)),
             "transition", facade, origin);
-        TypeHeader transitionHeader = index.find(transition.name()).orElseThrow(() ->
-            new CodegenException(UNRESOLVED, "unresolved transition enum " + transition.render(), origin));
+        TypeHeader transitionHeader = index.find(transition.name()).orElseThrow(() -> new CodegenException(
+                UNRESOLVED, "the transition type " + transition.render() + " of " + facade + " is unresolved", origin));
         if (transitionHeader.kind() != ElementKind.ENUM) {
             throw new CodegenException(UNRESOLVED, "the transition type " + transitionHeader.canonicalName() + " of "
                     + facade + " is not an enum", origin);
         }
         if (transitionHeader.canonicalName().equals(stateHeader.canonicalName())) {
-            throw new CodegenException(UNRESOLVED, "states and transitions require distinct enum types", origin);
+            throw new CodegenException(UNRESOLVED, "the machine " + facade + " uses " + stateHeader.canonicalName()
+                    + " as both its state type and its transition type; states and transitions require distinct"
+                    + " enum types", origin);
         }
+        requireAccessible(index, "the state type " + stateHeader.canonicalName() + " of " + facade, stateHeader,
+                packageName, origin);
+        requireAccessible(index, "the transition type " + transitionHeader.canonicalName() + " of " + facade,
+                transitionHeader, packageName, origin);
+        index.requireUnobscured(packageName, "the vocabulary generated for the machine " + facade + " in "
+                + where(packageName), qualifiedNames(index, List.of(facade, stateHeader.canonicalName(),
+                        transitionHeader.canonicalName())), origin);
         return new GraphDescriptor(header.canonicalName(), header.scope().packageName(), entity.render(),
                 stateHeader.canonicalName(), stateHeader.constants(), transitionHeader.canonicalName(),
                 transitionHeader.constants(), peers(index, header, origin), origin);
+    }
+
+    /**
+     * Refuses a peer whose watch vocabulary its owner's package could not compile. The vocabulary of an ordered
+     * pair is generated in the owner's package and names the peer machine and the peer's state enum, so both must
+     * be accessible there, and no type of that package or of {@code java.lang} may be named like the first segment
+     * of a qualified name it writes. A declared peer that is not one of {@code graphs} is left to the emitter, which
+     * reports it as {@code SG608} too.
+     *
+     * @throws CodegenException {@code SG608} anchored at the owner, naming the declaration it cannot access;
+     *     {@code SG603} naming a type of the owner's package or of {@code java.lang} that obscures a package the
+     *     vocabulary names
+     */
+    static void requireWatchablePeers(DeclarationIndex index, List<GraphDescriptor> graphs) {
+        Objects.requireNonNull(index, "index");
+        Objects.requireNonNull(graphs, "graphs");
+        for (GraphDescriptor owner : graphs) {
+            for (String peer : owner.peers()) {
+                Optional<GraphDescriptor> watched = graphs.stream()
+                        .filter(graph -> graph.facade().equals(peer))
+                        .findFirst();
+                if (watched.isEmpty()) {
+                    continue;
+                }
+                for (String named : List.of(watched.get().facade(), watched.get().stateType())) {
+                    Optional<String> reason = index.find(named)
+                            .flatMap(type -> index.inaccessibility(type, owner.packageName()));
+                    if (reason.isPresent()) {
+                        throw new CodegenException(UNUSABLE_PEER, "the peer machine " + peer + " declared by "
+                                + owner.facade() + " cannot be watched from " + where(owner.packageName())
+                                + ", where its watch vocabulary is generated: " + reason.get(), owner.origin());
+                    }
+                }
+                index.requireUnobscured(owner.packageName(), "the watch vocabulary generated for the machine "
+                        + owner.facade() + " over " + peer + " in " + where(owner.packageName()),
+                        qualifiedNames(index, List.of(owner.facade(), peer, owner.stateType(),
+                                owner.transitionType(), watched.get().stateType())), owner.origin());
+            }
+        }
+    }
+
+    /**
+     * The qualified names a vocabulary writes: the packages of the StateGraph and JDK types it names, then every
+     * one of {@code declarations} that belongs to a named package. A declaration of the unnamed package is written
+     * by its simple name, which names the declaration itself rather than a package.
+     */
+    private static List<String> qualifiedNames(DeclarationIndex index, List<String> declarations) {
+        List<String> names = new ArrayList<>(VOCABULARY_PACKAGES);
+        for (String declaration : declarations) {
+            index.find(declaration)
+                    .filter(type -> !index.packageOf(type).isEmpty())
+                    .ifPresent(type -> names.add(type.canonicalName()));
+        }
+        return names;
+    }
+
+    /** Refuses {@code type}, which the vocabulary generated in {@code packageName} names, when it cannot access it. */
+    private static void requireAccessible(DeclarationIndex index, String described, TypeHeader type,
+            String packageName, SourceLocation origin) {
+        Optional<String> reason = index.inaccessibility(type, packageName);
+        if (reason.isPresent()) {
+            throw new CodegenException(UNRESOLVED, described + " is not accessible to the vocabulary generated in "
+                    + where(packageName) + ": " + reason.get(), origin);
+        }
+    }
+
+    private static String where(String packageName) {
+        return packageName.isEmpty() ? "the unnamed package" : "package " + packageName;
     }
 
     /**
@@ -88,7 +181,7 @@ public final class MachineHeaders {
             if (!(supertype instanceof TypeUse.Declared declared)) {
                 continue;
             }
-            Optional<TypeHeader> resolved = index.resolve(header, declared.name());
+            Optional<TypeHeader> resolved = index.resolveInHeader(header, declared.name());
             if (resolved.isEmpty()) {
                 continue;
             }
@@ -115,7 +208,7 @@ public final class MachineHeaders {
         int declared = Math.min(superHeader.typeParameters().size(), arguments.size());
         for (int position = 0; position < declared; position++) {
             bound.put(superHeader.parameterKey(position),
-                    index.substitute(index.canonicalize(header, arguments.get(position)), environment));
+                    index.substitute(index.canonicalizeInHeader(header, arguments.get(position)), environment));
         }
         return bound;
     }
@@ -123,11 +216,11 @@ public final class MachineHeaders {
     private static List<String> peers(DeclarationIndex index, TypeHeader header, SourceLocation origin) {
         List<String> peers = new ArrayList<>();
         for (TypeHeader.Marker marker : header.markers()) {
-            if (!index.marks(header, marker, GRAPH_PEERS)) {
+            if (!index.marksInHeader(header, marker, GRAPH_PEERS)) {
                 continue;
             }
             for (String literal : marker.classLiterals()) {
-                peers.add(index.resolve(header, literal)
+                peers.add(index.resolveInHeader(header, literal)
                         .orElseThrow(() -> new CodegenException(UNRESOLVED, "the peer machine " + literal
                                 + " declared by " + header.canonicalName() + " is unresolved",
                                 marker.origin().orElse(origin)))

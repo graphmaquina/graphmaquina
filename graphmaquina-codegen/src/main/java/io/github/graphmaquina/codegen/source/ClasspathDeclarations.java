@@ -106,6 +106,18 @@ final class ClasspathDeclarations implements AutoCloseable {
     }
 
     /**
+     * The package that declares the classpath type {@code canonicalName}, empty for the unnamed package and for
+     * a name the classpath does not declare. A classpath header spells every name canonically, so its scope
+     * carries no package; access checks read the package here instead.
+     */
+    String packageOf(String canonicalName) {
+        TypeElement element = canonicalName.isEmpty() || canonicalName.equals(PROBE_NAME)
+                ? null
+                : elements.getTypeElement(canonicalName);
+        return element == null ? "" : elements.getPackageOf(element).getQualifiedName().toString();
+    }
+
+    /**
      * The position service used to anchor original declarations. A start position is data the parsed tree
      * carries, so the task that serves it does not have to be the task that parsed the tree.
      */

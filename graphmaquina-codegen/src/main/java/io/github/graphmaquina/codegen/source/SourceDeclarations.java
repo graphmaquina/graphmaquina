@@ -29,13 +29,16 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.Modifier;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -127,21 +130,24 @@ public final class SourceDeclarations {
                 Math.max(diagnostic.getLineNumber(), 1L), Math.max(diagnostic.getColumnNumber(), 1L)));
     }
 
-    /** Reads every type declaration of {@code unit}, nested declarations included, in declaration order. */
+    /**
+     * Reads every type declaration of {@code unit}, nested declarations included, in declaration order. Each
+     * header carries the modifiers javac records for the declaration, the implied ones included.
+     */
     static List<TypeHeader> declarations(SourceUnit unit, SourcePositions positions) {
         TypeHeader.Scope scope = scope(unit.tree());
         List<TypeHeader> headers = new ArrayList<>();
         for (Tree declaration : unit.tree().getTypeDecls()) {
             if (declaration instanceof ClassTree type) {
-                read(unit, positions, scope, scope.packageName(), type, Map.of(), headers);
+                read(unit, positions, scope, scope.packageName(), Optional.empty(), type, Map.of(), headers);
             }
         }
         return List.copyOf(headers);
     }
 
     private static void read(SourceUnit unit, SourcePositions positions, TypeHeader.Scope scope,
-            String enclosing, ClassTree type, Map<String, TypeParameterKey> inherited,
-            List<TypeHeader> headers) {
+            String enclosing, Optional<ElementKind> enclosingKind, ClassTree type,
+            Map<String, TypeParameterKey> inherited, List<TypeHeader> headers) {
         String canonicalName = enclosing.isEmpty()
                 ? type.getSimpleName().toString()
                 : enclosing + '.' + type.getSimpleName();
@@ -165,7 +171,7 @@ public final class SourceDeclarations {
         List<String> constants = new ArrayList<>();
         for (Tree member : type.getMembers()) {
             if (member instanceof ClassTree nested) {
-                read(unit, positions, scope, canonicalName, nested, variables, headers);
+                read(unit, positions, scope, canonicalName, Optional.of(kind(type)), nested, variables, headers);
             } else if (member instanceof MethodTree method) {
                 if (method.getReturnType() != null) {
                     members.add(method(unit, positions, canonicalName, method, variables));
@@ -179,9 +185,29 @@ public final class SourceDeclarations {
             }
         }
 
-        headers.add(new TypeHeader(canonicalName, kind(type), type.getModifiers().getFlags(), typeParameters,
+        headers.add(new TypeHeader(canonicalName, kind(type), modifiers(type, enclosingKind), typeParameters,
                 supertypes, members, markers(unit, positions, type.getModifiers()), constants, scope,
                 Optional.of(location(unit, positions, type))));
+    }
+
+    /**
+     * The modifiers written on {@code type} plus the ones the language implies for it, as javac records them for
+     * a binary: a member type of an interface is public and static (JLS 9.5), and a nested enum, record or
+     * interface is static (JLS 8.9, 8.10, 9.1.1.3). None of those is an inner class, so none of their uses
+     * captures the parameterization of an enclosing type.
+     */
+    private static Set<Modifier> modifiers(ClassTree type, Optional<ElementKind> enclosingKind) {
+        Set<Modifier> modifiers = EnumSet.noneOf(Modifier.class);
+        modifiers.addAll(type.getModifiers().getFlags());
+        if (enclosingKind.isPresent()) {
+            if (enclosingKind.get() == ElementKind.INTERFACE || enclosingKind.get() == ElementKind.ANNOTATION_TYPE) {
+                modifiers.add(Modifier.PUBLIC);
+                modifiers.add(Modifier.STATIC);
+            } else if (kind(type) != ElementKind.CLASS) {
+                modifiers.add(Modifier.STATIC);
+            }
+        }
+        return modifiers;
     }
 
     private static TypeHeader.Member method(SourceUnit unit, SourcePositions positions, String declaringType,
@@ -406,9 +432,24 @@ public final class SourceDeclarations {
         return new SourceLocation(relative(project, Path.of(tree.getSourceFile().toUri())), 1L, 1L);
     }
 
-    private static String relative(Path project, Path file) {
-        return project.toAbsolutePath().normalize()
-                .relativize(file.toAbsolutePath().normalize())
-                .toString();
+    /**
+     * The path of {@code file} relative to {@code project}, written with forward slashes on every platform so the
+     * export index that publishes it does not depend on the machine that built it. A file the project directory
+     * cannot be relativized against, such as one on another drive, keeps its absolute path.
+     */
+    static String relative(Path project, Path file) {
+        Path target = file.toAbsolutePath().normalize();
+        Path shown;
+        try {
+            shown = project.toAbsolutePath().normalize().relativize(target);
+        } catch (IllegalArgumentException differentRoot) {
+            shown = target;
+        }
+        return portable(shown.toString(), shown.getFileSystem().getSeparator());
+    }
+
+    /** {@code path} with every {@code separator} of the file system it was read from replaced by a forward slash. */
+    static String portable(String path, String separator) {
+        return path.replace(separator, "/");
     }
 }

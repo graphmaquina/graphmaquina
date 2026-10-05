@@ -144,10 +144,14 @@ class GeneratedApiCompilationTest {
         assertTrue(vocabulary.contains("fx.DocStatus initial();"), vocabulary);
         assertTrue(vocabulary.contains("fx.DocTransition id();"), vocabulary);
         assertTrue(vocabulary.contains("fx.DocTransition[] onFailure() default {};"), vocabulary);
-        assertTrue(vocabulary.contains("Class<? extends ActionSymbol>[] action() default {};"), vocabulary);
-        assertTrue(vocabulary.contains("Class<? extends PropertySymbol> state();"), vocabulary);
-        assertTrue(vocabulary.contains("Class<? extends PropertySymbol> id();"), vocabulary);
-        assertTrue(vocabulary.contains("Class<? extends HookSymbol>[] afterCommit() default {};"), vocabulary);
+        assertTrue(vocabulary.contains("java.lang.Class<? extends io.github.graphmaquina.symbol.ActionSymbol>[] "
+                + "action() default {};"), vocabulary);
+        assertTrue(vocabulary.contains("java.lang.Class<? extends io.github.graphmaquina.symbol.PropertySymbol> "
+                + "state();"), vocabulary);
+        assertTrue(vocabulary.contains("java.lang.Class<? extends io.github.graphmaquina.symbol.PropertySymbol> "
+                + "id();"), vocabulary);
+        assertTrue(vocabulary.contains("java.lang.Class<? extends io.github.graphmaquina.symbol.HookSymbol>[] "
+                + "afterCommit() default {};"), vocabulary);
         for (String retired : List.of("Row", "Rows", "Cell", "Cells", "Action", "Move", "Forbid", "Forbids")) {
             assertFalse(vocabulary.contains("public @interface " + retired + " {"), retired);
         }
@@ -355,6 +359,243 @@ class GeneratedApiCompilationTest {
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
     }
 
+    /**
+     * A type of the machine's own package shadows the {@code java.lang} type of the same simple name inside the
+     * vocabulary generated there, so the vocabulary spells every name it does not declare itself qualified.
+     */
+    @Test
+    void compilesTheVocabularyOfAPackageThatDeclaresClassStringAndThrowable() {
+        Map<String, String> originals = Map.of(
+                "school.Class", """
+                    package school;
+                    import io.github.graphmaquina.annotation.GraphProperty;
+                    public class Class {
+                        public enum Phase { PLANNED, RUNNING }
+                        public enum Step { START }
+                        @GraphProperty
+                        private Phase phase;
+                        @GraphProperty
+                        private java.lang.String id;
+                        public Phase phase() { return phase; }
+                        public java.lang.String id() { return id; }
+                    }
+                    """,
+                "school.String", "package school; public final class String {}",
+                "school.Throwable", "package school; public final class Throwable {}",
+                "school.Classes", """
+                    package school;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Classes extends Machine<school.Class, school.Class.Phase, school.Class.Step> {}
+                    """);
+        Path root = directory.resolve("sources");
+        List<Path> files = new ArrayList<>(SourceFiles.write(root, originals));
+        GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(root),
+            SourceFiles.classpath(), directory.resolve("generated"), directory.resolve("processor-generated"),
+            directory.resolve("classes"), directory.resolve("work"), "school"));
+        files.addAll(write(directory.resolve("generated"), ApiEmitter.emit(model, "school")));
+        files.addAll(SourceFiles.write(directory.resolve("usage"), Map.of("use.ClassesUsage", """
+            package use;
+            @school.ClassesGraph.Definition(initial = school.Class.Phase.PLANNED,
+                state = school.ClassRefs.Phase.class, id = school.ClassRefs.Id.class)
+            @school.ClassesGraph.StatePolicy(state = school.Class.Phase.PLANNED, otherwise = "start it first")
+            @school.ClassesGraph.Transition(id = school.Class.Step.START, from = school.Class.Phase.PLANNED,
+                to = school.Class.Phase.RUNNING, failsOn = java.io.IOException.class)
+            @school.ClassesGraph.Reject(from = school.Class.Phase.RUNNING, transition = school.Class.Step.START,
+                reason = "already running")
+            public interface ClassesUsage {}
+            """)));
+
+        SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, directory.resolve("classes"));
+        assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+    }
+
+    /**
+     * The watch vocabulary of machines {@code Retention} and {@code Policy} is named {@code RetentionPolicy}, a
+     * simple name an import of the vocabulary's own unit would already claim; no unit generated in the machines'
+     * package imports anything.
+     */
+    @Test
+    void compilesAWatchVocabularyNamedLikeAnAnnotationTypeOfTheJdk() {
+        Map<String, String> originals = Map.of(
+                "fx.Doc", "package fx; public class Doc { public enum Status { A } public enum Step { GO } }",
+                "fx.Policy", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Policy extends Machine<Doc, Doc.Status, Doc.Step> {}
+                    """,
+                "fx.Retention", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.annotation.GraphPeers;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    @GraphPeers(Policy.class)
+                    public interface Retention extends Machine<Doc, Doc.Status, Doc.Step> {}
+                    """);
+        Path root = directory.resolve("sources");
+        List<Path> files = new ArrayList<>(SourceFiles.write(root, originals));
+        GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(root),
+            SourceFiles.classpath(), directory.resolve("generated"), directory.resolve("processor-generated"),
+            directory.resolve("classes"), directory.resolve("work"), "retention"));
+        List<GeneratedSource> emitted = ApiEmitter.emit(model, "retention");
+        assertTrue(emitted.stream().anyMatch(source -> source.qualifiedName().equals("fx.RetentionPolicy")));
+        files.addAll(write(directory.resolve("generated"), emitted));
+
+        SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, directory.resolve("classes"));
+        assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+        assertTrue(emitted.stream().filter(source -> source.qualifiedName().startsWith("fx."))
+            .noneMatch(source -> source.content().contains("\nimport ")),
+            () -> emitted.stream().map(GeneratedSource::content).toList().toString());
+    }
+
+    /**
+     * A type of the unnamed package can only be named by its simple name, which a type nested in the generated
+     * unit shadows inside that unit, whatever the generator writes. Such a name is refused at its declaration.
+     */
+    @Test
+    void refusesANameOfTheUnnamedPackageThatAGeneratedNestedTypeShadows() {
+        GenerationModel tickets = inspect("tickets", Map.of(
+                "Doc", "public class Doc {}",
+                "Timeout", "public enum Timeout { OPEN, EXPIRED }",
+                "Transition", "public enum Transition { EXPIRE }",
+                "Tickets", """
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Tickets extends Machine<Doc, Timeout, Transition> {}
+                    """));
+        CodegenException vocabulary = assertThrows(CodegenException.class, () -> ApiEmitter.emit(tickets, "tickets"));
+        assertEquals("SG603", vocabulary.code());
+        assertEquals("the vocabulary TicketsGraph cannot name the transition type Transition of Tickets: inside it,"
+                + " Transition means its own nested type TicketsGraph.Transition", vocabulary.getMessage());
+        assertEquals("tickets/Tickets.java", vocabulary.location().orElseThrow().path());
+
+        GenerationModel item = inspect("item", Map.of("Item", """
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public class Item {
+                    @GraphProperty
+                    private int item;
+                    public int getItem() { return item; }
+                }
+                """));
+        CodegenException container = assertThrows(CodegenException.class, () -> ApiEmitter.emit(item, "item"));
+        assertEquals("SG603", container.code());
+        assertEquals("the references container ItemRefs cannot name its host Item: inside it, Item means its own"
+                + " nested type ItemRefs.Item", container.getMessage());
+        assertEquals("item/Item.java", container.location().orElseThrow().path());
+        assertEquals(3L, container.location().orElseThrow().line());
+    }
+
+    /**
+     * A type the generator creates in a package is a top-level type there, in scope inside every unit generated in
+     * that package, so it obscures a package of the same name (JLS 6.4.2). A name whose first segment is one of them
+     * is refused at its declaration: an enum of package {@code DocsGraph} inside {@code fx.DocsGraph}, a peer of
+     * that package inside the watch vocabulary {@code fx.DocsPages}, and a host of package {@code DocRefs} inside its
+     * own container {@code DocRefs.DocRefs}.
+     */
+    @Test
+    void refusesANameThatATypeGeneratedInTheSamePackageObscures() {
+        GenerationModel vocabulary = inspect("vocabulary", Map.of(
+                "DocsGraph.Doc",
+                    "package DocsGraph; public class Doc { public enum Status { DRAFT } public enum Step { GO } }",
+                "fx.Docs", """
+                    package fx;
+                    import DocsGraph.Doc;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Docs extends Machine<Doc, Doc.Status, Doc.Step> {}
+                    """));
+        CodegenException machine = assertThrows(CodegenException.class,
+                () -> ApiEmitter.emit(vocabulary, "vocabulary"));
+        assertEquals("SG603", machine.code());
+        assertEquals("the vocabulary DocsGraph cannot name the state type DocsGraph.Doc.Status of fx.Docs: inside it,"
+                + " DocsGraph means the type fx.DocsGraph generated in package fx", machine.getMessage());
+        assertEquals("vocabulary/fx/Docs.java", machine.location().orElseThrow().path());
+
+        GenerationModel pair = inspect("pair", Map.of(
+                "DocsGraph.Page",
+                    "package DocsGraph; public class Page { public enum Status { OPEN } public enum Step { GO } }",
+                "DocsGraph.Pages", """
+                    package DocsGraph;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Pages extends Machine<Page, Page.Status, Page.Step> {}
+                    """,
+                "fx.Doc", "package fx; public class Doc { public enum Status { DRAFT } public enum Step { GO } }",
+                "fx.Docs", """
+                    package fx;
+                    import DocsGraph.Pages;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.annotation.GraphPeers;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    @GraphPeers(Pages.class)
+                    public interface Docs extends Machine<Doc, Doc.Status, Doc.Step> {}
+                    """));
+        CodegenException watch = assertThrows(CodegenException.class, () -> ApiEmitter.emit(pair, "pair"));
+        assertEquals("SG603", watch.code());
+        assertEquals("the watch vocabulary DocsPages cannot name the peer machine DocsGraph.Pages: inside it,"
+                + " DocsGraph means the type fx.DocsGraph generated in package fx", watch.getMessage());
+        assertEquals("pair/fx/Docs.java", watch.location().orElseThrow().path());
+
+        GenerationModel host = inspect("host", Map.of("DocRefs.Doc", """
+                package DocRefs;
+                import io.github.graphmaquina.annotation.GraphAction;
+                public class Doc {
+                    @GraphAction
+                    public void archive(Object doc) {}
+                }
+                """));
+        CodegenException container = assertThrows(CodegenException.class, () -> ApiEmitter.emit(host, "host"));
+        assertEquals("SG603", container.code());
+        assertEquals("the references container DocRefs cannot name its host DocRefs.Doc: inside it, DocRefs means"
+                + " the type DocRefs.DocRefs generated in package DocRefs", container.getMessage());
+        assertEquals("host/DocRefs/Doc.java", container.location().orElseThrow().path());
+    }
+
+    /** A name of the unnamed package that no generated type shadows still names the application's own type. */
+    @Test
+    void compilesAVocabularyOfTheUnnamedPackageWhoseStateEnumIsNamedTimeout() {
+        Map<String, String> originals = Map.of(
+                "Doc", """
+                    import io.github.graphmaquina.annotation.GraphProperty;
+                    public class Doc {
+                        @GraphProperty
+                        private Timeout status;
+                        @GraphProperty
+                        private String id;
+                        public Timeout status() { return status; }
+                        public String id() { return id; }
+                    }
+                    """,
+                "Timeout", "public enum Timeout { OPEN, EXPIRED }",
+                "Move", "public enum Move { EXPIRE }",
+                "Tickets", """
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Tickets extends Machine<Doc, Timeout, Move> {}
+                    """);
+        List<Path> files = new ArrayList<>(SourceFiles.write(directory.resolve("timeout"), originals));
+        files.addAll(write(directory.resolve("generated"), ApiEmitter.emit(inspect("timeout", originals), "timeout")));
+        files.addAll(SourceFiles.write(directory.resolve("usage"), Map.of("TicketsUsage", """
+                @TicketsGraph.Definition(initial = Timeout.OPEN, terminals = Timeout.EXPIRED,
+                    state = DocRefs.Status.class, id = DocRefs.Id.class)
+                @TicketsGraph.Transition(id = Move.EXPIRE, from = Timeout.OPEN, to = Timeout.EXPIRED,
+                    timeout = @io.github.graphmaquina.annotation.Timeout(seconds = 5))
+                public interface TicketsUsage {}
+                """)));
+
+        SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, directory.resolve("classes"));
+        assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+    }
+
     @Test
     void rejectsInvalidNormalizedMachineNamesWithTheirSourceLocation() {
         Path root = directory.resolve("sources");
@@ -435,6 +676,15 @@ class GeneratedApiCompilationTest {
         return Bootstrap.inspect(new GenerationRequest(directory, List.of(sources), SourceFiles.classpath(),
                 directory.resolve("generated"), directory.resolve("processor-generated"),
                 directory.resolve("classes"), directory.resolve("work"), "io.github.graphmaquina:test:main"));
+    }
+
+    /** Writes {@code originals} under the source root {@code root} of the test directory and inspects them. */
+    private GenerationModel inspect(String root, Map<String, String> originals) {
+        Path sources = directory.resolve(root);
+        SourceFiles.write(sources, originals);
+        return Bootstrap.inspect(new GenerationRequest(directory, List.of(sources), SourceFiles.classpath(),
+                directory.resolve("generated"), directory.resolve("processor-generated"),
+                directory.resolve("classes"), directory.resolve("work"), root));
     }
 
     private SourceFiles.Compilation compile(List<GeneratedSource> emitted, Map<String, String> usage) {

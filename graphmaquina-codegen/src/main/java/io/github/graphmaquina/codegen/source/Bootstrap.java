@@ -5,12 +5,18 @@ import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.FileSystemLoopException;
+import java.nio.file.FileVisitOption;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.stream.Stream;
 
 /**
  * Reads one generation request into the model the emitters work from, without compiling the application.
@@ -27,7 +33,11 @@ public final class Bootstrap {
     private Bootstrap() {
     }
 
-    /** The graphs and symbols {@code request} declares, resolved against its sources and its classpath. */
+    /**
+     * The graphs and symbols {@code request} declares, resolved against its sources and its classpath. A
+     * declaration the generated vocabulary or references could not name from where they are generated is
+     * refused here, before anything is emitted.
+     */
     public static GenerationModel inspect(GenerationRequest request) {
         Objects.requireNonNull(request, "request");
         List<SourceUnit> units = SourceDeclarations.parse(request.projectDirectory(), sources(request));
@@ -36,6 +46,7 @@ public final class Bootstrap {
             for (String facade : machines(index)) {
                 graphs.add(MachineHeaders.resolve(index, facade));
             }
+            MachineHeaders.requireWatchablePeers(index, graphs);
             return new GenerationModel(graphs, ExportDeclarations.collect(index));
         }
     }
@@ -45,7 +56,7 @@ public final class Bootstrap {
         List<String> facades = new ArrayList<>();
         for (TypeHeader header : index.sourceHeaders()) {
             for (TypeHeader.Marker marker : header.markers()) {
-                if (index.marks(header, marker, GENERATE_GRAPH_API)) {
+                if (index.marksInHeader(header, marker, GENERATE_GRAPH_API)) {
                     facades.add(header.canonicalName());
                     break;
                 }
@@ -57,8 +68,12 @@ public final class Bootstrap {
 
     /**
      * Expands the requested sources: a file is read as it is given, a directory is walked recursively for its
-     * {@code .java} files in sorted order. An entry that does not exist contributes nothing, so a source set
-     * whose directory the build has not created yet is not a failure.
+     * {@code .java} files in sorted order, following symbolic links as Gradle's walk of a source set does. An
+     * entry that does not exist contributes nothing, so a source set whose directory the build has not created
+     * yet is not a failure. An entry that leads back into a directory the walk is already inside is skipped, as
+     * Gradle skips it, so the walk always ends. Every other link is followed wherever it points: a link out of the
+     * directory brings in the sources it reaches, and a file reached through two paths is read through each of
+     * them, its declarations recorded under the first of those paths in sorted order.
      */
     private static List<Path> sources(GenerationRequest request) {
         List<Path> files = new ArrayList<>();
@@ -73,13 +88,31 @@ public final class Bootstrap {
     }
 
     private static List<Path> javaFiles(Path directory) {
-        try (Stream<Path> walk = Files.walk(directory)) {
-            return walk.filter(Files::isRegularFile)
-                    .filter(file -> file.getFileName().toString().endsWith(".java"))
-                    .sorted()
-                    .toList();
+        List<Path> files = new ArrayList<>();
+        try {
+            Files.walkFileTree(directory, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE,
+                    new SimpleFileVisitor<Path>() {
+
+                        @Override
+                        public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
+                            if (attributes.isRegularFile() && file.getFileName().toString().endsWith(".java")) {
+                                files.add(file);
+                            }
+                            return FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
+                        public FileVisitResult visitFileFailed(Path file, IOException failure) throws IOException {
+                            if (failure instanceof FileSystemLoopException) {
+                                return FileVisitResult.CONTINUE;
+                            }
+                            throw failure;
+                        }
+                    });
         } catch (IOException failure) {
             throw new UncheckedIOException("cannot read the original sources under " + directory, failure);
         }
+        files.sort(Comparator.<Path>naturalOrder());
+        return List.copyOf(files);
     }
 }

@@ -142,9 +142,10 @@ class WatchVocabularyTest {
         assertTrue(watch.contains("fx.DocStatus state();"), watch);
         assertTrue(watch.contains("fx.DocTransition transition();"), watch);
         assertTrue(watch.contains("fx.PageStatus[] allIn() default {};"), watch);
-        assertTrue(watch.contains("Class<? extends ConditionSymbol>[] condition() default {};"), watch);
-        assertTrue(watch.contains("@Repeatable(DocsPages.Watches.class)"), watch);
-        assertTrue(watch.contains("@Target({})"), watch);
+        assertTrue(watch.contains("java.lang.Class<? extends io.github.graphmaquina.symbol.ConditionSymbol>[] "
+                + "condition() default {};"), watch);
+        assertTrue(watch.contains("@java.lang.annotation.Repeatable(DocsPages.Watches.class)"), watch);
+        assertTrue(watch.contains("@java.lang.annotation.Target({})"), watch);
 
         SourceFiles.Compilation compilation = compile(emitted, USAGE);
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
