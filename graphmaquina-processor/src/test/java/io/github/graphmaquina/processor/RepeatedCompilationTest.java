@@ -90,6 +90,34 @@ class RepeatedCompilationTest {
         assertFalse(Files.exists(request.workDirectory().resolve("owned-outputs.pending.json")));
     }
 
+    /**
+     * A rerun of javac over the same directories, without the lifecycle that retires the previous outputs, finds
+     * the companions the previous run generated already compiled. They are this processor's own outputs, which the
+     * previous inventory lists, so they are reported as stale outputs to retire, not as hand-written types that
+     * collide with the generated names.
+     */
+    @Test
+    void reportsItsOwnPreviousCompanionsAsStaleOutputRatherThanAsCollisions() {
+        Map<String, String> sources = TypedFixtures.minimal();
+        sources.put("fx.Library", """
+                package fx;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                @StateGraphs public interface Library extends Machines { Docs docs(); }
+                """);
+        Compilation.Prepared prepared = Compilation.prepare(project, sources);
+        Compilation.Result first = Compilation.compilePrepared(prepared);
+        assertTrue(first.success(), first.describe());
+
+        Compilation.Result rerun = Compilation.recompileWithoutLifecycle(prepared);
+
+        assertFalse(rerun.success(), rerun.describe());
+        assertEquals(0, rerun.countError("SG603"), rerun.describe());
+        assertEquals(2, rerun.countError("SG602"), rerun.describe());
+        assertTrue(rerun.errors().stream().allMatch((String error) -> error.contains("previous compilation")
+                && error.contains("prepare-compile")), rerun.describe());
+    }
+
     @Test
     void refusesRetiredInventoriesAndLeavesCleanupToTheUser() throws IOException {
         Map<String, String> sources = TypedFixtures.minimal();

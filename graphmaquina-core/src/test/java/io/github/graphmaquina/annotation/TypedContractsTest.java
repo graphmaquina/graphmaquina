@@ -3,6 +3,7 @@ package io.github.graphmaquina.annotation;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
 import io.github.graphmaquina.annotation.internal.GeneratedSymbol;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.GraphCompilation;
@@ -85,6 +86,15 @@ class TypedContractsTest {
         assertArrayEquals(new ElementType[] {ElementType.TYPE},
                 GraphCompilation.class.getAnnotation(Target.class).value());
         assertEquals(String.class, GraphCompilation.class.getDeclaredMethod("value").getReturnType());
+    }
+
+    /** The marker of a processor-generated companion: a bare type marker kept in the class file only. */
+    @Test
+    void generatedCompanionIsABareClassFileMarkerOfTypes() {
+        assertArrayEquals(new ElementType[] {ElementType.TYPE},
+                GeneratedCompanion.class.getAnnotation(Target.class).value());
+        assertEquals(RetentionPolicy.CLASS, GeneratedCompanion.class.getAnnotation(Retention.class).value());
+        assertEquals(0, GeneratedCompanion.class.getDeclaredMethods().length);
     }
 
     @Test

@@ -108,6 +108,45 @@ public final class ManifestProcessors {
         }
     }
 
+    /**
+     * Supports {@code javax.annotation.processing.Generated} alone, as the processors of other tools do, and
+     * records whether javac ever offered it: a processor ordered before this one that claims it hides it.
+     */
+    public static final class GeneratedProbe extends AbstractProcessor {
+
+        static final String GENERATED = "javax.annotation.processing.Generated";
+
+        private static final Set<String> SEEN = new LinkedHashSet<>();
+
+        /** Forgets what a previous compilation recorded. */
+        static void reset() {
+            SEEN.clear();
+        }
+
+        /** The annotation types this processor was actually handed. */
+        static Set<String> seen() {
+            return Set.copyOf(SEEN);
+        }
+
+        @Override
+        public Set<String> getSupportedAnnotationTypes() {
+            return Set.of(GENERATED);
+        }
+
+        @Override
+        public SourceVersion getSupportedSourceVersion() {
+            return SourceVersion.latestSupported();
+        }
+
+        @Override
+        public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
+            for (TypeElement annotation : annotations) {
+                SEEN.add(annotation.getQualifiedName().toString());
+            }
+            return true;
+        }
+    }
+
     /** Claims an annotation StateGraph does not own, so the test can tell the two claims apart. */
     public static final class Other extends AbstractProcessor {
 

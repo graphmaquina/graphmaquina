@@ -43,6 +43,28 @@ class SetGenerationTest {
                 sync.generated("fx.LibraryRuntime"));
     }
 
+    /**
+     * A set may declare a method of {@code Machines}, {@code AutoCloseable} or {@code Object} again: such a
+     * redeclaration is no accessor, since the companion writes or inherits that method already. An overload of one
+     * of them is no redeclaration, and stays refused.
+     */
+    @Test
+    void redeclarationsOfWhatTheCompanionImplementsAreNoAccessors() {
+        Compilation.Result redeclared = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY.replace(
+                        "    Pages pages();\n", "    Pages pages();\n    @Override void close();\n"
+                                + "    @Override String toString();\n    boolean equals(Object other);\n    int hashCode();\n")));
+        assertTrue(redeclared.success(), redeclared.describe());
+        assertTrue(redeclared.generated("fx.LibraryRuntime").contains("public void close()"),
+                redeclared.generated("fx.LibraryRuntime"));
+
+        Compilation.Result overload = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY.replace(
+                        "    Pages pages();\n", "    Pages pages();\n    void close(boolean now);\n")));
+        assertEquals(1, overload.countError("SG510"), overload.describe());
+        assertTrue(overload.errors().get(0).contains("close must be a no-argument accessor"), overload.describe());
+    }
+
     @Test
     void builtSetRunsCascadesWatchesHooksAndListener() throws Exception {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
@@ -94,6 +116,72 @@ class SetGenerationTest {
         InvocationTargetException error = assertThrows(InvocationTargetException.class,
                 () -> override.invoke(builder, result.load("fx.Pages"), Duration.ofSeconds(1)));
         assertInstanceOf(IllegalArgumentException.class, error.getCause());
+    }
+
+    /**
+     * The generated Builder mirrors MachineRegistry.Builder and StateMachines.Builder: a setting is refused when
+     * it is given, a second listener is refused rather than replacing the first, and the builder is single-use,
+     * so a second build() and any setting after build() fail loudly.
+     */
+    @Test
+    void theGeneratedBuilderRefusesWhatTheBuildersItMirrorsRefuse() throws Exception {
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        assertTrue(result.success(), result.describe());
+        Class<?> docActions = result.load("fx.DocActions");
+        Object builder = result.load("fx.LibraryRuntime").getMethod("builder", Duration.class, docActions)
+                .invoke(null, Duration.ofSeconds(5), docActions.getConstructor().newInstance());
+        Method listener = builder.getClass().getMethod("listener", TransitionListener.class);
+        Method depth = builder.getClass().getMethod("maxCascadeDepth", int.class);
+        Method chain = builder.getClass().getMethod("maxWatchChain", int.class);
+        Method build = builder.getClass().getMethod("build");
+        TransitionListener first = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> { };
+        TransitionListener second = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> { };
+
+        listener.invoke(builder, first);
+        assertInstanceOf(IllegalStateException.class,
+                assertThrows(InvocationTargetException.class, () -> listener.invoke(builder, second)).getCause());
+        assertInstanceOf(IllegalArgumentException.class,
+                assertThrows(InvocationTargetException.class, () -> depth.invoke(builder, 0)).getCause());
+        assertInstanceOf(IllegalArgumentException.class,
+                assertThrows(InvocationTargetException.class, () -> chain.invoke(builder, -3)).getCause());
+
+        try (Machines library = (Machines) build.invoke(builder)) {
+            assertInstanceOf(Machine.class, library.getClass().getMethod("docs").invoke(library));
+            assertInstanceOf(IllegalStateException.class,
+                    assertThrows(InvocationTargetException.class, () -> build.invoke(builder)).getCause());
+            assertInstanceOf(IllegalStateException.class,
+                    assertThrows(InvocationTargetException.class, () -> depth.invoke(builder, 3)).getCause());
+        }
+    }
+
+    /**
+     * The set reads and writes the state with the accessors the property selected, and only with those: a
+     * static overload of the same name, which a method reference would also consider, changes nothing.
+     */
+    @Test
+    void staticOverloadsOfTheStateAndIdentityAccessorsDoNotMakeTheSetAmbiguous() throws Exception {
+        Map<String, String> sources = Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY, Fixtures.LIBRARY);
+        sources.put("fx.Page", sources.get("fx.Page").replace("    public PageStatus status() { return status; }\n",
+                "    public PageStatus status() { return status; }\n"
+                        + "    public static PageStatus status(Page page) { return page.status; }\n"
+                        + "    public static void status(Page page, PageStatus value) { page.status = value; }\n"
+                        + "    public static String id(Page page) { return page.id; }\n"));
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertTrue(result.success(), result.describe());
+        Class<?> docActions = result.load("fx.DocActions");
+        Object builder = result.load("fx.LibraryRuntime").getMethod("builder", Duration.class, docActions)
+                .invoke(null, Duration.ofSeconds(5), docActions.getConstructor().newInstance());
+        try (Machines library = (Machines) builder.getClass().getMethod("build").invoke(builder)) {
+            Object pages = library.getClass().getMethod("pages").invoke(library);
+            Class<?> pageClass = result.load("fx.Page");
+            Object page = pageClass.getConstructor(String.class, result.load("fx.Doc")).newInstance("p1", null);
+            assertInstanceOf(Outcome.Applied.class, pages.getClass().getMethod("finish", pageClass).invoke(pages, page));
+            assertEquals("DONE", pageClass.getMethod("status").invoke(page).toString());
+        }
     }
 
     /** A package holding Status, Thing and a minimal Things machine over them: three simple names shared with every twin. */

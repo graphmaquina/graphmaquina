@@ -44,7 +44,36 @@ class MachineGenerationTest {
         assertTrue(source.contains(".timeout(Duration.parse(\"PT2S\"))"), source);
         assertTrue(source.contains(".endTransition()"), source);
         assertTrue(source.contains("return stateMachine.execute(doc, DocTransition.SUBMIT);"), source);
-        assertTrue(source.contains("@Generated(\"io.github.graphmaquina.processor.StateGraphProcessor\")"), source);
+        assertTrue(source.contains("import io.github.graphmaquina.annotation.internal.GeneratedCompanion;"), source);
+        assertTrue(source.contains("\n@GeneratedCompanion\n"), source);
+        assertFalse(source.contains("javax.annotation.processing.Generated"), source);
+    }
+
+    /**
+     * Deprecating a bound member is an ordinary step of a migration. The companions call such members where
+     * the author cannot suppress anything, and the build compiles them with {@code -Xlint:all -Werror}, so
+     * neither a {@code [deprecation]} nor a {@code [removal]} warning may come out of them.
+     */
+    @Test
+    void deprecatedMembersTheCompanionsCallKeepAStrictBuildGreen() {
+        Map<String, String> sources = Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY, Fixtures.LIBRARY);
+        sources.put("fx.DocActions", sources.get("fx.DocActions")
+                .replace("@GraphAction public ActionOutcome publish(",
+                        "@Deprecated(since = \"2\", forRemoval = true) @GraphAction public ActionOutcome publish(")
+                .replace("@GraphGuard public GuardResult approved(", "@Deprecated @GraphGuard public GuardResult approved("));
+        sources.put("fx.Doc", sources.get("fx.Doc")
+                .replace("public void setStatus(", "@Deprecated public void setStatus("));
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertTrue(result.success(), result.describe());
+        assertTrue(result.generated("fx.DocsRuntime")
+                .contains("@SuppressWarnings({\"deprecation\", \"removal\"})\npublic final class DocsRuntime"),
+                result.generated("fx.DocsRuntime"));
+        assertTrue(result.generated("fx.LibraryRuntime")
+                .contains("@SuppressWarnings({\"deprecation\", \"removal\"})\npublic final class LibraryRuntime"),
+                result.generated("fx.LibraryRuntime"));
     }
 
     /**

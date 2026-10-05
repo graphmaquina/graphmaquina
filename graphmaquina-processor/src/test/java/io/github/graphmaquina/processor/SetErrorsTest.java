@@ -58,6 +58,88 @@ class SetErrorsTest {
         assertTrue(library(Fixtures.LIBRARY.replace("    Docs docs();\n    Pages pages();\n", "")).hasError("SG510"));
     }
 
+    /**
+     * A registry refuses two machines that write the same entity and state enum, whether their transition
+     * catalogues differ or not, so a set holding two of them could never be built: it is refused where its
+     * second accessor declares the second machine.
+     */
+    @Test
+    void sg510TwoMachinesWritingTheSameEntityAndStateEnum() {
+        Map<String, String> catalogues = Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY);
+        catalogues.put("fx.ReviewTransition", "package fx;\npublic enum ReviewTransition { SEND, ACCEPT, SHELVE }\n");
+        catalogues.put("fx.Reviews", """
+                package fx;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import static fx.DocStatus.*;
+                import static fx.ReviewTransition.*;
+                @GenerateGraphApi
+                @ReviewsGraph.Definition(initial = DRAFT, terminals = ARCHIVED, state = DocRefs.Status.class, id = DocRefs.Id.class)
+                @ReviewsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is sent")
+                @ReviewsGraph.StatePolicy(state = REVIEW, otherwise = "a review is accepted")
+                @ReviewsGraph.StatePolicy(state = PUBLISHED, otherwise = "a published doc is shelved")
+                public interface Reviews extends Machine<Doc, DocStatus, ReviewTransition> {
+                    @ReviewsGraph.Transition(id = SEND, from = DRAFT, to = REVIEW)
+                    Outcome<Doc, DocStatus, ReviewTransition> send(Doc doc);
+                    @ReviewsGraph.Transition(id = ACCEPT, from = REVIEW, to = PUBLISHED)
+                    Outcome<Doc, DocStatus, ReviewTransition> accept(Doc doc);
+                    @ReviewsGraph.Transition(id = SHELVE, from = PUBLISHED, to = ARCHIVED)
+                    Outcome<Doc, DocStatus, ReviewTransition> shelve(Doc doc);
+                }
+                """);
+        catalogues.put("fx.Desk", """
+                package fx;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                @StateGraphs
+                public interface Desk extends Machines {
+                    Docs docs();
+                    Reviews reviews();
+                }
+                """);
+        Compilation.Result different = Compilation.compileTyped(catalogues);
+        assertEquals(1, different.countError("SG510"), different.describe());
+        assertTrue(different.errors().get(0).contains("reviews") && different.errors().get(0).contains("docs"),
+                different.describe());
+        assertFalse(different.hasGenerated("fx.DeskRuntime"), different.describe());
+
+        Map<String, String> same = Fixtures.withDocs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY);
+        same.put("fx.Copies", Fixtures.docs(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY)
+                .replace("DocsGraph", "CopiesGraph").replace("interface Docs ", "interface Copies "));
+        same.put("fx.Desk", catalogues.get("fx.Desk").replace("Reviews reviews();", "Copies copies();"));
+        Compilation.Result identical = Compilation.compileTyped(same);
+        assertEquals(1, identical.countError("SG510"), identical.describe());
+        assertFalse(identical.hasGenerated("fx.DeskRuntime"), identical.describe());
+    }
+
+    /**
+     * An accessor is a member of the set companion too. One named like a field the companion declares only
+     * renames that private field, while one whose signature is the companion's own static {@code builder()},
+     * which takes nothing for a synchronous set without dependencies, cannot be declared next to it.
+     */
+    @Test
+    void sg510AnAccessorCollidingWithTheCompanionsBuilderAndRenamedFieldsOtherwise() {
+        Compilation.Result builder = synchronousLibrary("Pages builder();");
+        assertFalse(builder.success(), builder.describe());
+        assertEquals(1, builder.countError("SG510"), builder.describe());
+        assertTrue(builder.errors().get(0).contains("builder"), builder.describe());
+        assertFalse(builder.hasGenerated("fx.LibraryRuntime"), builder.describe());
+
+        Compilation.Result registry = synchronousLibrary("Pages machineRegistry();");
+        assertTrue(registry.success(), registry.describe());
+
+        Compilation.Result overload = library(Fixtures.LIBRARY.replace("Pages pages();", "Pages builder();"));
+        assertTrue(overload.success(), overload.describe());
+    }
+
+    /** A set holding only Pages, a synchronous machine without dependencies, under {@code accessor}. */
+    private static Compilation.Result synchronousLibrary(String accessor) {
+        Map<String, String> sources = Fixtures.withPages(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY);
+        sources.put("fx.Library", Fixtures.LIBRARY.replace("    Docs docs();\n    Pages pages();\n", "    " + accessor + "\n"));
+        return Compilation.compileTyped(sources);
+    }
+
     @Test
     void aMachineWithErrorsDoesNotAddSetErrors() {
         Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(

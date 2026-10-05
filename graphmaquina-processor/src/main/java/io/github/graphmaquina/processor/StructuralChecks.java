@@ -38,6 +38,9 @@ final class StructuralChecks {
 
     static final String MACHINE = "io.github.graphmaquina.api.Machine";
 
+    /** The types whose methods a machine's companion implements whatever the facade declares. */
+    private static final List<String> BUILT_IN = List.of(MACHINE, "java.lang.Object");
+
     private final Signatures signatures;
     private final Diagnostics diagnostics;
 
@@ -93,6 +96,15 @@ final class StructuralChecks {
         return Optional.empty();
     }
 
+    /**
+     * Whether the entity of {@code types} is a parameterized type. Generated code names the entity by its class,
+     * as a class literal and as the host of its property symbols, whose class literals are raw, so it could only
+     * ever compare and name it raw; such a machine is refused where it is declared.
+     */
+    static boolean hasParameterizedEntity(MachineTypes types) {
+        return !types.entity().getTypeArguments().isEmpty();
+    }
+
     /** SG502 unless {@code type} is top-level: the generated companion lives next to it in its package. */
     boolean checkTopLevel(TypeElement type, DiagnosticAnchor anchor) {
         if (type.getNestingKind() == NestingKind.TOP_LEVEL) {
@@ -101,6 +113,61 @@ final class StructuralChecks {
         anchor.report(diagnostics, "SG502", type.getSimpleName() + " must be a top-level interface: the generated companion"
                 + " lives next to it in the package");
         return false;
+    }
+
+    /**
+     * The method of {@code Machine}, or the public method of {@code Object}, that {@code method}, which
+     * {@code facade} declares itself, overrides as a member of {@code facade}, if there is one. The companion writes
+     * or inherits every one of them, so a redeclaration of one is no operation, and an operation cannot be one.
+     */
+    Optional<ExecutableElement> overriddenBuiltIn(ExecutableElement method, TypeElement facade) {
+        return signatures.overridden(method, facade, BUILT_IN);
+    }
+
+    /**
+     * SG504 for every abstract method {@code facade} inherits from a super-interface other than {@code Machine},
+     * except one that the method the companion writes or inherits for a method of {@code Machine} or a public
+     * method of {@code Object} already implements, as {@link Signatures#implemented} decides: operations are read
+     * from the facade's own declarations, so the companion would not implement any other inherited method. A
+     * redeclaration of one of those methods whose result the companion's method cannot return is told apart, since
+     * declaring it on the facade would be refused as well.
+     */
+    void checkInheritedOperations(TypeElement facade) {
+        for (ExecutableElement method : signatures.inheritedAbstract(facade, BUILT_IN)) {
+            String from = ((TypeElement) method.getEnclosingElement()).getQualifiedName().toString();
+            Optional<ExecutableElement> builtIn = signatures.redeclared(method, facade, BUILT_IN);
+            if (builtIn.isPresent()) {
+                String owner = ((TypeElement) builtIn.get().getEnclosingElement()).getSimpleName() + "."
+                        + builtIn.get().getSimpleName();
+                diagnostics.error("SG504", facade.getSimpleName() + " inherits " + method.getSimpleName() + " from "
+                        + from + ", which redeclares " + owner + " with a result the generated companion's "
+                        + method.getSimpleName() + " cannot return: declare it in " + from + " with the result " + owner
+                        + " has, or leave the redeclaration out", facade);
+                continue;
+            }
+            diagnostics.error("SG504", facade.getSimpleName() + " inherits the abstract method " + method.getSimpleName()
+                    + " from " + from + ", which the generated companion would not implement: declare every operation on "
+                    + facade.getSimpleName() + " itself", facade);
+        }
+    }
+
+    /**
+     * SG504 when {@code method}, which {@code facade} declares and which overrides {@code builtIn}, carries
+     * vocabulary, since it would be an operation the companion cannot declare beside the implementation of
+     * {@code builtIn} it already has; and SG504 when it declares a result that the companion's {@code builtIn}
+     * cannot stand for, such as a subtype of the result {@code Machine} declares, since the companion would then
+     * not implement it at all.
+     */
+    void checkNotAnOperation(ExecutableElement method, ExecutableElement builtIn, TypeElement facade, boolean declared) {
+        String owner = ((TypeElement) builtIn.getEnclosingElement()).getSimpleName() + "." + builtIn.getSimpleName();
+        if (declared) {
+            diagnostics.error("SG504", method.getSimpleName() + " overrides " + owner
+                    + ", which the generated companion implements already: give the operation another name", method);
+        } else if (!signatures.implementedBy(method, builtIn, facade)) {
+            diagnostics.error("SG504", method.getSimpleName() + " redeclares " + owner + " with a result the generated"
+                    + " companion's " + builtIn.getSimpleName() + " cannot return: declare it with the result "
+                    + owner + " has, or leave the redeclaration out", method);
+        }
     }
 
     /** Whether {@code method} must declare an edge: a default, static or private declaration is not an operation. */
@@ -150,12 +217,20 @@ final class StructuralChecks {
         }
     }
 
-    /** SG302 for every exception failsOn reserves, reported at the value that names it. */
+    /**
+     * SG302 for every exception failsOn reserves, reported at the value that names it: the catch-alls, an
+     * {@code Error} and a {@code CancellationException}, which the runtime never treats as a domain failure, the
+     * library's own exceptions, and exactly {@code CompletionException} and {@code ExecutionException}, which
+     * the runtime unwraps before it matches, so only the type of their cause can ever match.
+     */
     void checkFailsOn(List<TypeMirror> failsOn, List<AnnotationValue> values, Element element, AnnotationMirror mirror) {
         for (int i = 0; i < failsOn.size(); i++) {
             if (isForbiddenFailsOn(failsOn.get(i))) {
-                diagnostics.error("SG302", "failsOn does not allow " + failsOn.get(i) + "; only exceptions foreign to the library, and never"
-                        + " Throwable, Exception, RuntimeException or an Error", element, mirror, values.get(i));
+                diagnostics.error("SG302", "failsOn does not allow " + failsOn.get(i) + "; only exceptions foreign to the"
+                        + " library, and never Throwable, Exception, RuntimeException, an Error or a"
+                        + " CancellationException, which are never domain failures, nor CompletionException or"
+                        + " ExecutionException, which are unwrapped before matching: declare the type of their cause",
+                        element, mirror, values.get(i));
             }
         }
     }
@@ -182,9 +257,17 @@ final class StructuralChecks {
         }
     }
 
+    /**
+     * Whether failsOn may not name {@code type}. A cancellation is refused with all its subtypes, the two wrappers
+     * only as themselves: a subtype of either is matched as it is thrown. {@code IllegalStateException}, the
+     * supertype of {@code CancellationException}, stays allowed.
+     */
     private boolean isForbiddenFailsOn(TypeMirror type) {
         return signatures.erasureIs(type, "java.lang.Throwable") || signatures.erasureIs(type, "java.lang.Exception")
                 || signatures.erasureIs(type, "java.lang.RuntimeException") || signatures.subtype(type, "java.lang.Error")
-                || signatures.subtype(type, "io.github.graphmaquina.error.StateMachineException");
+                || signatures.subtype(type, "io.github.graphmaquina.error.StateMachineException")
+                || signatures.subtype(type, "java.util.concurrent.CancellationException")
+                || signatures.erasureIs(type, "java.util.concurrent.CompletionException")
+                || signatures.erasureIs(type, "java.util.concurrent.ExecutionException");
     }
 }

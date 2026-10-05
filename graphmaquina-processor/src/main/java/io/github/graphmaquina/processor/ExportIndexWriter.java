@@ -11,6 +11,7 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import javax.annotation.processing.ProcessingEnvironment;
@@ -34,13 +35,15 @@ import javax.tools.StandardLocation;
  *
  * <p>An index is published even when the compilation declares no machine at all: the carrier of the
  * compilation is still there, and a dependent that finds no index cannot tell an empty producer from one whose
- * publication was lost. A failure to write either file is reported where it happens; the writer runs after
- * everything else, so nothing reads a count of errors afterwards.</p>
+ * publication was lost. A failure to write either file is reported where it happens, and so is an index that
+ * would name a declaration this compilation never verified, which is published not at all; the writer runs
+ * after everything else, so nothing reads a count of errors afterwards.</p>
  */
 final class ExportIndexWriter {
 
     private static final String PENDING = "META-INF/graphmaquina/pending-exports.json";
     private static final String FAILED = "SG599";
+    private static final String UNPROCESSED = "SG602";
 
     private final ProcessingEnvironment environment;
     private final Diagnostics diagnostics;
@@ -53,28 +56,38 @@ final class ExportIndexWriter {
     /**
      * Publishes the local index of {@code manifest} and the inventory of {@code generatedQualifiedNames}.
      * {@code verifiedLocalTypes} are the local declarations this compilation checked; nothing is written when
-     * the index would name one that was not among them, since the index states what this compilation verified.
+     * the index would name one that was not among them, since the index states what this compilation verified,
+     * and that is reported as {@code SG602}: such a declaration was never processed, which is what happens to a
+     * source javac compiles implicitly, from the source path, instead of being handed it.
      */
     void publish(CompileManifest manifest, Set<String> verifiedLocalTypes, Set<String> generatedQualifiedNames) {
-        if (!verified(manifest.local(), verifiedLocalTypes) || !writeIndex(manifest.local())) {
+        Set<String> unverified = unverified(manifest.local(), verifiedLocalTypes);
+        if (!unverified.isEmpty()) {
+            diagnostics.error(UNPROCESSED, "the index of this compilation names " + String.join(", ", unverified)
+                    + ", which this compilation never processed: javac does not process a source it compiles"
+                    + " implicitly, from the source path, so pass every source of the compilation to javac");
+            return;
+        }
+        if (!writeIndex(manifest.local())) {
             return;
         }
         writeInventory(manifest.processorInventory(), generatedQualifiedNames);
     }
 
-    /** Whether every machine and every symbol {@code index} names was verified by this compilation. */
-    private static boolean verified(ExportIndex index, Set<String> verifiedLocalTypes) {
+    /** Every machine and every symbol {@code index} names that this compilation did not verify, in index order. */
+    private static Set<String> unverified(ExportIndex index, Set<String> verifiedLocalTypes) {
+        Set<String> unverified = new LinkedHashSet<>();
         for (GraphDescriptor graph : index.model().graphs()) {
             if (!verifiedLocalTypes.contains(graph.facade())) {
-                return false;
+                unverified.add(graph.facade());
             }
         }
         for (SymbolDescriptor symbol : index.model().symbols()) {
             if (!verifiedLocalTypes.contains(symbol.qualifiedName())) {
-                return false;
+                unverified.add(symbol.qualifiedName());
             }
         }
-        return true;
+        return unverified;
     }
 
     /** The local index, encoded by the codec and copied into the resource the Filer creates for it. */

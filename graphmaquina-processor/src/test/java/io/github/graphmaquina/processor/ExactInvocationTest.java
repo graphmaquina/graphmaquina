@@ -45,6 +45,32 @@ class ExactInvocationTest {
         assertEquals("marked", publishThroughTheWatch(sources));
     }
 
+    /**
+     * The type that pins the marked overload is written as source: a type annotation on it, whose value names an
+     * enum constant, is written with that constant qualified, and not as javac prints the type.
+     */
+    @Test
+    void pinsTheMarkedOverloadWithATypeWhoseAnnotationsNameEnumConstants() throws Exception {
+        Map<String, String> sources = TypedFixtures.watching();
+        sources.put("fx.Tag", """
+                package fx;
+                import java.lang.annotation.ElementType;
+                import java.lang.annotation.Retention;
+                import java.lang.annotation.RetentionPolicy;
+                import java.lang.annotation.Target;
+                @Target(ElementType.TYPE_USE)
+                @Retention(RetentionPolicy.RUNTIME)
+                public @interface Tag {
+                    String value() default "";
+                    java.util.concurrent.TimeUnit unit() default java.util.concurrent.TimeUnit.SECONDS;
+                }
+                """);
+        sources.put("fx.DocActions", sources.get("fx.DocActions").replace("Iterable<? extends Page> pages",
+                "@Tag(value = \"packed\", unit = java.util.concurrent.TimeUnit.DAYS) Iterable<? extends @Tag(\"page\") Page> pages"));
+
+        assertEquals("marked", publishThroughTheWatch(sources));
+    }
+
     @Test
     void runsTheMarkedOverloadInheritedFromABaseHost() throws Exception {
         assertEquals("marked", publishThroughTheWatch(inheritedHost()));

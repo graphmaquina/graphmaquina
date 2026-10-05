@@ -10,6 +10,7 @@ import io.github.graphmaquina.annotation.GraphPeers;
 import io.github.graphmaquina.annotation.GraphProperty;
 import io.github.graphmaquina.annotation.StateGraphs;
 import io.github.graphmaquina.annotation.Timeout;
+import io.github.graphmaquina.annotation.internal.GeneratedCompanion;
 import io.github.graphmaquina.annotation.internal.GeneratedSymbol;
 import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.GraphCompilation;
@@ -28,7 +29,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
-import javax.annotation.processing.Generated;
 import javax.annotation.processing.ProcessingEnvironment;
 
 /**
@@ -47,10 +47,12 @@ import javax.annotation.processing.ProcessingEnvironment;
  * round. {@code init} has no round to anchor a diagnostic at, which is why the failure is recorded here
  * instead of being reported here.</p>
  *
- * <p>A compilation that names no manifest at all is refused the same way: a graph is declared with the
- * vocabulary a generation emitted, so a build that ran no generation has nothing to declare one with. The
- * fixed set is still claimed, so the declarations that were written are met with {@code SG602} and not with an
- * annotation nobody owns.</p>
+ * <p>A compilation that names no manifest at all is refused the same way once it carries one of these
+ * declarations: a graph is declared with the vocabulary a generation emitted, so a build that ran no
+ * generation has nothing to declare one with. The fixed set is still claimed, so the declarations that were
+ * written are met with {@code SG602} and not with an annotation nobody owns. A compilation that carries none of
+ * them, such as one whose only annotation is the {@code @Generated} of another tool, never reaches the
+ * processor, and is neither refused nor claimed.</p>
  */
 final class ManifestRegistry {
 
@@ -137,17 +139,19 @@ final class ManifestRegistry {
 
     /**
      * The annotations this processor owns whatever a compilation generates: every stable marker, the internal
-     * metadata the generator writes, the retired matrix vocabulary it only claims by name to report
-     * {@code SG609} at, and the {@code @Generated} it writes itself, so it coexists with other processors
-     * instead of claiming a package. The retired names are strings because those types no longer exist here;
-     * only a compilation that still resolves one of them from an older release ever matches.
+     * metadata the generator writes, the {@code @GeneratedCompanion} the processor marks its own companions
+     * with, and the retired matrix vocabulary it only claims by name to report {@code SG609} at, so it coexists
+     * with other processors instead of claiming a package. Nothing here belongs to another tool: the JDK's
+     * {@code @Generated}, which every source generator writes, is left to the processors that read it. The
+     * retired names are strings because those types no longer exist here; only a compilation that still
+     * resolves one of them from an older release ever matches.
      */
     private static Set<String> fixed() {
         List<Class<? extends Annotation>> types = List.of(
             GenerateGraphApi.class, GraphPeers.class, GraphAction.class, GraphGuard.class, GraphHook.class,
             GraphCondition.class, GraphProperty.class, GraphBindings.class, Timeout.class,
-            GeneratedVocabulary.class, GeneratedSymbol.class, GraphCompilation.class, StateGraphs.class,
-            Generated.class);
+            GeneratedVocabulary.class, GeneratedSymbol.class, GraphCompilation.class, GeneratedCompanion.class,
+            StateGraphs.class);
         Set<String> names = new TreeSet<>(LegacyDeclarations.retiredAnnotationTypes());
         for (Class<? extends Annotation> type : types) {
             names.add(type.getCanonicalName());

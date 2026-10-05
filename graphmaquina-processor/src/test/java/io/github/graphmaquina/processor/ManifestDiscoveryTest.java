@@ -43,6 +43,7 @@ class ManifestDiscoveryTest {
             "io.github.graphmaquina.annotation.internal.GeneratedVocabulary",
             "io.github.graphmaquina.annotation.internal.GeneratedSymbol",
             "io.github.graphmaquina.annotation.internal.GraphCompilation",
+            "io.github.graphmaquina.annotation.internal.GeneratedCompanion",
             "io.github.graphmaquina.annotation.StateGraphs",
             "io.github.graphmaquina.annotation.StateGraph",
             "io.github.graphmaquina.annotation.Row",
@@ -55,8 +56,15 @@ class ManifestDiscoveryTest {
             "io.github.graphmaquina.annotation.Forbids",
             "io.github.graphmaquina.annotation.Watch",
             "io.github.graphmaquina.annotation.Watches",
-            "io.github.graphmaquina.annotation.When",
-            "javax.annotation.processing.Generated");
+            "io.github.graphmaquina.annotation.When");
+
+    /** What other source generators mark their output with, which this processor neither claims nor reads. */
+    private static final String FOREIGN_GENERATED = """
+            package thirdparty;
+            import javax.annotation.processing.Generated;
+            @Generated("org.mapstruct.ap.MappingProcessor")
+            public class MapperImpl { }
+            """;
 
     /** A machine marked for generation whose vocabulary no generation emitted, so nothing can read it. */
     private static final Map<String, String> UNGENERATED = Map.of("fx.Docs", """
@@ -80,9 +88,38 @@ class ManifestDiscoveryTest {
         Set<String> claimed = ManifestProcessors.Recording.claimed();
         assertTrue(claimed.containsAll(List.of("fx.DocsGraph.Transition", "fx.DocsGraph.Transitions",
                 "io.github.graphmaquina.annotation.internal.GraphCompilation",
-                "javax.annotation.processing.Generated")), claimed::toString);
+                "io.github.graphmaquina.annotation.internal.GeneratedCompanion")), claimed::toString);
+        assertFalse(claimed.contains(ManifestProcessors.GeneratedProbe.GENERATED), claimed::toString);
         assertFalse(claimed.stream().anyMatch(name -> name.contains("*")), claimed::toString);
         assertEquals(union(FIXED, GENERATED), new TreeSet<>(claimed));
+    }
+
+    /**
+     * A foreign {@code @Generated} is not a declaration of this library: a compilation that carries nothing
+     * else does not reach the processor at all, so it is not refused for the manifest it has no use for.
+     */
+    @Test
+    void ignoresACompilationWhoseOnlyAnnotationIsAForeignGenerated() {
+        Compilation.Result result = Compilation.compileRaw(Map.of("thirdparty.MapperImpl", FOREIGN_GENERATED),
+                List.of("-Xlint:-processing"));
+
+        assertEquals(0, result.countError("SG602"), result.describe());
+        assertTrue(result.success(), result.describe());
+    }
+
+    /** The processors ordered after this one still receive the {@code @Generated} of other tools. */
+    @Test
+    void leavesAForeignGeneratedToTheProcessorsAfterIt() {
+        Map<String, String> sources = new LinkedHashMap<>(TypedFixtures.minimal());
+        sources.put("thirdparty.MapperImpl", FOREIGN_GENERATED);
+        ManifestProcessors.GeneratedProbe.reset();
+
+        Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(sources), processors(
+                StateGraphProcessor.class, ManifestProcessors.GeneratedProbe.class));
+
+        assertTrue(result.success(), result.describe());
+        assertTrue(result.hasGenerated("fx.DocsRuntime"), result.describe());
+        assertEquals(Set.of(ManifestProcessors.GeneratedProbe.GENERATED), ManifestProcessors.GeneratedProbe.seen());
     }
 
     @Test

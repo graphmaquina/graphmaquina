@@ -37,6 +37,24 @@ public final class BoundInvocation {
         return receiver + '.' + binding.methodName() + '(' + String.join(", ", written) + ')';
     }
 
+    /**
+     * The parameter types {@link #emit} writes for {@code binding} to keep it selected, one per argument it
+     * pins: none unless another overload competes, and none for an argument that already has its type.
+     */
+    public List<TypeMirror> casts(Binding binding) {
+        List<TypeMirror> casts = new ArrayList<>();
+        if (!competes(binding)) {
+            return casts;
+        }
+        List<? extends TypeMirror> parameters = binding.effectiveType().getParameterTypes();
+        for (int at = 0; at < binding.arguments().size(); at++) {
+            if (!types.isSameType(binding.arguments().get(at), parameters.get(at))) {
+                casts.add(parameters.get(at));
+            }
+        }
+        return casts;
+    }
+
     /** Whether another overload the host declares could take these arguments too. */
     private boolean competes(Binding binding) {
         if (binding.arguments().isEmpty()) {
@@ -71,7 +89,11 @@ public final class BoundInvocation {
         return true;
     }
 
-    /** The arguments, each one written with the parameter type it must have for this overload to win. */
+    /**
+     * The arguments, each one written with the parameter type it must have for this overload to win. The type is
+     * rendered by {@link TypeSource} as Java source, so its type annotations name their enum constants and their
+     * types fully qualified, and never as javac prints a type.
+     */
     private List<String> pinned(Binding binding, List<String> arguments) {
         List<? extends TypeMirror> parameters = binding.effectiveType().getParameterTypes();
         List<String> written = new ArrayList<>();
@@ -79,7 +101,7 @@ public final class BoundInvocation {
             TypeMirror parameter = parameters.get(at);
             written.add(types.isSameType(binding.arguments().get(at), parameter)
                     ? arguments.get(at)
-                    : "(" + parameter + ") " + arguments.get(at));
+                    : "(" + TypeSource.render(parameter) + ") " + arguments.get(at));
         }
         return written;
     }

@@ -45,6 +45,30 @@ class PublishedGraphsTest {
     @TempDir
     Path directory;
 
+    /**
+     * A facade javac compiles implicitly, from the source path, is never processed, so the index this
+     * compilation would publish names a machine it never verified. That is reported where it is detected, rather
+     * than by publishing nothing and leaving the build's completion step to fail without saying why.
+     */
+    @Test
+    void reportsAMachineTheIndexNamesButThisCompilationNeverProcessed() {
+        Map<String, String> sources = new LinkedHashMap<>(TypedFixtures.minimal());
+        sources.put("fx.Client", """
+                package fx;
+                public final class Client {
+                    public static String describe(Docs docs) { return String.valueOf(docs); }
+                }
+                """);
+        Compilation.Prepared prepared = Compilation.prepare(sources);
+
+        Compilation.Result result = Compilation.compileWithImplicitSources(prepared, List.of("fx.Client"));
+
+        assertEquals(1, result.countError("SG602"), result.describe());
+        assertTrue(result.errors().get(0).contains("fx.Docs") && result.errors().get(0).contains("implicitly"),
+                result.describe());
+        assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result.describe());
+    }
+
     @Test
     void publishesTheLocalIndexAndTheInventoryOfWhatItGenerated() throws IOException {
         Compilation.Prepared prepared = Compilation.prepare(TypedFixtures.watching());
@@ -112,6 +136,48 @@ class PublishedGraphsTest {
         assertEquals(List.of(), symbols(index));
         assertTrue(index.annotationTypes().stream().allMatch(name -> name.startsWith("cons.")),
                 () -> index.annotationTypes().toString());
+    }
+
+    /**
+     * A published machine whose facade also extends bases that redeclare methods of Machine, and a published set
+     * whose base redeclares close(), are what the producer's companions implement: the producer publishes them,
+     * and a consumer's set holds that machine, its model built from the classpath alone.
+     */
+    @Test
+    void aConsumerSetHoldsAPublishedMachineWhoseBasesRedeclareWhatItsCompanionImplements() throws IOException {
+        Map<String, String> producer = producer();
+        producer.put("prod.Reevaluable", """
+                package prod;
+                import io.github.graphmaquina.api.Outcome;
+                public interface Reevaluable<E> {
+                    Outcome<E, ?, ?> reevaluate(E entity);
+                }
+                """);
+        producer.put("prod.AsyncCapable", """
+                package prod;
+                import java.util.concurrent.CompletableFuture;
+                import java.util.function.Supplier;
+                public interface AsyncCapable {
+                    <R> CompletableFuture<R> async(Supplier<R> call);
+                }
+                """);
+        producer.put("prod.Lifecycle", """
+                package prod;
+                public interface Lifecycle {
+                    void close();
+                }
+                """);
+        producer.put("prod.Bills", producer.get("prod.Bills").replace(
+                "public interface Bills extends Machine<Bill, BillStatus, BillTransition> {",
+                "public interface Bills extends Machine<Bill, BillStatus, BillTransition>, Reevaluable<Bill>, AsyncCapable {"));
+        producer.put("prod.Ledger", producer.get("prod.Ledger").replace(
+                "public interface Ledger extends Machines {", "public interface Ledger extends Machines, Lifecycle {"));
+        Path jar = publish(producer, directory.resolve("redeclaring.jar"), UnaryOperator.identity());
+
+        Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
+
+        assertTrue(result.success(), result.describe());
+        assertTrue(result.hasGenerated("cons.ShelfRuntime"), result::describe);
     }
 
     @Test

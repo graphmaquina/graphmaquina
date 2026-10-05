@@ -190,6 +190,53 @@ class ExportValidationTest {
                 && error.contains("as an action, which it no longer declares")), result::describe);
     }
 
+    /**
+     * An export that does not hold stops what is generated and published, not what is checked: a machine that does
+     * not use it is still validated, so its own problems are reported in the same build.
+     */
+    @Test
+    void reportsTheOtherProblemsOfTheCompilationBesideAnExportThatDoesNotHold() {
+        Map<String, String> sources = Fixtures.withDocs(Fixtures.DOCS_HEADER
+                .replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \""), Fixtures.DOCS_BODY);
+        sources.put("fx.Audit", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.TransitionContext;
+                public final class Audit {
+                    @GraphAction public String record(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                        return "recorded";
+                    }
+                }
+                """);
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(1, result.countError("SG604"), result.describe());
+        assertEquals(1, result.countError("SG103"), result.describe());
+        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+    }
+
+    /**
+     * A machine that uses the export which does not hold is not reported again where it uses it: the export's own
+     * SG604 already says what is wrong. Every other machine is validated all the same.
+     */
+    @Test
+    void doesNotRepeatAnExportThatDoesNotHoldAtItsUseButValidatesTheOtherMachines() {
+        Map<String, String> sources = Fixtures.withPages(Fixtures.DOCS_HEADER, Fixtures.DOCS_BODY);
+        sources.put("fx.DocActions", sources.get("fx.DocActions").replace(
+                "@GraphAction public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { calls.add(\"publish\"); return ActionOutcome.ok(); }",
+                "@GraphAction public String publish(TransitionContext<Doc, DocStatus, DocTransition> ctx) { return \"publish\"; }"));
+        sources.put("fx.Pages", Fixtures.PAGES.replace("otherwise = \"a page is finished\"", "otherwise = \" \""));
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(1, result.countError("SG604"), result.describe());
+        assertEquals(0, result.countError("SG505"), result.describe());
+        assertEquals(1, result.countError("SG103"), result.describe());
+        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+        assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());
+    }
+
     /** A well-formed action host, so that only what a test changes about it can make its export invalid. */
     private static final String ACTION_HOST = """
             package fx;

@@ -186,6 +186,32 @@ final class Compilation {
         return run(files, options, request);
     }
 
+    /**
+     * Prepares the outputs of {@code prepared} and runs javac the way a build that hands it only some sources
+     * does: the originals named by {@code explicit} and the generated bootstrap are given to javac, and every
+     * other original is found through the source path, so javac compiles it without processing it. Completion
+     * does not run: the test observes what javac and the processor did.
+     */
+    static Result compileWithImplicitSources(Prepared prepared, List<String> explicit) {
+        GenerationRequest request = prepared.request();
+        try {
+            CompilationOutputs.prepare(request);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        Path originals = request.sources().get(0);
+        List<Path> files = new ArrayList<>();
+        for (String name : explicit) {
+            files.add(originals.resolve(name.replace('.', File.separatorChar) + ".java"));
+        }
+        files.addAll(javaFiles(request.sourcesOutput()));
+        List<String> options = new ArrayList<>(standardOptions(request));
+        options.add("-Agraphmaquina.annotationManifest=" + prepared.generation().annotationManifest());
+        options.addAll(List.of("-sourcepath", originals + File.pathSeparator + request.sourcesOutput(),
+                "-implicit:class"));
+        return run(files, options, request);
+    }
+
     /** Prepares {@code sources} and compiles them, which is what a consumer build does. */
     static Result compileTyped(Map<String, String> sources) {
         return compilePrepared(prepare(sources));
@@ -230,10 +256,32 @@ final class Compilation {
         }
     }
 
+    /**
+     * Runs javac over {@code prepared} once more, without the build's lifecycle and with the class output of the
+     * previous run on its classpath, which is what an IDE or a plain rerun of javac over the same directories
+     * does: nothing retires what the previous compilation produced.
+     */
+    static Result recompileWithoutLifecycle(Prepared prepared) {
+        GenerationRequest request = prepared.request();
+        List<Path> files = new ArrayList<>(javaFiles(request.sources().get(0)));
+        files.addAll(javaFiles(request.sourcesOutput()));
+        List<String> options = new ArrayList<>(standardOptions(request, List.of(request.classesOutput())));
+        options.add("-Agraphmaquina.annotationManifest=" + prepared.generation().annotationManifest());
+        return run(files, options, request);
+    }
+
     /** javac compiles against the very classpath the request names, so both stages see one set of dependencies. */
     private static List<String> standardOptions(GenerationRequest request) {
+        return standardOptions(request, List.of());
+    }
+
+    /** The same, with {@code extraClasspath} after the request's own classpath, for javac alone. */
+    private static List<String> standardOptions(GenerationRequest request, List<Path> extraClasspath) {
         List<String> entries = new ArrayList<>();
         for (Path entry : request.classpath()) {
+            entries.add(entry.toString());
+        }
+        for (Path entry : extraClasspath) {
             entries.add(entry.toString());
         }
         return List.of(
