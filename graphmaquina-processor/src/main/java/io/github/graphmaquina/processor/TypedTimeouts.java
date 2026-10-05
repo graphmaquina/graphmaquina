@@ -14,7 +14,9 @@ import javax.lang.model.element.AnnotationMirror;
  *
  * <p>The representation is checked before the duration is built, never by catching what building it throws:
  * the pair that overflows and the pair that is simply not a duration are the same failure to an author, and
- * both are reported as {@code SG511} at the declaration that wrote them.</p>
+ * both are reported as {@code SG511} at the declaration that wrote them. {@code Duration.ofSeconds} overflows only
+ * when the nanosecond adjustment moves the seconds out of the range of a {@code long}, which an adjustment from 0
+ * to 999,999,999 never does, so the range check of the adjustment refuses every pair it would overflow on.</p>
  */
 final class TypedTimeouts {
 

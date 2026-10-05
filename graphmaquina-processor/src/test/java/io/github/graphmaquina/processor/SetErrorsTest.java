@@ -123,14 +123,16 @@ class SetErrorsTest {
     /**
      * An accessor is a member of the set companion too. One named like a field the companion declares only
      * renames that private field, while one whose signature is the companion's own static {@code builder()},
-     * which takes nothing for a synchronous set without dependencies, cannot be declared next to it.
+     * which takes nothing for a synchronous set without dependencies, cannot be declared next to it; the refusal
+     * names that companion.
      */
     @Test
     void sg510AnAccessorCollidingWithTheCompanionsBuilderAndRenamedFieldsOtherwise() {
         Compilation.Result builder = synchronousLibrary("Pages builder();");
         assertFalse(builder.success(), builder.describe());
         assertEquals(1, builder.countError("SG510"), builder.describe());
-        assertTrue(builder.errors().get(0).contains("builder"), builder.describe());
+        assertTrue(builder.errors().get(0).contains("[SG510] builder() is the static builder() the generated"
+                + " LibraryRuntime declares"), builder.describe());
         assertFalse(builder.hasGenerated("fx.LibraryRuntime"), builder.describe());
 
         Compilation.Result registry = synchronousLibrary("Pages machineRegistry();");

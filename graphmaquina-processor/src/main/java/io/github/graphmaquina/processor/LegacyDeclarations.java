@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.codegen.emit.SymbolNames;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -8,6 +9,7 @@ import javax.annotation.processing.RoundEnvironment;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
+import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
 import lombok.RequiredArgsConstructor;
 
@@ -37,6 +39,13 @@ final class LegacyDeclarations {
 
     /** The retired vocabulary an operation carried. */
     private static final List<String> ON_MEMBER = List.of(PACKAGE + "Action", PACKAGE + "Move");
+
+    /**
+     * What a nested facade must become before anything else, since the processor refuses it as {@code SG502}: the
+     * companion generated for a machine is a top-level type of the facade's package.
+     */
+    private static final String TOP_LEVEL = " a top-level interface of its package, since its generated companion"
+            + " lives next to it there, ";
 
     /** Every retired name the processor still claims, so a declaration that resolves one is met by SG609. */
     static Set<String> retiredAnnotationTypes() {
@@ -94,14 +103,29 @@ final class LegacyDeclarations {
     }
 
     /**
-     * What to write instead of the retired header of {@code type}, with its vocabulary spelled as the simple name
-     * followed by {@code Graph}: the name the generator gives that vocabulary when normalizing the simple name to
-     * PascalCase leaves it unchanged.
+     * The simple name of the vocabulary the generator writes for {@code type} once it is a marked top-level
+     * interface: its simple name normalized to PascalCase, followed by {@code Graph}. A nested {@code type} must
+     * become that top-level interface first, so its vocabulary is named the same way, not after its enclosing types.
+     * A name with no PascalCase form gets no vocabulary, since the generator refuses such a facade with
+     * {@code SG603}, so a placeholder stands for it.
+     */
+    private static String vocabulary(TypeElement type) {
+        try {
+            return SymbolNames.hostName(type.getSimpleName().toString()) + "Graph";
+        } catch (IllegalArgumentException unnamed) {
+            return "<Machine>Graph";
+        }
+    }
+
+    /**
+     * What to write instead of the retired header of {@code type}, its vocabulary named as the generator names it;
+     * a nested {@code type} is told first to become a top-level interface.
      */
     private static String describe(TypeElement type) {
-        String graph = type.getSimpleName() + "Graph";
+        String graph = vocabulary(type);
+        String first = type.getNestingKind() == NestingKind.TOP_LEVEL ? "" : "make it" + TOP_LEVEL;
         return type.getQualifiedName() + " declares its graph with the retired matrix annotations, which this"
-                + " version no longer reads: mark it @GenerateGraphApi, give it a transition enum as"
+                + " version no longer reads: " + first + "mark it @GenerateGraphApi, give it a transition enum as"
                 + " Machine<E, S, T>, and declare it with the vocabulary generated for it — @" + graph
                 + ".Definition(initial = ..., state = <Entity>Refs.<Property>.class, id ="
                 + " <Entity>Refs.<Property>.class), @" + graph + ".StatePolicy, @" + graph + ".Transition, @"
@@ -110,11 +134,16 @@ final class LegacyDeclarations {
                 + " @GraphCondition or @GraphProperty and name each of them as <Host>Refs.<Member>.class";
     }
 
-    /** What to write instead of the retired declaration of one operation. */
+    /**
+     * What to write instead of the retired declaration of one operation, in the vocabulary of {@code type}; when
+     * {@code type} is nested, it is told first to become a top-level interface.
+     */
     private static String describe(TypeElement type, Element member) {
-        String graph = type.getSimpleName() + "Graph";
+        String graph = vocabulary(type);
+        String first = type.getNestingKind() == NestingKind.TOP_LEVEL ? ""
+                : "make " + type.getQualifiedName() + TOP_LEVEL + "then ";
         return type.getQualifiedName() + "." + member.getSimpleName() + " declares its transition with the"
-                + " retired matrix annotations, which this version no longer reads: use @" + graph
+                + " retired matrix annotations, which this version no longer reads: " + first + "use @" + graph
                 + ".Transition(id = ..., from = ..., to = ...), mark the method it runs with @GraphAction and"
                 + " the methods it asks with @GraphGuard, and name each of them as <Host>Refs.<Member>.class";
     }

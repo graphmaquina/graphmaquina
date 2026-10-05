@@ -19,7 +19,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 /**
  * The companion generated for a {@code @StateGraphs} set: its builder, whose signature follows the dependencies and
@@ -126,8 +128,10 @@ class SetGenerationTest {
 
     /**
      * The generated Builder mirrors MachineRegistry.Builder and StateMachines.Builder: a setting is refused when
-     * it is given, a second listener is refused rather than replacing the first, and the builder is single-use,
-     * so a second build() and any setting after build() fail loudly.
+     * it is given, a second listener is refused rather than replacing the first, and the builder is single-use, so
+     * once build() succeeded, build() itself and every setting fail loudly, each with valid arguments. The Builder
+     * refuses them itself, naming itself: the builders it hands its settings to would refuse them too, naming
+     * builders the author never wrote.
      */
     @Test
     void theGeneratedBuilderRefusesWhatTheBuildersItMirrorsRefuse() throws Exception {
@@ -140,9 +144,12 @@ class SetGenerationTest {
         Method listener = builder.getClass().getMethod("listener", TransitionListener.class);
         Method depth = builder.getClass().getMethod("maxCascadeDepth", int.class);
         Method chain = builder.getClass().getMethod("maxWatchChain", int.class);
+        Method timeout = builder.getClass().getMethod("asyncTimeout", Class.class, Duration.class);
+        Method executor = builder.getClass().getMethod("asyncExecutor", Executor.class);
         Method build = builder.getClass().getMethod("build");
         TransitionListener first = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> { };
         TransitionListener second = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> { };
+        Executor direct = (Runnable command) -> command.run();
 
         listener.invoke(builder, first);
         assertInstanceOf(IllegalStateException.class,
@@ -154,11 +161,20 @@ class SetGenerationTest {
 
         try (Machines library = (Machines) build.invoke(builder)) {
             assertInstanceOf(Machine.class, library.getClass().getMethod("docs").invoke(library));
-            assertInstanceOf(IllegalStateException.class,
-                    assertThrows(InvocationTargetException.class, () -> build.invoke(builder)).getCause());
-            assertInstanceOf(IllegalStateException.class,
-                    assertThrows(InvocationTargetException.class, () -> depth.invoke(builder, 3)).getCause());
+            refusedAsUsed(() -> build.invoke(builder));
+            refusedAsUsed(() -> listener.invoke(builder, second));
+            refusedAsUsed(() -> depth.invoke(builder, 3));
+            refusedAsUsed(() -> chain.invoke(builder, 3));
+            refusedAsUsed(() -> timeout.invoke(builder, result.load("fx.Docs"), Duration.ofSeconds(1)));
+            refusedAsUsed(() -> executor.invoke(builder, direct));
         }
+    }
+
+    /** Asserts that {@code call}, a call of the generated LibraryRuntime.Builder, is refused because it was used. */
+    private static void refusedAsUsed(Executable call) {
+        IllegalStateException refused = assertInstanceOf(IllegalStateException.class,
+                assertThrows(InvocationTargetException.class, call).getCause());
+        assertEquals("this LibraryRuntime.Builder was already used", refused.getMessage());
     }
 
     /**

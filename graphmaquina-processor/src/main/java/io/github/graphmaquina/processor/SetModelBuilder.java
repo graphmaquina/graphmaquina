@@ -201,14 +201,21 @@ final class SetModelBuilder {
      * SG510 for an accessor named {@code builder} when the companion's own static {@code builder(...)} takes no
      * parameter, which it does for a set without an asynchronous machine and without instance dependencies: the
      * two methods would then have one signature. With any parameter, they are overloads and both are declared.
+     * The message names the companion, {@code <Set>Runtime}, or names it through the set when the set's name has
+     * no PascalCase form: such a set, refused as {@code SG603} and checked all the same, has no companion name.
      */
     private void checkBuilderAccessor(SetModel model, Map<String, ExecutableElement> methods) {
         ExecutableElement accessor = methods.get("builder");
         if (accessor != null && !model.hasAsync() && model.dependencies().isEmpty()) {
-            diagnostics.error("SG510", "builder() is the static builder() the generated "
-                    + SymbolNames.runtimeName(model.setName()) + " declares, which takes no parameter for a set"
-                    + " without asynchronous machines and"
-                    + " without instance dependencies: give the accessor another name", accessor);
+            String companion;
+            try {
+                companion = "the generated " + SymbolNames.runtimeName(model.setName());
+            } catch (IllegalArgumentException unnamed) {
+                companion = "the companion of " + model.setName();
+            }
+            diagnostics.error("SG510", "builder() is the static builder() " + companion + " declares, which takes"
+                    + " no parameter for a set without asynchronous machines and without instance dependencies: give"
+                    + " the accessor another name", accessor);
         }
     }
 

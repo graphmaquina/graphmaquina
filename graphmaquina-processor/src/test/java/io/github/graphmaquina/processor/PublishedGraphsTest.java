@@ -69,6 +69,36 @@ class PublishedGraphsTest {
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result.describe());
     }
 
+    /**
+     * The same machine, held by a set javac is handed: the set is processed, the machine it holds still is not, so
+     * no companion is generated for the machine. The set is reported for it where it is declared, and its own
+     * companion, which could only build the machine with that missing companion, is not generated either.
+     */
+    @Test
+    void reportsASetHoldingAMachineThisCompilationNeverProcessed() {
+        Map<String, String> sources = new LinkedHashMap<>(TypedFixtures.minimal());
+        sources.put("fx.Library", """
+                package fx;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                @StateGraphs
+                public interface Library extends Machines {
+                    Docs docs();
+                }
+                """);
+        Compilation.Prepared prepared = Compilation.prepare(sources);
+
+        Compilation.Result result = Compilation.compileWithImplicitSources(prepared, List.of("fx.Library"));
+
+        assertEquals(List.of("[SG602] fx.Library holds fx.Docs, which this compilation never processed, so neither"
+                + " gets a companion: javac does not process a source it compiles implicitly, from the source path,"
+                + " so pass every source of the compilation to javac"), result.errors(), result.describe());
+        assertEquals(5, result.lineOf("SG602"), result.describe());
+        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+        assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
+        assertFalse(Files.exists(prepared.request().classesOutput().resolve(PENDING)), result.describe());
+    }
+
     @Test
     void publishesTheLocalIndexAndTheInventoryOfWhatItGenerated() throws IOException {
         Compilation.Prepared prepared = Compilation.prepare(TypedFixtures.watching());
@@ -134,7 +164,7 @@ class PublishedGraphsTest {
         ExportIndex index = ManifestCodec.readExports(prepared.request().classesOutput().resolve(PUBLISHED));
         assertEquals(List.of("cons.Archives"), facades(index));
         assertEquals(List.of(), symbols(index));
-        assertTrue(index.annotationTypes().stream().allMatch(name -> name.startsWith("cons.")),
+        assertTrue(index.annotationTypes().stream().allMatch((String name) -> name.startsWith("cons.")),
                 () -> index.annotationTypes().toString());
     }
 

@@ -6,6 +6,7 @@ import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
+import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
 import io.github.graphmaquina.processor.gen.BoundInvocation;
 import io.github.graphmaquina.processor.gen.Emitted;
@@ -54,8 +55,14 @@ import javax.lang.model.type.DeclaredType;
  * takes is a collision, unless that type is this processor's own output of a previous compilation that the build
  * did not retire, which is reported as such; and a facade or a set whose companion would write a name that a
  * type or a field of the companion's scope takes is refused, as {@link CompanionScope} decides, before its
- * companion is written. A type that a later round brings into the package of a companion already written, and
- * that takes a name the companion writes, is reported at that companion's facade or set.</p>
+ * companion is written. A refused declaration withholds only what depends on it: its own companion and, for a
+ * machine, the companion of a set that holds it. The round goes on, and every declaration of it is still checked.
+ * A type that a later round brings into the package of a companion already written, and that takes a name the
+ * companion writes, is reported at that companion's facade or set.</p>
+ *
+ * <p>Only a machine some round hands to this processor gets a companion. javac hands none of the sources it
+ * compiles implicitly, from the source path, so a set that holds such a machine of this compilation is reported
+ * and gets no companion either, and an index that names one is not published.</p>
  */
 public final class StateGraphProcessor extends AbstractProcessor {
 
@@ -76,6 +83,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private Map<String, MachineModel> models;
     private Set<String> failed;
     private Set<String> withheld;
+    private Set<String> refused;
     private Set<String> generated;
     private Set<String> verified;
     private final Map<String, TypeElement> runtimeOrigins = new LinkedHashMap<>();
@@ -103,6 +111,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
         models = new LinkedHashMap<>();
         failed = new HashSet<>();
         withheld = new HashSet<>();
+        refused = new HashSet<>();
         generated = new LinkedHashSet<>();
         verified = new LinkedHashSet<>();
         Signatures signatures = new Signatures(env.getElementUtils(), env.getTypeUtils());
@@ -138,20 +147,20 @@ public final class StateGraphProcessor extends AbstractProcessor {
         scope.checkLaterTypes();
         placement.ifPresent((VocabularyPlacement check) -> withheld.addAll(check.report(annotationTypes, round)));
         validateExports();
-        if (!validateRuntimeNames(round)) {
-            return true;
-        }
+        validateRuntimeNames(round);
         failed.addAll(legacy.report(round));
         for (Element element : round.getElementsAnnotatedWith(GenerateGraphApi.class)) {
             resolve((TypeElement) element, round);
         }
         for (Element element : round.getElementsAnnotatedWith(StateGraphs.class)) {
-            Optional<SetModel> set = sets.build((TypeElement) element,
-                    (TypeElement machine) -> resolve(machine, round));
-            Optional<Emitted> companion = set.map((SetModel model) -> SetGenerator.emit(model, invocations));
-            if (companion.isPresent() && scope.admits((TypeElement) element, SymbolNames.runtimeName(set.get().setName()),
+            TypeElement type = (TypeElement) element;
+            Optional<SetModel> set = sets.build(type, (TypeElement machine) -> held(machine, type, round));
+            Optional<Emitted> companion = set
+                    .filter((SetModel model) -> !refused.contains(type.getQualifiedName().toString()))
+                    .map((SetModel model) -> SetGenerator.emit(model, invocations));
+            if (companion.isPresent() && scope.admits(type, SymbolNames.runtimeName(set.get().setName()),
                     SetGenerator.MEMBER_TYPES, Set.of(), companion.get().written()) && invalidExports.isEmpty()) {
-                write(SetGenerator.qualifiedName(set.get()), companion.get(), (TypeElement) element);
+                write(SetGenerator.qualifiedName(set.get()), companion.get(), type);
             }
         }
         publish(round);
@@ -160,27 +169,28 @@ public final class StateGraphProcessor extends AbstractProcessor {
 
     /**
      * Reserves the normalized runtime names of this round's top-level declarations before any source of the round is
-     * written, and answers whether every one was reserved. A declaration is refused, at the declaration itself, when
-     * its simple name does not normalize to a runtime name, when another declaration or an existing type takes that
-     * name already, or when its companion would take a name that a companion written in an earlier round writes;
-     * {@code process} then ends the round there, before any machine or set of it is built.
+     * written. A declaration is refused, at the declaration itself, when its simple name does not normalize to a
+     * runtime name, when another declaration or an existing type takes that name already, or when its companion
+     * would take a name that a companion written in an earlier round writes. A refused declaration is still
+     * checked like every other declaration of the round, so all their problems are reported together, but its
+     * companion is never written, nor is the companion of a set that holds it, which would name that companion.
      */
-    private boolean validateRuntimeNames(RoundEnvironment round) {
+    private void validateRuntimeNames(RoundEnvironment round) {
         Set<Element> declarations = new LinkedHashSet<>(round.getElementsAnnotatedWith(GenerateGraphApi.class));
         declarations.addAll(round.getElementsAnnotatedWith(StateGraphs.class));
-        boolean valid = true;
         for (Element declaration : declarations) {
             TypeElement type = (TypeElement) declaration;
             if (type.getNestingKind() != NestingKind.TOP_LEVEL) {
                 continue; // The model builder reports unsupported nested declarations as SG502.
             }
+            String declared = type.getQualifiedName().toString();
             String name;
             try {
                 name = SymbolNames.qualified(processingEnv.getElementUtils().getPackageOf(type)
                         .getQualifiedName().toString(), SymbolNames.runtimeName(type.getSimpleName().toString()));
             } catch (IllegalArgumentException failure) {
                 diagnostics.error("SG603", failure.getMessage(), type);
-                valid = false;
+                refused.add(declared);
                 continue;
             }
             TypeElement previous = runtimeOrigins.putIfAbsent(name, type);
@@ -188,16 +198,18 @@ public final class StateGraphProcessor extends AbstractProcessor {
                 if (!previous.getQualifiedName().contentEquals(type.getQualifiedName())) {
                     diagnostics.error("SG603", "the generated runtime " + name + " is claimed by both "
                             + previous.getQualifiedName() + " and " + type.getQualifiedName(), type);
-                    valid = false;
+                    refused.add(declared);
                 }
                 continue;
             }
             TypeElement existing = processingEnv.getElementUtils().getTypeElement(name);
             if (existing == null) {
-                valid &= scope.admitsLater(type, name);
+                if (!scope.admitsLater(type, name)) {
+                    refused.add(declared);
+                }
                 continue;
             }
-            valid = false;
+            refused.add(declared);
             if (isStaleOutput(existing, round)) {
                 diagnostics.error("SG602", "the generated runtime " + name + " of " + type.getQualifiedName()
                         + " is still compiled from a previous compilation that nothing retired: run the generation"
@@ -208,7 +220,6 @@ public final class StateGraphProcessor extends AbstractProcessor {
                         + " conflicts with existing type " + existing.getQualifiedName(), type);
             }
         }
-        return valid;
     }
 
     /**
@@ -252,7 +263,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
             return;
         }
         reportedManifest = true;
-        manifests.failure().ifPresent(reason -> diagnostics.error("SG602", reason));
+        manifests.failure().ifPresent((String reason) -> diagnostics.error("SG602", reason));
     }
 
     /**
@@ -327,12 +338,36 @@ public final class StateGraphProcessor extends AbstractProcessor {
     }
 
     /**
+     * The model of {@code machine}, which the set {@code set} holds. A machine the index of this compilation names
+     * that no round handed to this processor, which is what javac does with a source it compiles implicitly, from
+     * the source path, has no companion, and the set's companion could not build it without one: that is reported
+     * as {@code SG602} at the set, whose companion is not generated either.
+     */
+    private Optional<MachineModel> held(TypeElement machine, TypeElement set, RoundEnvironment round) {
+        String name = machine.getQualifiedName().toString();
+        if (!models.containsKey(name) && !failed.contains(name) && isLocal(name)) {
+            diagnostics.error("SG602", set.getQualifiedName() + " holds " + name + ", which this compilation never"
+                    + " processed, so neither gets a companion: javac does not process a source it compiles"
+                    + " implicitly, from the source path, so pass every source of the compilation to javac", set);
+            return Optional.empty();
+        }
+        return resolve(machine, round);
+    }
+
+    /** Whether the index of this compilation names the machine {@code name}, which one of its sources declares. */
+    private boolean isLocal(String name) {
+        return manifests.manifest().map((CompileManifest manifest) -> manifest.local().model().graphs().stream()
+                .anyMatch((GraphDescriptor graph) -> graph.facade().equals(name))).orElse(false);
+    }
+
+    /**
      * A machine's model, built once for the whole compilation. Only a machine that is a root element of the round
-     * gets its companion generated; one that is not, such as a machine from the classpath, which carries its
-     * companion in its own jar already, is built on demand for the set that holds it. A machine whose vocabulary is
-     * written where no builder reads it, or on the facade of another machine, is still built, so every other problem
-     * of its declarations is reported, but without the checks of its graph as a whole, which misses that vocabulary,
-     * and it is never generated.
+     * gets its companion generated, and only such a machine counts as verified for the index; one that is not, a
+     * machine from the classpath, which carries its companion in its own jar already, is built on demand for the
+     * set that holds it. A machine whose vocabulary is written where no builder reads it, or on the facade of
+     * another machine, is still built, so every other problem of its declarations is reported, but without the
+     * checks of its graph as a whole, which misses that vocabulary, and it is never generated. Nor is a machine
+     * whose companion name was refused, which is still built and checked like every other machine of the round.
      */
     private Optional<MachineModel> resolve(TypeElement type, RoundEnvironment round) {
         String name = type.getQualifiedName().toString();
@@ -344,7 +379,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
             return Optional.empty();
         }
         Optional<MachineModel> model = build(type, !withheld.contains(name));
-        if (model.isEmpty() || withheld.contains(name)) {
+        if (model.isEmpty() || withheld.contains(name) || refused.contains(name)) {
             failed.add(name);
             return Optional.empty();
         }
@@ -357,9 +392,11 @@ public final class StateGraphProcessor extends AbstractProcessor {
             return Optional.empty();
         }
         models.put(name, model.get());
-        verified.add(name);
-        if (companion.isPresent() && invalidExports.isEmpty()) {
-            write(MachineGenerator.qualifiedName(model.get()), companion.get(), type);
+        if (companion.isPresent()) {
+            verified.add(name);
+            if (invalidExports.isEmpty()) {
+                write(MachineGenerator.qualifiedName(model.get()), companion.get(), type);
+            }
         }
         return model;
     }
