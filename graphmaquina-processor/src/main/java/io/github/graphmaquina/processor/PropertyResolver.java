@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.annotation.GraphProperty;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.model.PropertyDescriptor;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
@@ -193,16 +194,21 @@ final class PropertyResolver {
      * The declaration a marked getter names, read as the member of {@code entity} that answers a call to it.
      * A getter the generated code could not call — one that is not public, or that is static and so is not
      * called on an entity at all — is no reader: the marker names it, so no other one stands in for it.
+     * The type that declares the getter is taken among the entity and its supertypes, as
+     * {@link CanonicalNames#declaring} takes it.
      */
     private Optional<ExecutableElement> marked(PropertyDescriptor property, DeclaredType entity) {
-        TypeElement declaring = signatures.elements().getTypeElement(property.declaringType());
+        Predicate<Element> getter = (Element member) -> member.getKind() == ElementKind.METHOD
+                && member.getSimpleName().contentEquals(property.declarationName())
+                && ((ExecutableElement) member).getParameters().isEmpty();
+        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), (TypeElement) entity.asElement(),
+                property.declaringType(), getter.and((Element member) -> annotations.find(member, GraphProperty.class)
+                        .isPresent()));
         if (declaring == null) {
             return Optional.empty();
         }
         for (Element member : declaring.getEnclosedElements()) {
-            if (member.getKind() == ElementKind.METHOD
-                    && member.getSimpleName().contentEquals(property.declarationName())
-                    && ((ExecutableElement) member).getParameters().isEmpty()) {
+            if (getter.test(member)) {
                 ExecutableElement method = (ExecutableElement) member;
                 return Accessors.isPublicInstance(method)
                         ? Optional.of(effective(method, entity))

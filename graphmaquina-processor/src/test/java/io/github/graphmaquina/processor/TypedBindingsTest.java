@@ -108,6 +108,20 @@ class TypedBindingsTest {
                 && error.contains("fx.Fake")), result::describe);
     }
 
+    /**
+     * A host without {@code @GraphBindings} exports only the hook it marks itself, so its symbol does not reach the
+     * marked hook of the same name and arity that it inherits: that one is an overload, not an override, of the
+     * exported hook.
+     */
+    @Test
+    void refusesAnInheritedOverloadThatTheSymbolDoesNotExport() {
+        Compilation.Result result = Compilation.compileTyped(inheritedOverload());
+
+        assertEquals(List.of("[SG505] no exported hook named notified on fx.Payments has the signature this machine"
+                + " needs; expected void notified(Doc) or void notified(Doc, CommitContext<DocStatus, DocTransition>)"),
+                result.errors(), result.describe());
+    }
+
     @Test
     void refusesACandidateThatDoesNotFitTheEntityOfTheMachineUsingIt() {
         TypedProcessors.Resolving.reset();
@@ -161,6 +175,60 @@ class TypedBindingsTest {
                     public boolean ready(Doc doc, Collection<? extends Page> pages, PeerView<Page, PageStatus, PageTransition> view) {
                         return false;
                     }
+                }
+                """);
+        return sources;
+    }
+
+    /**
+     * A machine that calls {@code PaymentsRefs.Notified} after commit, and its host {@code fx.Payments}, which carries
+     * no {@code @GraphBindings}, marks a hook {@code notified(Other)} and inherits the marked hook
+     * {@code notified(Doc)} of {@code fx.BaseHooks}.
+     */
+    private static Map<String, String> inheritedOverload() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("fx.DocStatus", "package fx;\npublic enum DocStatus { DRAFT, PUBLISHED }\n");
+        sources.put("fx.DocTransition", "package fx;\npublic enum DocTransition { PUBLISH }\n");
+        sources.put("fx.Doc", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public final class Doc {
+                    @GraphProperty private DocStatus status = DocStatus.DRAFT;
+                    @GraphProperty public String id() { return "doc"; }
+                    public DocStatus status() { return status; }
+                    public void status(DocStatus value) { status = value; }
+                }
+                """);
+        sources.put("fx.Other", "package fx;\npublic final class Other { }\n");
+        sources.put("fx.BaseHooks", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphHook;
+                public class BaseHooks {
+                    @GraphHook public void notified(Doc doc) { }
+                }
+                """);
+        sources.put("fx.Payments", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphHook;
+                public class Payments extends BaseHooks {
+                    @GraphHook public void notified(Other other) { }
+                }
+                """);
+        sources.put("fx.Docs", """
+                package fx;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import static fx.DocStatus.*;
+                import static fx.DocTransition.*;
+                @GenerateGraphApi
+                @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
+                    state = DocRefs.Status.class, id = DocRefs.Id.class)
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "publish before finishing")
+                public interface Docs extends Machine<Doc, DocStatus, DocTransition> {
+                    @DocsGraph.Transition(id = PUBLISH, from = DRAFT, to = PUBLISHED,
+                        afterCommit = PaymentsRefs.Notified.class)
+                    Outcome<Doc, DocStatus, DocTransition> publish(Doc doc);
                 }
                 """);
         return sources;

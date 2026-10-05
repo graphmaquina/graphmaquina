@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
@@ -25,6 +26,7 @@ import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.util.Elements;
@@ -40,6 +42,12 @@ import javax.lang.model.util.Elements;
  *
  * <p>Existence, identity and the declared signature are checked here. Whether a member's effective signature suits the role it
  * declares is the frontend's work, once the model is being built.</p>
+ *
+ * <p>Every type a claim names is looked up by its canonical name as {@link CanonicalNames} looks one up: for the
+ * package of the declaration the claim was read from, the facade's for its enums and its vocabulary and the host's for
+ * its symbol types and the host itself, and among the host and its supertypes for the types that declare its members.
+ * The package of a vocabulary annotation or a symbol type, which is that of its facade or its host, is its name without
+ * the last two segments.</p>
  */
 final class ManifestChecks {
 
@@ -148,19 +156,19 @@ final class ManifestChecks {
      * enums declare them.
      */
     private static Optional<String> enums(GraphDescriptor graph, Elements elements) {
-        Optional<String> states = constants(graph.facade(), "state", graph.stateType(), graph.states(), elements);
+        Optional<String> states = constants(graph, "state", graph.stateType(), graph.states(), elements);
         if (states.isPresent()) {
             return states;
         }
-        return constants(graph.facade(), "transition", graph.transitionType(), graph.transitions(), elements);
+        return constants(graph, "transition", graph.transitionType(), graph.transitions(), elements);
     }
 
-    /** One enum of a machine: it must still be declared, still be an enum, and still declare {@code claimed}. */
-    private static Optional<String> constants(String facade, String role, String type, List<String> claimed,
+    /** One enum of {@code graph}: it must still be declared, still be an enum, and still declare {@code claimed}. */
+    private static Optional<String> constants(GraphDescriptor graph, String role, String type, List<String> claimed,
             Elements elements) {
-        TypeElement declaration = elements.getTypeElement(type);
+        TypeElement declaration = CanonicalNames.type(elements, type, graph.packageName());
         if (declaration == null || declaration.getKind() != ElementKind.ENUM) {
-            return Optional.of("describes the machine " + facade + " over the " + role + " enum " + type
+            return Optional.of("describes the machine " + graph.facade() + " over the " + role + " enum " + type
                 + ", which this compilation does not declare");
         }
         List<String> declared = new ArrayList<>();
@@ -179,7 +187,7 @@ final class ManifestChecks {
     /** A listed annotation type must exist, be an annotation, and say which machine of this index it serves. */
     private static Optional<String> vocabulary(String type, Map<String, GraphDescriptor> graphs,
             Elements elements, Annotations annotations) {
-        TypeElement element = elements.getTypeElement(type);
+        TypeElement element = CanonicalNames.type(elements, type, CanonicalNames.packageOfMemberType(type));
         if (element == null || element.getKind() != ElementKind.ANNOTATION_TYPE) {
             return Optional.of("lists the annotation type " + type
                 + ", which this compilation does not declare as an annotation");
@@ -205,7 +213,8 @@ final class ManifestChecks {
 
     /** A symbol must exist, name the host and member the manifest gives it, and still resolve to a member. */
     private static Optional<String> symbol(SymbolDescriptor symbol, Elements elements, Annotations annotations) {
-        TypeElement element = elements.getTypeElement(symbol.qualifiedName());
+        String hostPackage = CanonicalNames.packageOfMemberType(symbol.qualifiedName());
+        TypeElement element = CanonicalNames.type(elements, symbol.qualifiedName(), hostPackage);
         if (element == null) {
             return Optional.of("describes the symbol " + symbol.qualifiedName()
                 + ", which this compilation does not declare");
@@ -233,25 +242,29 @@ final class ManifestChecks {
             return Optional.of("gives " + symbol.qualifiedName() + " the roles " + names(symbol.kinds())
                 + ", but that type declares " + declared);
         }
-        if (elements.getTypeElement(symbol.host()) == null) {
+        TypeElement hostType = CanonicalNames.type(elements, symbol.host(), hostPackage);
+        if (hostType == null) {
             return Optional.of("describes the symbol " + symbol.qualifiedName() + " on the host " + symbol.host()
                 + ", which this compilation does not declare");
         }
-        return originals(symbol, elements);
+        return originals(symbol, hostType, elements);
     }
 
-    /** The original declarations must still have the signatures the generator recorded. */
-    private static Optional<String> originals(SymbolDescriptor symbol, Elements elements) {
+    /**
+     * The original declarations must still have the signatures the generator recorded; {@code host} is the host of
+     * {@code symbol}.
+     */
+    private static Optional<String> originals(SymbolDescriptor symbol, TypeElement host, Elements elements) {
         for (MemberDescriptor candidate : symbol.candidates()) {
-            if (!declares(elements, candidate)) {
+            if (!declares(elements, host, candidate.declaringType(), (Element member) -> matches(member, candidate))) {
                 return Optional.of("describes " + symbol.qualifiedName() + " over " + candidate.declaringType()
                     + '.' + candidate.name() + candidate.parameterTypes() + " returning " + candidate.returnType()
                     + ", which that type no longer declares with the same signature");
             }
         }
         Optional<PropertyDescriptor> property = symbol.property();
-        if (property.isPresent() && members(elements, property.get().declaringType(),
-                property.get().declarationName()).isEmpty()) {
+        if (property.isPresent() && !declares(elements, host, property.get().declaringType(), (Element member) ->
+                member.getSimpleName().contentEquals(property.get().declarationName()))) {
             return Optional.of("describes " + symbol.qualifiedName() + " over "
                 + property.get().declaringType() + '.' + property.get().declarationName()
                 + ", which that type no longer declares");
@@ -260,38 +273,29 @@ final class ManifestChecks {
     }
 
     /** Compare declaration types, before substituting host arguments or selecting a role's effective overload. */
-    private static boolean declares(Elements elements, MemberDescriptor candidate) {
-        for (Element member : members(elements, candidate.declaringType(), candidate.name())) {
-            if (member.getModifiers().contains(Modifier.STATIC) != candidate.staticMember()) {
-                continue;
-            }
-            if (member instanceof ExecutableElement method
-                    && method.getParameters().stream().map(parameter -> ManifestTypes.render(parameter.asType()))
-                        .toList().equals(candidate.parameterTypes())
-                    && ManifestTypes.render(method.getReturnType()).equals(candidate.returnType())) {
-                return true;
-            }
-            if (member.getKind() == ElementKind.FIELD && candidate.parameterTypes().isEmpty()
-                    && ManifestTypes.render(member.asType()).equals(candidate.returnType())) {
-                return true;
-            }
+    private static boolean matches(Element member, MemberDescriptor candidate) {
+        if (!member.getSimpleName().contentEquals(candidate.name())
+                || member.getModifiers().contains(Modifier.STATIC) != candidate.staticMember()) {
+            return false;
         }
-        return false;
+        if (member instanceof ExecutableElement method) {
+            return method.getParameters().stream()
+                    .map((VariableElement parameter) -> ManifestTypes.render(parameter.asType())).toList()
+                    .equals(candidate.parameterTypes())
+                    && ManifestTypes.render(method.getReturnType()).equals(candidate.returnType());
+        }
+        return member.getKind() == ElementKind.FIELD && candidate.parameterTypes().isEmpty()
+                && ManifestTypes.render(member.asType()).equals(candidate.returnType());
     }
 
-    /** The members {@code declaringType} declares under {@code name}; none when it is not declared at all. */
-    private static List<Element> members(Elements elements, String declaringType, String name) {
-        TypeElement type = elements.getTypeElement(declaringType);
-        if (type == null) {
-            return List.of();
-        }
-        List<Element> found = new ArrayList<>();
-        for (Element member : type.getEnclosedElements()) {
-            if (member.getSimpleName().contentEquals(name)) {
-                found.add(member);
-            }
-        }
-        return found;
+    /**
+     * Whether the type {@code declaringType} names declares a member {@code wanted} accepts, that type looked up as the
+     * declaring type of such a member of {@code host}.
+     */
+    private static boolean declares(Elements elements, TypeElement host, String declaringType,
+            Predicate<Element> wanted) {
+        TypeElement type = CanonicalNames.declaring(elements, host, declaringType, wanted);
+        return type != null && type.getEnclosedElements().stream().anyMatch(wanted);
     }
 
     private static Set<String> names(Set<SymbolKind> kinds) {

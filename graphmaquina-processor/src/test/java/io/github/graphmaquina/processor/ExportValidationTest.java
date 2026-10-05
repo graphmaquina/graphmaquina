@@ -10,6 +10,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -107,6 +108,36 @@ class ExportValidationTest {
         assertFalse(result.success(), result.describe());
         assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG604]")
                 && error.contains("notified") && error.contains("overrides")), result::describe);
+    }
+
+    /**
+     * The contract of an override that contradicts its role is a supertype of the overriding class along three paths:
+     * through the superclass that implements it, and through two interfaces that extend it. It is reported once.
+     */
+    @Test
+    void reportsAContractReachedAlongSeveralPathsOnce() {
+        Map<String, String> sources = exports("fx.Notifying", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphHook;
+                public interface Notifying {
+                    @GraphHook default void notified(Doc doc) { }
+                }
+                """, "fx.SubHooks", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphGuard;
+                public final class SubHooks extends BaseHooks implements Left, Right {
+                    @Override @GraphGuard public void notified(Doc doc) { }
+                }
+                """);
+        sources.put("fx.BaseHooks", "package fx;\npublic class BaseHooks implements Notifying { }\n");
+        sources.put("fx.Left", "package fx;\npublic interface Left extends Notifying { }\n");
+        sources.put("fx.Right", "package fx;\npublic interface Right extends Notifying { }\n");
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(List.of("[SG604] fx.SubHooks.notified is exported as a guard, but it overrides"
+                + " fx.Notifying.notified, whose contract is a hook"), result.errors().stream()
+                .filter((String error) -> error.contains("overrides")).toList(), result.describe());
     }
 
     @Test

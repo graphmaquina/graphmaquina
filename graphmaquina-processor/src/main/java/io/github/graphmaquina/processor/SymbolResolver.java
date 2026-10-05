@@ -17,6 +17,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -202,20 +203,19 @@ final class SymbolResolver {
         return false;
     }
 
-    /** Whether {@code method} overrides the declaration {@code candidate} names, seen from {@code host}. */
+    /**
+     * Whether {@code method} overrides the declaration {@code candidate} names, seen from {@code host}. The declaring
+     * type {@code candidate} names is taken among {@code host} and its supertypes, as {@link CanonicalNames#declaring}
+     * takes it.
+     */
     private boolean overrides(ExecutableElement method, MemberDescriptor candidate, TypeElement host) {
-        TypeElement declaring = signatures.elements().getTypeElement(candidate.declaringType());
-        if (declaring == null) {
-            return false;
-        }
-        for (Element member : declaring.getEnclosedElements()) {
-            if (member.getKind() == ElementKind.METHOD && member.getSimpleName().contentEquals(candidate.name())
-                    && ((ExecutableElement) member).getParameters().size() == candidate.parameterTypes().size()
-                    && signatures.elements().overrides(method, (ExecutableElement) member, host)) {
-                return true;
-            }
-        }
-        return false;
+        Predicate<Element> overridden = (Element member) -> member.getKind() == ElementKind.METHOD
+                && member.getSimpleName().contentEquals(candidate.name())
+                && ((ExecutableElement) member).getParameters().size() == candidate.parameterTypes().size()
+                && signatures.elements().overrides(method, (ExecutableElement) member, host);
+        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), host, candidate.declaringType(),
+                overridden);
+        return declaring != null && declaring.getEnclosedElements().stream().anyMatch(overridden);
     }
 
     private static String describe(SymbolDescriptor descriptor, Bindings.Role role, int fitting) {

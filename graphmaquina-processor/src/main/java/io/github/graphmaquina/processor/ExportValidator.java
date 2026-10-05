@@ -33,6 +33,11 @@ import javax.lang.model.type.TypeMirror;
  * overrides; a property is still declared as the field or the getter it was read from, and such a getter is a
  * public instance method. Whether its host is accessible where a companion is generated, and which entity and
  * which states it suits, are questions about a machine, and belong to the use.</p>
+ *
+ * <p>The host of an export is looked up by the canonical name the manifest gives it, as {@link CanonicalNames} looks
+ * one up for the package of the host, which is the name of the export's symbol type without its last two segments.
+ * The type that declares each of its members is taken among the host and its supertypes, as
+ * {@link CanonicalNames#declaring} takes it.</p>
  */
 final class ExportValidator {
 
@@ -69,7 +74,8 @@ final class ExportValidator {
         for (SymbolDescriptor symbol : manifest.local().model().symbols()) {
             int before = diagnostics.errors();
             boolean holds = true;
-            TypeElement host = signatures.elements().getTypeElement(symbol.host());
+            TypeElement host = CanonicalNames.type(signatures.elements(), symbol.host(),
+                    CanonicalNames.packageOfMemberType(symbol.qualifiedName()));
             if (host == null) {
                 diagnostics.error(INVALID, symbol.qualifiedName() + " exports members of " + symbol.host()
                         + ", which this compilation does not declare");
@@ -78,7 +84,7 @@ final class ExportValidator {
             }
             symbol.property().ifPresent((PropertyDescriptor property) -> property(symbol, property, host));
             for (MemberDescriptor candidate : symbol.candidates()) {
-                holds &= candidate(symbol, candidate, validated);
+                holds &= candidate(symbol, candidate, host, validated);
             }
             if (!holds || diagnostics.errors() > before) {
                 invalid.add(symbol.qualifiedName());
@@ -88,11 +94,14 @@ final class ExportValidator {
     }
 
     /**
-     * Whether every marked declaration one candidate names holds, each one checked once however many candidates
-     * reach it; {@code validated} remembers what each declaration checked already came to.
+     * Whether every marked declaration one candidate of {@code host} names holds, each one checked once however many
+     * candidates reach it; {@code validated} remembers what each declaration checked already came to.
      */
-    private boolean candidate(SymbolDescriptor symbol, MemberDescriptor candidate, Map<ExecutableElement, Boolean> validated) {
-        TypeElement declaring = signatures.elements().getTypeElement(candidate.declaringType());
+    private boolean candidate(SymbolDescriptor symbol, MemberDescriptor candidate, TypeElement host,
+            Map<ExecutableElement, Boolean> validated) {
+        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), host, candidate.declaringType(),
+                (Element member) -> marks(member, candidate)
+                        && effective.marker((ExecutableElement) member).orElseThrow().role() == candidate.role());
         if (declaring == null) {
             diagnostics.error(INVALID, symbol.qualifiedName() + " exports " + candidate.declaringType() + '.'
                     + candidate.name() + ", whose declaring type this compilation does not declare");
@@ -150,22 +159,19 @@ final class ExportValidator {
 
     /** The declaration a property was resolved from must still be the kind of declaration it was read as. */
     private void property(SymbolDescriptor symbol, PropertyDescriptor property, TypeElement host) {
-        TypeElement declaring = signatures.elements().getTypeElement(property.declaringType());
+        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), host, property.declaringType(),
+                (Element member) -> reads(member, property)
+                        && annotations.find(member, GraphProperty.class).isPresent());
         if (declaring == null) {
             diagnostics.error(INVALID, symbol.qualifiedName() + " exports the property " + property.logicalName()
                     + " of " + property.declaringType() + ", which this compilation does not declare", host);
             return;
         }
         for (Element member : declaring.getEnclosedElements()) {
-            if (!member.getSimpleName().contentEquals(property.declarationName())) {
-                continue;
-            }
-            if (property.directGetter() && member.getKind() == ElementKind.METHOD
-                    && ((ExecutableElement) member).getParameters().isEmpty()) {
-                reader((ExecutableElement) member, declaring, property);
-                return;
-            }
-            if (!property.directGetter() && member.getKind() == ElementKind.FIELD) {
+            if (reads(member, property)) {
+                if (property.directGetter()) {
+                    reader((ExecutableElement) member, declaring, property);
+                }
                 return;
             }
         }
@@ -226,16 +232,25 @@ final class ExportValidator {
     private List<ExecutableElement> marked(TypeElement declaring, MemberDescriptor candidate) {
         List<ExecutableElement> found = new ArrayList<>();
         for (Element member : declaring.getEnclosedElements()) {
-            if (member.getKind() != ElementKind.METHOD || !member.getSimpleName().contentEquals(candidate.name())) {
-                continue;
-            }
-            ExecutableElement method = (ExecutableElement) member;
-            if (method.getParameters().size() == candidate.parameterTypes().size()
-                    && effective.marker(method).isPresent()) {
-                found.add(method);
+            if (marks(member, candidate)) {
+                found.add((ExecutableElement) member);
             }
         }
         return found;
+    }
+
+    /** Whether {@code member} is a method of the name and the arity of {@code candidate} that carries a marker. */
+    private boolean marks(Element member, MemberDescriptor candidate) {
+        return member.getKind() == ElementKind.METHOD && member.getSimpleName().contentEquals(candidate.name())
+                && ((ExecutableElement) member).getParameters().size() == candidate.parameterTypes().size()
+                && effective.marker((ExecutableElement) member).isPresent();
+    }
+
+    /** Whether {@code member} has the name and the kind, getter or field, of the declaration {@code property} names. */
+    private static boolean reads(Element member, PropertyDescriptor property) {
+        return member.getSimpleName().contentEquals(property.declarationName()) && (property.directGetter()
+                ? member.getKind() == ElementKind.METHOD && ((ExecutableElement) member).getParameters().isEmpty()
+                : member.getKind() == ElementKind.FIELD);
     }
 
     private static String shape(SymbolKind role) {

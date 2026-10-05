@@ -26,8 +26,12 @@ final class Signatures {
     private final Elements elements;
     private final Types types;
 
+    /**
+     * The type {@code qualifiedName} names, with {@code args} as its type arguments. The type is looked up by its
+     * canonical name as {@link CanonicalNames} looks one up for code of a named package.
+     */
     DeclaredType declared(String qualifiedName, TypeMirror... args) {
-        TypeElement element = elements.getTypeElement(qualifiedName);
+        TypeElement element = CanonicalNames.type(elements, qualifiedName);
         if (element == null) {
             throw new IllegalStateException(qualifiedName + " is not on the classpath");
         }

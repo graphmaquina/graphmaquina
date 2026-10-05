@@ -128,14 +128,14 @@ final class EffectiveMethods {
     /** Every supertype of {@code host}, transitively, each one once. */
     private List<TypeElement> supertypes(TypeElement host) {
         List<TypeElement> found = new ArrayList<>();
-        Set<String> visited = new LinkedHashSet<>();
+        Set<TypeElement> visited = new LinkedHashSet<>();
         Deque<TypeMirror> pending = new ArrayDeque<>(signatures.types().directSupertypes(host.asType()));
         while (!pending.isEmpty()) {
             TypeMirror current = pending.removeFirst();
             if (!(current instanceof DeclaredType declared) || !(declared.asElement() instanceof TypeElement element)) {
                 continue;
             }
-            if (!visited.add(element.getQualifiedName().toString())) {
+            if (!visited.add(element)) {
                 continue;
             }
             found.add(element);
