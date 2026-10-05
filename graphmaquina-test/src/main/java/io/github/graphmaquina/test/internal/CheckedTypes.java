@@ -13,8 +13,8 @@ import java.util.Objects;
  * publishes its {@code Outcome<?, ?, ?>} because the machine that re-evaluated is not the one that committed,
  * so a typed view has to recover the triple {@code <E, S, T>} from a {@link MachineKey}. Every entity, state
  * and identifier the key describes, the recovery identifier of a failed outcome included, is checked against
- * the key's own classes before the one cast this class exists to localize. A value that does not match is a
- * programming error in the calling test and raises {@link IllegalArgumentException}.
+ * the key's own classes before the unchecked cast this class exists to localize. A value that does not match
+ * is a programming error in the calling test and raises {@link IllegalArgumentException}.
  */
 public final class CheckedTypes {
 
@@ -62,7 +62,7 @@ public final class CheckedTypes {
         return typed;
     }
 
-    /** Origin and current state always, plus the destination of the two variants that resolved an edge. */
+    /** Origin and current state always, plus the destination, which only an applied and a failed outcome report. */
     private static List<Enum<?>> statesOf(Outcome<?, ?, ?> outcome) {
         List<Enum<?>> states = new ArrayList<>();
         states.add(outcome.from());

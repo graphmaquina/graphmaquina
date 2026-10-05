@@ -31,7 +31,7 @@ import org.junit.jupiter.api.parallel.Resources;
 /**
  * Contract of the Graphviz DOT golden. Update writes the source file, read mode resolves the very same resource
  * through the class loader, and a second update over matching content writes nothing. The checked-in
- * {@code golden/simple.dot} pins the rendering of the fixture — every declared edge and nothing else — and a
+ * {@code golden/simple.dot} pins the rendering of the fixture — every declared edge and no other — and a
  * mismatch reports the lines that moved.
  */
 class GraphGoldensTest {
@@ -39,9 +39,9 @@ class GraphGoldensTest {
     private static final String RESOURCE = "golden/simple.dot";
 
     /**
-     * The negative cases name the checked-in fixtures with content that deliberately does not match, so they
-     * must never follow {@code graphmaquina.goldens.update}: a regeneration run would rewrite the fixtures
-     * with that wrong content instead of asserting. Explicit options read no property.
+     * The negative cases name the checked-in fixture with content that deliberately does not match, or a
+     * resource that has to stay absent, so they must never follow {@code graphmaquina.goldens.update}: a
+     * regeneration run would write that golden instead of asserting. Explicit options read no property.
      */
     private static final GoldenOptions READ_ONLY =
             GoldenOptions.readOnly(GraphGoldensTest.class.getClassLoader());
@@ -110,8 +110,8 @@ class GraphGoldensTest {
     }
 
     /**
-     * The rendering draws declared edges only, so the identifier of every arrow is in its label and an
-     * identifier without an edge appears nowhere: there is no exhaustive mode that could draw it.
+     * Between states the rendering draws declared edges only, so the identifier of every such arrow is in its
+     * label and an identifier without an edge appears nowhere: there is no exhaustive mode that could draw it.
      */
     @Test
     void theDiagramNamesEveryIdentifierItDrawsAndNoIdentifierItDoesNot() throws Exception {

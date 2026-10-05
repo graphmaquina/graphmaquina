@@ -42,7 +42,8 @@ public final class GoldenOptions {
     /**
      * The context class loader when the thread has one, the loader of this module otherwise, with the
      * mode taken from the system properties and, in update mode only, the source root. Read mode never
-     * writes, so it ignores {@code graphmaquina.goldens.root} and the options it builds carry no root.
+     * writes, so it ignores {@code graphmaquina.goldens.root} and the options it builds carry no root. Each
+     * golden an update writes is reported on the standard output as {@code UPDATED} followed by its absolute path.
      *
      * @throws IllegalArgumentException if {@code graphmaquina.goldens.update} is set to anything other than
      *     {@code true} or {@code false}; unset, it means {@code false}. Also if update mode is on and

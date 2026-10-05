@@ -42,13 +42,13 @@ import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
- * Contract of the reaction views. A reaction never propagates its failure to the commit that triggered it,
- * so the two questions a test asks — "did this commit's own re-evaluations abort?" and "did anything abort
- * anywhere below it?" — are kept apart and each is pinned here. Selection is by entity identity rather than
- * equality, an outcome published untyped is never cast without checking it against the key, every mismatch
- * is read off the fields of the {@link GraphAssertionError} rather than off its type alone, except in the few
- * cases that only need a check to fail, and every public expectation whose subject can be null gets its own
- * null-subject case.
+ * Contract of the reaction views. An exception thrown by a reaction never propagates to the commit that
+ * triggered it, so the two questions a test asks — "did this commit's own re-evaluations abort?" and "did
+ * anything abort anywhere below it?" — are kept apart and each is pinned here. Selection is by entity identity
+ * rather than equality, an outcome published untyped is never cast without checking it against the key, every
+ * mismatch is read off the fields of the {@link GraphAssertionError} rather than off its type alone, except in
+ * the few cases that only need a check to fail, and every public expectation whose subject can be null gets its
+ * own null-subject case.
  */
 class ReactionAssertionsTest {
 

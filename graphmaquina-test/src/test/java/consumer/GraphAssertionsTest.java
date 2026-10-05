@@ -26,9 +26,9 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 /**
- * Contract of {@link GraphAssert}. Every expectation gets a match, a mismatch read off the fields of the
- * {@link GraphAssertionError} and its own null-subject case, and the edge selector is pinned to the pair of an
- * origin and an identifier — never to a destination.
+ * Contract of {@link GraphAssert}. Every expectation gets a match and a mismatch read off the fields of the
+ * {@link GraphAssertionError}, every one but {@code rejects} gets its own null-subject case, and the edge
+ * selector is pinned to the pair of an origin and an identifier — never to a destination.
  */
 class GraphAssertionsTest {
 
@@ -276,9 +276,10 @@ class GraphAssertionsTest {
     }
 
     /**
-     * Absence is the one expectation a foreign identifier could satisfy by accident: the index is keyed by
-     * {@code (from, id)}, so a constant of another enum would simply miss it and report a green absence.
-     * Every selector that names an identifier refuses one that is not in the machine's catalogue.
+     * A foreign identifier could satisfy an expectation of absence by accident, {@code hasNoTransition} and
+     * {@code rejects} alike: the index is keyed by {@code (from, id)}, so a constant of another enum would
+     * simply miss it and report a green absence. Every selector that names an identifier refuses one that is
+     * not in the machine's catalogue.
      */
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -347,7 +348,7 @@ class GraphAssertionsTest {
                 () -> graph.hasTransitionsExactly(State.NEW, Id.PREPARE, null));
     }
 
-    // --- one null-subject case per expectation method ----------------------------------------------
+    // --- one null-subject case per expectation method, except rejects ------------------------------
 
     @Test
     void nullDefinitionFailsHasInitialWithContext() {

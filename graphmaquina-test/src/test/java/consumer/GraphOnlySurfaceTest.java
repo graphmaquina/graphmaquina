@@ -80,8 +80,9 @@ class GraphOnlySurfaceTest {
             "io.github.graphmaquina.annotation.Forbids");
 
     /**
-     * The simple names the generator once nested inside a machine's own vocabulary. A published artifact
-     * declares a nested type of none of them, whatever outer type it belongs to.
+     * The simple names of the retired annotations the generator once nested inside a machine's own vocabulary,
+     * apart from their repeatable containers {@code Rows}, {@code Cells} and {@code Forbids}. A published
+     * artifact declares a nested type of none of them, whatever outer type it belongs to.
      */
     private static final List<String> RETIRED_NESTED = List.of("Row", "Cell", "Forbid", "Action", "Move");
 
@@ -300,7 +301,8 @@ class GraphOnlySurfaceTest {
 
     /**
      * Parses the sources without resolving anything, so that it needs no classpath, and reports each type
-     * declared inside another one whose simple name is retired, as {@code file declares Outer.Name}.
+     * declared inside another one whose simple name is retired, as {@code file declares Outer.Name}. Anything
+     * javac reports while parsing, a source that does not parse included, fails the assertion.
      */
     private static List<String> retiredNestedDeclarations(List<SourceText> sources) throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
