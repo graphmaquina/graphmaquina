@@ -135,12 +135,19 @@ public final class SourceFiles {
             fileManager.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classes));
             JavaCompiler.CompilationTask task = compiler.getTask(null, fileManager, diagnostics, options, null,
                     fileManager.getJavaFileObjectsFromPaths(files));
-            boolean success = Boolean.TRUE.equals(task.call());
-            return new Compilation(success, List.copyOf(diagnostics.getDiagnostics()));
+            boolean called = Boolean.TRUE.equals(task.call());
+            List<Diagnostic<? extends JavaFileObject>> reported = List.copyOf(diagnostics.getDiagnostics());
+            boolean success = called && reported.stream().noneMatch(
+                    (Diagnostic<? extends JavaFileObject> diagnostic) -> diagnostic.getKind() == Diagnostic.Kind.ERROR);
+            return new Compilation(success, reported);
         }
     }
 
-    /** What one compilation reported: whether javac succeeded and every diagnostic it produced, in order. */
+    /**
+     * What one compilation reported: whether it succeeded, which takes javac's task returning {@code true} and no
+     * diagnostic of kind {@code ERROR}, since javac reports some errors without failing its task, such as a byte the
+     * encoding cannot decode in a comment; and every diagnostic it produced, in order.
+     */
     public record Compilation(boolean success, List<Diagnostic<? extends JavaFileObject>> diagnostics) {
 
         /** The javac codes of the diagnostics, for assertions that must not depend on a localized message. */

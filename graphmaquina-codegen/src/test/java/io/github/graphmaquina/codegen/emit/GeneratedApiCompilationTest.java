@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -84,9 +85,46 @@ class GeneratedApiCompilationTest {
     }
 
     /**
-     * Applies the annotations emitted for the machine as an application would: {@code Definition}, repeated
-     * {@code StatePolicy} and {@code Transition} on the type, {@code Transition} on two methods and one
-     * {@code Reject}.
+     * The originals of {@link #ORIGINALS} with a second machine, {@code fx.Pages}, which {@code fx.Docs} declares as
+     * its peer, so the generation also emits the watch vocabulary of {@code fx.Docs} over it.
+     */
+    private static Map<String, String> withPeer() {
+        Map<String, String> sources = new LinkedHashMap<>(ORIGINALS);
+        sources.put("fx.Docs", """
+            package fx;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.annotation.GraphPeers;
+            import io.github.graphmaquina.api.Machine;
+            @GenerateGraphApi
+            @GraphPeers(Pages.class)
+            public interface Docs extends Machine<Doc, DocStatus, DocTransition> {}
+            """);
+        sources.put("fx.PageStatus", """
+            package fx;
+            public enum PageStatus { OPEN, CLOSED }
+            """);
+        sources.put("fx.PageTransition", """
+            package fx;
+            public enum PageTransition { CLOSE_PAGE }
+            """);
+        sources.put("fx.Page", """
+            package fx;
+            public class Page { }
+            """);
+        sources.put("fx.Pages", """
+            package fx;
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.api.Machine;
+            @GenerateGraphApi
+            public interface Pages extends Machine<Page, PageStatus, PageTransition> {}
+            """);
+        return sources;
+    }
+
+    /**
+     * Applies the annotations emitted for the machine as an application would: {@code Definition} and repeated
+     * {@code StatePolicy}, {@code Transition} and {@code Reject} on the type, which javac gathers into their
+     * containers, and {@code Transition} on two methods.
      */
     private static final Map<String, String> USAGE = Map.of("use.DocsUsage", """
         package use;
@@ -113,6 +151,10 @@ class GeneratedApiCompilationTest {
                 from = fx.DocStatus.DRAFT,
                 transition = fx.DocTransition.PUBLISH,
                 reason = "review first")
+        @fx.DocsGraph.Reject(
+                from = fx.DocStatus.PUBLISHED,
+                transition = fx.DocTransition.SUBMIT,
+                reason = "already published")
         public interface DocsUsage {
 
             @fx.DocsGraph.Transition(
@@ -619,27 +661,53 @@ class GeneratedApiCompilationTest {
         assertTrue(failure.getMessage().contains("_1machine"), failure.getMessage());
     }
 
+    /** The annotations of both machine vocabularies and of the watch vocabulary of the pair they form. */
     @Test
     void namesEveryGeneratedAnnotationAndContainerCanonically() {
         assertEquals(List.of("fx.DocsGraph.Definition", "fx.DocsGraph.Reject", "fx.DocsGraph.Rejects",
                 "fx.DocsGraph.StatePolicies", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.Transition",
-                "fx.DocsGraph.Transitions"),
-                ApiEmitter.annotationTypes(model()).stream().sorted().toList());
+                "fx.DocsGraph.Transitions", "fx.DocsPages.Watch", "fx.DocsPages.Watches", "fx.DocsPages.When",
+                "fx.PagesGraph.Definition", "fx.PagesGraph.Reject", "fx.PagesGraph.Rejects",
+                "fx.PagesGraph.StatePolicies", "fx.PagesGraph.StatePolicy", "fx.PagesGraph.Transition",
+                "fx.PagesGraph.Transitions"),
+                ApiEmitter.annotationTypes(inspect("peered", withPeer())).stream().sorted().toList());
     }
 
-    /** The processor routes on these markers, so each annotation must carry the kind it was emitted for. */
+    /**
+     * The processor routes on these markers, so each annotation must carry the kind it was emitted for, in both
+     * machine vocabularies and in the watch vocabulary of the pair they form.
+     */
     @Test
     void marksEveryAnnotationWithTheVocabularyKindItDeclares() {
-        String vocabulary = content(ApiEmitter.emit(model(), "io.github.graphmaquina:test:main"), "fx.DocsGraph");
-        List<String> kinds = new ArrayList<>();
-        for (String line : vocabulary.lines().toList()) {
-            int marker = line.indexOf("VocabularyKind.");
-            if (marker >= 0) {
-                kinds.add(line.substring(marker + "VocabularyKind.".length(), line.lastIndexOf(')')));
+        Map<String, String> kinds = new TreeMap<>();
+        for (GeneratedSource source : ApiEmitter.emit(inspect("peered", withPeer()), "peered")) {
+            String kind = null;
+            for (String line : source.content().lines().map(String::strip).toList()) {
+                int marker = line.indexOf("VocabularyKind.");
+                if (marker >= 0) {
+                    kind = line.substring(marker + "VocabularyKind.".length(), line.lastIndexOf(')'));
+                } else if (kind != null && line.startsWith("public @interface ")) {
+                    String name = line.substring("public @interface ".length(), line.indexOf(" {"));
+                    kinds.put(source.qualifiedName() + '.' + name, kind);
+                    kind = null;
+                }
             }
         }
-        assertEquals(List.of("DEFINITION", "STATE_POLICY", "STATE_POLICIES", "TRANSITION", "TRANSITIONS",
-                "REJECT", "REJECTS"), kinds);
+
+        Map<String, String> expected = new TreeMap<>();
+        for (String vocabulary : List.of("fx.DocsGraph", "fx.PagesGraph")) {
+            expected.put(vocabulary + ".Definition", "DEFINITION");
+            expected.put(vocabulary + ".StatePolicy", "STATE_POLICY");
+            expected.put(vocabulary + ".StatePolicies", "STATE_POLICIES");
+            expected.put(vocabulary + ".Transition", "TRANSITION");
+            expected.put(vocabulary + ".Transitions", "TRANSITIONS");
+            expected.put(vocabulary + ".Reject", "REJECT");
+            expected.put(vocabulary + ".Rejects", "REJECTS");
+        }
+        expected.put("fx.DocsPages.Watch", "WATCH");
+        expected.put("fx.DocsPages.Watches", "WATCHES");
+        expected.put("fx.DocsPages.When", "WHEN");
+        assertEquals(expected, kinds);
     }
 
     /**

@@ -8,26 +8,35 @@ import io.github.graphmaquina.codegen.manifest.OwnedOutputs;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Stream;
+import javax.lang.model.SourceVersion;
 
 /**
  * The two steps a build runs around javac: {@code prepare} before it and {@code complete} after it succeeded.
  *
  * <p>javac never deletes a class file it no longer produces, so a compilation that renames or removes a graph
  * member would keep publishing the binaries of the previous one. {@code prepare} retires them, and it does so
- * from an inventory rather than from a name prefix: it removes the exact files a previous cycle recorded and,
- * after an interrupted cycle, the class files that reading them attributes to a unit an inventory or the manifest
- * names, so {@code fx/OldRefs$Manual.class} written by hand survives a run that retires {@code fx/OldRefs.class}. It
- * also removes the published index and the provisional one, so no consumer and no packager can read what this
- * compilation has not yet verified.</p>
+ * from an inventory rather than from a name prefix: it removes the exact class files and resources the inventories
+ * recorded and the processor's sources the sealed inventory recorded and, after an interrupted cycle, the sources the
+ * processor inventory names and the class files that reading them attributes to a unit an inventory, the manifest
+ * or the processor inventory names, so {@code fx/OldRefs$Manual.class} written by hand survives a run that retires
+ * {@code fx/OldRefs.class}. It never removes a source the generator wrote for the current generation, whatever path
+ * names the directory it stands in: the generator retires the sources of earlier generations itself, through its own
+ * manifests, when it publishes the next one. It also removes the published index and the provisional one, so no
+ * consumer and no packager can read what this compilation has not yet verified.</p>
  *
  * <p>Between the two steps the inventory of what is being retired lives in
  * {@code <workDirectory>/owned-outputs.pending.json}, written before the first deletion to a file beside it that
@@ -61,21 +70,45 @@ public final class CompilationOutputs {
     }
 
     /**
-     * Retires everything a previous cycle owned and invalidates the published index, before javac runs.
+     * Retires the outputs a previous cycle owned and invalidates the published index, before javac runs.
      *
      * <p>Only schema 2 inventories are accepted. A retired inventory stops preparation with {@code SG602}
      * before any output is changed; the user must clean the old build explicitly.</p>
      *
+     * <p>A path an inventory records is only removed under the root it is relative to, and only when the directory
+     * holding its file is, by its real path, the real directory of that root or one below it, so a symbolic link
+     * inside a root never takes a removal out of it. An entry this step removes, a source of the sealed inventory or a
+     * binary, a resource or an excluded binary of either inventory, whose file such a link would take out is refused
+     * with {@code SG603} before any output is changed; any other file it would take out, such as a source the
+     * processor inventory names or an export index, is left alone. The binaries, the resources and the excluded
+     * binaries of both inventories are removed from {@code classesOutput}. The sources of the sealed inventory, which
+     * are all the processor's, are removed from {@code processorSourcesOutput}, except one that is, by its file key
+     * where the file system has one and otherwise by its real path, a source the current generation writes under
+     * {@code sourcesOutput}, as when both source outputs are one directory, however each of them names it. No source
+     * is removed because the pending inventory lists it: its sources serve only to name the units a generation owned.
+     * Besides the processor's, copied from a sealed inventory, they list the generator's, which stand under
+     * {@code sourcesOutput}, where the generator retires them itself when it publishes the next generation.</p>
+     *
      * <p>When a pending inventory is already there, the cycle it belongs to was interrupted: javac may have
      * written class files for its units that no inventory could list, since only {@code complete} enumerates
-     * them. Those are retired too, by asking {@link OwnedClassFiles} which binaries belong to the units that
-     * generation owned, as the inventories and the current manifest name them; a class file the enumeration does
+     * them, and the annotation processor may have generated types that no inventory lists at all. The processor
+     * inventory at {@link CompileManifest#processorInventory()} names the types the processor generated in the last
+     * run that got as far as writing it, the interrupted one when javac did; their sources are removed from
+     * {@code processorSourcesOutput}, with the same exception as the sealed inventory's. A processor inventory that
+     * is missing, that cannot be read or that the codec refuses, as it refuses one javac stopped writing halfway,
+     * names nothing. So does one that lists anything but a qualified or binary Java name as the processor writes
+     * them, with no identifier-ignorable character that fits in one {@code char}, since javac leaves those out of
+     * every identifier it reads: a path made of such an entry could name a file the processor never wrote, or no file
+     * at all, so what only such an inventory could name is left alone, even what its valid names name. The class
+     * files are retired by asking {@link OwnedClassFiles} which binaries belong to the units that generation owned, as
+     * the inventories, the current manifest and that processor inventory name them; a class file the enumeration does
      * not attribute to one of them is never touched.</p>
      *
      * @throws CodegenException {@code SG602} if the generator wrote no manifest for this compilation, or
-     *     {@code SG603} if an inventory names a path outside the root it belongs to
+     *     {@code SG603} if the sealed or the pending inventory names a path outside the root it belongs to, one no
+     *     path can spell, or one this step removes whose file a symbolic link inside that root takes out of it
      * @throws IOException if the manifest, an inventory or a class file cannot be read, the pending inventory
-     *     cannot be written or an output cannot be removed
+     *     cannot be written, or a source or an output cannot be examined or removed
      */
     public static void prepare(GenerationRequest request) throws IOException {
         Objects.requireNonNull(request, "request");
@@ -86,9 +119,15 @@ public final class CompilationOutputs {
 
         Path pendingInventory = work.resolve(PENDING_INVENTORY);
         boolean interrupted = Files.isRegularFile(pendingInventory);
-        List<OwnedOutputs> previous = new ArrayList<>();
-        previous.addAll(readInventory(work.resolve(INVENTORY), classes, processorSources));
+        List<OwnedOutputs> sealed = readInventory(work.resolve(INVENTORY), classes, processorSources);
+        for (OwnedOutputs inventory : sealed) {
+            requireStaysInside(inventory.sources(), processorSources, INVENTORY);
+        }
+        List<OwnedOutputs> previous = new ArrayList<>(sealed);
         previous.addAll(readInventory(pendingInventory, classes, processorSources));
+        List<String> processorTypes = interrupted
+                ? processorTypes(Path.of(manifest.processorInventory()))
+                : List.of();
         OwnedOutputs retiring = new OwnedOutputs(SCHEMA_VERSION,
             union(previous.stream().map(OwnedOutputs::sources).toList(), manifest.ownedSources()),
             union(previous.stream().map(OwnedOutputs::binaries).toList(), List.of()),
@@ -96,11 +135,21 @@ public final class CompilationOutputs {
             union(previous.stream().map(OwnedOutputs::excludedBinaries).toList(), List.of()));
         replace(pendingInventory, retiring);
 
-        Set<String> generated = Set.copyOf(manifest.ownedSources());
+        Path generatedSources = root(request.sourcesOutput());
+        Set<Object> generated = new HashSet<>();
+        for (String source : manifest.ownedSources()) {
+            identity(resolve(generatedSources, source)).ifPresent(generated::add);
+        }
+        List<String> processorSourceFiles = new ArrayList<>(sourceFiles(processorTypes));
+        for (OwnedOutputs inventory : sealed) {
+            processorSourceFiles.addAll(inventory.sources());
+        }
         List<Path> retired = new ArrayList<>();
-        for (String source : retiring.sources()) {
-            if (!generated.contains(source)) {
-                retired.add(resolve(processorSources, source));
+        for (String source : processorSourceFiles) {
+            Path file = resolve(processorSources, source);
+            Optional<Object> identity = identity(file);
+            if (identity.isEmpty() || !generated.contains(identity.get())) {
+                retired.add(file);
             }
         }
         for (String binary : retiring.binaries()) {
@@ -115,7 +164,9 @@ public final class CompilationOutputs {
         retired.add(resolve(classes, PUBLISHED_INDEX));
         retired.add(resolve(classes, PENDING_INDEX));
         if (interrupted) {
-            retired.addAll(OwnedClassFiles.enumerate(classes, ownedTypes(retiring)));
+            Set<String> owned = ownedTypes(retiring);
+            owned.addAll(processorTypes);
+            retired.addAll(OwnedClassFiles.enumerate(classes, owned));
         }
         delete(retired, List.of(classes, processorSources));
     }
@@ -126,9 +177,9 @@ public final class CompilationOutputs {
      * @throws CodegenException {@code SG602} if the generator wrote no manifest for this compilation, if it was
      *     never prepared or was prepared for another generation, or if it carries no provisional index, no processor
      *     inventory or no class file for its carrier, or {@code SG603} if a path of the new inventory escapes its
-     *     root
+     *     root, or a symbolic link inside the class output takes one of its class-output paths out of it
      * @throws IOException if the manifest, an inventory or a class file cannot be read, or an output cannot be
-     *     written or removed
+     *     examined, written or removed
      */
     public static void complete(GenerationRequest request) throws IOException {
         Objects.requireNonNull(request, "request");
@@ -189,9 +240,10 @@ public final class CompilationOutputs {
             sourceFiles(generatedTypes), relative(classes, binaries), List.of(PUBLISHED_INDEX),
             relative(classes, carrierBinaries));
         requireInside(sealed.sources(), processorSources, INVENTORY);
-        requireInside(sealed.binaries(), classes, INVENTORY);
-        requireInside(sealed.resources(), classes, INVENTORY);
-        requireInside(sealed.excludedBinaries(), classes, INVENTORY);
+        for (List<String> removed : List.of(sealed.binaries(), sealed.resources(), sealed.excludedBinaries())) {
+            requireInside(removed, classes, INVENTORY);
+            requireStaysInside(removed, classes, INVENTORY);
+        }
 
         delete(carrierBinaries, List.of(classes));
         Path published = resolve(classes, PUBLISHED_INDEX);
@@ -222,37 +274,104 @@ public final class CompilationOutputs {
         return GenerationOutput.manifestPath(request);
     }
 
-    /** The inventory at {@code path} when it exists, with every one of its paths checked against its root. */
+    /**
+     * The inventory at {@code path} when it exists, with its sources checked against {@code processorSources} and
+     * its other paths against {@code classes}, which they are removed from, so they must also
+     * {@linkplain #requireStaysInside stay inside} it. Whether its sources must is left to the caller: those of a
+     * pending inventory are never removed.
+     */
     private static List<OwnedOutputs> readInventory(Path path, Path classes, Path processorSources)
             throws IOException {
         if (!Files.isRegularFile(path)) {
             return List.of();
         }
         OwnedOutputs inventory = ManifestCodec.readOwned(path);
-        requireInside(inventory.sources(), processorSources, path.getFileName().toString());
-        requireInside(inventory.binaries(), classes, path.getFileName().toString());
-        requireInside(inventory.resources(), classes, path.getFileName().toString());
-        requireInside(inventory.excludedBinaries(), classes, path.getFileName().toString());
+        String name = path.getFileName().toString();
+        requireInside(inventory.sources(), processorSources, name);
+        for (List<String> removed
+                : List.of(inventory.binaries(), inventory.resources(), inventory.excludedBinaries())) {
+            requireInside(removed, classes, name);
+            requireStaysInside(removed, classes, name);
+        }
         return List.of(inventory);
     }
 
     /**
-     * Refuses an inventory path that is blank, that is absolute or that lands on {@code root} itself or outside it
-     * once resolved. A blank entry resolves to the root itself, which would hand the whole output directory to a
-     * step that only ever deletes the files one compilation owns.
+     * Refuses an inventory path that is blank, that no path can spell, such as one holding the NUL character, that is
+     * absolute or has a root, as {@code \x} and {@code C:x} have on Windows, or that lands on {@code root} itself or
+     * outside it once resolved. A blank entry resolves to the root itself, which would hand the whole output
+     * directory to a step that only ever deletes the files one compilation owns.
      *
      * @throws CodegenException {@code SG603} naming the entry, since an inventory may only claim files the
      *     compilation itself produced under its own output roots
      */
     private static void requireInside(List<String> entries, Path root, String inventory) {
         for (String entry : entries) {
-            Path resolved = resolve(root, entry).normalize();
-            if (entry.isBlank() || Path.of(entry).isAbsolute()
-                    || resolved.equals(root) || !resolved.startsWith(root)) {
+            boolean inside;
+            try {
+                Path spelled = Path.of(entry);
+                Path resolved = resolve(root, entry).normalize();
+                inside = !entry.isBlank() && !spelled.isAbsolute() && spelled.getRoot() == null
+                        && !resolved.equals(root) && resolved.startsWith(root);
+            } catch (InvalidPathException unspellable) {
+                inside = false;
+            }
+            if (!inside) {
                 throw new CodegenException(COLLISION, "the inventory " + inventory + " claims '" + entry
                     + "', which is not a file under " + root);
             }
         }
+    }
+
+    /**
+     * Refuses an inventory path, already {@linkplain #requireInside inside} {@code root} as spelled, whose file a
+     * symbolic link inside {@code root} would take out of it: one whose directory exists but does not
+     * {@linkplain #standsUnder stand under} {@code root}. Only an entry a step removes under {@code root} is checked
+     * this way.
+     *
+     * @throws CodegenException {@code SG603} naming the entry
+     * @throws IOException if the directory of an entry or {@code root} cannot be examined
+     */
+    private static void requireStaysInside(List<String> entries, Path root, String inventory) throws IOException {
+        for (String entry : entries) {
+            Path file = resolve(root, entry);
+            if (Files.isDirectory(file.getParent()) && !standsUnder(file, root)) {
+                throw new CodegenException(COLLISION, "the inventory " + inventory + " claims '" + entry
+                    + "', which a symbolic link takes out of " + root);
+            }
+        }
+    }
+
+    /**
+     * The types the processor inventory at {@code path} lists: none when there is no regular file there, when it
+     * cannot be read, when the codec refuses it, as it refuses one javac stopped writing halfway, or when it lists
+     * anything {@link #isTypeName} refuses, which is no name the processor writes.
+     */
+    private static List<String> processorTypes(Path path) {
+        if (!Files.isRegularFile(path)) {
+            return List.of();
+        }
+        try {
+            List<String> types = ManifestCodec.readProcessorInventory(path);
+            for (String type : types) {
+                if (!isTypeName(type)) {
+                    return List.of();
+                }
+            }
+            return types;
+        } catch (IOException | CodegenException unreadable) {
+            return List.of();
+        }
+    }
+
+    /**
+     * Whether {@code name} is a qualified or binary name as the processor writes them: Java identifiers joined by
+     * dots, none of them a keyword, and no identifier-ignorable character that fits in one {@code char}, such as NUL.
+     * javac leaves those out of every identifier it reads, while it keeps a supplementary one, such as U+E0001, which
+     * a name the processor writes may therefore hold.
+     */
+    private static boolean isTypeName(String name) {
+        return SourceVersion.isName(name) && name.chars().noneMatch(Character::isIdentifierIgnorable);
     }
 
     /** Every distinct entry of {@code lists} and of {@code extra}, sorted. */
@@ -324,6 +443,20 @@ public final class CompilationOutputs {
         return List.copyOf(entries);
     }
 
+    /**
+     * What tells the file at {@code file} apart from every other file, whatever path leads to it: its file key where
+     * the file system has one, as POSIX file systems do with the device and the inode, and otherwise its real path,
+     * as {@link Path#toRealPath} derives it with every symbolic link resolved. Empty when no file stands there.
+     */
+    private static Optional<Object> identity(Path file) throws IOException {
+        try {
+            Object key = Files.readAttributes(file, BasicFileAttributes.class).fileKey();
+            return Optional.of(key != null ? key : file.toRealPath());
+        } catch (NoSuchFileException absent) {
+            return Optional.empty();
+        }
+    }
+
     /** {@code entry} resolved segment by segment under {@code root}, whatever separator this system uses. */
     private static Path resolve(Path root, String entry) {
         Path resolved = root;
@@ -335,11 +468,44 @@ public final class CompilationOutputs {
         return resolved;
     }
 
-    /** Removes every file that is still there and the directories that stay empty behind them. */
+    /**
+     * Whether the directory holding {@code file} is, by its real path, the real directory of {@code root} or one below
+     * it, with every symbolic link on the way resolved, so that an output root that is itself a link still holds its
+     * files. False when that directory or {@code root} does not exist, since no file can stand there.
+     *
+     * @throws IOException if a directory on the way cannot be examined, as when its links loop
+     */
+    static boolean standsUnder(Path file, Path root) throws IOException {
+        Path parent = file.toAbsolutePath().getParent();
+        if (parent == null) {
+            return false;
+        }
+        try {
+            return parent.toRealPath().startsWith(root.toRealPath());
+        } catch (NoSuchFileException absent) {
+            return false;
+        }
+    }
+
+    /** Whether {@code file} {@linkplain #standsUnder stands under} one of {@code roots} it is named under. */
+    private static boolean standsUnderAny(Path file, List<Path> roots) throws IOException {
+        for (Path root : roots) {
+            if (file.startsWith(root) && standsUnder(file, root)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Removes every file that is still there and the directories that stay empty behind them. A file or a directory
+     * that does not {@linkplain #standsUnder stand under} the root it is named under is left alone, so a symbolic link
+     * inside a root never takes a removal out of it.
+     */
     private static void delete(List<Path> files, List<Path> roots) throws IOException {
         Set<Path> parents = new LinkedHashSet<>();
         for (Path file : files) {
-            if (Files.deleteIfExists(file) && file.getParent() != null) {
+            if (standsUnderAny(file, roots) && Files.deleteIfExists(file) && file.getParent() != null) {
                 parents.add(file.getParent());
             }
         }
@@ -348,11 +514,14 @@ public final class CompilationOutputs {
         }
     }
 
-    /** Removes {@code directory} and its own empty parents, never reaching or removing one of {@code roots}. */
+    /**
+     * Removes {@code directory} and its own empty parents, never reaching or removing one of {@code roots}, and
+     * stopping at the first that does not {@linkplain #standsUnder stand under} the root it is named under.
+     */
     private static void prune(Path directory, List<Path> roots) throws IOException {
         Path current = directory;
         while (current != null && !roots.contains(current) && startsWithAny(current, roots)
-                && Files.isDirectory(current)) {
+                && Files.isDirectory(current) && standsUnderAny(current, roots)) {
             try (Stream<Path> entries = Files.list(current)) {
                 if (entries.findAny().isPresent()) {
                     return;

@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -51,8 +52,10 @@ final class OwnedClassFiles {
     }
 
     /**
-     * Every candidate class file under {@code classesOutput} whose outermost class, as {@link ClassFile#outermost()}
-     * traces it, is one of {@code ownedTopLevelNames} and whose {@code SourceFile} is that unit's own file, sorted.
+     * Every candidate class file under {@code classesOutput} whose outermost class, as
+     * {@link ClassFile#outermost(Map)} traces it through the candidates that stand where javac writes the class
+     * they declare, is one of {@code ownedTopLevelNames} and whose {@code SourceFile} is that unit's own file,
+     * sorted.
      *
      * @param classesOutput the class output of the compilation; an absent directory contributes nothing
      * @param ownedTopLevelNames the canonical names of the top-level types this compilation owns
@@ -65,12 +68,23 @@ final class OwnedClassFiles {
         if (ownedTopLevelNames.isEmpty() || !Files.isDirectory(classesOutput)) {
             return List.of();
         }
-        List<Path> owned = new ArrayList<>();
+        Map<Path, ClassFile> parsed = new LinkedHashMap<>();
+        Map<String, ClassFile> declaring = new HashMap<>();
         for (Path file : candidates(classesOutput, ownedTopLevelNames)) {
-            ClassFile parsed = read(file);
-            String outermost = parsed.outermost();
-            if (ownedTopLevelNames.contains(outermost) && parsed.sourceFile().equals(fileNameOf(outermost))) {
-                owned.add(file);
+            ClassFile classFile = read(file);
+            parsed.put(file, classFile);
+            String relative = classesOutput.relativize(file).toString()
+                    .replace(file.getFileSystem().getSeparator(), "/");
+            if (relative.equals(classFile.thisClass().replace('.', '/') + SUFFIX)) {
+                declaring.put(classFile.thisClass(), classFile);
+            }
+        }
+        List<Path> owned = new ArrayList<>();
+        for (Map.Entry<Path, ClassFile> candidate : parsed.entrySet()) {
+            Optional<String> outermost = candidate.getValue().outermost(declaring);
+            if (outermost.isPresent() && ownedTopLevelNames.contains(outermost.get())
+                    && candidate.getValue().sourceFile().equals(fileNameOf(outermost.get()))) {
+                owned.add(candidate.getKey());
             }
         }
         return List.copyOf(owned);
@@ -157,30 +171,41 @@ final class OwnedClassFiles {
             String enclosing) {
 
         /**
-         * The top-level class this file belongs to, followed outwards through {@code InnerClasses} and, when this
-         * file's own class is an anonymous, local or synthetic class those entries name no outer class for, through
-         * its {@code EnclosingMethod}, which a file carries for its own class only. A chain that leads nowhere
-         * yields the last name reached, which matches no owned unit, so such a file is left alone rather than
-         * deleted on a guess. That includes a chain that reaches another anonymous or local class, as from a class
-         * declared inside one: a member class of a local class, or a local class inside an anonymous one.
+         * The top-level class this file belongs to, when a chain of declarations leads from its own class to one.
+         * Each class the chain reaches is read in the class file that declares it: this file for its own class,
+         * the one {@code declaring} maps it to for any other. A class steps out to the outer class its
+         * {@code InnerClasses} entry names: the entry in its own class file or, when that file is missing or holds
+         * none, the entry in this file. When that entry names no outer class, as for an anonymous, local or
+         * synthetic class, it steps out to the class its {@code EnclosingMethod} names, which only its own class file
+         * carries. A class that neither file holds an entry for is the top-level class. A member class of a local
+         * class, or a local class inside an anonymous one, is therefore traced through the class files of the classes
+         * around it. A chain leads nowhere, and yields nothing, when it reaches a class whose entry names no outer
+         * class and whose own class file is missing or names no enclosing class, or when it comes back to a class it
+         * already reached; such a file is left alone rather than deleted on a guess.
+         *
+         * @param declaring the class files a chain may continue in, by the binary name, with dots for slashes, of
+         *     the class each one declares
          */
-        String outermost() {
+        Optional<String> outermost(Map<String, ClassFile> declaring) {
+            Set<String> reached = new HashSet<>();
             String current = thisClass;
-            for (int step = 0; step <= outerOf.size(); step++) {
-                String outer = outerOf.get(current);
+            while (reached.add(current)) {
+                ClassFile own = current.equals(thisClass) ? this : declaring.get(current);
+                String outer = own != null && own.outerOf().containsKey(current)
+                        ? own.outerOf().get(current)
+                        : outerOf.get(current);
                 if (outer == null) {
-                    return current;
+                    return Optional.of(current);
                 }
-                if (NO_OUTER.equals(outer)) {
-                    if (!current.equals(thisClass) || enclosing.isEmpty()) {
-                        return current;
-                    }
-                    current = enclosing;
-                } else {
+                if (!NO_OUTER.equals(outer)) {
                     current = outer;
+                } else if (own != null && !own.enclosing().isEmpty()) {
+                    current = own.enclosing();
+                } else {
+                    return Optional.empty();
                 }
             }
-            return current;
+            return Optional.empty();
         }
     }
 

@@ -14,10 +14,15 @@ import java.util.Objects;
  * {@code sources} are relative to {@code processorSourcesOutput}, and {@code binaries}, {@code resources} and
  * {@code excludedBinaries} to {@code classesOutput}. The pending inventory written before javac runs also lists,
  * among its {@code sources}, the sources the generator wrote, relative to {@code sourcesOutput}, so that completing
- * the compilation can tell which generation it was prepared for. Besides the files an inventory lists, the next
- * preparation only removes the published and the pending export index and, after an interrupted cycle, the class
- * files it attributes, by reading them, to the types the inventory names; any other file is never touched,
- * whatever its name looks like.</p>
+ * the compilation can tell which generation it was prepared for and, after an interrupted cycle, the next
+ * preparation still knows the units that generation owned. Since that list mixes two roots, a preparation never
+ * removes a source because a pending inventory lists it: it removes from {@code processorSourcesOutput} the sources
+ * of the sealed inventory, all of them the processor's, but none that is, by its file key or else its real path, a
+ * source the current generation writes, and the generator retires its own from {@code sourcesOutput}. Besides those
+ * sources and the files the other lists name, the next preparation only removes the published and the pending export
+ * index and, after an interrupted cycle, the sources of the types the processor inventory names, with the same
+ * exception, and the class files it attributes, by reading them, to the types the inventories and the processor
+ * inventory name; any other file is never touched, whatever its name looks like.</p>
  */
 public record OwnedOutputs(int schemaVersion, List<String> sources,
         List<String> binaries, List<String> resources, List<String> excludedBinaries) {

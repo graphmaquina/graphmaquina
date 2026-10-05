@@ -18,6 +18,7 @@ import java.math.BigDecimal;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -277,18 +278,28 @@ final class JsonSupport {
     }
 
     /**
-     * Rejects an inventory path that is absolute or holds a {@code ..} segment, whether or not that segment leads
-     * out of its root.
+     * Rejects an inventory path that no path can spell, such as one holding the NUL character, one that is absolute
+     * or has a root, as {@code \x} and {@code C:x} have on Windows, where resolving one against a directory can give
+     * a path outside that directory, one that holds a {@code ..} segment, whether or not that segment leads out of its
+     * root, and one that names its root itself, as {@code .} and the empty path do.
      */
     static void requireRelativeInventoryPath(String value, Path file) {
-        Path candidate = Path.of(value);
-        if (candidate.isAbsolute()) {
+        Path candidate;
+        try {
+            candidate = Path.of(value);
+        } catch (InvalidPathException unspellable) {
+            throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' is not a path in " + file);
+        }
+        if (candidate.isAbsolute() || candidate.getRoot() != null) {
             throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' must be relative in " + file);
         }
         for (Path segment : candidate) {
             if ("..".equals(segment.toString())) {
                 throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' escapes its root in " + file);
             }
+        }
+        if (candidate.normalize().toString().isEmpty()) {
+            throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' names no file in " + file);
         }
     }
 

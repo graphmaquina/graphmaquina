@@ -31,10 +31,10 @@ import java.util.List;
  * unknown {@code schemaVersion} values, a missing mandatory member, a member of the wrong JSON type, a number
  * member that is not an exact integer of its range (a fraction, or a value beyond 32 bits for
  * {@code schemaVersion} and 64 bits for an origin's {@code line} and {@code column}), a duplicate key at any
- * nesting level, and an inventory path ({@link CompileManifest#ownedSources()}) that is absolute or holds a
- * {@code ..} segment are all rejected with a {@link CodegenException} carrying code {@code SG602} and naming the
- * file. A genuine I/O failure (the file cannot be opened, read or written) is reported as an {@link IOException}
- * instead, exactly as declared.
+ * nesting level, and an inventory path ({@link CompileManifest#ownedSources()}) that no path can spell, that is
+ * absolute or has a root, that holds a {@code ..} segment or that names the root itself, as {@code .} does, are all
+ * rejected with a {@link CodegenException} carrying code {@code SG602} and naming the file. A genuine I/O failure
+ * (the file cannot be opened, read or written) is reported as an {@link IOException} instead, exactly as declared.
  *
  * <p>Every write method sorts identity lists (a model's graphs by {@code facade}, its symbols by
  * {@code qualifiedName}, a graph's {@code peers}, a symbol's {@code kinds} by name and its {@code candidates} by
@@ -142,6 +142,9 @@ import java.util.List;
  *   "excludedBinaries": ["<string, path relative to classesOutput>", ...]
  * }
  * }</pre>
+ *
+ * <p>The pending inventory, written before javac runs, also lists among its {@code sources} the sources the
+ * generator wrote, relative to {@code sourcesOutput}, as {@link OwnedOutputs} explains.</p>
  *
  * <p>Unlike {@link CompileManifest#ownedSources()}, the four inventory lists are not validated against their
  * roots here: an inventory is read to decide what a build may delete, and that decision belongs to
@@ -269,8 +272,9 @@ public final class ManifestCodec {
     /**
      * Writes {@code manifest} to {@code path}, in the canonical order documented on this class.
      *
-     * @throws CodegenException {@code SG602} if an owned source is absolute or holds a {@code ..} segment, as
-     *     {@link #readCompile} would refuse it; nothing is written then
+     * @throws CodegenException {@code SG602} if {@link #readCompile} would refuse an owned source: one that no path
+     *     can spell, that is absolute or has a root, that holds a {@code ..} segment or that names the root itself;
+     *     nothing is written then
      * @throws IOException if {@code path} cannot be written
      */
     public static void writeCompile(Path path, CompileManifest manifest) throws IOException {

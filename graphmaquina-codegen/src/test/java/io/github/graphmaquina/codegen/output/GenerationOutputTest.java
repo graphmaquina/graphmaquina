@@ -377,6 +377,74 @@ class GenerationOutputTest {
         assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
     }
 
+    /**
+     * A symbolic link inside the generated source output that leads outside it would take a source the previous
+     * generation owned out of the output: that file is not deleted, and the generation goes on.
+     */
+    @Test
+    void leavesAPreviouslyOwnedSourceThatASymbolicLinkTakesOutOfTheOutput() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        GenerationResult first = StateGraphCodegen.generate(request());
+        CompileManifest manifest = ManifestCodec.readCompile(first.annotationManifest());
+        List<String> owned = new ArrayList<>(manifest.ownedSources());
+        owned.add("link/x.java");
+        ManifestCodec.writeCompile(first.annotationManifest(), new CompileManifest(manifest.schemaVersion(),
+                manifest.toolVersion(), manifest.local(), manifest.dependencies(), manifest.processorInventory(),
+                owned));
+        Path outside = Files.createDirectories(directory.resolve("outside/deep/er"));
+        Path victim = Files.writeString(outside.resolve("x.java"), "// not generated\n", StandardCharsets.UTF_8);
+        SymbolicLinks.create(output().resolve("link"), outside);
+
+        StateGraphCodegen.generate(request());
+
+        assertTrue(Files.isRegularFile(victim));
+        assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
+    }
+
+    /**
+     * A symbolic link inside the generated source output that leads outside it would take a generated source out of
+     * the output: one that would replace a file there is refused with {@code SG603}, even under a name the previous
+     * generation listed, and nothing is written there.
+     */
+    @Test
+    void refusesToReplaceAFileThatASymbolicLinkTakesOutOfTheOutput() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        StateGraphCodegen.generate(request());
+        Path outside = Files.createDirectories(directory.resolve("outside/fx"));
+        Path victim = Files.writeString(outside.resolve("DocsGraph.java"), "// not generated\n",
+                StandardCharsets.UTF_8);
+        Files.move(output().resolve("fx"), directory.resolve("moved"));
+        SymbolicLinks.create(output().resolve("fx"), outside);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("symbolic link"), failure.getMessage());
+        assertEquals("// not generated\n", Files.readString(victim, StandardCharsets.UTF_8));
+        assertFalse(Files.exists(outside.resolve("DocRefs.java")));
+    }
+
+    /**
+     * A symbolic link inside the generated source output that leads outside it, as the directory of a generated
+     * source or as one of that directory's parents, would take the source out of the output even where no file
+     * stands yet: the generation is refused with {@code SG603}, and nothing is written outside.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"fx", "io"})
+    void refusesToWriteASourceThroughASymbolicLinkThatLeadsOutOfTheOutput(String linked) throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        Path outside = Files.createDirectories(directory.resolve("outside"));
+        SymbolicLinks.create(Files.createDirectories(output()).resolve(linked), outside);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("symbolic link"), failure.getMessage());
+        try (Stream<Path> written = Files.list(outside)) {
+            assertEquals(List.of(), written.toList());
+        }
+    }
+
     /** javac accepts a top-level type in a file of any name, so a generated type collides with it all the same. */
     @Test
     void refusesAGeneratedTypeAnOriginalSourceDeclaresInAFileOfAnotherName() throws IOException {
@@ -464,38 +532,41 @@ class GenerationOutputTest {
     }
 
     /**
-     * A source the request lists as a file stands, below its source root, where its package declaration puts it.
-     * A hand-written type that only shares the file name of a generated source, in a package that merely ends
-     * like the generated one's, is therefore no collision when the build lists its sources one by one, as this
-     * request does.
+     * A source stands, below its source root, at the path the walk of a directory the request names reached it by
+     * or, for a file the request lists, where its package declaration puts it. A hand-written type that only shares
+     * the file name of a generated source, in a package that merely ends like the generated one's, is therefore no
+     * collision, whether the build lists its sources one by one or names their directory.
      */
-    @Test
-    void acceptsAListedSourceThatSharesTheFileNameOfAGeneratedSourceInAnotherPackage() throws IOException {
-        List<Path> listed = new ArrayList<>(SourceFiles.write(sources(), ORIGINALS));
-        listed.addAll(SourceFiles.write(sources(), Map.of("legacy.fx.DocsGraph", """
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void acceptsASourceThatSharesTheFileNameOfAGeneratedSourceInAnotherPackage(boolean listed) throws IOException {
+        List<Path> files = new ArrayList<>(SourceFiles.write(sources(), ORIGINALS));
+        files.addAll(SourceFiles.write(sources(), Map.of("legacy.fx.DocsGraph", """
             package legacy.fx;
             public final class DocsGraph {}
             """)));
 
-        StateGraphCodegen.generate(withSources(listed));
+        StateGraphCodegen.generate(listed ? withSources(files) : request());
 
         assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
     }
 
     /**
      * On a case-insensitive volume a hand-written source whose name differs from a generated one only in case is the
-     * same file name to the volume. This one declares the type it is named after, so javac compiling both would also
-     * keep one class file of the two, by default without saying so. The directory the request names is asked the
-     * way the volume answers, so that source is refused, as it would be if it declared other types.
+     * same file name to the volume. When it declares the type it is named after, javac compiling both would also keep
+     * one class file of the two, by default without saying so. The directory the request names is asked the way the
+     * volume answers, so that source is refused whatever it declares: that type, or another one.
      */
-    @Test
-    void refusesAnOriginalSourceNamedLikeAGeneratedSourceInAnotherCaseOnACaseInsensitiveVolume() throws IOException {
+    @ParameterizedTest
+    @ValueSource(strings = {"Docsgraph", "Unrelated"})
+    void refusesAnOriginalSourceNamedLikeAGeneratedSourceInAnotherCaseOnACaseInsensitiveVolume(String declared)
+            throws IOException {
         assumeTrue(caseInsensitive(directory), "only a case-insensitive volume finds a file under another case");
         SourceFiles.write(sources(), ORIGINALS);
         Path original = SourceFiles.write(sources(), Map.of("fx.Docsgraph", """
             package fx;
-            final class Docsgraph {}
-            """)).get(0);
+            final class %s {}
+            """.formatted(declared))).get(0);
 
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 

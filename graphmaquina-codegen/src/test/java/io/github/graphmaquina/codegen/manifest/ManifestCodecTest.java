@@ -5,6 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
@@ -76,13 +80,33 @@ class ManifestCodecTest {
         assertFalse(Files.readString(first).contains(directory.toString()));
     }
 
+    /**
+     * Every writer breaks lines with LF alone: the request, an index, a manifest, an inventory and the processor
+     * inventory. Only the processor inventory ends with a line break.
+     */
     @Test
-    void writtenManifestsUseLfLineEndings() throws IOException {
-        ExportIndex index = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:empty:main",
-            new GenerationModel(List.of(), List.of()), List.of());
-        Path file = directory.resolve("index.json");
-        ManifestCodec.writeExports(file, index);
-        assertFalse(Files.readString(file).contains("\r"));
+    void everyWriterBreaksLinesWithLfAndOnlyTheProcessorInventoryEndsWithOne() throws IOException {
+        Path request = directory.resolve("request.json");
+        ManifestCodec.writeRequest(request, new GenerationRequest(directory.resolve("project"),
+            List.of(directory.resolve("project/src")), List.of(), directory.resolve("generated"),
+            directory.resolve("processor"), directory.resolve("classes"), directory.resolve("work"), "fx:demo:main"));
+        Path exports = directory.resolve("exports.json");
+        ManifestCodec.writeExports(exports, index("fx:demo:main"));
+        Path compile = directory.resolve("compile.json");
+        ManifestCodec.writeCompile(compile, new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"),
+            List.of(index("fx:peer:main")), "processor-inventory.json", List.of("fx/DocsGraph.java")));
+        Path owned = directory.resolve("owned-outputs.json");
+        ManifestCodec.writeOwned(owned, new OwnedOutputs(2, List.of("fx/Docs_.java"), List.of("fx/Docs_.class"),
+            List.of("META-INF/graphmaquina/exports.json"), List.of()));
+        Path processor = directory.resolve("processor-inventory.json");
+        ManifestCodec.writeProcessorInventory(processor, List.of("fx.Docs_"));
+
+        for (Path file : List.of(request, exports, compile, owned, processor)) {
+            String text = Files.readString(file, StandardCharsets.UTF_8);
+            assertTrue(text.contains("\n"), file.toString());
+            assertFalse(text.contains("\r"), file.toString());
+            assertEquals(file.equals(processor), text.endsWith("\n"), file.toString());
+        }
     }
 
     @Test
@@ -276,6 +300,91 @@ class ManifestCodecTest {
         assertEquals(Files.readString(first), Files.readString(second));
     }
 
+    /**
+     * An index is written with its graphs, its symbols, each graph's peers, each symbol's kinds and candidates, the
+     * candidates by name and then by their parameter types, and its annotation types sorted, while a graph's states
+     * and transitions and a candidate's parameter types keep the order they were given in.
+     */
+    @Test
+    void writesTheIdentityListsOfAnIndexSortedAndItsOtherListsInTheirOrder() throws IOException {
+        MemberDescriptor wide = new MemberDescriptor("fx.Handlers", "archive", List.of("int", "fx.Order"), "void",
+            SymbolKind.ACTION, false, origin());
+        MemberDescriptor narrow = new MemberDescriptor("fx.Handlers", "archive", List.of("fx.Order"), "void",
+            SymbolKind.ACTION, false, origin());
+        MemberDescriptor approve = new MemberDescriptor("fx.Handlers", "approve", List.of("fx.Order"), "boolean",
+            SymbolKind.GUARD, false, origin());
+        SymbolDescriptor zeta = new SymbolDescriptor("fx.HandlersRefs.Zeta", "Handlers", "zeta",
+            Set.of(SymbolKind.GUARD, SymbolKind.CONDITION), List.of(wide, approve, narrow), Optional.empty(), origin());
+        SymbolDescriptor alpha = new SymbolDescriptor("fx.HandlersRefs.Alpha", "Handlers", "alpha",
+            Set.of(SymbolKind.ACTION), List.of(narrow), Optional.empty(), origin());
+        GraphDescriptor orders = new GraphDescriptor("fx.Orders", "fx", "fx.Order", "fx.Status",
+            List.of("NEW", "DONE"), "fx.OrderTransition", List.of("SUBMIT", "SHIP"), List.of("fx.Pages", "fx.Billing"),
+            origin());
+        GraphDescriptor billing = new GraphDescriptor("fx.Billing", "fx", "fx.Invoice", "fx.Status",
+            List.of("NEW", "DONE"), "fx.BillingTransition", List.of("ISSUE", "SETTLE"), List.of(), origin());
+        Path file = directory.resolve("exports.json");
+
+        ManifestCodec.writeExports(file, new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+            new GenerationModel(List.of(orders, billing), List.of(zeta, alpha)),
+            List.of("fx.OrdersGraph.Transition", "fx.BillingGraph.Definition")));
+
+        JsonObject index = parse(file);
+        JsonArray graphs = index.getAsJsonObject("model").getAsJsonArray("graphs");
+        assertEquals(List.of("fx.Billing", "fx.Orders"), memberValues(graphs, "facade"));
+        JsonObject ordersJson = graphs.get(1).getAsJsonObject();
+        assertEquals(List.of("fx.Billing", "fx.Pages"), strings(ordersJson.getAsJsonArray("peers")));
+        assertEquals(List.of("NEW", "DONE"), strings(ordersJson.getAsJsonArray("states")));
+        assertEquals(List.of("SUBMIT", "SHIP"), strings(ordersJson.getAsJsonArray("transitions")));
+        JsonArray symbols = index.getAsJsonObject("model").getAsJsonArray("symbols");
+        assertEquals(List.of("fx.HandlersRefs.Alpha", "fx.HandlersRefs.Zeta"), memberValues(symbols, "qualifiedName"));
+        JsonObject zetaJson = symbols.get(1).getAsJsonObject();
+        assertEquals(List.of("CONDITION", "GUARD"), strings(zetaJson.getAsJsonArray("kinds")));
+        JsonArray candidates = zetaJson.getAsJsonArray("candidates");
+        assertEquals(List.of("approve", "archive", "archive"), memberValues(candidates, "name"));
+        assertEquals(List.of("fx.Order"),
+            strings(candidates.get(1).getAsJsonObject().getAsJsonArray("parameterTypes")));
+        assertEquals(List.of("int", "fx.Order"),
+            strings(candidates.get(2).getAsJsonObject().getAsJsonArray("parameterTypes")));
+        assertEquals(List.of("fx.BillingGraph.Definition", "fx.OrdersGraph.Transition"),
+            strings(index.getAsJsonArray("annotationTypes")));
+    }
+
+    /** A manifest is written with its dependencies sorted by their identifier and its owned sources sorted. */
+    @Test
+    void writesTheDependenciesAndTheOwnedSourcesOfAManifestSorted() throws IOException {
+        Path file = directory.resolve("compile.json");
+
+        ManifestCodec.writeCompile(file, new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"),
+            List.of(index("fx:zeta:main"), index("fx:alpha:main")), "processor-inventory.json",
+            List.of("fx/ZetaGraph.java", "fx/AlphaGraph.java")));
+
+        JsonObject manifest = parse(file);
+        assertEquals(List.of("fx:alpha:main", "fx:zeta:main"),
+            memberValues(manifest.getAsJsonArray("dependencies"), "compilationId"));
+        assertEquals(List.of("fx/AlphaGraph.java", "fx/ZetaGraph.java"),
+            strings(manifest.getAsJsonArray("ownedSources")));
+    }
+
+    /** An inventory is written with each of its four lists sorted, and the processor inventory with its types. */
+    @Test
+    void writesTheListsOfBothInventoriesSorted() throws IOException {
+        Path owned = directory.resolve("owned-outputs.json");
+        Path processor = directory.resolve("processor-inventory.json");
+
+        ManifestCodec.writeOwned(owned, new OwnedOutputs(2, List.of("fx/Zeta_.java", "fx/Alpha_.java"),
+            List.of("fx/Zeta_.class", "fx/Alpha_.class"), List.of("META-INF/z.json", "META-INF/a.json"),
+            List.of("fx/Zeta.class", "fx/Alpha.class")));
+        ManifestCodec.writeProcessorInventory(processor, List.of("fx.Zeta_", "fx.Alpha_"));
+
+        JsonObject inventory = parse(owned);
+        assertEquals(List.of("fx/Alpha_.java", "fx/Zeta_.java"), strings(inventory.getAsJsonArray("sources")));
+        assertEquals(List.of("fx/Alpha_.class", "fx/Zeta_.class"), strings(inventory.getAsJsonArray("binaries")));
+        assertEquals(List.of("META-INF/a.json", "META-INF/z.json"), strings(inventory.getAsJsonArray("resources")));
+        assertEquals(List.of("fx/Alpha.class", "fx/Zeta.class"),
+            strings(inventory.getAsJsonArray("excludedBinaries")));
+        assertEquals(List.of("fx.Alpha_", "fx.Zeta_"), strings(parse(processor).getAsJsonArray("generatedTypes")));
+    }
+
     @Test
     void compileManifestRoundTripsWithDependenciesAndOwnedSources() throws IOException {
         ExportIndex local = new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
@@ -301,12 +410,40 @@ class ManifestCodecTest {
         assertThrows(CodegenException.class, () -> ManifestCodec.writeCompile(file, manifest));
     }
 
+    /**
+     * An owned source must name a file below the generated source root. One that has a root, as {@code /x.java} has
+     * here and {@code \x.java} or {@code C:x.java} would have on Windows, one with a {@code ..} segment, one that names
+     * the root itself, as {@code .} and the empty path do, and one no path can spell, such as one holding the NUL
+     * character, are refused with {@code SG602}, both when a manifest is written and when it is read.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"/x.java", "../x.java", ".", "", "NUL"})
+    void refusesAnOwnedSourceThatNamesNoFileBelowItsRoot(String entry) throws IOException {
+        String ownedSource = entry.equals("NUL") ? "fx/X\u0000.java" : entry;
+        Path written = directory.resolve("written.json");
+
+        CodegenException onWrite = assertThrows(CodegenException.class, () -> ManifestCodec.writeCompile(written,
+            new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"), List.of(), "processor-inventory.json",
+                List.of(ownedSource))));
+
+        assertEquals("SG602", onWrite.code());
+        assertFalse(Files.exists(written));
+        Path valid = directory.resolve("valid.json");
+        ManifestCodec.writeCompile(valid, new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"), List.of(),
+            "processor-inventory.json", List.of("fx/Valid.java")));
+        Path read = Files.writeString(directory.resolve("read.json"), Files.readString(valid, StandardCharsets.UTF_8)
+            .replace("fx/Valid.java", entry.equals("NUL") ? "fx/X\\u0000.java" : entry), StandardCharsets.UTF_8);
+        CodegenException onRead = assertThrows(CodegenException.class, () -> ManifestCodec.readCompile(read));
+        assertEquals("SG602", onRead.code());
+    }
+
+    /** A request round-trips as one flat object, with its sources and its classpath in the order it gives them. */
     @Test
     void generationRequestRoundTripsAsFlatJson() throws IOException {
         GenerationRequest request = new GenerationRequest(
             directory.resolve("project"),
-            List.of(directory.resolve("project/src/main/java")),
-            List.of(directory.resolve("deps/one.jar"), directory.resolve("deps/two.jar")),
+            List.of(directory.resolve("project/src/main/java"), directory.resolve("project/src/extra/java")),
+            List.of(directory.resolve("deps/two.jar"), directory.resolve("deps/one.jar")),
             directory.resolve("build/generated-sources/graphmaquina"),
             directory.resolve("build/generated-sources/graphmaquina-processor"),
             directory.resolve("build/classes/java/main"),
@@ -321,23 +458,34 @@ class ManifestCodecTest {
     }
 
     /**
-     * The release and the encoding of the compilation are optional members: a request names them when the build
-     * knows them, and one that names neither, as every request did before they existed, is read at release 21 in
-     * UTF-8. Both are written back as they were read.
+     * The release and the encoding of the compilation are optional members, each read on its own: a request names
+     * them when the build knows them, and a member it leaves out, whether or not it names the other, is read as
+     * release 21 or as UTF-8, the values of a request that names neither, as every request did before they existed.
+     * Both are written back as they were read.
      */
     @Test
     void generationRequestReadsTheReleaseAndTheEncodingItNamesAndDefaultsTheOthers() throws IOException {
         Path older = Files.writeString(directory.resolve("older.json"), requestJson(""), StandardCharsets.UTF_8);
         Path newer = Files.writeString(directory.resolve("newer.json"),
                 requestJson(",\n  \"release\": 25,\n  \"encoding\": \"ISO-8859-1\""), StandardCharsets.UTF_8);
+        Path releaseOnly = Files.writeString(directory.resolve("release-only.json"),
+                requestJson(",\n  \"release\": 25"), StandardCharsets.UTF_8);
+        Path encodingOnly = Files.writeString(directory.resolve("encoding-only.json"),
+                requestJson(",\n  \"encoding\": \"ISO-8859-1\""), StandardCharsets.UTF_8);
 
         GenerationRequest defaults = ManifestCodec.readRequest(older);
         GenerationRequest named = ManifestCodec.readRequest(newer);
+        GenerationRequest release = ManifestCodec.readRequest(releaseOnly);
+        GenerationRequest encoding = ManifestCodec.readRequest(encodingOnly);
 
         assertEquals(21, defaults.release());
         assertEquals(StandardCharsets.UTF_8, defaults.encoding());
         assertEquals(25, named.release());
         assertEquals(StandardCharsets.ISO_8859_1, named.encoding());
+        assertEquals(25, release.release());
+        assertEquals(StandardCharsets.UTF_8, release.encoding());
+        assertEquals(21, encoding.release());
+        assertEquals(StandardCharsets.ISO_8859_1, encoding.encoding());
         Path written = directory.resolve("written.json");
         ManifestCodec.writeRequest(written, named);
         assertEquals(named, ManifestCodec.readRequest(written));
@@ -526,6 +674,35 @@ class ManifestCodecTest {
         CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readOwned(file));
         assertEquals("SG602", failure.code());
         assertTrue(failure.getMessage().contains("clean"), failure.getMessage());
+    }
+
+    /** An index of {@code compilationId} with an empty model and no annotation type. */
+    private static ExportIndex index(String compilationId) {
+        return new ExportIndex(2, "0.3.0-SNAPSHOT", compilationId, new GenerationModel(List.of(), List.of()),
+            List.of());
+    }
+
+    /** The JSON object {@code file} holds, its arrays in the order the document spells them. */
+    private static JsonObject parse(Path file) throws IOException {
+        return JsonParser.parseString(Files.readString(file, StandardCharsets.UTF_8)).getAsJsonObject();
+    }
+
+    /** The strings of {@code array}, in the order the document spells them. */
+    private static List<String> strings(JsonArray array) {
+        List<String> values = new ArrayList<>();
+        for (JsonElement element : array) {
+            values.add(element.getAsString());
+        }
+        return values;
+    }
+
+    /** The string member {@code name} of each object of {@code array}, in the order the document spells them. */
+    private static List<String> memberValues(JsonArray array, String name) {
+        List<String> values = new ArrayList<>();
+        for (JsonElement element : array) {
+            values.add(element.getAsJsonObject().get(name).getAsString());
+        }
+        return values;
     }
 
     /**

@@ -99,7 +99,8 @@ public final class SourceDeclarations {
             JavacTask task = (JavacTask) compiler.getTask(null, fileManager, diagnostics,
                     List.of("-proc:none", "--release", Integer.toString(release)), null, sources);
             try {
-                // A file object equals every other one of the same file, which is how javac read it only once.
+                // javac parsed each distinct file object once, and two are equal exactly when their real paths are:
+                // the paths that lead to one file through symbolic links share its tree; each hard link has its own.
                 Map<JavaFileObject, SourceUnit> parsed = new HashMap<>();
                 for (CompilationUnitTree tree : task.parse()) {
                     parsed.put(tree.getSourceFile(), new SourceUnit(tree, fileOrigin(project, tree)));

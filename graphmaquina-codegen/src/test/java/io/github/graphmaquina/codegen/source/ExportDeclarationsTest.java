@@ -42,7 +42,6 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
-import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -982,8 +981,8 @@ class ExportDeclarationsTest {
                     }
                     """));
         Path linkedPackage = Files.createDirectories(directory.resolve("src"));
-        symbolicLink(linkedPackage.resolve("fx"), shared.resolve("fx"));
-        Path linkedRoot = symbolicLink(directory.resolve("root"), shared);
+        SymbolicLinks.create(linkedPackage.resolve("fx"), shared.resolve("fx"));
+        Path linkedRoot = SymbolicLinks.create(directory.resolve("root"), shared);
 
         for (Path sources : List.of(linkedPackage, linkedRoot)) {
             GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(sources),
@@ -1003,7 +1002,7 @@ class ExportDeclarationsTest {
      * skips such a link, so the generator skips it too, and reads every source once.
      */
     @Test
-    void skipsASymbolicLinkThatLoopsBackIntoTheSourceDirectory() {
+    void skipsASymbolicLinkThatLoopsBackIntoTheSourceDirectory() throws IOException {
         Path sources = directory.resolve("src");
         SourceFiles.write(sources, Map.of(
                 "fx.Order", ORDER,
@@ -1015,7 +1014,7 @@ class ExportDeclarationsTest {
                         public void authorize(Order order) {}
                     }
                     """));
-        symbolicLink(sources.resolve("fx/again"), sources);
+        SymbolicLinks.create(sources.resolve("fx/again"), sources);
 
         GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(sources),
                 SourceFiles.classpath(), directory.resolve("out/sources"), directory.resolve("out/processor"),
@@ -1162,19 +1161,6 @@ class ExportDeclarationsTest {
         assertEquals(List.of("fx.Pages"), model.graphs().get(0).peers());
         assertEquals(List.of("fx.BaseRefs.Archive", "fx.HandlersRefs.Archive"),
                 model.symbols().stream().map(SymbolDescriptor::qualifiedName).toList());
-    }
-
-    /**
-     * Creates {@code link} to {@code target}, skipping the test when the file system does not support links or the
-     * call fails with any {@code IOException}.
-     */
-    private static Path symbolicLink(Path link, Path target) {
-        try {
-            return Files.createSymbolicLink(link, target);
-        } catch (UnsupportedOperationException | IOException unsupported) {
-            Assumptions.abort("symbolic links are not available here: " + unsupported);
-            throw new IllegalStateException("unreachable", unsupported);
-        }
     }
 
     private List<SymbolDescriptor> collect(Map<String, String> sources) {

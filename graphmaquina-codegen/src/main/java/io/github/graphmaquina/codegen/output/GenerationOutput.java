@@ -40,13 +40,17 @@ import java.util.stream.Stream;
  * declares, in the file it would overwrite or in a file of another name, is refused instead. So is one whose file or
  * class file a volume that does not tell names apart by case would take for an original's. The original sources it
  * is checked against are the ones the generator read, as the one walk of {@link Bootstrap} read them; below every
- * directory the request names, a file standing where a generated file would stand is refused as well. A publication
- * that fails once it has read the previous manifests deletes the manifest, so no build ever reads a manifest that
- * does not describe the sources on disk. A previous manifest that cannot be read at all, such as the retired format
- * of GraphMaquina 1.x, is left in place instead, so the refusal repeats until the user cleans the build rather than
- * the next run calling the files it owned unowned. A separate pending manifest retains ownership across failures,
- * including a partially published generation, so the next run can retire its files. Both manifests are written
- * beside their place and moved into it, so an interrupted run never leaves half of one.</p>
+ * directory the request names, a file standing where a generated file would stand is refused as well. A listed file
+ * is removed only below the generated source root: one whose path does not resolve below it, or whose directory, by
+ * its real path, a symbolic link inside the root takes out of it, is left alone. A generated source that such a link
+ * would take out of the root is refused, whether it would replace a file there, even one the previous generation
+ * listed, or create one. A publication that fails once it has read the previous manifests deletes the manifest, so
+ * no build ever reads a manifest that does not describe the sources on disk. A previous manifest that cannot be read
+ * at all, such as the retired format of GraphMaquina 1.x, is left in place instead, so the refusal repeats until the
+ * user cleans the build rather than the next run calling the files it owned unowned. A separate pending manifest
+ * retains ownership across failures, including a partially published generation, so the next run can retire its
+ * files. Both manifests are written beside their place and moved into it, so an interrupted run never leaves half of
+ * one.</p>
  *
  * <p>The files carry exactly the emitted text with LF endings, in the encoding of the compilation that reads
  * them, so a run that changes nothing writes byte-identical files. A character that encoding cannot represent is
@@ -72,7 +76,8 @@ public final class GenerationOutput {
      *
      * @throws CodegenException {@code SG603} if a generated type is already declared by an original source, or
      *     takes the name of one where the volume does not tell names apart by case, would shadow a class of the
-     *     classpath or would overwrite a file the previous generation did not own; {@code SG602} if a previous
+     *     classpath, would overwrite a file the previous generation did not own or would be written through a
+     *     symbolic link inside the generated source output that leads out of it; {@code SG602} if a previous
      *     manifest cannot be read, which leaves that manifest in place; {@code SG601} if javac cannot read or parse
      *     an original source, as when the file may not be read
      * @throws java.io.UncheckedIOException if a source directory, or a directory below it, cannot be walked, or the
@@ -99,7 +104,8 @@ public final class GenerationOutput {
      * @return the published sources and the manifest
      * @throws CodegenException {@code SG603} if a generated type is already declared by an original source, or
      *     takes the name of one where the volume does not tell names apart by case, would shadow a class of the
-     *     classpath or would overwrite a file the previous generation did not own; {@code SG602} if a previous
+     *     classpath, would overwrite a file the previous generation did not own or would be written through a
+     *     symbolic link inside the generated source output that leads out of it; {@code SG602} if a previous
      *     manifest cannot be read, which leaves that manifest in place
      * @throws IOException if the staged sources, the previous manifest or the published files cannot be handled, a
      *     file of the classpath cannot be read, or the original sources and the class output the collision check
@@ -134,8 +140,14 @@ public final class GenerationOutput {
             publishing.addAll(manifest.ownedSources());
             // Only claim new targets after stage has established that none belongs to somebody else.
             remember(pending, manifest, publishing);
+            Path root = output.normalize();
             for (String owned : previouslyOwned) {
-                Files.deleteIfExists(output.resolve(owned));
+                Path target = output.resolve(owned);
+                Path resolved = target.normalize();
+                if (resolved.startsWith(root) && !resolved.equals(root)
+                        && CompilationOutputs.standsUnder(target, output)) {
+                    Files.deleteIfExists(target);
+                }
             }
             List<Path> published = publish(staging, staged, output);
             replace(manifestPath, manifest);
@@ -160,7 +172,8 @@ public final class GenerationOutput {
     /**
      * Writes every source under {@code staging}, in the encoding of the compilation, refusing one an original
      * source already declares, one that takes the name of an original source or type where the volume does not
-     * tell names apart by case, and one that would overwrite a file the previous generation did not own.
+     * tell names apart by case, one that a symbolic link inside the generated source output would take out of it,
+     * and one that would overwrite a file the previous generation did not own.
      */
     private static List<Path> stage(GenerationRequest request, List<GeneratedSource> sources, Path staging,
             Set<String> previouslyOwned, List<Bootstrap.OriginalSource> originals)
@@ -188,6 +201,11 @@ public final class GenerationOutput {
                     standing.getOrDefault(caseKey(relative), List.of()),
                     declaring.getOrDefault(caseKey(source.qualifiedName()), List.of()), request.classesOutput());
             Path target = request.sourcesOutput().resolve(relative);
+            if (!writesUnder(request.sourcesOutput(), target)) {
+                throw new CodegenException(COLLISION, "the generated type " + source.qualifiedName()
+                    + " would be written through a symbolic link that leads out of " + request.sourcesOutput()
+                    + ": " + target);
+            }
             if (Files.exists(target) && !ownedBefore(request.sourcesOutput(), target, relative, previouslyOwned)) {
                 throw new CodegenException(COLLISION, "the generated type " + source.qualifiedName()
                     + " would overwrite the unowned file " + target);
@@ -228,6 +246,22 @@ public final class GenerationOutput {
             index += Character.charCount(codePoint);
         }
         return escaped.toString().getBytes(encoder.charset());
+    }
+
+    /**
+     * Whether publishing {@code target} writes nothing through a symbolic link that leads out of {@code root}: the
+     * nearest of its directories that exists, looking no higher than {@code root}, must
+     * {@linkplain CompilationOutputs#standsUnder stand under} {@code root} by its real path. True when none of them
+     * exists as a directory, {@code root} included: publishing then creates them, or fails where something else, such
+     * as a dangling link, stands in the way.
+     */
+    private static boolean writesUnder(Path root, Path target) throws IOException {
+        Path directory = target.getParent() == null ? root : target.getParent();
+        while (!Files.isDirectory(directory) && !directory.equals(root) && directory.getParent() != null) {
+            directory = directory.getParent();
+        }
+        return !Files.isDirectory(directory)
+                || CompilationOutputs.standsUnder(directory.resolve(target.getFileName()), root);
     }
 
     /**
