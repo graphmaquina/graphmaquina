@@ -10,6 +10,7 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.TransitionAction;
+import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.runtime.MachineRegistry;
@@ -255,7 +256,7 @@ class StateWriteProbeTest {
         StateWriteProbe<Tracked, State> writes =
                 StateWriteProbe.<Tracked, State>wrapping(Tracked::setState).failOnCall(2, boom);
         Throwable failure = captureFailure(() -> {
-            try (MachineRegistry registry = registry(writes, order, first, second)) {
+            try (MachineRegistry registry = registry(writes, first, second)) {
                 registry.of(ORDER).execute(order, Id.PREPARE);
             }
         });
@@ -280,7 +281,8 @@ class StateWriteProbeTest {
         IllegalStateException boom = new IllegalStateException("no stock");
         StateWriteProbe<Tracked, State> writes = StateWriteProbe.<Tracked, State>wrapping(Tracked::setState);
         TransitionAbortedException aborted = assertThrows(TransitionAbortedException.class, () -> {
-            try (MachineRegistry registry = registry(writes, order, first, second, context -> { throw boom; })) {
+            try (MachineRegistry registry = registry(writes,
+                    (TransitionContext<Order, State, Id> context) -> { throw boom; })) {
                 registry.of(ORDER).execute(order, Id.PREPARE);
             }
         });
@@ -356,17 +358,17 @@ class StateWriteProbeTest {
         }
     }
 
-    private static MachineRegistry registry(BiConsumer<? super Tracked, ? super State> setter, Order order,
+    private static MachineRegistry registry(BiConsumer<? super Tracked, ? super State> setter,
             Item first, Item second) {
-        return registry(setter, order, first, second, context -> {
+        return registry(setter, (TransitionContext<Order, State, Id> context) -> {
             context.cascade(ITEM, first, Id.PREPARE);
             context.cascade(ITEM, second, Id.PREPARE);
             return ActionOutcome.ok();
         });
     }
 
-    private static MachineRegistry registry(BiConsumer<? super Tracked, ? super State> setter, Order order,
-            Item first, Item second, TransitionAction<Order, State, Id> prepare) {
+    private static MachineRegistry registry(BiConsumer<? super Tracked, ? super State> setter,
+            TransitionAction<Order, State, Id> prepare) {
         return MachineRegistry.builder()
                 .add(StateMachines.from(orderGraph(prepare))
                         .state(Order::state, setter).identity(Order::id))

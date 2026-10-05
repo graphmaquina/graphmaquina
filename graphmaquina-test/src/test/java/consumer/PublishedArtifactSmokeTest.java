@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -156,12 +157,18 @@ class PublishedArtifactSmokeTest {
 
     @Test
     void everyPublishedFileExistsAndCarriesContent() throws IOException {
-        for (String module : List.of("graphmaquina-core", "graphmaquina-test")) {
+        for (String module : PublishedModules.ALL) {
             for (String suffix : SUFFIXES) {
                 Path artifact = artifact(module, suffix);
                 assertTrue(Files.isRegularFile(artifact), "missing published artifact: " + artifact);
                 assertTrue(Files.size(artifact) > 0L, "empty published artifact: " + artifact);
             }
+            assertTrue(carriesAnEntryEndingWith(module, ".jar", ".class"),
+                    module + ": the binary jar must carry compiled classes");
+            assertTrue(carriesAnEntryEndingWith(module, "-sources.jar", ".java"),
+                    module + ": the sources jar must carry sources, not just a manifest");
+            assertTrue(carriesAnEntryEndingWith(module, "-javadoc.jar", ".html"),
+                    module + ": the javadoc jar must carry rendered documentation, not just a manifest");
         }
         assertTrue(entries("graphmaquina-test", ".jar").contains("io/github/graphmaquina/test/GraphAssertions.class"),
                 "the binary jar must carry the compiled facade");
@@ -171,10 +178,17 @@ class PublishedArtifactSmokeTest {
                 "the javadoc jar must carry the rendered documentation, not just a manifest");
     }
 
+    /**
+     * The Gradle plugin jar is the one that declares no name, because its build configures no manifest attribute
+     * for it; that is asserted for it instead of leaving the jar out. A module that is added to the published
+     * ones has to be given an expectation, or this test fails for it.
+     */
     @Test
-    void everyJarDeclaresItsAutomaticModuleName() throws IOException {
-        assertEquals("io.github.graphmaquina.core", automaticModuleName("graphmaquina-core"));
-        assertEquals("io.github.graphmaquina.test", automaticModuleName("graphmaquina-test"));
+    void everyJarDeclaresItsAutomaticModuleNameExceptTheGradlePluginJarWhichHasNone() throws IOException {
+        for (String module : PublishedModules.ALL) {
+            assertEquals(expectedAutomaticModuleName(module), Optional.ofNullable(automaticModuleName(module)),
+                    module + ": the Automatic-Module-Name of the published jar");
+        }
     }
 
     @Test
@@ -279,6 +293,20 @@ class PublishedArtifactSmokeTest {
         return first == null ? "" : first.getTextContent().trim();
     }
 
+    /** What the jar of {@code module} has to declare; the Gradle plugin's build configures no name, so it is empty. */
+    private static Optional<String> expectedAutomaticModuleName(String module) {
+        return switch (module) {
+            case "graphmaquina-core" -> Optional.of("io.github.graphmaquina.core");
+            case "graphmaquina-codegen" -> Optional.of("io.github.graphmaquina.codegen");
+            case "graphmaquina-processor" -> Optional.of("io.github.graphmaquina.processor");
+            case "graphmaquina-test" -> Optional.of("io.github.graphmaquina.test");
+            case "graphmaquina-maven-plugin" -> Optional.of("io.github.graphmaquina.maven");
+            case "graphmaquina-gradle-plugin" -> Optional.empty();
+            default -> throw new AssertionError(module + " has no Automatic-Module-Name expectation: list it in "
+                    + "expectedAutomaticModuleName");
+        };
+    }
+
     private static String automaticModuleName(String module) throws IOException {
         try (JarFile jar = new JarFile(artifact(module, ".jar").toFile())) {
             return jar.getManifest().getMainAttributes().getValue("Automatic-Module-Name");
@@ -294,6 +322,11 @@ class PublishedArtifactSmokeTest {
             }
             return names;
         }
+    }
+
+    private static boolean carriesAnEntryEndingWith(String module, String suffix, String extension)
+            throws IOException {
+        return entries(module, suffix).stream().anyMatch((String name) -> name.endsWith(extension));
     }
 
     private static Path artifact(String module, String suffix) {

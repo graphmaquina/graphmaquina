@@ -142,9 +142,14 @@ class ControlledAsyncTest {
             Entity later = new Entity("later", State.NEW);
             CompletableFuture<Outcome<Entity, State, Id>> second =
                     registry.of(KEY).async().execute(later, Id.PREPARE);
-            assertTrue(action.awaitInvocation(GENEROUS).complete(ActionOutcome.ok()));
+            PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome> laterCall =
+                    action.awaitInvocation(GENEROUS);
+            assertTrue(laterCall.complete(ActionOutcome.ok()));
             AsyncAssertions.await(second, GENEROUS).isApplied().hasEntitySameAs(later);
-            assertEquals(2, action.invocations().size());
+            List<PendingInvocation<ActionCall<Entity, State, Id>, ActionOutcome>> history = action.invocations();
+            assertEquals(List.of(call, laterCall), history, "the invocation that entered first is listed first");
+            assertSame(entity, history.get(0).call().entity());
+            assertSame(later, history.get(1).call().entity());
             assertEquals(List.of(call), recorded, "a list already handed out does not grow");
         }
     }
@@ -217,10 +222,63 @@ class ControlledAsyncTest {
             Parcel later = new Parcel("later", Status.NEW);
             CompletableFuture<Outcome<Parcel, Status, Move>> secondResult =
                     registry.of(PARCEL).async().execute(later, Move.SEND);
-            assertTrue(gate.awaitInvocation(GENEROUS).complete(GuardResult.reject("still closed")));
+            PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> laterCall =
+                    gate.awaitInvocation(GENEROUS);
+            assertTrue(laterCall.complete(GuardResult.reject("still closed")));
             AsyncAssertions.await(secondResult, GENEROUS).isRejected().hasReason("still closed");
-            assertEquals(2, gate.invocations().size());
+            List<PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult>> history = gate.invocations();
+            assertEquals(List.of(call, laterCall), history, "the invocation that entered first is listed first");
+            assertSame(first, history.get(0).call().entity());
+            assertSame(later, history.get(1).call().entity());
             assertEquals(List.of(call), recorded, "a list already handed out does not grow");
+        }
+    }
+
+    /**
+     * As for the action fixture, a guard handle is delivered once its side effect has returned, so delivery can
+     * overtake an invocation that entered earlier, while the history keeps the order in which they entered.
+     */
+    @Test
+    void guardDeliveryFollowsPublicationAfterSuccessfulSideEffectsWhileHistoryKeepsEntryOrder() {
+        CountDownLatch firstEntered = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        ControlledAsyncGuard<Parcel, Status, Move> gate = ControlledAsyncGuard.<Parcel, Status, Move>create()
+                .onCall((GuardContext<Parcel, Status, Move> context) -> {
+                    if (context.entity().id().equals("first")) {
+                        firstEntered.countDown();
+                        awaitLatch(releaseFirst, "first side effect was not released");
+                    }
+                });
+        ControlledAsyncAction<Parcel, Status, Move> send = ControlledAsyncAction.create();
+        MachineRegistry registry = gatedRegistry(gate, send);
+        try (registry; gate; send) {
+            Parcel first = new Parcel("first", Status.NEW);
+            Parcel second = new Parcel("second", Status.NEW);
+            CompletableFuture<Outcome<Parcel, Status, Move>> firstResult =
+                    registry.of(PARCEL).async().execute(first, Move.SEND);
+            try {
+                awaitLatch(firstEntered, "first side effect was not entered");
+                CompletableFuture<Outcome<Parcel, Status, Move>> secondResult =
+                        registry.of(PARCEL).async().execute(second, Move.SEND);
+                PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> secondCall =
+                        gate.awaitInvocation(GENEROUS);
+
+                assertSame(second, secondCall.call().entity());
+                List<PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult>> history = gate.invocations();
+                assertEquals(2, history.size());
+                assertSame(first, history.get(0).call().entity());
+                assertSame(second, history.get(1).call().entity());
+                assertTrue(secondCall.complete(GuardResult.reject("closed for the day")));
+                AsyncAssertions.await(secondResult, GENEROUS).isRejected().hasEntitySameAs(second);
+            } finally {
+                releaseFirst.countDown();
+            }
+
+            PendingInvocation<GuardCall<Parcel, Status, Move>, GuardResult> firstCall =
+                    gate.awaitInvocation(GENEROUS);
+            assertSame(first, firstCall.call().entity());
+            assertTrue(firstCall.complete(GuardResult.reject("closed for the day")));
+            AsyncAssertions.await(firstResult, GENEROUS).isRejected().hasEntitySameAs(first);
         }
     }
 

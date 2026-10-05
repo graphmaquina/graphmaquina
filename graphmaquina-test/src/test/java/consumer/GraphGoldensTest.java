@@ -200,6 +200,26 @@ class GraphGoldensTest {
         }
     }
 
+    /**
+     * The two-argument entry point reads the properties, and read mode never uses the root: a value of
+     * {@code graphmaquina.goldens.root} that is not a path therefore cannot fail a run that only reads.
+     */
+    @Test
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    void aRootThatIsNotAPathDoesNotFailAReadModeRun() {
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
+        String previousUpdate = System.getProperty(GoldenOptions.UPDATE_PROPERTY);
+        String previousRoot = System.getProperty(GoldenOptions.ROOT_PROPERTY);
+        try {
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "false");
+            System.setProperty(GoldenOptions.ROOT_PROPERTY, "bad" + (char) 0 + "root");
+            GraphGoldens.assertMatches(graph, RESOURCE);
+        } finally {
+            restore(GoldenOptions.UPDATE_PROPERTY, previousUpdate);
+            restore(GoldenOptions.ROOT_PROPERTY, previousRoot);
+        }
+    }
+
     @Test
     void aNullDefinitionFailsTheThreeArgumentAssertion() {
         GraphAssertionError error = assertThrows(GraphAssertionError.class,

@@ -15,7 +15,9 @@ import java.util.concurrent.CompletableFuture;
 /**
  * Shared fixture for this module's own tests: a small NEW/READY/DONE/FAILED machine whose three declared
  * edges exercise an async action, guards, a timeout, a recovery identifier and an after-commit hook. The
- * catalogue declares one identifier with no edge at all, so absence stays observable.
+ * catalogue declares one identifier with no edge at all, so absence stays observable. The edges are declared
+ * in an order that is neither the one a definition lists them in nor its reverse, so a test can tell sorting
+ * them from keeping or reversing the order the builder was given.
  */
 public final class TestDomain {
 
@@ -58,14 +60,14 @@ public final class TestDomain {
                 .terminal(State.DONE).terminal(State.FAILED)
                 .statePolicy(State.NEW, "prepare first")
                 .statePolicy(State.READY, "finish only")
+                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
+                .transition(Id.FINISH, State.READY, State.DONE).endTransition()
                 .transition(Id.PREPARE, State.NEW, State.READY).asyncAction("prepare", action)
                     .guard("first", ctx -> GuardResult.pass())
                     .guard("second", ctx -> GuardResult.pass())
                     .timeout(timeout).onFailure(Id.RECOVER).failsOn(IOException.class)
                     .afterCommit("audit", entity -> { })
                     .endTransition()
-                .transition(Id.RECOVER, State.NEW, State.FAILED).endTransition()
-                .transition(Id.FINISH, State.READY, State.DONE).endTransition()
                 .build();
     }
 

@@ -12,9 +12,9 @@ import java.util.Objects;
  * {@code TransitionRecord<?, ?, ?>} because one transaction may touch several machines, and a watch reaction
  * publishes its {@code Outcome<?, ?, ?>} because the machine that re-evaluated is not the one that committed,
  * so a typed view has to recover the triple {@code <E, S, T>} from a {@link MachineKey}. Every entity, state
- * and identifier the key describes is checked against the key's own classes before the one cast this class
- * exists to localize, with one exception: the recovery identifier of a failed outcome is not checked. A value
- * that does not match is a programming error in the calling test and raises {@link IllegalArgumentException}.
+ * and identifier the key describes, the recovery identifier of a failed outcome included, is checked against
+ * the key's own classes before the one cast this class exists to localize. A value that does not match is a
+ * programming error in the calling test and raises {@link IllegalArgumentException}.
  */
 public final class CheckedTypes {
 
@@ -38,9 +38,9 @@ public final class CheckedTypes {
 
     /**
      * An outcome carries no key of its own, so the values it names are checked instead: the entity, the origin,
-     * the state it records as current, the destination of an applied or failed outcome, and the identifier it
-     * was asked for, which a rejected outcome reports without ever having run an edge and an ignored one does
-     * not report at all. The recovery identifier of a failed outcome is the one value left unchecked.
+     * the state it records as current, the destination of an applied or failed outcome, the identifier it was
+     * asked for, which a rejected outcome reports without ever having run an edge and an ignored one does not
+     * report at all, and the recovery identifier of a failed outcome.
      */
     public static <E, S extends Enum<S>, T extends Enum<T>> Outcome<E, S, T> outcome(
             MachineKey<E, S, T> key, Outcome<?, ?, ?> outcome) {
@@ -51,7 +51,12 @@ public final class CheckedTypes {
         require("outcome", states.stream().allMatch(key.states()::isInstance), "states", key.states(), states);
         require("outcome", outcome.requestedTransition().stream().allMatch(key.transitions()::isInstance),
                 "transitions", key.transitions(), outcome.requestedTransition());
-        // Safe: the entity, every state and the requested identifier are instances of the classes the key names.
+        if (outcome instanceof Outcome.Failed<?, ?, ?> failed) {
+            require("outcome", key.transitions().isInstance(failed.failureTransition()),
+                    "transitions", key.transitions(), failed.failureTransition());
+        }
+        // Safe: the entity, every state and every identifier the outcome carries, the recovery identifier of a
+        // failed one included, are instances of the classes the key names.
         @SuppressWarnings("unchecked")
         Outcome<E, S, T> typed = (Outcome<E, S, T>) outcome;
         return typed;

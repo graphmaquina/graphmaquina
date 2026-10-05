@@ -519,6 +519,29 @@ class ReactionAssertionsTest {
                         () -> CheckedTypes.outcome(TestDomain.KEY, foreignTransition)).getMessage());
     }
 
+    /**
+     * A failed outcome names a second identifier of the machine, the recovery edge it was routed through, and
+     * the typed outcome the check returns fails with a {@link ClassCastException} wherever that identifier is
+     * read as the machine's own. Only a raw construction can carry a foreign one, and it is refused like the
+     * other values the key describes, while a recovery identifier of the machine passes and the outcome comes
+     * back as it was.
+     */
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void aForeignRecoveryIdentifierIsNeverCast() {
+        Entity entity = new Entity("e", State.READY);
+        Outcome<?, ?, ?> own = new Outcome.Failed<>(entity, State.NEW, Id.PREPARE, State.READY, Id.RECOVER,
+                State.FAILED, "boom", Optional.empty(), List.of(), List.of());
+        assertSame(own, CheckedTypes.outcome(TestDomain.KEY, own));
+        Outcome<?, ?, ?> foreignRecovery = (Outcome<?, ?, ?>) new Outcome.Failed(
+                entity, State.NEW, Id.PREPARE, State.READY, Switch.FLIP, State.FAILED, "boom", Optional.empty(),
+                List.of(), List.of());
+        assertEquals("outcome does not belong to the machine: transitions expected " + Id.class
+                        + " but was " + Switch.FLIP,
+                assertThrows(IllegalArgumentException.class,
+                        () -> CheckedTypes.outcome(TestDomain.KEY, foreignRecovery)).getMessage());
+    }
+
     @Test
     void anOutcomeInsideAManuallyBuiltDoneIsCheckedWhenItIsRead() {
         Entity entity = new Entity("e", State.READY);
@@ -703,7 +726,9 @@ class ReactionAssertionsTest {
     void aWatchThatMatchesNoRuleIsADoneReactionWithAnIgnoredOutcome() {
         Shipment shipment = new Shipment("s1", ShipmentStatus.OPEN);
         Parcel first = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
-        new Parcel("p2", ParcelStatus.LOADING, Optional.of(shipment));
+        Parcel second = new Parcel("p2", ParcelStatus.LOADING, Optional.of(shipment));
+        // Building a parcel registers it with its shipment, and this second one stays loading, so no rule holds.
+        assertEquals(List.of(first, second), shipment.parcels());
 
         try (MachineRegistry registry = registry()) {
             Outcome<Parcel, ParcelStatus, Loading> outcome =

@@ -18,6 +18,7 @@ import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -176,9 +177,16 @@ class GraphAssertionsTest {
     @Test
     void everyStateCarriesARejectionPolicy() {
         GraphAssert<Entity, State, Id> graph = GraphAssert.assertThat(TestDomain.graph(TIMEOUT));
-        graph.policy(State.NEW).hasDefaultReason("prepare first").rejects(Id.ABANDON, "prepare first");
-        graph.policy(State.READY).hasDefaultReason("finish only");
-        graph.policy(State.DONE).hasDefaultReason("terminal state DONE accepts no transitions");
+        Map<State, String> defaultReasons = Map.of(
+                State.NEW, "prepare first",
+                State.READY, "finish only",
+                State.DONE, "terminal state DONE accepts no transitions",
+                State.FAILED, "terminal state FAILED accepts no transitions");
+        assertEquals(Set.of(State.values()), defaultReasons.keySet(), "this test must list every state");
+        for (State state : State.values()) {
+            graph.policy(state).hasDefaultReason(defaultReasons.get(state))
+                    .rejects(Id.ABANDON, defaultReasons.get(state));
+        }
     }
 
     @Test

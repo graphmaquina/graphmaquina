@@ -574,15 +574,51 @@ class GoldenStoreTest {
         }
     }
 
+    /**
+     * Read mode never writes, so it never uses the root: a value that is not a path cannot fail it, and the
+     * options it builds carry no root at all, however the property is set. Update mode needs the root and
+     * refuses the same value when the options are built.
+     */
+    @Test
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    void theRootIsResolvedOnlyWhenUpdateModeNeedsIt(@TempDir Path root) throws Exception {
+        String previousUpdate = System.getProperty(GoldenOptions.UPDATE_PROPERTY);
+        String previousRoot = System.getProperty(GoldenOptions.ROOT_PROPERTY);
+        String checkedIn = Files.readString(Path.of(
+                GoldenStoreTest.class.getClassLoader().getResource("golden/simple.dot").toURI()));
+        String notAPath = "bad" + (char) 0 + "root";
+        try {
+            System.setProperty(GoldenOptions.ROOT_PROPERTY, notAPath);
+            System.clearProperty(GoldenOptions.UPDATE_PROPERTY);
+            assertEquals(Optional.empty(), GoldenOptions.defaults().sourceRoot());
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "false");
+            GoldenOptions read = GoldenOptions.defaults();
+            assertFalse(read.update());
+            assertEquals(Optional.empty(), read.sourceRoot());
+            GoldenStore.assertMatches("golden/simple.dot", checkedIn, read, DIFF);
+            System.setProperty(GoldenOptions.ROOT_PROPERTY, root.toString());
+            assertEquals(Optional.empty(), GoldenOptions.defaults().sourceRoot());
+            System.setProperty(GoldenOptions.ROOT_PROPERTY, notAPath);
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "true");
+            assertThrows(IllegalArgumentException.class, GoldenOptions::defaults);
+        } finally {
+            restore(GoldenOptions.UPDATE_PROPERTY, previousUpdate);
+            restore(GoldenOptions.ROOT_PROPERTY, previousRoot);
+        }
+    }
+
     @Test
     @ResourceLock(Resources.SYSTEM_PROPERTIES)
     void aRelativeRootResolvesAgainstTheWorkingDirectory() {
+        String previousUpdate = System.getProperty(GoldenOptions.UPDATE_PROPERTY);
         String previousRoot = System.getProperty(GoldenOptions.ROOT_PROPERTY);
         try {
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "true");
             System.setProperty(GoldenOptions.ROOT_PROPERTY, "src/./test/resources");
             assertEquals(Optional.of(Path.of("src/test/resources").toAbsolutePath().normalize()),
                     GoldenOptions.defaults().sourceRoot());
         } finally {
+            restore(GoldenOptions.UPDATE_PROPERTY, previousUpdate);
             restore(GoldenOptions.ROOT_PROPERTY, previousRoot);
         }
     }
@@ -601,13 +637,16 @@ class GoldenStoreTest {
             GoldenOptions options = GoldenOptions.defaults();
             System.setOut(new PrintStream(buffer, true, StandardCharsets.UTF_8));
             GoldenStore.assertMatches("golden/x.dot", "a\n", options, DIFF);
+            // The file already holds this text, so nothing is written and nothing is printed.
             GoldenStore.assertMatches("golden/x.dot", "a\n", options, DIFF);
+            GoldenStore.assertMatches("golden/y.dot", "b\n", options, DIFF);
         } finally {
             System.setOut(previousOut);
             restore(GoldenOptions.UPDATE_PROPERTY, previousUpdate);
             restore(GoldenOptions.ROOT_PROPERTY, previousRoot);
         }
-        assertEquals("UPDATED " + root.resolve("golden/x.dot") + System.lineSeparator(),
+        assertEquals("UPDATED " + root.resolve("golden/x.dot") + System.lineSeparator()
+                        + "UPDATED " + root.resolve("golden/y.dot") + System.lineSeparator(),
                 buffer.toString(StandardCharsets.UTF_8));
     }
 

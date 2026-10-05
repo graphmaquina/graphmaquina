@@ -27,15 +27,19 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Contract of the shared fixture. This class builds {@link TestDomain}'s graph and registry and pins the
- * shape the other tests read off it: which edges exist and which identifiers have none, the full
- * description of the async edge, the rejection policy of every state, the initial state, the terminals,
- * and that a registry can actually be built from an asynchronous and from a purely synchronous graph.
+ * shape the other tests read off it: which edges exist, in the order a definition lists them although the
+ * fixture declares them in neither that order nor its reverse, and which identifiers have none, the full
+ * description of the async edge, the rejection policy of every state, the initial state, the terminals, and
+ * that a registry can actually be built from an asynchronous and from a purely synchronous graph.
  */
 class TestDomainTest {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(1);
 
-    /** The declared edges, in the canonical order the definition keeps them. */
+    /**
+     * The declared edges, in the canonical order the definition keeps them: by origin, then identifier, then
+     * destination. The fixture declares them in neither that order nor its reverse.
+     */
     private static final List<String> EXPECTED_EDGES =
             List.of("NEW/PREPARE->READY", "NEW/RECOVER->FAILED", "READY/FINISH->DONE");
 
