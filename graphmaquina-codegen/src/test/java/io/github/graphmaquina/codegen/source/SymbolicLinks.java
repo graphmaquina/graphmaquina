@@ -15,7 +15,11 @@ public final class SymbolicLinks {
     private SymbolicLinks() {
     }
 
-    /** Creates {@code link} pointing at {@code target} and returns it, or aborts the test that asked for it. */
+    /**
+     * Creates {@code link} pointing at {@code target} and returns it. The test that asked for it is aborted, as a
+     * JUnit assumption, when the call throws an {@code UnsupportedOperationException} or any
+     * {@code FileSystemException}, a link that already exists included.
+     */
     public static Path create(Path link, Path target) throws IOException {
         try {
             return Files.createSymbolicLink(link, target);

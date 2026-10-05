@@ -466,8 +466,8 @@ class GenerationOutputTest {
     /**
      * A source the request lists as a file stands, below its source root, where its package declaration puts it.
      * A hand-written type that only shares the file name of a generated source, in a package that merely ends
-     * like the generated one's, is therefore no collision, whether the build lists its sources one by one or
-     * names their directory.
+     * like the generated one's, is therefore no collision when the build lists its sources one by one, as this
+     * request does.
      */
     @Test
     void acceptsAListedSourceThatSharesTheFileNameOfAGeneratedSourceInAnotherPackage() throws IOException {
@@ -650,7 +650,12 @@ class GenerationOutputTest {
         assertEquals(List.of(), ManifestCodec.readCompile(result.annotationManifest()).dependencies());
     }
 
-    /** javac reads past a classpath file that is not an archive, and so does the check for shadowed classes. */
+    /**
+     * A classpath file that is not an archive and is not named like one, such as {@code settings.properties}, is
+     * read past by javac, by the reading of the dependency indexes and by the check for shadowed classes. One named
+     * {@code .jar} or {@code .zip} that is not an archive is refused by javac and by the reading of the indexes;
+     * only the check for shadowed classes skips it, as it skips any file that does not open as an archive.
+     */
     @Test
     void ignoresAClasspathEntryThatIsNeitherADirectoryNorAnArchive() throws IOException {
         SourceFiles.write(sources(), ORIGINALS);
@@ -729,7 +734,7 @@ class GenerationOutputTest {
         }
     }
 
-    /** Every published file with its text, so two runs can be compared as a whole. */
+    /** Every published file with its text, and the manifest, so two runs can be compared as a whole. */
     private Map<String, String> contents() throws IOException {
         Map<String, String> contents = new TreeMap<>();
         for (String name : published()) {

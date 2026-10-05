@@ -23,8 +23,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies the carrier of a compilation: whatever its identifier holds, the carrier compiles and javac reads that
- * identifier back exactly.
+ * Verifies the carrier of a compilation: for an identifier that holds line breaks, control characters, quotes, a
+ * backslash and a non-ASCII letter, the carrier compiles and javac reads that identifier back exactly.
  */
 class CompilationMarkerEmitterTest {
 
@@ -32,9 +32,10 @@ class CompilationMarkerEmitterTest {
     Path directory;
 
     /**
-     * A line break ends a Java string literal and no control character, C0, DEL or C1, has a place in one, so the
-     * carrier spells every one of them as an escape, which javac reads back as the very character the identifier
-     * holds. Quotes, backslashes, text that only looks like a Unicode escape and non-ASCII letters survive as well.
+     * A line break ends a Java string literal and no control character, C0, DEL or C1, belongs in source text, so
+     * the carrier spells every one of them as an escape, which javac reads back as the very character the
+     * identifier holds. Quotes, backslashes, text that only looks like a Unicode escape and non-ASCII letters
+     * survive as well.
      */
     @Test
     void carriesAnIdentifierWithLineBreaksAndControlCharactersExactly() throws IOException {

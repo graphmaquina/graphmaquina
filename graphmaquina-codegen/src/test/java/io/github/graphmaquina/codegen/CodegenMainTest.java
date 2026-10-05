@@ -43,7 +43,7 @@ class CodegenMainTest {
     @TempDir
     Path directory;
 
-    /** One invocation of the tool: what it wrote on the error stream and the status it left. */
+    /** One invocation of the tool: what it wrote, error stream and standard output merged, and the status it left. */
     private record Invocation(int exitCode, String errors) { }
 
     @Test
@@ -198,7 +198,10 @@ class CodegenMainTest {
         return file;
     }
 
-    /** Runs {@code operation} over {@code request} in the JVM the test itself runs on. */
+    /**
+     * Runs {@code operation} over {@code request} in a new JVM, of the same runtime and with the same class path as
+     * the one the test itself runs on.
+     */
     private Invocation run(String operation, Path request) {
         return launch(List.of(operation, "--request", request.toString()));
     }
@@ -235,7 +238,10 @@ class CodegenMainTest {
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
     }
 
-    /** The provisional index the processor leaves behind for the completion step to promote. */
+    /**
+     * Writes, in place of the processor, the provisional index it leaves behind for the completion step to promote,
+     * and returns its bytes.
+     */
     private byte[] writeProvisionalIndex() throws IOException {
         Path pending = directory.resolve("classes").resolve(PENDING);
         Files.createDirectories(pending.getParent());
@@ -262,7 +268,10 @@ class CodegenMainTest {
         }
     }
 
-    /** The smallest fixture the generator produces a full vocabulary for. */
+    /**
+     * The sources {@link #request()} writes and names: an entity with one property, its two enums, the machine over
+     * them and an action host.
+     */
     private static final Map<String, String> ORIGINALS = originals();
 
     private static Map<String, String> originals() {

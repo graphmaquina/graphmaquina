@@ -36,8 +36,9 @@ import org.junit.jupiter.params.provider.ValueSource;
  * what {@code complete} seals once it succeeded.
  *
  * <p>Every root is a temporary directory of its own, so nothing here can pass because two outputs happen to
- * share a parent. The inventory is the only authority on what may be deleted: a class file whose name starts
- * like an owned one but which no inventory lists survives {@code prepare} byte for byte.</p>
+ * share a parent. The inventory decides what may be deleted: a class file that no inventory lists survives
+ * {@code prepare} byte for byte, unless an interrupted cycle left it and it was compiled from one of the units the
+ * inventory lists.</p>
  */
 class CompilationOutputsTest {
 
@@ -411,7 +412,10 @@ class CompilationOutputsTest {
                         workDirectory.resolve("processor-inventory.json").toString(), ownedSources));
     }
 
-    /** Compiles the two owned units and one unowned type into the class output, as javac would. */
+    /**
+     * Compiles into the class output, as javac would, the generator's {@code fx.DocsGraph} and the carrier,
+     * {@code fx.Docs_} as the annotation processor would write it, and {@code fx.Manual}, which no generation owns.
+     */
     private void compileOwnedAndManualSources() {
         compileOwnedAndManualSources(List.of());
     }

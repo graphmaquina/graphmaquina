@@ -109,7 +109,7 @@ class WatchVocabularyTest {
         return Map.copyOf(sources);
     }
 
-    /** Repeats the watch, omits every optional array once and fills each of them once. */
+    /** Repeats the watch and, across its three rules, omits each optional array in some and fills it in another. */
     private static final Map<String, String> USAGE = Map.of("use.WatchUsage", """
         package use;
         @fx.DocsPages.Watch(

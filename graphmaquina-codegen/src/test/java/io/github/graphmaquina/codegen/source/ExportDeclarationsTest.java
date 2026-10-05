@@ -1164,7 +1164,10 @@ class ExportDeclarationsTest {
                 model.symbols().stream().map(SymbolDescriptor::qualifiedName).toList());
     }
 
-    /** Creates {@code link} to {@code target}, skipping the test where this file system cannot create one. */
+    /**
+     * Creates {@code link} to {@code target}, skipping the test when the file system does not support links or the
+     * call fails with any {@code IOException}.
+     */
     private static Path symbolicLink(Path link, Path target) {
         try {
             return Files.createSymbolicLink(link, target);

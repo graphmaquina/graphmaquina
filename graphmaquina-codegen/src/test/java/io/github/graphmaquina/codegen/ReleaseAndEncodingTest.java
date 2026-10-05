@@ -41,7 +41,7 @@ class ReleaseAndEncodingTest {
     @TempDir
     Path directory;
 
-    /** The smallest fixture with a machine, an entity, its enums and an action host. */
+    /** A machine, its entity and its two enums; a test that needs a host of marked members adds one. */
     private static final Map<String, String> ORIGINALS = originals();
 
     private static Map<String, String> originals() {

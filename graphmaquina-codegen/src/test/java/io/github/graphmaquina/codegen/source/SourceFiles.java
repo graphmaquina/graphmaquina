@@ -24,9 +24,9 @@ import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 
 /**
- * Test support for the source reading and emission layers: materializes source texts on disk, exposes the
- * classpath of the test JVM, compiles a fixture into a temporary jar so binary headers are exercised for real,
- * and compiles original plus generated sources under the project's own strict compiler options.
+ * Test support for the tests of the generator: materializes source texts on disk, exposes the classpath of the
+ * test JVM, compiles a fixture into a jar so binary headers are exercised for real, and compiles original plus
+ * generated sources under the project's own strict compiler options.
  */
 public final class SourceFiles {
 
@@ -65,7 +65,10 @@ public final class SourceFiles {
         return List.copyOf(entries);
     }
 
-    /** Compiles {@code sources} with {@code -proc:none} and packs the result into {@code jar}. */
+    /**
+     * Compiles {@code sources} with {@code -proc:none --release 21} and packs the result into {@code jar}. The
+     * sources stay in {@code jar-sources} and the classes in {@code jar-classes}, both under {@code workDirectory}.
+     */
     public static Path compileToJar(Path workDirectory, Map<String, String> sources, Path jar) {
         try {
             Path sourceRoot = Files.createDirectories(workDirectory.resolve("jar-sources"));
@@ -79,8 +82,8 @@ public final class SourceFiles {
     }
 
     /**
-     * Compiles {@code files} against the test classpath with the options every module of this project uses,
-     * {@code -proc:none -Xlint:all,-serial -Werror}, and returns what javac reported.
+     * Compiles {@code files} against the test classpath with {@code -proc:none --release 21} and the options every
+     * module of this project compiles with, {@code -Xlint:all,-serial -Werror}, and returns what javac reported.
      */
     public static Compilation compileStrict(List<Path> files, Path classes) {
         return compileStrict(files, classes, List.of());

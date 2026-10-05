@@ -528,7 +528,11 @@ class ManifestCodecTest {
         assertTrue(failure.getMessage().contains("clean"), failure.getMessage());
     }
 
-    /** The member names of the first graph object of a written index, in the order the document spells them. */
+    /**
+     * The member names of the graph objects of a written index, from its {@code graphs} key to its {@code symbols}
+     * key, in the order the document spells them and without the {@code path}, {@code line} and {@code column} of an
+     * origin.
+     */
     private static List<String> members(String json) {
         List<String> names = new ArrayList<>();
         Matcher matcher = Pattern.compile("\"([a-zA-Z]+)\":").matcher(

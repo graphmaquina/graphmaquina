@@ -118,8 +118,8 @@ class SourceDeclarationsTest {
 
     /**
      * An origin path is published in the export index, so it reads the same on every platform: the separator
-     * of the file system it was read from becomes a forward slash. This host's own separator is already one, so
-     * Windows' is given explicitly.
+     * of the file system it was read from becomes a forward slash. The separator is an argument, so Windows' is
+     * given explicitly and the test runs the same on any host.
      */
     @Test
     void spellsOriginPathsWithForwardSlashesWhateverTheSeparatorOfTheFileSystem() {

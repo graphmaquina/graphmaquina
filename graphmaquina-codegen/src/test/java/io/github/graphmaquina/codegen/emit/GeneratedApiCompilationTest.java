@@ -83,7 +83,11 @@ class GeneratedApiCompilationTest {
         return Map.copyOf(sources);
     }
 
-    /** Applies every emitted annotation of the machine exactly as an application would. */
+    /**
+     * Applies the annotations emitted for the machine as an application would: {@code Definition}, repeated
+     * {@code StatePolicy} and {@code Transition} on the type, {@code Transition} on two methods and one
+     * {@code Reject}.
+     */
     private static final Map<String, String> USAGE = Map.of("use.DocsUsage", """
         package use;
         import io.github.graphmaquina.annotation.Timeout;
@@ -639,9 +643,9 @@ class GeneratedApiCompilationTest {
     }
 
     /**
-     * The three type errors the generated vocabulary must leave to javac: a state constant where a transition
-     * identifier belongs, a foreign machine's constant in {@code from}, and — for the same declaration written
-     * correctly — no error at all.
+     * The two type errors the generated vocabulary must leave to javac: a state constant where a transition
+     * identifier belongs and a foreign machine's constant in {@code from}. The same declaration written correctly
+     * compiles.
      */
     @Test
     void refusesAStateConstantAsATransitionIdentifierAndAForeignConstantInFrom() {
