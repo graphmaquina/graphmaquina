@@ -8,13 +8,17 @@ import org.apache.maven.plugin.MojoExecutionException;
  * writes. It runs over the request the {@code generate} goal of the same compilation wrote.
  *
  * <p>It then dates the carrier of this generation past the newest output the retirement removed, so the
- * incremental compiler recompiles the module it has just been left without, and it refuses to retire anything
- * at all when the build switched the main compilation off.</p>
+ * incremental compiler recompiles the module it has just been left without. It retires nothing at all, and
+ * says so, when the build compiles no main sources: in a project packaged as {@code pom}, or when
+ * {@code maven.main.skip} or {@code <skipMain>} switches the main compilation off.</p>
  */
 public final class PrepareCompileMojo extends StateGraphMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
-        prepare(CompilerExecution.MAIN, mainRequest());
+        if (skips(CompilerExecution.MAIN)) {
+            return;
+        }
+        prepare(mainRequest());
     }
 }

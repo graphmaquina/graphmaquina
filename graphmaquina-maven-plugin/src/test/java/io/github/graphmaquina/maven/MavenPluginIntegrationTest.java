@@ -294,6 +294,96 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * The generator parses exactly the sources javac compiles: a source the {@code <excludes>} of the compiler
+     * leave out — here a draft that does not even parse — is not read by the main generation, and one the
+     * {@code <testExcludes>} leave out is not read by the test generation.
+     */
+    @Test
+    void theGeneratorReadsOnlyTheSourcesTheCompilerCompiles() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <excludes><exclude>fx/drafts/**</exclude></excludes>\n"
+                + "          <testExcludes><exclude>fxt/drafts/**</exclude></testExcludes>");
+        Map<String, String> sources = MavenFixture.domainSources();
+        sources.put("fx.drafts.Draft", draft("fx.drafts"));
+        fixture.writeSources(sources);
+        fixture.writeTestSource("fxt.drafts.Draft", draft("fxt.drafts"));
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertFalse(fixture.jarContains("fx/drafts/Draft.class"));
+        assertTrue(fixture.inventoryIsSealed("test"));
+        assertFalse(fixture.exists("target/test-classes/fxt/drafts/Draft.class"));
+    }
+
+    /**
+     * maven-compiler-plugin applies its includes and excludes to the directory the generator writes into as well,
+     * so patterns that leave out the carrier of a compilation would let javac compile the vocabulary without it.
+     * They are refused by the generation, before anything is retired, naming the pattern and the include that
+     * mends it: main includes that select only the packages of the project, and a test exclude that drops the
+     * carrier package.
+     */
+    @Test
+    void patternsThatLeaveOutTheCarrierAreRefusedBeforeAnythingIsRetired() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        // The carrier the generator emitted, named relative to its root as the compiler matches it.
+        String carrier = fixture.projectDirectory().resolve("target/generated-sources/graphmaquina")
+                .relativize(fixture.carrierSource()).toString();
+        fixture.editPom("<release>21</release>",
+                "<release>21</release>\n          <includes><include>fx/**</include></includes>");
+
+        MavenResult includes = fixture.run("package");
+
+        assertNotEquals(0, includes.exitCode(), includes.output());
+        assertTrue(includes.output().contains("the <includes> of the default-compile execution of"
+                + " maven-compiler-plugin, [fx/**], select no " + carrier), includes.output());
+        assertTrue(includes.output().contains("Add <include>io/github/graphmaquina/generated/**</include> to the"
+                + " <includes> of that execution."), includes.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("<includes><include>fx/**</include></includes>",
+                "<testExcludes><exclude>io/github/**</exclude></testExcludes>");
+
+        MavenResult excludes = fixture.run("package");
+
+        assertNotEquals(0, excludes.exitCode(), excludes.output());
+        assertTrue(excludes.output().contains("the <testExcludes> pattern io/github/** of the default-testCompile"
+                + " execution of maven-compiler-plugin leaves out io/github/graphmaquina/generated/bootstrap/"
+                + "GraphCompilation"), excludes.output());
+        assertTrue(fixture.inventoryIsSealed("test"));
+    }
+
+    /**
+     * Includes that also select the sources the generator emits outside the packages of the project build and
+     * package: the generator reads only the included sources — a draft outside them does not even parse — and
+     * javac compiles the generated vocabulary together with its carrier.
+     */
+    @Test
+    void includesThatSelectTheGeneratedSourcesBuildAndPackage() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <includes>\n"
+                + "            <include>fx/**</include>\n"
+                + "            <include>io/github/graphmaquina/generated/**</include>\n"
+                + "          </includes>");
+        Map<String, String> sources = MavenFixture.domainSources();
+        sources.put("misc.Draft", draft("misc"));
+        fixture.writeSources(sources);
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertFalse(fixture.jarContains("misc/Draft.class"));
+        assertFalse(fixture.jarContainsGraphCompilationCarrier());
+    }
+
+    /**
      * A downstream project resolves the vocabulary of its dependency from the index that dependency published
      * inside its jar: no source of the producer is on its source path, and its own machine binds the producer's
      * generated symbols.
@@ -349,6 +439,30 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * A plugin configured once in a {@code pom} parent is inherited by its modules and runs in the parent too,
+     * which compiles nothing: there every goal does nothing and says so, and the module builds as it would
+     * on its own.
+     */
+    @Test
+    void aPomParentSkipsTheExecutionsItsModulesInherit() throws IOException {
+        MavenFixture parent = MavenFixture.basic(tempDirectory, fixtureRepository);
+        MavenFixture module = parent.module();
+
+        MavenResult result = parent.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("StateGraph skips fx.build:fixture:main: the project is packaged as"
+                + " pom, which compiles no Java"), result.output());
+        assertTrue(result.output().contains("StateGraph skips fx.build:fixture:test: the project is packaged as"
+                + " pom, which compiles no Java"), result.output());
+        assertFalse(parent.exists("target/graphmaquina"));
+        assertTrue(module.inventoryIsSealed("main"));
+        assertTrue(module.jarContains("fx/OrdersGraph.class"));
+        assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
+                module.localExports());
+    }
+
+    /**
      * {@code clean} is a complete migration path out of the retired release: with the whole target directory
      * gone there is no inventory left to retire anything from, and the build regenerates the vocabulary,
      * compiles it and publishes the same index again. The hand-written sources it was generated from are
@@ -393,11 +507,17 @@ class MavenPluginIntegrationTest {
         assertEquals(before, Files.getLastModifiedTime(compiled));
     }
 
-    /** The generator runs under the {@code java} the build selected for it, not under the JVM running Maven. */
+    /**
+     * The generator runs under the {@code java} the build selected for it, not under the default the JVM running
+     * Maven provides. The selection is that very JDK reached through a link of its own — javac compiles inside
+     * that JVM, so the generator must be on the same JDK — and only its path tells it apart from the default.
+     */
     @Test
     void runsTheGeneratorUnderTheSelectedJavaExecutable() throws IOException {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
-        String selected = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+        Path linked = Files.createSymbolicLink(tempDirectory.resolve("linked-jdk"),
+                Path.of(System.getProperty("java.home")));
+        String selected = linked.resolve("bin").resolve("java").toString();
 
         MavenResult result = fixture.run("-X", "-Dgraphmaquina.javaExecutable=" + selected, "generate-sources");
 
@@ -461,6 +581,33 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * The refusal of a missing processor comes from the generation, before the preparation: it says what the
+     * preparation would retire, not that anything has been retired, and the index and the sealed inventory of
+     * the previous build are still there afterwards.
+     */
+    @Test
+    void aMissingProcessorIsRefusedBeforeTheIndexIsRetired() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        fixture.editPom("""
+                            <path>
+                              <groupId>io.github.graphmaquina</groupId>
+                              <artifactId>graphmaquina-processor</artifactId>
+                              <version>${graphmaquina.version}</version>
+                            </path>
+                """, "");
+
+        MavenResult result = fixture.run("package");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("and the preparation that follows would retire the index of the"
+                + " previous compilation"), result.output());
+        assertFalse(result.output().contains("has already retired"), result.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
      * A compilation this build prepared but javac never published for is a failure, not a no-op: the outputs of
      * the previous cycle are already retired, so leaving the build green would package a jar with the carrier
      * of the compilation in it and no index at all.
@@ -514,6 +661,62 @@ class MavenPluginIntegrationTest {
 
         assertNotEquals(0, forked.exitCode(), forked.output());
         assertTrue(forked.output().contains("forks javac at /nonexistent/javac"), forked.output());
+    }
+
+    /**
+     * A compiler property set both for the JVM running Maven and in the POM is read the way Maven evaluates the
+     * compiler's own parameter: the property of the session wins over the property of the project, so the
+     * release this check reads is the release javac compiles with.
+     */
+    @Test
+    void aJvmSystemPropertyWinsOverTheProjectProperty() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "");
+        fixture.editPom("<lombok.version>1.18.48</lombok.version>",
+                "<lombok.version>1.18.48</lombok.version>\n"
+                        + "    <maven.compiler.release>17</maven.compiler.release>");
+        // A project sets a system property of the JVM running its build here, as MAVEN_OPTS does.
+        Path options = Files.createDirectories(fixture.projectDirectory().resolve(".mvn")).resolve("jvm.config");
+        Files.writeString(options, "-Dmaven.compiler.release=21\n", StandardCharsets.UTF_8);
+
+        MavenResult result = fixture.run("compile");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.exists("target/classes/fx/OrdersGraph.class"));
+    }
+
+    /**
+     * Maven merges the configuration the compiler declares for all of its executions into each execution, and
+     * a list the execution declares itself replaces the plugin's: the test compilation of this POM compiles
+     * with its own arguments alone, so the main manifest the plugin level names is not one it reads.
+     */
+    @Test
+    void anExecutionsCompilerArgumentsReplaceThoseOfThePlugin() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        String mainArguments = """
+                          <compilerArgs>
+                            <arg>-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/main/\
+                annotation-manifest.json</arg>
+                            <arg>-Xlint:all,-serial</arg>
+                            <arg>-Werror</arg>
+                          </compilerArgs>
+                """;
+        fixture.editPom("""
+                          <execution>
+                            <id>default-compile</id>
+                            <configuration>
+                """ + mainArguments.indent(4) + """
+                            </configuration>
+                          </execution>
+                """, "");
+        fixture.editPom("<release>21</release>\n", "<release>21</release>\n" + mainArguments);
+
+        MavenResult result = fixture.run("test-compile");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.inventoryIsSealed("test"));
     }
 
     /**
@@ -580,29 +783,83 @@ class MavenPluginIntegrationTest {
     }
 
     /**
-     * A build that switched a compilation off is refused before the first deletion: the index and the sealed
-     * inventory of the previous build are untouched, because retiring them and compiling nothing would leave
-     * the project published with nothing at all.
+     * A build that switched a compilation off skips the StateGraph goals of that compilation the way
+     * maven-compiler-plugin skips its own goal: they do nothing and say so, the index and the sealed inventory
+     * of the previous build stay exactly as they were, and the rest of the build carries on — which is what
+     * makes {@code -Dmaven.test.skip=true package} work.
      */
     @Test
-    void skippingTheCompilerFailsBeforeAnythingIsRetired() throws IOException {
+    void skippingACompilationSkipsItsStateGraphGoals() throws IOException {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
         assertEquals(0, fixture.run("package").exitCode());
         List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
 
         MavenResult main = fixture.run("-Dmaven.main.skip=true", "compile");
 
-        assertNotEquals(0, main.exitCode(), main.output());
-        assertTrue(main.output().contains("maven.main.skip=true switches the default-compile compilation off"),
-                main.output());
+        assertEquals(0, main.exitCode(), main.output());
+        assertTrue(main.output().contains("StateGraph skips fx.build:fixture:main: maven.main.skip=true switches"
+                + " the default-compile compilation off"), main.output());
         assertTrue(fixture.inventoryIsSealed("main"));
         assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
 
-        MavenResult test = fixture.run("-Dmaven.test.skip=true", "test-compile");
+        MavenResult test = fixture.run("-Dmaven.test.skip=true", "package");
 
-        assertNotEquals(0, test.exitCode(), test.output());
-        assertTrue(test.output().contains("maven.test.skip=true switches the default-testCompile compilation off"),
-                test.output());
+        assertEquals(0, test.exitCode(), test.output());
+        assertTrue(test.output().contains("StateGraph skips fx.build:fixture:test: maven.test.skip=true switches"
+                + " the default-testCompile compilation off"), test.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.exists("target/fixture-1.0.0.jar"));
+    }
+
+    /**
+     * A compilation that can end without the classes the completion publishes is refused by the generation,
+     * before the preparation retires anything: {@code failOnError=false} carries the build on past a
+     * compilation javac rejected, and {@code proc=only}, as a parameter or as a compiler argument, runs the
+     * annotation processors and compiles nothing.
+     */
+    @Test
+    void aCompilationThatCanEndWithoutClassesIsRefusedBeforeAnythingIsRetired() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        Map<String, String> broken = MavenFixture.domainSources();
+        broken.put("fx.Broken", """
+                package fx;
+
+                /** A declaration javac refuses, so the compilation of this fixture fails. */
+                public final class Broken {
+
+                    private final int count = "not a number";
+                }
+                """);
+        fixture.writeSources(broken);
+
+        MavenResult failOnError = fixture.run("-Dmaven.compiler.failOnError=false", "package");
+
+        assertNotEquals(0, failOnError.exitCode(), failOnError.output());
+        assertTrue(failOnError.output().contains("maven.compiler.failOnError=false lets the build continue past a"
+                + " compilation the default-compile execution of maven-compiler-plugin rejects"),
+                failOnError.output());
+        assertNothingWasRetired(fixture, published);
+
+        MavenResult procOnly = fixture.run("-Dmaven.compiler.proc=only", "compile");
+
+        assertNotEquals(0, procOnly.exitCode(), procOnly.output());
+        assertTrue(procOnly.output().contains("maven.compiler.proc=only makes the default-compile execution of"
+                + " maven-compiler-plugin run the annotation processors and compile nothing"), procOnly.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("graphmaquina/main/annotation-manifest.json</arg>",
+                "graphmaquina/main/annotation-manifest.json</arg>\n                <arg>-proc:only</arg>");
+
+        MavenResult argument = fixture.run("compile");
+
+        assertNotEquals(0, argument.exitCode(), argument.output());
+        assertTrue(argument.output().contains("the compiler argument -proc:only makes the default-compile"
+                + " execution of maven-compiler-plugin run the annotation processors"), argument.output());
+        assertTrue(argument.output().contains("Remove that argument from the configuration of that execution."),
+                argument.output());
+        assertNothingWasRetired(fixture, published);
     }
 
     /**
@@ -629,10 +886,111 @@ class MavenPluginIntegrationTest {
 
         fixture.editPom("<release>21</release>",
                 "<release>21</release><jdkToolchain><version>77</version></jdkToolchain>");
-        MavenResult toolchain = fixture.run("generate-sources");
+        Path other = fakeJdk("jdk-77", null);
+        Path declared = toolchains("toolchains.xml", other);
+        Path none = toolchains("no-toolchains.xml", null);
+        MavenResult toolchain = fixture.run("-t", declared.toString(), "-gt", none.toString(), "generate-sources");
         assertNotEquals(0, toolchain.exitCode(), toolchain.output());
-        assertTrue(toolchain.output().contains("the jdk toolchain {version=77}"), toolchain.output());
+        assertTrue(toolchain.output().contains("the jdk toolchain {version=77}, which selects "),
+                toolchain.output());
+        assertTrue(toolchain.output().contains("jdk-77"), toolchain.output());
         assertFalse(fixture.exists("target/graphmaquina/main/annotation-manifest.json"));
+    }
+
+    /**
+     * javac forked at the {@code javac} of the very JDK the generator runs on is on the same JDK, whatever path
+     * names it, so the build compiles.
+     */
+    @Test
+    void aCompilerForkedAtTheJdkOfTheGeneratorCompiles() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        // ${java.home} is the JVM running Maven, which is where the generator runs when nothing else is selected.
+        fixture.editPom("<release>21</release>",
+                "<release>21</release><fork>true</fork><executable>${java.home}/bin/javac</executable>");
+
+        MavenResult result = fixture.run("compile");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.exists("target/classes/fx/OrdersGraph.class"));
+    }
+
+    /**
+     * A javac that runs inside the JVM running Maven compiles on that JDK, so a generator configured to run on
+     * another JDK is refused before anything is generated.
+     */
+    @Test
+    void aGeneratorOnAnotherJdkThanJavacIsRefused() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        Path other = fakeJdk("other-jdk", null);
+
+        MavenResult result = fixture.run("-Dgraphmaquina.javaExecutable=" + other.resolve("bin/java"),
+                "generate-sources");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("the default-compile execution of maven-compiler-plugin compiles with"
+                + " the JDK running Maven"), result.output());
+        assertTrue(result.output().contains("while the StateGraph generator runs under " + other.resolve("bin/java")),
+                result.output());
+        assertFalse(fixture.exists("target/graphmaquina/main/annotation-manifest.json"));
+    }
+
+    /**
+     * A {@code <jdkToolchain>} that matches no toolchain of the build is no disagreement: maven-compiler-plugin
+     * then compiles with the toolchain selected for the build or, without one, on the JDK running Maven, which
+     * is where the generator runs too.
+     */
+    @Test
+    void aJdkToolchainThatMatchesNoToolchainFallsBackLikeTheCompiler() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>",
+                "<release>21</release><jdkToolchain><version>21</version></jdkToolchain>");
+        Path none = toolchains("no-toolchains.xml", null);
+
+        MavenResult result = fixture.run("-t", none.toString(), "-gt", none.toString(), "compile");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+    }
+
+    /**
+     * The generator parses sources with the jdk.compiler module and runs on Java 21 or later, so whatever
+     * {@code java} it is given is checked before anything is generated: one with no javac beside it belongs to a
+     * runtime, and one whose JDK declares an older Java in its release file is too old. Both are refused, although
+     * either launcher would start the generator here, since both run the JDK of these tests.
+     */
+    @Test
+    void theGeneratorIsStartedOnlyWithTheJavaOfAJdk21() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        Path runtime = fakeJavaHome("runtime", null, "java");
+
+        MavenResult result = fixture.run("-Dgraphmaquina.javaExecutable=" + runtime.resolve("bin/java"),
+                "generate-sources");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("the configured <javaExecutable>, " + runtime.resolve("bin/java")
+                + ", has no javac beside it, so it belongs to a runtime, not a JDK"), result.output());
+
+        Path older = fakeJdk("jdk-17", "17.0.2");
+
+        MavenResult old = fixture.run("-Dgraphmaquina.javaExecutable=" + older.resolve("bin/java"),
+                "generate-sources");
+
+        assertNotEquals(0, old.exitCode(), old.output());
+        assertTrue(old.output().contains("the StateGraph generator needs Java 21 or later, but the configured"
+                + " <javaExecutable>, " + older.resolve("bin/java") + ", belongs to Java 17"), old.output());
+        assertFalse(fixture.exists("target/graphmaquina/main/annotation-manifest.json"));
+    }
+
+    /**
+     * The descriptor names the Java release the classes of the plugin need, so Maven refuses an older JVM with
+     * its own message before it loads a goal, rather than with a class-version error.
+     */
+    @Test
+    void theDescriptorRequiresJava21() throws IOException {
+        Element descriptor = descriptorOf(newest(fixtureRepository.resolve(MODULE), ".jar"));
+
+        assertEquals("21", text(descriptor, "requiredJavaVersion"));
     }
 
     /**
@@ -711,6 +1069,76 @@ class MavenPluginIntegrationTest {
         assertFalse(fixture.exists(MAIN_EXPORTS));
         assertFalse(fixture.exists("target/fixture-1.0.0.jar"));
     }
+
+    /**
+     * Asserts that the main compilation of a previous build is exactly as that build left it: its inventory is
+     * sealed, no preparation started another cycle, and its index still publishes {@code published}.
+     */
+    private static void assertNothingWasRetired(MavenFixture fixture, List<String> published) {
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /** A source javac refuses to parse, which only a build that excludes it can carry. */
+    private static String draft(String packageName) {
+        return """
+                package %s;
+
+                /** Work in progress, excluded from the build until it compiles. */
+                public final class Draft {
+
+                    void unfinished( {
+                }
+                """.formatted(packageName);
+    }
+
+    /** A directory laid out like the home of another JDK; see {@link #fakeJavaHome}. */
+    private Path fakeJdk(String name, String version) throws IOException {
+        return fakeJavaHome(name, version, "java", "javac");
+    }
+
+    /**
+     * A directory laid out like the home of another Java installation: each of {@code tools} in its {@code bin}
+     * runs that tool of the JDK running these tests, so only its path tells it apart, and its {@code release}
+     * file declares {@code version} when one is given. Without {@code javac} among the tools it is a runtime.
+     */
+    private Path fakeJavaHome(String name, String version, String... tools) throws IOException {
+        Path home = tempDirectory.resolve(name);
+        Path bin = Files.createDirectories(home.resolve("bin"));
+        Path real = Path.of(System.getProperty("java.home"), "bin");
+        for (String tool : tools) {
+            Path launcher = bin.resolve(tool);
+            Files.writeString(launcher, "#!/bin/sh\nexec \"" + real.resolve(tool) + "\" \"$@\"\n",
+                    StandardCharsets.UTF_8);
+            if (!launcher.toFile().setExecutable(true)) {
+                throw new IllegalStateException("cannot make " + launcher + " executable");
+            }
+        }
+        if (version != null) {
+            Files.writeString(home.resolve("release"), "JAVA_VERSION=\"" + version + "\"\n", StandardCharsets.UTF_8);
+        }
+        return home;
+    }
+
+    /**
+     * A toolchains file that declares one jdk toolchain of version {@code 77} at {@code jdk}, or none at all when
+     * {@code jdk} is {@code null}. A build given it for both the user and the installation level sees exactly
+     * these toolchains, whatever the machine running the tests declares.
+     */
+    private Path toolchains(String name, Path jdk) throws IOException {
+        String declared = jdk == null ? "" : """
+                  <toolchain>
+                    <type>jdk</type>
+                    <provides><version>77</version></provides>
+                    <configuration><jdkHome>%s</jdkHome></configuration>
+                  </toolchain>
+                """.formatted(jdk);
+        Path file = tempDirectory.resolve(name);
+        Files.writeString(file, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<toolchains>\n" + declared
+                + "</toolchains>\n", StandardCharsets.UTF_8);
+        return file;
+    }
+
 
     /** Every hand-written source of {@code fixture}, keyed by its path relative to the source root. */
     private static Map<String, String> handWrittenSources(MavenFixture fixture) throws IOException {

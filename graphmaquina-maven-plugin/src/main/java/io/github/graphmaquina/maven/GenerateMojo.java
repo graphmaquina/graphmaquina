@@ -13,11 +13,18 @@ import org.apache.maven.plugin.MojoExecutionException;
  * <p>Before it writes anything, the goal checks that {@code default-compile} is configured to read the very
  * manifest this generation writes, under the same JDK and a release that vocabulary compiles with. A build that
  * disagrees is stopped here rather than compiled against the vocabulary of a previous run.</p>
+ *
+ * <p>When the build compiles no main sources — in a project packaged as {@code pom}, or when
+ * {@code maven.main.skip} or {@code <skipMain>} switches the main compilation off — the goal generates nothing
+ * and says so.</p>
  */
 public final class GenerateMojo extends StateGraphMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
+        if (skips(CompilerExecution.MAIN)) {
+            return;
+        }
         Request request = mainRequest();
         verifyCompiler(CompilerExecution.MAIN, request);
         run("generate", request);

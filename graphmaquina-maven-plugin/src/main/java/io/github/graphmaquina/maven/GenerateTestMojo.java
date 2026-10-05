@@ -10,6 +10,9 @@ public final class GenerateTestMojo extends StateGraphMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
+        if (skips(CompilerExecution.TEST)) {
+            return;
+        }
         Request request = testRequest();
         verifyCompiler(CompilerExecution.TEST, request);
         run("generate", request);

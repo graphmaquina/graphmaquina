@@ -9,6 +9,9 @@ public final class CompleteTestCompileMojo extends StateGraphMojo {
 
     @Override
     public void execute() throws MojoExecutionException {
+        if (skips(CompilerExecution.TEST)) {
+            return;
+        }
         complete(testRequest());
     }
 }

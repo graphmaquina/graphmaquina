@@ -90,6 +90,30 @@ public final class MavenFixture {
         return write(directory, "consumer project ñ", "/it/consumer/pom.xml", "consumer", repository);
     }
 
+    /**
+     * Turns this project into the {@code pom} parent of one {@code jar} module, {@code app}, which declares nothing
+     * but its parent: the compiler configuration and the six StateGraph executions reach it by inheritance, the
+     * way a multi-module build configures them once. The shared domain moves into the module, so the parent
+     * itself has nothing to compile.
+     *
+     * @return a fixture bound to the module; {@link #run} on this fixture builds the parent and the module
+     * @throws IOException if the projects cannot be rewritten
+     */
+    public MavenFixture module() throws IOException {
+        editPom("<packaging>jar</packaging>", """
+                <packaging>pom</packaging>
+
+                  <modules>
+                    <module>app</module>
+                  </modules>""");
+        deleteRecursively(directory.resolve("src"));
+        Path module = Files.createDirectories(directory.resolve("app"));
+        Files.writeString(module.resolve("pom.xml"), template("/it/module/pom.xml"), StandardCharsets.UTF_8);
+        MavenFixture fixture = new MavenFixture(module, settings, "app");
+        fixture.writeSources(domainSources());
+        return fixture;
+    }
+
     /** Materializes one project: its POM from the test resources and the settings file of every build. */
     private static MavenFixture write(Path directory, String name, String pom, String artifactId,
             Path repository) throws IOException {
@@ -352,6 +376,10 @@ public final class MavenFixture {
      * Runs {@code goals} with the fixture's settings and local repository, in the project directory, merging
      * both streams of the process in the order Maven wrote them.
      *
+     * <p>Maven runs on the JDK running these tests, whatever {@code JAVA_HOME} the shell that started them
+     * exported: javac compiles inside that JVM unless a build forks it, so this is the JDK every test reasons
+     * about when it compares the compiler with the generator.</p>
+     *
      * @param goals the Maven goals and phases to run
      * @return the status and output of the build
      * @throws IOException if the process cannot be started or its output cannot be read
@@ -364,10 +392,11 @@ public final class MavenFixture {
         command.add(settings.toString());
         command.add("-Dmaven.repo.local=" + localRepository());
         command.addAll(List.of(goals));
-        Process process = new ProcessBuilder(command)
+        ProcessBuilder builder = new ProcessBuilder(command)
                 .directory(directory.toFile())
-                .redirectErrorStream(true)
-                .start();
+                .redirectErrorStream(true);
+        builder.environment().put("JAVA_HOME", System.getProperty("java.home"));
+        Process process = builder.start();
         String output;
         try (InputStream stream = process.getInputStream()) {
             output = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
