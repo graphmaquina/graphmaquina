@@ -53,6 +53,9 @@ class PublishedArtifactSmokeTest {
             import io.github.graphmaquina.api.GraphDefinition;
             import io.github.graphmaquina.api.GuardResult;
             import io.github.graphmaquina.api.MachineKey;
+            import io.github.graphmaquina.api.Outcome;
+            import io.github.graphmaquina.api.OutcomeCode;
+            import io.github.graphmaquina.api.OutcomeStatus;
             import io.github.graphmaquina.api.StateMachine;
             import io.github.graphmaquina.dsl.StateGraph;
             import io.github.graphmaquina.runtime.StateMachines;
@@ -114,9 +117,27 @@ class PublishedArtifactSmokeTest {
                     StateMachine<Entity, State, Id> machine = StateMachines.from(definition)
                             .state(value -> value.state, (value, state) -> value.state = state)
                             .asyncExecutor(Runnable::run).build();
-                    assertThat(machine.execute(entity, Id.FINISH)).isApplied().movedTo(State.DONE)
+                    Outcome<Entity, State, Id> finished = machine.execute(entity, Id.FINISH);
+                    assertThat(finished).isApplied().movedTo(State.DONE)
                             .requestedTransition(Id.FINISH)
                             .hasEntityState(value -> value.state, State.DONE).records().hasSize(1);
+                    String verdict = switch (finished.code()) {
+                        case APPLIED -> "applied";
+                        case NO_TRANSITION, GUARD_REJECTED -> "rejected";
+                        case FAILURE_ROUTED -> "failed";
+                        case NO_WATCH, NO_RULE_MATCHED -> "ignored";
+                    };
+                    if (!verdict.equals("applied") || finished.status() != OutcomeStatus.APPLIED
+                            || finished.explanation().isPresent() || finished.records().size() != 1
+                            || finished.asApplied().isEmpty() || finished.asRejected().isPresent()
+                            || finished.recordedState() != State.DONE) {
+                        throw new AssertionError("the published outcome must classify itself");
+                    }
+                    Outcome<Entity, State, Id> again = machine.execute(entity, Id.FINISH);
+                    if (again.code() != OutcomeCode.NO_TRANSITION
+                            || !again.explanation().equals(Optional.of("terminal state DONE accepts no transitions"))) {
+                        throw new AssertionError("a request with no edge must explain itself: " + again);
+                    }
                     if (before.changes().size() != 1) {
                         throw new AssertionError("the actual state write must be observed");
                     }
