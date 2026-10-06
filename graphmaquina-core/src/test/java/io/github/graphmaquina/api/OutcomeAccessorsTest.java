@@ -151,7 +151,7 @@ class OutcomeAccessorsTest {
         }
     }
 
-    /** Each variant narrows to itself, typed like the outcome, and to none of the other three. */
+    /** Each variant narrows to itself, with the outcome's type arguments, and to none of the other three. */
     @Test
     void everyVariantNarrowsToItselfAndToNothingElse() {
         Outcome<String, DayOfWeek, Month> applied = applied();

@@ -1323,9 +1323,11 @@ Read the classification with its limits in mind:
 - `recordedState()` is what the call recorded, not a read of the entity. An after-commit hook, a watch reaction
   or a later call can move the entity again; read the entity when you need its live state.
 - `FAILED` does not mean that nothing happened: the failure route committed and the entity is at `movedTo`.
-- `explanation()` holds only text the graph's author wrote: a policy's reason, a guard's, or the reason an action
-  returned with `ActionOutcome.failed(...)`. When `failsOn` routes an exception, the failure's reason is composed
-  from that exception and may carry internal details; it stays in `Failed.reason()` and `Failed.cause()`.
+- `explanation()` holds the reasons the graph declares: a policy's reason, a guard's, or the reason an action
+  returned with `ActionOutcome.failed(...)`. The only text the library writes there is the fixed reason of a
+  terminal state that declares no policy, such as `terminal state DONE accepts no transitions`. When `failsOn`
+  routes an exception, the failure's reason is composed from that exception and may carry internal details; it
+  stays in `Failed.reason()` and `Failed.cause()`.
 - A commit here is GraphMaquina writing states through the setters. A JPA or other transaction around the call
   commits later and can still fail.
 - The constant names of `OutcomeStatus` and `OutcomeCode` are stable identifiers, safe to persist or send.
@@ -1372,7 +1374,7 @@ their own entities.
 
 The sealed variants remain available when a caller needs what only one of them carries: the rejecting guard,
 the recovery identifier, the requested destination of a failure or its cause. `asApplied()`, `asRejected()`,
-`asFailed()` and `asIgnored()` return the outcome as that variant, typed like the outcome, or empty:
+`asFailed()` and `asIgnored()` return the outcome as that variant, with the outcome's type arguments, or empty:
 
 ```java
 Optional<String> guard = outcome.asRejected().flatMap(Outcome.Rejected::guard);
@@ -1670,8 +1672,7 @@ With the `tickets` and `ticket` from the example, this fragment observes complet
 CompletableFuture<Outcome<Ticket, TicketState, TicketTransition>> pending =
         tickets.async(() -> tickets.approve(ticket));
 
-CompletableFuture<Void> observed = pending.thenAccept(
-        (Outcome<Ticket, TicketState, TicketTransition> outcome) -> {
+CompletableFuture<Void> observed = pending.thenAccept((Outcome<Ticket, TicketState, TicketTransition> outcome) -> {
     switch (outcome.status()) {
         case APPLIED -> System.out.println("Committed: " + outcome.requestedTransition().orElseThrow()
                 + " -> " + outcome.recordedState());

@@ -114,7 +114,10 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
         return self();
     }
 
-    /** The text the graph's author wrote for this outcome, compared by value. */
+    /**
+     * The reason given for this outcome, compared by value: the graph author's, or the library's fixed text for a
+     * terminal state that declares no policy.
+     */
     public SELF hasExplanation(String expected) {
         Objects.requireNonNull(expected, "expected");
         Optional<String> wanted = Optional.of(expected);
@@ -123,7 +126,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
         return self();
     }
 
-    /** No text of the author's: an applied or ignored outcome, or a failure routed from an exception. */
+    /** No reason given: an applied or ignored outcome, or a failure routed from an exception. */
     public SELF hasNoExplanation() {
         Optional<String> wanted = Optional.empty();
         Outcome<E, S, T> outcome = Checks.subject(context, "explanation", wanted, actual);

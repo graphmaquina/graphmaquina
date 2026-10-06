@@ -121,6 +121,7 @@ class PublishedArtifactSmokeTest {
                     assertThat(finished).isApplied().movedTo(State.DONE)
                             .requestedTransition(Id.FINISH)
                             .hasEntityState(value -> value.state, State.DONE).records().hasSize(1);
+                    // No default: this switch compiles only while OutcomeCode holds exactly these six codes.
                     String verdict = switch (finished.code()) {
                         case APPLIED -> "applied";
                         case NO_TRANSITION, GUARD_REJECTED -> "rejected";
@@ -131,10 +132,11 @@ class PublishedArtifactSmokeTest {
                             || finished.explanation().isPresent() || finished.records().size() != 1
                             || finished.asApplied().isEmpty() || finished.asRejected().isPresent()
                             || finished.recordedState() != State.DONE) {
-                        throw new AssertionError("the published outcome must classify itself");
+                        throw new AssertionError("the published outcome must classify itself: " + finished);
                     }
                     Outcome<Entity, State, Id> again = machine.execute(entity, Id.FINISH);
-                    if (again.code() != OutcomeCode.NO_TRANSITION
+                    if (again.code() != OutcomeCode.NO_TRANSITION || again.status() != OutcomeStatus.REJECTED
+                            || again.asRejected().isEmpty()
                             || !again.explanation().equals(Optional.of("terminal state DONE accepts no transitions"))) {
                         throw new AssertionError("a request with no edge must explain itself: " + again);
                     }

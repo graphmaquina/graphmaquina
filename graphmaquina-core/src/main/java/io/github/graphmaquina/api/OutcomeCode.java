@@ -17,7 +17,7 @@ public enum OutcomeCode {
     /** A guard of the selected edge rejected it: {@link RejectionKind#GUARD}. */
     GUARD_REJECTED(OutcomeStatus.REJECTED),
 
-    /** The action failed and its failure route committed: {@link Outcome.Failed}. */
+    /** The action failed and its failure route was taken: {@link Outcome.Failed}. */
     FAILURE_ROUTED(OutcomeStatus.FAILED),
 
     /** The state declares no watch: {@link IgnoreReason#NO_WATCH}. */
