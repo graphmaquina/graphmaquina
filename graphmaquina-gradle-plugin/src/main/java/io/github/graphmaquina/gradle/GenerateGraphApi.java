@@ -44,9 +44,13 @@ public abstract class GenerateGraphApi extends DefaultTask {
 
     /**
      * The original sources of the source set: its source directories other than the generated ones, each named
-     * whole, or file by file as the source set's include and exclude patterns select them when it has any,
-     * which is what javac compiles of them. They are what the generator parses, so the task is out of date
-     * whenever any of them changes, and it runs after every task those directories are built by.
+     * whole, or file by file as the include and exclude patterns of the source set and the include and exclude
+     * pattern strings of its compilation task select them when they filter it. That is what javac compiles of them
+     * unless the compilation task is given a filter as a spec or a closure, or a source of its own. When one of those
+     * changes the original Java sources javac compiles, the plugin refuses the generation before the generator runs,
+     * and the preparation refuses the compilation when the generation is up to date. They are what the generator
+     * parses, so the task is out of date whenever any of them changes, and it runs after every task those directories
+     * are built by.
      *
      * @return the original sources of this source set
      */
@@ -171,12 +175,18 @@ public abstract class GenerateGraphApi extends DefaultTask {
     /**
      * The Java release the generator parses the original sources at and resolves the JDK types they name against.
      *
-     * <p>By convention it is the compilation's {@code options.release}, which javac compiles at. When that is not
-     * set, it is the language version of the compilation's toolchain. Gradle then passes javac {@code -source} and
-     * {@code -target} from the compilation's source and target compatibility, which default to that version, and
-     * no {@code --release}, so javac resolves JDK types against the whole API of the toolchain's JDK: the API of
-     * that release. A source compatibility set lower makes javac parse at that lower level, where it accepts no
-     * syntax the generator does not parse.</p>
+     * <p>By convention it is the release javac compiles at. Gradle 9.2.1 gives javac the compilation's
+     * {@code options.release} as a {@code --release} ahead of the compiler arguments, and javac takes the last
+     * {@code --release} it is given, spelled {@code --release N} or {@code --release=N}: the release is the value of
+     * the last such option of the compilation's {@code options.compilerArgs}, else {@code options.release}. A value
+     * that is not a plain decimal number, which javac refuses, is passed over. When the compilation gives no release
+     * either way, it is the language version of the compilation's toolchain. Gradle then passes javac
+     * {@code -source} and {@code -target} from the compilation's source and target compatibility, which default to
+     * that version, and no {@code --release}, so javac resolves JDK types against the whole API of the toolchain's
+     * JDK: the API of that release. A source compatibility set lower makes javac parse at that lower level, where it
+     * accepts no syntax the generator does not parse. The arguments of the compilation's argument providers are not
+     * read, since a provider may need files other tasks write before the compilation runs; the preparation refuses a
+     * compilation whose providers change the release javac compiles at.</p>
      *
      * @return the release of the compilation
      */
@@ -185,10 +195,24 @@ public abstract class GenerateGraphApi extends DefaultTask {
     public abstract Property<Integer> getRelease();
 
     /**
-     * The encoding the compilation of this source set reads its sources in, which the generator reads the original
-     * sources in and writes the generated ones in. By convention it is the compilation's {@code options.encoding}.
-     * Without one the generator reads UTF-8, while javac reads the default charset of the JVM that runs it, which is
-     * UTF-8 from Java 18 on unless {@code file.encoding} names another.
+     * The encoding javac reads the sources of this source set in, which the generator reads the original sources in
+     * and writes the generated ones in.
+     *
+     * <p>By convention it is the one javac takes. Gradle 9.2.1 gives javac the compilation's {@code options.encoding}
+     * as an {@code -encoding} ahead of the compiler arguments, and javac takes the last {@code -encoding} it is given.
+     * That settles it when Gradle starts javac from the command line, as it does when {@code options.fork} is set
+     * with {@code forkOptions.javaHome} or {@code forkOptions.executable}: the encoding is then the value of the last
+     * {@code -encoding} of the compilation's {@code options.compilerArgs}, else {@code options.encoding}. Gradle's own
+     * Java compiler, in process or in a forked compiler daemon, reads the sources through a file manager it opens in
+     * {@code options.encoding}, which then wins: the encoding is {@code options.encoding}, else the value of the last
+     * {@code -encoding} of {@code options.compilerArgs}. There, javac still writes the sources annotation processors
+     * generate in the last {@code -encoding} it is given, so the preparation refuses a last {@code -encoding} that
+     * names another charset than {@code options.encoding}, when this JVM supports both. The arguments of the
+     * compilation's argument providers are not read, since a provider may need files other tasks write before the
+     * compilation runs; the preparation refuses a compilation whose providers change the encoding javac reads the
+     * sources in. When neither {@code options.encoding} nor {@code options.compilerArgs} names an encoding, the
+     * generator reads UTF-8, while javac reads the default charset of the JVM that runs it, which is UTF-8 from Java 18
+     * on unless {@code file.encoding} names another.</p>
      *
      * @return the name of the source encoding of the compilation
      */

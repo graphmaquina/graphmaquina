@@ -63,6 +63,46 @@ class StateGraphPluginFunctionalTest {
     /** The StateGraph annotation processor, as a {@code -processor} list names it. */
     private static final String STATEGRAPH_PROCESSOR = "io.github.graphmaquina.processor.StateGraphProcessor";
 
+    /**
+     * An argument provider of the main compilation that reads its arguments from a file the task
+     * {@code writeArguments} writes, which runs after the generation, and that prints a marker whenever it runs.
+     */
+    private static final String FILE_ARGUMENTS = """
+            abstract class WriteArguments : DefaultTask() {
+                @get:OutputFile abstract val output: RegularFileProperty
+                @TaskAction fun write() { output.get().asFile.writeText("-parameters\\n") }
+            }
+            abstract class FileArguments : CommandLineArgumentProvider {
+                @get:InputFile @get:PathSensitive(PathSensitivity.NONE) abstract val argumentsFile: RegularFileProperty
+                override fun asArguments(): Iterable<String> {
+                    println("FILE_ARGUMENTS_READ")
+                    return argumentsFile.get().asFile.readLines()
+                }
+            }
+            val writeArguments = tasks.register<WriteArguments>("writeArguments") {
+                output = layout.buildDirectory.file("arguments/compiler.txt")
+                mustRunAfter("generateStateGraphApi")
+            }
+            tasks.named<JavaCompile>("compileJava") {
+                options.compilerArgumentProviders.add(objects.newInstance<FileArguments>().apply {
+                    argumentsFile = writeArguments.flatMap { it.output }
+                })
+            }
+            """;
+
+    /** An argument provider of the main compilation that gives the arguments of its {@code values}. */
+    private static final String FIXED_ARGUMENTS = """
+            abstract class FixedArguments : CommandLineArgumentProvider {
+                @get:Input abstract val values: ListProperty<String>
+                override fun asArguments(): Iterable<String> = values.get()
+            }
+            tasks.named<JavaCompile>("compileJava") {
+                options.compilerArgumentProviders.add(objects.newInstance<FixedArguments>().apply {
+                    values = listOf("--release=17")
+                })
+            }
+            """;
+
     @TempDir
     Path tempDirectory;
 
@@ -471,7 +511,8 @@ class StateGraphPluginFunctionalTest {
      * The generator runs under the launcher the project's Java toolchain selected, not under the JVM the Gradle
      * daemon runs on: with a toolchain of another language version than the daemon's, the generation task's own
      * launcher is the toolchain's, of that version and outside the daemon's JDK, and the process the build started
-     * is that very executable. The test is skipped when Gradle detects no JDK 21 or later other than the daemon's.
+     * is that very executable. The test is skipped when Gradle detects no JDK 21 or later of another language version
+     * than the daemon's: a second JDK of the daemon's own language version does not count.
      */
     @Test
     void launchesSelectedToolchainInsteadOfDaemonJdk() throws IOException {
@@ -480,7 +521,8 @@ class StateGraphPluginFunctionalTest {
         Optional<Integer> other = toolchains.detected().stream()
                 .filter((Integer version) -> version != toolchains.daemon())
                 .findFirst();
-        assumeTrue(other.isPresent(), "Gradle detects no JDK 21 or later other than the one its daemon runs on");
+        assumeTrue(other.isPresent(),
+                "Gradle detects no JDK 21 or later of another language version than the one its daemon runs on");
         fixture.replaceInBuildScript("languageVersion = JavaLanguageVersion.of(21)",
                 "languageVersion = JavaLanguageVersion.of(" + other.get() + ")");
 
@@ -641,10 +683,11 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * A source directory the source set takes whole is still handed to the generator as a directory, so a
-     * hand-written type that shares its simple name with a generated one, in a package that merely ends like
-     * the generated one's, is no collision: the generator compares a generated type with the original sources by
-     * the path each stands at below its source root and by the types it declares, not by how that path ends.
+     * A source directory that neither the source set nor its compilation task filters is still handed to the
+     * generator as a directory, so a hand-written type that shares its simple name with a generated one, in a package
+     * that merely ends like the generated one's, is no collision: the generator compares a generated type with the
+     * original sources by the path each stands at below its source root and by the types it declares, not by how that
+     * path ends.
      */
     @Test
     void aWholeSourceDirectoryStaysADirectoryOfTheRequest() throws IOException {
@@ -712,6 +755,221 @@ class StateGraphPluginFunctionalTest {
         assertTrue(requested.contains("fx/Orders.java"), requested::toString);
         assertFalse(requested.stream().anyMatch((String source) -> source.startsWith("other/")),
                 requested::toString);
+    }
+
+    /**
+     * javac compiles the source set as the include and exclude patterns of the compilation task filter it too, so the
+     * generator reads it that way: the task's include leaves out a draft outside it that does not parse, and its
+     * excludes leave out a draft inside it and a facade, which then gets no vocabulary javac would find no
+     * declaration for. The include also names the package of the compilation carrier, since it filters the
+     * generated sources as well.
+     */
+    @Test
+    void parsesOnlyTheSourcesTheCompilationTaskIncludes() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Map<String, String> sources = PluginFixture.domainSources();
+        sources.put("other.Draft", draft("other"));
+        sources.put("fx.drafts.Draft", draft("fx.drafts"));
+        sources.put("fx.Legacy", PluginFixture.orders("Legacy", "Approve", "approve"));
+        fixture.writeSources(sources);
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    include("fx/**", "io/github/graphmaquina/generated/**")
+                    exclude("fx/drafts/**", "**/Legacy.java")
+                }
+                """);
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        List<String> requested = requestedSources(fixture.request("main"));
+        assertTrue(requested.contains("fx/Orders.java"), requested::toString);
+        assertFalse(requested.stream().anyMatch((String source) -> source.startsWith("other/")),
+                requested::toString);
+        assertFalse(requested.stream().anyMatch((String source) -> source.startsWith("fx/drafts/")),
+                requested::toString);
+        assertFalse(requested.contains("fx/Legacy.java"), requested::toString);
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertFalse(fixture.jarContains("fx/LegacyGraph.class"));
+        assertFalse(fixture.localExports().contains("fx.Legacy"), fixture.localExports()::toString);
+    }
+
+    /**
+     * A filter the compilation task is given as a spec or a closure is one the generation cannot read, so the
+     * generation refuses it before the generator runs, which would otherwise report the draft that filter leaves out
+     * with {@code SG601}, and says to move it to the source set. The source set's own filters are followed, specs
+     * included, so the build that follows that advice builds.
+     */
+    @Test
+    void refusesAFilterOfTheCompilationTaskBeforeTheGeneratorRuns() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Map<String, String> sources = PluginFixture.domainSources();
+        sources.put("fx.drafts.Draft", draft("fx.drafts"));
+        fixture.writeSources(sources);
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    exclude { element -> element.file.name == "Draft.java" }
+                }
+                """);
+
+        BuildResult refused = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, refused.task(":generateStateGraphApi").getOutcome());
+        assertTrue(refused.getOutput().contains(
+                "fx/drafts/Draft.java, which task ':compileJava' does not compile"), refused::getOutput);
+        assertTrue(refused.getOutput().contains("When task ':compileJava' is given such a filter, give it to the java"
+                + " sources of the source set instead"),
+                refused::getOutput);
+        assertFalse(refused.getOutput().contains("[SG601]"), refused::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("tasks.named<JavaCompile>(\"compileJava\") {\n    exclude {",
+                "sourceSets.named(\"main\") {\n    java.exclude {");
+
+        BuildResult moved = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, moved.task(":compileJava").getOutcome());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+    }
+
+    /**
+     * A filter or a source the compilation task is given after a generation leaves that generation up to date, since
+     * it changes nothing the generation reads; the preparation then refuses it, before it retires anything and before
+     * javac runs: a closure that leaves a facade out of the compilation, whose vocabulary javac would compile without
+     * it; a directory added to the compilation alone, whose sources the generation never read, which the refusal names
+     * as the directory to give the source set; and a source put in place of the source set's, which the refusal tells
+     * to give the source set instead, just as the generation itself would have told.
+     */
+    @Test
+    void refusesAFilterOrASourceOfTheCompilationTaskBeforeThePreparation() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Map<String, String> sources = PluginFixture.domainSources();
+        sources.put("fx.Legacy", PluginFixture.orders("Legacy", "Approve", "approve"));
+        fixture.writeSources(sources);
+        fixture.writeFile("src/extra/java/extra/Helper.java", """
+                package extra;
+
+                /** A class only the compilation task is given. */
+                public final class Helper {
+
+                    private Helper() {
+                    }
+                }
+                """);
+        fixture.run("jar");
+        assertTrue(fixture.jarContains("fx/LegacyGraph.class"));
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    exclude { element -> element.file.name == "Legacy.java" }
+                }
+                """);
+
+        BuildResult filtered = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.UP_TO_DATE, filtered.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.FAILED, filtered.task(":compileJava").getOutcome());
+        assertTrue(filtered.getOutput().contains("fx/Legacy.java, which task ':compileJava' does not compile"),
+                filtered::getOutput);
+        assertFalse(filtered.getOutput().contains("cannot find symbol"), "javac never ran");
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("exclude { element -> element.file.name == \"Legacy.java\" }",
+                "source(\"src/extra/java\")");
+
+        BuildResult added = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.UP_TO_DATE, added.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.FAILED, added.task(":compileJava").getOutcome());
+        assertTrue(added.getOutput().contains("task ':compileJava' compiles "), added::getOutput);
+        assertTrue(added.getOutput().contains(
+                "extra/Helper.java, which the StateGraph generation generateStateGraphApi does not read"),
+                added::getOutput);
+        assertTrue(added.getOutput().contains("/src/extra/java, the directory task ':compileJava' takes that file"
+                + " from, to the java sources of the source set instead, with java.srcDir(...)"), added::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("source(\"src/extra/java\")", "setSource(fileTree(\"src/extra/java\"))");
+
+        BuildResult replaced = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.UP_TO_DATE, replaced.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.FAILED, replaced.task(":compileJava").getOutcome());
+        assertTrue(replaced.getOutput().contains(", which task ':compileJava' does not compile."),
+                replaced::getOutput);
+        assertTrue(replaced.getOutput().contains("/src/extra/java, in place of its own, add the generated directory"
+                + " back after them, and remove that source from task ':compileJava'"), replaced::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+    }
+
+    /**
+     * A source the compilation task is given in place of the source set's is refused before the generator runs, and
+     * the refusal's fix builds as the refusal gives it: the source set takes the directories the task compiled, in
+     * place of its own, the generated directory is added back after them, and the task's source goes. The legacy
+     * class the replacement left out stays out. The fix also builds when the task was given no source at all, so
+     * that the source set keeps no directory of its own.
+     */
+    @Test
+    void refusesASourcePutInPlaceOfTheSourceSetsWithAFixThatBuilds() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.writeSources(Map.of("legacy.Old", """
+                package legacy;
+
+                /** A class only the source set holds. */
+                public final class Old {
+
+                    private Old() {
+                    }
+                }
+                """));
+        for (Map.Entry<String, String> source : PluginFixture.domainSources().entrySet()) {
+            fixture.writeFile("src/other/java/" + source.getKey().replace('.', '/') + ".java", source.getValue());
+        }
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    setSource(fileTree("src/other/java"))
+                }
+                """);
+
+        BuildResult refused = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, refused.task(":generateStateGraphApi").getOutcome());
+        assertTrue(refused.getOutput().contains("legacy/Old.java, which task ':compileJava' does not compile"),
+                refused::getOutput);
+        Matcher remedy = Pattern.compile("Kotlin DSL: (.+)").matcher(refused.getOutput());
+        assertTrue(remedy.find(), refused::getOutput);
+        assertTrue(remedy.group(1).contains("/src/other/java"), remedy.group(1));
+        fixture.replaceInBuildScript("setSource(fileTree(\"src/other/java\"))", "");
+        fixture.appendToBuildScript("sourceSets.named(\"main\") {\n    " + remedy.group(1).strip() + "\n}\n");
+
+        BuildResult fixed = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, fixed.task(":compileJava").getOutcome());
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertFalse(fixture.jarContains("legacy/Old.class"));
+        assertTrue(fixture.inventoryIsSealed("main"));
+
+        PluginFixture nothing = PluginFixture.basic(
+                Files.createDirectories(tempDirectory.resolve("nothing")), FIXTURE_REPOSITORY);
+        nothing.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    setSource(files())
+                }
+                """);
+
+        BuildResult refusedNothing = nothing.runFailing("jar");
+
+        Matcher noDirectory = Pattern.compile("Kotlin DSL: (.+)").matcher(refusedNothing.getOutput());
+        assertTrue(noDirectory.find(), refusedNothing::getOutput);
+        nothing.replaceInBuildScript("setSource(files())", "");
+        nothing.appendToBuildScript("sourceSets.named(\"main\") {\n    " + noDirectory.group(1).strip() + "\n}\n");
+
+        BuildResult fixedNothing = nothing.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, fixedNothing.task(":compileJava").getOutcome());
+        assertFalse(nothing.jarContains("fx/OrdersGraph.class"));
+        assertTrue(nothing.inventoryIsSealed("main"));
     }
 
     /**
@@ -1043,6 +1301,54 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
+     * Gradle gives javac a {@code -proc:none} of its own when the compilation's processor path is empty or null, so
+     * javac would run no annotation processor and the StateGraph processor would write no index for the completion
+     * step to publish: such a compilation is refused before the preparation starts. A later {@code -proc:full} changes
+     * nothing for Gradle's own Java compiler, in process or in its compiler daemon, which runs only the processors of
+     * the processor path, so it is refused too. Only a javac Gradle starts from the command line takes that later
+     * {@code -proc:full} and looks for processors on the class path, so with the processors there it builds.
+     */
+    @Test
+    void refusesAnEmptyProcessorPath() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    options.annotationProcessorPath = files()
+                }
+                """);
+
+        BuildResult refused = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, refused.task(":compileJava").getOutcome());
+        assertTrue(refused.getOutput().contains("cannot run with an options.annotationProcessorPath that is empty or"
+                + " null: Gradle then gives javac -proc:none"), refused::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("options.annotationProcessorPath = files()",
+                "options.annotationProcessorPath = files()\n    options.compilerArgs.add(\"-proc:full\")");
+
+        BuildResult inProcess = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, inProcess.task(":compileJava").getOutcome());
+        assertTrue(inProcess.getOutput().contains("cannot run with an options.annotationProcessorPath that is empty or"
+                + " null: Gradle's Java compiler, in process or in its compiler daemon, runs only the annotation"
+                + " processors of options.annotationProcessorPath"), inProcess::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("options.compilerArgs.add(\"-proc:full\")", """
+                options.compilerArgs.add("-proc:full")
+                    classpath += configurations.annotationProcessor.get()
+                    options.isFork = true
+                    options.forkOptions.javaHome = javaCompiler.get().metadata.installationPath.asFile""");
+
+        BuildResult commandLine = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, commandLine.task(":compileJava").getOutcome());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+    }
+
+    /**
      * javac takes the last {@code -proc:} option, and Gradle's Java compiler takes the last {@code -processor} list,
      * splits it on every comma, keeping empty names, and loads each name exactly as written; the preparation reads
      * both the same way. {@code -proc:none} followed by {@code -proc:full} builds, while {@code -proc:full} followed
@@ -1105,6 +1411,74 @@ class StateGraphPluginFunctionalTest {
                 + STATEGRAPH_PROCESSOR + ",', whose name '' is not a valid qualified class name"),
                 trailing::getOutput);
         assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+    }
+
+    /**
+     * javac leaves the {@code SourceFile} attribute out of every class file once it is given {@code -g:none} or a
+     * {@code -g:} list and no {@code -g:} list it is given names {@code source}, and the completion step links each
+     * class file to its source through that attribute. Gradle passes {@code options.debug = false} as {@code -g:none}
+     * and {@code options.debugOptions.debugLevel} as a {@code -g:} list, ahead of the compiler arguments. Each of
+     * those settings, and such a compiler argument, is refused before the preparation starts, so javac never runs; a
+     * {@code -g:} list that names {@code source} anywhere keeps the attribute, so it builds even when {@code -g:none}
+     * and a {@code -g:} list without {@code source} follow it, and a {@code -g:} option javac rejects is left to
+     * javac.
+     */
+    @Test
+    void refusesADebugSettingThatDropsTheSourceFileAttribute() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    options.isDebug = false
+                }
+                """);
+
+        BuildResult noDebug = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, noDebug.task(":compileJava").getOutcome());
+        assertTrue(noDebug.getOutput().contains("cannot run with options.debug = false: javac then leaves the"
+                + " SourceFile attribute out of every class file"), noDebug::getOutput);
+        assertFalse(noDebug.getOutput().contains("[SG602]"), noDebug::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("options.isDebug = false",
+                "options.debugOptions.debugLevel = \"lines,vars\"");
+
+        BuildResult level = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, level.task(":compileJava").getOutcome());
+        assertTrue(level.getOutput().contains(
+                "cannot run with options.debugOptions.debugLevel = \"lines,vars\": javac then leaves"),
+                level::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("options.debugOptions.debugLevel = \"lines,vars\"",
+                "options.compilerArgs.add(\"-g:lines,vars\")");
+
+        BuildResult argument = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, argument.task(":compileJava").getOutcome());
+        assertTrue(argument.getOutput().contains(
+                "cannot run with the compiler argument -g:lines,vars: javac then leaves"), argument::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("options.compilerArgs.add(\"-g:lines,vars\")",
+                "options.compilerArgs.add(\"-g:foo\")");
+
+        BuildResult rejected = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, rejected.task(":compileJava").getOutcome());
+        assertTrue(rejected.getOutput().contains("invalid flag: -g:foo"), rejected::getOutput);
+        assertFalse(rejected.getOutput().contains("SourceFile attribute"), rejected::getOutput);
+
+        fixture.replaceInBuildScript("options.compilerArgs.add(\"-g:foo\")",
+                "options.debugOptions.debugLevel = \"source\"\n"
+                        + "    options.compilerArgs.addAll(listOf(\"-g:none\", \"-g:lines,vars\"))");
+
+        BuildResult kept = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, kept.task(":compileJava").getOutcome());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
     }
 
     /**
@@ -1207,6 +1581,277 @@ class StateGraphPluginFunctionalTest {
         JsonObject request = fixture.request("main");
         assertEquals(later.get().intValue(), request.get("release").getAsInt(), request::toString);
         assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+    }
+
+    /**
+     * The generator is told the encoding javac reads the sources in. Gradle passes {@code options.encoding} as an
+     * {@code -encoding} of its own ahead of the compiler arguments, and javac takes the last {@code -encoding} it is
+     * given, but Gradle's own Java compiler, in process or in a compiler daemon, opens its file manager in
+     * {@code options.encoding}, which then wins. So a project kept in ISO-8859-1 builds with its accented identifier
+     * intact when the last {@code -encoding} of its compiler arguments names that encoding and it sets no
+     * {@code options.encoding}, and, with the javac Gradle starts from the command line for
+     * {@code forkOptions.javaHome}, when the last {@code -encoding} of the arguments names it, whatever
+     * {@code options.encoding} says. In process, javac still writes the sources an annotation processor generates in
+     * the last {@code -encoding}, and reads them back in {@code options.encoding}, so a last {@code -encoding} that
+     * names another charset than {@code options.encoding} is refused before the preparation starts, in process and in
+     * the compiler daemon alike, while one that names the same charset under another name, {@code latin1}, builds.
+     */
+    @Test
+    void passesTheEncodingJavacReadsTheSourcesIn() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.replaceInBuildScript("options.encoding = \"UTF-8\"\n", "");
+        fixture.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
+        String arguments = """
+                tasks.named<JavaCompile>("compileJava") {
+                    options.compilerArgs.addAll(listOf("-encoding", "UTF-16", "-encoding", "ISO-8859-1"))
+                }
+                """;
+        fixture.appendToBuildScript(arguments);
+
+        BuildResult lastArgument = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, lastArgument.task(":compileJava").getOutcome());
+        assertEquals("ISO-8859-1", fixture.request("main").get("encoding").getAsString());
+        assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), fixture.localExports()::toString);
+        assertTrue(fixture.jarContains("fx/ActionsRefs$ApproveRésumé.class"));
+
+        String alias = """
+                tasks.named<JavaCompile>("compileJava") {
+                    options.encoding = "ISO-8859-1"
+                    options.compilerArgs.addAll(listOf("-encoding", "latin1"))
+                }
+                """;
+        fixture.replaceInBuildScript(arguments, alias);
+
+        BuildResult sameCharset = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, sameCharset.task(":compileJava").getOutcome());
+        assertEquals("ISO-8859-1", fixture.request("main").get("encoding").getAsString());
+        assertTrue(fixture.jarContains("fx/ActionsRefs$ApproveRésumé.class"));
+
+        String contradicting = alias.replace("\"latin1\"", "\"UTF-8\"");
+        fixture.replaceInBuildScript(alias, contradicting);
+
+        BuildResult refused = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, refused.task(":compileJava").getOutcome());
+        assertTrue(refused.getOutput().contains("cannot run with options.encoding = \"ISO-8859-1\" and the compiler"
+                + " argument -encoding UTF-8:"), refused::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        String daemon = contradicting.replace("options.encoding = \"ISO-8859-1\"",
+                "options.encoding = \"ISO-8859-1\"\n    options.isFork = true");
+        fixture.replaceInBuildScript(contradicting, daemon);
+
+        BuildResult refusedInDaemon = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, refusedInDaemon.task(":compileJava").getOutcome());
+        assertTrue(refusedInDaemon.getOutput().contains("cannot run with options.encoding = \"ISO-8859-1\" and the"
+                + " compiler argument -encoding UTF-8:"), refusedInDaemon::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript(daemon, """
+                tasks.named<JavaCompile>("compileJava") {
+                    options.encoding = "UTF-8"
+                    options.compilerArgs.addAll(listOf("-encoding", "ISO-8859-1"))
+                    options.isFork = true
+                    options.forkOptions.javaHome = javaCompiler.get().metadata.installationPath.asFile
+                }
+                """);
+
+        BuildResult commandLine = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, commandLine.task(":compileJava").getOutcome());
+        assertEquals("ISO-8859-1", fixture.request("main").get("encoding").getAsString());
+        assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), fixture.localExports()::toString);
+        assertTrue(fixture.jarContains("fx/ActionsRefs$ApproveRésumé.class"));
+    }
+
+    /**
+     * The generation reads the release and the encoding from the compilation's options and
+     * {@code options.compilerArgs} alone, never from its argument providers, which run only with the compilation: a
+     * provider that reads a file another task writes does not run when the generation runs on its own.
+     */
+    @Test
+    void aCompilerArgumentProviderDoesNotRunForTheGenerationAlone() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript(FILE_ARGUMENTS);
+
+        BuildResult result = fixture.run("generateStateGraphApi");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateStateGraphApi").getOutcome());
+        assertFalse(result.getOutput().contains("FILE_ARGUMENTS_READ"), result::getOutput);
+    }
+
+    /**
+     * An argument provider that reads a file another task writes runs with the compilation, once that task wrote it,
+     * even when that task runs after the generation; the generation never runs it.
+     */
+    @Test
+    void aCompilerArgumentProviderRunsOnlyWithTheCompilation() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript(FILE_ARGUMENTS);
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        assertTrue(result.getOutput().contains("FILE_ARGUMENTS_READ"), result::getOutput);
+        assertTrue(fixture.inventoryIsSealed("main"));
+    }
+
+    /**
+     * Storing the configuration cache runs no argument provider of the compilation either: the generation's release
+     * and encoding are stored without one, so a provider that reads a file another task writes runs only with the
+     * compilation, and the next build reuses the entry.
+     */
+    @Test
+    void aCompilerArgumentProviderDoesNotRunWhenTheConfigurationCacheIsStored() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript(FILE_ARGUMENTS);
+
+        BuildResult result = fixture.run("jar", "--configuration-cache");
+
+        assertTrue(result.getOutput().contains("Configuration cache entry stored."), result::getOutput);
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        assertTrue(fixture.inventoryIsSealed("main"));
+
+        BuildResult reused = fixture.run("jar", "--configuration-cache");
+
+        assertTrue(reused.getOutput().contains("Reusing configuration cache."), reused::getOutput);
+        assertEquals(TaskOutcome.UP_TO_DATE, reused.task(":compileJava").getOutcome());
+    }
+
+    /**
+     * The argument providers of a compilation run just before javac, so the preparation, which runs then, derives the
+     * release and the encoding javac takes from all its compiler arguments, and refuses a compilation whose providers
+     * change either from the one the generation was given: a provider's {@code --release=17} beside
+     * {@code options.release = 21}, and a provider's {@code -encoding ISO-8859-1} where nothing else names an encoding,
+     * so the generator reads UTF-8. A provider that repeats the effective value changes nothing and builds, and one
+     * whose last {@code --release} javac refuses is left to javac, which names it.
+     */
+    @Test
+    void refusesArgumentProvidersThatChangeTheReleaseOrTheEncoding() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript(FIXED_ARGUMENTS);
+
+        BuildResult release = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, release.task(":compileJava").getOutcome());
+        assertTrue(release.getOutput().contains("cannot run with the compiler arguments its argument providers give:"
+                + " they make javac compile at release 17 instead of release 21, the one options.release gives and"
+                + " the generation reads"), release::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("listOf(\"--release=17\")", "listOf(\"--release=21\")");
+
+        BuildResult sameRelease = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, sameRelease.task(":compileJava").getOutcome());
+
+        fixture.replaceInBuildScript("options.encoding = \"UTF-8\"\n", "");
+        fixture.replaceInBuildScript("listOf(\"--release=21\")", "listOf(\"-encoding\", \"ISO-8859-1\")");
+
+        BuildResult encoding = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, encoding.task(":compileJava").getOutcome());
+        assertTrue(encoding.getOutput().contains("cannot run with the compiler arguments its argument providers give:"
+                + " they make javac read the sources in ISO-8859-1 instead of UTF-8, which the generator reads when"
+                + " options.encoding and options.compilerArgs name no encoding"), encoding::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+
+        fixture.replaceInBuildScript("listOf(\"-encoding\", \"ISO-8859-1\")", "listOf(\"-encoding\", \"UTF-8\")");
+
+        BuildResult sameEncoding = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, sameEncoding.task(":compileJava").getOutcome());
+        assertTrue(fixture.inventoryIsSealed("main"));
+
+        fixture.replaceInBuildScript("listOf(\"-encoding\", \"UTF-8\")", "listOf(\"--release=1.8\")");
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    options.compilerArgs.add("--release=17")
+                }
+                """);
+
+        BuildResult refusedRelease = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, refusedRelease.task(":compileJava").getOutcome());
+        assertTrue(refusedRelease.getOutput().contains("release version 1.8 not supported"),
+                refusedRelease::getOutput);
+        assertFalse(refusedRelease.getOutput().contains("its argument providers give"), refusedRelease::getOutput);
+    }
+
+    /**
+     * A refusal of argument providers that change the release names where the release the generation reads comes
+     * from: the language version of the compilation's toolchain when neither {@code options.release} nor
+     * {@code options.compilerArgs} gives one, else the last {@code --release} of {@code options.compilerArgs}.
+     */
+    @Test
+    void aReleaseRefusalNamesWhereTheGenerationsReleaseComesFrom() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.replaceInBuildScript("options.release = 21\n", "");
+        fixture.appendToBuildScript(FIXED_ARGUMENTS);
+
+        BuildResult toolchain = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, toolchain.task(":compileJava").getOutcome());
+        assertTrue(toolchain.getOutput().contains("they make javac compile at release 17 instead of release 21, the"
+                + " language version of the compilation's toolchain, which the generation reads when options.release"
+                + " and options.compilerArgs give none"), toolchain::getOutput);
+
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    options.compilerArgs.addAll(listOf("--release", "21"))
+                }
+                """);
+
+        BuildResult arguments = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, arguments.task(":compileJava").getOutcome());
+        assertTrue(arguments.getOutput().contains("they make javac compile at release 17 instead of release 21, the"
+                + " one options.compilerArgs give and the generation reads"), arguments::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
+    }
+
+    /**
+     * javac takes the last {@code --release} it is given, spelled {@code --release N} or {@code --release=N}, and
+     * Gradle passes {@code options.release} ahead of the compiler arguments, so the last {@code --release} among those
+     * arguments is the release javac compiles at; the generator is told that one, whether the compilation also sets
+     * {@code options.release} or not. A last value that is not a plain decimal number, which javac refuses, is passed
+     * over, so the generation still runs, at the language version of the toolchain. Only the generation runs: javac
+     * would compile the domain at release 17 against a library built for 21.
+     */
+    @Test
+    void passesTheReleaseJavacTakesFromTheCompilerArguments() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    options.compilerArgs.addAll(listOf("--release=17"))
+                }
+                """);
+
+        fixture.run("generateStateGraphApi");
+
+        JsonObject overriding = fixture.request("main");
+        assertEquals(17, overriding.get("release").getAsInt(), overriding::toString);
+
+        fixture.replaceInBuildScript("options.release = 21\n", "");
+        fixture.replaceInBuildScript("listOf(\"--release=17\")",
+                "listOf(\"--release\", \"21\", \"--release\", \"17\")");
+
+        fixture.run("generateStateGraphApi");
+
+        JsonObject last = fixture.request("main");
+        assertEquals(17, last.get("release").getAsInt(), last::toString);
+
+        fixture.replaceInBuildScript("listOf(\"--release\", \"21\", \"--release\", \"17\")",
+                "listOf(\"--release\", \"21\", \"--release\", \"1.8\")");
+
+        fixture.run("generateStateGraphApi");
+
+        JsonObject refused = fixture.request("main");
+        assertEquals(21, refused.get("release").getAsInt(), refused::toString);
     }
 
     /**
@@ -1485,6 +2130,19 @@ class StateGraphPluginFunctionalTest {
         assertFalse(documentation.stream().anyMatch((String entry) -> entry.startsWith(CARRIER_PACKAGE)),
                 documentation::toString);
         assertFalse(fixture.jarContainsGraphCompilationCarrier());
+    }
+
+    /** A class of {@code packageName} that does not parse, so the generator fails with {@code SG601} if it reads it. */
+    private static String draft(String packageName) {
+        return """
+                package %s;
+
+                /** A draft the build leaves out; it does not parse. */
+                public final class Draft {
+
+                    this is not a declaration
+                }
+                """.formatted(packageName);
     }
 
     /** The domain with its action spelled with an accent, as a project kept in ISO-8859-1 may spell it. */
