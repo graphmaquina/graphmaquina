@@ -1344,7 +1344,8 @@ static String describe(Outcome<Ticket, TicketState, TicketTransition> outcome) {
 ### Map an outcome to a response
 
 A web layer copies the classification into a type it owns, so its contract does not change when the library
-does. The HTTP mapping below is one application's policy, not the library's:
+does. The HTTP mapping below is one application's policy, not the library's; another application may just as well
+answer `409` for every rejection and every handled failure:
 
 ```java
 record TransitionResponse(String id, OutcomeStatus status, OutcomeCode code, TicketState from,

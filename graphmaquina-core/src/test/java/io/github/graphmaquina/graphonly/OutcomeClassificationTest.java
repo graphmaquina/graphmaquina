@@ -44,7 +44,7 @@ import org.junit.jupiter.api.Test;
  */
 class OutcomeClassificationTest {
 
-    /** The peer a cascading action drives, reached through this field rather than a lookup. */
+    /** The peer the watches read; no test changes its state. */
     final Ticket peer = new Ticket(9, OPEN);
 
     @Test void anAppliedEdgeExplainsNothingAndCarriesItsRecord() {
@@ -110,6 +110,7 @@ class OutcomeClassificationTest {
         try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
             Outcome<Ticket, State, Id> result = registry.of(KEY).execute(new Ticket(1, REVIEW), APPROVE);
             assertEquals(OutcomeCode.FAILURE_ROUTED, result.code());
+            assertEquals(OutcomeStatus.FAILED, result.status());
             assertEquals(Optional.empty(), result.explanation());
             assertEquals(Optional.of("GatewayException: gateway 10.0.0.12 refused the charge"),
                     result.asFailed().map(Outcome.Failed::reason));
@@ -157,13 +158,14 @@ class OutcomeClassificationTest {
 
     /** A cascade's outcome is provisional: it reports its step, and the hops belong to the root's records. */
     @Test void aCascadedStepIsAppliedWhileItsHopsBelongToTheRoot() {
+        Ticket target = new Ticket(9, OPEN);
         List<Outcome<Ticket, State, Id>> cascaded = new ArrayList<>();
         GraphDefinition<Ticket, State, Id> graph = StateGraph.define(KEY).initial(OPEN).terminal(DONE)
                 .statePolicy(OPEN, "submit first").statePolicy(REVIEW, "review required")
                 .transition(SUBMIT, OPEN, REVIEW).endTransition()
                 .transition(APPROVE, REVIEW, DONE)
                     .action("approve", (TransitionContext<Ticket, State, Id> ctx) -> {
-                        cascaded.add(ctx.cascade(KEY, peer, SUBMIT));
+                        cascaded.add(ctx.cascade(KEY, target, SUBMIT));
                         return ActionOutcome.ok();
                     })
                     .endTransition()
@@ -173,6 +175,7 @@ class OutcomeClassificationTest {
             assertEquals(1, cascaded.size());
             Outcome<Ticket, State, Id> step = cascaded.get(0);
             assertEquals(OutcomeCode.APPLIED, step.code());
+            assertEquals(OutcomeStatus.APPLIED, step.status());
             assertEquals(List.of(), step.records());
             assertEquals(List.of(), step.reactions());
             assertEquals(OutcomeCode.APPLIED, root.code());
