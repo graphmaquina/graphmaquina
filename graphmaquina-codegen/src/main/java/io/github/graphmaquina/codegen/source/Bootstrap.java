@@ -1,5 +1,6 @@
 package io.github.graphmaquina.codegen.source;
 
+import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
@@ -40,6 +41,7 @@ import java.util.Set;
 public final class Bootstrap {
 
     private static final String GENERATE_GRAPH_API = "io.github.graphmaquina.annotation.GenerateGraphApi";
+    private static final String COLLISION = "SG603";
 
     /**
      * The directories of a version control system that Ant's default excludes, the ones Gradle applies, leave out of
@@ -73,11 +75,14 @@ public final class Bootstrap {
         GenerationModel model;
         try (DeclarationIndex index = DeclarationIndex.open(parsed.distinctUnits(), request.classpath(),
                 request.release(), request.encoding())) {
+            List<MachineHeaders.Resolved> resolved = new ArrayList<>();
             List<GraphDescriptor> graphs = new ArrayList<>();
-            for (String facade : machines(index)) {
-                graphs.add(MachineHeaders.resolve(index, facade));
+            for (TypeHeader facade : machines(index)) {
+                MachineHeaders.Resolved machine = MachineHeaders.resolveDeclaration(index, facade);
+                resolved.add(machine);
+                graphs.add(machine.graph());
             }
-            MachineHeaders.requireWatchablePeers(index, graphs);
+            MachineHeaders.requireWatchablePeers(index, resolved);
             model = new GenerationModel(graphs, ExportDeclarations.collect(index));
         }
         return new Inspection(model, parsed.originals());
@@ -107,18 +112,33 @@ public final class Bootstrap {
                 reached.stream().map(Reached::file).toList(), request.release(), request.encoding()));
     }
 
-    /** The original declarations marked with {@code @GenerateGraphApi}, ordered by canonical name. */
-    private static List<String> machines(DeclarationIndex index) {
-        List<String> facades = new ArrayList<>();
+    /**
+     * The original declarations marked with {@code @GenerateGraphApi}, ordered by canonical name. A manifest knows a
+     * machine by its canonical name alone, so two machines that share one, one of a named package and a member type
+     * of a class of the unnamed package, are refused.
+     *
+     * @throws CodegenException {@code SG603} naming both machines, anchored at the one read first
+     */
+    private static List<TypeHeader> machines(DeclarationIndex index) {
+        List<TypeHeader> facades = new ArrayList<>();
         for (TypeHeader header : index.sourceHeaders()) {
             for (TypeHeader.Marker marker : header.markers()) {
                 if (index.marksInHeader(header, marker, GENERATE_GRAPH_API)) {
-                    facades.add(header.canonicalName());
+                    facades.add(header);
                     break;
                 }
             }
         }
-        facades.sort(String::compareTo);
+        facades.sort(Comparator.comparing(TypeHeader::canonicalName));
+        for (int at = 1; at < facades.size(); at++) {
+            TypeHeader first = facades.get(at - 1);
+            TypeHeader second = facades.get(at);
+            if (first.canonicalName().equals(second.canonicalName())) {
+                throw new CodegenException(COLLISION, "the machines " + index.describe(first) + " and "
+                        + index.describe(second) + " share one canonical name, which is all a manifest names a machine"
+                        + " by; rename one of them", first.origin().orElseThrow());
+            }
+        }
         return facades;
     }
 

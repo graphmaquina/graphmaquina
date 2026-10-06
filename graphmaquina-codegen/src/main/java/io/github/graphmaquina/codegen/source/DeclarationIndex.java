@@ -6,7 +6,10 @@ import io.github.graphmaquina.codegen.model.SourceLocation;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -24,17 +27,36 @@ import javax.lang.model.element.Modifier;
  * <p>Resolution is lazy on purpose. Import syntax is recorded without validating its targets, so a source may
  * import or annotate itself with a type this generator has not produced yet. A name is only resolved when the
  * header model actually needs it, and only then can it fail with {@code SG601}.</p>
+ *
+ * <p>One canonical name can name two types: a type of a named package, such as {@code shop.Model.Order} of the
+ * package {@code shop}, and a member type of a class of the unnamed package named like the first segment of that
+ * package, such as the member {@code Model.Order} of a class {@code shop}. javac admits both. Code of a named package
+ * never sees a type of the unnamed package. In code of the unnamed package, such a class obscures the package of its
+ * name (JLS 6.4.2) in a name that starts with it, but no class of the unnamed package is in scope in an import
+ * (JLS 6.3). So the index keeps the declarations of the two packages apart. It never answers a type of the unnamed
+ * package for a name that code or a binary of a named package spells, that an import names, that starts with a
+ * package, or that the class file of a binary of the unnamed package gives a type of a named package. It finds a
+ * member type and an enclosing declaration in the package of the type they belong to, and it carries a type it has
+ * resolved on as that header rather than looking its canonical name up again.</p>
  */
 public final class DeclarationIndex implements AutoCloseable {
 
     private static final String UNRESOLVED = "SG601";
     private static final String COLLISION = "SG603";
 
+    /** The source declarations of named packages, by canonical name. */
     private final Map<String, TypeHeader> sources;
+    /** The source declarations of the unnamed package, by canonical name. */
+    private final Map<String, TypeHeader> unnamedSources;
+    /** Every source declaration either map keeps, in the order the units declared them. */
+    private final List<TypeHeader> sourceHeaders;
     private final ClasspathDeclarations classpath;
 
-    private DeclarationIndex(Map<String, TypeHeader> sources, ClasspathDeclarations classpath) {
+    private DeclarationIndex(Map<String, TypeHeader> sources, Map<String, TypeHeader> unnamedSources,
+            List<TypeHeader> sourceHeaders, ClasspathDeclarations classpath) {
         this.sources = sources;
+        this.unnamedSources = unnamedSources;
+        this.sourceHeaders = sourceHeaders;
         this.classpath = classpath;
     }
 
@@ -55,14 +77,19 @@ public final class DeclarationIndex implements AutoCloseable {
         Objects.requireNonNull(classpath, "classpath");
         ClasspathDeclarations declarations = ClasspathDeclarations.open(classpath, release, encoding);
         try {
-            Map<String, TypeHeader> sources = new LinkedHashMap<>();
+            Map<String, TypeHeader> sources = new HashMap<>();
+            Map<String, TypeHeader> unnamedSources = new HashMap<>();
+            List<TypeHeader> sourceHeaders = new ArrayList<>();
             for (SourceUnit unit : units) {
                 for (TypeHeader header : SourceDeclarations.declarations(unit,
                         declarations.sourcePositions())) {
-                    sources.putIfAbsent(header.canonicalName(), header);
+                    Map<String, TypeHeader> side = header.scope().packageName().isEmpty() ? unnamedSources : sources;
+                    if (side.putIfAbsent(header.canonicalName(), header) == null) {
+                        sourceHeaders.add(header);
+                    }
                 }
             }
-            return new DeclarationIndex(sources, declarations);
+            return new DeclarationIndex(sources, unnamedSources, List.copyOf(sourceHeaders), declarations);
         } catch (RuntimeException failure) {
             declarations.close();
             throw failure;
@@ -70,18 +97,35 @@ public final class DeclarationIndex implements AutoCloseable {
     }
 
     /**
-     * Every header read from the original sources, in the order the units declared them; of two declarations of
-     * one canonical name, only the one read first is kept.
+     * Every header read from the original sources, in the order the units declared them. Of two declarations of one
+     * canonical name in named packages, or of two in the unnamed package, only the one read first is kept; a
+     * declaration of a named package and one of the unnamed package are two types, and both are kept.
      */
     public List<TypeHeader> sourceHeaders() {
-        return List.copyOf(sources.values());
+        return sourceHeaders;
     }
 
-    /** The header declared under exactly {@code canonicalName}, sources first, then the classpath. */
+    /**
+     * The header declared under exactly {@code canonicalName}: a type of a named package when one has that name,
+     * which is what the name means in an import (JLS 6.3), in code of a named package, and wherever its first segment
+     * names a package, and otherwise a type of the unnamed package. Either is a source when one declares it, or else
+     * the classpath's.
+     */
     public Optional<TypeHeader> find(String canonicalName) {
         Objects.requireNonNull(canonicalName, "canonicalName");
-        TypeHeader source = sources.get(canonicalName);
-        return source != null ? Optional.of(source) : classpath.find(canonicalName);
+        return declared(canonicalName, false).or(() -> declared(canonicalName, true));
+    }
+
+    /**
+     * The type of the unnamed package, when {@code unnamed} is set, or else of a named package, whose canonical name is
+     * {@code canonicalName}: the source declaration of that name when there is one, and otherwise the classpath's.
+     */
+    private Optional<TypeHeader> declared(String canonicalName, boolean unnamed) {
+        TypeHeader source = (unnamed ? unnamedSources : sources).get(canonicalName);
+        if (source != null) {
+            return Optional.of(source);
+        }
+        return unnamed ? classpath.unnamed(canonicalName) : classpath.named(canonicalName);
     }
 
     /**
@@ -141,15 +185,28 @@ public final class DeclarationIndex implements AutoCloseable {
                 if (resolved.isPresent() && resolved.get().kind() == ElementKind.CLASS
                         && !resolved.get().modifiers().contains(Modifier.STATIC)) {
                     int separator = declared.name().lastIndexOf('.');
+                    // The type the owner names, as the code spelling it resolves it; none for an implicit owner,
+                    // which already names the declaration enclosing the inner type.
+                    Optional<TypeHeader> ownerType = declared.owner()
+                            .filter(TypeUse.Declared.class::isInstance).map(TypeUse.Declared.class::cast)
+                            .flatMap((TypeUse.Declared spelled) ->
+                                    lookup(context, spelled.name(), header, new HashSet<>()));
                     if (owner.isEmpty()) {
-                        owner = separator < 0 ? implicitOwner(context, resolved.get(), header, pendingOwners)
-                                : lookup(context, declared.name().substring(0, separator), header, new HashSet<>())
-                                    .map(enclosing -> TypeUse.Declared.of(enclosing.canonicalName()));
+                        if (separator < 0) {
+                            owner = implicitOwner(context, resolved.get(), header, pendingOwners);
+                        } else {
+                            ownerType = lookup(context, declared.name().substring(0, separator), header,
+                                    new HashSet<>());
+                            owner = ownerType.map(
+                                    (TypeHeader enclosing) -> TypeUse.Declared.of(enclosing.canonicalName()));
+                        }
                     }
-                    String parent = parentName(resolved.get());
-                    if (owner.isPresent() && owner.get() instanceof TypeUse.Declared selected) {
-                        owner = asSuper(selected, parent, new HashSet<>(), pendingOwners)
-                                .map(value -> (TypeUse) value);
+                    Optional<TypeHeader> parent = enclosingDeclaration(resolved.get());
+                    if (parent.isEmpty()) {
+                        owner = Optional.empty();
+                    } else if (owner.isPresent() && owner.get() instanceof TypeUse.Declared selected) {
+                        owner = asSuper(selected, ownerType, parent.get(), identities(), pendingOwners)
+                                .map((TypeUse.Declared value) -> (TypeUse) value);
                     }
                 }
                 yield new TypeUse.Declared(resolved.map(TypeHeader::canonicalName).orElse(declared.name()),
@@ -169,28 +226,30 @@ public final class DeclarationIndex implements AutoCloseable {
      * An unqualified inner type in its enclosing generic declaration implicitly captures that owner's variables.
      * A header use is seen from the declaration that encloses its own, as javac sees it. A request for an owner
      * that an enclosing call is still computing gets the raw owner instead of recursing without end. An inheritance
-     * cycle through an enclosing class, which javac rejects, leads back to one.
+     * cycle through an enclosing class, which javac rejects, leads back to one. The owner is the declaration that
+     * encloses {@code member}, looked up in the package of {@code member}.
      */
     private Optional<TypeUse> implicitOwner(TypeHeader context, TypeHeader member, boolean header,
             Set<String> pendingOwners) {
         if (member.kind() != ElementKind.CLASS || member.modifiers().contains(Modifier.STATIC)) {
             return Optional.empty();
         }
-        String parent = parentName(member);
-        if (find(parent).isEmpty()) {
+        Optional<TypeHeader> parent = enclosingDeclaration(member);
+        if (parent.isEmpty()) {
             return Optional.empty();
         }
-        String token = (header ? "header:" : "body:") + context.canonicalName() + '#' + member.canonicalName();
+        String token = (header ? "header:" : "body:") + side(context) + context.canonicalName() + '#' + side(member)
+                + member.canonicalName();
         if (!pendingOwners.add(token)) {
-            return Optional.of(TypeUse.Declared.of(parent));
+            return Optional.of(TypeUse.Declared.of(parent.get().canonicalName()));
         }
         try {
             for (TypeHeader scope : scopes(context, header)) {
-                if (!scope.canonicalName().equals(member.canonicalName())) {
-                    Optional<TypeUse.Declared> owner = asSuper(lexicalType(scope, pendingOwners), parent,
-                            new HashSet<>(), pendingOwners);
+                if (scope != member) {
+                    Optional<TypeUse.Declared> owner = asSuper(lexicalType(scope, pendingOwners), Optional.of(scope),
+                            parent.get(), identities(), pendingOwners);
                     if (owner.isPresent()) {
-                        return owner.map(value -> (TypeUse) value);
+                        return owner.map((TypeUse.Declared value) -> (TypeUse) value);
                     }
                 }
                 if (scope.modifiers().contains(Modifier.STATIC)) {
@@ -212,31 +271,39 @@ public final class DeclarationIndex implements AutoCloseable {
                 implicitOwner(header, header, false, pendingOwners));
     }
 
-    private static String parentName(TypeHeader header) {
-        int separator = header.canonicalName().lastIndexOf('.');
-        return separator < 0 ? "" : header.canonicalName().substring(0, separator);
-    }
-
-    /** Specializes an inherited inner type's actual declaring owner, including reordered type arguments. */
-    private Optional<TypeUse.Declared> asSuper(TypeUse.Declared use, String target, Set<String> visited,
-            Set<String> pendingOwners) {
-        if (use.name().equals(target)) {
+    /**
+     * Specializes an inherited inner type's actual declaring owner, including reordered type arguments: {@code use},
+     * a use of {@code declaration}, specialized as the supertype of it that is {@code target}. Each supertype met on
+     * the way is the type the header that spells it resolves it to, so a type is never looked up again by its
+     * canonical name, which a type of the other package, named or unnamed, may share. A use whose type no header
+     * resolved, such as an implicit owner, is taken as {@code target} when its name is the name of {@code target}.
+     * {@code visited} holds the types met so far, by identity.
+     */
+    private Optional<TypeUse.Declared> asSuper(TypeUse.Declared use, Optional<TypeHeader> declaration,
+            TypeHeader target, Set<TypeHeader> visited, Set<String> pendingOwners) {
+        if (declaration.isEmpty()) {
+            return use.name().equals(target.canonicalName()) ? Optional.of(use) : Optional.empty();
+        }
+        TypeHeader header = declaration.get();
+        if (header == target) {
             return Optional.of(use);
         }
-        Optional<TypeHeader> found = find(use.name());
-        if (found.isEmpty() || !visited.add(use.name())) {
+        if (!visited.add(header)) {
             return Optional.empty();
         }
-        TypeHeader header = found.get();
         Map<TypeParameterKey, TypeUse> environment = new LinkedHashMap<>();
-        bindOwner(use, environment);
+        bindOwner(use, header, environment);
         for (TypeUse supertype : header.supertypes()) {
+            if (!(supertype instanceof TypeUse.Declared spelled)) {
+                continue;
+            }
             TypeUse specialized = substitute(canonicalize(header, supertype, true, pendingOwners), environment);
             if (specialized instanceof TypeUse.Declared declared) {
                 if (!header.typeParameters().isEmpty() && use.arguments().isEmpty()) {
                     declared = new TypeUse.Declared(declared.name(), List.of(), Optional.empty());
                 }
-                Optional<TypeUse.Declared> result = asSuper(declared, target, visited, pendingOwners);
+                Optional<TypeUse.Declared> result = asSuper(declared,
+                        lookup(header, spelled.name(), true, new HashSet<>()), target, visited, pendingOwners);
                 if (result.isPresent()) {
                     return result;
                 }
@@ -245,14 +312,31 @@ public final class DeclarationIndex implements AutoCloseable {
         return Optional.empty();
     }
 
-    private void bindOwner(TypeUse.Declared use, Map<TypeParameterKey, TypeUse> environment) {
+    /**
+     * Binds the type parameters of {@code declaration} to the arguments {@code use} gives them, and those of the
+     * declarations enclosing it to the arguments of the owners of {@code use}.
+     */
+    private void bindOwner(TypeUse.Declared use, TypeHeader declaration, Map<TypeParameterKey, TypeUse> environment) {
         use.owner().filter(TypeUse.Declared.class::isInstance).map(TypeUse.Declared.class::cast)
-                .ifPresent(owner -> bindOwner(owner, environment));
-        find(use.name()).ifPresent(header -> {
-            for (int at = 0; at < Math.min(header.typeParameters().size(), use.arguments().size()); at++) {
-                environment.put(header.parameterKey(at), use.arguments().get(at));
-            }
-        });
+                .ifPresent((TypeUse.Declared owner) -> enclosingDeclaration(declaration)
+                        .ifPresent((TypeHeader enclosing) -> bindOwner(owner, enclosing, environment)));
+        for (int at = 0; at < Math.min(declaration.typeParameters().size(), use.arguments().size()); at++) {
+            environment.put(declaration.parameterKey(at), use.arguments().get(at));
+        }
+    }
+
+    /** An empty set of types that tells two of them apart by identity, as two types can share a canonical name. */
+    private static Set<TypeHeader> identities() {
+        return Collections.newSetFromMap(new IdentityHashMap<>());
+    }
+
+    /**
+     * Which side of a canonical name {@code header} is on, a named package or the unnamed package. A recursion guard
+     * keys a type by its side and its canonical name, so that the two types one canonical name can name never share a
+     * guard.
+     */
+    private String side(TypeHeader header) {
+        return packageOf(header).isEmpty() ? "unnamed:" : "named:";
     }
 
     /** Applies {@code environment} to every type variable of {@code use}, owners and arguments included. */
@@ -279,8 +363,10 @@ public final class DeclarationIndex implements AutoCloseable {
 
     /**
      * Whether {@code marker}, written in the body of {@code context} on one of its members, names
-     * {@code annotationType}. An annotation whose last segment cannot match is never resolved, so a marker the
-     * generator is still about to produce costs nothing here.
+     * {@code annotationType}, an annotation type of a named package. An annotation whose last segment cannot match is
+     * never resolved, so a marker the generator is still about to produce costs nothing here. A type of the unnamed
+     * package that shares the canonical name of {@code annotationType}, which code of that package means by that name
+     * when a class of it obscures the package, is another type and never a marker.
      *
      * @throws CodegenException {@code SG601} when a marker spelled like {@code annotationType} resolves to nothing
      *     and {@code annotationType} itself is not on the classpath either, which means the generator cannot
@@ -317,7 +403,8 @@ public final class DeclarationIndex implements AutoCloseable {
                     .map(origin -> new CodegenException(UNRESOLVED, message, origin))
                     .orElseGet(() -> new CodegenException(UNRESOLVED, message));
         }
-        return resolved.map(type -> type.canonicalName().equals(annotationType)).orElse(Boolean.FALSE);
+        return resolved.map((TypeHeader type) -> type.canonicalName().equals(annotationType)
+                && !packageOf(type).isEmpty()).orElse(Boolean.FALSE);
     }
 
     @Override
@@ -325,14 +412,33 @@ public final class DeclarationIndex implements AutoCloseable {
         classpath.close();
     }
 
-    /** Resolves {@code spelledName} in the body of {@code context}, or in its header when {@code header} is set. */
+    /**
+     * Resolves {@code spelledName} in the body of {@code context}, or in its header when {@code header} is set. A
+     * binary spells every name canonically. A qualified name that a binary of a named package spells, or that the class
+     * file of a binary of the unnamed package gives a type of a named package, starts with a package: it is looked up
+     * as qualified only, never through a type in scope.
+     *
+     * @throws CodegenException {@code SG603} when the class file of a binary of the unnamed package gives
+     *     {@code spelledName} both to a type of a named package and to a type of the unnamed package
+     */
     private Optional<TypeHeader> lookup(TypeHeader context, String spelledName, boolean header,
             Set<String> pending) {
         List<String> segments = List.of(spelledName.split("\\.", -1));
         if (segments.size() == 1) {
             return simple(context, spelledName, header, pending);
         }
-        Optional<TypeHeader> head = simple(context, segments.get(0), header, pending);
+        boolean binary = context.origin().isEmpty();
+        if (binary && classpath.namesBothTypes(context, spelledName)) {
+            throw new CodegenException(COLLISION, "the class file of " + context.canonicalName()
+                    + " of the unnamed package names both "
+                    + declared(spelledName, false).map(this::describe).orElse(spelledName) + " and "
+                    + declared(spelledName, true).map(this::describe).orElse(spelledName)
+                    + ", which the generator cannot tell apart by their canonical name; rename one of them");
+        }
+        Optional<TypeHeader> head = binary
+                && (!packageOf(context).isEmpty() || classpath.namesNamedType(context, spelledName))
+                ? Optional.empty()
+                : simple(context, segments.get(0), header, pending);
         if (head.isPresent()) {
             Optional<TypeHeader> walked = walk(head.get(), segments.subList(1, segments.size()), pending);
             if (walked.isPresent()) {
@@ -343,7 +449,7 @@ public final class DeclarationIndex implements AutoCloseable {
     }
 
     private Optional<TypeHeader> simple(TypeHeader context, String name, boolean header, Set<String> pending) {
-        String token = (header ? "header:" : "simple:") + context.canonicalName() + '#' + name;
+        String token = (header ? "header:" : "simple:") + side(context) + context.canonicalName() + '#' + name;
         if (!pending.add(token)) {
             return Optional.empty();
         }
@@ -363,9 +469,11 @@ public final class DeclarationIndex implements AutoCloseable {
             if (imported.isPresent()) {
                 return imported;
             }
-            // In the unnamed package, a sibling's canonical name is its simple name.
+            // In the unnamed package, a sibling's canonical name is its simple name. Code of a named package never
+            // sees a type of the unnamed package, and a binary keeps its package outside its scope.
+            String packageName = packageOf(context);
             Optional<TypeHeader> sibling =
-                    find(scope.packageName().isEmpty() ? name : scope.packageName() + '.' + name);
+                    packageName.isEmpty() ? find(name) : declared(packageName + '.' + name, false);
             if (sibling.isPresent()) {
                 return sibling;
             }
@@ -376,7 +484,8 @@ public final class DeclarationIndex implements AutoCloseable {
             if (onDemand.isPresent()) {
                 return onDemand;
             }
-            return find("java.lang." + name).filter(type -> importable(type, scope.packageName()));
+            return declared("java.lang." + name, false)
+                    .filter((TypeHeader type) -> importable(type, scope.packageName()));
         } finally {
             pending.remove(token);
         }
@@ -451,8 +560,9 @@ public final class DeclarationIndex implements AutoCloseable {
         for (String name : names) {
             String segment = name.substring(0, name.indexOf('.'));
             Optional<TypeHeader> obscurer = find(packageName.isEmpty() ? segment : packageName + '.' + segment)
-                    .filter(type -> packageOf(type).equals(packageName))
-                    .or(() -> find("java.lang." + segment).filter(type -> importable(type, packageName)));
+                    .filter((TypeHeader type) -> packageOf(type).equals(packageName))
+                    .or(() -> declared("java.lang." + segment, false)
+                            .filter((TypeHeader type) -> importable(type, packageName)));
             if (obscurer.isPresent()) {
                 throw new CodegenException(COLLISION, unit + " cannot name " + name + ": the type "
                         + obscurer.get().canonicalName() + " obscures the package " + segment + " there", origin);
@@ -460,22 +570,38 @@ public final class DeclarationIndex implements AutoCloseable {
         }
     }
 
-    /** The declaration that directly encloses {@code header}, empty for a top-level type. */
+    /**
+     * The declaration that directly encloses {@code header}, empty for a top-level type. It belongs to the package of
+     * {@code header}, and is looked up there.
+     */
     private Optional<TypeHeader> enclosingDeclaration(TypeHeader header) {
+        String packageName = packageOf(header);
         int separator = header.canonicalName().lastIndexOf('.');
-        return separator > packageOf(header).length()
-                ? find(header.canonicalName().substring(0, separator))
+        return separator > packageName.length()
+                ? declared(header.canonicalName().substring(0, separator), packageName.isEmpty())
                 : Optional.empty();
     }
 
     /**
-     * The package that declares {@code header}, empty for the unnamed package: as its source spells it, or as the
-     * classpath records it.
+     * {@code type} as a diagnostic names it apart from a type of the same canonical name: that name, the package that
+     * declares it, and the position of its declaration, or that the classpath declares it.
+     */
+    String describe(TypeHeader type) {
+        String packageName = packageOf(type);
+        return type.canonicalName() + " of "
+                + (packageName.isEmpty() ? "the unnamed package" : "package " + packageName)
+                + type.origin().map((SourceLocation origin) -> " at " + origin.path() + ':' + origin.line())
+                        .orElse(" on the classpath");
+    }
+
+    /**
+     * The package that declares {@code header}, empty for the unnamed package: as its source spells it, or, for a
+     * header of the classpath, as {@link ClasspathDeclarations#packageOf} gives it.
      */
     String packageOf(TypeHeader header) {
         return header.origin().isPresent()
                 ? header.scope().packageName()
-                : classpath.packageOf(header.canonicalName());
+                : classpath.packageOf(header);
     }
 
     /** Rejects a simple name that several imports offer at once instead of choosing one by order. */
@@ -500,9 +626,16 @@ public final class DeclarationIndex implements AutoCloseable {
         return Optional.ofNullable(first);
     }
 
+    /**
+     * The type a qualified name means whose first segment names a package, as an import, a name no type in scope
+     * starts and a name a binary of a named package spells are read: a type of a named package that a prefix of
+     * {@code segments} names, the longest first, followed through the member types it declares or inherits under the
+     * remaining segments. No class of the unnamed package is in scope in an import (JLS 6.3), and code of a named
+     * package never sees one, so a type of the unnamed package is never answered.
+     */
     private Optional<TypeHeader> qualified(List<String> segments, Set<String> pending) {
-        for (int length = segments.size(); length >= 1; length--) {
-            Optional<TypeHeader> owner = find(String.join(".", segments.subList(0, length)));
+        for (int length = segments.size(); length >= 2; length--) {
+            Optional<TypeHeader> owner = declared(String.join(".", segments.subList(0, length)), false);
             if (owner.isEmpty()) {
                 continue;
             }
@@ -531,15 +664,17 @@ public final class DeclarationIndex implements AutoCloseable {
      * A member type {@code owner} declares or inherits from one of its supertypes, which are resolved as the
      * header of {@code owner} spells them; a private member type of a supertype, or one with package access
      * declared in another package, is not inherited. A dotted spelling is never assumed to be a canonical name:
-     * the declaring header found here is the one whose canonical name is recorded.
+     * the declaring header found here is the one whose canonical name is recorded. A member type {@code owner}
+     * declares belongs to the package of {@code owner}, and is looked up there.
      */
     private Optional<TypeHeader> memberType(TypeHeader owner, String simpleName, Set<String> pending) {
-        String token = "member:" + owner.canonicalName() + '.' + simpleName;
+        String token = "member:" + side(owner) + owner.canonicalName() + '.' + simpleName;
         if (!pending.add(token)) {
             return Optional.empty();
         }
         try {
-            Optional<TypeHeader> declared = find(owner.canonicalName() + '.' + simpleName);
+            Optional<TypeHeader> declared =
+                    declared(owner.canonicalName() + '.' + simpleName, packageOf(owner).isEmpty());
             if (declared.isPresent()) {
                 return declared;
             }
@@ -572,14 +707,19 @@ public final class DeclarationIndex implements AutoCloseable {
         return header ? chain.subList(1, chain.size()) : chain;
     }
 
-    /** The declaration itself and the declarations that lexically enclose it, innermost first. */
+    /**
+     * The declaration itself and the source declarations that lexically enclose it, innermost first. They belong to
+     * the package of the declaration: a class of the unnamed package named like the first segment of a named package
+     * never encloses a declaration of that package.
+     */
     private List<TypeHeader> enclosingChain(TypeHeader context) {
         List<TypeHeader> chain = new ArrayList<>();
         chain.add(context);
+        Map<String, TypeHeader> side = packageOf(context).isEmpty() ? unnamedSources : sources;
         String enclosing = context.canonicalName();
         while (enclosing.lastIndexOf('.') > 0) {
             enclosing = enclosing.substring(0, enclosing.lastIndexOf('.'));
-            TypeHeader header = sources.get(enclosing);
+            TypeHeader header = side.get(enclosing);
             if (header == null) {
                 break;
             }

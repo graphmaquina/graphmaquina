@@ -41,8 +41,10 @@ import org.junit.jupiter.api.Test;
  * that homonym, nested by a class of the sources, is among its supertypes too and met first, whether the homonym
  * declares nothing of the member's name or something else of it that does not carry the member's own mark: a field,
  * an overload, an override without a mark, a method marked in another role, or a getter that is not public. A host
- * that overrides such an action without a mark keeps the action's role. A name no type of the package has is reported
- * as it is without that class, even when the class nests a type of that canonical name.</p>
+ * that overrides such an action without a mark keeps the action's role. A host keeps its action, too, when its
+ * supertypes hold two types of one canonical name that both mark it alike: the homonym by an override that keeps the
+ * mark, or by a declaration of its own. A name no type of the package has is reported as it is without that class,
+ * even when the class nests a type of that canonical name.</p>
  */
 class UnnamedPackageClassTest {
 
@@ -486,7 +488,9 @@ class UnnamedPackageClassTest {
                         }
                     }
                 """));
-        Compilation.Result guard = Compilation.compileTyped(inAnotherFile(throughHomonym(""), "shop", """
+        // The homonym's guard makes it a host, whose references container names the auxiliary class shop.
+        Compilation.Result guard = Compilation.compilePrepared(Compilation.prepare(inAnotherFile(throughHomonym(""),
+                "shop", """
                     static class Charging extends mid.Mid {
                         @io.github.graphmaquina.annotation.GraphGuard
                         public io.github.graphmaquina.api.GuardResult charge(
@@ -495,9 +499,71 @@ class UnnamedPackageClassTest {
                             return io.github.graphmaquina.api.GuardResult.pass();
                         }
                     }
-                """));
+                """)), List.of("-Xlint:-auxiliaryclass"));
 
         assertAll(() -> assertCompiled(unmarked, "OrdersRuntime"), () -> assertCompiled(guard, "OrdersRuntime"));
+    }
+
+    /**
+     * Two types of one canonical name that mark one action alike: the host of
+     * {@link #theActionOfAHostThatExtendsAHomonymIsDeclaredByTheTypeOfThePackageTheHomonymExtends}, whose homonym, met
+     * first, overrides the action and keeps its mark; and a host {@code Host} that implements the interface
+     * {@code shop.B} of the package, which it imports, and {@code shop.C}, a member type of the class that extends the
+     * class's own {@code shop.B}, where both {@code shop.B} mark one action alike and the host overrides it without a
+     * mark. Each host keeps the action, and the compilation succeeds.
+     */
+    @Test
+    void twoTypesOfOneCanonicalNameThatMarkAnActionAlikeLeaveTheHostThatAction() {
+        Map<String, String> override = inAnotherFile(throughHomonym(""), "shop", """
+                    static class Charging extends mid.Mid {
+                        @io.github.graphmaquina.annotation.GraphAction
+                        @Override
+                        public io.github.graphmaquina.api.ActionOutcome charge(
+                                io.github.graphmaquina.api.TransitionContext<model.Order, model.OrderStatus,
+                                        model.OrderTransition> context) {
+                            return io.github.graphmaquina.api.ActionOutcome.ok();
+                        }
+                    }
+                """);
+        Map<String, String> alike = new LinkedHashMap<>();
+        alike.put("shop.B", """
+                package shop;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+                public interface B {
+                    @GraphAction
+                    ActionOutcome charge(TransitionContext<Object, java.time.DayOfWeek, java.time.Month> context);
+                }
+                """);
+        alike.put("Host", """
+                import io.github.graphmaquina.annotation.GraphBindings;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+                import shop.B;
+                @GraphBindings
+                public final class Host implements B, shop.C {
+                    @Override
+                    public ActionOutcome charge(
+                            TransitionContext<Object, java.time.DayOfWeek, java.time.Month> context) {
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
+        Map<String, String> alikeBeside = inAnotherFile(alike, "shop", """
+                    public interface B {
+                        @io.github.graphmaquina.annotation.GraphAction
+                        io.github.graphmaquina.api.ActionOutcome charge(io.github.graphmaquina.api.TransitionContext<
+                                Object, java.time.DayOfWeek, java.time.Month> context);
+                    }
+                    public interface C extends B { }
+                """);
+
+        // Each homonym marks an action, which makes it a host whose references container names the auxiliary class.
+        assertAll(() -> assertCompiled(Compilation.compilePrepared(Compilation.prepare(override),
+                        List.of("-Xlint:-auxiliaryclass")), "OrdersRuntime"),
+                () -> assertCompiled(Compilation.compilePrepared(Compilation.prepare(alikeBeside),
+                        List.of("-Xlint:-auxiliaryclass"))));
     }
 
     /**
@@ -560,8 +626,10 @@ class UnnamedPackageClassTest {
 
     /**
      * {@code sources} and a class {@code name} of the unnamed package whose body is {@code members}, declared as an
-     * auxiliary class of the file {@code zzz.java}. Declared in {@code <name>.java} instead, a class nesting a homonym
-     * of an action host or of its supertype keeps the generator from writing that host's symbols.
+     * auxiliary class of the file {@code zzz.java}. The references container the generator writes for a host the class
+     * nests names the class from outside that file, which javac warns about when its lint {@code auxiliaryclass} is
+     * enabled, as {@code -Xlint:all} does. A build with {@code -Xlint:all -Werror} then fails unless it disables that
+     * lint, as such a build fails for any host declared as an auxiliary class, homonym or not.
      */
     private static Map<String, String> inAnotherFile(Map<String, String> sources, String name, String members) {
         Map<String, String> with = new LinkedHashMap<>(sources);

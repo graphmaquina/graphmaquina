@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.EnumSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -142,7 +143,10 @@ public final class ExportDeclarations {
     /**
      * The marked declarations {@code host} exports, its own first and, when it carries {@code @GraphBindings},
      * the inherited ones in the order its hierarchy declares them. A declaration reached twice through a
-     * diamond is kept once; that deduplication is not a second local declaration.
+     * diamond is kept once; that deduplication is not a second local declaration. The hierarchy can hold two types of
+     * one canonical name, a type of a named package and a type of the unnamed package. The declarations of each are
+     * exported, but a member both declare with one name and with parameter types of the same canonical names is kept
+     * once, as the type met first declares it.
      */
     private static List<Declaration> declarations(DeclarationIndex index, TypeHeader host) {
         List<Declaration> declarations = new ArrayList<>();
@@ -186,11 +190,14 @@ public final class ExportDeclarations {
         return declared.isEmpty() ? Optional.empty() : Optional.of(declared.get(0));
     }
 
-    /** The supertypes of {@code host}, nearest first, skipping the ones no header declares. */
+    /**
+     * The supertypes of {@code host}, nearest first, skipping the ones no header declares. Each is met once, and
+     * told apart by identity from a type of the other package of its canonical name, named or unnamed.
+     */
     private static List<TypeHeader> ancestors(DeclarationIndex index, TypeHeader host) {
         List<TypeHeader> ancestors = new ArrayList<>();
-        Set<String> visited = new LinkedHashSet<>();
-        visited.add(host.canonicalName());
+        Set<TypeHeader> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        visited.add(host);
         Deque<TypeHeader> pending = new ArrayDeque<>();
         pending.addLast(host);
         while (!pending.isEmpty()) {
@@ -200,7 +207,7 @@ public final class ExportDeclarations {
                     continue;
                 }
                 Optional<TypeHeader> resolved = index.resolveInHeader(current, declared.name());
-                if (resolved.isEmpty() || !visited.add(resolved.get().canonicalName())) {
+                if (resolved.isEmpty() || !visited.add(resolved.get())) {
                     continue;
                 }
                 ancestors.add(resolved.get());
