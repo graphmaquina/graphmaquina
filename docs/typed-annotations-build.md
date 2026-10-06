@@ -212,9 +212,19 @@ leaves its source out of the source set's sources jar and javadoc.
 ### What the generator reads
 
 The generation task parses what javac compiles of the source set: every source directory but the generated
-ones, whole, or file by file as the source set's include and exclude patterns select them. Files Gradle leaves
-out of a source directory by default, such as `._*` copies and `.git` directories, are left out either way, and
-symbolic links are followed, a link that leads back into a directory being walked skipped.
+ones, whole, or file by file as the source set's include and exclude patterns and the compile task's include and
+exclude pattern strings select them. Files Gradle leaves out of a source directory by default, such as `._*`
+copies and `.git` directories, are left out either way, and symbolic links are followed, a link that leads back
+into a directory being walked skipped.
+
+A filter given to the compile task as a spec or a closure, and a source added to the compile task or put in place
+of the source set's, are not followed. When they make javac compile other original Java sources than the
+generation reads, the generation task refuses the build before the generator runs, and `prepare-compile` does
+when the generation is up to date. Give such a filter to the source set's java sources, where a spec or a closure
+is followed, or to the compile task as an include or exclude pattern. For a source added to the compile task, the
+refusal names the directory to give the source set with `java.srcDir(...)`; for a source put in place of the
+source set's, it prints, for the Kotlin and the Groovy DSL, a `java.setSrcDirs(...)` line with the directories
+the compile task compiles, followed by the line that adds the generated directory back.
 
 The task runs after every task those directories are built by, so a directory registered with the task that
 writes it, as `java.srcDir(generateOther)` registers the output of a `generateOther` task, is written before it
@@ -223,10 +233,16 @@ generation: depending on the order the two tasks run in, the build stops with Gr
 generation task uses an output of that task without declaring a dependency on it, or the generation reads the
 directory before it is written. Register such a directory with the task that writes it.
 
-The sources are parsed at the compilation's `options.release`, or, when that is not set, at the language
-version of its toolchain, and read in its `options.encoding`; the generated sources are written in that
-encoding, a character it cannot represent as a `\uXXXX` escape. Without `options.encoding` the generator reads
-and writes UTF-8.
+The sources are parsed at the release javac compiles at: the value of the last `--release` of
+`options.compilerArgs`, spelled `--release N` or `--release=N`, when it is a plain decimal number, else
+`options.release`, else the language version of the compilation's toolchain. They are read in the encoding
+javac reads them in: with Gradle's own compiler, in process or in its compiler daemon, `options.encoding`, else
+the last `-encoding` of `options.compilerArgs`; with a javac Gradle starts from the command line, as it does
+when `options.fork` is set with `forkOptions.javaHome` or `forkOptions.executable`, the last `-encoding`, else
+`options.encoding`. The generated sources are written in that encoding, a character it cannot represent as a
+`\uXXXX` escape; without an encoding, the generator reads and writes UTF-8. The generation never runs the compile
+task's argument providers, which may need files that other tasks write first; `prepare-compile` refuses providers
+that change the release or the encoding.
 
 ### What the plugin does to the compilation
 
@@ -253,28 +269,48 @@ The build is compatible with Gradle's configuration cache: nothing the plugin st
 
 Before it retires anything, `prepare-compile` refuses a compilation that could end without the classes the
 completion publishes, that would run without the StateGraph annotation processor, which writes the provisional
-index the completion publishes, or that would not compile everything generated:
+index the completion publishes, whose class files would lack the `SourceFile` attribute the completion reads,
+that would read the sources annotation processors generate in another charset than javac writes them in, or
+that would not compile everything generated and exactly the original sources the generation read, at its release
+and in its encoding:
 
 - `options.failOnError = false`;
 - `-proc:only` or `-proc:none` as the last `-proc:` option among the compiler arguments, the one javac takes;
+- an `options.annotationProcessorPath` that is empty or null. Gradle then gives javac a `-proc:none` of its own,
+  and its own compiler, in process or in its compiler daemon, runs only the processors of that path, whatever
+  `-proc:` compiler argument follows. Only a javac Gradle starts from the command line is left to run with such a
+  path, when a `-proc:` compiler argument follows, since that javac then looks for processors on the class path;
 - a `-processor` list, the last one among the compiler arguments, that leaves out
   `io.github.graphmaquina.processor.StateGraphProcessor` or holds a name that is not a valid qualified class
   name, such as an empty one or one with spaces around it. The Java compiler of Gradle 9.2.1, in process or in
   its compiler daemon, keeps empty names when it splits the list on its commas, so an empty name is refused
   wherever it stands, after the last comma included;
+- a debug setting that leaves the `SourceFile` attribute out of the class files: `options.debug = false`, an
+  `options.debugOptions.debugLevel` without `source`, or `-g:none` or a `-g:` list without `source` among the
+  compiler arguments, unless another `-g:` list names `source`;
+- with Gradle's own compiler, in process or in its compiler daemon, a last `-encoding` compiler argument that
+  names another charset than `options.encoding`, when this JVM supports both. That compiler reads the sources in
+  `options.encoding`, while javac writes the sources annotation processors generate in the last `-encoding`; an
+  alias of the same charset passes;
+- argument providers that change the release or the encoding javac takes from those the generation read. Give
+  `--release` or `-encoding` in `options.compilerArgs`, or set `options.release` or `options.encoding`, instead;
+- a compilation whose original Java sources are not those the generation read, as
+  [above](#what-the-generator-reads);
 - a compilation whose sources leave out a generated file, as replacing the source set's java directories with
   `java.setSrcDirs(...)` does, or a source or a pattern set on the compile task itself. The refusal prints, for
   the Kotlin and the Groovy DSL, the line that adds the generated directory back after a replacement, and asks
   for a setting on the compile task to be removed.
 
-A well-formed name of a class that is on no processor path, such as a misspelt one, is not refused: the
-compilation fails on it after the preparation, like any failed compilation, and the next preparation cleans up
-after it from the pending inventory it left.
+A processor path without the StateGraph processor, a well-formed name of a class that is on no processor path,
+such as a misspelt one, and a `-g:` option javac rejects are not refused: the compilation fails on them after
+the preparation, like any failed compilation, and the next preparation cleans up after it from the pending
+inventory it left.
 
-That the plugin retires nothing does not mean the previous outputs survive a refusal. Each of the first three
-settings is an option of the compile task, so adding one changes the task's options, and Gradle then runs the
-task as a full rebuild: before the preparation runs, Gradle itself removes the task's previous outputs, the
-classes, the published index and the sealed inventory among them. A refusal leaves no pending inventory behind.
+That the plugin retires nothing does not mean the previous outputs survive a refusal. Adding
+`options.failOnError = false` or a compiler argument, such as `-proc:none`, changes the compile task's options,
+and Gradle then runs the task as a full rebuild: before the preparation runs, Gradle itself removes the task's
+previous outputs, the classes, the published index and the sealed inventory among them. A refusal leaves no
+pending inventory behind.
 
 The generation task's `sourcesOutput`, `workDirectory`, `requestFile`, `javaLauncher`, `generatorClasspath`,
 `release`, `encoding` and `compilationId` are conventions: a value a build sets wins whenever it sets it, and
@@ -588,10 +624,11 @@ inventory it left.
 | `SG602` "…is still compiled from a previous compilation that nothing retired…" | javac ran again over a class output that still holds the previous companions. Run the lifecycle, whose preparation retires them, or clean the build. |
 | `SG602` "…no class file in … belongs to the carrier…" | javac's debug setting left the `SourceFile` attribute out of the class files, which the completion reads: `-g:none`, or a `-g:` list without `source` such as `-g:lines,vars`. Compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. |
 | `SG602` "inventory path '…' …" | a manifest of the work directory lists an owned source that is not a relative path to a file: one that no path can spell, such as one holding a NUL character, one that is absolute or has a root, one with a `..` segment, or one that names the directory itself, such as `.`. Clean the build. |
-| `SG602` "member 'encoding' names no charset this JVM supports in …" | the source encoding of the compilation is no charset of the JVM the generator runs under: in Maven `<encoding>` or its property `encoding`, else `project.build.sourceEncoding`; in Gradle the generation task's `encoding`, by convention the compile task's `options.encoding`. Name a charset that JVM supports, such as `UTF-8`. |
+| `SG602` "member 'encoding' names no charset this JVM supports in …" | the source encoding of the compilation is no charset of the JVM the generator runs under: in Maven `<encoding>` or its property `encoding`, else `project.build.sourceEncoding`; in Gradle the generation task's `encoding`, by convention the encoding javac reads the sources in, from `options.encoding` or an `-encoding` compiler argument. Name a charset that JVM supports, such as `UTF-8`. |
+| `SG602` "number with an exponent out of range in …" | the request, a manifest, an inventory or a dependency's export index holds a number whose exponent is out of range, such as `1e99999999999`, so it was edited or damaged after the tools wrote it. Clean the build, or rebuild the dependency that published the index. |
 | `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host), or could not parse an original source at the compilation's release. The message names the type and the declaration. |
 | `SG603` | a generated name collides or cannot be written: names that collide after PascalCase normalization, such as `id` / `_id`; a generated type that an original source already declares, that would shadow a class of the classpath or overwrite a file of the generated directory the previous generation did not own, or that differs from an original only in case where the volume does not tell names apart; or a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references, then regenerate. |
-| `SG603` "…share one canonical name…", "the class file of … of the unnamed package names both …" | a class of the unnamed package is named like a package, as a class `shop` beside the package `shop`, so one canonical name names two types: two machines, one of the package and one nested in the class, which a manifest names by that name alone, or two types that a class file of the unnamed package refers to, which the generator cannot tell apart. Rename one of them, or the class. |
+| `SG603` "…share one canonical name…", "the class file of … of the unnamed package names both …" | a class of the unnamed package is named like a package, as a class `shop` beside the package `shop`, so one canonical name names two types: two machines, one of the package and one nested in the class, which a manifest names by that name alone, or two types in a class file of the unnamed package that the generator has to tell apart, such as two of its supertypes, which it cannot do by their canonical name. Rename one of them, or the class. |
 | `SG603` "…which a symbolic link takes out of …", "…would be written through a symbolic link that leads out of …" | a symbolic link inside an output directory, the class output or a generated source directory, leads out of it, and the step would remove or write a file outside it through that link. Nothing outside the directory is touched. Remove the link, then run the lifecycle again. |
 | `SG603` "…claims '…', which is not a file under …" | an inventory of the work directory names an entry that is not a file under its output root: a blank one, one that no path can spell, such as one holding a NUL character, or one that is absolute, has a root, names the root itself or leads out of it. Clean the build. |
 | `SG609` | a declaration still uses the retired 1.x matrix vocabulary. The message names the typed declaration to write instead; see [migrating to 2.0](migration-2.0.md) and the [generated typed annotations](guide.md#annotation-and-binding-reference). |
@@ -610,6 +647,12 @@ inventory it left.
 | "…reads the annotation manifest X, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. |
 | `[INFO] StateGraph skips <id>: …` | the project is packaged as `pom`, or `maven.main.skip` / `<skipMain>` / `maven.test.skip` / `<skip>` switches that compilation off. Nothing was generated, retired or published; this is not an error. |
 | "…cannot run with options.failOnError = false…", "…cannot run with -proc:only…", "…cannot run with -proc:none…" (Gradle) | remove that setting from the compile task. |
+| "…cannot run with an options.annotationProcessorPath that is empty or null…" (Gradle) | a setting of the compile task empties its annotation processor path. Remove it, so the path holds the source set's annotation processors again. |
+| "…javac then leaves the SourceFile attribute out of every class file…" (Gradle) | a debug setting of the compile task drops the attribute the completion reads. Remove it, or add a `-g:` list that names `source`, such as `-g:source,lines,vars`, to the compiler arguments. |
+| "…cannot run with options.encoding = "…" and the compiler argument -encoding …" (Gradle) | the two name different charsets, and Gradle's own compiler would read back the sources the StateGraph processor writes in the other one. Remove that `-encoding`, or set `options.encoding` to the charset it names. |
+| "…cannot run with the compiler arguments its argument providers give…" (Gradle) | an argument provider changes the release or the encoding javac takes, which the generation never reads. Give `--release` or `-encoding` in `options.compilerArgs`, or set `options.release` or `options.encoding`, instead. |
+| "the StateGraph generation … reads …, which task ':compileJava' does not compile…" (Gradle) | the compile task has a filter given as a spec or a closure, or a source put in place of the source set's. Give the filter to the source set's java sources, or to the task as an include or exclude pattern; for a replaced source, paste the `java.setSrcDirs(...)` line the message prints into the source set's block and remove the source from the task. |
+| "task ':compileJava' compiles …, which the StateGraph generation … does not read…" (Gradle) | a source was given to the compile task beside the source set's. Give the directory the message names to the source set with `java.srcDir(...)`, and remove it from the task. |
 | "task ':compileJava' does not compile …" (Gradle) | the compilation leaves out a generated file. Add directories with `java.srcDir(...)` instead of replacing them, or add the generated directory back with the line the message prints, or remove a source or pattern set on the compile task. |
 | "…there is no compilation carrier of … under …, although every generation emits one there…" (Maven) | the carrier source the generation emitted was missing when `prepare` or `prepare-test` ran, as when it was deleted after `generate`. Run the lifecycle again, so that `generate` or `generate-test` emits it before the preparation. |
 | `complete` (Maven) or `complete-compile` (Gradle, `SG602`) fails naming `pending-exports.json` | javac ran but the annotation processor published no index: it was not on the processor path of that compilation, or did not run. |

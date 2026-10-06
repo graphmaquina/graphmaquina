@@ -477,6 +477,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
   a `failsOn` match after it no longer takes the failure route. `cascadeAll` refuses a null element before any
   element runs, and an unknown machine even over an empty collection; an unknown facade in a cascade poisons
   like an unknown key.
+- **`cascadeAll` reads its collection once.** It copies the collection before any element runs, so elements
+  added or removed while the cascade runs change neither which elements run nor their order. It used to fail with
+  a `ConcurrentModificationException` of its own iteration or stop early, which could let the root commit a
+  partial batch. An exception or an `Error` the collection throws while it is copied propagates as it is and
+  poisons nothing.
 - **Library exceptions pass through.** A `StateMachineException` that a guard or action throws wrapped in
   `CompletionException` or `ExecutionException` is rethrown as is, never matched against `failsOn`, as it
   already was bare or through a stage.
@@ -487,6 +492,12 @@ observe. Most items refuse up front what used to fail later, in generated code o
   no limit, and the other limit stays in charge. Such budgets used to overflow, into `ArithmeticException` or a
   deadline silently switched off, and an `asyncTimeout` above that left its thread refusing every later
   transition.
+- **An async wait runs no other task.** A root waiting on a `ForkJoinPool` worker no longer runs other queued
+  tasks on its thread, as `CompletableFuture`'s own wait could, on a common-pool worker for instance, where such a
+  task could fail with `ReentrantTransitionException`, keep the wait past its timeout, or cascade through the
+  root's context. A task the stage needs must now run on another worker, so on a pool whose other workers are all
+  busy or blocked the wait can run to its timeout. A pool that refuses to let its worker block now aborts the
+  transition, with its `RejectedExecutionException` as the cause; that exception used to escape the call.
 - **Standalone machines.** `StateMachines.Builder.build()` registers the `as(...)` facade and dispatches the
   machine's own watches; a watch on another machine is refused at `build()`.
 - **Blank reasons are refused.** `StatePolicy` refuses a blank reason for an identifier, as it refused a blank
@@ -522,14 +533,18 @@ observe. Most items refuse up front what used to fail later, in generated code o
   operation that overrides a `Machine` method, or a redeclaration of one with a result the companion cannot
   return (`SG504`); a parameterized entity (`SG601`, `SG509`); an instance binding of a generic host, and a type
   the companion's package cannot access (`SG505`, `SG509`, `SG510`); two machines of one set that write the
-  same entity and state enum, and a `builder()` accessor that collides with the companion's (`SG510`); a name
-  the companion writes whose first segment a type, member type or constant of its scope takes, so that no
-  spelling reaches it (`SG603`); and a machine javac compiled implicitly, from the source path, that the export
-  index or a set names (`SG602`). The index case used to publish nothing and report nothing.
+  same entity and state enum (`SG510`); an instance method, declared or inherited, abstract or default, with the
+  signature of the companion's static `graph(...)` on a facade (`SG504`) or `builder(...)` on a set (`SG510`),
+  the latter reported once the set has no other error; a name the companion writes whose first segment a type,
+  member type or constant of its scope takes, so that no spelling reaches it (`SG603`); and a machine javac
+  compiled implicitly, from the source path, that the export index or a set names (`SG602`). The index case used
+  to publish nothing and report nothing.
 - **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a
   member type of the facade named like a type they write, with parameter names that would have been keywords,
   with deprecated bound members under `-Werror`, with a cast whose type annotations name enum constants, beside
-  static overloads of the state and identity accessors, and in a set with an accessor named `machineRegistry`.
+  static overloads of the state and identity accessors, in a set with an accessor named `machineRegistry`, and
+  for a bound member or accessor that declares a checked exception, which is now handled as the same exception
+  thrown undeclared would be.
 - **One problem no longer hides the others.** A failed export check (`SG604`) or a refused companion name no
   longer stops the rest of the compilation from being checked, and javac rerun over the previous companions
   reports them as stale output (`SG602`) instead of a collision (`SG603`).
@@ -560,7 +575,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   class has one. Such layouts could get false diagnostics, a processor crash, or wrong output, such as missing
   `*Refs` types, a dropped machine or host, or another enum's states. What a canonical name alone cannot tell
   apart is refused with `SG603`: two machines that share a canonical name, and two types of one canonical name
-  that a class file of the unnamed package refers to.
+  that the generator has to tell apart in a class file of the unnamed package, such as two of its supertypes.
 - **Builds that used to fail.** A machine renamed only in case on a case-insensitive volume, which got a false
   `SG603`, a compilation id that holds a line break, whose carrier javac refused, and a class output holding an
   unreadable `.class` file, which stopped `prepare-compile` and `complete-compile`, now build.
@@ -568,7 +583,12 @@ observe. Most items refuse up front what used to fail later, in generated code o
   in a manifest or an index is `SG602` naming the file, and so is a `schemaVersion` or a source position that is
   not an exact integer, which used to be truncated. So is an owned source of a manifest that no path can spell,
   such as one holding a NUL character, that has a root, as `\x` and `C:x` have on Windows, or that names the
-  directory itself, such as `.`.
+  directory itself, such as `.`. A number whose exponent is out of range, such as `1e99999999999`, in the request,
+  a manifest, an inventory or an index is `SG602` too, where an unchecked `NumberFormatException` used to escape.
+- **A failed pending-manifest write keeps the manifest.** A `generate` that cannot write its pending manifest,
+  on a full disk for instance, leaves `annotation-manifest.json` in place, so once the cause is gone the next run
+  retires and replaces its files. It used to delete that manifest, and every later run then refused its own
+  previous sources with `SG603` ("would overwrite the unowned file") until `clean`.
 - **Maven.** `maven.main.skip`, `<skipMain>`, `maven.test.skip` and `<skip>` skip the goals of that compilation
   with an info line instead of failing, and a project packaged as `pom` skips all six. Refused before anything is
   retired: `proc=only`, `-proc:only`, `failOnError=false`, `useIncrementalCompilation=false`, a `-processor`
@@ -590,12 +610,20 @@ observe. Most items refuse up front what used to fail later, in generated code o
   execution's `<compilerArgs>` replace the plugin-level ones, as Maven merges them, where both used to be read.
   The plugin's descriptor declares Java 21 as the Java version it requires.
 - **Gradle.** `prepare-compile` refuses, before it retires anything: `options.failOnError = false`, `-proc:only`
-  or `-proc:none` as the last `-proc:` option, a `-processor` list, the last one given, that leaves out the
-  StateGraph processor or holds a name that is not a valid qualified class name, an empty one after its last
-  comma included, and a compilation that no longer compiles every generated source. Adding one of the first
-  three changes the compile task's options, so Gradle's own full rebuild has already removed the previous
-  classes, index and sealed inventory when the preparation refuses: unlike Maven's, such a refusal does not keep
-  them. The generated directory joins the source set as a source directory set of its own, which the source
+  or `-proc:none` as the last `-proc:` option, an `options.annotationProcessorPath` that is empty or null, a
+  `-processor` list, the last one given, that leaves out the StateGraph processor or holds a name that is not a
+  valid qualified class name, an empty one after its last comma included, a debug setting that leaves out the
+  `SourceFile` attribute, an `-encoding` compiler argument that names another charset than `options.encoding`
+  when Gradle's own compiler runs javac, argument providers that change the release or the encoding javac takes,
+  a compilation that no longer compiles every generated source, and one that compiles other original sources than
+  the generation reads, through a spec or closure filter or a source given to the compile task, which the
+  generation also refuses before the generator runs. Sources given to the compile task alone used to build and
+  are now refused. Adding `options.failOnError = false` or a compiler argument changes the compile task's
+  options, so Gradle's own full rebuild has already removed the previous classes, index and sealed inventory when
+  the preparation refuses: unlike Maven's, such a refusal does not keep them. The generation parses only what
+  the compile task's include and exclude pattern strings select as well, at the release and in the encoding javac
+  takes, a `--release` or `-encoding` in `options.compilerArgs` included, but never one an argument provider
+  gives. The generated directory joins the source set as a source directory set of its own, which the source
   set's patterns do not filter, and the sources jar and javadoc leave out the compilation carrier. The generation
   runs after the tasks that build the source set's other directories. Its locations, launcher and generator
   classpath are conventions that `prepare-compile` and `complete-compile` follow, and `classesOutput`,
@@ -614,8 +642,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **`GoldenOptions.defaults()` ignores `graphmaquina.goldens.root` in read mode:** `sourceRoot()` is empty there,
   and a value that is not a path no longer fails a read-mode run.
 - **Goldens.** Update mode replaces a source golden that is not valid UTF-8 and writes through a symbolic link
-  that stays inside the source root; a leading byte order mark is ignored; a resource that names a directory is
-  reported instead of read; and a malformed resource name is reported before the system properties are read.
+  that stays inside the source root, even one whose target does not exist yet, which it creates with any
+  directory missing on the way; a link that leads out of the root is refused with `IllegalArgumentException`, a
+  dangling one included, which used to fail with `IllegalStateException`; a leading byte order mark is ignored; a
+  resource that names a directory is reported instead of read; and a malformed resource name is reported before
+  the system properties are read.
 - **Failure reports.** A view opened from another one names the path it came from; a value whose `toString()`
   throws a runtime exception or returns null is still reported; a throwable reported as the actual value is the
   error's cause; and a null element of a list no longer raises `NullPointerException`: an exact comparison reports

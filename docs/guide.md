@@ -1267,12 +1267,15 @@ The corresponding async action calls a gateway and returns a stage. An exception
 `IOException` uses the declared failure route. The runtime unwraps a `CompletionException` or
 `ExecutionException` that carries a cause before classifying that cause. It unwraps exactly those two classes:
 an exception of a subclass of either is classified as itself, not through its cause. It also classifies a
-checked exception that an action throws without declaring it, as Kotlin or `@SneakyThrows` code can, like any
-other. `failsOn` applies to action failures; a guard exception is a technical abort. A library exception, a
-`StateMachineException`, that a guard or action throws or completes its stage with, bare or wrapped in one of
-those two classes, is rethrown as it is and never matched against `failsOn`. An `Error` is never routed either:
-thrown as itself it propagates unchanged, and one that completes a stage, or that one of those two classes
-carries, aborts.
+checked exception that an action throws like any other, whether the method declares it, so that an action
+declared `throws IOException` with `failsOn = IOException.class` takes the failure route, or throws it without
+declaring it, as Kotlin or `@SneakyThrows` code can. A guard, a hook, a watch condition, a state or identity
+accessor, or a watch's peers or owner reader may declare a checked exception too: the generated companion
+compiles, and the exception is handled as the same exception thrown undeclared would be. `failsOn` applies to
+action failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a
+guard or action throws or completes its stage with, bare or wrapped in one of those two classes, is rethrown as
+it is and never matched against `failsOn`. An `Error` is never routed either: thrown as itself it propagates
+unchanged, and one that completes a stage, or that one of those two classes carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine
 exception, or a `CancellationException` or one of its subtypes, which are never domain failures; nor
@@ -1692,7 +1695,9 @@ Three objects can be involved:
 In particular, `pending.cancel(true)`, `pending.orTimeout(...)` or a timed `pending.get(...)` is not a
 transaction rollback API. The operation may already be running, may continue running and may commit after
 the caller stops waiting. Interrupting an operation thread while it is waiting causes a technical abort,
-but GraphMaquina still does not cancel the foreign stage.
+but GraphMaquina still does not cancel the foreign stage. A `ForkJoinPool` that refuses to let its worker block
+for the wait, as one does when it cannot start a spare worker in its place, causes a technical abort as well,
+whose cause is that pool's `RejectedExecutionException`.
 
 A late remote success can mean "the service processed the request, but the graph did not commit". Use a
 stable request/idempotency key and a service-level deadline where needed. Reconcile uncertain remote results
@@ -1759,6 +1764,12 @@ those operations. If every worker is blocked waiting for a service stage whose c
 those workers, the executor can be starved. Keep service execution independent or provision an execution
 model that does not block the resources its completions need. A custom direct executor such as `Runnable::run`
 runs inline and removes the offloading behavior shown for the default executor.
+
+A root that runs on a `ForkJoinPool` worker, such as one submitted through
+`asyncExecutor(ForkJoinPool.commonPool())`, waits for its stage without running other tasks on its thread. If
+the stage's own work is a task queued on that pool, another worker has to take it: an idle one, a spare the pool
+starts, or one that frees up. While every other worker is busy or blocked, the wait goes on, up to its timeout.
+Start roots off `ForkJoinPool` workers, or give asynchronous work its own executor.
 
 Multiple virtual threads do not serialize access to a shared entity. Two concurrent operations on the same
 ticket need an application-level concurrency policy. The commit precheck detects some state conflicts; it
@@ -1892,7 +1903,10 @@ throws an exception its `failsOn` lists, the root throws that failure instead, c
 failure route; an `Error` or a callback exception arrives wrapped in a `TransitionAbortedException`. A cascade
 that names an unknown machine poisons too, by key or by facade type, even over an empty collection. A refused
 argument poisons nothing: a null peer, a null element, which `cascadeAll` refuses before any element runs, or
-an identifier from another machine's catalogue. Use `ctx.cascade` instead of calling another facade operation
+an identifier from another machine's catalogue. `cascadeAll` copies its collection once, before any element runs,
+and never reads it again, so elements added or removed while the cascade runs change neither which elements run
+nor their order; an exception or an `Error` the collection throws while it is copied propagates as it is and
+poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another facade operation
 from inside an action: nested facade entry points violate the runtime's reentrancy rules.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
@@ -2595,12 +2609,12 @@ code runs.
 | `SG404` | A watch has no rules. In the DSL, also a `when(...)` that no `execute(...)` follows, and an `execute(...)` with no pending `when(...)`. |
 | `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
 | `SG503` | Missing or incompatible public property accessor. |
-| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; and a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return. |
+| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes one parameter per class with instance members the machine binds, or none. |
 | `SG505` | Exported method does not uniquely fit the action, guard, hook or condition role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
 | `SG507` | Invalid transition elements: empty `from`, `onFailure` or `failsOn` without an action, or a timeout without an asynchronous action. In the DSL, also an edge never closed with `endTransition()`, and an edge that declares more than one action, `onFailure` or `timeout`. |
 | `SG508` | Watch rule must choose exactly one supported predicate alternative. |
 | `SG509` | Invalid peer-machine type, a peer whose entity is a parameterized type, or a watched peer whose types the watcher's package cannot access. |
-| `SG510` | Invalid set accessor, duplicate/missing machine or missing watched peer in the set. Also an accessor the set inherits from another interface, two machines that write the same entity and state enum, a `builder()` accessor that collides with the companion's own `builder()`, and a machine whose types the set's package cannot access. |
+| `SG510` | Invalid set accessor, duplicate/missing machine or missing watched peer in the set. Also an accessor the set inherits from another interface, two machines that write the same entity and state enum, a machine whose types the set's package cannot access, and an instance method of the set, declared or inherited, abstract or default, with the signature of the companion's static `builder(...)`, which takes the timeout shared by the set's asynchronous machines, when it has any, then every class with instance members its machines use. That last refusal is reported only once the set has no other error, since fixing one can change what `builder(...)` takes. |
 | `SG511` | Invalid timeout duration: it must be positive. |
 | `SG701` | A state declares no rejection policy. |
 | `SG702` | One `(from, transition)` key both declares an edge and rejects the identifier. |
@@ -2612,8 +2626,8 @@ code runs.
 | --- | --- |
 | `SG599` | The processor could not write a generated source, provisional export index or processor inventory. Inspect the named type/path and underlying error; correct the output path, permissions, available space or reported file collision, then rerun the full generation/compilation lifecycle. See [processor output failures](typed-annotations-build.md#processor-output-failures-sg599). |
 | `SG601` | Bootstrap declaration cannot be resolved, is ambiguous or contradicts another declaration. `Machine<E, S, T>` must resolve to a concrete entity type and **two distinct enums**, one for states and one for transition identifiers. Also a facade that declares type parameters, a parameterized entity type, a facade or enum the vocabulary's package cannot access, a marker whose annotation type is not on the generator's classpath, and an original source javac cannot parse at the compilation's release. |
-| `SG602` | A manifest, an inventory or an export index is missing, incompatible, stale, malformed, or written in the retired schema 1. A manifest is also malformed when an owned source it lists is not a relative path to a file: one that no path can spell, such as one holding a NUL character, one that is absolute or has a root, one with a `..` segment, or one that names the directory itself, such as `.`. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place, or one whose manifest is malformed, needs one `clean`. Also a machine javac compiled implicitly, from the source path, which the processor never saw, reported where the index or a set names it: pass every source of the compilation to javac. A companion of a previous compilation that nothing retired is reported too: run the lifecycle, or clean. Completion reports a class output without the `SourceFile` attribute: compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. The generator also refuses a source encoding that names no charset of the JVM it runs under: name one that JVM supports, such as `UTF-8`. |
-| `SG603` | Generated output or export collision, a name generated code cannot write, or an output path the generator may not use. Two names normalize to the same PascalCase spelling; a generated type already exists as an original source, in the file it would overwrite or in another one, as a class of the classpath, or as a file of the generated directory the previous generation did not own; an original file or type differs from a generated one only in case where the volume does not tell names apart; an existing type takes a companion's name; a type, member type or constant in the scope of a generated file takes over a name that file writes, such as a type of its package named `io`, `java` or like a `java.lang` type; or one canonical name names two types, because a class of the unnamed package is named like a package: two machines, one of the package and one nested in the class, which a manifest names by that name alone, or two types that a class file of the unnamed package refers to, which the generator cannot tell apart. The diagnostic names both sides; rename one of them and its references. The generator's steps also refuse an inventory entry that is not a file under its output root, such as a blank one, one that no path can spell, as with a NUL character, or one that is absolute, has a root, names the root itself or leads out of it; an inventory entry whose file they would remove through a symbolic link inside its output root that leads out of it; and a generated source that would be written through such a link. Remove the link; clean a build whose inventory holds such an entry. |
+| `SG602` | A manifest, an inventory or an export index is missing, incompatible, stale, malformed, or written in the retired schema 1. Any of these files, or the request, is malformed when it holds a number whose exponent is out of range, such as `1e99999999999`, and a manifest is also malformed when an owned source it lists is not a relative path to a file: one that no path can spell, such as one holding a NUL character, one that is absolute or has a root, one with a `..` segment, or one that names the directory itself, such as `.`. Run the full generation/compilation lifecycle with aligned versions; a build upgraded in place, or one whose manifest is malformed, needs one `clean`. Also a machine javac compiled implicitly, from the source path, which the processor never saw, reported where the index or a set names it: pass every source of the compilation to javac. A companion of a previous compilation that nothing retired is reported too: run the lifecycle, or clean. Completion reports a class output without the `SourceFile` attribute: compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. The generator also refuses a source encoding that names no charset of the JVM it runs under: name one that JVM supports, such as `UTF-8`. |
+| `SG603` | Generated output or export collision, a name generated code cannot write, or an output path the generator may not use. Two names normalize to the same PascalCase spelling; a generated type already exists as an original source, in the file it would overwrite or in another one, as a class of the classpath, or as a file of the generated directory the previous generation did not own; an original file or type differs from a generated one only in case where the volume does not tell names apart; an existing type takes a companion's name; a type, member type or constant in the scope of a generated file takes over a name that file writes, such as a type of its package named `io`, `java` or like a `java.lang` type; or one canonical name names two types, because a class of the unnamed package is named like a package: two machines, one of the package and one nested in the class, which a manifest names by that name alone, or two types in a class file of the unnamed package that the generator has to tell apart, such as two of its supertypes, which it cannot do by their canonical name. The diagnostic names both sides; rename one of them and its references. The generator's steps also refuse an inventory entry that is not a file under its output root, such as a blank one, one that no path can spell, as with a NUL character, or one that is absolute, has a root, names the root itself or leads out of it; an inventory entry whose file they would remove through a symbolic link inside its output root that leads out of it; and a generated source that would be written through such a link. Remove the link; clean a build whose inventory holds such an entry. |
 | `SG604` | Invalid or contradictory export/role, or a host its generated references container cannot access, such as a private nested class. Check markers and exported signatures. |
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |
 | `SG606` | Graph or watch vocabulary belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract operations. On a default, static or private method of its own facade it is `SG504`. |
