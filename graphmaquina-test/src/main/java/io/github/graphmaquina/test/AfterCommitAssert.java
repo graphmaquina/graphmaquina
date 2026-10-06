@@ -8,9 +8,11 @@ import java.util.Objects;
 /**
  * Chainable assertion over an {@link AfterCommitException}: an after-commit hook or the registry listener
  * threw, and nothing is rolled back. A hook runs only for a committed hop, once every state was written, so
- * {@link #at(MachineKey, Object, Enum, Enum)} names a hop that really happened. The listener is notified of
- * the outcome of every call; for a rejected or ignored one nothing was written, and its failure reports the
- * unchanged state as both endpoints. The step is the hook's own name, or {@code "listener"}. The exception
+ * {@link #at(MachineKey, Object, Enum, Enum)} names a hop that really happened. The listener sees the outcome
+ * of every call that reaches it, after the call's hooks and watch reactions. A call that throws first notifies
+ * nothing, such as one whose step aborts, whose commit fails, whose hook throws or whose reaction raises an
+ * Error. For a rejected or ignored outcome nothing was written, and a listener failure reports the unchanged
+ * state as both endpoints. The step is the hook's own name, or {@code "listener"}. The exception
  * carries only the endpoints, so the identifier of a committed edge is read from the outcome or from the
  * records rather than here.
  */

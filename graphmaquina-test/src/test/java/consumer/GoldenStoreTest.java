@@ -18,6 +18,7 @@ import java.net.URLClassLoader;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.util.ArrayList;
@@ -423,6 +424,131 @@ class GoldenStoreTest {
         }
         try (Stream<Path> entries = Files.list(module)) {
             assertEquals(List.of(link), entries.toList());
+        }
+    }
+
+    /**
+     * A link can be checked in before the file it names, or outlive that file when it is deleted to force a
+     * regeneration. Update mode then creates the file the link names, the link stays, and read mode finds the
+     * golden through it.
+     */
+    @Test
+    void aDanglingSymbolicLinkInsideTheRootIsWrittenThroughAndKept(@TempDir Path root) throws Exception {
+        Path shared = Files.createDirectory(root.resolve("shared"));
+        Path module = Files.createDirectory(root.resolve("module"));
+        Path link = Files.createSymbolicLink(module.resolve("x.dot"), Path.of("../shared/x.dot"));
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            GoldenStore.assertMatches("module/x.dot", "new\n",
+                    GoldenOptions.updating(loader, root, written::add), DIFF);
+            GoldenStore.assertMatches("module/x.dot", "new\n",
+                    GoldenOptions.updating(loader, root, written::add), DIFF);
+            GoldenStore.assertMatches("module/x.dot", "new\n", GoldenOptions.readOnly(loader), DIFF);
+        }
+        assertTrue(Files.isSymbolicLink(link), "the link must survive the update");
+        assertEquals(Path.of("../shared/x.dot"), Files.readSymbolicLink(link));
+        assertEquals("new\n", Files.readString(shared.resolve("x.dot")));
+        assertEquals(List.of(link), written, "the path that was named is the one reported, once");
+        try (Stream<Path> entries = Files.list(shared)) {
+            assertEquals(List.of(shared.resolve("x.dot")), entries.toList());
+        }
+        try (Stream<Path> entries = Files.list(module)) {
+            assertEquals(List.of(link), entries.toList());
+        }
+    }
+
+    /**
+     * The file a dangling link names may lie behind a further link and under directories that do not exist
+     * yet: update mode follows the whole chain and creates those directories, as it does for any golden.
+     */
+    @Test
+    void aDanglingChainOfLinksHasTheDirectoriesOfItsFileCreated(@TempDir Path root) throws Exception {
+        Path module = Files.createDirectory(root.resolve("module"));
+        Path link = Files.createSymbolicLink(module.resolve("x.dot"), Path.of("../hop.dot"));
+        Path hop = Files.createSymbolicLink(root.resolve("hop.dot"), Path.of("shared/nested/x.dot"));
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            GoldenStore.assertMatches("module/x.dot", "new\n",
+                    GoldenOptions.updating(loader, root, written::add), DIFF);
+            GoldenStore.assertMatches("module/x.dot", "new\n", GoldenOptions.readOnly(loader), DIFF);
+        }
+        assertEquals(Path.of("../hop.dot"), Files.readSymbolicLink(link));
+        assertEquals(Path.of("shared/nested/x.dot"), Files.readSymbolicLink(hop));
+        assertEquals("new\n", Files.readString(root.resolve("shared/nested/x.dot")));
+        assertEquals(List.of(link), written);
+    }
+
+    /** A link to a directory above the source is followed the same way when that directory is missing. */
+    @Test
+    void aDanglingDirectoryLinkInsideTheRootIsWrittenThroughAndKept(@TempDir Path root) throws Exception {
+        Path alias = Files.createSymbolicLink(root.resolve("alias"), Path.of("inside"));
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            GoldenStore.assertMatches("alias/nested/x.dot", "new\n",
+                    GoldenOptions.updating(loader, root, written::add), DIFF);
+            GoldenStore.assertMatches("alias/nested/x.dot", "new\n", GoldenOptions.readOnly(loader), DIFF);
+        }
+        assertTrue(Files.isSymbolicLink(alias), "the link must survive the update");
+        assertEquals(Path.of("inside"), Files.readSymbolicLink(alias));
+        assertEquals("new\n", Files.readString(root.resolve("inside/nested/x.dot")));
+        assertEquals(List.of(root.resolve("alias/nested/x.dot")), written);
+    }
+
+    /**
+     * A dangling link is held to the same containment as a link whose file exists: when what it names lies
+     * outside the root, nothing is created there, neither the file nor a directory on the way to it.
+     */
+    @Test
+    void aDanglingSymbolicLinkOutOfTheRootIsRejected(@TempDir Path root, @TempDir Path outside)
+            throws Exception {
+        Path module = Files.createDirectory(root.resolve("module"));
+        Files.createSymbolicLink(module.resolve("x.dot"), outside.resolve("x.dot"));
+        Files.createSymbolicLink(module.resolve("y.dot"), outside.resolve("missing/y.dot"));
+        Files.createSymbolicLink(root.resolve("away"), outside.resolve("missing"));
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            for (String resource : List.of("module/x.dot", "module/y.dot", "away/x.dot", "away/nested/x.dot")) {
+                IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                        () -> GoldenStore.assertMatches(resource, "a\n",
+                                GoldenOptions.updating(loader, root, written::add), DIFF),
+                        resource);
+                assertTrue(error.getMessage().contains("outside the source root"), error.getMessage());
+            }
+        }
+        assertEquals(List.of(), written);
+        try (Stream<Path> entries = Files.list(outside)) {
+            assertEquals(List.of(), entries.toList());
+        }
+    }
+
+    /**
+     * Past a name that does not exist, only plain names can be created: a {@code .} or {@code ..} there names
+     * nothing the file system resolves, and a {@code ..} would carry the write out of the root, creating the
+     * directories it names on the way. The update fails before it creates anything.
+     */
+    @Test
+    void aDanglingLinkThatStepsThroughAMissingDirectoryIsNotWritten(@TempDir Path temp) throws Exception {
+        Path root = Files.createDirectory(temp.resolve("root"));
+        Path outside = Files.createDirectory(temp.resolve("outside"));
+        Path module = Files.createDirectory(root.resolve("module"));
+        Files.createSymbolicLink(module.resolve("x.dot"), Path.of("../missing/../../outside/new/x.dot"));
+        Files.createSymbolicLink(module.resolve("y.dot"), Path.of("../missing/./y.dot"));
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = loader(root)) {
+            for (String resource : List.of("module/x.dot", "module/y.dot")) {
+                IllegalStateException error = assertThrows(IllegalStateException.class,
+                        () -> GoldenStore.assertMatches(resource, "a\n",
+                                GoldenOptions.updating(loader, root, written::add), DIFF),
+                        resource);
+                assertInstanceOf(NoSuchFileException.class, error.getCause(), error.getMessage());
+            }
+        }
+        assertEquals(List.of(), written);
+        try (Stream<Path> entries = Files.list(root)) {
+            assertEquals(List.of(module), entries.toList());
+        }
+        try (Stream<Path> entries = Files.list(outside)) {
+            assertEquals(List.of(), entries.toList());
         }
     }
 

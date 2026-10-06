@@ -15,6 +15,7 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Objects;
@@ -38,9 +39,10 @@ import java.util.function.BiFunction;
  *
  * <p>A golden is read as UTF-8 without a leading byte order mark, which an editor may add and a diff cannot
  * show, and a resource that names a directory is not a golden. In update mode a source that cannot be decoded
- * is simply a different file, so it is replaced instead of reported, and a source that is a symbolic link
- * inside the root is written through: the link stays, the file it names is the one that changes, and the
- * reported path is the one that was named.
+ * is simply a different file, so it is replaced instead of reported. A symbolic link inside the root that leads
+ * inside it, the source itself or a directory above it, is written through even when what it names does not
+ * exist yet, as long as no {@code .} or {@code ..} follows a missing name: the link stays, the file it leads to
+ * is the one written, with any directory missing on the way, and the reported path is the one that was named.
  */
 public final class GoldenStore {
 
@@ -159,9 +161,9 @@ public final class GoldenStore {
         }
         try {
             requireInside(resource, root, target);
-            // A link inside the root is a golden shared under another name: write the file it stands for, so
-            // the link survives, and report the name the test gave.
-            Path destination = Files.isSymbolicLink(target) ? target.toRealPath() : target;
+            // A link inside the root, dangling or not, is a golden shared under another name: write the file it
+            // leads to, so the link survives, and report the name the test gave.
+            Path destination = reach(target);
             if (Files.isRegularFile(destination) && existingMatches(Files.readAllBytes(destination), actual)) {
                 return;
             }
@@ -175,7 +177,8 @@ public final class GoldenStore {
 
     /**
      * Refuses a source root that is not a directory, and a target that leaves the real source root through a
-     * symbolic link, whether the link is the target itself or an existing ancestor of it under the root.
+     * symbolic link, dangling or not, whether the link is the target itself or an existing ancestor of it under
+     * the root.
      */
     private static void requireInside(String resource, Path root, Path target) throws IOException {
         if (!Files.isDirectory(root)) {
@@ -184,11 +187,33 @@ public final class GoldenStore {
         Path real = root.toRealPath();
         for (Path existing = target; existing != null && existing.startsWith(root);
                 existing = existing.getParent()) {
-            if (Files.exists(existing, LinkOption.NOFOLLOW_LINKS)
-                    && !existing.toRealPath().startsWith(real)) {
+            if (Files.exists(existing, LinkOption.NOFOLLOW_LINKS) && !reach(existing).startsWith(real)) {
                 throw new IllegalArgumentException("the resource <" + resource + "> resolves through <" + existing
                         + "> outside the source root <" + real + ">");
             }
+        }
+    }
+
+    /**
+     * Where a write of {@code path} lands: its real path when it has one, otherwise the real path of the part
+     * that exists, reached through every symbolic link on the way, dangling ones included, followed by the
+     * names still missing, which the write creates. The file system resolves no {@code .} or {@code ..} under
+     * a missing name, so such a path fails as missing: a {@code ..} kept there would let the write leave the
+     * root unseen by the containment check.
+     */
+    private static Path reach(Path path) throws IOException {
+        try {
+            return path.toRealPath();
+        } catch (NoSuchFileException missing) {
+            Path parent = path.getParent();
+            String name = String.valueOf(path.getFileName());
+            if (parent == null || ".".equals(name) || "..".equals(name)) {
+                throw missing;
+            }
+            if (Files.isSymbolicLink(path)) {
+                return reach(parent.resolve(Files.readSymbolicLink(path)));
+            }
+            return reach(parent).resolve(path.getFileName());
         }
     }
 

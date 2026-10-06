@@ -10,7 +10,7 @@ import io.github.graphmaquina.test.probe.GuardCall;
 import java.util.function.Function;
 
 /**
- * Single entry point to the typed views: one {@code assertThat} per subject a test holds, each returning
+ * Main entry point to the typed views: one {@code assertThat} per subject a test holds, each returning
  * the same view its own class exposes. The facade asserts nothing and validates nothing of its own, so a
  * null subject reaches the view untouched and fails, inspectably, on the first expectation called on it.
  *
