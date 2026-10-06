@@ -12,8 +12,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     S from();
 
-    /** Where the entity ended up. */
-    S current();
+    /**
+     * The state this call recorded for the entity: {@code to} for Applied, {@code movedTo} for Failed, and
+     * {@code from} for Rejected and Ignored. It is not a read of the entity: an after-commit hook, a watch reaction
+     * or a later call may have moved it since, so read the entity for its live state.
+     */
+    S recordedState();
 
     /**
      * The identifier the caller asked for, or the one the watch selected in a reevaluation; empty only when a
@@ -36,7 +40,7 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         }
 
         @Override
-        public S current() {
+        public S recordedState() {
             return to;
         }
 
@@ -50,7 +54,7 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     record Ignored<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from,
                                                             @NonNull IgnoreReason reason) implements Outcome<E, S, T> {
         @Override
-        public S current() {
+        public S recordedState() {
             return from;
         }
 
@@ -82,7 +86,7 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         }
 
         @Override
-        public S current() {
+        public S recordedState() {
             return from;
         }
 
@@ -113,7 +117,7 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         }
 
         @Override
-        public S current() {
+        public S recordedState() {
             return movedTo;
         }
 

@@ -66,7 +66,7 @@ class TransitionRecorderTest {
     @Test
     void theProjectionReceivesTheKeyOfTheCallbackItIsRecording() {
         TransitionRecorder recorder = TransitionRecorder.projecting(
-                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> key + "=" + outcome.current());
+                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> key + "=" + outcome.recordedState());
         Entity entity = new Entity("e", State.NEW);
         Twin twin = new Twin("t", State.NEW);
         recorder.onOutcome(TestDomain.KEY, applied(entity));
@@ -458,7 +458,7 @@ class TransitionRecorderTest {
     @Test
     void aProjectionSurvivesTheTransitionsThatFollowIt() {
         TransitionRecorder recorder = TransitionRecorder.projecting(
-                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> outcome.current());
+                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> outcome.recordedState());
         Shipment shipment = new Shipment("s1", ShipmentStatus.OPEN);
         Parcel parcel = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
         try (MachineRegistry registry = registry(recorder)) {

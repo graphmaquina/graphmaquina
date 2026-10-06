@@ -42,7 +42,7 @@ class ListenerTest {
     final List<String> seen = new ArrayList<>();
     final TransitionListener listener = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) ->
             seen.add(key.entity().getSimpleName() + ":" + outcome.getClass().getSimpleName() + ":" + outcome.from()
-                    + ">" + outcome.current());
+                    + ">" + outcome.recordedState());
 
     private MachineRegistry registry(TransitionListener listener) {
         return MachineRegistry.builder()

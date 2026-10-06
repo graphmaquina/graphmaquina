@@ -68,7 +68,7 @@ class ValuesTest {
     }
 
     @Test
-    void outcomeCurrentAndRequestFollowTheVariant() {
+    void outcomeRecordedStateAndRequestFollowTheVariant() {
         Outcome<String, DayOfWeek, Month> applied = new Outcome.Applied<>("e", DayOfWeek.MONDAY, Month.JANUARY,
                 DayOfWeek.TUESDAY, List.of(), List.of());
         Outcome<String, DayOfWeek, Month> ignored =
@@ -77,10 +77,10 @@ class ValuesTest {
                 RejectionKind.NO_TRANSITION, Optional.empty());
         Outcome<String, DayOfWeek, Month> failed = new Outcome.Failed<>("e", DayOfWeek.MONDAY, Month.JANUARY,
                 DayOfWeek.TUESDAY, Month.MARCH, DayOfWeek.SUNDAY, "declined", Optional.empty(), List.of(), List.of());
-        assertEquals(DayOfWeek.TUESDAY, applied.current());
-        assertEquals(DayOfWeek.MONDAY, ignored.current());
-        assertEquals(DayOfWeek.MONDAY, rejected.current());
-        assertEquals(DayOfWeek.SUNDAY, failed.current());
+        assertEquals(DayOfWeek.TUESDAY, applied.recordedState());
+        assertEquals(DayOfWeek.MONDAY, ignored.recordedState());
+        assertEquals(DayOfWeek.MONDAY, rejected.recordedState());
+        assertEquals(DayOfWeek.SUNDAY, failed.recordedState());
         assertEquals(Optional.of(Month.JANUARY), applied.requestedTransition());
         assertEquals(Optional.empty(), ignored.requestedTransition());
         assertEquals(Optional.of(Month.JANUARY), rejected.requestedTransition());

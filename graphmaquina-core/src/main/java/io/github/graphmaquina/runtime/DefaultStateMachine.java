@@ -230,7 +230,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             listener.get().onOutcome(key(), outcome);
         } catch (Exception e) {
             boolean written = outcome instanceof Outcome.Applied<E, S, T> || outcome instanceof Outcome.Failed<E, S, T>;
-            throw new AfterCommitException(key(), outcome.entity(), outcome.from(), outcome.current(), "listener",
+            throw new AfterCommitException(key(), outcome.entity(), outcome.from(), outcome.recordedState(), "listener",
                     written, e);
         }
         return outcome;

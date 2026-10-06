@@ -38,7 +38,7 @@ public final class CheckedTypes {
 
     /**
      * An outcome carries no key of its own, so the values it names are checked instead: the entity, the origin,
-     * the state it records as current, the destination of an applied or failed outcome, the identifier it was
+     * the state it records, the destination of an applied or failed outcome, the identifier it was
      * asked for, which a rejected outcome reports without ever having run an edge and an ignored one does not
      * report at all, and the recovery identifier of a failed outcome.
      */
@@ -62,11 +62,11 @@ public final class CheckedTypes {
         return typed;
     }
 
-    /** Origin and current state always, plus the destination, which only an applied and a failed outcome report. */
+    /** Origin and recorded state always, plus the destination, which only an applied and a failed outcome report. */
     private static List<Enum<?>> statesOf(Outcome<?, ?, ?> outcome) {
         List<Enum<?>> states = new ArrayList<>();
         states.add(outcome.from());
-        states.add(outcome.current());
+        states.add(outcome.recordedState());
         switch (outcome) {
             case Outcome.Applied<?, ?, ?> applied -> states.add(applied.to());
             case Outcome.Failed<?, ?, ?> failed -> states.add(failed.to());

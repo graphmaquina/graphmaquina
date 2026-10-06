@@ -10,7 +10,7 @@ import java.util.function.Function;
  * Expectations every {@link Outcome} variant shares, returning the concrete view so that a chain keeps
  * the narrowed type. Three readings of a transition are kept apart on purpose:
  * {@link #requestedTransition(Enum)} is the identifier that was asked for, {@link #hasRecordedState(Enum)}
- * is the state the outcome itself records as current, and {@link #hasEntityState(Function, Enum)} reads
+ * is the state the outcome itself records, and {@link #hasEntityState(Function, Enum)} reads
  * the live entity at the moment the expectation runs. They diverge whenever something moves the entity
  * away from the state the outcome records, such as an after-commit hook opening its own transition.
  *
@@ -65,13 +65,13 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
     }
 
     /**
-     * The state the outcome itself records as current: the destination for an applied one, the state the
+     * The state the outcome itself records: the destination for an applied one, the state the
      * failure route landed on for a failed one, and the origin for a rejected or ignored one.
      */
     public SELF hasRecordedState(S expected) {
         Objects.requireNonNull(expected, "expected");
         Outcome<E, S, T> outcome = Checks.subject(context, "recorded state", expected, actual);
-        Checks.equal(context, "recorded state", expected, outcome.current());
+        Checks.equal(context, "recorded state", expected, outcome.recordedState());
         return self();
     }
 

@@ -59,7 +59,7 @@ class GraphOnlyRuntimeTest {
             Ticket ticket = new Ticket(1, OPEN);
             Outcome<Ticket,State,Id> result = registry.of(KEY).execute(ticket, AUTO_APPROVE);
             assertInstanceOf(Outcome.Rejected.class, result);
-            assertEquals(OPEN, result.current());
+            assertEquals(OPEN, result.recordedState());
             assertTrue(ticket.calls.isEmpty());
         }
     }
@@ -175,7 +175,7 @@ class GraphOnlyRuntimeTest {
             Outcome.Ignored<Ticket,State,Id> ignored = (Outcome.Ignored<Ticket,State,Id>) result;
             assertEquals(IgnoreReason.NO_WATCH, ignored.reason());
             assertEquals(Optional.empty(), ignored.requestedTransition());
-            assertEquals(OPEN, ignored.current());
+            assertEquals(OPEN, ignored.recordedState());
         }
     }
 

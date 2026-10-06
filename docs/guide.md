@@ -948,7 +948,7 @@ observable result.
 | Situation | What the engine does | Outcome |
 | --- | --- | --- |
 | No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION` |
-| An explicit self-loop `A --T--> A` is requested | The edge runs like any other: guards, action, commit, hook. | `Applied`, with `current() == A` |
+| An explicit self-loop `A --T--> A` is requested | The edge runs like any other: guards, action, commit, hook. | `Applied`, with `recordedState() == A` |
 | `reevaluate(entity)` finds no watch, or no rule that holds | Nothing runs. | `Ignored`, with `IgnoreReason.NO_WATCH` or `NO_RULE_MATCHED` |
 
 A self-loop is an ordinary edge that ends where it started. It needs `allowsCycle` on that state, it may be
@@ -1304,7 +1304,7 @@ The full action implementation is in
 | `Failed` | Yes, the handled failure route committed | `transition`, requested `to`, `failureTransition`, `movedTo`, `reason`, optional `cause`, `records`, `reactions` |
 | `Ignored` | No | `from` and an `IgnoreReason`; reevaluation only, and no requested identifier |
 
-Every outcome has `entity()`, `from()`, `current()` and `requestedTransition()`. `current()` is `to` for
+Every outcome has `entity()`, `from()`, `recordedState()` and `requestedTransition()`. `recordedState()` is `to` for
 `Applied`, `movedTo` for `Failed` and `from` for the other two. `requestedTransition()` is empty only for
 `Ignored`, which selected no edge at all. Outcomes describe that call's result; later watch reactions or
 subsequent operations can move an entity again. Read the entity when you need its live state.
@@ -1321,7 +1321,7 @@ static String describe(Outcome<Ticket, TicketState, TicketTransition> outcome) {
         case Outcome.Failed<Ticket, TicketState, TicketTransition> failed ->
                 failed.failureTransition() + " moved to " + failed.movedTo() + ": " + failed.reason();
         case Outcome.Ignored<Ticket, TicketState, TicketTransition> ignored ->
-                "Unchanged at " + ignored.current() + " (" + ignored.reason() + ")";
+                "Unchanged at " + ignored.recordedState() + " (" + ignored.reason() + ")";
     };
 }
 ```
@@ -1607,7 +1607,7 @@ CompletableFuture<Void> observed = pending.thenAccept(outcome -> {
         case Outcome.Rejected<Ticket, TicketState, TicketTransition> rejected ->
                 System.out.println("Not allowed: " + rejected.reason());
         case Outcome.Ignored<Ticket, TicketState, TicketTransition> ignored ->
-                System.out.println("Unchanged: " + ignored.current());
+                System.out.println("Unchanged: " + ignored.recordedState());
     }
 });
 
@@ -1752,7 +1752,7 @@ try (ExecutorService operations = Executors.newVirtualThreadPerTaskExecutor();
              .build()) {
     Outcome<Ticket, TicketState, TicketTransition> submitted = machines.tickets()
             .async(() -> machines.tickets().submit(ticket)).join();
-    System.out.println(submitted.current());
+    System.out.println(submitted.recordedState());
 }
 ```
 
@@ -2104,7 +2104,7 @@ A listener receives each completed outcome, including ignored and rejected opera
 TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
         .listener((key, outcome) -> System.out.println(
                 key.entity().getSimpleName() + ": " + outcome.getClass().getSimpleName()
-                        + " -> " + outcome.current()))
+                        + " -> " + outcome.recordedState()))
         .build();
 ```
 
