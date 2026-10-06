@@ -1,6 +1,8 @@
 package io.github.graphmaquina.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.time.DayOfWeek;
@@ -21,6 +23,9 @@ import org.junit.jupiter.api.Test;
 class OutcomeAccessorsTest {
 
     private static final String ENTITY = "e";
+
+    private static final MachineKey<String, DayOfWeek, Month> KEY =
+            MachineKey.of(String.class, DayOfWeek.class, Month.class);
 
     @Test
     void everyVariantReportsItsCode() {
@@ -122,6 +127,63 @@ class OutcomeAccessorsTest {
                 Optional.of(new IOException("connection refused by 10.0.0.12")), List.of(), List.of());
         assertEquals(Optional.empty(), routed.explanation());
         assertEquals("IOException: connection refused by 10.0.0.12", routed.reason());
+    }
+
+    /** Only a commit carries hops and reactions; the variants that committed nothing answer empty lists. */
+    @Test
+    void recordsAndReactionsComeFromTheCommitOnly() {
+        TransitionRecord<String, DayOfWeek, Month> hop = new TransitionRecord<>(KEY, ENTITY, DayOfWeek.MONDAY,
+                Month.JANUARY, DayOfWeek.TUESDAY, TransitionKind.MOVE, Optional.empty(), 0);
+        Reaction reaction = new Reaction.Aborted(KEY, ENTITY, new IllegalStateException("watch down"));
+        Outcome<String, DayOfWeek, Month> applied = new Outcome.Applied<>(ENTITY, DayOfWeek.MONDAY, Month.JANUARY,
+                DayOfWeek.TUESDAY, List.of(hop), List.of(reaction));
+        Outcome<String, DayOfWeek, Month> failed = new Outcome.Failed<>(ENTITY, DayOfWeek.MONDAY, Month.JANUARY,
+                DayOfWeek.TUESDAY, Month.MARCH, DayOfWeek.SUNDAY, "declined", Optional.empty(), List.of(hop),
+                List.of(reaction));
+        assertEquals(List.of(hop), applied.records());
+        assertEquals(List.of(reaction), applied.reactions());
+        assertEquals(List.of(hop), failed.records());
+        assertEquals(List.of(reaction), failed.reactions());
+        for (Outcome<String, DayOfWeek, Month> nothing : List.of(rejected(RejectionKind.NO_TRANSITION),
+                rejected(RejectionKind.GUARD), ignored(IgnoreReason.NO_WATCH), ignored(IgnoreReason.NO_RULE_MATCHED))) {
+            assertEquals(List.of(), nothing.records());
+            assertEquals(List.of(), nothing.reactions());
+        }
+    }
+
+    /** Each variant narrows to itself, typed like the outcome, and to none of the other three. */
+    @Test
+    void everyVariantNarrowsToItselfAndToNothingElse() {
+        Outcome<String, DayOfWeek, Month> applied = applied();
+        Outcome<String, DayOfWeek, Month> rejected = rejected(RejectionKind.GUARD);
+        Outcome<String, DayOfWeek, Month> failed = failed(Optional.empty());
+        Outcome<String, DayOfWeek, Month> ignored = ignored(IgnoreReason.NO_WATCH);
+        assertSame(applied, applied.asApplied().orElseThrow());
+        assertSame(rejected, rejected.asRejected().orElseThrow());
+        assertSame(failed, failed.asFailed().orElseThrow());
+        assertSame(ignored, ignored.asIgnored().orElseThrow());
+        assertTrue(applied.asRejected().isEmpty());
+        assertTrue(applied.asFailed().isEmpty());
+        assertTrue(applied.asIgnored().isEmpty());
+        assertTrue(rejected.asApplied().isEmpty());
+        assertTrue(rejected.asFailed().isEmpty());
+        assertTrue(rejected.asIgnored().isEmpty());
+        assertTrue(failed.asApplied().isEmpty());
+        assertTrue(failed.asRejected().isEmpty());
+        assertTrue(failed.asIgnored().isEmpty());
+        assertTrue(ignored.asApplied().isEmpty());
+        assertTrue(ignored.asRejected().isEmpty());
+        assertTrue(ignored.asFailed().isEmpty());
+    }
+
+    /** A field only one variant carries reads with its own type, without writing the type arguments. */
+    @Test
+    void aNarrowedVariantReadsItsOwnFieldsTyped() {
+        Month recovery = failed(Optional.empty()).asFailed().map(Outcome.Failed::failureTransition).orElseThrow();
+        assertEquals(Month.MARCH, recovery);
+        DayOfWeek target = failed(Optional.empty()).asFailed().map(Outcome.Failed::to).orElseThrow();
+        assertEquals(DayOfWeek.TUESDAY, target);
+        assertEquals(Optional.of("gate"), rejected(RejectionKind.GUARD).asRejected().flatMap(Outcome.Rejected::guard));
     }
 
     // --- fixtures ----------------------------------------------------------------------------------

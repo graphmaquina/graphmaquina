@@ -4,7 +4,13 @@ import java.util.List;
 import java.util.Optional;
 import lombok.NonNull;
 
-/** Domain-level result of a request. Technical failures are not modeled here: they throw. */
+/**
+ * Domain-level result of a request. Technical failures are not modeled here: they throw. {@link #status()} and
+ * {@link #code()} classify an outcome as a value and {@link #explanation()} carries the text the graph's author
+ * wrote for it, so reading what happened needs no narrowing. {@code asApplied()}, {@code asRejected()},
+ * {@code asFailed()} and {@code asIgnored()} return the outcome as that variant, typed like the outcome, or empty for
+ * the other three; the sealed variants stay available to a switch.
+ */
 public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         permits Outcome.Applied, Outcome.Ignored, Outcome.Rejected, Outcome.Failed {
 
@@ -49,6 +55,38 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     Optional<String> explanation();
 
     /**
+     * The hops this root call committed, in log order, cascaded ones included. Empty for a rejected or ignored
+     * outcome, which committed nothing, and for any outcome a cascade returned, whose hops belong to its root.
+     */
+    default List<TransitionRecord<?, ?, ?>> records() {
+        return List.of();
+    }
+
+    /**
+     * The watch reactions of this root call's commit. Empty for a rejected or ignored outcome and for any outcome a
+     * cascade returned. An applied outcome may still carry an aborted reaction, so inspect them whatever the status.
+     */
+    default List<Reaction> reactions() {
+        return List.of();
+    }
+
+    default Optional<Applied<E, S, T>> asApplied() {
+        return Optional.empty();
+    }
+
+    default Optional<Rejected<E, S, T>> asRejected() {
+        return Optional.empty();
+    }
+
+    default Optional<Failed<E, S, T>> asFailed() {
+        return Optional.empty();
+    }
+
+    default Optional<Ignored<E, S, T>> asIgnored() {
+        return Optional.empty();
+    }
+
+    /**
      * The selected edge ran. Returned by a root call, it committed: {@code records} holds every hop the root
      * committed, cascaded ones included, in log order, and {@code reactions} the watch reactions of that commit.
      * Returned by a cascade, it is written only if its root commits, and both lists are empty.
@@ -81,6 +119,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         public Optional<String> explanation() {
             return Optional.empty();
         }
+
+        @Override
+        public Optional<Applied<E, S, T>> asApplied() {
+            return Optional.of(this);
+        }
     }
 
     /** A reevaluation that selected no edge: no watch on the state, or no rule of its watch held. */
@@ -107,6 +150,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         @Override
         public Optional<String> explanation() {
             return Optional.empty();
+        }
+
+        @Override
+        public Optional<Ignored<E, S, T>> asIgnored() {
+            return Optional.of(this);
         }
     }
 
@@ -153,6 +201,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         public Optional<String> explanation() {
             return Optional.of(reason);
         }
+
+        @Override
+        public Optional<Rejected<E, S, T>> asRejected() {
+            return Optional.of(this);
+        }
     }
 
     /**
@@ -194,6 +247,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         @Override
         public Optional<String> explanation() {
             return cause.isPresent() ? Optional.empty() : Optional.of(reason);
+        }
+
+        @Override
+        public Optional<Failed<E, S, T>> asFailed() {
+            return Optional.of(this);
         }
     }
 }
