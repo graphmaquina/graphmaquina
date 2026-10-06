@@ -40,6 +40,15 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     /**
+     * The text the graph's author wrote for this result: the reason of the state policy or of the guard for a
+     * rejection, and the reason the action returned for a failure. Empty for an applied outcome, for an ignored one,
+     * whose why is its {@link IgnoreReason}, and for a failure that failsOn routed from an exception: that reason is
+     * composed from the exception and may carry internal details, so it stays in the failure's {@code reason} and
+     * {@code cause}.
+     */
+    Optional<String> explanation();
+
+    /**
      * The selected edge ran. Returned by a root call, it committed: {@code records} holds every hop the root
      * committed, cascaded ones included, in log order, and {@code reactions} the watch reactions of that commit.
      * Returned by a cascade, it is written only if its root commits, and both lists are empty.
@@ -67,6 +76,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         public OutcomeCode code() {
             return OutcomeCode.APPLIED;
         }
+
+        @Override
+        public Optional<String> explanation() {
+            return Optional.empty();
+        }
     }
 
     /** A reevaluation that selected no edge: no watch on the state, or no rule of its watch held. */
@@ -88,6 +102,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
                 case NO_WATCH -> OutcomeCode.NO_WATCH;
                 case NO_RULE_MATCHED -> OutcomeCode.NO_RULE_MATCHED;
             };
+        }
+
+        @Override
+        public Optional<String> explanation() {
+            return Optional.empty();
         }
     }
 
@@ -129,6 +148,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
                 case GUARD -> OutcomeCode.GUARD_REJECTED;
             };
         }
+
+        @Override
+        public Optional<String> explanation() {
+            return Optional.of(reason);
+        }
     }
 
     /**
@@ -136,7 +160,8 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * with an exception its edge lists in failsOn, which {@code cause} then holds. The entity moves to
      * {@code movedTo}. Returned by a root call, it committed, with {@code records} and {@code reactions} as in
      * {@link Applied}; returned by a cascade, it is written only if its root commits, and both lists are empty. The
-     * reason is never blank.
+     * reason is never blank. When failsOn routed the failure, the reason is composed from the exception, so
+     * {@link #explanation()} leaves it out.
      */
     record Failed<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from, @NonNull T transition,
                                                            @NonNull S to, @NonNull T failureTransition, @NonNull S movedTo,
@@ -164,6 +189,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         @Override
         public OutcomeCode code() {
             return OutcomeCode.FAILURE_ROUTED;
+        }
+
+        @Override
+        public Optional<String> explanation() {
+            return cause.isPresent() ? Optional.empty() : Optional.of(reason);
         }
     }
 }

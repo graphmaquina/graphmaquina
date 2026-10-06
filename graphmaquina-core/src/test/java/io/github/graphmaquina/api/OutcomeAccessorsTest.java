@@ -94,6 +94,36 @@ class OutcomeAccessorsTest {
         assertEquals(EnumSet.allOf(OutcomeCode.class), produced);
     }
 
+    /** Only author-written text comes out: a policy's or a guard's reason, and the reason an action returned. */
+    @Test
+    void theExplanationIsTheReasonTheAuthorWrote() {
+        assertEquals(Optional.of("not from here"), rejected(RejectionKind.NO_TRANSITION).explanation());
+        assertEquals(Optional.of("gate closed"), rejected(RejectionKind.GUARD).explanation());
+        assertEquals(Optional.of("declined"), failed(Optional.empty()).explanation());
+    }
+
+    /** Nothing is fabricated: an applied or an ignored outcome carries no text of its own. */
+    @Test
+    void appliedAndIgnoredOutcomesExplainNothing() {
+        assertEquals(Optional.empty(), applied().explanation());
+        assertEquals(Optional.empty(), ignored(IgnoreReason.NO_WATCH).explanation());
+        assertEquals(Optional.empty(), ignored(IgnoreReason.NO_RULE_MATCHED).explanation());
+    }
+
+    /**
+     * A reason failsOn composed from an exception may carry internal details, such as an address: it stays on the
+     * variant and never reaches the explanation.
+     */
+    @Test
+    void aFailureRoutedFromAnExceptionKeepsItsReasonOutOfTheExplanation() {
+        Outcome.Failed<String, DayOfWeek, Month> routed = new Outcome.Failed<>(ENTITY, DayOfWeek.MONDAY,
+                Month.JANUARY, DayOfWeek.TUESDAY, Month.MARCH, DayOfWeek.SUNDAY,
+                "IOException: connection refused by 10.0.0.12",
+                Optional.of(new IOException("connection refused by 10.0.0.12")), List.of(), List.of());
+        assertEquals(Optional.empty(), routed.explanation());
+        assertEquals("IOException: connection refused by 10.0.0.12", routed.reason());
+    }
+
     // --- fixtures ----------------------------------------------------------------------------------
 
     private static Outcome<String, DayOfWeek, Month> applied() {
