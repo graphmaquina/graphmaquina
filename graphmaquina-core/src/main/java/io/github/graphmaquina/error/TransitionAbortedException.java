@@ -8,7 +8,7 @@ import java.util.Optional;
 import lombok.Getter;
 
 /**
- * ABORT: nothing moved and the UnitOfWork was discarded.
+ * ABORT: nothing moved; the unit of work, if one was started, was discarded.
  *
  * <p>When a guard or an action failed, the cause is what it threw, checked exceptions included, once unwrapped from
  * CompletionException and ExecutionException; a {@link StateMachineException} found there never becomes a cause,

@@ -41,8 +41,10 @@ import io.github.graphmaquina.fixtures.ItemTransition;
 import io.github.graphmaquina.fixtures.Probe;
 import io.github.graphmaquina.fixtures.Sneaky;
 import java.io.IOException;
+import java.util.AbstractCollection;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,9 +56,30 @@ import org.junit.jupiter.api.Test;
 /**
  * A failure inside a cascade poisons the unit of work, and a poisoned unit of work never commits: not when the
  * parent action catches the failure, not through a failure route, and not when the failure is no engine exception.
- * Refusing a cascade's arguments and reading a peer stage nothing, so neither poisons.
+ * Refusing a cascade's arguments and reading a peer stage nothing, so neither poisons. A change to the collection
+ * cascadeAll was given, made while it runs, cannot leave the root committing part of the batch.
  */
 class PoisonTest {
+
+    /** A collection whose elements cannot be read: copying it throws {@code failure}. */
+    private static final class Unreadable<T> extends AbstractCollection<T> {
+
+        private final Throwable failure;
+
+        Unreadable(Throwable failure) {
+            this.failure = failure;
+        }
+
+        @Override
+        public Iterator<T> iterator() {
+            throw Sneaky.raise(failure);
+        }
+
+        @Override
+        public int size() {
+            return 1;
+        }
+    }
 
     final Probe<Doc, DocStatus, DocTransition> submit = new Probe<>();
     final Probe<Doc, DocStatus, DocTransition> publish = new Probe<>();
@@ -378,6 +401,55 @@ class PoisonTest {
     }
 
     /**
+     * Reading the collection is part of accepting cascadeAll's arguments: a collection that throws, an exception or
+     * an Error, while cascadeAll copies it stops the call before the machine is resolved, by key or by facade type,
+     * under either policy, whether it names a known machine or an unknown one. Nothing is staged, so nothing is
+     * poisoned: no element runs, and an action that swallows what was thrown lets its root commit.
+     */
+    @Test
+    void aCollectionThatCannotBeCopiedPoisonsNothingEvenWithAnUnknownMachine() {
+        List<String> ends = new ArrayList<>();
+        List<String> expected = new ArrayList<>();
+        for (Throwable failure : List.<Throwable>of(new IllegalStateException("the collection cannot be read"),
+                new AssertionError("the collection cannot be read"))) {
+            Map<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades = new LinkedHashMap<>();
+            for (CascadePolicy policy : CascadePolicy.values()) {
+                cascades.put("by key, known machine, " + policy, (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                        ctx.cascadeAll(DOCS, new Unreadable<Doc>(failure), PUBLISH, policy));
+                cascades.put("by key, unknown machine, " + policy,
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                ctx.cascadeAll(ITEMS, new Unreadable<Item>(failure), ItemTransition.PACK, policy));
+                cascades.put("by facade, known machine, " + policy,
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                ctx.cascadeAll(Facades.Docs.class, new Unreadable<Doc>(failure), PUBLISH, policy));
+                cascades.put("by facade, unknown machine, " + policy,
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ctx.cascadeAll(Facades.Items.class,
+                                new Unreadable<Item>(failure), ItemTransition.PACK, policy));
+            }
+            for (Map.Entry<String, Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascade
+                    : cascades.entrySet()) {
+                StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(machine(false).definition())
+                        .state(Doc::status, Doc::setStatus).as(Facades.Docs.class).build();
+                AtomicReference<Throwable> caught = new AtomicReference<>();
+                swallowing(caught, cascade.getValue());
+                publish.calls.clear();
+                Doc doc = new Doc("1", DRAFT);
+                String end;
+                try {
+                    end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                } catch (StateMachineException error) {
+                    end = error.getClass().getSimpleName();
+                }
+                String label = failure.getClass().getSimpleName() + ", " + cascade.getKey();
+                ends.add(label + ": " + end + ", caught " + caught.get() + ", publish ran " + publish.calls.size()
+                        + ", " + doc.status());
+                expected.add(label + ": Applied, caught " + failure + ", publish ran 0, REVIEW");
+            }
+        }
+        assertEquals(expected, ends);
+    }
+
+    /**
      * A null element is an argument refusal, so cascadeAll refuses it before it resolves the machine and poisons
      * nothing, whether it names an unknown machine by key or by facade type: an action that swallows the refusal lets
      * its root commit.
@@ -493,6 +565,62 @@ class PoisonTest {
                     + publish.calls.size() + ", " + doc.status() + ", " + peer.status());
             expected.add(cascade.getKey() + ": Applied, caught java.lang.IllegalArgumentException: transition must"
                     + " belong to io.github.graphmaquina.fixtures.DocTransition: PACK, publish ran 0, REVIEW, REVIEW");
+        }
+        assertEquals(expected, ends);
+    }
+
+    /**
+     * cascadeAll runs by key and by facade type, under either policy, and the first element's action changes the
+     * collection it was given: it adds an element, or it removes itself. cascadeAll runs the elements the collection
+     * held when it was called, all of them and nothing added since, and returns their outcomes, so the root commits
+     * the whole batch. Iterating the live collection instead ends the batch early on a removal, and throws
+     * ConcurrentModificationException between two elements on an addition, where nothing poisons: either way the
+     * root, whose action catches whatever cascadeAll throws, commits the first element alone.
+     */
+    @Test
+    void aCollectionChangedDuringCascadeAllRunsTheElementsItHeldWhenCalled() {
+        List<String> ends = new ArrayList<>();
+        List<String> expected = new ArrayList<>();
+        for (boolean byFacade : List.of(false, true)) {
+            for (CascadePolicy policy : CascadePolicy.values()) {
+                for (boolean grows : List.of(true, false)) {
+                    StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(machine(false).definition())
+                            .state(Doc::status, Doc::setStatus).as(Facades.Docs.class).build();
+                    Doc doc = new Doc("1", DRAFT);
+                    Doc first = new Doc("p1", REVIEW);
+                    Doc second = new Doc("p2", REVIEW);
+                    Doc late = new Doc("late", REVIEW);
+                    List<Doc> peers = new ArrayList<>(List.of(first, second));
+                    publish.behaviour = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        if (ctx.entity() == first) {
+                            if (grows) {
+                                peers.add(late);
+                            } else {
+                                peers.remove(first);
+                            }
+                        }
+                        return ActionOutcome.ok();
+                    };
+                    AtomicReference<Throwable> caught = new AtomicReference<>();
+                    AtomicReference<Integer> outcomes = new AtomicReference<>();
+                    swallowing(caught, (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> outcomes.set(byFacade
+                            ? ctx.cascadeAll(Facades.Docs.class, peers, PUBLISH, policy).size()
+                            : ctx.cascadeAll(DOCS, peers, PUBLISH, policy).size()));
+                    String end;
+                    try {
+                        end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                    } catch (StateMachineException error) {
+                        end = error.getClass().getSimpleName();
+                    }
+                    String label = (byFacade ? "by facade, " : "by key, ") + policy + (grows ? ", grows" : ", shrinks");
+                    ends.add(label + ": root " + end + ", caught "
+                            + (caught.get() == null ? "nothing" : caught.get().getClass().getSimpleName())
+                            + ", outcomes " + outcomes.get() + ", " + doc.status() + ", " + first.status() + ", "
+                            + second.status() + ", late " + late.status());
+                    expected.add(label + ": root Applied, caught nothing, outcomes 2, REVIEW, PUBLISHED, PUBLISHED,"
+                            + " late REVIEW");
+                }
+            }
         }
         assertEquals(expected, ends);
     }

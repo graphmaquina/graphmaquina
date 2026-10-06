@@ -241,7 +241,10 @@ final class Transaction {
         return verdict;
     }
 
-    /** Waits under the deadline. Timeout and interruption are aborts; the user's stage is left running. */
+    /**
+     * Waits under the deadline. Timeout, interruption and the refusal of the thread's ForkJoinPool to let it block
+     * are aborts, each caused by what ended the wait; the user's stage is left running.
+     */
     private <R> R await(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Optional<Enum<?>> id,
                         Optional<Enum<?>> to, Optional<String> action, int depth, String what, CompletionStage<R> stage,
                         long deadlineNanos) {
@@ -253,6 +256,9 @@ final class Transaction {
         } catch (Await.Interrupted interrupted) {
             throw abort(machine, ref, from, id, to, action, depth, "interrupted while waiting for " + what,
                     Optional.of(interrupted.getCause()));
+        } catch (Await.Rejected rejected) {
+            throw abort(machine, ref, from, id, to, action, depth,
+                    "waiting for " + what + " was refused by the thread's ForkJoinPool", Optional.of(rejected.getCause()));
         }
     }
 
@@ -535,19 +541,23 @@ final class Transaction {
     /**
      * FAIL_FAST aborts at the first failure. COLLECT tries every element under its own savepoint, rolls back
      * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
-     * COLLECT gathers transition aborts only: any other failure poisons and propagates at once. The arguments are
-     * refused before any element runs, as cascade refuses its own, and the refusal stages nothing and poisons
-     * nothing: a null element first, then an identifier from another catalogue, which the key carries. The machine
-     * is looked up next, before any element runs, so an unknown key poisons whatever valid elements the collection
-     * holds, and an empty collection too, as it does in cascade.
+     * COLLECT gathers transition aborts only: any other failure poisons and propagates at once. Once the poison is
+     * checked, the collection is copied, and every later step reads the copy alone: the elements checked are the
+     * elements run, and a change to the collection while the cascade runs, by an element's action for instance,
+     * changes neither which elements run nor their order. Copying is part of accepting the arguments: an exception or
+     * an Error the collection throws while it is copied propagates as it is, and stages and poisons nothing. The
+     * arguments are refused before any element runs, as cascade refuses its own, and the refusal stages nothing and
+     * poisons nothing: a null element first, then an identifier from another catalogue, which the key carries. The
+     * machine is looked up next, before any element runs, so an unknown key poisons whatever valid elements the
+     * collection holds, and an empty collection too, as it does in cascade.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(ContextHandle caller,
                                                                                 MachineKey<P, Q, U> key,
                                                                                 Collection<? extends P> peers, U id,
                                                                                 CascadePolicy policy) {
         checkPoison(caller);
-        requireElements(peers);
-        return cascadeEach(caller, key, peers, id, policy);
+        List<P> elements = elementsOf(peers);
+        return cascadeEach(caller, key, elements, id, policy);
     }
 
     /**
@@ -559,24 +569,27 @@ final class Transaction {
             ContextHandle caller, Class<? extends Machine<P, Q, U>> facade, Collection<? extends P> peers, U id,
             CascadePolicy policy) {
         checkPoison(caller);
-        requireElements(peers);
-        return cascadeEach(caller, cascadeKeyFor(caller, facade), peers, id, policy);
+        List<P> elements = elementsOf(peers);
+        return cascadeEach(caller, cascadeKeyFor(caller, facade), elements, id, policy);
     }
 
-    private static void requireElements(Collection<?> peers) {
-        for (Object peer : peers) {
+    /** A copy of {@code peers}, read once, with a null element refused. */
+    private static <P> List<P> elementsOf(Collection<? extends P> peers) {
+        List<P> elements = new ArrayList<>(peers);
+        for (P peer : elements) {
             Objects.requireNonNull(peer, "peers contains a null element");
         }
+        return elements;
     }
 
     /** The rest of cascadeAll once its elements are accepted: the identifier, the machine, then every element. */
     private <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeEach(
-            ContextHandle caller, MachineKey<P, Q, U> key, Collection<? extends P> peers, U id, CascadePolicy policy) {
+            ContextHandle caller, MachineKey<P, Q, U> key, List<P> elements, U id, CascadePolicy policy) {
         requireTransition(key, id);
         requireMachine(key);
         List<Outcome<P, Q, U>> outcomes = new ArrayList<>();
         List<TransitionAbortedException> errors = new ArrayList<>();
-        for (P peer : peers) {
+        for (P peer : elements) {
             if (policy == CascadePolicy.FAIL_FAST) {
                 outcomes.add(cascade(caller, key, peer, id));
                 continue;

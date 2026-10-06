@@ -28,6 +28,7 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
+import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.StaleContextException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Doc;
@@ -44,6 +45,8 @@ import io.github.graphmaquina.fixtures.OrderTransition;
 import io.github.graphmaquina.fixtures.Probe;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
@@ -53,6 +56,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -60,9 +64,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Asynchronous guards and actions on the order and doc fixtures, and the async facade: how a stage is awaited under
- * the asyncTimeout and under an edge timeout, how a failed, cancelled or never-completing stage ends, what a context
- * does once its stage runs on another thread or the call is over, and what the facade does once the registry is
- * closed.
+ * the asyncTimeout and under an edge timeout, how a failed, cancelled or never-completing stage ends, what an
+ * interrupt of the waiting thread does, what a context does once its stage runs on another thread or the call is
+ * over, and what the facade does once the registry is closed.
  */
 class AsyncTest {
 
@@ -294,6 +298,56 @@ class AsyncTest {
         long elapsedMillis = (System.nanoTime() - start) / 1_000_000L;
         assertTrue(elapsedMillis < 5_000, "took " + elapsedMillis + " ms");
         assertInstanceOf(TimeoutException.class, error.getCause());
+    }
+
+    /**
+     * An interrupt of the waiting thread ends the wait. An action that interrupts its own thread and returns a stage
+     * that is not complete aborts the call as interrupted while waiting, even when its edge's budget is already
+     * spent, and the thread is still interrupted afterwards. A stage that is already complete is taken as it is, and
+     * the thread stays interrupted.
+     */
+    @Test
+    void anInterruptedWaitAbortsUnlessTheStageIsAlreadyComplete() throws Exception {
+        List<String> ends = new ArrayList<>();
+        for (String stage : List.of("pending", "pending with a spent budget", "complete")) {
+            TransitionBuilder<Doc, DocStatus, DocTransition> submitting = StateGraph.define(DOCS)
+                    .initial(DRAFT).terminal(ARCHIVED)
+                    .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                    .transition(SUBMIT, DRAFT, REVIEW).asyncAction("Interrupting",
+                            (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                                Thread.currentThread().interrupt();
+                                return stage.equals("complete") ? CompletableFuture.completedFuture(ActionOutcome.ok())
+                                        : new CompletableFuture<ActionOutcome>();
+                            });
+            if (stage.endsWith("spent budget")) {
+                submitting = submitting.timeout(Duration.ofNanos(1));
+            }
+            GraphDefinition<Doc, DocStatus, DocTransition> graph = submitting.endTransition()
+                    .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                    .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                    .build();
+            StateMachine<Doc, DocStatus, DocTransition> docs = StateMachines.from(graph)
+                    .state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(5)).build();
+            Doc doc = new Doc("1", DRAFT);
+            try (ExecutorService thread = Executors.newSingleThreadExecutor()) {
+                String end = thread.submit(() -> {
+                    String how;
+                    try {
+                        how = docs.execute(doc, SUBMIT).getClass().getSimpleName();
+                    } catch (TransitionAbortedException e) {
+                        how = "aborted by " + e.getCause().getClass().getSimpleName()
+                                + (e.getMessage().contains("interrupted while waiting for the action Interrupting")
+                                        ? "" : ": " + e.getMessage());
+                    }
+                    return how + ", interrupted " + Thread.interrupted();
+                }).get(10, TimeUnit.SECONDS);
+                ends.add(stage + ": " + end + ", " + doc.status());
+            }
+        }
+        assertEquals(List.of(
+                "pending: aborted by InterruptedException, interrupted true, DRAFT",
+                "pending with a spent budget: aborted by InterruptedException, interrupted true, DRAFT",
+                "complete: Applied, interrupted true, REVIEW"), ends);
     }
 
     @Test

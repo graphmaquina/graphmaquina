@@ -33,12 +33,12 @@ import org.junit.jupiter.api.Test;
  * The inputs on which the two implementations are meant to differ are not part of the corpus: sets whose
  * membership disagrees with {@code equals}, and sets that are not one strongly connected component, which the base
  * refuses when its first member reaches no cycle and the production method searches on from the next member
- * ({@code aCycleTheFirstMemberDoesNotReachIsStillWitnessed} in {@link StrongComponentsTest}). Two of the four
- * divergences listed in the {@link StrongComponents#cycleWitness} Javadoc are pinned in {@link StrongComponentsTest}:
- * the rejection of a case-insensitive {@code TreeSet}
+ * ({@code aCycleTheFirstMemberDoesNotReachIsStillWitnessed} in {@link StrongComponentsTest}). Two of the three
+ * behaviours that the {@link StrongComponents#cycleWitness} Javadoc gives for a set whose own {@code contains} is
+ * never consulted are pinned in {@link StrongComponentsTest}: the rejection of a case-insensitive {@code TreeSet}
  * ({@code aComponentWhoseMembershipDisagreesWithEqualsIsRejected}) and the acceptance of an identity-based set with
- * equal but distinct members ({@code anIdentityComponentWithEqualButDistinctMembersIsAccepted}). The other two, a
- * {@code contains} that would throw and a different exception message, are only documented there.
+ * equal but distinct members ({@code anIdentityComponentWithEqualButDistinctMembersIsAccepted}). The third, a
+ * {@code contains} that would throw and is never reached, is only documented there.
  *
  * <p>The corpora are those of {@link CycleEnumerationDifferentialTest}: every one of the 512 directed graphs over
  * three nodes under each of the six declaration orders, and a pseudorandom corpus of four- and six-node graphs
