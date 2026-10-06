@@ -15,7 +15,7 @@ import java.util.Set;
 
 /**
  * Chainable assertion over the watch reactions a committed outcome carries, obtained from
- * {@link AppliedOutcomeAssert#reactions()} or {@link FailedOutcomeAssert#reactions()}. A reaction belongs to
+ * {@link BaseOutcomeAssert#reactions()} on any outcome view. A reaction belongs to
  * the machine that re-evaluated or, when the owner to re-evaluate could not be looked up, to the machine of
  * the peer that moved, so the list is untyped as a whole and {@link #forEntity(MachineKey, Object)} is what
  * narrows it: it selects by machine key and by entity IDENTITY, never by entity equality. An exception
@@ -119,12 +119,7 @@ public final class ReactionsAssert {
 
     /** Only a committed outcome carries reactions of its own; an ignored or rejected one has none. */
     private static List<Reaction> nested(Reaction.Done done) {
-        return switch (done.outcome()) {
-            case Outcome.Applied<?, ?, ?> applied -> applied.reactions();
-            case Outcome.Failed<?, ?, ?> failed -> failed.reactions();
-            case Outcome.Ignored<?, ?, ?> ignored -> List.of();
-            case Outcome.Rejected<?, ?, ?> rejected -> List.of();
-        };
+        return done.outcome().reactions();
     }
 
     /** One level of the breadth-first walk of {@link #hasNoAbortedRecursively()}: a list and the path naming it. */

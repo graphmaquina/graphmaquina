@@ -12,6 +12,7 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionListener;
@@ -295,7 +296,7 @@ class TransitionRecorderTest {
                 recorder.assertRecorded().forEntity(TestDomain.KEY, entity);
         String context = "recorded transitions for " + TestDomain.KEY;
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.atIndex(1).isApplied()),
-                context + "[1]", "kind", "Applied", "Ignored");
+                context + "[1]", "status", OutcomeStatus.APPLIED, OutcomeStatus.IGNORED);
         assertFailure(
                 assertThrows(GraphAssertionError.class,
                         () -> view.atIndex(0).hasRecordedState(State.NEW)),

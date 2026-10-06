@@ -11,7 +11,7 @@ import java.util.Objects;
 
 /**
  * Chainable assertion over the transition records a committed outcome carries, obtained from
- * {@link AppliedOutcomeAssert#records()} or {@link FailedOutcomeAssert#records()}. One transaction may touch
+ * {@link BaseOutcomeAssert#records()} on any outcome view. One transaction may touch
  * several machines, so the list is untyped as a whole and {@link #forEntity(MachineKey, Object)} is what
  * narrows it: it selects by machine key and by entity IDENTITY, never by entity equality, so two entities
  * that carry the same business id stay distinct subjects. Order and multiplicity are part of the contract,

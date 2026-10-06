@@ -1,6 +1,8 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeCode;
+import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Objects;
 import java.util.Optional;
@@ -94,5 +96,55 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
         Outcome<E, S, T> outcome = Checks.subject(context, "entity", expected, actual);
         Checks.same(context, "entity", expected, outcome.entity());
         return self();
+    }
+
+    /** The status this outcome reports, which every variant carries. */
+    public SELF hasStatus(OutcomeStatus expected) {
+        Objects.requireNonNull(expected, "expected");
+        Outcome<E, S, T> outcome = Checks.subject(context, "status", expected, actual);
+        Checks.equal(context, "status", expected, outcome.status());
+        return self();
+    }
+
+    /** The code this outcome reports: its status refined by the kind of rejection or why nothing was selected. */
+    public SELF hasCode(OutcomeCode expected) {
+        Objects.requireNonNull(expected, "expected");
+        Outcome<E, S, T> outcome = Checks.subject(context, "code", expected, actual);
+        Checks.equal(context, "code", expected, outcome.code());
+        return self();
+    }
+
+    /** The text the graph's author wrote for this outcome, compared by value. */
+    public SELF hasExplanation(String expected) {
+        Objects.requireNonNull(expected, "expected");
+        Optional<String> wanted = Optional.of(expected);
+        Outcome<E, S, T> outcome = Checks.subject(context, "explanation", wanted, actual);
+        Checks.equal(context, "explanation", wanted, outcome.explanation());
+        return self();
+    }
+
+    /** No text of the author's: an applied or ignored outcome, or a failure routed from an exception. */
+    public SELF hasNoExplanation() {
+        Optional<String> wanted = Optional.empty();
+        Outcome<E, S, T> outcome = Checks.subject(context, "explanation", wanted, actual);
+        Checks.equal(context, "explanation", wanted, outcome.explanation());
+        return self();
+    }
+
+    /**
+     * The hops the outcome's root call committed, which may belong to several machines when it cascaded; empty for
+     * an outcome that committed nothing and for one a cascade returned.
+     */
+    public TransitionRecordsAssert records() {
+        return new TransitionRecordsAssert(context + ".records", actual == null ? null : actual.records());
+    }
+
+    /**
+     * The watch re-evaluations the outcome's commit triggered; one that threw an exception is reported here as an
+     * aborted reaction instead of propagating, while an {@link Error} is not caught. Empty for an outcome that
+     * committed nothing.
+     */
+    public ReactionsAssert reactions() {
+        return new ReactionsAssert(context + ".reactions", actual == null ? null : actual.reactions());
     }
 }
