@@ -579,15 +579,19 @@ The adapter validates the effective Java release, processor path, manifest paths
 argument, `failOnError=false`, `useIncrementalCompilation=false`, missing processor configuration, a
 `-processor` list or `<annotationProcessors>` that leaves out
 `io.github.graphmaquina.processor.StateGraphProcessor` or holds a name that is not a valid qualified class name,
-divergent main/test manifests, compiler includes or excludes that leave out the compilation carrier the
-generator emits, and includes that hold only empty values. A compilation the build switches off is skipped
-instead: `maven.main.skip` or `<skipMain>` makes the three main goals log that and do nothing,
-`maven.test.skip` or `<skip>` the three test goals, and a project packaged as `pom` skips all six. Run the
-normal lifecycle when generating graphs.
+a processor path compiler argument that does not reach the processor, a `--processor-module-path`, a processor
+that is only a dependency when javac 23 or later is not asked to process, debug settings that leave out the
+`SourceFile` attribute, classes or processor sources sent elsewhere than the project keeps them, as
+`<outputDirectory>`, `<multiReleaseOutput>`, `-d` or `-s` can, `<compileSourceRoots>` without the generated
+directory, divergent main/test manifests, compiler includes or excludes, incremental excludes included, that
+leave out the compilation carrier the generator emits, and includes that hold only empty values. A compilation
+the build switches off is skipped instead: `maven.main.skip` or `<skipMain>` makes the three main goals log that
+and do nothing, `maven.test.skip` or `<skip>` the three test goals, and a project packaged as `pom` skips all
+six. Run the normal lifecycle when generating graphs.
 
 | Optional property | Meaning |
 | --- | --- |
-| `graphmaquina.javaExecutable` | Explicit `java` executable for generation. It must belong to a JDK 21 or later, the one javac compiles with: the two are compared by JDK home after symbolic links are followed, so a wrapper launcher outside that JDK's `bin` directory is refused |
+| `graphmaquina.javaExecutable` | Explicit `java` executable for generation. It must belong to a JDK 21 or later, the one javac compiles with: the two are compared by JDK home after symbolic links are followed, so a wrapper launcher outside that JDK's `bin` directory is refused. On Windows, a name without an extension that names no file stands for the `.exe` beside it |
 | `graphmaquina.compilationId` | Override compilation identity; defaults distinguish artifact and main/test scope |
 
 See the [Maven adapter reference](typed-annotations-build.md#maven) for toolchains and custom compiler paths.
@@ -1768,8 +1772,10 @@ runs inline and removes the offloading behavior shown for the default executor.
 A root that runs on a `ForkJoinPool` worker, such as one submitted through
 `asyncExecutor(ForkJoinPool.commonPool())`, waits for its stage without running other tasks on its thread. If
 the stage's own work is a task queued on that pool, another worker has to take it: an idle one, a spare the pool
-starts, or one that frees up. While every other worker is busy or blocked, the wait goes on, up to its timeout.
-Start roots off `ForkJoinPool` workers, or give asynchronous work its own executor.
+starts, or one that frees up. While every other worker is busy, or blocked where the pool cannot see it, as on a
+lock or a plain latch, the wait goes on, up to its timeout. When every other worker is blocked where the pool
+sees it, as in `CompletableFuture`'s `get` or `join` or in another GraphMaquina wait, the pool starts a spare, if
+its size allows. Start roots off `ForkJoinPool` workers, or give asynchronous work its own executor.
 
 Multiple virtual threads do not serialize access to a shared entity. Two concurrent operations on the same
 ticket need an application-level concurrency policy. The commit precheck detects some state conflicts; it
@@ -2105,7 +2111,8 @@ TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
 Close `machines` through the application's lifecycle. A listener sees watch-reaction outcomes through their
 own calls; do not recursively emit them again from the parent's `reactions()` list. Reaction outcomes can
 arrive before the triggering root's notification. A call that throws before it returns an outcome notifies
-nothing: a technical abort, a commit failure, a failing hook or an `Error` from a reaction.
+nothing, such as one that ends in a technical abort, a commit failure, a failing hook or an `Error` from a
+reaction.
 
 Any exception a listener throws, checked ones included, also surfaces as `AfterCommitException`, and its
 message says whether the call wrote state. For an ignored or rejected outcome, no state change occurred, and the
@@ -2609,12 +2616,12 @@ code runs.
 | `SG404` | A watch has no rules. In the DSL, also a `when(...)` that no `execute(...)` follows, and an `execute(...)` with no pending `when(...)`. |
 | `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
 | `SG503` | Missing or incompatible public property accessor. |
-| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes one parameter per class with instance members the machine binds, or none. |
+| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes one parameter per class with instance members the machine binds, or none. That last refusal is reported only once the machine has no other error, its vocabulary included. |
 | `SG505` | Exported method does not uniquely fit the action, guard, hook or condition role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
 | `SG507` | Invalid transition elements: empty `from`, `onFailure` or `failsOn` without an action, or a timeout without an asynchronous action. In the DSL, also an edge never closed with `endTransition()`, and an edge that declares more than one action, `onFailure` or `timeout`. |
 | `SG508` | Watch rule must choose exactly one supported predicate alternative. |
 | `SG509` | Invalid peer-machine type, a peer whose entity is a parameterized type, or a watched peer whose types the watcher's package cannot access. |
-| `SG510` | Invalid set accessor, duplicate/missing machine or missing watched peer in the set. Also an accessor the set inherits from another interface, two machines that write the same entity and state enum, a machine whose types the set's package cannot access, and an instance method of the set, declared or inherited, abstract or default, with the signature of the companion's static `builder(...)`, which takes the timeout shared by the set's asynchronous machines, when it has any, then every class with instance members its machines use. That last refusal is reported only once the set has no other error, since fixing one can change what `builder(...)` takes. |
+| `SG510` | Invalid set accessor, duplicate/missing machine or missing watched peer in the set. Also an accessor the set inherits from another interface, two machines that write the same entity and state enum, a machine whose types the set's package cannot access, and an instance method of the set, declared or inherited, abstract or default, with the signature of the companion's static `builder(...)`, which takes the timeout shared by the set's asynchronous machines, when it has any, then every class with instance members its machines use. That last refusal is reported only once the set's accessors and machines have no other error, since fixing one can change what `builder(...)` takes. |
 | `SG511` | Invalid timeout duration: it must be positive. |
 | `SG701` | A state declares no rejection policy. |
 | `SG702` | One `(from, transition)` key both declares an edge and rejects the identifier. |

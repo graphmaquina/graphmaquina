@@ -496,8 +496,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   tasks on its thread, as `CompletableFuture`'s own wait could, on a common-pool worker for instance, where such a
   task could fail with `ReentrantTransitionException`, keep the wait past its timeout, or cascade through the
   root's context. A task the stage needs must now run on another worker, so on a pool whose other workers are all
-  busy or blocked the wait can run to its timeout. A pool that refuses to let its worker block now aborts the
-  transition, with its `RejectedExecutionException` as the cause; that exception used to escape the call.
+  busy, or blocked where the pool cannot see it, the wait can run to its timeout. A pool that refuses to let its
+  worker block now aborts the transition, with its `RejectedExecutionException` as the cause; that exception used
+  to escape the call.
 - **Standalone machines.** `StateMachines.Builder.build()` registers the `as(...)` facade and dispatches the
   machine's own watches; a watch on another machine is refused at `build()`.
 - **Blank reasons are refused.** `StatePolicy` refuses a blank reason for an identifier, as it refused a blank
@@ -535,10 +536,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
   the companion's package cannot access (`SG505`, `SG509`, `SG510`); two machines of one set that write the
   same entity and state enum (`SG510`); an instance method, declared or inherited, abstract or default, with the
   signature of the companion's static `graph(...)` on a facade (`SG504`) or `builder(...)` on a set (`SG510`),
-  the latter reported once the set has no other error; a name the companion writes whose first segment a type,
-  member type or constant of its scope takes, so that no spelling reaches it (`SG603`); and a machine javac
-  compiled implicitly, from the source path, that the export index or a set names (`SG602`). The index case used
-  to publish nothing and report nothing.
+  each reported only once the machine, or the set's accessors and machines, have no other error; a name the
+  companion writes whose first segment a type, member type or constant of its scope takes, so that no spelling
+  reaches it (`SG603`); and a machine javac compiled implicitly, from the source path, that the export index or a
+  set names (`SG602`). The index case used to publish nothing and report nothing.
 - **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a
   member type of the facade named like a type they write, with parameter names that would have been keywords,
   with deprecated bound members under `-Werror`, with a cast whose type annotations name enum constants, beside
@@ -584,11 +585,15 @@ observe. Most items refuse up front what used to fail later, in generated code o
   not an exact integer, which used to be truncated. So is an owned source of a manifest that no path can spell,
   such as one holding a NUL character, that has a root, as `\x` and `C:x` have on Windows, or that names the
   directory itself, such as `.`. A number whose exponent is out of range, such as `1e99999999999`, in the request,
-  a manifest, an inventory or an index is `SG602` too, where an unchecked `NumberFormatException` used to escape.
-- **A failed pending-manifest write keeps the manifest.** A `generate` that cannot write its pending manifest,
-  on a full disk for instance, leaves `annotation-manifest.json` in place, so once the cause is gone the next run
-  retires and replaces its files. It used to delete that manifest, and every later run then refused its own
-  previous sources with `SG603` ("would overwrite the unowned file") until `clean`.
+  a manifest, an index or an inventory a step needs is `SG602` too, where an unchecked `NumberFormatException`
+  used to escape; a processor inventory read only to clean up after an earlier run is then read as listing
+  nothing, as one that cannot be read is.
+- **A failed pending-manifest write keeps the record.** A `generate` that fails while it first writes its pending
+  manifest, on a full disk for instance, leaves `annotation-manifest.json` in place; a later failure deletes it
+  but leaves the pending manifest, which still records the previous sources, so either way the next run retires
+  and replaces its files once the cause is gone. A failed first write used to delete the manifest, and every
+  later run then refused its own previous sources with `SG603` ("would overwrite the unowned file") until
+  `clean`.
 - **Maven.** `maven.main.skip`, `<skipMain>`, `maven.test.skip` and `<skip>` skip the goals of that compilation
   with an info line instead of failing, and a project packaged as `pom` skips all six. Refused before anything is
   retired: `proc=only`, `-proc:only`, `failOnError=false`, `useIncrementalCompilation=false`, a `-processor`
@@ -609,18 +614,42 @@ observe. Most items refuse up front what used to fail later, in generated code o
   the compiler does, properties given on the command line or to the JVM win over those of the project, and an
   execution's `<compilerArgs>` replace the plugin-level ones, as Maven merges them, where both used to be read.
   The plugin's descriptor declares Java 21 as the Java version it requires.
+- **Maven: more refusals.** Also refused before anything is retired: a `-processorpath` or `--processor-path`
+  compiler argument, the last one given, that does not reach the processor through its entries, a jar's manifest
+  `Class-Path`, as a pathing jar's, or a multi-release jar's versioned entries; a `--processor-module-path`; with
+  a javac whose JDK declares release 23 or later, a processor that is only a dependency when neither
+  `-proc:full`, `-proc:only` nor a `-processor` list requests processing, since such a javac then runs no
+  processor it finds on the class path; a `<debuglevel>` or `-g:` arguments that leave out `source`, which drops
+  the `SourceFile` attribute; an `<outputDirectory>`, `maven.compiler.outputDirectory`, `<multiReleaseOutput>true`
+  or last `-d` argument that moves the classes, and a last `-s` argument that moves the processor's sources;
+  `<compileSourceRoots>` without the generated directory; and a `<testIncrementalExcludes>` or main
+  `<incrementalExcludes>` pattern that matches the compilation carrier.
+- **Maven: settings read as the compiler applies them.** `<testIncrementalExcludes>` narrow the test sources the
+  generator reads, so it no longer fails with `SG601` on a source javac never compiles; the compiler's
+  `<compileSourceRoots>` are the roots the generator parses, an empty element standing for the project's; an
+  empty `<annotationProcessorPaths/>` counts as no processor path, where it used to be refused; an empty
+  `<jdkToolchain/>` selects the first jdk toolchain of the build, as the compiler does, where it used to be
+  ignored; include and exclude patterns match as plexus-utils matches them, `%ant[...]` and `%regex[...]`
+  included; compiler arguments are evaluated as Maven evaluates them, `${settings.localRepository}` for instance;
+  and on Windows a `javaExecutable` without an extension stands for the `.exe` beside it.
+- **Maven: paths.** A relative manifest path is resolved where javac runs, in the directory Maven was started in
+  or, for a forked javac, in the project directory, so a module of a build started from its parent is refused
+  up front, where javac used to fail on it after the preparation. Paths are compared with their symbolic links
+  resolved, as javac resolves them, so `mvn -f <link>/pom.xml` is checked like a build of the real directory,
+  and the published index's source positions do not depend on how a source root is spelled.
 - **Gradle.** `prepare-compile` refuses, before it retires anything: `options.failOnError = false`, `-proc:only`
-  or `-proc:none` as the last `-proc:` option, an `options.annotationProcessorPath` that is empty or null, a
-  `-processor` list, the last one given, that leaves out the StateGraph processor or holds a name that is not a
-  valid qualified class name, an empty one after its last comma included, a debug setting that leaves out the
-  `SourceFile` attribute, an `-encoding` compiler argument that names another charset than `options.encoding`
-  when Gradle's own compiler runs javac, argument providers that change the release or the encoding javac takes,
-  a compilation that no longer compiles every generated source, and one that compiles other original sources than
-  the generation reads, through a spec or closure filter or a source given to the compile task, which the
-  generation also refuses before the generator runs. Sources given to the compile task alone used to build and
-  are now refused. Adding `options.failOnError = false` or a compiler argument changes the compile task's
-  options, so Gradle's own full rebuild has already removed the previous classes, index and sealed inventory when
-  the preparation refuses: unlike Maven's, such a refusal does not keep them. The generation parses only what
+  or `-proc:none` as the last `-proc:` option, an `options.annotationProcessorPath` that is empty or null, unless
+  javac runs from the command line with a `-proc:` argument after it, a `-processor` list, the last one given,
+  that leaves out the StateGraph processor or holds a name that is not a valid qualified class name, an empty one
+  after its last comma included, a debug setting that leaves out the `SourceFile` attribute, a last `-encoding`
+  compiler argument that names another charset than `options.encoding`, when Gradle's own compiler runs javac and
+  this JVM supports both, argument providers that change the release or the encoding javac takes, a compilation
+  that no longer compiles every generated source, and one that compiles other original sources than the
+  generation reads, through a spec or closure filter or a source given to the compile task, which the generation
+  also refuses before the generator runs. Sources given to the compile task alone used to build and are now
+  refused. Adding `options.failOnError = false` or a compiler argument changes the compile task's options, so
+  Gradle's own full rebuild has already removed the previous classes, index and sealed inventory when the
+  preparation refuses: unlike Maven's, such a refusal does not keep them. The generation parses only what
   the compile task's include and exclude pattern strings select as well, at the release and in the encoding javac
   takes, a `--release` or `-encoding` in `options.compilerArgs` included, but never one an argument provider
   gives. The generated directory joins the source set as a source directory set of its own, which the source

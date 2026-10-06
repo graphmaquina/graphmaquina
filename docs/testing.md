@@ -557,8 +557,8 @@ the root, so pointing the root at `src/test/resources` puts the file back where 
 
 Update mode writes through a symbolic link inside the root, at the golden itself or at a directory above it, and
 keeps the link. It does so even when what the link names does not exist yet: it creates that file, with any
-directory missing on the way, unless a `.` or `..` follows a missing name in the link's path, which fails with
-`IllegalStateException`. A link that leads out of the root, a dangling one included, is refused with
+directory missing on the way, unless a `.` or `..` follows a missing name in the path the link holds, which
+fails with `IllegalStateException`. A link that leads out of the root, a dangling one included, is refused with
 `IllegalArgumentException`, and nothing is written.
 
 ### Gradle
@@ -628,7 +628,7 @@ A test that needs no properties at all can pass options explicitly —
 | `isRejected().hasNoTransition()`: nothing was keyed by `(from, id)` | that the entity cannot move at all. Another identifier may well have an edge from the same state. |
 | `calls().assertCount(n)`: a callback was entered n times | that the machine wrote a state. Only `StateWriteProbe.writes()` sees the setter. |
 | `journal()`: which actions the aborted attempt entered, and how each ended | that the entities were put back. `StateSnapshot.assertUnchanged()` is the expectation that asserts the rollback. |
-| the recorder: every outcome the engine published to the listener | anything about a call that threw before the listener: one whose step aborts, whose commit fails, whose hook throws, or whose reaction raises an `Error`. Such a call throws instead of notifying, so no callback is made for it; capture the throwable instead. |
+| the recorder: every outcome the engine published to the listener | anything about a call that threw before the listener, such as one whose step aborts, whose commit fails, whose hook throws, or whose reaction raises an `Error`. Such a call throws instead of notifying, so no callback is made for it; capture the throwable instead. |
 | `AsyncAssertions.await(stage, budget)`: the engine's transition finished | that work the action started in the background ended. Neither wait ever cancels a stage it was handed. |
 | that budget: how long the test is willing to wait | the engine's deadline. That is `asyncTimeout(...)` on the machine and `hasTimeout(...)` on the edge, and an expired engine deadline leaves the user's stage alive. |
 

@@ -223,8 +223,9 @@ generation reads, the generation task refuses the build before the generator run
 when the generation is up to date. Give such a filter to the source set's java sources, where a spec or a closure
 is followed, or to the compile task as an include or exclude pattern. For a source added to the compile task, the
 refusal names the directory to give the source set with `java.srcDir(...)`; for a source put in place of the
-source set's, it prints, for the Kotlin and the Groovy DSL, a `java.setSrcDirs(...)` line with the directories
-the compile task compiles, followed by the line that adds the generated directory back.
+source set's, it prints a line that gives the source set the directories the compile task compiles, followed by
+the line that adds the generated directory back: `java.setSrcDirs(listOf<String>(…)); …` for the Kotlin DSL and
+`java.srcDirs = […]; …` for the Groovy DSL.
 
 The task runs after every task those directories are built by, so a directory registered with the task that
 writes it, as `java.srcDir(generateOther)` registers the output of a `generateOther` task, is written before it
@@ -515,10 +516,14 @@ In the `<configuration>` of `maven-source-plugin` 3.4.0, this one does:
 
 ### Sources, release and encoding
 
-A source root the execution does not narrow is passed to the generator whole; one its `<includes>` or
-`<excludes>` narrow (`<testIncludes>` or `<testExcludes>` for the tests) is passed as the files they select,
-without the files the compiler's scanner excludes by default, the list of plexus-utils, which leaves out `._*`
-copies and the directories of version control systems among others. The generator walks a whole root with
+The source roots are the compiler's own `<compileSourceRoots>` when the execution declares them, a relative one
+resolved against the directory Maven was started in, as `maven-compiler-plugin` resolves it, and the project's
+otherwise; an empty `<compileSourceRoots/>` stands for the project's. A source root the execution does not narrow
+is passed to the generator whole; one its `<includes>` or `<excludes>` narrow (`<testIncludes>`, `<testExcludes>`
+or `<testIncrementalExcludes>` for the tests) is passed as the files they select, with the patterns matched as
+the compiler's plexus-utils scanner matches them, `%ant[...]` and `%regex[...]` included, and without the files
+that scanner excludes by default, the list of plexus-utils, which leaves out `._*` copies and the directories of
+version control systems among others. The generator walks a whole root with
 Ant's shorter default list instead, so a `.java` file under such a root inside an `RCS`, `BitKeeper`,
 `ChangeSet`, `_darcs`, `.metadata`, `.arch-ids` or `.darcsrepo` directory, or one named `-darcs-backup*`, is
 read by the generator although javac never compiles it. Symbolic links are followed, and a link that leads back
@@ -549,9 +554,22 @@ written or retired, and every failure names what to change:
 - **The annotation processor on the compiler's processor path.** Annotation processing switched off is refused:
   `-proc:none` as the last `-proc:` option javac gets, from `<proc>none</proc>`, `${maven.compiler.proc}=none`
   or a compiler argument. `maven-compiler-plugin` passes `<proc>` ahead of the compiler arguments, so a later
-  `-proc:full` argument wins over it. A compilation whose `<annotationProcessorPaths>` (or, when it declares
-  none, whose resolved dependencies) does not carry `io.github.graphmaquina:graphmaquina-processor` is refused
-  too.
+  `-proc:full` argument wins over it. Given a processor path, javac looks for processors there and not on the
+  class path, so the processor must be where javac looks:
+  - a `-processorpath` or `--processor-path` compiler argument, the last one given, must reach the processor's
+    class through one of its entries, resolved where javac runs, the jars the `Class-Path` of a jar's manifest
+    names, or the versioned entries of a multi-release jar. The argument is evaluated as Maven evaluates it
+    first, and a value that still holds `${` after that is not checked;
+  - otherwise `<annotationProcessorPaths>`, when it holds a path, must name
+    `io.github.graphmaquina:graphmaquina-processor`; an empty `<annotationProcessorPaths/>` counts as absent, as
+    it does for the compiler;
+  - otherwise the resolved dependencies must carry the processor. javac 23 and later runs a processor found on
+    the class path only when processing is requested, by `-proc:full` or `-proc:only` as the last `-proc:`
+    option or by a `-processor` list, so with a javac whose JDK declares release 23 or later in its `release`
+    file, a processor that is only a dependency is refused unless processing is requested.
+
+  A `--processor-module-path` compiler argument is refused: javac rejects one beside a processor path, and
+  without a processor path it looks for processors on that module path instead of the class path.
 - **A processor list that names the processor.** Given a `-processor` list, javac runs only the processors it
   names, and of several lists it takes the last. The list javac gets is the last `-processor` compiler argument,
   else `<annotationProcessors>`, which `maven-compiler-plugin` passes as such a list ahead of the compiler
@@ -566,6 +584,17 @@ written or retired, and every failure names what to change:
   compile nothing, and so is `failOnError` set to false, since the build would go on past a compilation javac
   rejected: either way the preparation would have retired the previous outputs and the completion would find
   nothing to publish in their place.
+- **Class files with their `SourceFile` attribute, where the completion reads them.** javac leaves the attribute
+  out once it is given a `-g:` option, `-g:none` included, and none that lists `source`, whatever their order.
+  `maven-compiler-plugin` passes `<debuglevel>`, or `maven.compiler.debuglevel`, as such an option while
+  `<debug>` is on, as it is by default, so a `<debuglevel>` or `-g:` compiler arguments that leave `source` out
+  are refused; `<debug>false</debug>` passes no `-g` option and is accepted, and a `-g:` option javac cannot read
+  is left to javac. The classes must also go to the project's class output: an `<outputDirectory>` (for the main
+  compilation also `maven.compiler.outputDirectory`) that names another directory, `<multiReleaseOutput>true`,
+  and a last `-d` compiler argument that names another directory are refused; move the class output with
+  `<outputDirectory>` or `<testOutputDirectory>` in the `<build>` of the POM instead.
+- **Source roots that hold the generated directory.** `<compileSourceRoots>` that leave out the directory the
+  generator writes into are refused, since they replace the project's source roots for javac.
 - **A compilation of the whole module.** `useIncrementalCompilation` set to false, by
   `<useIncrementalCompilation>false</useIncrementalCompilation>` or
   `maven.compiler.useIncrementalCompilation=false`, is refused. `maven-compiler-plugin` would then hand javac
@@ -574,33 +603,47 @@ written or retired, and every failure names what to change:
   miss declarations the index publishes. At its default, `true`, the compiler recompiles the whole module
   whenever it compiles at all.
 - **Includes and excludes that keep the carrier.** The compiler applies its `<includes>` and `<excludes>`
-  (`<testIncludes>` and `<testExcludes>` for the tests) to the generated source root too. Patterns that leave out
-  the compilation carrier are refused, naming the exclude, or the include list; with includes, the remedy is
-  `<include>io/github/graphmaquina/generated/**</include>`. Includes that hold only empty values, such as
+  (`<testIncludes>`, `<testExcludes>` and `<testIncrementalExcludes>` for the tests) to the generated source root
+  too. Patterns that leave out the compilation carrier are refused, naming the exclude, or the include list; with
+  includes, the remedy is `<include>io/github/graphmaquina/generated/**</include>`. So is a main
+  `<incrementalExcludes>` pattern that matches the carrier: the compiler leaves what it matches out of its check
+  for stale sources, and the carrier, which has no class file once a compilation completes, is what makes that
+  check compile the module again after the preparation. Includes that hold only empty values, such as
   `<includes>,</includes>` or a lone `<include/>`, are refused too: Maven turns those values into null,
   `maven-compiler-plugin` then adds no default include, and the compiler would select no source at all.
 - **The manifest argument, per execution.** Every `-Agraphmaquina.annotationManifest=` the two scopes declare
-  must name the manifest of that execution's own work directory. A missing or divergent one is refused with the
-  exact argument to declare.
+  must name the manifest of that execution's own work directory. A relative one is resolved where javac runs:
+  against the directory Maven was started in when javac compiles inside Maven, so a module of a build started
+  from its parent does not find it, and against the project directory when the compiler forks javac. A missing
+  or divergent one is refused with the exact argument to declare.
 - **The compiler and the generator on the same JDK.** javac's JDK is resolved as `maven-compiler-plugin`
   resolves it: the `<executable>` it forks; else, unless an `<executable>` configured without a fork makes it
-  ignore toolchains, a `jdk` toolchain, the first one its `<jdkToolchain>` matches or else the one selected for
-  the build; else the JDK running Maven. Its home must be the home of the JDK the generator's `java` belongs to,
-  the directory above the `bin` holding that `java` once symbolic links are followed. A launcher outside a JDK's
-  `bin` directory, such as a wrapper script, has a home of its own and is refused, even when it starts the same
-  JDK.
+  ignore toolchains, a `jdk` toolchain, the first one its `<jdkToolchain>` matches, the first of the build for an
+  empty `<jdkToolchain/>`, or else the one selected for the build; else the JDK running Maven. Its home must be
+  the home of the JDK the generator's `java` belongs to, the directory above the `bin` holding that `java` once
+  symbolic links are followed. A launcher outside a JDK's `bin` directory, such as a wrapper script, has a home
+  of its own and is refused, even when it starts the same JDK.
 - **A JDK 21 or later for the generator.** Its `java` must exist, have a `javac` beside it, and belong to a JDK
-  whose `release` file, when it has one, declares 21 or later.
+  whose `release` file, when it has one, declares 21 or later. On Windows, a `javaExecutable` whose name has no
+  extension and names no file stands for the `.exe` beside it.
 - **The processor's own generated-sources directory left where GraphMaquina owns it.** A configured
-  `<generatedSourcesDirectory>` / `<generatedTestSourcesDirectory>` must match the request's.
+  `<generatedSourcesDirectory>` / `<generatedTestSourcesDirectory>` must match the request's, and so must the
+  directory of a last `-s` compiler argument, resolved where javac runs.
+
+Paths are compared once their symbolic links are resolved, as javac resolves the directories it writes into, so
+naming the project through a link, as `mvn -f <link>/pom.xml` does, or a link inside a configured path, makes no
+two names of one directory differ.
 
 The checks read the compiler arguments as `maven-compiler-plugin` 3.15.0 passes them to javac: the entries of
 the deprecated `<compilerArguments>` map, sorted by key, each key once with its last value, as Maven converts
 that map; then `<compilerArgument>`; then the values of `<compilerArgs>`. The test compilation takes
-`<testCompilerArguments>` and `<testCompilerArgument>` over the first two when they are set. A list parameter
+`<testCompilerArguments>` and `<testCompilerArgument>` over the first two when they are set. Each argument is
+evaluated as Maven evaluates the parameters it hands the compiler, so `${settings.localRepository}` or
+`${session.executionRootDirectory}` is completed and `$$` becomes `$`; an expression about the running goal or
+its plugin, or one Maven cannot complete, stays as it is written. A list parameter
 written as comma-separated text, such as `<compilerArgs>-Xlint:all,-Werror</compilerArgs>`, is split on every
-comma, as Maven splits it, and so are `<annotationProcessors>`, `<includes>`, `<excludes>`, `<testIncludes>`
-and `<testExcludes>`, for these checks and, for the four lists of patterns, for the sources passed to the
+comma, as Maven splits it, and so are `<annotationProcessors>`, `<compileSourceRoots>` and every list of
+patterns, for these checks and, for the roots and the patterns that select sources, for the sources passed to the
 generator. `<annotationProcessors>` can therefore name its processors as text,
 `<annotationProcessors>p.First,p.Second</annotationProcessors>`, or in one element that holds a comma list,
 `<annotationProcessor>p.First,p.Second</annotationProcessor>`, as well as one name per element: javac gets the
@@ -622,7 +665,7 @@ inventory it left.
 | `SG602` "the annotation manifest … does not exist", "…there is no manifest at …" / stale manifest | the generation step did not run before javac or before the preparation. Never invoke `compiler:compile` on its own; run a lifecycle phase so `graphmaquina:generate` and `graphmaquina:prepare` precede it. |
 | `SG602` "…which this compilation never processed…" | javac compiled a machine implicitly, from the source path, and javac does not process such a source. Pass every source of the compilation to javac. |
 | `SG602` "…is still compiled from a previous compilation that nothing retired…" | javac ran again over a class output that still holds the previous companions. Run the lifecycle, whose preparation retires them, or clean the build. |
-| `SG602` "…no class file in … belongs to the carrier…" | javac's debug setting left the `SourceFile` attribute out of the class files, which the completion reads: `-g:none`, or a `-g:` list without `source` such as `-g:lines,vars`. Compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. |
+| `SG602` "…no class file in … belongs to the carrier…" | javac's debug setting left the `SourceFile` attribute out of the class files, which the completion reads: `-g:none`, or a `-g:` list without `source` such as `-g:lines,vars`. Compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. Both plugins refuse such a setting before anything is retired when they can read it. |
 | `SG602` "inventory path '…' …" | a manifest of the work directory lists an owned source that is not a relative path to a file: one that no path can spell, such as one holding a NUL character, one that is absolute or has a root, one with a `..` segment, or one that names the directory itself, such as `.`. Clean the build. |
 | `SG602` "member 'encoding' names no charset this JVM supports in …" | the source encoding of the compilation is no charset of the JVM the generator runs under: in Maven `<encoding>` or its property `encoding`, else `project.build.sourceEncoding`; in Gradle the generation task's `encoding`, by convention the encoding javac reads the sources in, from `options.encoding` or an `-encoding` compiler argument. Name a charset that JVM supports, such as `UTF-8`. |
 | `SG602` "number with an exponent out of range in …" | the request, a manifest, an inventory or a dependency's export index holds a number whose exponent is out of range, such as `1e99999999999`, so it was edited or damaged after the tools wrote it. Clean the build, or rebuild the dependency that published the index. |
@@ -637,6 +680,9 @@ inventory it left.
 | "…needs the jdk.compiler module…" | the Gradle toolchain, or Maven's `graphmaquina.javaExecutable` or `jdk` toolchain, has no `javac` beside its `java`: it is a runtime, or, in Maven, a launcher outside a JDK's `bin` directory. Point it at a full JDK 21 or later, in Maven at the `java` in that JDK's `bin`. |
 | "…The two must be the same JDK…" | the generator's `java` and javac belong to different JDK homes. Point `graphmaquina.javaExecutable` at the `java` in the `bin` directory of the JDK javac compiles with, not at a wrapper launcher, or have javac compile with the generator's JDK. |
 | "…is not on the `<annotationProcessorPaths>` …" | the processor is missing from the compiler's processor path; declare it after Lombok. |
+| "…gives javac the processor path it takes, the only place it then looks for annotation processors, and no entry of it holds…" (Maven) | a `-processorpath` or `--processor-path` compiler argument does not reach the processor. Add the processor's jar and the jars it depends on to that path, or remove the argument and declare the processor in `<annotationProcessorPaths>`. |
+| "…makes javac look for annotation processors on a module path…" (Maven) | remove the `--processor-module-path` argument, and declare the processor in `<annotationProcessorPaths>`. |
+| "…is only a dependency of this project…: from Java 23 on, javac runs no annotation processor it finds on the class path unless annotation processing is requested…" (Maven) | configure `<proc>full</proc>` for that execution, or declare the processor in `<annotationProcessorPaths>`, after Lombok. |
 | "…switches annotation processing off…" | remove `proc=none` / `-proc:none`. |
 | "…which leaves out io.github.graphmaquina.processor.StateGraphProcessor…" | the `-processor` list javac gets, from a compiler argument or, in Maven, from `<annotationProcessors>`, leaves out the StateGraph processor, and javac runs only the processors such a list names. Add `io.github.graphmaquina.processor.StateGraphProcessor` to it, after Lombok's processors when the project uses Lombok, or remove the list so javac runs every processor on its processor path. |
 | "…whose name '…' is not a valid qualified class name…" | that list holds a name that is not a valid qualified class name, which the compiler cannot load: an empty or blank one, one with spaces around it, or, in Maven, a value of `<annotationProcessors>` left empty. Correct or remove that name. |
@@ -644,14 +690,19 @@ inventory it left.
 | "…compile only the sources whose class file is missing or older than the source…" | `useIncrementalCompilation` is set to false. Leave it at its default, `true`. |
 | "…select no …/GraphCompilation….java…", "…leaves out …/GraphCompilation….java…" | the compiler's includes or excludes leave out the compilation carrier. Add `<include>io/github/graphmaquina/generated/**</include>`, or change the exclude so it matches nothing under `io/github/graphmaquina/generated`. |
 | "…hold only empty values, which Maven turns into null…" | the compiler's includes hold only empty values, so it would select no source. Remove those empty values, so that `maven-compiler-plugin` includes every source. |
-| "…reads the annotation manifest X, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. |
+| "…reads the annotation manifest X…, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. A relative path is resolved where javac runs, so in a module of a build started from its parent it names another file; the printed argument is absolute. |
+| "…javac write the class files of … without the SourceFile attribute…" (Maven) | a `<debuglevel>` or a `-g:` compiler argument leaves `source` out. Remove that setting, or have one `-g:` option list `source`, as `<debuglevel>lines,vars,source</debuglevel>` does. |
+| "…write its classes …, while StateGraph completes this compilation in …" (Maven) | an `<outputDirectory>`, `maven.compiler.outputDirectory`, `<multiReleaseOutput>true` or a `-d` compiler argument moves the classes. Remove it, or move the project's class output with `<outputDirectory>` or `<testOutputDirectory>` in `<build>`. |
+| "…makes the annotation processor write its sources to …" (Maven) | a `-s` compiler argument names another directory than the processor's generated-sources directory. Remove that argument. |
+| "…the `<compileSourceRoots>` of … replace the source roots of the project and leave out …" (Maven) | add the `<compileSourceRoot>` the message prints, or leave `compileSourceRoots` unset. |
+| "…the `<incrementalExcludes>` pattern … leaves … out of the check the compiler makes for stale sources…" (Maven) | change that pattern so it matches nothing under `io/github/graphmaquina/generated`. |
 | `[INFO] StateGraph skips <id>: …` | the project is packaged as `pom`, or `maven.main.skip` / `<skipMain>` / `maven.test.skip` / `<skip>` switches that compilation off. Nothing was generated, retired or published; this is not an error. |
 | "…cannot run with options.failOnError = false…", "…cannot run with -proc:only…", "…cannot run with -proc:none…" (Gradle) | remove that setting from the compile task. |
 | "…cannot run with an options.annotationProcessorPath that is empty or null…" (Gradle) | a setting of the compile task empties its annotation processor path. Remove it, so the path holds the source set's annotation processors again. |
 | "…javac then leaves the SourceFile attribute out of every class file…" (Gradle) | a debug setting of the compile task drops the attribute the completion reads. Remove it, or add a `-g:` list that names `source`, such as `-g:source,lines,vars`, to the compiler arguments. |
 | "…cannot run with options.encoding = "…" and the compiler argument -encoding …" (Gradle) | the two name different charsets, and Gradle's own compiler would read back the sources the StateGraph processor writes in the other one. Remove that `-encoding`, or set `options.encoding` to the charset it names. |
 | "…cannot run with the compiler arguments its argument providers give…" (Gradle) | an argument provider changes the release or the encoding javac takes, which the generation never reads. Give `--release` or `-encoding` in `options.compilerArgs`, or set `options.release` or `options.encoding`, instead. |
-| "the StateGraph generation … reads …, which task ':compileJava' does not compile…" (Gradle) | the compile task has a filter given as a spec or a closure, or a source put in place of the source set's. Give the filter to the source set's java sources, or to the task as an include or exclude pattern; for a replaced source, paste the `java.setSrcDirs(...)` line the message prints into the source set's block and remove the source from the task. |
+| "the StateGraph generation … reads …, which task ':compileJava' does not compile…" (Gradle) | the compile task has a filter given as a spec or a closure, or a source put in place of the source set's. Give the filter to the source set's java sources, or to the task as an include or exclude pattern; for a replaced source, paste the line the message prints for your DSL into the source set's block and remove the source from the task. |
 | "task ':compileJava' compiles …, which the StateGraph generation … does not read…" (Gradle) | a source was given to the compile task beside the source set's. Give the directory the message names to the source set with `java.srcDir(...)`, and remove it from the task. |
 | "task ':compileJava' does not compile …" (Gradle) | the compilation leaves out a generated file. Add directories with `java.srcDir(...)` instead of replacing them, or add the generated directory back with the line the message prints, or remove a source or pattern set on the compile task. |
 | "…there is no compilation carrier of … under …, although every generation emits one there…" (Maven) | the carrier source the generation emitted was missing when `prepare` or `prepare-test` ran, as when it was deleted after `generate`. Run the lifecycle again, so that `generate` or `generate-test` emits it before the preparation. |
