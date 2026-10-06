@@ -44,13 +44,15 @@ import java.util.stream.Stream;
  * is removed only below the generated source root: one whose path does not resolve below it, or whose directory, by
  * its real path, a symbolic link inside the root takes out of it, is left alone. A generated source that such a link
  * would take out of the root is refused, whether it would replace a file there, even one the previous generation
- * listed, or create one. A publication that fails once it has read the previous manifests deletes the manifest, so
- * no build ever reads a manifest that does not describe the sources on disk. A previous manifest that cannot be read
- * at all, such as the retired format of GraphMaquina 1.x, is left in place instead, so the refusal repeats until the
- * user cleans the build rather than the next run calling the files it owned unowned. A separate pending manifest
- * retains ownership across failures, including a partially published generation, so the next run can retire its
- * files. Both manifests are written beside their place and moved into it, so an interrupted run never leaves half of
- * one.</p>
+ * listed, or create one. A separate pending manifest retains ownership across failures, including a partially
+ * published generation, so the next run can retire its files: before it touches any source, a publication records
+ * there the sources the previous manifests list. A publication that fails after that deletes the manifest, so no
+ * build ever reads a manifest that does not describe the sources on disk. One that fails before it, as when a
+ * previous manifest cannot be read or the first write of the pending manifest fails, leaves the manifest in place,
+ * since no source has changed yet. A previous manifest that cannot be read at all, such as the retired format of
+ * GraphMaquina 1.x, therefore stays, so the refusal repeats until the user cleans the build rather than the next run
+ * calling the files it owned unowned. Both manifests are written beside their place and moved into it, so an
+ * interrupted run never leaves half of one.</p>
  *
  * <p>The files carry exactly the emitted text with LF endings, in the encoding of the compilation that reads
  * them, so a run that changes nothing writes byte-identical files. A character that encoding cannot represent is
@@ -82,9 +84,9 @@ public final class GenerationOutput {
      *     an original source, as when the file may not be read
      * @throws java.io.UncheckedIOException if a source directory, or a directory below it, cannot be walked, or the
      *     file manager javac read the original sources with cannot be closed
-     * @throws IOException if the staged sources, the previous manifest or the published files cannot be handled, a
-     *     file of the classpath cannot be read, or the original sources and the class output the collision check
-     *     looks up cannot be examined
+     * @throws IOException if the work directory, the manifests or the staged sources in it, or the published files
+     *     cannot be handled, a file of the classpath cannot be read, or the original sources and the class output
+     *     the collision check looks up cannot be examined
      */
     public static GenerationResult publish(GenerationRequest request, List<GeneratedSource> sources,
             CompileManifest manifest) throws IOException {
@@ -107,9 +109,9 @@ public final class GenerationOutput {
      *     classpath, would overwrite a file the previous generation did not own or would be written through a
      *     symbolic link inside the generated source output that leads out of it; {@code SG602} if a previous
      *     manifest cannot be read, which leaves that manifest in place
-     * @throws IOException if the staged sources, the previous manifest or the published files cannot be handled, a
-     *     file of the classpath cannot be read, or the original sources and the class output the collision check
-     *     looks up cannot be examined
+     * @throws IOException if the work directory, the manifests or the staged sources in it, or the published files
+     *     cannot be handled, a file of the classpath cannot be read, or the original sources and the class output
+     *     the collision check looks up cannot be examined
      */
     public static GenerationResult publish(GenerationRequest request, List<GeneratedSource> sources,
             CompileManifest manifest, List<Bootstrap.OriginalSource> originals) throws IOException {
@@ -129,9 +131,10 @@ public final class GenerationOutput {
                 previouslyOwned.addAll(ManifestCodec.readCompile(inventory).ownedSources());
             }
         }
+        // Save the last generation before anything that can fail invalidates its active manifest. A failure to save it
+        // leaves that manifest in place, since no source has changed yet.
+        remember(pending, manifest, previouslyOwned);
         try {
-            // Save the last generation before anything that can fail invalidates its active manifest.
-            remember(pending, manifest, previouslyOwned);
             delete(staging);
             requireNoClasspathCollision(request, sources);
             List<Path> staged = stage(request, sources, staging, previouslyOwned, originals);

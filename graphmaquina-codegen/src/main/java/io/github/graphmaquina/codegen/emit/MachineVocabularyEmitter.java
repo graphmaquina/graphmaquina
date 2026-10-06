@@ -56,7 +56,7 @@ final class MachineVocabularyEmitter {
     /** The canonical names of every annotation the vocabulary of {@code graph} declares, in declaration order. */
     static List<String> annotationTypes(GraphDescriptor graph) {
         String vocabulary = vocabularyName(graph);
-        return ANNOTATIONS.stream().map(name -> vocabulary + '.' + name).toList();
+        return ANNOTATIONS.stream().map((String name) -> vocabulary + '.' + name).toList();
     }
 
     /**

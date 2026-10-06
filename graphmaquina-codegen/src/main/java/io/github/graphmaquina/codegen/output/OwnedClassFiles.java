@@ -102,14 +102,14 @@ final class OwnedClassFiles {
             String packageName = separator < 0 ? "" : name.substring(0, separator);
             Optional<Path> directory = packageDirectory(classesOutput, packageName);
             if (directory.isPresent()) {
-                simpleNamesByDirectory.computeIfAbsent(directory.get(), unused -> new HashSet<>())
+                simpleNamesByDirectory.computeIfAbsent(directory.get(), (Path unused) -> new HashSet<>())
                         .add(name.substring(separator + 1));
             }
         }
         List<Path> candidates = new ArrayList<>();
         for (Map.Entry<Path, Set<String>> entry : simpleNamesByDirectory.entrySet()) {
             try (Stream<Path> files = Files.list(entry.getKey())) {
-                files.filter(file -> namedAfter(file, entry.getValue()))
+                files.filter((Path file) -> namedAfter(file, entry.getValue()))
                         .filter(Files::isRegularFile)
                         .forEach(candidates::add);
             }

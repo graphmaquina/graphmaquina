@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.sun.source.tree.ClassTree;
 import io.github.graphmaquina.codegen.CodegenException;
 import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.nio.file.FileStore;
 import java.nio.file.FileSystem;
@@ -145,7 +146,7 @@ class SourceDeclarationsTest {
      */
     private static Path backslashPath(String text) {
         FileSystem backslash = new BackslashFileSystem();
-        InvocationHandler behaviour = (proxy, method, arguments) -> switch (method.getName()) {
+        InvocationHandler behaviour = (Object proxy, Method method, Object[] arguments) -> switch (method.getName()) {
             case "toAbsolutePath", "normalize" -> proxy;
             case "getFileSystem" -> backslash;
             case "toString" -> text;

@@ -257,6 +257,33 @@ class GenerationOutputTest {
                 ManifestCodec.readCompile(result.annotationManifest()).ownedSources().stream().sorted().toList());
     }
 
+    /**
+     * A run that cannot write the pending manifest, here because a directory stands where that manifest is first
+     * written, as a full disk would also stop that write, has replaced no source yet. The manifest stays as it was,
+     * so once the cause is gone the next run still owns the sources it lists and retires the one a deleted reference
+     * left behind, instead of refusing them as unowned files.
+     */
+    @Test
+    void keepsTheManifestWhenThePendingManifestCannotBeWritten() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        GenerationResult first = StateGraphCodegen.generate(request());
+        byte[] manifest = Files.readAllBytes(first.annotationManifest());
+        Path obstacle = Files.createDirectories(
+                first.annotationManifest().resolveSibling("annotation-manifest.pending.json.tmp"));
+        Files.delete(sources().resolve("fx/DocActions.java"));
+
+        IOException failure = assertThrows(IOException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertTrue(failure.getMessage().contains(obstacle.toString()), failure.getMessage());
+        assertTrue(Files.isRegularFile(first.annotationManifest()));
+        assertArrayEquals(manifest, Files.readAllBytes(first.annotationManifest()));
+        Files.delete(obstacle);
+        GenerationResult next = StateGraphCodegen.generate(request());
+        assertFalse(Files.exists(output().resolve("fx/DocActionsRefs.java")));
+        assertEquals(published(),
+                ManifestCodec.readCompile(next.annotationManifest()).ownedSources().stream().sorted().toList());
+    }
+
     @Test
     void refusesToOverwriteAnUnownedFileInTheGeneratedSourceDirectory() throws IOException {
         SourceFiles.write(sources(), ORIGINALS);
@@ -777,8 +804,8 @@ class GenerationOutputTest {
     /** The vocabularies in the generated {@code fx} directory, under the names the volume itself reports. */
     private List<String> vocabularies() throws IOException {
         try (Stream<Path> files = Files.list(output().resolve("fx"))) {
-            return files.map(file -> file.getFileName().toString()).filter(name -> name.endsWith("Graph.java"))
-                    .sorted().toList();
+            return files.map((Path file) -> file.getFileName().toString())
+                    .filter((String name) -> name.endsWith("Graph.java")).sorted().toList();
         }
     }
 

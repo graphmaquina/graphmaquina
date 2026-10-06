@@ -30,10 +30,12 @@ import java.util.List;
  * that is not well-formed strict JSON, holds bytes that are not UTF-8 text or carries content after its end,
  * unknown {@code schemaVersion} values, a missing mandatory member, a member of the wrong JSON type, a number
  * member that is not an exact integer of its range (a fraction, or a value beyond 32 bits for
- * {@code schemaVersion} and 64 bits for an origin's {@code line} and {@code column}), a duplicate key at any
- * nesting level, and an inventory path ({@link CompileManifest#ownedSources()}) that no path can spell, that is
- * absolute or has a root, that holds a {@code ..} segment or that names the root itself, as {@code .} does, are all
- * rejected with a {@link CodegenException} carrying code {@code SG602} and naming the file. A genuine I/O failure
+ * {@code schemaVersion} and 64 bits for an origin's {@code line} and {@code column}), a number anywhere in the
+ * document whose exponent lies beyond the range a {@link java.math.BigDecimal} holds, such as
+ * {@code 1e99999999999}, a duplicate key at any nesting level, and an inventory path
+ * ({@link CompileManifest#ownedSources()}) that no path can spell, that is absolute or has a root, that holds a
+ * {@code ..} segment or that names the root itself, as {@code .} does, are all rejected with a
+ * {@link CodegenException} carrying code {@code SG602} and naming the file. A genuine I/O failure
  * (the file cannot be opened, read or written) is reported as an {@link IOException} instead, exactly as declared.
  *
  * <p>Every write method sorts identity lists (a model's graphs by {@code facade}, its symbols by

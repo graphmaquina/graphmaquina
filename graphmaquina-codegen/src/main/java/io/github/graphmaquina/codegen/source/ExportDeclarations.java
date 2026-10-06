@@ -52,9 +52,9 @@ public final class ExportDeclarations {
      * Every symbol the original sources of {@code index} export, ordered by qualified name so that neither the
      * order of the files nor the order of a hash table can change the result. A host its references container
      * cannot name, because it is private or nested in a private type, is refused with {@code SG604}. A host is
-     * refused with {@code SG603} when a qualified name its container writes, StateGraph's {@code io} package or the
-     * host's own name, starts with the simple name of a type the host's package declares or of a public type of
-     * {@code java.lang}: inside the container that type obscures the package.
+     * refused with {@code SG603} when a qualified name its container writes, StateGraph's {@code io} package or, for
+     * a host of a named package, the host's own name, starts with the simple name of a type the host's package
+     * declares or of a public type of {@code java.lang}: inside the container that type obscures the package.
      */
     public static List<SymbolDescriptor> collect(DeclarationIndex index) {
         Objects.requireNonNull(index, "index");
@@ -152,7 +152,8 @@ public final class ExportDeclarations {
         List<Declaration> declarations = new ArrayList<>();
         Set<String> signatures = new LinkedHashSet<>();
         declare(index, host, host, true, declarations, signatures);
-        if (host.markers().stream().anyMatch(marker -> index.marksInHeader(host, marker, BINDINGS))) {
+        if (host.markers().stream()
+                .anyMatch((TypeHeader.Marker marker) -> index.marksInHeader(host, marker, BINDINGS))) {
             for (TypeHeader ancestor : ancestors(index, host)) {
                 declare(index, host, ancestor, false, declarations, signatures);
             }

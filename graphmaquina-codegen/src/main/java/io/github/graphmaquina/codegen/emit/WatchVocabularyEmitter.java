@@ -40,7 +40,7 @@ final class WatchVocabularyEmitter {
     /** The canonical names of the annotations the pair declares, in declaration order. */
     static List<String> annotationTypes(GraphDescriptor owner, GraphDescriptor peer) {
         String vocabulary = vocabularyName(owner, peer);
-        return ANNOTATIONS.stream().map(name -> vocabulary + '.' + name).toList();
+        return ANNOTATIONS.stream().map((String name) -> vocabulary + '.' + name).toList();
     }
 
     /**

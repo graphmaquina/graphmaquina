@@ -82,7 +82,7 @@ final class SymbolEmitter {
         List<String> symbolNames = symbols.stream().map(SymbolEmitter::simpleName).toList();
         // A refusal is anchored at the symbol whose type takes the host's first segment, or else at the first one.
         SourceLocation anchor = symbols.stream()
-            .filter(symbol -> simpleName(symbol).equals(ApiEmitter.firstSegment(host)))
+            .filter((SymbolDescriptor symbol) -> simpleName(symbol).equals(ApiEmitter.firstSegment(host)))
             .map(SymbolDescriptor::origin)
             .findFirst()
             .orElse(symbols.get(0).origin());

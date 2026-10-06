@@ -181,7 +181,7 @@ public final class DeclarationIndex implements AutoCloseable {
                 }
                 Optional<TypeHeader> resolved = lookup(context, declared.name(), header, new HashSet<>());
                 Optional<TypeUse> owner =
-                        declared.owner().map(value -> canonicalize(context, value, header, pendingOwners));
+                        declared.owner().map((TypeUse value) -> canonicalize(context, value, header, pendingOwners));
                 if (resolved.isPresent() && resolved.get().kind() == ElementKind.CLASS
                         && !resolved.get().modifiers().contains(Modifier.STATIC)) {
                     int separator = declared.name().lastIndexOf('.');
@@ -215,8 +215,8 @@ public final class DeclarationIndex implements AutoCloseable {
             case TypeUse.Array array ->
                     new TypeUse.Array(canonicalize(context, array.component(), header, pendingOwners));
             case TypeUse.Wildcard wildcard -> new TypeUse.Wildcard(
-                    wildcard.upperBound().map(bound -> canonicalize(context, bound, header, pendingOwners)),
-                    wildcard.lowerBound().map(bound -> canonicalize(context, bound, header, pendingOwners)));
+                    wildcard.upperBound().map((TypeUse bound) -> canonicalize(context, bound, header, pendingOwners)),
+                    wildcard.lowerBound().map((TypeUse bound) -> canonicalize(context, bound, header, pendingOwners)));
             case TypeUse.Variable variable -> variable;
             case TypeUse.Primitive primitive -> primitive;
         };
@@ -400,7 +400,7 @@ public final class DeclarationIndex implements AutoCloseable {
             String message = "the marker @" + marker.name() + " in " + context.canonicalName()
                     + " cannot be recognized: " + annotationType + " is not on the generator classpath";
             throw marker.origin().or(context::origin)
-                    .map(origin -> new CodegenException(UNRESOLVED, message, origin))
+                    .map((SourceLocation origin) -> new CodegenException(UNRESOLVED, message, origin))
                     .orElseGet(() -> new CodegenException(UNRESOLVED, message));
         }
         return resolved.map((TypeHeader type) -> type.canonicalName().equals(annotationType)
@@ -463,8 +463,8 @@ public final class DeclarationIndex implements AutoCloseable {
             TypeHeader.Scope scope = context.scope();
             Optional<TypeHeader> imported = unique(scope.singleImports().stream()
                     .filter(single -> single.endsWith('.' + name))
-                    .map(single -> qualified(List.of(single.split("\\.", -1)), pending)
-                            .filter(type -> importable(type, scope.packageName())))
+                    .map((String single) -> qualified(List.of(single.split("\\.", -1)), pending)
+                            .filter((TypeHeader type) -> importable(type, scope.packageName())))
                     .toList(), name, context);
             if (imported.isPresent()) {
                 return imported;
@@ -478,8 +478,8 @@ public final class DeclarationIndex implements AutoCloseable {
                 return sibling;
             }
             Optional<TypeHeader> onDemand = unique(scope.onDemandImports().stream()
-                    .map(prefix -> qualified(List.of((prefix + '.' + name).split("\\.", -1)), pending)
-                            .filter(type -> importable(type, scope.packageName())))
+                    .map((String prefix) -> qualified(List.of((prefix + '.' + name).split("\\.", -1)), pending)
+                            .filter((TypeHeader type) -> importable(type, scope.packageName())))
                     .toList(), name, context);
             if (onDemand.isPresent()) {
                 return onDemand;
@@ -687,7 +687,7 @@ public final class DeclarationIndex implements AutoCloseable {
                     continue;
                 }
                 Optional<TypeHeader> inherited = memberType(superHeader.get(), simpleName, pending)
-                        .filter(member -> inheritedBy(member, owner));
+                        .filter((TypeHeader member) -> inheritedBy(member, owner));
                 if (inherited.isPresent()) {
                     return inherited;
                 }

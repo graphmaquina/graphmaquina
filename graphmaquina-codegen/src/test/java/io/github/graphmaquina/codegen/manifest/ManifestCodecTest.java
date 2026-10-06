@@ -34,6 +34,7 @@ import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
@@ -162,6 +163,48 @@ class ManifestCodecTest {
 
         assertEquals("SG602", failure.code());
         assertEquals("member 'line' must be a 64-bit integer in " + file + ", but is 10.5", failure.getMessage());
+    }
+
+    /**
+     * A number whose exponent lies beyond the range a {@link java.math.BigDecimal} holds is well-formed JSON all the
+     * same. Wherever it stands, it is refused like any other invalid value: with {@code SG602}, naming the file and
+     * the place of the number in the document.
+     */
+    @ParameterizedTest
+    @CsvSource({
+        "schemaVersion, 1e99999999999, $.schemaVersion",
+        "line, 1E2147483649, $.model.graphs[0].origin.line"})
+    void rejectsANumberWhoseExponentIsOutOfRange(String member, String number, String place) throws IOException {
+        GraphDescriptor graph = new GraphDescriptor("fx.Orders", "fx", "fx.Order", "fx.Status",
+            List.of("NEW", "DONE"), "fx.OrderTransition", List.of("SUBMIT"), List.of(), origin());
+        Path file = directory.resolve("exponent.json");
+        ManifestCodec.writeExports(file, new ExportIndex(2, "0.3.0-SNAPSHOT", "fx:demo:main",
+            new GenerationModel(List.of(graph), List.of()), List.of()));
+        Files.writeString(file, Files.readString(file)
+            .replaceFirst("\"" + member + "\": \\d+", "\"" + member + "\": " + number));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> ManifestCodec.readExports(file));
+
+        assertEquals("SG602", failure.code());
+        assertEquals("number with an exponent out of range in " + file + ": " + number + " at path " + place,
+            failure.getMessage());
+    }
+
+    /**
+     * Such a number that is an element of an array is placed at the index of that element, the one just read, not
+     * at the index of the element that would follow it.
+     */
+    @Test
+    void placesANumberWhoseExponentIsOutOfRangeAtItsOwnArrayIndex() throws IOException {
+        Path file = directory.resolve("processor-inventory.json");
+        Files.writeString(file, "{\"schemaVersion\": 2, \"generatedTypes\": [1e99999999999]}\n");
+
+        CodegenException failure =
+            assertThrows(CodegenException.class, () -> ManifestCodec.readProcessorInventory(file));
+
+        assertEquals("SG602", failure.code());
+        assertEquals("number with an exponent out of range in " + file + ": 1e99999999999 at path $.generatedTypes[0]",
+            failure.getMessage());
     }
 
     /** The branch that names content after the document is the one a reader sees, not the parser's advice. */

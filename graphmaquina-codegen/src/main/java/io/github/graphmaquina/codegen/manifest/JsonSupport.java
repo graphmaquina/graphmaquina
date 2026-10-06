@@ -30,8 +30,8 @@ import java.util.OptionalInt;
  * Strict JSON tree plumbing shared by {@link ManifestCodec} and {@link GenerationModelJson}: reading a document
  * into a {@link JsonObject} tree while rejecting duplicate keys, and typed, null-checked member access that
  * reports every violation as a {@link CodegenException} with code {@value #ERROR_CODE}. A document that is not
- * well-formed strict JSON, holds bytes that are not UTF-8 text or carries content after its end is reported the
- * same way, naming its file.
+ * well-formed strict JSON, holds bytes that are not UTF-8 text, carries content after its end or holds a number whose
+ * exponent lies beyond the range a {@link BigDecimal} holds is reported the same way, naming its file.
  *
  * <p>Package-private: {@link ManifestCodec} is the only public JSON boundary of this package.
  */
@@ -68,7 +68,9 @@ final class JsonSupport {
      *
      * @throws CodegenException {@value #ERROR_CODE} naming {@code path} if the document is not well-formed
      *     strict JSON, for example because a write was interrupted, holds bytes that are not UTF-8 text, as a
-     *     write cut off inside a multi-byte character leaves, or carries content after its end
+     *     write cut off inside a multi-byte character leaves, carries content after its end, or holds a number,
+     *     wherever it stands, whose exponent lies beyond the range a {@link BigDecimal} holds, such as
+     *     {@code 1e99999999999}
      * @throws IOException if {@code path} cannot be opened or read
      */
     static JsonObject readObject(Path path) throws IOException {
@@ -142,7 +144,16 @@ final class JsonSupport {
                 yield array;
             }
             case STRING -> new JsonPrimitive(reader.nextString());
-            case NUMBER -> new JsonPrimitive(new BigDecimal(reader.nextString()));
+            case NUMBER -> {
+                String text = reader.nextString();
+                try {
+                    yield new JsonPrimitive(new BigDecimal(text));
+                } catch (NumberFormatException outOfRange) {
+                    // Well-formed JSON all the same, such as 1e99999999999: no BigDecimal holds that exponent.
+                    throw new CodegenException(ERROR_CODE, "number with an exponent out of range in " + file + ": "
+                        + text + " at path " + reader.getPreviousPath());
+                }
+            }
             case BOOLEAN -> new JsonPrimitive(reader.nextBoolean());
             case NULL -> {
                 reader.nextNull();

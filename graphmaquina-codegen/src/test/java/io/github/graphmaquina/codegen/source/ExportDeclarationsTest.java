@@ -1198,7 +1198,8 @@ class ExportDeclarationsTest {
                     List.of("-proc:none", "--release", "21"), null, fileManager.getJavaFileObjectsFromPaths(files));
             task.analyze();
             assertEquals(List.of(), diagnostics.getDiagnostics().stream()
-                    .filter(diagnostic -> diagnostic.getKind() == Diagnostic.Kind.ERROR)
+                    .filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
+                            diagnostic.getKind() == Diagnostic.Kind.ERROR)
                     .map(Object::toString)
                     .toList());
             for (ExecutableElement candidate : ElementFilter.methodsIn(

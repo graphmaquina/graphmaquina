@@ -488,13 +488,14 @@ class GeneratedApiCompilationTest {
             SourceFiles.classpath(), directory.resolve("generated"), directory.resolve("processor-generated"),
             directory.resolve("classes"), directory.resolve("work"), "retention"));
         List<GeneratedSource> emitted = ApiEmitter.emit(model, "retention");
-        assertTrue(emitted.stream().anyMatch(source -> source.qualifiedName().equals("fx.RetentionPolicy")));
+        assertTrue(emitted.stream()
+            .anyMatch((GeneratedSource source) -> source.qualifiedName().equals("fx.RetentionPolicy")));
         files.addAll(write(directory.resolve("generated"), emitted));
 
         SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, directory.resolve("classes"));
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
-        assertTrue(emitted.stream().filter(source -> source.qualifiedName().startsWith("fx."))
-            .noneMatch(source -> source.content().contains("\nimport ")),
+        assertTrue(emitted.stream().filter((GeneratedSource source) -> source.qualifiedName().startsWith("fx."))
+            .noneMatch((GeneratedSource source) -> source.content().contains("\nimport ")),
             () -> emitted.stream().map(GeneratedSource::content).toList().toString());
     }
 

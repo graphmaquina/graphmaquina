@@ -1,6 +1,7 @@
 package io.github.graphmaquina.codegen;
 
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
+import io.github.graphmaquina.codegen.model.SourceLocation;
 import io.github.graphmaquina.codegen.output.CompilationOutputs;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -125,7 +126,8 @@ public final class CodegenMain {
     private static String headline(Throwable failure) {
         if (failure instanceof CodegenException diagnosed) {
             return "[" + diagnosed.code() + "] " + diagnosed.getMessage() + diagnosed.location()
-                .map(anchor -> " (at " + anchor.path() + ':' + anchor.line() + ':' + anchor.column() + ')')
+                .map((SourceLocation anchor) ->
+                        " (at " + anchor.path() + ':' + anchor.line() + ':' + anchor.column() + ')')
                 .orElse("");
         }
         return failure.getClass().getName() + ": " + failure.getMessage();

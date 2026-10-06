@@ -631,13 +631,15 @@ class CompilationOutputsTest {
 
     /**
      * Nothing says what the processor generated without a processor inventory, with one the codec refuses, such as
-     * one the interrupted javac stopped writing halfway, or with one that names anything but a qualified or binary Java
-     * name, as the processor writes them: a name holding the NUL character, which javac leaves out of every identifier
-     * it reads and no path can hold, a path, an empty name or a Windows path. The preparation goes on and deletes
-     * nothing such an inventory names, not even what its valid names name.
+     * one the interrupted javac stopped writing halfway or one holding a number whose exponent is out of range, or
+     * with one that names anything but a qualified or binary Java name, as the processor writes them: a name holding
+     * the NUL character, which javac leaves out of every identifier it reads and no path can hold, a path, an empty
+     * name or a Windows path. The preparation goes on and deletes nothing such an inventory names, not even what its
+     * valid names name.
      */
     @ParameterizedTest
-    @ValueSource(strings = {"missing", "half-written", "NUL in a name", "a path", "an empty name", "a Windows path"})
+    @ValueSource(strings = {"missing", "half-written", "an exponent out of range", "NUL in a name", "a path",
+        "an empty name", "a Windows path"})
     void retiresNothingThatOnlyAnUnusableProcessorInventoryWouldName(String inventory) throws IOException {
         writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
         CompilationOutputs.prepare(request());
@@ -647,6 +649,9 @@ class CompilationOutputsTest {
             case "missing" -> { }
             case "half-written" -> Files.writeString(file,
                     "{\n  \"schemaVersion\": 2,\n  \"generatedTypes\": [\n    \"fx.Old_\"", StandardCharsets.UTF_8);
+            case "an exponent out of range" -> Files.writeString(file,
+                    "{\n  \"schemaVersion\": 1e99999999999,\n  \"generatedTypes\": [\n    \"fx.Old_\"\n  ]\n}\n",
+                    StandardCharsets.UTF_8);
             case "NUL in a name" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "fx.Old_\u0000"));
             case "a path" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "../outside/Victim"));
             case "an empty name" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", ""));

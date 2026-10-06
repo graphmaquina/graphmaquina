@@ -46,8 +46,8 @@ class CompilationMarkerEmitterTest {
 
         SourceFiles.Compilation compilation = SourceFiles.compileStrict(List.of(file), directory.resolve("classes"));
 
-        assertTrue(carrier.content().chars().filter(character -> character != '\n').noneMatch(Character::isISOControl),
-                carrier.content());
+        assertTrue(carrier.content().chars().filter((int character) -> character != '\n')
+                .noneMatch(Character::isISOControl), carrier.content());
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
         assertEquals(compilationId, annotationValue(file));
     }

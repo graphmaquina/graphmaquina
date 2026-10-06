@@ -110,7 +110,7 @@ public final class ApiEmitter {
     private static void addGenerated(Map<String, Set<String>> generated, String qualifiedName) {
         int lastDot = qualifiedName.lastIndexOf('.');
         generated.computeIfAbsent(lastDot < 0 ? "" : qualifiedName.substring(0, lastDot),
-                packageName -> new LinkedHashSet<>()).add(qualifiedName.substring(lastDot + 1));
+                (String packageName) -> new LinkedHashSet<>()).add(qualifiedName.substring(lastDot + 1));
     }
 
     /**
