@@ -1,5 +1,7 @@
 package io.github.graphmaquina.maven;
 
+import com.google.gson.Gson;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Document;
@@ -11,17 +13,28 @@ import org.xml.sax.SAXException;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.jar.Attributes;
+import java.util.jar.JarEntry;
+import java.util.jar.JarFile;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -61,6 +74,23 @@ class MavenPluginIntegrationTest {
 
     /** The StateGraph annotation processor, as a {@code -processor} list names it. */
     private static final String STATEGRAPH_PROCESSOR = "io.github.graphmaquina.processor.StateGraphProcessor";
+
+    /** The processor path of the fixture POM, as {@code it/basic/pom.xml} spells it, Lombok first. */
+    private static final String PROCESSOR_PATHS = """
+                      <annotationProcessorPaths>
+                        <!-- Lombok first: the processor reads the accessors Lombok generates on Order. -->
+                        <path>
+                          <groupId>org.projectlombok</groupId>
+                          <artifactId>lombok</artifactId>
+                          <version>${lombok.version}</version>
+                        </path>
+                        <path>
+                          <groupId>io.github.graphmaquina</groupId>
+                          <artifactId>graphmaquina-processor</artifactId>
+                          <version>${graphmaquina.version}</version>
+                        </path>
+                      </annotationProcessorPaths>
+            """.strip();
 
     /** The file repository the Gradle build published every StateGraph artifact of this version to. */
     private final Path fixtureRepository = Path.of(requireProperty("graphmaquina.fixtureRepository"));
@@ -338,6 +368,77 @@ class MavenPluginIntegrationTest {
         assertFalse(fixture.jarContains("fx/drafts/Draft.class"));
         assertTrue(fixture.inventoryIsSealed("test"));
         assertFalse(fixture.exists("target/test-classes/fxt/drafts/Draft.class"));
+    }
+
+    /**
+     * The test compilation of maven-compiler-plugin adds its {@code <testIncrementalExcludes>} to its
+     * {@code <testExcludes>} when it selects the sources javac compiles, and so does the test generation: a draft they
+     * leave out, which does not even parse, is not read, and a pattern of theirs that leaves out the carrier of the
+     * test compilation is refused before anything is retired.
+     */
+    @Test
+    void theTestIncrementalExcludesLeaveOutTheTestSourcesJavacLeavesOut() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        for (Map.Entry<String, String> source : testDomain().entrySet()) {
+            fixture.writeTestSource(source.getKey(), source.getValue());
+        }
+        fixture.writeTestSource("fxt.drafts.Draft", draft("fxt.drafts"));
+        String drafts = "<testIncrementalExclude>fxt/drafts/**</testIncrementalExclude>";
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <testIncrementalExcludes>" + drafts + "</testIncrementalExcludes>");
+
+        MavenResult left = fixture.run("package");
+
+        assertEquals(0, left.exitCode(), left.output());
+        assertTrue(fixture.inventoryIsSealed("test"));
+        assertFalse(fixture.exists("target/test-classes/fxt/drafts/Draft.class"));
+        List<String> published = fixture.localExportsOf(TEST_EXPORTS);
+        assertTrue(published.contains("fxt.Tickets"), published::toString);
+
+        fixture.editPom(drafts, drafts + "<testIncrementalExclude>io/github/**</testIncrementalExclude>");
+
+        MavenResult carrier = fixture.run("package");
+
+        assertNotEquals(0, carrier.exitCode(), carrier.output());
+        assertTrue(carrier.output().contains("the <testIncrementalExcludes> pattern io/github/** of the"
+                + " default-testCompile execution of maven-compiler-plugin leaves out"
+                + " io/github/graphmaquina/generated/bootstrap/GraphCompilation"), carrier.output());
+        assertTrue(fixture.inventoryIsSealed("test"));
+        assertEquals(published, fixture.localExportsOf(TEST_EXPORTS));
+    }
+
+    /**
+     * The main compilation of maven-compiler-plugin compiles the sources its {@code <incrementalExcludes>} match, but
+     * leaves them out of its check for stale sources, which decides whether it runs javac at all. The carrier, whose
+     * class file the completion deletes, is what makes it compile the module again after the preparation: a pattern
+     * that hides the carrier, here in a project whose generation emits nothing else, would let it skip javac. Such a
+     * pattern is refused before anything is retired, while one that leaves the carrier in builds.
+     */
+    @Test
+    void anIncrementalExcludeThatHidesTheCarrierIsRefusedBeforeAnythingIsRetired() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.removeAllStateGraphDeclarations();
+        assertEquals(0, fixture.run("compile").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        String generated = "<incrementalExclude>**/generated/**</incrementalExclude>";
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <incrementalExcludes>" + generated + "</incrementalExcludes>");
+
+        MavenResult hidden = fixture.run("compile");
+
+        assertNotEquals(0, hidden.exitCode(), hidden.output());
+        assertTrue(hidden.output().contains("the <incrementalExcludes> pattern **/generated/** of the default-compile"
+                + " execution of maven-compiler-plugin leaves io/github/graphmaquina/generated/bootstrap/"
+                + "GraphCompilation"), hidden.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom(generated, "<incrementalExclude>fx/drafts/**</incrementalExclude>");
+
+        MavenResult left = fixture.run("compile");
+
+        assertEquals(0, left.exitCode(), left.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
     }
 
     /**
@@ -638,6 +739,293 @@ class MavenPluginIntegrationTest {
         assertTrue(result.output().contains("and the preparation that follows would retire the index of the"
                 + " previous compilation"), result.output());
         assertFalse(result.output().contains("has already retired"), result.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * maven-compiler-plugin treats an {@code <annotationProcessorPaths>} that holds no path as one that is absent: it
+     * gives javac no processor path, so javac finds the annotation processors on the class path, among the
+     * dependencies of the project. The check reads it the same way, so a processor that is a dependency of the project
+     * builds and publishes. {@code <proc>full</proc>} is configured as well, since from Java 23 on javac runs a
+     * processor found on the class path only when annotation processing is requested.
+     */
+    @Test
+    void anEmptyProcessorPathIsNoProcessorPath() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        processorAsDependency(fixture, "<annotationProcessorPaths/>\n          <proc>full</proc>");
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
+                fixture.localExports());
+    }
+
+    /**
+     * From Java 23 on, javac runs no annotation processor it finds on the class path unless annotation processing is
+     * requested: by {@code -proc:full}, by a {@code -processor} list or by a processor path. A StateGraph processor
+     * that is only a dependency of the project is therefore refused by the generation when such a javac compiles,
+     * before anything is retired, naming the settings that make javac run it; {@code <proc>full</proc>}, a
+     * {@code -processor} list that names it and a processor path that a compiler argument gives javac each build and
+     * publish the same index. The test is skipped on a JDK below 23, whose javac runs such a processor anyway.
+     */
+    @Test
+    void aProcessorOnlyOnTheClassPathIsRefusedWhereJavacWouldNotRunIt() throws IOException {
+        assumeTrue(Runtime.version().feature() >= 23, "a javac below 23 runs a processor it finds on the class path");
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        processorAsDependency(fixture, "");
+
+        MavenResult implicit = fixture.run("package");
+
+        assertNotEquals(0, implicit.exitCode(), implicit.output());
+        assertTrue(implicit.output().contains("io.github.graphmaquina:graphmaquina-processor is only a dependency of"
+                + " this project, and the default-compile execution of maven-compiler-plugin, which declares no path"
+                + " in <annotationProcessorPaths>, compiles with the JDK running Maven"), implicit.output());
+        assertTrue(implicit.output().contains("a JDK of Java " + Runtime.version().feature() + ": from Java 23 on,"
+                + " javac runs no annotation processor it finds on the class path unless annotation processing is"
+                + " requested"), implicit.output());
+        assertTrue(implicit.output().contains("Configure <proc>full</proc> for that execution, or declare the"
+                + " processor in <annotationProcessorPaths> of that execution"), implicit.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("<release>21</release>", "<release>21</release>\n          <proc>full</proc>");
+
+        MavenResult full = fixture.run("package");
+
+        assertEquals(0, full.exitCode(), full.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        List<String> withStateGraph = new ArrayList<>(LOMBOK_PROCESSORS);
+        withStateGraph.add(STATEGRAPH_PROCESSOR);
+        String list = "<annotationProcessors>" + annotationProcessors(withStateGraph) + "</annotationProcessors>";
+        fixture.editPom("<proc>full</proc>", list);
+
+        MavenResult listed = fixture.run("package");
+
+        assertEquals(0, listed.exitCode(), listed.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        // A processor path given as a compiler argument requests annotation processing too, and javac then finds the
+        // processors on that path alone: Lombok, then the StateGraph processor with what it runs on.
+        fixture.editPom(list, "");
+        extraArguments(fixture, List.of(), List.of("-processorpath", processorPath(true)));
+
+        MavenResult path = fixture.run("package");
+
+        assertEquals(0, path.exitCode(), path.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /**
+     * A processor path given as a compiler argument, {@code -processorpath} or {@code --processor-path}, with a space
+     * or an {@code =}, is the only place javac looks for annotation processors, over {@code <annotationProcessorPaths>}
+     * and over the class path, and of several such arguments javac takes the last one. So the check reads that last
+     * argument, evaluated as Maven evaluates it for the compiler, which completes {@code ${settings.localRepository}},
+     * and looks the processor up as the processor class loader of javac does. A path that does not reach the
+     * StateGraph processor is refused before anything is retired, even with the processor among the dependencies; one
+     * that reaches it builds and publishes: with the processor among no dependency, over an
+     * {@code <annotationProcessorPaths>} that holds Lombok alone, through the {@code Class-Path} of a jar's manifest,
+     * and from a multi-release jar that holds it only for Java 21 and later. A path argument that is one expression
+     * naming an object Maven does not take for a {@code String}, such as {@code ${project.file}}, is left out, as Maven
+     * leaves it out, so the argument after it is the path javac takes, and is refused. A processor module path is
+     * refused, which StateGraph does not support.
+     */
+    @Test
+    void aProcessorPathArgumentIsTheOnlyPlaceJavacLooksForTheProcessor() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        String lombok = processorPath(false);
+        String full = processorPath(true);
+        processorAsDependency(fixture, "");
+        List<String> lombokLast = List.of("-processorpath", full, "-processorpath", lombok);
+        extraArguments(fixture, List.of(), lombokLast);
+
+        MavenResult lombokOnly = fixture.run("package");
+
+        assertNotEquals(0, lombokOnly.exitCode(), lombokOnly.output());
+        assertTrue(lombokOnly.output().contains("the compiler argument -processorpath " + lombok + " of the"
+                + " default-compile execution of maven-compiler-plugin gives javac the processor path it takes, the"
+                + " only place it then looks for annotation processors, and that path reaches no"
+                + " io/github/graphmaquina/processor/StateGraphProcessor.class"), lombokOnly.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("""
+                    <dependency>
+                      <groupId>io.github.graphmaquina</groupId>
+                      <artifactId>graphmaquina-processor</artifactId>
+                      <version>${graphmaquina.version}</version>
+                      <scope>provided</scope>
+                    </dependency>
+                """, "");
+        List<String> fullLast = List.of("-processorpath", lombok, "--processor-path", full);
+        extraArguments(fixture, lombokLast, fullLast);
+
+        MavenResult pathOnly = fixture.run("package");
+
+        assertEquals(0, pathOnly.exitCode(), pathOnly.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        fixture.editPom("<release>21</release>", "<release>21</release>\n" + PROCESSOR_PATHS.replace("""
+                            <path>
+                              <groupId>io.github.graphmaquina</groupId>
+                              <artifactId>graphmaquina-processor</artifactId>
+                              <version>${graphmaquina.version}</version>
+                            </path>
+                """, ""));
+        List<String> joined = List.of("--processor-path=" + full);
+        extraArguments(fixture, fullLast, joined);
+
+        MavenResult overPaths = fixture.run("package");
+
+        assertEquals(0, overPaths.exitCode(), overPaths.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        String repository = requireProperty("graphmaquina.mavenLocalRepository");
+        List<String> expressionFull = List.of("--processor-path="
+                + full.replace(repository, "${settings.localRepository}"));
+        extraArguments(fixture, joined, expressionFull);
+
+        MavenResult expression = fixture.run("package");
+
+        assertEquals(0, expression.exitCode(), expression.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        List<String> expressionLombok = List.of("--processor-path="
+                + lombok.replace(repository, "${settings.localRepository}"));
+        extraArguments(fixture, expressionFull, expressionLombok);
+
+        MavenResult evaluated = fixture.run("package");
+
+        assertNotEquals(0, evaluated.exitCode(), evaluated.output());
+        assertTrue(evaluated.output().contains("the compiler argument --processor-path=" + lombok + " of the"
+                + " default-compile execution of maven-compiler-plugin gives javac the processor path it takes"),
+                evaluated.output());
+        assertNothingWasRetired(fixture, published);
+
+        List<String> pathing = List.of("-processorpath", pathingJar(tempDirectory.resolve("pathing.jar"), full)
+                .toString());
+        extraArguments(fixture, expressionLombok, pathing);
+
+        MavenResult manifestClassPath = fixture.run("package");
+
+        assertEquals(0, manifestClassPath.exitCode(), manifestClassPath.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        Path processorJar = Path.of(repository).resolve("io/github/graphmaquina/graphmaquina-processor/" + VERSION
+                + "/graphmaquina-processor-" + VERSION + ".jar");
+        Path versionedJar = multiReleaseJar(processorJar, tempDirectory.resolve("versioned processor.jar"), 21);
+        List<String> versioned = List.of("-processorpath", full.replace(processorJar.toString(),
+                versionedJar.toString()));
+        extraArguments(fixture, pathing, versioned);
+
+        MavenResult multiRelease = fixture.run("package");
+
+        assertEquals(0, multiRelease.exitCode(), multiRelease.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        // Maven evaluates an argument that is one expression naming an object it does not take for a String to
+        // nothing, and leaves it out, so javac takes the argument after it as the processor path.
+        List<String> dropped = List.of("-processorpath", "${project.file}");
+        extraArguments(fixture, versioned, dropped);
+
+        MavenResult nothing = fixture.run("package");
+
+        assertNotEquals(0, nothing.exitCode(), nothing.output());
+        assertTrue(nothing.output().contains("the compiler argument -processorpath -Xlint:all,-serial of the"
+                + " default-compile execution of maven-compiler-plugin gives javac the processor path it takes"),
+                nothing.output());
+        assertNothingWasRetired(fixture, published);
+
+        extraArguments(fixture, dropped, List.of("--processor-module-path", full));
+
+        MavenResult modules = fixture.run("package");
+
+        assertNotEquals(0, modules.exitCode(), modules.output());
+        assertTrue(modules.output().contains("the compiler argument --processor-module-path " + full + " of the"
+                + " default-compile execution of maven-compiler-plugin makes javac look for annotation processors on"
+                + " a module path, which StateGraph does not support"), modules.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * Maven evaluates the compiler arguments when the compiler runs, so a property a plugin sets after
+     * {@code generate} has run still reaches javac. A processor path argument that is one such property, not yet set
+     * when {@code generate} checks it, is left as it is written and unchecked: here build-helper-maven-plugin sets it
+     * in {@code process-sources} to a path that reaches the processor, and the build publishes the same index.
+     */
+    @Test
+    void aProcessorPathPropertySetAfterGenerateIsLeftUnchecked() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        fixture.editPom("<plugins>", "<plugins>" + """
+                      <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>build-helper-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                          <execution>
+                            <id>late-processor-path</id>
+                            <phase>process-sources</phase>
+                            <goals><goal>regex-property</goal></goals>
+                            <configuration>
+                              <name>late.processor.path</name>
+                              <value>%s</value>
+                              <regex>^(.*)$</regex>
+                              <replacement>$1</replacement>
+                            </configuration>
+                          </execution>
+                        </executions>
+                      </plugin>
+                """.formatted(processorPath(true)).stripTrailing());
+        extraArguments(fixture, List.of(), List.of("-processorpath", "${late.processor.path}"));
+
+        MavenResult late = fixture.run("package");
+
+        assertEquals(0, late.exitCode(), late.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /**
+     * javac reads a multi-release jar on its processor path for the release of its own JDK, which need not be the
+     * release of the JDK running Maven. So a processor path whose jar holds the processor only for Java 22 and later
+     * is refused, before anything is retired, for a forked javac whose JDK declares Java 21, whatever JDK runs Maven:
+     * here the one running these tests, which also runs that javac.
+     */
+    @Test
+    void aForkedJavacReadsTheProcessorPathForTheReleaseOfItsOwnJdk() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        Path jdk21 = fakeJdk("jdk-21", "21");
+        fixture.editPom("<release>21</release>",
+                "<release>21</release><fork>true</fork><executable>" + jdk21.resolve("bin/javac") + "</executable>");
+        Path processorJar = Path.of(requireProperty("graphmaquina.mavenLocalRepository"))
+                .resolve("io/github/graphmaquina/graphmaquina-processor/" + VERSION + "/graphmaquina-processor-"
+                        + VERSION + ".jar");
+        Path versionedJar = multiReleaseJar(processorJar, tempDirectory.resolve("processor for 22.jar"), 22);
+        extraArguments(fixture, List.of(), List.of("-processorpath",
+                processorPath(true).replace(processorJar.toString(), versionedJar.toString())));
+
+        MavenResult forked = fixture.run("-Dgraphmaquina.javaExecutable=" + jdk21.resolve("bin/java"), "package");
+
+        assertNotEquals(0, forked.exitCode(), forked.output());
+        assertTrue(forked.output().contains("of the default-compile execution of maven-compiler-plugin gives javac"
+                + " the processor path it takes, the only place it then looks for annotation processors, and that"
+                + " path reaches no io/github/graphmaquina/processor/StateGraphProcessor.class"), forked.output());
         assertNothingWasRetired(fixture, published);
     }
 
@@ -1157,13 +1545,19 @@ class MavenPluginIntegrationTest {
      * A build that switched a compilation off skips the StateGraph goals of that compilation the way
      * maven-compiler-plugin skips its own goal: they do nothing and say so, the index and the sealed inventory
      * of the previous build stay exactly as they were, and the rest of the build carries on — which is what
-     * makes {@code -Dmaven.test.skip=true package} work.
+     * makes {@code -Dmaven.test.skip=true package} work. The index and the sealed inventory of each compilation are
+     * checked after each of the two builds, the test ones included.
      */
     @Test
     void skippingACompilationSkipsItsStateGraphGoals() throws IOException {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        for (Map.Entry<String, String> source : testDomain().entrySet()) {
+            fixture.writeTestSource(source.getKey(), source.getValue());
+        }
         assertEquals(0, fixture.run("package").exitCode());
         List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        List<String> testPublished = fixture.localExportsOf(TEST_EXPORTS);
+        assertTrue(testPublished.contains("fxt.Tickets"), testPublished::toString);
 
         MavenResult main = fixture.run("-Dmaven.main.skip=true", "compile");
 
@@ -1172,13 +1566,18 @@ class MavenPluginIntegrationTest {
                 + " the default-compile compilation off"), main.output());
         assertTrue(fixture.inventoryIsSealed("main"));
         assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+        assertTrue(fixture.inventoryIsSealed("test"));
+        assertEquals(testPublished, fixture.localExportsOf(TEST_EXPORTS));
 
         MavenResult test = fixture.run("-Dmaven.test.skip=true", "package");
 
         assertEquals(0, test.exitCode(), test.output());
         assertTrue(test.output().contains("StateGraph skips fx.build:fixture:test: maven.test.skip=true switches"
                 + " the default-testCompile compilation off"), test.output());
+        assertTrue(fixture.inventoryIsSealed("test"), "the test inventory was retired:\n" + test.output());
+        assertEquals(testPublished, fixture.localExportsOf(TEST_EXPORTS));
         assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
         assertTrue(fixture.exists("target/fixture-1.0.0.jar"));
     }
 
@@ -1231,6 +1630,60 @@ class MavenPluginIntegrationTest {
         assertTrue(argument.output().contains("Remove that argument from the configuration of that execution."),
                 argument.output());
         assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * The completion attributes each class file to the source javac compiled it from through its {@code SourceFile}
+     * attribute, which javac leaves out when it is given a {@code -g:} option and none of its {@code -g:} options,
+     * whatever their order, lists {@code source}. maven-compiler-plugin passes {@code <debuglevel>} as such an option
+     * while {@code <debug>} is on, as it is by default. A debug level or a compiler argument that leaves the attribute
+     * out is refused by the generation, before anything is retired; {@code <debug>false</debug>}, which passes no
+     * {@code -g} option at all, and a {@code -g:source} before a {@code -g:none} each build and publish.
+     */
+    @Test
+    void aDebugSettingThatLeavesOutTheSourceFileIsRefusedBeforeAnythingIsRetired() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        fixture.editPom("<release>21</release>",
+                "<release>21</release>\n          <debuglevel>lines,vars</debuglevel>");
+
+        MavenResult level = fixture.run("package");
+
+        assertNotEquals(0, level.exitCode(), level.output());
+        assertTrue(level.output().contains("<debuglevel>lines,vars</debuglevel> makes javac write the class files of"
+                + " the default-compile execution of maven-compiler-plugin without the SourceFile attribute"),
+                level.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("<debuglevel>lines,vars</debuglevel>",
+                "<debug>false</debug>\n          <debuglevel>lines,vars</debuglevel>");
+
+        MavenResult off = fixture.run("package");
+
+        assertEquals(0, off.exitCode(), off.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        fixture.editPom("\n          <debug>false</debug>\n          <debuglevel>lines,vars</debuglevel>", "");
+        String manifest = "graphmaquina/main/annotation-manifest.json</arg>";
+        fixture.editPom(manifest, manifest + "\n                <arg>-g:none</arg>");
+
+        MavenResult none = fixture.run("package");
+
+        assertNotEquals(0, none.exitCode(), none.output());
+        assertTrue(none.output().contains("the compiler argument -g:none makes javac write the class files of the"
+                + " default-compile execution of maven-compiler-plugin without the SourceFile attribute"),
+                none.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("<arg>-g:none</arg>", "<arg>-g:source</arg>\n                <arg>-g:none</arg>");
+
+        MavenResult source = fixture.run("package");
+
+        assertEquals(0, source.exitCode(), source.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
     }
 
     /**
@@ -1369,6 +1822,29 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * An empty {@code <jdkToolchain/>} is a requirement every jdk toolchain meets, so maven-compiler-plugin forks the
+     * javac of the first jdk toolchain of the build, as it would for any requirement that toolchain meets. The check
+     * compares that javac with the JDK of the generator, and refuses it here, where it belongs to another JDK, before
+     * anything is generated.
+     */
+    @Test
+    void anEmptyJdkToolchainSelectsTheFirstJdkToolchainLikeTheCompiler() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "<release>21</release><jdkToolchain/>");
+        Path other = fakeJdk("jdk-77", null);
+        Path declared = toolchains("toolchains.xml", other);
+        Path none = toolchains("no-toolchains.xml", null);
+
+        MavenResult result = fixture.run("-t", declared.toString(), "-gt", none.toString(), "generate-sources");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("the default-compile execution of maven-compiler-plugin compiles with the"
+                + " first jdk toolchain of this build, as its empty <jdkToolchain> selects, "
+                + other.resolve("bin/javac")), result.output());
+        assertFalse(fixture.exists("target/graphmaquina/main/annotation-manifest.json"));
+    }
+
+    /**
      * The generator parses sources with the jdk.compiler module and runs on Java 21 or later, so whatever
      * {@code java} it is given is checked before anything is generated: one with no javac beside it belongs to a
      * runtime, and one whose JDK declares an older Java in its release file is too old. Both are refused, although
@@ -1425,6 +1901,443 @@ class MavenPluginIntegrationTest {
         assertTrue(result.output().contains("Declare exactly this compiler argument for that execution:"
                 + " -Agraphmaquina.annotationManifest="), result.output());
         assertFalse(fixture.exists("target/graphmaquina/main/annotation-manifest.json"));
+    }
+
+    /**
+     * javac resolves a relative manifest path against the directory it runs in. A javac that compiles inside Maven
+     * runs in the directory Maven was started in, which in a multi-module build is the directory of the parent, not of
+     * the module, while a forked javac runs in the directory of the module. The check resolves the path the same
+     * way: in the module of a build started from its parent, a relative manifest path is refused before anything is
+     * retired, naming the file javac would read, and the same path builds with a forked javac.
+     */
+    @Test
+    void aRelativeManifestPathIsResolvedWhereJavacRuns() throws IOException {
+        MavenFixture parent = MavenFixture.basic(tempDirectory, fixtureRepository);
+        MavenFixture module = parent.module();
+        assertEquals(0, parent.run("package").exitCode());
+        List<String> published = module.localExportsOf(MAIN_EXPORTS);
+        parent.editPom("-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/main/",
+                "-Agraphmaquina.annotationManifest=target/graphmaquina/main/");
+
+        MavenResult inside = parent.run("package");
+
+        assertNotEquals(0, inside.exitCode(), inside.output());
+        assertTrue(inside.output().contains("reads the annotation manifest"
+                + " target/graphmaquina/main/annotation-manifest.json, which javac, compiling inside the JVM running"
+                + " Maven, resolves against the directory Maven was started in, to " + parent.projectDirectory()
+                .toRealPath().resolve("target/graphmaquina/main/annotation-manifest.json")), inside.output());
+        assertTrue(module.inventoryIsSealed("main"));
+        assertEquals(published, module.localExportsOf(MAIN_EXPORTS));
+
+        // ${java.home} is the JVM running Maven, which is where the generator runs when nothing else is selected.
+        parent.editPom("<release>21</release>",
+                "<release>21</release><fork>true</fork><executable>${java.home}/bin/javac</executable>");
+
+        MavenResult forked = parent.run("package");
+
+        assertEquals(0, forked.exitCode(), forked.output());
+        assertTrue(module.inventoryIsSealed("main"));
+        assertEquals(published, module.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /**
+     * The completion reads the class output of the project, where javac writes the classes of a compilation unless its
+     * compiler execution moves them: through {@code <outputDirectory>}, through the
+     * {@code maven.compiler.outputDirectory} property, which only the main compilation reads, or through
+     * {@code <multiReleaseOutput>}, which moves the classes of the main compilation below {@code META-INF/versions}.
+     * Each is refused by the generation of that compilation before anything is retired, while an
+     * {@code <outputDirectory>} that names the class output of the project, here relative to the project directory,
+     * builds.
+     */
+    @Test
+    void aCompilerThatWritesItsClassesElsewhereIsRefusedBeforeAnythingIsRetired() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        for (Map.Entry<String, String> source : testDomain().entrySet()) {
+            fixture.writeTestSource(source.getKey(), source.getValue());
+        }
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        List<String> testPublished = fixture.localExportsOf(TEST_EXPORTS);
+        String main = "<id>default-compile</id>\n            <configuration>";
+        String elsewhere = "<outputDirectory>${project.build.directory}/elsewhere-classes</outputDirectory>";
+        fixture.editPom(main, main + "\n              " + elsewhere);
+
+        MavenResult moved = fixture.run("package");
+
+        assertNotEquals(0, moved.exitCode(), moved.output());
+        assertTrue(moved.output().contains("/elsewhere-classes</outputDirectory> makes the default-compile execution"
+                + " of maven-compiler-plugin write its classes to "), moved.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom(elsewhere, "<multiReleaseOutput>true</multiReleaseOutput>");
+
+        MavenResult versioned = fixture.run("package");
+
+        assertNotEquals(0, versioned.exitCode(), versioned.output());
+        assertTrue(versioned.output().contains("<multiReleaseOutput>true</multiReleaseOutput> makes the"
+                + " default-compile execution of maven-compiler-plugin write its classes to "), versioned.output());
+        assertNothingWasRetired(fixture, published);
+
+        String relative = "<outputDirectory>target/classes</outputDirectory>";
+        fixture.editPom("<multiReleaseOutput>true</multiReleaseOutput>", relative);
+
+        MavenResult same = fixture.run("package");
+
+        assertEquals(0, same.exitCode(), same.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        fixture.editPom("\n              " + relative, "");
+        Path classes = fixture.projectDirectory().resolve("target/property-classes");
+
+        MavenResult property = fixture.run("-Dmaven.compiler.outputDirectory=" + classes, "package");
+
+        assertNotEquals(0, property.exitCode(), property.output());
+        assertTrue(property.output().contains("maven.compiler.outputDirectory=" + classes + " makes the"
+                + " default-compile execution of maven-compiler-plugin write its classes to "), property.output());
+        assertNothingWasRetired(fixture, published);
+
+        String test = "<id>default-testCompile</id>\n            <configuration>";
+        fixture.editPom(test, test + "\n              "
+                + "<outputDirectory>${project.build.directory}/elsewhere-test-classes</outputDirectory>");
+
+        MavenResult tests = fixture.run("package");
+
+        assertNotEquals(0, tests.exitCode(), tests.output());
+        assertTrue(tests.output().contains("/elsewhere-test-classes</outputDirectory> makes the default-testCompile"
+                + " execution of maven-compiler-plugin write its classes to "), tests.output());
+        assertTrue(fixture.inventoryIsSealed("test"));
+        assertEquals(testPublished, fixture.localExportsOf(TEST_EXPORTS));
+    }
+
+    /**
+     * javac takes the last {@code -d} and the last {@code -s} it is given, and maven-compiler-plugin passes its own
+     * ahead of the compiler arguments. A {@code -d} compiler argument therefore moves the classes, and the index the
+     * annotation processor publishes beside them, away from the class output the completion reads, and a {@code -s}
+     * one moves the sources that processor writes away from the directory the preparation retires them from. Either
+     * is refused before anything is retired, while a {@code -d} and a {@code -s} that name the directories of the
+     * project build, and so does a relative {@code -d} that names the class output through a symbolic link followed
+     * by {@code ..}, which javac resolves as the file system does: the link first, then the {@code ..}. That part is
+     * aborted where symbolic links cannot be created.
+     */
+    @Test
+    void outputArgumentsThatMoveWhatJavacWritesAreRefusedBeforeAnythingIsRetired() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        String manifest = "graphmaquina/main/annotation-manifest.json</arg>";
+        String classes = arguments(List.of("-d", "${project.build.directory}/elsewhere-classes"));
+        fixture.editPom(manifest, manifest + classes);
+
+        MavenResult moved = fixture.run("package");
+
+        assertNotEquals(0, moved.exitCode(), moved.output());
+        assertTrue(moved.output().contains("/elsewhere-classes of the default-compile execution of"
+                + " maven-compiler-plugin makes javac write its classes to "), moved.output());
+        assertNothingWasRetired(fixture, published);
+
+        String sources = arguments(List.of("-s", "${project.build.directory}/elsewhere-sources"));
+        fixture.editPom(manifest + classes, manifest + sources);
+
+        MavenResult generated = fixture.run("package");
+
+        assertNotEquals(0, generated.exitCode(), generated.output());
+        assertTrue(generated.output().contains("/elsewhere-sources of the default-compile execution of"
+                + " maven-compiler-plugin makes the annotation processor write its sources to "), generated.output());
+        assertNothingWasRetired(fixture, published);
+
+        String same = arguments(List.of("-d", "${project.build.outputDirectory}", "-s",
+                "${project.build.directory}/generated-sources/annotations"));
+        fixture.editPom(manifest + sources, manifest + same);
+
+        MavenResult kept = fixture.run("package");
+
+        assertEquals(0, kept.exitCode(), kept.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        Path inner = Files.createDirectories(fixture.projectDirectory().resolve("target/inner"));
+        try {
+            Files.createSymbolicLink(fixture.projectDirectory().resolve("inner"), inner);
+        } catch (UnsupportedOperationException | FileSystemException unsupported) {
+            Assumptions.abort("symbolic links cannot be created here: " + unsupported);
+        }
+        String throughLink = arguments(List.of("-d", "inner/../classes"));
+        fixture.editPom(manifest + same, manifest + throughLink);
+
+        MavenResult linked = fixture.run("package");
+
+        assertEquals(0, linked.exitCode(), linked.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /**
+     * {@code <compileSourceRoots>} of a compiler execution replace the source roots of the project for javac, the
+     * directory the generator writes into included, so a list that leaves that directory out would have javac compile
+     * the hand-written sources without the vocabulary they use. It is refused before anything is retired.
+     */
+    @Test
+    void compilerSourceRootsWithoutTheGeneratedDirectoryAreRefusedBeforeAnythingIsRetired() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        String main = "<id>default-compile</id>\n            <configuration>";
+        fixture.editPom(main, main + "\n              <compileSourceRoots>"
+                + "<compileSourceRoot>${project.basedir}/src/main/java</compileSourceRoot></compileSourceRoots>");
+
+        MavenResult result = fixture.run("compile");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("the <compileSourceRoots> of the default-compile execution of"
+                + " maven-compiler-plugin replace the source roots of the project and leave out "
+                + fixture.projectDirectory().toRealPath().resolve("target/generated-sources/graphmaquina")),
+                result.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * An empty {@code <compileSourceRoots/>} is no list of its own: Maven gives the compiler its default for it, the
+     * source roots of the project, the directory the generator writes into included, so it builds and publishes.
+     */
+    @Test
+    void anEmptyCompileSourceRootsElementCompilesTheSourceRootsOfTheProject() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        String main = "<id>default-compile</id>\n            <configuration>";
+        fixture.editPom(main, main + "\n              <compileSourceRoots/>");
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
+                fixture.localExports());
+    }
+
+    /**
+     * Maven started with {@code -f} through a symbolic link to the project directory names the project directory
+     * through that link, while the JVM running it names its working directory with every link resolved. A relative
+     * manifest path, and relative {@code <compileSourceRoots>}, which javac resolves against that working directory,
+     * name the very files and directories the generator writes, so both build. So do absolute
+     * {@code <compileSourceRoots>} spelled through the link while Maven names the project directory without it, and a
+     * relative root that leads through a link inside the project and then up again, which the file system resolves
+     * link first. Each build publishes, byte for byte, the index a plain build publishes: a source keeps its origin
+     * relative to the project directory, however its root is spelled. The test is aborted where symbolic links cannot
+     * be created.
+     */
+    @Test
+    void namesThroughALinkToTheProjectDirectoryBuildTheSameIndex() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        Path link = tempDirectory.resolve("linked project");
+        try {
+            Files.createSymbolicLink(link, fixture.projectDirectory());
+        } catch (UnsupportedOperationException | FileSystemException unsupported) {
+            Assumptions.abort("symbolic links cannot be created here: " + unsupported);
+        }
+        assertEquals(0, fixture.run("package").exitCode());
+        Path exports = fixture.projectDirectory().resolve(MAIN_EXPORTS);
+        byte[] published = Files.readAllBytes(exports);
+        String pom = link.resolve("pom.xml").toString();
+        fixture.editPom("-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/main/",
+                "-Agraphmaquina.annotationManifest=target/graphmaquina/main/");
+
+        MavenResult manifest = fixture.run("-f", pom, "package");
+
+        assertEquals(0, manifest.exitCode(), manifest.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertArrayEquals(published, Files.readAllBytes(exports), Files.readString(exports));
+
+        String main = "<id>default-compile</id>\n            <configuration>";
+        String relative = "<compileSourceRoots>"
+                + "<compileSourceRoot>src/main/java</compileSourceRoot>"
+                + "<compileSourceRoot>target/generated-sources/graphmaquina</compileSourceRoot>"
+                + "</compileSourceRoots>";
+        fixture.editPom(main, main + "\n              " + relative);
+
+        MavenResult roots = fixture.run("-f", pom, "package");
+
+        assertEquals(0, roots.exitCode(), roots.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertArrayEquals(published, Files.readAllBytes(exports), Files.readString(exports));
+
+        String absoluteRoots = "<compileSourceRoots>"
+                + "<compileSourceRoot>" + link.resolve("src/main/java") + "</compileSourceRoot>"
+                + "<compileSourceRoot>" + link.resolve("target/generated-sources/graphmaquina")
+                + "</compileSourceRoot></compileSourceRoots>";
+        fixture.editPom(relative, absoluteRoots);
+
+        MavenResult absolute = fixture.run("package");
+
+        assertEquals(0, absolute.exitCode(), absolute.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertArrayEquals(published, Files.readAllBytes(exports), Files.readString(exports));
+
+        // The file system resolves deep/../../src/main/java through the link first, to src/main/java, while a
+        // normalized spelling of it would leave the project directory.
+        Path deep = Files.createDirectories(fixture.projectDirectory().resolve("target/deep"));
+        Files.createSymbolicLink(fixture.projectDirectory().resolve("deep"), deep);
+        fixture.editPom(absoluteRoots, "<compileSourceRoots>"
+                + "<compileSourceRoot>deep/../../src/main/java</compileSourceRoot>"
+                + "<compileSourceRoot>target/generated-sources/graphmaquina</compileSourceRoot>"
+                + "</compileSourceRoots>");
+
+        MavenResult throughDeep = fixture.run("package");
+
+        assertEquals(0, throughDeep.exitCode(), throughDeep.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertArrayEquals(published, Files.readAllBytes(exports), Files.readString(exports));
+    }
+
+    /**
+     * The generator parses the sources of the roots javac compiles: the {@code <compileSourceRoots>} of the compiler
+     * execution when it declares them. Here they name a root of their own, which holds the shared domain, and the
+     * directory the generator writes into, while the source root of the project holds only a draft that does not
+     * parse, which javac never sees and the generator does not read either. That root then builds the same index when
+     * it is spelled through a symbolic link followed by {@code ..}, which the file system resolves link first, while
+     * a normalized spelling of it would name a directory that does not exist. That part is aborted where symbolic
+     * links cannot be created.
+     */
+    @Test
+    void theGeneratorReadsTheSourceRootsOfTheCompiler() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        for (Map.Entry<String, String> source : MavenFixture.domainSources().entrySet()) {
+            fixture.writeFile("src/other/java/" + source.getKey().replace('.', '/') + ".java",
+                    source.getValue().getBytes(StandardCharsets.UTF_8));
+        }
+        fixture.writeSources(Map.of("misc.Draft", draft("misc")));
+        String main = "<id>default-compile</id>\n            <configuration>";
+        String other = "<compileSourceRoot>${project.basedir}/src/other/java</compileSourceRoot>";
+        fixture.editPom(main, main + "\n              <compileSourceRoots>" + other
+                + "<compileSourceRoot>${project.build.directory}/generated-sources/graphmaquina</compileSourceRoot>"
+                + "</compileSourceRoots>");
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
+                fixture.localExports());
+        assertFalse(fixture.jarContains("misc/Draft.class"));
+        Path exports = fixture.projectDirectory().resolve(MAIN_EXPORTS);
+        byte[] published = Files.readAllBytes(exports);
+
+        Path deeper = Files.createDirectories(fixture.projectDirectory().resolve("src/other/deeper"));
+        try {
+            Files.createSymbolicLink(fixture.projectDirectory().resolve("inner"), deeper);
+        } catch (UnsupportedOperationException | FileSystemException unsupported) {
+            Assumptions.abort("symbolic links cannot be created here: " + unsupported);
+        }
+        fixture.editPom(other, "<compileSourceRoot>${project.basedir}/inner/../java</compileSourceRoot>");
+
+        MavenResult throughLink = fixture.run("package");
+
+        assertEquals(0, throughLink.exitCode(), throughLink.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertArrayEquals(published, Files.readAllBytes(exports), Files.readString(exports));
+    }
+
+    /**
+     * The sources of a root outside the project directory keep the origin a plain build publishes for them, their path
+     * from the project directory once symbolic links are resolved, when the build reaches that root with {@code -f}
+     * through a link to the project directory that lies in another directory, whose path has at least as many names
+     * as that path has {@code ..}, and through a link to the root itself. The index is the same, byte for byte, each
+     * time. The test is aborted where symbolic links cannot be created.
+     */
+    @Test
+    void aSourceRootOutsideTheProjectKeepsItsOriginThroughALink() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        Path shared = tempDirectory.resolve("shared/java");
+        for (Map.Entry<String, String> source : MavenFixture.domainSources().entrySet()) {
+            Path file = shared.resolve(source.getKey().replace('.', '/') + ".java");
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, source.getValue(), StandardCharsets.UTF_8);
+        }
+        fixture.writeSources(Map.of("misc.Draft", draft("misc")));
+        Path projectLink = Files.createDirectories(tempDirectory.resolve("elsewhere/deeper")).resolve("linked project");
+        Path sharedLink = tempDirectory.resolve("shared link");
+        try {
+            Files.createSymbolicLink(projectLink, fixture.projectDirectory());
+            Files.createSymbolicLink(sharedLink, shared);
+        } catch (UnsupportedOperationException | FileSystemException unsupported) {
+            Assumptions.abort("symbolic links cannot be created here: " + unsupported);
+        }
+        String main = "<id>default-compile</id>\n            <configuration>";
+        String outside = "<compileSourceRoot>${project.basedir}/../shared/java</compileSourceRoot>";
+        fixture.editPom(main, main + "\n              <compileSourceRoots>" + outside
+                + "<compileSourceRoot>${project.build.directory}/generated-sources/graphmaquina</compileSourceRoot>"
+                + "</compileSourceRoots>");
+
+        MavenResult plain = fixture.run("package");
+
+        assertEquals(0, plain.exitCode(), plain.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        Path exports = fixture.projectDirectory().resolve(MAIN_EXPORTS);
+        byte[] published = Files.readAllBytes(exports);
+        assertTrue(Files.readString(exports).contains("\"../shared/java/fx/Orders.java\""),
+                Files.readString(exports));
+
+        MavenResult throughProject = fixture.run("-f", projectLink.resolve("pom.xml").toString(), "package");
+
+        assertEquals(0, throughProject.exitCode(), throughProject.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertArrayEquals(published, Files.readAllBytes(exports), Files.readString(exports));
+
+        fixture.editPom(outside, "<compileSourceRoot>" + sharedLink + "</compileSourceRoot>");
+
+        MavenResult throughRoot = fixture.run("package");
+
+        assertEquals(0, throughRoot.exitCode(), throughRoot.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertArrayEquals(published, Files.readAllBytes(exports), Files.readString(exports));
+    }
+
+    /**
+     * An origin is the path of its source from the project directory the build is given, read lexically, as the
+     * generator relativizes it. When {@code -f} names a deep project directory through a link whose path has fewer
+     * names than the {@code ..} that lead from the project directory up to a source root outside it, a name that
+     * spelled those {@code ..} after the link would lose some of them in the generator. The root then keeps its own
+     * name, so every origin still leads from the link to its source. The test is aborted where symbolic links cannot
+     * be created.
+     */
+    @Test
+    void aShallowLinkToADeepProjectLeavesEveryOriginLeadingToItsSource() throws IOException {
+        Path deep = tempDirectory;
+        for (int level = 0; level <= tempDirectory.getNameCount(); level++) {
+            deep = deep.resolve("d" + level);
+        }
+        MavenFixture fixture = MavenFixture.basic(deep, fixtureRepository);
+        Path shared = tempDirectory.resolve("shared/java");
+        for (Map.Entry<String, String> source : MavenFixture.domainSources().entrySet()) {
+            Path file = shared.resolve(source.getKey().replace('.', '/') + ".java");
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, source.getValue(), StandardCharsets.UTF_8);
+        }
+        fixture.writeSources(Map.of("misc.Draft", draft("misc")));
+        Path projectLink = tempDirectory.resolve("shallow");
+        try {
+            Files.createSymbolicLink(projectLink, fixture.projectDirectory());
+        } catch (UnsupportedOperationException | FileSystemException unsupported) {
+            Assumptions.abort("symbolic links cannot be created here: " + unsupported);
+        }
+        String up = "../".repeat(fixture.projectDirectory().getNameCount() - tempDirectory.getNameCount());
+        String main = "<id>default-compile</id>\n            <configuration>";
+        fixture.editPom(main, main + "\n              <compileSourceRoots>"
+                + "<compileSourceRoot>${project.basedir}/" + up + "shared/java</compileSourceRoot>"
+                + "<compileSourceRoot>${project.build.directory}/generated-sources/graphmaquina</compileSourceRoot>"
+                + "</compileSourceRoots>");
+        Path exports = fixture.projectDirectory().resolve(MAIN_EXPORTS);
+
+        MavenResult plain = fixture.run("package");
+
+        assertEquals(0, plain.exitCode(), plain.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertOriginsLeadToSources(fixture.projectDirectory(), exports);
+
+        MavenResult throughLink = fixture.run("-f", projectLink.resolve("pom.xml").toString(), "package");
+
+        assertEquals(0, throughLink.exitCode(), throughLink.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertOriginsLeadToSources(projectLink, exports);
     }
 
     @Test
@@ -1760,6 +2673,134 @@ class MavenPluginIntegrationTest {
             elements.append("<annotationProcessor>").append(name).append("</annotationProcessor>");
         }
         return elements.toString();
+    }
+
+    /**
+     * Writes {@code replacement} where the fixture POM declares its processor path, and makes the StateGraph annotation
+     * processor a {@code provided} dependency of the project instead, declared after Lombok, so that javac finds both
+     * processors on the class path, Lombok first, when no processor path is left.
+     */
+    private static void processorAsDependency(MavenFixture fixture, String replacement) throws IOException {
+        fixture.editPom(PROCESSOR_PATHS, replacement);
+        fixture.editPom("  </dependencies>", """
+                    <dependency>
+                      <groupId>io.github.graphmaquina</groupId>
+                      <artifactId>graphmaquina-processor</artifactId>
+                      <version>${graphmaquina.version}</version>
+                      <scope>provided</scope>
+                    </dependency>
+                  </dependencies>
+                """.stripTrailing());
+    }
+
+    /**
+     * A processor path of jars of the local repository the fixture builds share, with absolute paths: Lombok, and with
+     * {@code stateGraph} the StateGraph annotation processor and the jars it runs on after it. A build that declared
+     * the processor before has resolved them all there.
+     */
+    private static String processorPath(boolean stateGraph) {
+        Path repository = Path.of(requireProperty("graphmaquina.mavenLocalRepository"));
+        List<String> entries = new ArrayList<>();
+        entries.add(repository.resolve("org/projectlombok/lombok/1.18.48/lombok-1.18.48.jar").toString());
+        if (stateGraph) {
+            for (String artifact : List.of("graphmaquina-processor", "graphmaquina-codegen", "graphmaquina-core")) {
+                entries.add(repository.resolve("io/github/graphmaquina/" + artifact + '/' + VERSION + '/' + artifact
+                        + '-' + VERSION + ".jar").toString());
+            }
+            entries.add(jarOf(Gson.class).toString());
+        }
+        return String.join(File.pathSeparator, entries);
+    }
+
+    /**
+     * Writes a jar at {@code jar} that holds nothing but a manifest whose {@code Class-Path} names every entry of
+     * {@code path} as a file URL, so that a processor path of that jar alone reaches them all.
+     */
+    private static Path pathingJar(Path jar, String path) throws IOException {
+        List<String> urls = new ArrayList<>();
+        for (String entry : path.split(File.pathSeparator)) {
+            urls.add(Path.of(entry).toUri().toString());
+        }
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        manifest.getMainAttributes().put(Attributes.Name.CLASS_PATH, String.join(" ", urls));
+        new JarOutputStream(Files.newOutputStream(jar), manifest).close();
+        return jar;
+    }
+
+    /**
+     * Copies {@code jar} to {@code target} as a multi-release jar that holds everything outside {@code META-INF} only
+     * under {@code META-INF/versions/<release>}, so that a JVM of that release or later reads its classes there and
+     * nothing reads them at the top level.
+     */
+    private static Path multiReleaseJar(Path jar, Path target, int release) throws IOException {
+        try (JarFile source = new JarFile(jar.toFile())) {
+            Manifest manifest = source.getManifest() == null ? new Manifest() : new Manifest(source.getManifest());
+            manifest.getMainAttributes().putIfAbsent(Attributes.Name.MANIFEST_VERSION, "1.0");
+            manifest.getMainAttributes().put(Attributes.Name.MULTI_RELEASE, "true");
+            try (JarOutputStream copy = new JarOutputStream(Files.newOutputStream(target), manifest)) {
+                for (JarEntry entry : Collections.list(source.entries())) {
+                    String name = entry.getName();
+                    if (entry.isDirectory() || name.equals(JarFile.MANIFEST_NAME)) {
+                        continue;
+                    }
+                    copy.putNextEntry(new JarEntry(name.startsWith("META-INF/") ? name
+                            : "META-INF/versions/" + release + '/' + name));
+                    try (InputStream content = source.getInputStream(entry)) {
+                        content.transferTo(copy);
+                    }
+                    copy.closeEntry();
+                }
+            }
+        }
+        return target;
+    }
+
+    /**
+     * Asserts that the index {@code exports} publishes origins, and that each of them, resolved lexically against
+     * {@code projectDirectory}, names a regular file.
+     */
+    private static void assertOriginsLeadToSources(Path projectDirectory, Path exports) throws IOException {
+        String index = Files.readString(exports);
+        Matcher origins = Pattern.compile("\"path\": \"([^\"]*)\"").matcher(index);
+        int found = 0;
+        while (origins.find()) {
+            found++;
+            Path named = projectDirectory.resolve(origins.group(1)).normalize();
+            assertTrue(Files.isRegularFile(named), origins.group(1) + " leads from " + projectDirectory + " to "
+                    + named + ", which is no source");
+        }
+        assertTrue(found > 0, index);
+    }
+
+    /**
+     * Replaces, in the compiler arguments of both compiler executions, the arguments {@code before} that follow the
+     * manifest argument with {@code after}.
+     */
+    private static void extraArguments(MavenFixture fixture, List<String> before, List<String> after)
+            throws IOException {
+        for (String sourceSet : List.of("main", "test")) {
+            String manifest = "graphmaquina/" + sourceSet + "/annotation-manifest.json</arg>";
+            fixture.editPom(manifest + arguments(before), manifest + arguments(after));
+        }
+    }
+
+    /** One {@code <arg>} element per value, each on a line of its own, as the fixture POM writes them. */
+    private static String arguments(List<String> values) {
+        StringBuilder elements = new StringBuilder();
+        for (String value : values) {
+            elements.append("\n                <arg>").append(value).append("</arg>");
+        }
+        return elements.toString();
+    }
+
+    /** The jar {@code type} was loaded from, on the classpath of these tests. */
+    private static Path jarOf(Class<?> type) {
+        try {
+            return Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
+        } catch (URISyntaxException unusable) {
+            throw new IllegalStateException("cannot locate the jar of " + type.getName(), unusable);
+        }
     }
 
     /** A source javac refuses to parse, which only a build that excludes it can carry. */

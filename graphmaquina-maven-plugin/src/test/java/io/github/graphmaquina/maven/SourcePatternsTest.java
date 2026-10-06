@@ -59,6 +59,50 @@ class SourcePatternsTest {
         assertTrue(SourcePatterns.matches("%ant[fx/drafts/**]", "fx/drafts/Draft.java"));
     }
 
+    /**
+     * plexus-utils appends {@code **} to a pattern that ends with a separator before it unwraps {@code %ant[...]}, so
+     * the rule applies to a plain pattern only: {@code %ant[fx/drafts/]} names the path {@code fx/drafts} itself, and
+     * no file below it.
+     */
+    @Test
+    void aTrailingSeparatorInsideAnAntPatternSelectsNothingBelowIt() {
+        assertFalse(SourcePatterns.matches("%ant[fx/drafts/]", "fx/drafts/Draft.java"));
+        assertFalse(SourcePatterns.matches("%ant[fx\\drafts\\]", "fx/drafts/deeper/Draft.java"));
+        assertTrue(SourcePatterns.matches("%ant[fx/drafts/]", "fx/drafts"));
+    }
+
+    /**
+     * plexus-utils reads {@code %ant[...]} and {@code %regex[...]} only when at least two characters stand between
+     * the brackets. A shorter one is a plain pattern, brackets included, so {@code %ant[*]} matches no source at the
+     * root, while {@code %ant[**]} matches every source.
+     */
+    @Test
+    void aSpelledPatternNeedsTwoCharactersBetweenItsBrackets() {
+        assertFalse(SourcePatterns.matches("%ant[*]", "Root.java"));
+        assertTrue(SourcePatterns.matches("%ant[*]", "%ant[Root]"));
+        assertTrue(SourcePatterns.matches("%ant[**]", "fx/Orders.java"));
+    }
+
+    /**
+     * plexus-utils turns every pair of backslashes of a {@code %regex[...]} pattern into the separator, so an escaped
+     * backslash of the regular expression stands for a separator.
+     */
+    @Test
+    void anEscapedBackslashOfARegularExpressionStandsForASeparator() {
+        assertTrue(SourcePatterns.matches("%regex[fx\\\\drafts\\\\.*]", "fx/drafts/Draft.java"));
+        assertFalse(SourcePatterns.matches("%regex[fx\\\\drafts\\\\.*]", "fx/Orders.java"));
+    }
+
+    /**
+     * plexus-utils trims a pattern with {@link String#trim()}, which removes the control characters and the space
+     * around it and keeps any other white space, such as an em space.
+     */
+    @Test
+    void aPatternIsTrimmedTheWayStringTrimTrimsIt() {
+        assertTrue(SourcePatterns.matches("\u0001 fx/** \t", "fx/Orders.java"));
+        assertFalse(SourcePatterns.matches("\u2003fx/**", "fx/Orders.java"));
+    }
+
     @Test
     void selectsTheJavaSourcesIncludedAndNotExcluded(@TempDir Path root) throws IOException {
         for (String source : List.of("fx/Orders.java", "fx/drafts/Draft.java", "fx/notes.txt", "other/Other.java")) {

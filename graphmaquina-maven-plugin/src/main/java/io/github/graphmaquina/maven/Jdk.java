@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.regex.Matcher;
@@ -18,14 +19,20 @@ import java.util.regex.Pattern;
  * javac run on the same JDK, and which Java release a JDK declares.
  *
  * <p>An executable is found the way the process that runs it is found: a bare name on the {@code PATH}, any other
- * relative path against the project directory, where both the generator and a forked javac are started. Symbolic
- * links are followed to the launcher they lead to, so a link such as {@code /usr/bin/java} is attributed to the JDK
- * it runs. The home of that JDK is the directory above the {@code bin} directory of the launcher.</p>
+ * relative path against the project directory, where both the generator and a forked javac are started. On
+ * Windows, a path whose file name has no extension and that names no file stands for the {@code .exe} beside it,
+ * which is what the process start runs there. Symbolic links are followed to the launcher they lead to, so a link
+ * such as {@code /usr/bin/java} is attributed to the JDK it runs. The home of that JDK is the directory above the
+ * {@code bin} directory of the launcher.</p>
  */
 final class Jdk {
 
     /** The feature release at the start of a {@code JAVA_VERSION}, past the {@code 1.} of Java 8 and earlier. */
     private static final Pattern FEATURE = Pattern.compile("^(?:1\\.)?(\\d{1,9})");
+
+    /** Whether this plugin runs on Windows, where the process start runs {@code java.exe} for {@code java}. */
+    private static final boolean WINDOWS = System.getProperty("os.name", "").toLowerCase(Locale.ROOT)
+        .startsWith("windows");
 
     private Jdk() {
     }
@@ -38,10 +45,30 @@ final class Jdk {
      * @return the launcher, as its real path when it exists
      */
     static Path launcher(String executable, Path directory) {
+        return launcher(executable, directory, WINDOWS);
+    }
+
+    /**
+     * The launcher {@code executable} names, as the process that runs it would find it on Windows when
+     * {@code windows} is {@code true}, and on any other system when it is {@code false}.
+     *
+     * @param executable a path or a bare name, as the build configures it
+     * @param directory the directory the process is started in
+     * @param windows whether to find it as Windows finds it
+     * @return the launcher, as its real path when it exists
+     */
+    static Path launcher(String executable, Path directory, boolean windows) {
         Path path = Path.of(executable);
         Path found = path.isAbsolute() || path.getNameCount() > 1
             ? directory.resolve(path)
             : onPath(executable).orElse(directory.resolve(path));
+        Path name = found.getFileName();
+        if (windows && name != null && name.toString().indexOf('.') < 0 && !Files.isRegularFile(found)) {
+            Path exe = found.resolveSibling(name + ".exe");
+            if (Files.isRegularFile(exe)) {
+                found = exe;
+            }
+        }
         try {
             return found.toRealPath();
         } catch (IOException absent) {

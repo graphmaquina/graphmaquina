@@ -35,6 +35,23 @@ class JdkTest {
                 Jdk.launcher("no-such-launcher", directory));
     }
 
+    /**
+     * On Windows, a launcher configured without its extension, which names no file, is the {@code .exe} beside it,
+     * the file the process start runs. Elsewhere it stays the missing file it names. The Windows side is checked
+     * here through the flag alone, not on Windows.
+     */
+    @Test
+    void aLauncherWithoutItsExtensionIsTheExeBesideItOnWindows(@TempDir Path directory) throws IOException {
+        Path exe = Files.createDirectories(directory.resolve("jdk/bin")).resolve("java.exe");
+        Files.writeString(exe, "", StandardCharsets.UTF_8);
+        String configured = directory.resolve("jdk/bin/java").toString();
+
+        assertEquals(exe.toRealPath(), Jdk.launcher(configured, directory, true));
+        assertEquals(directory.resolve("jdk/bin/java").toAbsolutePath(), Jdk.launcher(configured, directory, false));
+        assertEquals(directory.resolve("jdk/bin/java.cmd").toAbsolutePath(),
+                Jdk.launcher(directory.resolve("jdk/bin/java.cmd").toString(), directory, true));
+    }
+
     @Test
     void theReleaseIsTheFeatureVersionTheReleaseFileDeclares(@TempDir Path directory) throws IOException {
         assertEquals(21, release(directory.resolve("modern"), "JAVA_VERSION=\"21.0.9\"\n"));

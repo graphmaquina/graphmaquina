@@ -39,9 +39,12 @@ import java.util.Set;
  * written as UTF-8 text with only the escapes JSON requires — a quote, a backslash and every character below
  * {@code U+0020} — so a path carrying spaces, quotes, backslashes or non-ASCII characters round-trips exactly.</p>
  *
- * <p>Every directory is derived from the project model — its source roots, its build directory and its class
- * output directories — so a project that moved them is generated for where it actually put them. The parameters
- * are injected by name from the plugin descriptor; this class declares no annotations of its own.</p>
+ * <p>Every directory is derived from the project model — its source roots, or the {@code <compileSourceRoots>} a
+ * compiler execution declares in their place, its build directory and its class output directories — so a project
+ * that moved them is generated for where it actually put them. A compiler execution that writes its classes
+ * anywhere but the class output of the project is refused by the generation, since the completion reads them
+ * there. The parameters are injected by name from the plugin descriptor; this class declares no annotations of
+ * its own.</p>
  */
 public abstract class StateGraphMojo extends AbstractMojo {
 
@@ -118,10 +121,10 @@ public abstract class StateGraphMojo extends AbstractMojo {
     }
 
     /**
-     * The request of the {@code main} compilation: the original sources of the project — its source roots, or
-     * the files of them the includes and excludes of the compiler select — its compile classpath without its
-     * own class output, the directories this plugin and the compiler write into, and the release and the
-     * encoding the compiler reads the sources with.
+     * The request of the {@code main} compilation: the original sources of the project — the source roots javac
+     * compiles, or the files of them the includes and excludes of the compiler select — its compile classpath
+     * without its own class output, the directories this plugin and the compiler write into, and the release and
+     * the encoding the compiler reads the sources with.
      *
      * @return the request the generator reads for the main source set
      * @throws MojoExecutionException if Maven has not resolved the compile classpath of the project, or a source
@@ -135,7 +138,8 @@ public abstract class StateGraphMojo extends AbstractMojo {
         CompilerConfiguration compiler = CompilerConfiguration.of(project, session, CompilerExecution.MAIN);
         return new Request(
             project.getBasedir().getAbsolutePath(),
-            originalSources(CompilerExecution.MAIN, project.getCompileSourceRoots(), sourcesOutput,
+            originalSources(CompilerExecution.MAIN,
+                compiler.compileSourceRoots().orElse(project.getCompileSourceRoots()), sourcesOutput,
                 processorSourcesOutput),
             applicationClasspath(compileClasspathElements(), classesOutput),
             sourcesOutput.toString(),
@@ -163,7 +167,8 @@ public abstract class StateGraphMojo extends AbstractMojo {
         CompilerConfiguration compiler = CompilerConfiguration.of(project, session, CompilerExecution.TEST);
         return new Request(
             project.getBasedir().getAbsolutePath(),
-            originalSources(CompilerExecution.TEST, project.getTestCompileSourceRoots(), sourcesOutput,
+            originalSources(CompilerExecution.TEST,
+                compiler.compileSourceRoots().orElse(project.getTestCompileSourceRoots()), sourcesOutput,
                 processorSourcesOutput),
             applicationClasspath(testClasspathElements(), classesOutput),
             sourcesOutput.toString(),
@@ -178,11 +183,13 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /**
      * Refuses to generate for a compilation the compiler is not going to run the way this request describes:
      * under another JDK, under a release the generated vocabulary does not compile with, with annotation
-     * processing off, without the annotation processor on its processor path or in the {@code -processor} list
-     * javac takes, without writing its classes or past a failure of javac, over only part of the module, with
-     * includes or excludes that leave out the carrier of the compilation, over another annotation manifest, or
-     * writing the sources of the annotation processor somewhere this plugin does not own. Nothing has been written
-     * when this fails.
+     * processing off, without the annotation processor on the processor path or in the {@code -processor} list
+     * javac takes, with a processor module path, with the annotation processor only on the class path of a javac
+     * that would not run it, without writing its classes or past a failure of javac, writing its classes without the
+     * {@code SourceFile} attribute or anywhere but the class output of the project, over source roots that leave out
+     * the directory the generator writes into, over only part of the module, with includes or excludes that leave out
+     * the carrier of the compilation, over another annotation manifest, or writing the sources of the annotation
+     * processor somewhere this plugin does not own. Nothing has been written when this fails.
      *
      * @param execution the compiler execution this generation belongs to
      * @param request the request the generator is about to run over
@@ -191,13 +198,17 @@ public abstract class StateGraphMojo extends AbstractMojo {
     protected final void verifyCompiler(CompilerExecution execution, Request request)
             throws MojoExecutionException {
         CompilerConfiguration compiler = CompilerConfiguration.of(project, session, execution);
-        compiler.requireAgreementWith(javaExecutable(), toolchainManager, session);
-        compiler.requireAnnotationProcessor(project);
+        CompilerConfiguration.Javac javac = compiler.requireAgreementWith(javaExecutable(), toolchainManager,
+            session);
+        compiler.requireAnnotationProcessor(project, javac);
         compiler.requireCompiledClasses();
+        compiler.requireSourceFileAttribute();
+        compiler.requireClassesOutput(request, javac);
+        compiler.requireGeneratedSourcesCompiled(request);
         compiler.requireWholeModuleCompilation();
         compiler.requireCarrierSelected(request);
-        compiler.requireManifestArgument(request);
-        compiler.requireProcessorSourcesOutput(request);
+        compiler.requireManifestArgument(request, javac);
+        compiler.requireProcessorSourcesOutput(request, javac);
     }
 
     /**
@@ -356,7 +367,8 @@ public abstract class StateGraphMojo extends AbstractMojo {
     }
 
     /**
-     * Refuses a {@code java} the generator cannot run on: one that names no file; one with no {@code javac}
+     * Refuses a {@code java} the generator cannot run on: one that names no file, on Windows neither as written nor
+     * with the {@code .exe} that the process start adds to a file name without an extension; one with no {@code javac}
      * beside it, which belongs to a runtime without the jdk.compiler module the generator parses sources with;
      * and one whose JDK declares a release below 21 in its {@code release} file. A JDK without a readable
      * release file is not refused on its release. The JVM running Maven always passes that last check: the
@@ -427,22 +439,30 @@ public abstract class StateGraphMojo extends AbstractMojo {
     }
 
     /**
-     * The sources the generator parses: every source root the compilation declares except the two directories
-     * this build generates into, which its own outputs must never overlap. A root the execution does not narrow
-     * is handed to the generator whole, and the generator walks it with Ant's default excludes, not with
-     * plexus-utils' longer list; {@code SourcePatterns} describes what that leaves in. A root the includes or
-     * excludes of the compiler narrow is handed over as the very files they select, with the compiler's own
-     * default excludes left out.
+     * The sources the generator parses: every source root javac compiles — the {@code <compileSourceRoots>} of the
+     * compiler execution when it declares them, which replace the source roots of the project, else those — except
+     * the two directories this build generates into, which its own outputs must never overlap, whatever symbolic links
+     * their names lead through. A root the execution does not narrow is handed to the generator whole, and the
+     * generator walks it with Ant's default excludes, not with plexus-utils' longer list; {@code SourcePatterns}
+     * describes what that leaves in. A root the includes or excludes of the compiler narrow is handed over as the very
+     * files they select, with the compiler's own default excludes left out. Either is handed over under the name
+     * {@link #spelling} gives it, which anchors the origins the generator publishes to the project directory.
      */
     private List<String> originalSources(CompilerExecution execution, List<String> roots, Path sourcesOutput,
             Path processorSourcesOutput) throws MojoExecutionException {
         SourcePatterns patterns = CompilerConfiguration.of(project, session, execution).sourcePatterns();
+        Set<Path> generated = Set.of(CompilerConfiguration.canonical(sourcesOutput),
+            CompilerConfiguration.canonical(processorSourcesOutput));
+        Path projectDirectory = Path.of(project.getBasedir().getAbsolutePath()).normalize();
+        Path canonicalProject = CompilerConfiguration.canonical(projectDirectory);
         Set<String> sources = new LinkedHashSet<>();
         for (String root : roots) {
-            Path source = absolute(root);
-            if (source.equals(sourcesOutput) || source.equals(processorSourcesOutput)) {
+            Path declared = Path.of(root).isAbsolute() ? Path.of(root) : project.getBasedir().toPath().resolve(root);
+            Path canonicalRoot = CompilerConfiguration.canonical(declared);
+            if (generated.contains(canonicalRoot)) {
                 continue;
             }
+            Path source = spelling(declared, canonicalRoot, projectDirectory, canonicalProject);
             if (!patterns.narrow()) {
                 sources.add(source.toString());
                 continue;
@@ -457,6 +477,60 @@ public abstract class StateGraphMojo extends AbstractMojo {
             }
         }
         return List.copyOf(sources);
+    }
+
+    /**
+     * The name the generator is handed for a source root. That is the root as the build spells it, normalized, unless
+     * a {@code ..} after a symbolic link makes that name another directory, in which case it is the root as the file
+     * system resolves it. A name that lies in the project directory as the request spells it is kept. Any other name
+     * is replaced by the project directory as the request spells it followed by the path from the project directory
+     * to the root once symbolic links are resolved, {@code ..} included, when three things hold: that path differs
+     * from the one the name gives, the file system resolves the new name to the root itself, and the new name,
+     * normalized lexically as the generator normalizes it, still gives that path. The last fails where the generator
+     * would read the new name as another directory, as when the project directory is spelled through a link whose
+     * path has fewer names than that path has {@code ..}: normalization drops the {@code ..} that would climb above
+     * the root of the file system.
+     *
+     * <p>The generator publishes the origin of every source relative to the project directory as the request spells
+     * it, lexically, and the absolute path of a source on another drive. So the origin of a source under a root named
+     * outside the project directory, on the same drive, starts with the path from the project directory to the root
+     * once symbolic links are resolved, unless the new name fails one of the last two conditions, in which case it
+     * starts with the path from the project directory to the name the root keeps, which, read lexically, still leads
+     * from the project directory to the root. The origin of a source under a root named in the project directory
+     * starts with that name, which a symbolic link in the project directory can make differ from the resolved
+     * path.</p>
+     *
+     * @param root the root as the build spells it, absolute
+     * @param canonicalRoot the root as {@code CompilerConfiguration.canonical} resolves it
+     * @param projectDirectory the project directory as the request spells it, normalized
+     * @param canonicalProject the project directory as {@code CompilerConfiguration.canonical} resolves it
+     * @return the name to hand the generator for that root
+     */
+    private static Path spelling(Path root, Path canonicalRoot, Path projectDirectory, Path canonicalProject) {
+        Path spelled = root.normalize();
+        if (!CompilerConfiguration.canonical(spelled).equals(canonicalRoot)) {
+            spelled = canonicalRoot;
+        }
+        if (spelled.startsWith(projectDirectory)) {
+            return spelled;
+        }
+        try {
+            Path resolved = canonicalProject.relativize(canonicalRoot);
+            if (projectDirectory.relativize(spelled).equals(resolved)) {
+                return spelled;
+            }
+            // Not normalized: the generator relativizes the name lexically, while a file system that resolves the link
+            // a project directory may be spelled through before the .. that leaves it reads the root through it. Where
+            // the file system resolves .. first instead, the name reaches another directory and is not used.
+            Path anchored = projectDirectory.resolve(resolved);
+            boolean readAsResolved = projectDirectory.relativize(anchored.normalize()).equals(resolved);
+            return readAsResolved && CompilerConfiguration.canonical(anchored).equals(canonicalRoot)
+                ? anchored
+                : spelled;
+        } catch (IllegalArgumentException otherRoot) {
+            // A root on another drive cannot be named from the project directory.
+            return spelled;
+        }
     }
 
     /** The classpath the generator resolves headers and published indexes against, without {@code own}. */

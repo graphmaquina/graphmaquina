@@ -7,7 +7,8 @@ import org.apache.maven.plugin.MojoExecutionException;
  * annotation processor reads, before javac runs.
  *
  * <p>The directory it generated into becomes a compile source root of the project, so the compiler of this
- * build compiles what was generated without the POM naming that directory itself, and every goal that reads the
+ * build compiles what was generated without the POM naming that directory itself, unless the compiler execution
+ * declares {@code <compileSourceRoots>} of its own, which then have to name it, and every goal that reads the
  * compile source roots of the project later in this build reads that directory too.</p>
  *
  * <p>Before it writes anything, the goal checks that {@code default-compile} is configured to read the very

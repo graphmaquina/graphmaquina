@@ -95,7 +95,9 @@ enum CompilerExecution {
     }
 
     /**
-     * The configuration parameter that lists the patterns of the sources this execution leaves out.
+     * The configuration parameter that lists the patterns of the sources this execution leaves out. The test
+     * execution also leaves out those its {@code testIncrementalExcludes} match, which maven-compiler-plugin joins with
+     * these.
      *
      * @return the name of the excludes parameter
      */

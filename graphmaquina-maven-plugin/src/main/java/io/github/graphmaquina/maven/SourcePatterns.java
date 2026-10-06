@@ -23,8 +23,12 @@ import java.util.regex.Pattern;
  * whole name {@code **} for any number of names, none included, and a pattern that ends with a separator for
  * everything below it; either separator is accepted, and empty names, a leading separator included, are
  * ignored. A pattern spelled {@code %regex[...]} is a regular expression over the whole relative path,
- * separated by {@code /}, and one spelled {@code %ant[...]} is the pattern between the brackets. Without
- * includes every source is included.</p>
+ * separated by {@code /}, in which a pair of backslashes stands for that separator. One spelled
+ * {@code %ant[...]} is the pattern between the brackets, read without the rule for a trailing separator, which
+ * plexus-utils applies to the whole pattern before it unwraps one: {@code %ant[fx/drafts/]} matches the path
+ * {@code fx/drafts} alone, and no file below it. Either spelling needs at least two characters between its
+ * brackets; a shorter one is a plain pattern, brackets included. A pattern is trimmed as {@link String#trim()}
+ * trims it. Without includes every source is included.</p>
  *
  * <p>The scanner of the compiler cannot be reused here: Maven does not export plexus-utils to the realm of a
  * plugin, and this plugin depends on nothing but the generator. Its default excludes are applied on top of the
@@ -150,18 +154,33 @@ final class SourcePatterns {
      * @return {@code true} if the pattern selects that path
      */
     static boolean matches(String pattern, String path) {
-        String spelled = pattern.strip();
-        if (spelled.startsWith(REGEX) && spelled.endsWith("]")) {
-            return path.matches(spelled.substring(REGEX.length(), spelled.length() - 1));
+        // plexus-utils normalizes the whole pattern before it reads the spelling inside it: it trims it, turns every
+        // pair of backslashes of a regular expression into the separator, or every backslash of any other pattern,
+        // and only then appends ** to a pattern that ends with the separator.
+        String normalized = pattern.trim();
+        if (normalized.startsWith(REGEX)) {
+            normalized = normalized.replace("\\\\", "/");
+        } else {
+            normalized = normalized.replace('\\', '/');
+            if (normalized.endsWith("/")) {
+                normalized += "**";
+            }
         }
-        if (spelled.startsWith(ANT) && spelled.endsWith("]")) {
-            spelled = spelled.substring(ANT.length(), spelled.length() - 1);
+        if (spelled(normalized, REGEX)) {
+            return path.matches(normalized.substring(REGEX.length(), normalized.length() - 1));
         }
-        String normalized = spelled.replace('\\', '/');
-        if (normalized.endsWith("/")) {
-            normalized += "**";
-        }
-        return matches(names(normalized), 0, names(path), 0);
+        String ant = spelled(normalized, ANT)
+                ? normalized.substring(ANT.length(), normalized.length() - 1)
+                : normalized;
+        return matches(names(ant), 0, names(path), 0);
+    }
+
+    /**
+     * Whether plexus-utils reads {@code pattern} as spelled with {@code prefix}: it starts with that prefix, ends with
+     * {@code ]} and holds at least two characters between them.
+     */
+    private static boolean spelled(String pattern, String prefix) {
+        return pattern.length() > prefix.length() + 2 && pattern.startsWith(prefix) && pattern.endsWith("]");
     }
 
     private static List<String> names(String path) {
