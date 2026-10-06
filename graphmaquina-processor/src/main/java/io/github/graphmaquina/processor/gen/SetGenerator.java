@@ -14,18 +14,18 @@ import java.util.Map;
 import java.util.Set;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
-import javax.lang.model.util.Elements;
 
 /**
  * Emits {@code <Set>Runtime}, named by {@link SymbolNames#runtimeName} as a machine's companion is: a builder that
  * assembles the registry from the machines' companions and hands out the facades.
  *
  * <p>Like a machine's companion, it is marked {@code @GeneratedCompanion} and suppresses the {@code deprecation}
- * and {@code removal} warnings of the members it calls, and it writes its types and suffixes its variables as
- * {@link MachineGenerator} describes, its own {@code Builder} counted among the member types of its scope; a
- * variable is named after its role, after the accessor it serves, or after the class a parameter of
- * {@code builder(...)} takes. {@link #emit} answers, beside the source, what the processor checks against that
- * scope before writing it.</p>
+ * and {@code removal} warnings of the members it calls, it writes its types and suffixes its variables as
+ * {@link MachineGenerator} describes, its own {@code Builder} counted among the member types of its scope, and it
+ * throws on a checked exception that a state or identity accessor declares as that class describes, naming its
+ * method after the methods the set declares or inherits; a variable is named after its role, after the accessor
+ * it serves, or after the class a parameter of {@code builder(...)} takes. {@link #emit} answers, beside the source,
+ * what the processor checks against that scope before writing it.</p>
  *
  * <p>Its {@code Builder} mirrors {@code MachineRegistry.Builder} and {@code StateMachines.Builder}: it creates
  * them when it is created and hands every setting to them as soon as it is given, so a setting they refuse is
@@ -72,11 +72,14 @@ public final class SetGenerator {
      * name of each parameter type of {@code builder(...)} to the parameter's name, the shared timeout first when
      * the set has one, whose name {@code timeout} holds as well; {@code entity} and {@code state} name the
      * parameters of the accessor lambdas, and {@code setters}, by role, the parameters of the {@code Builder}'s
-     * methods and the local variable of its {@code build()}.</p>
+     * methods and the local variable of its {@code build()}. {@code rethrow} names the private method that throws on
+     * what an accessor lambda caught, and {@code failure} the parameter of its catch clause; both are empty when no
+     * accessor lambda catches anything.</p>
      */
     private record Variables(Map<String, String> fields, String registry, Map<String, String> builders,
                              String registryBuilder, String used, Map<String, String> parameters, String timeout,
-                             String entity, String state, Map<String, String> setters) { }
+                             String entity, String state, Map<String, String> setters, String rethrow,
+                             String failure) { }
 
     public static String qualifiedName(SetModel model) {
         return SymbolNames.qualified(model.packageName(), SymbolNames.runtimeName(model.setName()));
@@ -99,9 +102,9 @@ public final class SetGenerator {
      */
     public static Emitted emit(SetModel model, BoundInvocation invocations) {
         String companion = SymbolNames.runtimeName(model.setName());
-        Names names = names(model, invocations.elements());
+        Names names = names(model, invocations);
         Written rendered = rendered(model, invocations);
-        Variables variables = variables(model, names.written().and(rendered));
+        Variables variables = variables(model, names.written().and(rendered), invocations);
         String set = names.of(model.type().getQualifiedName().toString());
         String registry = variables.registry();
         SourceWriter out = new SourceWriter();
@@ -147,6 +150,9 @@ public final class SetGenerator {
         out.blank();
         out.line("@" + names.of(OVERRIDE));
         out.line("public void close() { " + registry + ".close(); }");
+        if (!variables.rethrow().isEmpty()) {
+            MachineGenerator.rethrower(out, names, variables.rethrow());
+        }
         out.close();
         return new Emitted(out.toString(), names.written().and(rendered));
     }
@@ -272,16 +278,36 @@ public final class SetGenerator {
         String s = names.of(machine.types().statesElement().getQualifiedName().toString());
         String entity = variables.entity();
         String state = variables.state();
-        return reader(machine, machine.stateGetter(), names, invocations, variables) + ", (" + e + " " + entity + ", "
-                + s + " " + state + ") -> " + invocations.emit(writer(machine), entity, List.of(state));
+        Binding writer = writer(machine);
+        return reader(machine, machine.stateGetter(), names, invocations, variables) + ", "
+                + MachineGenerator.lambda(e + " " + entity + ", " + s + " " + state,
+                        invocations.emit(writer, entity, List.of(state)), invocations.caught(writer).map(names::of), false,
+                        variables.rethrow(), variables.failure());
     }
 
     /** A lambda that reads {@code property} from the entity of {@code machine} by calling its selected accessor. */
     private static String reader(MachineModel machine, Property property, Names names, BoundInvocation invocations,
                                  Variables variables) {
         String e = names.of(machine.types().entityElement().getQualifiedName().toString());
-        return "(" + e + " " + variables.entity() + ") -> "
-                + invocations.emit(property.accessor(), variables.entity(), List.of());
+        return MachineGenerator.lambda(e + " " + variables.entity(),
+                invocations.emit(property.accessor(), variables.entity(), List.of()),
+                invocations.caught(property.accessor()).map(names::of), true, variables.rethrow(), variables.failure());
+    }
+
+    /**
+     * The types the accessor lambdas of the companion of {@code model} catch, in the order they first appear: one
+     * for each state reader, state writer or identity reader that declares a checked exception, as
+     * {@link BoundInvocation#caught} decides; none when no accessor does.
+     */
+    private static Set<String> caught(SetModel model, BoundInvocation invocations) {
+        Set<String> caught = new LinkedHashSet<>();
+        for (MachineAccessor accessor : model.machines()) {
+            MachineModel machine = accessor.machine();
+            for (Binding binding : List.of(machine.stateGetter().accessor(), writer(machine), machine.idGetter().accessor())) {
+                invocations.caught(binding).ifPresent(caught::add);
+            }
+        }
+        return caught;
     }
 
     /**
@@ -308,7 +334,7 @@ public final class SetGenerator {
      * writes at the head of a type reference: so nothing a nested scope declares hides what that scope reads,
      * and no field named after an accessor collides with a field the companion needs for itself.
      */
-    private static Variables variables(SetModel model, Written written) {
+    private static Variables variables(SetModel model, Written written, BoundInvocation invocations) {
         Set<String> taken = new LinkedHashSet<>(written.identifiers());
         Map<String, String> fields = new LinkedHashMap<>();
         for (MachineAccessor accessor : model.machines()) {
@@ -332,17 +358,21 @@ public final class SetGenerator {
         taken.addAll(dependencies.values());
         String entity = MachineGenerator.unique("entity", taken);
         String state = MachineGenerator.unique("state", taken);
+        boolean catches = !caught(model, invocations).isEmpty();
+        String failure = catches ? MachineGenerator.unique("failure", taken) : "";
+        String rethrow = catches ? MachineGenerator.rethrowName(model.type(), invocations.elements()) : "";
         Map<String, String> setters = new LinkedHashMap<>();
         for (String role : SETTER_PARAMETERS) {
             setters.put(role, MachineGenerator.unique(role, new LinkedHashSet<>(taken)));
         }
-        return new Variables(fields, registry, builders, registryBuilder, used, parameters, timeout, entity, state, setters);
+        return new Variables(fields, registry, builders, registryBuilder, used, parameters, timeout, entity, state, setters,
+                rethrow, failure);
     }
 
     /** How the set companion writes its types, from what it claims and what its scope holds already, its own Builder included. */
-    private static Names names(SetModel model, Elements elements) {
-        return new Names(model.packageName(), types(model), Names.Scope.of(elements, Names.packageOf(model.type()),
-                model.type(), Map.of("Builder", qualifiedName(model) + ".Builder")));
+    private static Names names(SetModel model, BoundInvocation invocations) {
+        return new Names(model.packageName(), types(model, invocations), Names.Scope.of(invocations.elements(),
+                Names.packageOf(model.type()), model.type(), Map.of("Builder", qualifiedName(model) + ".Builder")));
     }
 
     /** How this file writes the machine's facade interface. */
@@ -362,9 +392,10 @@ public final class SetGenerator {
 
     /**
      * Every type the set companion writes through {@link Names}, in the order it claims them: its own first, then
-     * the fixed ones, then the machines'.
+     * the fixed ones, then the machines', then, where an accessor lambda catches what an accessor throws,
+     * {@code Throwable} and the types the lambdas catch.
      */
-    private static Map<String, String> types(SetModel model) {
+    private static Map<String, String> types(SetModel model, BoundInvocation invocations) {
         Map<String, String> types = new LinkedHashMap<>();
         Names.claim(types, model.type());
         Names.claim(types, qualifiedName(model));
@@ -388,6 +419,7 @@ public final class SetGenerator {
         for (TypeElement dependency : model.dependencies()) {
             Names.claim(types, dependency);
         }
+        MachineGenerator.claimCaught(types, caught(model, invocations));
         return types;
     }
 }

@@ -155,6 +155,34 @@ final class Signatures {
         return inherited;
     }
 
+    /**
+     * The instance methods named {@code name}, abstract or default, that {@code type} declares or inherits and whose
+     * parameter types, as members of {@code type} and once erased, are the erasures of {@code parameters}: the
+     * methods beside which a class implementing {@code type} cannot declare a static method of that name whose
+     * parameters are those erasures, as a generated companion writes each class it takes. That method would hide one
+     * the class inherits, or have the signature of one it declares (JLS 8.4.8.2, 8.4.2). A static or private method
+     * of an interface is no member a class inherits, and a method whose parameter types differ is an overload.
+     */
+    List<ExecutableElement> clashing(TypeElement type, String name, List<TypeMirror> parameters) {
+        DeclaredType site = (DeclaredType) type.asType();
+        List<ExecutableElement> clashing = new ArrayList<>();
+        for (ExecutableElement method : ElementFilter.methodsIn(elements.getAllMembers(type))) {
+            if (!method.getSimpleName().contentEquals(name) || method.getModifiers().contains(Modifier.STATIC)
+                    || method.getModifiers().contains(Modifier.PRIVATE) || method.getParameters().size() != parameters.size()) {
+                continue;
+            }
+            List<? extends TypeMirror> declared = asMemberOf(site, method).getParameterTypes();
+            boolean same = true;
+            for (int at = 0; at < parameters.size(); at++) {
+                same &= types.isSameType(types.erasure(declared.get(at)), types.erasure(parameters.get(at)));
+            }
+            if (same) {
+                clashing.add(method);
+            }
+        }
+        return clashing;
+    }
+
     /** The public methods {@code owners}, given by qualified name, declare themselves, in that order. */
     private List<ExecutableElement> publicMethods(List<String> owners) {
         List<ExecutableElement> methods = new ArrayList<>();

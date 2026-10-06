@@ -53,8 +53,10 @@ import javax.lang.model.type.TypeMirror;
  * the method the companion writes or inherits for it implements; one whose result that method cannot return is
  * refused with that reason. A method the facade declares that overrides one of those is no operation, and is
  * refused as {@code SG504} when it carries vocabulary or declares a result the companion's method cannot return.
- * An entity of a parameterized type, which generated code can only name by its class, is refused as
- * {@code SG601}.</p>
+ * So is an instance method the facade declares or inherits that has the signature of the companion's static
+ * {@code graph(...)}, which only a model whose bindings all resolved tells, and only when no vocabulary of the machine
+ * is missing from it. An entity of a parameterized type, which generated code can only name by its class, is refused
+ * as {@code SG601}.</p>
  */
 final class TypedMachineModelBuilder {
 
@@ -90,8 +92,8 @@ final class TypedMachineModelBuilder {
      * Empty when the machine has an error this processor reports, or a value javac refused that the model cannot do
      * without; nothing is generated for it then. {@code complete} is false when part of the machine's vocabulary is
      * written where no builder reads it, or on the facade of another machine, whose builder refuses it: every
-     * declaration is still checked, but no conclusion is drawn from the graph as a whole, since that graph misses
-     * what the author declared.
+     * declaration is still checked, but no conclusion is drawn from the graph as a whole, nor from the classes it
+     * binds, since that graph misses what the author declared.
      */
     Optional<MachineModel> build(TypeElement type, boolean complete) {
         int before = diagnostics.errors();
@@ -162,6 +164,7 @@ final class TypedMachineModelBuilder {
                 state.get().reader(), state.get().writer(), id.get(), policies, rejections, declared, operations, watched);
         if (complete) {
             structure.checkOutline(model, header);
+            structure.checkGraphFactory(model);
         }
         return diagnostics.errors() > before ? Optional.empty() : Optional.of(model);
     }

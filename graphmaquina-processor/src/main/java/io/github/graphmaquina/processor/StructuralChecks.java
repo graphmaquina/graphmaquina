@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.dsl.MachineOutlineValidator;
 import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.processor.model.Binding;
@@ -256,6 +257,63 @@ final class StructuralChecks {
     void checkOutline(MachineModel model, DiagnosticAnchor anchor) {
         for (InvalidGraphException.Problem problem : MachineOutlineValidator.validate(Outlines.of(model))) {
             anchor.report(diagnostics, problem.code(), problem.message());
+        }
+    }
+
+    /**
+     * SG504 for an instance method of the facade of {@code model}, abstract or default, declared or inherited, that
+     * the static {@code graph(...)} of its companion would clash with, as {@link Signatures#clashing} finds it: one
+     * named {@code graph} taking what that {@code graph(...)} takes, one parameter per class with instance members the
+     * machine binds. javac would refuse the companion. A method the facade declares is reported where it is declared,
+     * as an operation when it is abstract, and one it only inherits at the facade, with the interface that declares
+     * it. This is the facade's counterpart of the refusal of a set's {@code builder} method by
+     * {@link SetModelBuilder}.
+     */
+    void checkGraphFactory(MachineModel model) {
+        TypeElement facade = model.types().facade();
+        List<TypeMirror> parameters = new ArrayList<>();
+        for (TypeElement dependency : model.instanceDependencies()) {
+            parameters.add(dependency.asType());
+        }
+        List<ExecutableElement> clashing = signatures.clashing(facade, "graph", parameters);
+        if (clashing.isEmpty()) {
+            return;
+        }
+        String graph = factory("graph", parameters);
+        String takes = parameters.isEmpty() ? "no parameter for a machine without instance dependencies"
+                : "every class with instance members the machine binds";
+        String companion = companion(model.facadeName());
+        for (ExecutableElement method : clashing) {
+            if (method.getEnclosingElement().equals(facade)) {
+                diagnostics.error("SG504", graph + " is the static " + graph + " " + companion + " declares, which takes "
+                        + takes + ": give the " + (method.isDefault() ? "method" : "operation") + " another name", method);
+                return;
+            }
+        }
+        diagnostics.error("SG504", facade.getSimpleName() + " inherits " + graph + " from "
+                + ((TypeElement) clashing.get(0).getEnclosingElement()).getQualifiedName() + ", but " + companion
+                + " declares a static " + graph + ", which takes " + takes + ": give that method another name", facade);
+    }
+
+    /** {@code name(A, B)}: the method {@code name} with the simple names of the classes {@code parameters} are. */
+    static String factory(String name, List<TypeMirror> parameters) {
+        List<String> classes = new ArrayList<>();
+        for (TypeMirror parameter : parameters) {
+            classes.add(((DeclaredType) parameter).asElement().getSimpleName().toString());
+        }
+        return name + "(" + String.join(", ", classes) + ")";
+    }
+
+    /**
+     * The companion of the facade or set named {@code declaration}, as a diagnostic names it: {@code the generated
+     * <Name>Runtime}, or {@code the companion of <declaration>} when that name has no PascalCase form, which the
+     * processor refuses as {@code SG603} while it checks the declaration all the same.
+     */
+    static String companion(String declaration) {
+        try {
+            return "the generated " + SymbolNames.runtimeName(declaration);
+        } catch (IllegalArgumentException unnamed) {
+            return "the companion of " + declaration;
         }
     }
 

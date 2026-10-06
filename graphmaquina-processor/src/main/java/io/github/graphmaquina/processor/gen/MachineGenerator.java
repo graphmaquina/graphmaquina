@@ -20,8 +20,10 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.SourceVersion;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 
 /**
@@ -54,6 +56,14 @@ import javax.lang.model.util.Elements;
  * taken by another variable in scope, or is an identifier the file writes at the head of a type reference gets the
  * smallest numeric suffix from {@code 2} that frees it: a host {@code Default} is taken as {@code default2}. So no
  * variable the companion declares obscures a type or a package it names.</p>
+ *
+ * <p>A bound method or an accessor the companion calls may declare a checked exception, which no functional
+ * interface of the DSL declares. The lambda then makes the call in a block that catches what it throws, as
+ * {@link BoundInvocation#caught} decides, and throws it on unchanged through a private static method of the companion,
+ * so the engine receives what the method threw and routes it as it routes a checked exception thrown without being
+ * declared. That method is named {@code rethrow}, followed by the smallest numeric suffix from {@code 2} that frees
+ * the name when the facade declares or inherits a method of that name; the catch parameter is named {@code failure},
+ * suffixed like a variable. A companion that makes no such call declares no such method.</p>
  */
 public final class MachineGenerator {
 
@@ -82,12 +92,14 @@ public final class MachineGenerator {
     /**
      * The names the companion gives its variables. {@code reserved} holds the names no later variable takes: the
      * identifiers the file writes at the head of a type reference, which a variable would obscure, and the names
-     * {@code machine}, {@code call} and {@code state} hold, of its field and of the parameters of its constructor,
-     * {@code async} and {@code transitionsFrom}; {@code parameters} are the parameters of {@code graph(...)}, and
-     * {@code entity} names the entity wherever a method or a lambda takes it.
+     * {@code machine}, {@code call}, {@code state} and {@code failure} hold, of its field, of the parameters of its
+     * constructor, {@code async} and {@code transitionsFrom}, and of every catch clause; {@code parameters} are the
+     * parameters of {@code graph(...)}, and {@code entity} names the entity wherever a method or a lambda takes it.
+     * {@code rethrow} names the private method that throws on what a lambda caught; it and {@code failure} are empty
+     * when no lambda catches anything.
      */
     private record Variables(Set<String> reserved, String machine, String state, String call,
-                             Map<String, String> parameters, String entity) {
+                             Map<String, String> parameters, String entity, String rethrow, String failure) {
 
         /** Every name a lambda of {@code graph(...)} may not take. */
         Set<String> taken() {
@@ -130,9 +142,9 @@ public final class MachineGenerator {
      */
     public static Emitted emit(MachineModel model, BoundInvocation invocations) {
         TypeElement facadeType = model.types().facade();
-        Names names = names(model, invocations.elements());
+        Names names = names(model, invocations);
         Written rendered = rendered(model, invocations);
-        Variables variables = variables(model, names.written().and(rendered));
+        Variables variables = variables(model, names.written().and(rendered), invocations);
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
         String s = names.of(model.types().statesElement().getQualifiedName().toString());
         String t = names.of(model.types().transitionsElement().getQualifiedName().toString());
@@ -197,29 +209,52 @@ public final class MachineGenerator {
         out.line(override);
         out.line("public <R> " + names.of(COMPLETABLE_FUTURE) + "<R> async(" + names.of(SUPPLIER) + "<R> "
                 + variables.call() + ") { return " + machine + ".supplyAsync(" + variables.call() + "); }");
+        if (!variables.rethrow().isEmpty()) {
+            rethrower(out, names, variables.rethrow());
+        }
         out.close();
         return new Emitted(out.toString(), names.written().and(rendered));
     }
 
     /** How the companion of {@code model} writes its types, from what it claims and what its scope holds already. */
-    private static Names names(MachineModel model, Elements elements) {
+    private static Names names(MachineModel model, BoundInvocation invocations) {
         TypeElement facade = model.types().facade();
-        return new Names(model.packageName(), types(model),
-                Names.Scope.of(elements, Names.packageOf(facade), facade, Map.of()));
+        return new Names(model.packageName(), types(model, invocations),
+                Names.Scope.of(invocations.elements(), Names.packageOf(facade), facade, Map.of()));
     }
 
     /**
      * The names of the companion's variables, chosen once the file knows what it writes: no variable takes an
      * identifier {@code written} holds, whether {@link Names} or a rendering of {@link TypeSource} writes it.
      */
-    private static Variables variables(MachineModel model, Written written) {
+    private static Variables variables(MachineModel model, Written written, BoundInvocation invocations) {
         Set<String> reserved = new LinkedHashSet<>(written.identifiers());
         String machine = unique("stateMachine", reserved);
         String call = unique("call", reserved);
         String state = unique("state", reserved);
+        boolean catches = !caught(model, invocations).isEmpty();
+        String failure = catches ? unique("failure", reserved) : "";
+        String rethrow = catches ? rethrowName(model.types().facade(), invocations.elements()) : "";
         Map<String, String> parameters = parameterNames(model.instanceDependencies(), reserved);
         return new Variables(Set.copyOf(reserved), machine, state, call, parameters,
-                entityParameter(model, parameters, reserved));
+                entityParameter(model, parameters, reserved), rethrow, failure);
+    }
+
+    /**
+     * The types the lambdas of the companion of {@code model} catch, in the order they first appear: one for each
+     * call to a bound method or to a watch's peers or owner reader that declares a checked exception, as
+     * {@link BoundInvocation#caught} decides; none when no call does.
+     */
+    private static Set<String> caught(MachineModel model, BoundInvocation invocations) {
+        Set<String> caught = new LinkedHashSet<>();
+        for (Binding binding : bindings(model)) {
+            invocations.caught(binding).ifPresent(caught::add);
+        }
+        for (WatchModel watch : model.watches()) {
+            invocations.caught(watch.peers().accessor()).ifPresent(caught::add);
+            invocations.caught(watch.owner().accessor()).ifPresent(caught::add);
+        }
+        return caught;
     }
 
     /** Every binding the companion calls: the edges' actions, guards and hooks, and the watches' conditions. */
@@ -291,7 +326,6 @@ public final class MachineGenerator {
                                        SourceWriter out) {
         TypeElement states = model.types().statesElement();
         TypeElement transitions = model.types().transitionsElement();
-        Map<String, String> parameters = variables.parameters();
         List<String> context = List.of(unique("context", variables.taken()));
         List<String> entity = List.of(variables.entity());
         StringBuilder line = new StringBuilder(".transition(" + constant(names, transitions, transition.transitionId())
@@ -299,13 +333,13 @@ public final class MachineGenerator {
         if (transition.kind() == TransitionKind.ACTION) {
             Binding action = transition.action().orElseThrow();
             line.append(action.async() ? ".asyncAction(" : ".action(").append(quote(transition.name())).append(", ")
-                    .append(lambda(action, context, parameters, names, invocations)).append(')');
+                    .append(lambda(action, context, true, variables, names, invocations)).append(')');
             transition.timeout().ifPresent((Duration timeout) -> line.append(".timeout(").append(names.qualifier(DURATION))
                     .append(".parse(\"").append(timeout).append("\"))"));
         }
         for (Binding guard : transition.guards()) {
             line.append(guard.async() ? ".asyncGuard(" : ".guard(").append(quote(guard.methodName())).append(", ")
-                    .append(lambda(guard, context, parameters, names, invocations)).append(')');
+                    .append(lambda(guard, context, true, variables, names, invocations)).append(')');
         }
         transition.onFailure().ifPresent((String recovery) ->
                 line.append(".onFailure(").append(constant(names, transitions, recovery)).append(')'));
@@ -315,7 +349,8 @@ public final class MachineGenerator {
         transition.afterCommit().ifPresent((Binding hook) -> {
             boolean contextual = hook.arguments().size() == 2;
             line.append(contextual ? ".afterCommitWith(" : ".afterCommit(").append(quote(hook.methodName())).append(", ")
-                    .append(lambda(hook, contextual ? hookParameters(entity.get(0), variables) : entity, parameters, names, invocations))
+                    .append(lambda(hook, contextual ? hookParameters(entity.get(0), variables) : entity, false, variables,
+                            names, invocations))
                     .append(')');
         });
         out.line(line.append(".endTransition()").toString());
@@ -334,14 +369,18 @@ public final class MachineGenerator {
         String owner = watch.ownerIsOptional()
                 ? peer + "." + watch.owner().method() + "()"
                 : names.qualifier(OPTIONAL) + ".ofNullable(" + peer + "." + watch.owner().method() + "())";
+        String peers = lambda(e + " " + entity, entity + "." + watch.peers().method() + "()",
+                invocations.caught(watch.peers().accessor()).map(names::of), true, variables.rethrow(), variables.failure());
+        String owners = lambda(p + " " + peer, owner, invocations.caught(watch.owner().accessor()).map(names::of), true,
+                variables.rethrow(), variables.failure());
         out.line(".watch(" + constant(names, model.types().statesElement(), watch.state()) + ", "
-                + names.qualifier(MACHINE_KEY) + ".of(" + p + ".class, " + q + ".class, " + u + ".class), (" + e + " "
-                + entity + ") -> " + entity + "." + watch.peers().method() + "(), (" + p + " " + peer + ") -> " + owner + ")");
+                + names.qualifier(MACHINE_KEY) + ".of(" + p + ".class, " + q + ".class, " + u + ".class), " + peers + ", "
+                + owners + ")");
         out.indent();
         for (RuleModel rule : watch.rules()) {
             String condition = switch (rule.kind()) {
                 case CONDITION -> quote(rule.condition().orElseThrow().methodName()) + ", "
-                        + lambda(rule.condition().orElseThrow(), arguments, variables.parameters(), names, invocations);
+                        + lambda(rule.condition().orElseThrow(), arguments, true, variables, names, invocations);
                 case ALL_IN -> names.qualifier(WATCH_CONDITION) + ".allIn(" + constant(names, peerStates, rule.argument()) + ")";
                 case ANY_IN -> names.qualifier(WATCH_CONDITION) + ".anyIn(" + constant(names, peerStates, rule.argument()) + ")";
                 case NONE_IN -> names.qualifier(WATCH_CONDITION) + ".noneIn(" + constant(names, peerStates, rule.argument()) + ")";
@@ -356,9 +395,10 @@ public final class MachineGenerator {
     /**
      * Every type the companion writes through {@link Names}, each with the package that declares it, in the order it
      * claims them: its own first, then the fixed ones, then the types of the watched peers, then {@code Duration},
-     * {@code Optional} and {@code WatchCondition} where an edge or a watch needs them, then the model's other types.
+     * {@code Optional} and {@code WatchCondition} where an edge or a watch needs them, then the model's other types,
+     * then, where a lambda catches what a call throws, {@code Throwable} and the types the lambdas catch.
      */
-    private static Map<String, String> types(MachineModel model) {
+    private static Map<String, String> types(MachineModel model, BoundInvocation invocations) {
         Map<String, String> types = new LinkedHashMap<>();
         Names.claim(types, model.types().facade());
         Names.claim(types, qualifiedName(model));
@@ -401,7 +441,22 @@ public final class MachineGenerator {
                 Names.claim(types, binding.owner());
             }
         }
+        claimCaught(types, caught(model, invocations));
         return types;
+    }
+
+    /**
+     * Claims in {@code types} {@code Throwable}, which the method that throws on takes, then each type of
+     * {@code caught}; nothing when {@code caught} is empty.
+     */
+    static void claimCaught(Map<String, String> types, Set<String> caught) {
+        if (caught.isEmpty()) {
+            return;
+        }
+        Names.claim(types, BoundInvocation.THROWABLE);
+        for (String type : caught) {
+            Names.claim(types, type);
+        }
     }
 
     /** {@code type.constant}, an expression that reads a constant of the enum {@code type}, as this file writes it. */
@@ -429,14 +484,62 @@ public final class MachineGenerator {
      * The lambda that hands the arguments of the functional interface the DSL takes to the exact method the binding
      * selected: the receiver is the host class for a static member and the injected parameter for an instance one.
      * A lambda, rather than a method reference, because only a call can name the parameter types that keep the
-     * selected overload when the host has another one that would also fit.
+     * selected overload when the host has another one that would also fit. {@code returns} is false for a hook, whose
+     * functional interface returns nothing.
      */
-    static String lambda(Binding binding, List<String> arguments, Map<String, String> parameters, Names names,
-                         BoundInvocation invocations) {
+    private static String lambda(Binding binding, List<String> arguments, boolean returns, Variables variables,
+                                 Names names, BoundInvocation invocations) {
         String receiver = binding.isStatic()
                 ? names.qualifier(binding.owner().getQualifiedName().toString())
-                : parameters.get(binding.owner().getQualifiedName().toString());
-        return "(" + String.join(", ", arguments) + ") -> " + invocations.emit(binding, receiver, arguments);
+                : variables.parameters().get(binding.owner().getQualifiedName().toString());
+        return lambda(String.join(", ", arguments), invocations.emit(binding, receiver, arguments),
+                invocations.caught(binding).map(names::of), returns, variables.rethrow(), variables.failure());
+    }
+
+    /**
+     * {@code (parameters) -> call}, or, when {@code caught} names what the call throws that the lambda may not, a
+     * block that makes the call and catches that as {@code failure}, to throw it on unchanged through the
+     * companion's method {@code rethrow}. {@code returns} is false where the functional interface returns nothing,
+     * and the block then makes the call as a statement.
+     */
+    static String lambda(String parameters, String call, Optional<String> caught, boolean returns, String rethrow,
+                         String failure) {
+        String head = "(" + parameters + ") -> ";
+        if (caught.isEmpty()) {
+            return head + call;
+        }
+        return head + "{ try { " + (returns ? "return " : "") + call + "; } catch (" + caught.get() + " " + failure
+                + ") { throw " + rethrow + "(" + failure + "); } }";
+    }
+
+    /**
+     * The name of the method through which the companion of {@code implemented} throws on what a lambda caught:
+     * {@code rethrow}, followed by the smallest numeric suffix from {@code 2} that frees it when a method
+     * {@code implemented} declares or inherits has it. A static method may not hide an instance method the companion
+     * inherits, and a call by a name both have would consider both.
+     */
+    static String rethrowName(TypeElement implemented, Elements elements) {
+        Set<String> methods = new LinkedHashSet<>();
+        for (ExecutableElement method : ElementFilter.methodsIn(elements.getAllMembers(implemented))) {
+            methods.add(method.getSimpleName().toString());
+        }
+        return unique("rethrow", methods);
+    }
+
+    /**
+     * The private method {@code rethrow}, which throws what it is given unchanged, a checked exception included,
+     * through a type variable that a call leaves to javac, which infers it as {@code RuntimeException}. Its own
+     * names, {@code X} and {@code failure}, cannot hide what it writes: {@code Throwable}, by its simple name or as
+     * {@code java.lang.Throwable}.
+     */
+    static void rethrower(SourceWriter out, Names names, String rethrow) {
+        String throwable = names.of(BoundInvocation.THROWABLE);
+        out.blank();
+        out.line("/** Throws what a bound method or an accessor threw, unchanged, which its lambda cannot declare. */");
+        out.line("@" + names.of(SUPPRESS_WARNINGS) + "(\"unchecked\")");
+        out.open("private static <X extends " + throwable + "> X " + rethrow + "(" + throwable + " failure) throws X");
+        out.line("throw (X) failure;");
+        out.close();
     }
 
     /**

@@ -2,7 +2,6 @@ package io.github.graphmaquina.processor;
 
 import io.github.graphmaquina.annotation.GenerateGraphApi;
 import io.github.graphmaquina.annotation.StateGraphs;
-import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.processor.gen.BoundInvocation;
 import io.github.graphmaquina.processor.gen.SetGenerator;
 import io.github.graphmaquina.processor.model.MachineAccessor;
@@ -37,8 +36,9 @@ import lombok.RequiredArgsConstructor;
  * companion writes or inherits it already, and no redeclaration can narrow their results, which are {@code void},
  * primitive or the final {@code String}. Each machine must also be one the generated set can hold and build: a
  * second machine over the same entity and state enum is refused, as the registry would refuse it, and so is a
- * machine whose types the set's package cannot name, or an accessor whose signature is the companion's own static
- * {@code builder()}.</p>
+ * machine whose types the set's package cannot name. Once nothing else is wrong with the set, an instance method it
+ * declares or inherits, an accessor or not, that has the signature of the companion's own static
+ * {@code builder(...)} is refused too.</p>
  *
  * <p>A machine is named by its own marker, {@code @GenerateGraphApi}, and by nothing else: an accessor that
  * returns anything else returns no machine of this library. Building a machine's model is the caller's work,
@@ -75,7 +75,6 @@ final class SetModelBuilder {
             return Optional.empty();
         }
         List<MachineAccessor> accessors = new ArrayList<>();
-        Map<String, ExecutableElement> methods = new LinkedHashMap<>();
         Map<String, ExecutableElement> writers = new LinkedHashMap<>();
         Set<String> seen = new LinkedHashSet<>();
         boolean silent = false;
@@ -116,7 +115,6 @@ final class SetModelBuilder {
                 continue;
             }
             accessors.add(new MachineAccessor(method.getSimpleName().toString(), model.get()));
-            methods.put(method.getSimpleName().toString(), method);
         }
         for (ExecutableElement inherited : signatures.inheritedAbstract(type, BUILT_IN)) {
             anyAccessor = true;
@@ -145,11 +143,11 @@ final class SetModelBuilder {
         }
         String packageName = signatures.elements().getPackageOf(type).getQualifiedName().toString();
         SetModel model = new SetModel(type, packageName, accessors);
-        checkBuilderAccessor(model, methods);
         if (silent || diagnostics.errors() > before) {
             return Optional.empty();
         }
-        return Optional.of(model);
+        checkBuilder(type, set, model);
+        return diagnostics.errors() > before ? Optional.empty() : Optional.of(model);
     }
 
     /**
@@ -202,25 +200,55 @@ final class SetModelBuilder {
     }
 
     /**
-     * SG510 for an accessor named {@code builder} when the companion's own static {@code builder(...)} takes no
-     * parameter, which it does for a set without an asynchronous machine and without instance dependencies: the
-     * two methods would then have one signature. With any parameter, they are overloads and both are declared.
-     * The message names the companion, {@code <Set>Runtime}, or names it through the set when the set's name has
-     * no PascalCase form: such a set, refused as {@code SG603} and checked all the same, has no companion name.
+     * SG510 for an instance method of the set, abstract or default, declared or inherited, that the companion's own
+     * static {@code builder(...)} would clash with, as {@link Signatures#clashing} finds it: one named
+     * {@code builder} taking what that {@code builder(...)} takes, the timeout shared by the set's asynchronous
+     * machines when it has any, then every class with instance members its machines use. javac would refuse the
+     * companion. A method the set declares is reported where it is declared, as an accessor when it is abstract, and
+     * one it only inherits at the set, with the interface that declares it. With any other parameters, the two are
+     * overloads and both are declared. {@link StructuralChecks#checkGraphFactory} refuses the facade's counterpart.
+     *
+     * <p>It runs on a set without any other error, the only one whose companion's {@code builder(...)} is known:
+     * fixing another error, a machine that failed or an accessor refused or missing, can add the timeout or a class
+     * to it. The message names the companion, {@code <Set>Runtime}, or names it through the set when the set's name
+     * has no PascalCase form: such a set, refused as {@code SG603} before it is built, is checked all the same.</p>
      */
-    private void checkBuilderAccessor(SetModel model, Map<String, ExecutableElement> methods) {
-        ExecutableElement accessor = methods.get("builder");
-        if (accessor != null && !model.hasAsync() && model.dependencies().isEmpty()) {
-            String companion;
-            try {
-                companion = "the generated " + SymbolNames.runtimeName(model.setName());
-            } catch (IllegalArgumentException unnamed) {
-                companion = "the companion of " + model.setName();
-            }
-            diagnostics.error("SG510", "builder() is the static builder() " + companion + " declares, which takes"
-                    + " no parameter for a set without asynchronous machines and without instance dependencies: give"
-                    + " the accessor another name", accessor);
+    private void checkBuilder(TypeElement type, AnnotationMirror set, SetModel model) {
+        List<TypeMirror> parameters = new ArrayList<>();
+        if (model.hasAsync()) {
+            parameters.add(signatures.declared("java.time.Duration"));
         }
+        for (TypeElement dependency : model.dependencies()) {
+            parameters.add(dependency.asType());
+        }
+        List<ExecutableElement> clashing = signatures.clashing(type, "builder", parameters);
+        if (clashing.isEmpty()) {
+            return;
+        }
+        String takes;
+        if (parameters.isEmpty()) {
+            takes = "no parameter for a set without asynchronous machines and without instance dependencies";
+        } else if (!model.hasAsync()) {
+            takes = "every class with instance members the set's machines use";
+        } else if (model.dependencies().isEmpty()) {
+            takes = "the timeout shared by the set's asynchronous machines";
+        } else {
+            takes = "the timeout shared by the set's asynchronous machines, then every class with instance members its"
+                    + " machines use";
+        }
+        String builder = StructuralChecks.factory("builder", parameters);
+        String companion = StructuralChecks.companion(model.setName());
+        for (ExecutableElement method : clashing) {
+            if (method.getEnclosingElement().equals(type)) {
+                diagnostics.error("SG510", builder + " is the static " + builder + " " + companion + " declares, which"
+                        + " takes " + takes + ": give the " + (method.isDefault() ? "method" : "accessor") + " another name",
+                        method);
+                return;
+            }
+        }
+        diagnostics.error("SG510", type.getSimpleName() + " inherits " + builder + " from "
+                + ((TypeElement) clashing.get(0).getEnclosingElement()).getQualifiedName() + ", but " + companion
+                + " declares a static " + builder + ", which takes " + takes + ": give that method another name", type, set);
     }
 
     /** Whether {@code element} declares a graph this library generates an API for. */

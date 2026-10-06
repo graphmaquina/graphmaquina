@@ -3,11 +3,17 @@ package io.github.graphmaquina.processor.gen;
 import io.github.graphmaquina.processor.model.Binding;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
+import javax.lang.model.element.PackageElement;
+import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.IntersectionType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.type.TypeVariable;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 
@@ -20,8 +26,17 @@ import javax.lang.model.util.Types;
  * the same name and arity that could take those arguments as well. Only then is a parameter type written out, and
  * only at the positions where the argument does not already have it: a cast to the type an expression already has
  * is redundant, and a build that compiles the generated sources with {@code -Xlint:all -Werror} fails on it.</p>
+ *
+ * <p>It also tells which calls the generated lambda making them catches, because they may throw a checked exception,
+ * which no functional interface the generated code implements declares.</p>
  */
 public final class BoundInvocation {
+
+    /** What a lambda catches around a call that throws checked exceptions, all of them exceptions. */
+    static final String EXCEPTION = "java.lang.Exception";
+
+    /** What a lambda catches around a call that throws a checked throwable that is no exception. */
+    static final String THROWABLE = "java.lang.Throwable";
 
     private final Elements elements;
     private final Types types;
@@ -82,6 +97,60 @@ public final class BoundInvocation {
                     && applies(binding, other)) {
                 return true;
             }
+        }
+        return false;
+    }
+
+    /**
+     * The type a lambda that calls {@code binding} catches, to throw on unchanged what the method declares: nothing
+     * when its throws clause holds no checked type, {@code java.lang.Exception} when every checked type it holds is
+     * an exception, {@code java.lang.Throwable} otherwise. A type is checked unless it is {@code RuntimeException},
+     * {@code Error} or a subclass of either. A thrown type variable counts as its bound or, when that bound is an
+     * intersection, as the class among its bounds. javac infers the bound itself for a call that leaves the variable to
+     * it, unless the bound is a supertype of {@code RuntimeException}, as {@code Exception} and {@code Throwable} are:
+     * javac then infers {@code RuntimeException}, and the call is caught although it need not be.
+     */
+    Optional<String> caught(Binding binding) {
+        boolean checked = false;
+        boolean exceptions = true;
+        for (TypeMirror thrown : binding.effectiveType().getThrownTypes()) {
+            if (extendsJavaLang(thrown, "RuntimeException") || extendsJavaLang(thrown, "Error")) {
+                continue;
+            }
+            checked = true;
+            exceptions &= extendsJavaLang(thrown, "Exception");
+        }
+        if (!checked) {
+            return Optional.empty();
+        }
+        return Optional.of(exceptions ? EXCEPTION : THROWABLE);
+    }
+
+    /**
+     * Whether {@code type} is the class {@code java.lang.<simple>} or a subclass of it; a type variable is when its
+     * bound is, and an intersection when one of its bounds is, which only the class among them can be. Each class is
+     * recognized by its package and simple name along the superclasses of {@code type}, so no lookup by name is made,
+     * which a class of the unnamed package named {@code java} could obscure.
+     */
+    private static boolean extendsJavaLang(TypeMirror type, String simple) {
+        if (type instanceof TypeVariable variable) {
+            return extendsJavaLang(variable.getUpperBound(), simple);
+        }
+        if (type instanceof IntersectionType intersection) {
+            for (TypeMirror bound : intersection.getBounds()) {
+                if (extendsJavaLang(bound, simple)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        TypeMirror current = type;
+        while (current instanceof DeclaredType declared && declared.asElement() instanceof TypeElement element) {
+            if (element.getSimpleName().contentEquals(simple) && element.getEnclosingElement() instanceof PackageElement owner
+                    && owner.getQualifiedName().contentEquals("java.lang")) {
+                return true;
+            }
+            current = element.getSuperclass();
         }
         return false;
     }

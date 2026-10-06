@@ -11,8 +11,8 @@ import org.junit.jupiter.api.Test;
  * What a {@code @StateGraphs} set must hold. A set that is not a top-level interface extending {@code Machines} is
  * refused as {@code SG502}. An accessor that takes an argument or returns no machine, a machine held twice, a
  * watch whose peer the set lacks, two machines over one entity and state enum, a set without a machine and an
- * accessor that would collide with the companion's own {@code builder()} are refused as {@code SG510}. A machine
- * with errors adds no error to its set.
+ * accessor that would collide with the companion's own {@code builder()} are refused as {@code SG510}; the last is
+ * checked only once nothing else is wrong with the set. A machine with errors adds no error to its set.
  */
 class SetErrorsTest {
 
@@ -149,12 +149,36 @@ class SetErrorsTest {
         return Compilation.compileTyped(sources);
     }
 
+    /**
+     * Neither as a missing machine nor through what the set's companion would declare without it: Docs is
+     * asynchronous and has an instance dependency, so with Docs valid the companion's {@code builder(...)} takes both,
+     * and an accessor named {@code builder} is only an overload of it.
+     */
     @Test
     void aMachineWithErrorsDoesNotAddSetErrors() {
-        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
-                Fixtures.DOCS_HEADER.replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \"")
-                        + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        String blankPolicy = Fixtures.DOCS_HEADER.replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \"");
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(blankPolicy + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY, Fixtures.LIBRARY));
         assertEquals(1, result.errors().size(), result.describe());
         assertTrue(result.hasError("SG103"), result.describe());
+
+        Compilation.Result builder = Compilation.compileTyped(Fixtures.withLibrary(blankPolicy, Fixtures.DOCS_BODY,
+                Fixtures.LIBRARY.replace("Pages pages();", "Pages builder();")));
+        assertEquals(1, builder.errors().size(), builder.describe());
+        assertTrue(builder.hasError("SG103"), builder.describe());
+    }
+
+    /**
+     * What the companion's {@code builder(...)} takes is known only once every accessor of the set holds a machine
+     * it builds: here {@code docs} takes an argument, and the asynchronous Docs it returns, which has an instance
+     * dependency, is held by no accessor yet. The accessor named {@code builder} is not reported as well.
+     */
+    @Test
+    void aBuilderAccessorIsNotReportedBesideAnotherErrorOfTheSet() {
+        Compilation.Result result = library(Fixtures.LIBRARY.replace("Docs docs();", "Docs docs(String name);")
+                .replace("Pages pages();", "Pages builder();"));
+
+        assertEquals(1, result.errors().size(), result.describe());
+        assertTrue(result.errors().get(0).contains("[SG510] docs must be a no-argument accessor"), result.describe());
     }
 }

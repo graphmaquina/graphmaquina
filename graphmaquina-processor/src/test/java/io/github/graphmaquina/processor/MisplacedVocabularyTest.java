@@ -148,8 +148,8 @@ class MisplacedVocabularyTest {
     }
 
     /**
-     * Elsewhere, the vocabulary belongs to no machine at all: on a method of another class, on a type nested in
-     * the facade, or on a type that is no facade.
+     * Elsewhere, on an element that is neither a facade nor a method of one, the vocabulary of {@code fx.Docs} is
+     * {@code SG606}: on a method of another class, on a type nested in the facade, or on a type that is no facade.
      */
     @Test
     void sg606VocabularyOnAnythingButTheFacade() {

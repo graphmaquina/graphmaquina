@@ -222,12 +222,14 @@ class ExportValidationTest {
     }
 
     /**
-     * An export that does not hold stops what is generated and published, not what is checked: a machine that does
-     * not use it is still validated, so its own problems are reported in the same build.
+     * An export that does not hold stops what is generated, not what is checked: a machine that does not use it is
+     * still validated, so its own problems are reported in the same build. Nothing else is generated either: neither
+     * the companion of Pages, a valid machine that does not use the export, nor that of Shelf, a valid set that holds
+     * Pages alone, although nothing else is wrong with them.
      */
     @Test
     void reportsTheOtherProblemsOfTheCompilationBesideAnExportThatDoesNotHold() {
-        Map<String, String> sources = Fixtures.withDocs(Fixtures.DOCS_HEADER
+        Map<String, String> sources = Fixtures.withPages(Fixtures.DOCS_HEADER
                 .replace("otherwise = \"a draft is sent to review\"", "otherwise = \" \""), Fixtures.DOCS_BODY);
         sources.put("fx.Audit", """
                 package fx;
@@ -239,12 +241,24 @@ class ExportValidationTest {
                     }
                 }
                 """);
+        sources.put("fx.Shelf", """
+                package fx;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                @StateGraphs
+                public interface Shelf extends Machines {
+                    Pages pages();
+                }
+                """);
 
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertEquals(1, result.countError("SG604"), result.describe());
         assertEquals(1, result.countError("SG103"), result.describe());
+        assertEquals(2, result.errors().size(), result.describe());
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+        assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());
+        assertFalse(result.hasGenerated("fx.ShelfRuntime"), result.describe());
     }
 
     /**
