@@ -125,7 +125,7 @@ constant of another machine's catalogue does not compile inside it.
 | Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal |
 | Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, and the reason |
 | Live entity | `assertThat(entity, Order::status)` | the state the getter reads at that moment |
-| Listener callbacks | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome kinds, and the outcome sequence of one entity |
+| Listener callbacks | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome statuses, and the outcome sequence of one entity |
 | Tracked entities | `StateSnapshot` | which of the tracked entities moved since the capture, and that none did |
 | Completion stage | `AsyncAssertions.await`, `AsyncAssertions.awaitFailure` | the outcome, or the throwable, the stage ended with inside the test's budget |
 | Guard, action, hook | `GuardProbe`, `ActionProbe`, `HookProbe`, `CallTrace` | scripted answers per call, the calls each probe recorded, and the order callbacks were entered in |
@@ -300,9 +300,7 @@ recorder.assertRecorded()
         .hasKeysExactly(OrdersRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
                 ItemsRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
                 ItemsRuntime.KEY)
-        .hasOutcomeKindsExactly(Outcome.Applied.class, Outcome.Ignored.class, Outcome.Applied.class,
-                Outcome.Ignored.class, Outcome.Applied.class, Outcome.Ignored.class,
-                Outcome.Applied.class, Outcome.Applied.class, Outcome.Applied.class);
+        .hasStatusesExactly(APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, APPLIED, APPLIED);
 ```
 
 A registry accepts one listener. When the test needs its own as well, `TransitionRecorder.compose(...)`

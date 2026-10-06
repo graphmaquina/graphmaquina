@@ -2,6 +2,7 @@ package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
@@ -41,15 +42,15 @@ public final class RecordedTransitionsAssert {
     }
 
     /**
-     * The variant of every callback in order, compared as the outcome's own class: {@code
-     * Outcome.Applied.class} matches an applied outcome and no other, and a supertype matches nothing.
+     * The status of every callback in order, one {@link OutcomeStatus} per callback, which pins a
+     * sequence of applied, rejected, failed and ignored results without naming the variant classes.
      */
-    public RecordedTransitionsAssert hasOutcomeKindsExactly(Class<?>... expected) {
-        List<Class<?>> wanted = List.of(expected);
+    public RecordedTransitionsAssert hasStatusesExactly(OutcomeStatus... expected) {
+        List<OutcomeStatus> wanted = List.of(expected);
         Checks.equal(CONTEXT, "size", wanted.size(), actual.size());
         for (int index = 0; index < wanted.size(); index++) {
-            Checks.equal(CONTEXT + "[" + index + "]", "kind", wanted.get(index),
-                    actual.get(index).outcome().getClass());
+            Checks.equal(CONTEXT + "[" + index + "]", "status", wanted.get(index),
+                    actual.get(index).outcome().status());
         }
         return this;
     }
