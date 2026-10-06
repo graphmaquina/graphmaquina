@@ -86,11 +86,14 @@ class OutcomeAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         Outcome<Entity, State, Id> outcome = applied(entity);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "status", OutcomeStatus.FAILED, OutcomeStatus.APPLIED);
+                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "status", OutcomeStatus.FAILED,
+                OutcomeStatus.APPLIED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "status", OutcomeStatus.REJECTED, OutcomeStatus.APPLIED);
+                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "status", OutcomeStatus.REJECTED,
+                OutcomeStatus.APPLIED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "status", OutcomeStatus.IGNORED, OutcomeStatus.APPLIED);
+                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "status", OutcomeStatus.IGNORED,
+                OutcomeStatus.APPLIED);
     }
 
     @Test
@@ -98,11 +101,14 @@ class OutcomeAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         Outcome<Entity, State, Id> outcome = failed(entity, Optional.empty());
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "status", OutcomeStatus.APPLIED, OutcomeStatus.FAILED);
+                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "status", OutcomeStatus.APPLIED,
+                OutcomeStatus.FAILED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "status", OutcomeStatus.REJECTED, OutcomeStatus.FAILED);
+                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "status", OutcomeStatus.REJECTED,
+                OutcomeStatus.FAILED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "status", OutcomeStatus.IGNORED, OutcomeStatus.FAILED);
+                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "status", OutcomeStatus.IGNORED,
+                OutcomeStatus.FAILED);
     }
 
     @Test
@@ -110,11 +116,14 @@ class OutcomeAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         Outcome<Entity, State, Id> outcome = rejected(entity, Optional.empty());
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "status", OutcomeStatus.APPLIED, OutcomeStatus.REJECTED);
+                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "status", OutcomeStatus.APPLIED,
+                OutcomeStatus.REJECTED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "status", OutcomeStatus.FAILED, OutcomeStatus.REJECTED);
+                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "status", OutcomeStatus.FAILED,
+                OutcomeStatus.REJECTED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "status", OutcomeStatus.IGNORED, OutcomeStatus.REJECTED);
+                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "status", OutcomeStatus.IGNORED,
+                OutcomeStatus.REJECTED);
     }
 
     @Test
@@ -122,11 +131,14 @@ class OutcomeAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         Outcome<Entity, State, Id> outcome = ignored(entity);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "status", OutcomeStatus.APPLIED, OutcomeStatus.IGNORED);
+                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "status", OutcomeStatus.APPLIED,
+                OutcomeStatus.IGNORED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "status", OutcomeStatus.FAILED, OutcomeStatus.IGNORED);
+                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "status", OutcomeStatus.FAILED,
+                OutcomeStatus.IGNORED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "status", OutcomeStatus.REJECTED, OutcomeStatus.IGNORED);
+                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "status", OutcomeStatus.REJECTED,
+                OutcomeStatus.IGNORED);
     }
 
     // --- shared expectations -----------------------------------------------------------------------

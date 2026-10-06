@@ -142,7 +142,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
     /**
      * The watch re-evaluations the outcome's commit triggered; one that threw an exception is reported here as an
      * aborted reaction instead of propagating, while an {@link Error} is not caught. Empty for an outcome that
-     * committed nothing.
+     * committed nothing and for one a cascade returned.
      */
     public ReactionsAssert reactions() {
         return new ReactionsAssert(context + ".reactions", actual == null ? null : actual.reactions());
