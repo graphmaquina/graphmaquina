@@ -554,6 +554,13 @@ observe. Most items refuse up front what used to fail later, in generated code o
   stack, a member class of a generic interface, a type named in a declaration's header like a member type the
   declaration declares or inherits, an on-demand import of a type the source cannot access, and a sibling type in
   the unnamed package are resolved as javac resolves them, where generation used to fail or resolve them wrongly.
+- **A class of the unnamed package named like a package.** Beside such a class, as a class `shop` beside the
+  package `shop`, the generator and the annotation processor read a canonical name as javac does: in code of a
+  named package it names the package's type, in code of the unnamed package the class's member type when the
+  class has one. Such layouts could get false diagnostics, a processor crash, or wrong output, such as missing
+  `*Refs` types, a dropped machine or host, or another enum's states. What a canonical name alone cannot tell
+  apart is refused with `SG603`: two machines that share a canonical name, and two types of one canonical name
+  that a class file of the unnamed package refers to.
 - **Builds that used to fail.** A machine renamed only in case on a case-insensitive volume, which got a false
   `SG603`, a compilation id that holds a line break, whose carrier javac refused, and a class output holding an
   unreadable `.class` file, which stopped `prepare-compile` and `complete-compile`, now build.
@@ -570,18 +577,18 @@ observe. Most items refuse up front what used to fail later, in generated code o
   carrier, includes that hold only empty values, a test release below 21, a generator `java` with no `javac`
   beside it or whose JDK declares a release below 21, from `javaExecutable` or a toolchain alike, and a generator
   `java` that is not the `java` of the JDK javac compiles with, compared by JDK home, so a wrapper launcher outside
-  that JDK's `bin` directory is refused. A `-processor` list or `<annotationProcessors>` refused this way used to
-  fail only after the preparation had retired the previous outputs, in javac or in the `complete` goal, and so
-  could a rebuild without `clean` under `useIncrementalCompilation=false`. The last `-proc:` option decides, as
-  for javac, so `-proc:none` followed by a `-proc:full` argument is no longer refused, nor is `<proc>none</proc>`
-  with a `-proc:full` argument. The deprecated `<compilerArguments>` map, and for the test compilation
-  `<testCompilerArguments>` and `<testCompilerArgument>`, are read as `maven-compiler-plugin` 3.15.0 passes them,
-  so a manifest argument given only there is no longer refused, and `<compilerArgs>`, `<annotationProcessors>`,
-  `<includes>`, `<excludes>`, `<testIncludes>` and `<testExcludes>` written as comma-separated text are split as
-  Maven splits them. A `<jdkToolchain>` that matches no toolchain falls back as the compiler does, properties
-  given on the command line or to the JVM win over those of the project, and an execution's `<compilerArgs>`
-  replace the plugin-level ones, as Maven merges them, where both used to be read. The plugin's descriptor
-  declares Java 21 as the Java version it requires.
+  that JDK's `bin` directory is refused. A `-processor` list or `<annotationProcessors>` that the plugin now
+  refuses used to fail only after the preparation had retired the previous outputs, in javac or in the `complete`
+  goal, and so could a rebuild without `clean` under `useIncrementalCompilation=false`. The last `-proc:` option
+  decides, as for javac, so `-proc:none` followed by a `-proc:full` argument is no longer refused, nor is
+  `<proc>none</proc>` with a `-proc:full` argument. The deprecated `<compilerArguments>` map, and for the test
+  compilation `<testCompilerArguments>` and `<testCompilerArgument>`, are read as `maven-compiler-plugin` 3.15.0
+  passes them, so a manifest argument given only there is no longer refused, and `<compilerArgs>`,
+  `<annotationProcessors>`, `<includes>`, `<excludes>`, `<testIncludes>` and `<testExcludes>` written as
+  comma-separated text are split as Maven splits them. A `<jdkToolchain>` that matches no toolchain falls back as
+  the compiler does, properties given on the command line or to the JVM win over those of the project, and an
+  execution's `<compilerArgs>` replace the plugin-level ones, as Maven merges them, where both used to be read.
+  The plugin's descriptor declares Java 21 as the Java version it requires.
 - **Gradle.** `prepare-compile` refuses, before it retires anything: `options.failOnError = false`, `-proc:only`
   or `-proc:none` as the last `-proc:` option, a `-processor` list, the last one given, that leaves out the
   StateGraph processor or holds a name that is not a valid qualified class name, an empty one after its last
