@@ -44,6 +44,7 @@ entity and state enum with different transition catalogues: two engines would ot
 | `render()` and `Detail.FULL` | Export the real graph with Graphviz. There is no tabular substitute. |
 | `edge(from, to)` and `/cells` snapshots | `findTransition(from, id)` and `/transitions` in a v2 snapshot. |
 | A return to the origin, or a terminal with an ACTION self-loop, in the DSL | A terminal forbids every outgoing edge. A non-terminal self-loop is legal and requires `allowsCycle`. |
+| `Outcome.current()` | `Outcome.recordedState()`: the same value, the state the call recorded, not a read of the entity. |
 
 Preserved, apart from the fixes listed under
 [Behaviour changes in this release](#behaviour-changes-in-this-release): guard order, timeouts and deadlines,
