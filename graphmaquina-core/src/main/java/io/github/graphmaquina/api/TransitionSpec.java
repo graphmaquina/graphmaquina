@@ -7,7 +7,9 @@ import lombok.NonNull;
 
 /**
  * One declared edge of the graph: where it starts, which identifier selects it, where it ends, and everything
- * the runtime needs to execute it. The constructor validates what the runtime takes for granted.
+ * the runtime needs to execute it. The constructor checks what one edge can check alone: onFailure and failsOn need
+ * an action, and a timeout needs an asynchronous action and must be positive. That onFailure names an edge leaving
+ * {@code from} is checked by the DSL when it builds the graph.
  *
  * @param <E> entity type
  * @param <S> state enum
@@ -18,8 +20,13 @@ import lombok.NonNull;
  * @param action the action to run, absent for a plain move
  * @param guards guards evaluated in declaration order
  * @param onFailure identifier of the recovery edge, resolved from {@code from}
- * @param failsOn exception types treated as domain failures
- * @param timeout deadline of an asynchronous action
+ * @param failsOn exception types that turn an action's exception into a domain failure, routed like a failed outcome;
+ *     the exception is unwrapped from CompletionException and ExecutionException first, and an Error or a
+ *     CancellationException never matches, nor does a StateMachineException, which the engine rethrows as is,
+ *     whichever root it comes from; a TransitionAbortedException from another root keeps details that describe
+ *     that root
+ * @param timeout longest wait for the asynchronous action's stage, counted from when the action returns it; it only
+ *     shortens the root's deadline, and {@code Duration.ofNanos(Long.MAX_VALUE)} or more sets no limit of its own
  * @param afterCommit hook run once this edge is committed
  */
 public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(@NonNull S from, @NonNull T transition, @NonNull S to,

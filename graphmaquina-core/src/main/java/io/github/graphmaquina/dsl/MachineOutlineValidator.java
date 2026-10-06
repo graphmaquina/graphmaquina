@@ -13,12 +13,19 @@ import java.util.Set;
 import lombok.NonNull;
 
 /**
- * Structural checks over a {@link MachineOutline}: unique keys, reasons, terminals, reachability, cycles,
- * failure routes and watches. Shared by the DSL and the annotation processor, so both report the same codes.
+ * Structural checks over a {@link MachineOutline}: unique keys, policies and their reasons, terminals,
+ * reachability, cycles, failure routes and watches. Shared by the DSL and the annotation processor, so both report
+ * the same codes for these checks.
  */
 public final class MachineOutlineValidator {
 
     private MachineOutlineValidator() { }
+
+    /**
+     * The identity of an edge: the pair itself, never its printed form {@code FROM/ID}, which two distinct pairs
+     * share as soon as a name holds a {@code /}.
+     */
+    private record EdgeKey(String from, String transition) { }
 
     /** Problems sorted by code, then by the index of the origin state, then by the index of the identifier. */
     public static List<InvalidGraphException.Problem> validate(@NonNull MachineOutline outline) {
@@ -29,7 +36,7 @@ public final class MachineOutlineValidator {
 
     static void validate(MachineOutline outline, Problems problems) {
         OutlineIndex index = new OutlineIndex(outline);
-        Map<String, TransitionOutline> byKey = uniqueKeys(outline, index, problems);
+        Map<EdgeKey, TransitionOutline> byKey = uniqueKeys(outline, index, problems);
         policies(outline, index, byKey, problems);
         exits(outline, index, problems);
         reachability(outline, index, problems);
@@ -38,11 +45,11 @@ public final class MachineOutlineValidator {
         watches(outline, index, byKey, problems);
     }
 
-    private static Map<String, TransitionOutline> uniqueKeys(MachineOutline outline, OutlineIndex index,
+    private static Map<EdgeKey, TransitionOutline> uniqueKeys(MachineOutline outline, OutlineIndex index,
             Problems problems) {
-        Map<String, TransitionOutline> byKey = new HashMap<>();
+        Map<EdgeKey, TransitionOutline> byKey = new HashMap<>();
         for (TransitionOutline edge : outline.transitions()) {
-            if (byKey.putIfAbsent(edge.key(), edge) != null) {
+            if (byKey.putIfAbsent(new EdgeKey(edge.from(), edge.transition()), edge) != null) {
                 problems.add("SG102", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
                         "duplicate transition " + edge.key());
             }
@@ -51,7 +58,7 @@ public final class MachineOutlineValidator {
     }
 
     private static void policies(MachineOutline outline, OutlineIndex index,
-            Map<String, TransitionOutline> byKey, Problems problems) {
+            Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
         Set<String> declared = new HashSet<>();
         for (PolicyOutline policy : outline.policies()) {
             if (!declared.add(policy.state())) {
@@ -68,7 +75,7 @@ public final class MachineOutlineValidator {
                     problems.add("SG103", index.stateIndex(policy.state()), index.transitionIndex(rejection.getKey()),
                             "the rejection of " + rejection.getKey() + " in " + policy.state() + " has a blank reason");
                 }
-                if (byKey.containsKey(policy.state() + "/" + rejection.getKey())) {
+                if (byKey.containsKey(new EdgeKey(policy.state(), rejection.getKey()))) {
                     problems.add("SG702", index.stateIndex(policy.state()), index.transitionIndex(rejection.getKey()),
                             policy.state() + " both declares and rejects " + rejection.getKey());
                 }
@@ -139,7 +146,7 @@ public final class MachineOutlineValidator {
     }
 
     private static void failureRoutes(MachineOutline outline, OutlineIndex index,
-            Map<String, TransitionOutline> byKey, Problems problems) {
+            Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
         for (TransitionOutline edge : outline.transitions()) {
             if (edge.onFailure().isEmpty()) {
                 continue;
@@ -156,7 +163,7 @@ public final class MachineOutlineValidator {
                         where + " declares onFailure = " + recovery + ", which is its own key");
                 continue;
             }
-            if (!byKey.containsKey(edge.from() + "/" + recovery)) {
+            if (!byKey.containsKey(new EdgeKey(edge.from(), recovery))) {
                 problems.add("SG301", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
                         where + " declares onFailure = " + recovery + ", but no transition " + recovery
                                 + " leaves " + edge.from());
@@ -165,10 +172,10 @@ public final class MachineOutlineValidator {
     }
 
     private static void watches(MachineOutline outline, OutlineIndex index,
-            Map<String, TransitionOutline> byKey, Problems problems) {
+            Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
         for (WatchOutline watch : outline.watches()) {
             for (String transition : watch.transitions()) {
-                if (!byKey.containsKey(watch.state() + "/" + transition)) {
+                if (!byKey.containsKey(new EdgeKey(watch.state(), transition))) {
                     problems.add("SG401", index.stateIndex(watch.state()), index.transitionIndex(transition),
                             "the watch of " + watch.state() + " executes " + transition
                                     + ", but no such transition leaves " + watch.state());

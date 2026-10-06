@@ -6,18 +6,22 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
- * Where a golden is read from, whether a mismatch rewrites it, and who is told about a rewrite. Reading
- * resolves the resource through a {@link ClassLoader} only; updating writes through the source root only,
- * so a run can never overwrite a file of the class path it is reading from.
+ * Where a golden is read from, whether a mismatch rewrites it, and who is told about a rewrite. Read mode
+ * resolves the resource through the {@link ClassLoader} and never writes. Update mode never consults the class
+ * loader: it reads and writes the source file under the source root. Nothing compares the source root with the
+ * class path, so a root that is also a class-path directory is rewritten like any other.
  *
  * <p>{@link #defaults()} reads the system properties {@code graphmaquina.goldens.update} and
  * {@code graphmaquina.goldens.root} at the moment it is called, so a test may set them and restore them
- * around one call. {@link #readOnly(ClassLoader)} and
- * {@link #updating(ClassLoader, Path, Consumer)} read no property at all.
+ * around one call; the root is made a path only when update mode is on, and read mode ignores it.
+ * {@link #readOnly(ClassLoader)} and {@link #updating(ClassLoader, Path, Consumer)} read no property at all.
  */
 public final class GoldenOptions {
 
-    /** System property selecting update mode; only the exact values {@code true} and {@code false}. */
+    /**
+     * System property selecting update mode; only the exact values {@code true} and {@code false} are accepted,
+     * and an unset property means {@code false}.
+     */
     public static final String UPDATE_PROPERTY = "graphmaquina.goldens.update";
 
     /** System property holding the source root to write into; required when update mode is on. */
@@ -37,11 +41,14 @@ public final class GoldenOptions {
 
     /**
      * The context class loader when the thread has one, the loader of this module otherwise, with the
-     * mode and the source root taken from the system properties.
+     * mode taken from the system properties and, in update mode only, the source root. Read mode never
+     * writes, so it ignores {@code graphmaquina.goldens.root} and the options it builds carry no root. Each
+     * golden an update writes is reported on the standard output as {@code UPDATED} followed by its absolute path.
      *
-     * @throws IllegalArgumentException if {@code graphmaquina.goldens.update} is neither {@code true} nor
-     *     {@code false}
-     * @throws IllegalStateException if update mode is on without {@code graphmaquina.goldens.root}
+     * @throws IllegalArgumentException if {@code graphmaquina.goldens.update} is set to anything other than
+     *     {@code true} or {@code false}; unset, it means {@code false}. Also if update mode is on and
+     *     {@code graphmaquina.goldens.root} is not a valid path
+     * @throws IllegalStateException if update mode is on and {@code graphmaquina.goldens.root} is unset or blank
      */
     public static GoldenOptions defaults() {
         ClassLoader context = Thread.currentThread().getContextClassLoader();
@@ -52,7 +59,7 @@ public final class GoldenOptions {
             throw new IllegalStateException("update mode requires the system property " + ROOT_PROPERTY
                     + " naming the source root the goldens are written to");
         }
-        Path sourceRoot = root == null || root.isBlank() ? null : root(Path.of(root));
+        Path sourceRoot = update ? root(Path.of(root)) : null;
         return new GoldenOptions(loader, sourceRoot, update, GoldenOptions::report);
     }
 
@@ -62,8 +69,9 @@ public final class GoldenOptions {
     }
 
     /**
-     * Reads through {@code loader} and rewrites a differing golden under {@code sourceRoot}, telling
-     * {@code reporter} the absolute path of every file it writes.
+     * Update mode: writes a golden under {@code sourceRoot} when it is missing or its text differs, telling
+     * {@code reporter} the absolute path of every golden it writes. The loader is only kept for
+     * {@link #loader()}; update mode never reads through it.
      */
     public static GoldenOptions updating(ClassLoader loader, Path sourceRoot, Consumer<Path> reporter) {
         return new GoldenOptions(Objects.requireNonNull(loader, "loader"),
@@ -76,8 +84,8 @@ public final class GoldenOptions {
     }
 
     /**
-     * The root update mode writes into, made absolute against the working directory and normalized; empty
-     * when none was configured.
+     * The root update mode writes into, made absolute against the working directory and normalized. Empty in
+     * read mode, which never writes, whatever {@code graphmaquina.goldens.root} holds.
      */
     public Optional<Path> sourceRoot() {
         return Optional.ofNullable(sourceRoot);

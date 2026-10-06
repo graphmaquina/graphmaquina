@@ -61,9 +61,9 @@ final class Bindings {
 
     /**
      * The static types of the arguments the generated code passes to a {@code role} of {@code machine}: the
-     * parameters of the SPI's own functional interface, which the emitter compares the selected method's
-     * parameters against. For a hook, {@code arity} is the selected method's parameter count and picks the
-     * entity-only or the entity-plus-context form.
+     * parameters of the functional interface the DSL takes for that role, which the emitter compares the selected
+     * method's parameters against. For a hook, {@code arity} is the selected method's parameter count and picks the
+     * entity-only or the entity-plus-context form. A condition without a peer gets none.
      */
     List<TypeMirror> arguments(Role role, MachineTypes machine, Optional<MachineTypes> peer, int arity) {
         return switch (role) {

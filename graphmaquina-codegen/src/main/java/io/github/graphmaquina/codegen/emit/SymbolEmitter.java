@@ -3,12 +3,14 @@ package io.github.graphmaquina.codegen.emit;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.PropertyDescriptor;
+import io.github.graphmaquina.codegen.model.SourceLocation;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Emits the references container of every host: a top-level {@code <Host>Refs} whose nested symbol types name one
@@ -18,6 +20,14 @@ import java.util.Optional;
  * roles is usable wherever either category is required, and it records its host, its original member name and
  * those roles in metadata the processor reads back. The types are final, have a private constructor and are
  * never instantiated: they are compile-time names, not runtime objects.</p>
+ *
+ * <p>Every name a container writes is qualified, except that a host of the unnamed package can only be written by
+ * its simple name. Each name is read through its first segment, and any type in scope in the container under that
+ * simple name takes the name over: a symbol type of the container shadows a type of that name (JLS 6.4.1) and
+ * obscures a package of that name, and a type of the host's package, a top-level type generated in that package,
+ * the container included, or a public type of {@code java.lang} obscures the package it starts with (JLS 6.4.2).
+ * The bootstrap refuses a host whose names a type of its package or of {@code java.lang} would take; a container
+ * whose host a symbol type or a generated type would take is refused here. Both refusals are {@code SG603}.</p>
  */
 final class SymbolEmitter {
 
@@ -37,10 +47,15 @@ final class SymbolEmitter {
     }
 
     /**
-     * The containers of {@code symbols}, one compilation unit per host, in the order the symbols are given; every
-     * symbol of one host shares the container its qualified name spells, so grouping never reorders them.
+     * The containers of {@code symbols}, one compilation unit per host, in the order their first symbols are given,
+     * each holding its symbols in the order they are given. Every symbol of one host shares the container its
+     * qualified name spells, so symbols sorted by qualified name, as the bootstrap gives them, are never reordered.
+     *
+     * @param generated the simple names of the top-level types generated in each package
+     * @throws io.github.graphmaquina.codegen.CodegenException {@code SG603} if a symbol type of a container, or a
+     *     top-level type generated in its package, takes over the first segment of the container's host
      */
-    static List<GeneratedSource> emit(List<SymbolDescriptor> symbols) {
+    static List<GeneratedSource> emit(List<SymbolDescriptor> symbols, Map<String, Set<String>> generated) {
         Map<String, List<SymbolDescriptor>> containers = new LinkedHashMap<>();
         for (SymbolDescriptor symbol : symbols) {
             String container = symbol.qualifiedName().substring(0, symbol.qualifiedName().lastIndexOf('.'));
@@ -48,20 +63,31 @@ final class SymbolEmitter {
         }
         List<GeneratedSource> sources = new ArrayList<>();
         for (Map.Entry<String, List<SymbolDescriptor>> container : containers.entrySet()) {
-            sources.add(emit(container.getKey(), container.getValue()));
+            sources.add(emit(container.getKey(), container.getValue(), generated));
         }
         return List.copyOf(sources);
     }
 
     /**
      * One container. A container is a top-level type whose simple name joins the host's enclosing names in
-     * PascalCase, so the last dot of its canonical name separates its package from its simple name exactly.
+     * PascalCase, followed by {@code Refs}, so the last dot of its canonical name separates its package from its
+     * simple name exactly; the canonical name of a container of the unnamed package has no dot.
      */
-    private static GeneratedSource emit(String container, List<SymbolDescriptor> symbols) {
+    private static GeneratedSource emit(String container, List<SymbolDescriptor> symbols,
+            Map<String, Set<String>> generated) {
         int lastDot = container.lastIndexOf('.');
         String packageName = lastDot < 0 ? "" : container.substring(0, lastDot);
         String simpleName = container.substring(lastDot + 1);
         String host = symbols.get(0).host();
+        List<String> symbolNames = symbols.stream().map(SymbolEmitter::simpleName).toList();
+        // A refusal is anchored at the symbol whose type takes the host's first segment, or else at the first one.
+        SourceLocation anchor = symbols.stream()
+            .filter((SymbolDescriptor symbol) -> simpleName(symbol).equals(ApiEmitter.firstSegment(host)))
+            .map(SymbolDescriptor::origin)
+            .findFirst()
+            .orElse(symbols.get(0).origin());
+        ApiEmitter.requireNameable("the references container " + simpleName,
+            ApiEmitter.meanings(simpleName, packageName, symbolNames, generated), "its host " + host, host, anchor);
 
         JavaSource source = new JavaSource();
         source.header(packageName, List.of());
@@ -81,8 +107,13 @@ final class SymbolEmitter {
         return new GeneratedSource(container, source.toString());
     }
 
+    /** The simple name of the type generated for {@code symbol}, nested in its container. */
+    private static String simpleName(SymbolDescriptor symbol) {
+        return symbol.qualifiedName().substring(symbol.qualifiedName().lastIndexOf('.') + 1);
+    }
+
     private static void symbol(JavaSource source, SymbolDescriptor symbol) {
-        String name = symbol.qualifiedName().substring(symbol.qualifiedName().lastIndexOf('.') + 1);
+        String name = simpleName(symbol);
         source.line("");
         source.javadoc(documentation(symbol));
         source.line("@io.github.graphmaquina.annotation.internal.GeneratedSymbol(host = " + symbol.host() + ".class, member = \"" + symbol.member()

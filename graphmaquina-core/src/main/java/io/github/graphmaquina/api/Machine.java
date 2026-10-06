@@ -18,6 +18,10 @@ public interface Machine<E, S extends Enum<S>, T extends Enum<T>> {
     /** Structural inspection: the identifiers declared from {@code state}. Evaluates no guard. */
     Set<T> transitionsFrom(S state);
 
-    /** Runs the whole call on the machine's executor, never on the calling thread. A failed future after close(). */
+    /**
+     * Runs {@code call} on the machine's executor through {@link StateMachine#supplyAsync}: a new virtual thread by
+     * default, wherever a supplied executor runs it otherwise, the calling thread included. A call the executor
+     * refuses, as the default one does after close(), returns a failed future.
+     */
     <R> CompletableFuture<R> async(Supplier<R> call);
 }

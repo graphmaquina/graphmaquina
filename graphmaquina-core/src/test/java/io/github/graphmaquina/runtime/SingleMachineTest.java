@@ -52,8 +52,17 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
+/**
+ * One standalone machine over the doc fixture: what each outcome writes, guard order, the failure route and its
+ * limits, aborts, the commit's pre-read and setter failures, reentrancy, how long and where a context and a peer
+ * view stay usable, and self-loops.
+ */
 class SingleMachineTest {
 
+    /**
+     * A transition action that records each call as {@code from-identifier>to@depth}, runs {@code onCall}, and answers
+     * with {@code behaviour}, ok by default.
+     */
     static final class Probe implements TransitionAction<Doc, DocStatus, DocTransition> {
         Supplier<ActionOutcome> behaviour = ActionOutcome::ok;
         Consumer<TransitionContext<Doc, DocStatus, DocTransition>> onCall =
@@ -68,6 +77,7 @@ class SingleMachineTest {
         }
     }
 
+    /** A transition guard that counts its calls and answers with {@code verdict}, pass by default. */
     static final class GuardProbe implements TransitionGuard<Doc, DocStatus, DocTransition> {
         Supplier<GuardResult> verdict = GuardResult::pass;
         int calls;
@@ -307,7 +317,8 @@ class SingleMachineTest {
         CommitFailedException error = assertThrows(CommitFailedException.class, () -> machine.execute(doc, SUBMIT));
         assertEquals(List.of(), error.applied());
         assertEquals(List.of(doc), error.pending());
-        assertTrue(error.getMessage().contains("an action must not call the setter"));
+        assertTrue(error.getMessage().contains(
+                "an action called the setter, or a concurrent transition on the same entity wrote it first"));
     }
 
     /**
@@ -329,7 +340,8 @@ class SingleMachineTest {
         assertEquals(List.of(doc, peer), error.pending());
         assertEquals(List.of(), writes);
         assertEquals(DRAFT, doc.status());
-        assertTrue(error.getMessage().contains("an action must not call the setter"));
+        assertTrue(error.getMessage().contains(
+                "an action called the setter, or a concurrent transition on the same entity wrote it first"));
     }
 
     /** A setter that throws stops phase 2 where it stood: what was written is applied, the rest stays pending. */
@@ -454,7 +466,10 @@ class SingleMachineTest {
         assertEquals(DRAFT, raw.get());
     }
 
-    /** An explicit self-loop is a real edge: it runs, it commits, and the setter still writes once. */
+    /**
+     * An explicit self-loop is a real edge: it is Applied, its action runs once, and the commit writes its state
+     * through the setter once, although the entity stays where it was.
+     */
     @Test
     void anExplicitSelfLoopIsAppliedAndWritesItsState() {
         Probe retouch = new Probe();
@@ -468,12 +483,17 @@ class SingleMachineTest {
                 .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .build();
-        StateMachine<Doc, DocStatus, DocTransition> loops =
-                StateMachines.from(looping).state(Doc::status, Doc::setStatus).build();
+        StateMachine<Doc, DocStatus, DocTransition> loops = StateMachines.from(looping)
+                .state(Doc::status, (Doc written, DocStatus status) -> {
+                    writes.add(written.id() + ":" + status);
+                    written.setStatus(status);
+                })
+                .build();
         Doc doc = new Doc("1", REVIEW);
         Outcome<Doc, DocStatus, DocTransition> outcome = loops.execute(doc, RETOUCH);
         assertInstanceOf(Outcome.Applied.class, outcome);
         assertEquals(List.of("REVIEW-RETOUCH>REVIEW@0"), retouch.calls);
+        assertEquals(List.of("1:REVIEW"), writes);
         assertEquals(REVIEW, doc.status());
     }
 }

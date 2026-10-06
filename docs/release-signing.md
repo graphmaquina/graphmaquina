@@ -53,7 +53,7 @@ SIGNING_PASSWORD='op://<vault>/<item>/password' \
 op run -- ./gradlew --no-daemon --no-configuration-cache centralBundle
 ```
 
-The resulting `build/graphmaquina-central-bundle.zip` contains five modules and the Gradle plugin marker.
+The resulting `build/graphmaquina-central-bundle.zip` contains six modules and the Gradle plugin marker.
 The build checks metadata, required files and checksums. Before uploading, independently verify every
 signature with GnuPG. The ZIP contains public artifacts and detached signatures; it must never contain
 private keys or the passphrase. Upload it through Central Portal, wait for validation, then publish and

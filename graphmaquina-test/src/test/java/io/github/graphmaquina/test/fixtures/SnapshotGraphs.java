@@ -19,11 +19,13 @@ import java.util.function.Consumer;
 
 /**
  * Graphs built with the real DSL for the structural snapshot tests. {@link Variant} yields one machine
- * whose every snapshotted property can be changed one at a time, so a diff between two variants names
- * exactly the paths that were touched; {@link #cycleGraph(Step)} and {@link #branchGraph(boolean)} do the
- * same for the initial state and for terminality, which cannot change alone and valid;
- * {@link #identityGraph(Gate)} changes nothing but the identifier of an edge; and {@link #minimalGraph()}
- * is small enough for its serialized form to be pinned character by character.
+ * whose action name, guard mode and order, recovery identifier, failure class, hook, timeout, rejection
+ * reasons, watch peer, watch rules and watch itself can each be changed on their own, so a diff between two
+ * variants names exactly the paths that were touched; {@link #cycleGraph(Step)} and
+ * {@link #branchGraph(boolean)} do the same for the initial state and for terminality, which cannot change
+ * alone and valid; {@link #identityGraph(Gate)} changes nothing but the identifier of an edge;
+ * {@link #asyncGuardGraph()} is the one shape whose edge is asynchronous while its action is not; and
+ * {@link #minimalGraph()} is small enough for its serialized form to be pinned character by character.
  *
  * <p>Every action, guard, hook and watch condition here throws when it runs: capturing a snapshot reads
  * the definition only, and a fixture that was executed fails the test that executed it.
@@ -36,7 +38,10 @@ public final class SnapshotGraphs {
     /** Transition identifiers of the machine {@link Variant} builds. */
     public enum Id { PREPARE, RECOVER, FINISH, ABANDON }
 
-    /** States of the machines that vary their initial state or their terminals. */
+    /**
+     * States of {@link #cycleGraph(Step)}, {@link #asyncGuardGraph()} and {@link #branchGraph(boolean)}; the first
+     * varies its initial state and the last its terminals.
+     */
     public enum Step { A, B, C }
 
     /** Transition identifiers of the machines built over {@link Step}. */
@@ -74,7 +79,7 @@ public final class SnapshotGraphs {
 
     private SnapshotGraphs() { }
 
-    /** A machine with an asynchronous edge, two guards, a recovery identifier, a hook and a watch. */
+    /** The builder of a machine with an asynchronous edge, two guards, a recovery identifier, a hook and a watch. */
     public static Variant variant() {
         return new Variant();
     }
@@ -149,7 +154,7 @@ public final class SnapshotGraphs {
     /**
      * Builder of the rich machine. Each setter changes one recorded property and nothing else, so the
      * diff between two variants names only the paths that property owns: one path for most of them, and
-     * the paths of a whole rule or of the watch for the ones that move or remove a rule.
+     * several for the ones that reorder the guards or the rules or remove the watch.
      */
     public static final class Variant {
 
@@ -183,7 +188,7 @@ public final class SnapshotGraphs {
             return this;
         }
 
-        /** Both identifiers leave {@code NEW}, so either of them is a valid recovery route. */
+        /** {@code RECOVER} and {@code FINISH} both leave {@code NEW}, so either of them is a valid recovery route. */
         public Variant onFailure(Id transition) {
             this.onFailure = transition;
             return this;

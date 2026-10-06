@@ -13,7 +13,7 @@ import java.util.Optional;
  * @param status whether the call is still running, returned or threw, which says nothing about what the
  *        setter stored
  * @param cause the exception the call threw, empty while it is still running, empty when it returned and
- *        also when what came out was an {@link Error} rather than a {@link RuntimeException}
+ *        also empty when what came out was not a {@link RuntimeException}, an {@link Error} for example
  * @param <E> the entity type of the machine the setter belongs to
  * @param <S> the state enum of that machine
  */

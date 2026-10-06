@@ -43,9 +43,14 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>> impleme
         return tx.peer(this, this::check, key);
     }
 
+    /**
+     * Checks this context and then the poison before it resolves the facade; an unknown facade in a read never
+     * poisons.
+     */
     @Override
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(@NonNull Class<M> peer) {
-        return peer(tx.keyFor(peer));
+        check();
+        return tx.peer(this, this::check, tx.peerKeyFor(this, peer));
     }
 
     /** Only from the thread running test(), and only while the transaction is alive. */

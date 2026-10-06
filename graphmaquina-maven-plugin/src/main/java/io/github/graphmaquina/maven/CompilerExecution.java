@@ -12,22 +12,39 @@ package io.github.graphmaquina.maven;
 enum CompilerExecution {
 
     /** The compilation of {@code src/main/java}, which {@code compiler:compile} runs. */
-    MAIN("default-compile", "skipMain", "maven.main.skip", "generatedSourcesDirectory"),
+    MAIN("main", "default-compile", "skipMain", "maven.main.skip", "generatedSourcesDirectory", "includes",
+        "excludes"),
 
     /** The compilation of {@code src/test/java}, which {@code compiler:testCompile} runs. */
-    TEST("default-testCompile", "skip", "maven.test.skip", "generatedTestSourcesDirectory");
+    TEST("test", "default-testCompile", "skip", "maven.test.skip", "generatedTestSourcesDirectory",
+        "testIncludes", "testExcludes");
 
+    private final String sourceSet;
     private final String id;
     private final String skipParameter;
     private final String skipProperty;
     private final String generatedSourcesParameter;
+    private final String includesParameter;
+    private final String excludesParameter;
 
-    CompilerExecution(String id, String skipParameter, String skipProperty,
-            String generatedSourcesParameter) {
+    CompilerExecution(String sourceSet, String id, String skipParameter, String skipProperty,
+            String generatedSourcesParameter, String includesParameter, String excludesParameter) {
+        this.sourceSet = sourceSet;
         this.id = id;
         this.skipParameter = skipParameter;
         this.skipProperty = skipProperty;
         this.generatedSourcesParameter = generatedSourcesParameter;
+        this.includesParameter = includesParameter;
+        this.excludesParameter = excludesParameter;
+    }
+
+    /**
+     * The source set this execution compiles, as the identity of its compilation names it.
+     *
+     * @return {@code main} or {@code test}
+     */
+    String sourceSet() {
+        return sourceSet;
     }
 
     /**
@@ -66,5 +83,25 @@ enum CompilerExecution {
      */
     String generatedSourcesParameter() {
         return generatedSourcesParameter;
+    }
+
+    /**
+     * The configuration parameter that lists the patterns of the sources this execution compiles.
+     *
+     * @return the name of the includes parameter
+     */
+    String includesParameter() {
+        return includesParameter;
+    }
+
+    /**
+     * The configuration parameter that lists the patterns of the sources this execution leaves out. The test
+     * execution also leaves out those its {@code testIncrementalExcludes} match, which maven-compiler-plugin joins with
+     * these.
+     *
+     * @return the name of the excludes parameter
+     */
+    String excludesParameter() {
+        return excludesParameter;
     }
 }

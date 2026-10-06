@@ -235,7 +235,10 @@ class StateSnapshotTest {
     /** Transition identifiers of the machine over {@link Flag}. */
     enum Toggle { SWITCH }
 
-    /** A second state enum of {@link Box}: one entity class belongs to as many machines as it has states. */
+    /**
+     * A second state enum of {@link Box}, which makes it the entity of a second machine: a registry holds at most
+     * one machine per entity class and state enum.
+     */
     enum Shelf { OUT, IN }
 
     /** Transition identifiers of the machine over {@link Shelf}. */

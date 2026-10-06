@@ -70,20 +70,21 @@ public final class StrongComponents {
      * One cycle inside {@code component}. The search starts at the member the graph declares first and stops at
      * the first back edge it meets, so the list starts and ends on the node that back edge closes, which is not
      * always the first member: over {@code A→B, B→C, C→B, C→A} the witness of {@code {A, B, C}} is
-     * {@code [B, C, B]}. A self-loop reads {@code [A, A]}. The answer follows the graph's declared order and its
-     * successor order and never the iteration order of {@code component}, so an unordered set and an ordered one
-     * yield the same witness.
+     * {@code [B, C, B]}. A self-loop reads {@code [A, A]}. When nothing that member reaches inside the set closes
+     * a cycle, which only a set that is not one strongly connected component allows, the search goes on from the
+     * next member not yet visited, in declared order: over {@code B→C, C→B} alone, the witness of
+     * {@code {A, B, C}} is {@code [B, C, B]}. The answer follows the graph's declared order and its successor order
+     * and never the iteration order of {@code component}, so an unordered set and an ordered one yield the same
+     * witness.
      *
      * <p>Membership is decided by the graph: every element of {@code component} must be one of
      * {@code graph.nodes()} under the node type's {@code equals} and {@code hashCode}. The component's own
-     * {@code contains} is never consulted, except to probe for {@code null} when the graph declares a
-     * {@code null} node. A {@code Set} whose membership disagrees with {@code equals} can therefore behave
-     * differently than under the former global scan, in both directions. A case-insensitive {@code TreeSet}
-     * holding {@code "a"} for the graph node {@code "A"} is rejected as holding a node outside the graph. An
-     * identity-based set holding an equal but distinct instance of a graph node is accepted, and the witness uses
-     * the graph's declared instance. A {@code contains} that would throw, such as the natural order of a
-     * {@code TreeSet} over a graph whose nodes are not mutually comparable, is never reached. The message of the
-     * exception can differ as well.
+     * {@code contains} is never consulted, so a {@code Set} whose membership disagrees with {@code equals} is
+     * judged by {@code equals}, in both directions. A case-insensitive {@code TreeSet} holding {@code "a"} for the
+     * graph node {@code "A"} is rejected as holding a node outside the graph. An identity-based set holding an equal
+     * but distinct instance of a graph node is accepted, and the witness uses the graph's declared instance. A
+     * {@code contains} that would throw, such as the natural order of a {@code TreeSet} over a graph whose nodes are
+     * not mutually comparable, is never reached.
      *
      * @throws IllegalArgumentException if the component is empty, holds no cycle, or is not part of {@code graph}
      */
@@ -91,63 +92,63 @@ public final class StrongComponents {
         if (component.isEmpty()) {
             throw new IllegalArgumentException("an empty component holds no cycle");
         }
-        // The original declaration scan queried component membership for null too. Preserve the
-        // exception of null-rejecting Sets on graphs that Graph.of legitimately accepts, without a scan.
-        if (graph.nodes().contains(null)) {
-            component.contains(null);
-        }
-        N start = null;
-        int first = Integer.MAX_VALUE;
+        List<Member<N>> roots = new ArrayList<>();
         Set<N> members = new HashSet<>();
         for (N node : component) {
             if (!graph.nodes().contains(node)) {
                 throw new IllegalArgumentException("the component " + component + " holds a node outside the graph");
             }
             members.add(node);
-            int position = graph.declarationIndex(node);
-            if (position < first) {
-                first = position;
-                start = graph.declaredNode(node);
-            }
+            roots.add(new Member<>(graph.declarationIndex(node), graph.declaredNode(node)));
         }
+        roots.sort(Comparator.comparingInt((Member<N> member) -> member.position()));
         Map<N, N> parent = new HashMap<>();
         Set<N> onPath = new LinkedHashSet<>();
         Set<N> done = new LinkedHashSet<>();
         Deque<N> stack = new ArrayDeque<>();
         Deque<List<N>> successors = new ArrayDeque<>();
         Deque<int[]> cursors = new ArrayDeque<>();
-        stack.addLast(start);
-        successors.addLast(inside(graph, start, members));
-        cursors.addLast(new int[] {0});
-        onPath.add(start);
-        while (!stack.isEmpty()) {
-            N current = stack.peekLast();
-            List<N> next = successors.peekLast();
-            int[] cursor = cursors.peekLast();
-            if (cursor[0] == next.size()) {
-                stack.removeLast();
-                successors.removeLast();
-                cursors.removeLast();
-                onPath.remove(current);
-                done.add(current);
+        for (Member<N> root : roots) {
+            N start = root.node();
+            if (done.contains(start)) {
                 continue;
             }
-            N candidate = next.get(cursor[0]);
-            cursor[0]++;
-            if (onPath.contains(candidate)) {
-                return close(parent, current, candidate);
-            }
-            if (done.contains(candidate)) {
-                continue;
-            }
-            parent.put(candidate, current);
-            stack.addLast(candidate);
-            successors.addLast(inside(graph, candidate, members));
+            stack.addLast(start);
+            successors.addLast(inside(graph, start, members));
             cursors.addLast(new int[] {0});
-            onPath.add(candidate);
+            onPath.add(start);
+            while (!stack.isEmpty()) {
+                N current = stack.peekLast();
+                List<N> next = successors.peekLast();
+                int[] cursor = cursors.peekLast();
+                if (cursor[0] == next.size()) {
+                    stack.removeLast();
+                    successors.removeLast();
+                    cursors.removeLast();
+                    onPath.remove(current);
+                    done.add(current);
+                    continue;
+                }
+                N candidate = next.get(cursor[0]);
+                cursor[0]++;
+                if (onPath.contains(candidate)) {
+                    return close(parent, current, candidate);
+                }
+                if (done.contains(candidate)) {
+                    continue;
+                }
+                parent.put(candidate, current);
+                stack.addLast(candidate);
+                successors.addLast(inside(graph, candidate, members));
+                cursors.addLast(new int[] {0});
+                onPath.add(candidate);
+            }
         }
         throw new IllegalArgumentException("the component " + component + " holds no cycle");
     }
+
+    /** A member of the searched set: the graph's own instance of it, and its position in the declared order. */
+    private record Member<N>(int position, N node) { }
 
     /** Walks the parents from {@code last} back to {@code first} and closes the list on {@code first}. */
     private static <N> List<N> close(Map<N, N> parent, N last, N first) {

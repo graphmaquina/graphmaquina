@@ -7,7 +7,16 @@ import java.util.function.Supplier;
 
 /**
  * Governs the state S of entity E through the transitions T it declares. Does not protect an entity against
- * concurrent transitions: that is the caller's responsibility.
+ * concurrent transitions: that is the caller's responsibility. Two calls on one entity from different threads are
+ * not serialized, and the check that runs before phase 2 writes catches only the interleavings that leave the entity
+ * in another state than the call started from.
+ * A call's asynchronous waits, those of the peers it cascades to included, are bounded by the asyncTimeout of this
+ * machine, never by a peer's own. When this machine declares no asyncTimeout, the waits of its cascaded peers are
+ * unbounded, whatever their own asyncTimeout: only an edge that declares a timeout of its own still bounds its
+ * action's wait. The watch reactions a call triggers are not part of it: each runs as a new root, bounded by the
+ * asyncTimeout of the machine that reacts, counted from the moment that root starts. A machine built standalone runs
+ * in a registry of its own that is internal and unreachable, so nothing can close it, and its default executor is
+ * never closed.
  * SPI: applications receive facades generated from their declarations; this type is what the generated code wraps.
  */
 public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
@@ -16,7 +25,11 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
 
     GraphDefinition<E, S, T> definition();
 
-    /** Domain-level results as a value. Only a technical failure throws. Blocks on an asynchronous edge. */
+    /**
+     * Returns the domain-level result as a value; a technical failure throws. Two domain-level results throw as well:
+     * a domain failure on an edge without onFailure throws {@code UnhandledFailureException}, and a rejection inside
+     * a cascade aborts the whole call. Blocks on an asynchronous edge.
+     */
     Outcome<E, S, T> execute(E entity, T transition);
 
     /** Evaluates the watch of the current state. Ignored if there is no watch or no rule holds. */
@@ -25,10 +38,17 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
     /** Structural inspection: the identifiers declared from {@code state}. Evaluates no guard. */
     Set<T> transitionsFrom(S state);
 
-    /** The same machine, running on its executor. Never runs anything on the calling thread. */
+    /**
+     * The same machine, submitting each call to its executor: a new virtual thread by default, wherever a supplied
+     * executor runs it otherwise. A null argument throws on the calling thread, and a submission the executor refuses
+     * returns a failed future.
+     */
     AsyncStateMachine<E, S, T> async();
 
-    /** Runs {@code call} on the machine's executor; implements {@link Machine#async}. Failed future after close(). */
+    /**
+     * Runs {@code call} on the machine's executor; implements {@link Machine#async}. A submission the executor
+     * refuses, as the default one does after close(), returns a failed future.
+     */
     <R> CompletableFuture<R> supplyAsync(Supplier<R> call);
 
     /**

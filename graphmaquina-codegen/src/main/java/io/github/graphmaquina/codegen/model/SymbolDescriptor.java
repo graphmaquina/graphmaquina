@@ -9,8 +9,8 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * One generated symbol type: the host and member it names, every original member it could resolve to and,
- * when the member is a property, the resolved accessor.
+ * One generated symbol type: the host and member it names and, for a method family, every original member it
+ * could resolve to or, for a property, the declaration the property was read from, with no candidate.
  *
  * <p>{@code kinds} is normalized to declaration order of {@link SymbolKind}, so a descriptor iterates its
  * roles the same way in every run; a hash set of enums does not, because its iteration order is salted per

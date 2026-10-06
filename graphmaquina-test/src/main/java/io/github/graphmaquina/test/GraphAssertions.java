@@ -10,7 +10,7 @@ import io.github.graphmaquina.test.probe.GuardCall;
 import java.util.function.Function;
 
 /**
- * Single entry point to the typed views: one {@code assertThat} per subject a test holds, each returning
+ * Main entry point to the typed views: one {@code assertThat} per subject a test holds, each returning
  * the same view its own class exposes. The facade asserts nothing and validates nothing of its own, so a
  * null subject reaches the view untouched and fails, inspectably, on the first expectation called on it.
  *
@@ -80,7 +80,8 @@ public final class GraphAssertions {
 
     /**
      * Runs {@code operation} and returns the exception it threw, for handing to {@link #assertThat(Throwable)}.
-     * It catches no {@link Error}, so an {@link AssertionError} raised inside the body propagates untouched.
+     * It catches no {@link Error}, so an {@link AssertionError} raised inside the body propagates untouched,
+     * and a body that completes normally fails with a {@link GraphAssertionError}.
      */
     public static Throwable captureFailure(ThrowingRunnable operation) {
         return TransitionFailureAssert.captureFailure(operation);

@@ -11,11 +11,11 @@ import java.util.function.Function;
  * the narrowed type. Three readings of a transition are kept apart on purpose:
  * {@link #requestedTransition(Enum)} is the identifier that was asked for, {@link #hasRecordedState(Enum)}
  * is the state the outcome itself records as current, and {@link #hasEntityState(Function, Enum)} reads
- * the live entity at the moment the expectation runs. They diverge whenever something moved the entity
- * after the outcome was produced, such as an after-commit hook opening its own transition.
+ * the live entity at the moment the expectation runs. They diverge whenever something moves the entity
+ * away from the state the outcome records, such as an after-commit hook opening its own transition.
  *
  * <p>There is no shared reading of a requested destination. An identifier without an edge has no
- * destination to report, so only the variants that resolved one expose it.
+ * destination to report, so only the variants that ran an edge expose one.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
@@ -65,8 +65,8 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
     }
 
     /**
-     * The state the outcome itself records as current: the destination for an applied one, the failure
-     * route for a failed one, and the origin for a rejected or ignored one.
+     * The state the outcome itself records as current: the destination for an applied one, the state the
+     * failure route landed on for a failed one, and the origin for a rejected or ignored one.
      */
     public SELF hasRecordedState(S expected) {
         Objects.requireNonNull(expected, "expected");

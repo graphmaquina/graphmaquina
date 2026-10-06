@@ -9,13 +9,14 @@ import java.util.Objects;
  * A unified, line-oriented difference between two texts, meant to be read inside an assertion message:
  * only the lines that changed, each with three lines of context, instead of both documents in full.
  * Carriage returns are normalized to line feeds before comparing, and only that; every other character,
- * leading and trailing blanks included, is compared as it stands. A text that does not end with a line
- * feed carries an explicit marker line, so the presence of the final feed is itself part of the diff.
+ * leading and trailing blanks included, is compared as it stands. A non-empty text that does not end with a
+ * line feed carries an explicit marker line, so the presence of the final feed is itself part of the diff;
+ * an empty text has no lines at all.
  *
  * <p>The middle block — what is left once the common prefix and suffix are removed — is aligned with a
  * longest common subsequence while its table stays within a million cells, and is otherwise reported as
- * one deletion block followed by one addition block, so the memory a diff costs is bounded. The rendered
- * text is bounded too: past two hundred lines it stops and says how many it dropped.
+ * one deletion block followed by one addition block, so the memory the alignment needs is bounded. The
+ * rendered text is bounded too: past two hundred lines it stops and says how many it dropped.
  */
 public final class LineDiff {
 
@@ -188,6 +189,10 @@ public final class LineDiff {
         return text.toString();
     }
 
+    /**
+     * How a line of the edit script stands against the two texts: in both, only in the expected one or only in
+     * the actual one, each rendered with its own marker character.
+     */
     private enum Kind {
         CONTEXT(' '), DELETE('-'), ADD('+');
 
@@ -202,6 +207,10 @@ public final class LineDiff {
         }
     }
 
+    /**
+     * One line of a text. {@code diagnostic} marks the line that stands for a missing final line feed, so a
+     * real line that happens to read the same is a different line.
+     */
     private record Line(String text, boolean diagnostic) { }
 
     /** One line of the edit script with the zero-based position each side stands at when it is emitted. */

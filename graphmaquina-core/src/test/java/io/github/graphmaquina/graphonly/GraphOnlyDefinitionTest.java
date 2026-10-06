@@ -24,6 +24,11 @@ import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The definition the DSL builds for the graph-only fixture: only the declared edges, a repeated key refused, parallel
+ * edges told apart by identifier, one spec instance per edge, self-loops, and the declaration order of edges and of
+ * outgoing edges.
+ */
 class GraphOnlyDefinitionTest {
 
     @Test void definitionContainsOnlyDeclaredTransitions() {

@@ -2,7 +2,11 @@ package io.github.graphmaquina.api;
 
 import java.util.Optional;
 
-/** A guard decides, it does not mutate: no cascade and no depth. */
+/**
+ * A guard decides, it does not mutate: no cascade and no depth. Its peer views work only on the thread that called
+ * {@code test()} and only until the root transaction ends: elsewhere they throw {@code WrongThreadException},
+ * afterwards {@code StaleContextException}.
+ */
 public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 
     E entity();
@@ -20,7 +24,8 @@ public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * The value passed as this operation's second argument, if any; empty when called with one argument or an
-     * explicit {@code null}. Scoped to this invocation only, never a value left over from an earlier call.
+     * explicit {@code null}, and always empty in a cascaded step or a reevaluation, which carry none. Scoped to this
+     * invocation only, never a value left over from an earlier call.
      */
     default Optional<?> input() {
         return Optional.empty();

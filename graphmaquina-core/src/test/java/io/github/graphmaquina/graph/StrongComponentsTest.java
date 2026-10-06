@@ -15,6 +15,10 @@ import java.util.Set;
 import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Components and cycle witnesses of a {@link Graph}: declaration order, membership decided by the graph, witnesses of
+ * sets that are not one component, large inputs and refusals; also {@code inducedSubgraph}.
+ */
 class StrongComponentsTest {
 
     /** Equality is by stable id; labels expose which equal instance the witness returns. */
@@ -26,10 +30,13 @@ class StrongComponentsTest {
         @Override public String toString() { return label; }
     }
 
-    @Test void nullDeclarationsPreserveComponentMembershipExceptions() {
-        Graph<String> graph = Graph.of(java.util.Arrays.asList("A", null), List.of(new GraphEdge<>("A", "A")));
-        assertTrue(graph.nodes().contains(null));
-        assertThrows(NullPointerException.class, () -> StrongComponents.cycleWitness(graph, Set.of("A")));
+    /**
+     * Membership is decided by the graph alone, so the component is never asked about null: a {@code Set.of}, whose
+     * {@code contains(null)} throws, gets the same witness as any other set.
+     */
+    @Test void aComponentWhoseContainsRejectsNullIsWitnessedLikeAnyOther() {
+        Graph<String> graph = Graph.of(List.of("A"), List.of(new GraphEdge<>("A", "A")));
+        assertEquals(List.of("A", "A"), StrongComponents.cycleWitness(graph, Set.of("A")));
         assertEquals(List.of("A", "A"),
                 StrongComponents.cycleWitness(graph, new LinkedHashSet<>(List.of("A"))));
     }
@@ -159,6 +166,23 @@ class StrongComponentsTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> StrongComponents.cycleWitness(graph, component));
         assertEquals("the component [A] holds no cycle", error.getMessage());
+    }
+
+    /**
+     * A set that is not one component can hold a cycle its first member does not reach. The search then goes on
+     * from the next member not yet visited, in declared order, instead of calling the set acyclic.
+     */
+    @Test void aCycleTheFirstMemberDoesNotReachIsStillWitnessed() {
+        Graph<String> apart = Graph.of(List.of("A", "B", "C"),
+                List.of(new GraphEdge<>("B", "C"), new GraphEdge<>("C", "B")));
+        assertEquals(List.of("B", "C", "B"), StrongComponents.cycleWitness(apart, Set.of("A", "B", "C")));
+        Graph<String> after = Graph.of(List.of("A", "B", "C"),
+                List.of(new GraphEdge<>("A", "B"), new GraphEdge<>("C", "C")));
+        assertEquals(List.of("C", "C"), StrongComponents.cycleWitness(after, Set.of("C", "B", "A")));
+        Graph<String> chain = Graph.of(List.of("A", "B"), List.of(new GraphEdge<>("A", "B")));
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> StrongComponents.cycleWitness(chain, new LinkedHashSet<>(List.of("A", "B"))));
+        assertEquals("the component [A, B] holds no cycle", error.getMessage());
     }
 
     @Test void manySmallComponentsEachWitnessTheirOwnSelfLoop() {

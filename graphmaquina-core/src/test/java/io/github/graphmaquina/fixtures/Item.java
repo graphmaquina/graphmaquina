@@ -2,6 +2,7 @@ package io.github.graphmaquina.fixtures;
 
 import java.util.Optional;
 
+/** Test entity of the item machine: an id, a status and an optional order, which the item joins when built. */
 public final class Item {
 
     private final String id;

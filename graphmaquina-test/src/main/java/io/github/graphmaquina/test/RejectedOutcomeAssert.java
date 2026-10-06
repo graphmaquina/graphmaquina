@@ -8,10 +8,10 @@ import java.util.Optional;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Rejected}, obtained from {@link
- * OutcomeAssert#isRejected()}. Nothing ran, so the entity stays where it was and there is no destination
- * to read: the same identifier may reach different states from different origins. The two rejections the
- * engine produces are told apart by their {@link RejectionKind} — no edge leaves the origin under that
- * identifier, or a guard said no and named itself.
+ * OutcomeAssert#isRejected()}. No action ran and nothing was committed, so the entity stays where it was
+ * and there is no destination to read: the same identifier may reach different states from different
+ * origins. The two rejections the engine produces are told apart by their {@link RejectionKind} — no edge
+ * leaves the origin under that identifier, or a guard said no and named itself.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
@@ -22,8 +22,8 @@ public final class RejectedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>
 
     private final Outcome.Rejected<E, S, T> rejected;
 
-    RejectedOutcomeAssert(Outcome.Rejected<E, S, T> rejected) {
-        super("rejected outcome", rejected);
+    RejectedOutcomeAssert(String context, Outcome.Rejected<E, S, T> rejected) {
+        super(context, rejected);
         this.rejected = rejected;
     }
 

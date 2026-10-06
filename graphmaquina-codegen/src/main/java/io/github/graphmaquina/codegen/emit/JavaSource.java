@@ -4,11 +4,12 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- * Accumulates one generated compilation unit as indented text with LF line endings, and renders the parts every
- * emitted file shares: its package declaration, its single-type imports and its documentation comments.
+ * Accumulates one generated compilation unit as indented text with LF line endings, and renders the parts emitted
+ * files share: the package declaration, any single-type imports and the documentation comments.
  *
- * <p>Nothing here interprets Java: a caller writes the exact text of each line and this class only owns the
- * indentation and the line separator, so two runs over the same model always produce the same bytes.</p>
+ * <p>Nothing here interprets Java: apart from the package and import lines and the comment delimiters it renders,
+ * a caller writes the exact text of each line, and this class owns the indentation and the line separator, so two
+ * runs over the same model always produce the same bytes.</p>
  */
 final class JavaSource {
 
@@ -39,8 +40,9 @@ final class JavaSource {
     }
 
     /**
-     * Writes the package declaration of {@code packageName}, empty for the unnamed package, and one single-type
-     * import per entry of {@code imports}, in the order given, followed by a blank line.
+     * Writes the package declaration of {@code packageName}, none for the unnamed package, then one single-type
+     * import per entry of {@code imports}, in the order given. Each of the two parts is followed by a blank line
+     * when it is written, so the unnamed package without imports writes nothing.
      */
     void header(String packageName, Collection<String> imports) {
         if (!packageName.isEmpty()) {

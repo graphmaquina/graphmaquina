@@ -33,6 +33,7 @@ import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -40,8 +41,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Contract of the transition-record and journal views. Selection is pinned to entity identity rather than
  * equality, order and multiplicity are pinned on every list expectation, each mismatch is read off the
- * fields of the {@link GraphAssertionError} rather than off its type alone, and every public expectation
- * whose subject can be null gets its own null-subject case.
+ * fields of the {@link GraphAssertionError} rather than off its type alone, except in the few cases that only
+ * need a check to fail, and every public expectation whose subject can be null gets its own null-subject case.
  */
 class RecordAssertionsTest {
 
@@ -348,6 +349,43 @@ class RecordAssertionsTest {
                 () -> CheckedTypes.record(TestDomain.KEY, corrupt));
         assertEquals("record does not belong to the machine: states expected " + State.class
                 + " but was " + List.of(Flag.OFF, Flag.ON), error.getMessage());
+    }
+
+    // --- a subject built by hand may hold a null element --------------------------------------------
+
+    /**
+     * A list the engine produced never holds a null, but a subject built by hand may. A view neither crashes
+     * when it is built nor when it reads the element: a selection by entity skips the null, and an expectation
+     * that compares the list reports it as a discrepancy.
+     */
+    @Test
+    void aNullRecordInTheSubjectIsADiscrepancyAndNeverACrash() {
+        Entity entity = new Entity("e", State.NEW);
+        TransitionRecord<Entity, State, Id> hop = hop(entity, State.NEW, State.READY, 0);
+        TransitionRecordsAssert view =
+                TransitionRecordsAssert.assertThat(new ArrayList<>(Arrays.asList(hop, null)));
+        assertSame(view, view.hasSize(2));
+        view.forEntity(TestDomain.KEY, entity).single().hasTransition(Id.PREPARE);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.containsExactly(List.of(hop, hop))),
+                "transition records[1]", "record", hop, null);
+    }
+
+    @Test
+    void aNullEntryInTheJournalIsADiscrepancyAndNeverACrash() {
+        Entity entity = new Entity("e", State.NEW);
+        JournalAssert view = JournalAssert.assertThat(
+                new ArrayList<>(Arrays.asList(entry(entity, ActionStatus.OK), null)));
+        assertSame(view, view.hasSize(2));
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasActionsExactly("prepare", "prepare")),
+                "journal", "actions", List.of("prepare", "prepare"), Arrays.asList("prepare", null));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> view.hasStatusesExactly(ActionStatus.OK, ActionStatus.OK)),
+                "journal", "statuses", List.of(ActionStatus.OK, ActionStatus.OK),
+                Arrays.asList(ActionStatus.OK, null));
+        assertSame(view, view.hasEntry(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY, "prepare", 1,
+                ActionStatus.OK));
+        assertThrows(GraphAssertionError.class, () -> view.hasEntry(TestDomain.KEY, entity, State.NEW,
+                Id.PREPARE, State.READY, "prepare", 1, ActionStatus.THREW));
     }
 
     // --- the journal -------------------------------------------------------------------------------
@@ -694,7 +732,10 @@ class RecordAssertionsTest {
     /** Transition identifiers of the machine over {@link Flag}. */
     enum Switch { FLIP }
 
-    /** A second state enum of {@link Entity}: one entity class belongs to as many machines as it has states. */
+    /**
+     * A second state enum of {@link Entity}, which makes it the entity of a second machine: a registry holds at
+     * most one machine per entity class and state enum.
+     */
     enum Shelf { OUT, IN }
 
     /** Transition identifiers of the machine over {@link Shelf}. */
@@ -736,7 +777,7 @@ class RecordAssertionsTest {
         void setState(Crate state) { this.state = state; }
     }
 
-    /** Peer entity of the engine cases: the cascade target that can ask its box to converge. */
+    /** Peer entity of the engine cases: the cascade target that holds its box, so it can cascade back into it. */
     static final class Tag {
 
         private final String id;

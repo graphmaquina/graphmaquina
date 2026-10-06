@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.Outcome;
@@ -34,6 +35,10 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Running graph-only machines by identifier: the selected parallel edge, rejections and their reasons, self-loops, the
+ * input of an invocation, moves and their records, reevaluation without a watch, and structural inspection.
+ */
 class GraphOnlyRuntimeTest {
 
     @Test void invokesTheSelectedParallelTransition() {
@@ -142,7 +147,7 @@ class GraphOnlyRuntimeTest {
         }
     }
 
-    /** Two guards reject with GUARD and name the one that stopped the request; the action never runs. */
+    /** A guard that rejects makes the call a GUARD rejection that names it; the action never runs. */
     @Test void aGuardRejectionNamesTheGuardAndSkipsTheAction() {
         GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
             .transition(AUTO_APPROVE, REVIEW, DONE)
@@ -174,14 +179,24 @@ class GraphOnlyRuntimeTest {
         }
     }
 
-    /** Structural inspection returns identifiers, not destinations, and evaluates no guard. */
+    /**
+     * Structural inspection returns the identifiers declared from a state, not destinations, and evaluates no guard:
+     * AUTO_APPROVE is listed although its guard would reject, and that guard never runs. A terminal gives none.
+     */
     @Test void transitionsFromListsIdentifiers() {
+        List<String> evaluated = new ArrayList<>();
         GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
-            .transition(AUTO_APPROVE, REVIEW, DONE).endTransition().build();
+            .transition(AUTO_APPROVE, REVIEW, DONE)
+                .guard("never evaluated", (GuardContext<Ticket, State, Id> ctx) -> {
+                    evaluated.add("never evaluated");
+                    return GuardResult.reject("transitionsFrom evaluated a guard");
+                })
+                .endTransition().build();
         try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
             assertEquals(Set.of(APPROVE, AUTO_APPROVE), registry.of(KEY).transitionsFrom(REVIEW));
             assertEquals(Set.of(SUBMIT), registry.of(KEY).transitionsFrom(OPEN));
             assertEquals(Set.of(), registry.of(KEY).transitionsFrom(DONE));
+            assertEquals(List.of(), evaluated);
         }
     }
 }

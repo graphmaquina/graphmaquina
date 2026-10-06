@@ -9,6 +9,10 @@ import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
+/**
+ * {@link Graph} over string nodes: declaration order, edge endpoints, reachability, shortest paths, cycle enumeration
+ * and its dense counts, immutable results, null nodes, induced subgraphs and the declaration index.
+ */
 class GraphTest {
 
     private static Graph<String> graph(List<String> nodes, String... edges) {
@@ -120,16 +124,25 @@ class GraphTest {
     }
 
     /**
-     * Characterisation, not an endorsement: {@code of} admits a null node today and the null only fails later, at
-     * the members annotated {@code @NonNull}. Nothing added inside the graph may narrow that admission.
+     * The cycle and component searches could never walk a null node, so {@code of} refuses one up front, like
+     * {@link DirectedGraph#of} does, wherever it is declared.
      */
     @Test
-    void admitsANullNodeAndOnlyFailsWhereItAlreadyFailed() {
-        Graph<String> g = Graph.of(java.util.Arrays.asList("A", null), List.of());
-        assertEquals(2, g.nodes().size());
-        assertTrue(g.nodes().contains(null));
-        assertEquals(1, g.declarationIndex(null));
-        assertThrows(NullPointerException.class, () -> g.successors(null));
+    void refusesANullNode() {
+        for (List<String> nodes : List.of(java.util.Arrays.asList("A", null), java.util.Arrays.asList(null, "A"))) {
+            NullPointerException error = assertThrows(NullPointerException.class, () -> Graph.of(nodes, List.of()));
+            assertEquals("node", error.getMessage());
+        }
+        assertThrows(NullPointerException.class, () -> graph(List.of("A")).successors(null));
+    }
+
+    /** The kept nodes come back in this graph's declared order, so the cycles of the result start where they did. */
+    @Test
+    void inducedSubgraphKeepsTheDeclaredOrderWhateverTheOrderOfKept() {
+        Graph<String> g = graph(List.of("A", "B", "C"), "A>C", "C>A");
+        Graph<String> induced = g.inducedSubgraph(List.of("C", "A"));
+        assertEquals(List.of("A", "C"), List.copyOf(induced.nodes()));
+        assertEquals(List.of(List.of("A", "C")), induced.cycles());
     }
 
     @Test

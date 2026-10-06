@@ -6,7 +6,11 @@ import java.util.Optional;
 import java.util.function.Function;
 import lombok.NonNull;
 
-/** The watch of a state: which machine it looks at, how to reach the peers and back, and which rules advance it. */
+/**
+ * The watch of a state: which machine it looks at, how to reach the peers and back, and which rules advance it.
+ * {@code peersOf}, {@code ownerOf} and the rules' conditions run while the thread evaluates the watch, where execute
+ * and reevaluate throw {@code ReentrantTransitionException}, as they do in a guard.
+ */
 public record WatchSpec<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>(
         @NonNull S state,
         @NonNull MachineKey<P, Q, U> peer,

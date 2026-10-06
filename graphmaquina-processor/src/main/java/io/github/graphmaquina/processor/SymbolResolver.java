@@ -6,14 +6,18 @@ import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.model.MemberDescriptor;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
+import io.github.graphmaquina.processor.gen.BoundInvocation;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineTypes;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Predicate;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
@@ -44,6 +48,7 @@ final class SymbolResolver {
     private final Bindings bindings;
     private final Diagnostics diagnostics;
     private final Annotations annotations;
+    private final BoundInvocation invocations;
 
     SymbolResolver(Map<String, SymbolDescriptor> symbols, Signatures signatures, EffectiveMethods effective,
             Bindings bindings, Diagnostics diagnostics) {
@@ -53,6 +58,7 @@ final class SymbolResolver {
         this.bindings = bindings;
         this.diagnostics = diagnostics;
         this.annotations = new Annotations(signatures.elements());
+        this.invocations = new BoundInvocation(signatures.elements(), signatures.types());
     }
 
     /** One symbol type this compilation may use: the manifest entry it belongs to and the host it names. */
@@ -75,7 +81,11 @@ final class SymbolResolver {
     /**
      * The method {@code symbol} names when it is used as {@code role} by {@code machine}, or empty after
      * reporting {@code SG605} when the type is not a symbol of this compilation or does not export that role,
-     * and {@code SG505} when no exported declaration of that role fits the machine, or more than one does.
+     * and {@code SG505} when no exported declaration of that role fits the machine, when more than one does, or
+     * when the one that fits makes the machine's companion name a type its package cannot access. An instance
+     * member of a generic host is never a candidate: the symbol names the host by its raw class, and generated
+     * code could only call such a member on a raw parameter, so it is refused as such rather than as a member
+     * whose signature does not fit.
      */
     Optional<Binding> resolve(TypeMirror symbol, Bindings.Role role, MachineTypes machine,
             Optional<MachineTypes> peer, DiagnosticAnchor anchor) {
@@ -86,10 +96,16 @@ final class SymbolResolver {
         }
         SymbolDescriptor descriptor = reference.get().descriptor();
         DeclaredType host = reference.get().host();
+        boolean generic = !((TypeElement) host.asElement()).getTypeParameters().isEmpty();
+        boolean genericInstance = false;
         List<Binding> fitting = new ArrayList<>();
         for (Binding member : effective.of(host)) {
             if (member.role() != kind || !member.method().getModifiers().contains(Modifier.PUBLIC)
                     || !exported(member, descriptor, (TypeElement) host.asElement())) {
+                continue;
+            }
+            if (generic && !member.isStatic()) {
+                genericInstance = true;
                 continue;
             }
             ExecutableType signature = member.effectiveType();
@@ -97,14 +113,43 @@ final class SymbolResolver {
                 fitting.add(member);
             }
         }
+        if (fitting.isEmpty() && genericInstance) {
+            anchor.report(diagnostics, NO_BINDING, "the exported " + role.name().toLowerCase(Locale.ROOT) + " "
+                    + descriptor.member() + " is an instance member of " + descriptor.host() + ", a generic class,"
+                    + " which generated code could only declare and call raw: export it from a non-generic subclass"
+                    + " marked @GraphBindings, or make it static");
+            return Optional.empty();
+        }
         if (fitting.size() != 1) {
             anchor.report(diagnostics, NO_BINDING, describe(descriptor, role, fitting.size())
                     + "; expected " + Bindings.expected(descriptor.member(), role, machine, peer));
             return Optional.empty();
         }
         Binding chosen = fitting.get(0);
-        return Optional.of(new Binding(chosen.owner(), chosen.method(), chosen.effectiveType(), kind,
-                bindings.arguments(role, machine, peer, chosen.effectiveType().getParameterTypes().size()), chosen.isStatic(), chosen.async()));
+        Binding selected = new Binding(chosen.owner(), chosen.method(), chosen.effectiveType(), kind,
+                bindings.arguments(role, machine, peer, chosen.effectiveType().getParameterTypes().size()), chosen.isStatic(), chosen.async());
+        return reachable(selected, descriptor, machine, anchor) ? Optional.of(selected) : Optional.empty();
+    }
+
+    /**
+     * Whether the companion of {@code machine}, generated in the package of its facade, can name every type the
+     * call to {@code binding} makes it write: the host, every class enclosing it, and the parameter types it pins
+     * the arguments with. {@code SG505} otherwise, naming each type it cannot access.
+     */
+    private boolean reachable(Binding binding, SymbolDescriptor descriptor, MachineTypes machine, DiagnosticAnchor anchor) {
+        String packageName = Accessibility.packageOf(machine.facade());
+        Set<String> inaccessible = new LinkedHashSet<>(Accessibility.inaccessible(binding.owner(), packageName));
+        for (TypeMirror cast : invocations.casts(binding)) {
+            inaccessible.addAll(Accessibility.inaccessible(cast, packageName));
+        }
+        if (inaccessible.isEmpty()) {
+            return true;
+        }
+        anchor.report(diagnostics, NO_BINDING, descriptor.qualifiedName() + " makes the companion of "
+                + machine.facade().getSimpleName() + " name " + String.join(" and ", inaccessible) + ", which "
+                + Accessibility.describe(packageName) + ", where that companion is generated, cannot access: make "
+                + (inaccessible.size() == 1 ? "it" : "them") + " public");
+        return false;
     }
 
     /**
@@ -140,8 +185,8 @@ final class SymbolResolver {
 
     /**
      * Whether {@code member} is one of the declarations {@code descriptor} exports: the declaration itself, or
-     * an override of it that the host inherits. An unexported method that only shares a name and a role with
-     * one is not reachable through the symbol.
+     * an override of it that the host declares or inherits. An unexported method that only shares a name and a
+     * role with one is not reachable through the symbol.
      */
     private boolean exported(Binding member, SymbolDescriptor descriptor, TypeElement host) {
         for (MemberDescriptor candidate : descriptor.candidates()) {
@@ -158,20 +203,19 @@ final class SymbolResolver {
         return false;
     }
 
-    /** Whether {@code method} overrides the declaration {@code candidate} names, seen from {@code host}. */
+    /**
+     * Whether {@code method} overrides the declaration {@code candidate} names, seen from {@code host}. The declaring
+     * type {@code candidate} names is taken among {@code host} and its supertypes, as {@link CanonicalNames#declaring}
+     * takes it.
+     */
     private boolean overrides(ExecutableElement method, MemberDescriptor candidate, TypeElement host) {
-        TypeElement declaring = signatures.elements().getTypeElement(candidate.declaringType());
-        if (declaring == null) {
-            return false;
-        }
-        for (Element member : declaring.getEnclosedElements()) {
-            if (member.getKind() == ElementKind.METHOD && member.getSimpleName().contentEquals(candidate.name())
-                    && ((ExecutableElement) member).getParameters().size() == candidate.parameterTypes().size()
-                    && signatures.elements().overrides(method, (ExecutableElement) member, host)) {
-                return true;
-            }
-        }
-        return false;
+        Predicate<Element> overridden = (Element member) -> member.getKind() == ElementKind.METHOD
+                && member.getSimpleName().contentEquals(candidate.name())
+                && ((ExecutableElement) member).getParameters().size() == candidate.parameterTypes().size()
+                && signatures.elements().overrides(method, (ExecutableElement) member, host);
+        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), host, candidate.declaringType(),
+                overridden);
+        return declaring != null && declaring.getEnclosedElements().stream().anyMatch(overridden);
     }
 
     private static String describe(SymbolDescriptor descriptor, Bindings.Role role, int fitting) {

@@ -31,11 +31,10 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 
 /**
- * Contract of the structural golden. It pins what the diagram leaves out, so a change of timeout or of
- * recovery identifier breaks the build with the path that differs instead of with two files; a stored
- * snapshot of an unknown version — the retired matrix format included — is reported as the fixture problem
- * it is and never silently rewritten by a read; and update replaces whatever was there with the current
- * version without reading the old one as a snapshot.
+ * Contract of the structural golden. It pins what the diagram leaves out, so a change of timeout breaks the
+ * build with the path that differs instead of with two files; a stored snapshot of an unknown version is
+ * reported as the fixture problem it is and never silently rewritten by a read; and update replaces
+ * whatever was there with the current version without reading the old one as a snapshot.
  */
 class GraphSnapshotsTest {
 
@@ -144,6 +143,38 @@ class GraphSnapshotsTest {
                 Files.readString(root.resolve(RESOURCE), StandardCharsets.UTF_8));
     }
 
+    /** A byte order mark is not part of the version line, so it never makes a current snapshot unsupported. */
+    @Test
+    void aSnapshotSavedWithAByteOrderMarkIsReadLikeAnyOther(@TempDir Path root) throws Exception {
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
+        Files.createDirectories(root.resolve("contracts"));
+        Files.writeString(root.resolve(RESOURCE), "\uFEFF" + GraphSnapshot.capture(graph).serialize(),
+                StandardCharsets.UTF_8);
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {
+            GraphSnapshots.assertMatches(graph, RESOURCE, GoldenOptions.readOnly(loader));
+        }
+    }
+
+    /**
+     * Update replaces whatever was there, so also a stored text that is not even UTF-8, such as a snapshot saved
+     * as Latin-1.
+     */
+    @Test
+    void updateReplacesASnapshotThatIsNotUtf8(@TempDir Path root) throws Exception {
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
+        Files.createDirectories(root.resolve("contracts"));
+        Files.write(root.resolve(RESOURCE),
+                "graphmaquina-snapshot-v2\n/policies/NEW/otherwise\tcaf\u00e9\n"
+                        .getBytes(StandardCharsets.ISO_8859_1));
+        List<Path> written = new ArrayList<>();
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {
+            GraphSnapshots.assertMatches(graph, RESOURCE, GoldenOptions.updating(loader, root, written::add));
+        }
+        assertEquals(List.of(root.resolve(RESOURCE)), written);
+        assertEquals(GraphSnapshot.capture(graph).serialize(),
+                Files.readString(root.resolve(RESOURCE), StandardCharsets.UTF_8));
+    }
+
     @Test
     void anUnreadableSnapshotInReadModeExplainsTheFormatAndWritesNothing(@TempDir Path root)
             throws Exception {
@@ -175,6 +206,31 @@ class GraphSnapshotsTest {
         assertNull(error.actual());
     }
 
+    /**
+     * A malformed name is an error of the calling test whatever else is wrong, so the two-argument entry point
+     * reports it before it reads a system property that may be wrong too.
+     */
+    @Test
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    void aMalformedNameIsReportedBeforeTheSystemProperties() {
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
+        String previousUpdate = System.getProperty(GoldenOptions.UPDATE_PROPERTY);
+        String previousRoot = System.getProperty(GoldenOptions.ROOT_PROPERTY);
+        try {
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "yes");
+            assertEquals("the resource </abs.graph> must be relative", assertThrows(IllegalArgumentException.class,
+                    () -> GraphSnapshots.assertMatches(graph, "/abs.graph")).getMessage());
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "true");
+            System.clearProperty(GoldenOptions.ROOT_PROPERTY);
+            assertEquals("the resource <../x.graph> carries an empty or relative segment",
+                    assertThrows(IllegalArgumentException.class,
+                            () -> GraphSnapshots.assertMatches(graph, "../x.graph")).getMessage());
+        } finally {
+            restore(GoldenOptions.UPDATE_PROPERTY, previousUpdate);
+            restore(GoldenOptions.ROOT_PROPERTY, previousRoot);
+        }
+    }
+
     @Test
     void aNullDefinitionFailsTheThreeArgumentAssertion() {
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
@@ -193,5 +249,13 @@ class GraphSnapshotsTest {
                 () -> GraphSnapshots.assertMatches(graph, RESOURCE, null)).getMessage());
         assertThrows(IllegalArgumentException.class,
                 () -> GraphSnapshots.assertMatches(graph, "/contracts/simple.graph", READ_ONLY));
+    }
+
+    private static void restore(String key, String value) {
+        if (value == null) {
+            System.clearProperty(key);
+        } else {
+            System.setProperty(key, value);
+        }
     }
 }

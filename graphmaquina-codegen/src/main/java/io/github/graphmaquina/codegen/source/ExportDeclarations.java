@@ -13,6 +13,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.EnumSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,18 +28,21 @@ import javax.lang.model.element.Modifier;
  * Discovers the members and properties the original sources export, one symbol per host and member name.
  *
  * <p>A host exports its own marked declarations; a host that also carries {@code @GraphBindings} exports the
- * marked declarations it inherits, from a source or a binary supertype, under its own name. Every marked
- * declaration is kept as its own candidate, with the type that declares it, the role that declaration spells
- * and its own origin. Nothing here decides an override: the bootstrap cannot see a source host from the binary
- * task, so a role is never transferred onto a same-name local declaration and a family is never rejected for
- * mixing roles. Resolving overrides and effective signatures is the processor's work, once javac has the real
- * elements.</p>
+ * marked declarations it inherits, from a source or a binary supertype, under its own name. Every marked method
+ * is kept as its own candidate, with the type that declares it, the role that declaration spells and its own
+ * origin, or the host's for one read from a binary. A property keeps only the first declaration of its logical
+ * name, the host's own before inherited ones, and two the host declares itself are refused with {@code SG603}.
+ * Nothing here decides an override: the bootstrap cannot see a source host from the binary task, so a role is never
+ * transferred onto a same-name local declaration and a family is never rejected for mixing roles. Resolving
+ * overrides and effective signatures is the processor's work, once javac has the real elements.</p>
  */
 public final class ExportDeclarations {
 
     private static final String COLLISION = "SG603";
     private static final String INVALID_ROLE = "SG604";
     private static final String BINDINGS = "io.github.graphmaquina.annotation.GraphBindings";
+    /** The package of the StateGraph types every references container writes by qualified name. */
+    private static final String STATEGRAPH_PACKAGE = "io.github.graphmaquina";
     private static final Map<String, SymbolKind> ROLES = roles();
 
     private ExportDeclarations() {
@@ -46,7 +50,11 @@ public final class ExportDeclarations {
 
     /**
      * Every symbol the original sources of {@code index} export, ordered by qualified name so that neither the
-     * order of the files nor the order of a hash table can change the result.
+     * order of the files nor the order of a hash table can change the result. A host its references container
+     * cannot name, because it is private or nested in a private type, is refused with {@code SG604}. A host is
+     * refused with {@code SG603} when a qualified name its container writes, StateGraph's {@code io} package or, for
+     * a host of a named package, the host's own name, starts with the simple name of a type the host's package
+     * declares or of a public type of {@code java.lang}: inside the container that type obscures the package.
      */
     public static List<SymbolDescriptor> collect(DeclarationIndex index) {
         Objects.requireNonNull(index, "index");
@@ -60,6 +68,17 @@ public final class ExportDeclarations {
                 continue;
             }
             String container = container(host);
+            String packageName = host.scope().packageName();
+            Optional<String> inaccessible = index.inaccessibility(host, packageName);
+            if (inaccessible.isPresent()) {
+                throw new CodegenException(INVALID_ROLE, "the host " + host.canonicalName()
+                    + " is not accessible to its references container " + container + ": " + inaccessible.get(),
+                    origin(host));
+            }
+            index.requireUnobscured(packageName, "the references container generated for the host "
+                + host.canonicalName() + " in " + (packageName.isEmpty() ? "the unnamed package" : "package "
+                + packageName), packageName.isEmpty() ? List.of(STATEGRAPH_PACKAGE)
+                : List.of(STATEGRAPH_PACKAGE, host.canonicalName()), origin(host));
             TypeHeader previous = containers.putIfAbsent(container, host);
             if (previous != null) {
                 throw sharedContainer(container, previous, host);
@@ -124,13 +143,17 @@ public final class ExportDeclarations {
     /**
      * The marked declarations {@code host} exports, its own first and, when it carries {@code @GraphBindings},
      * the inherited ones in the order its hierarchy declares them. A declaration reached twice through a
-     * diamond is kept once; that deduplication is not a second local declaration.
+     * diamond is kept once; that deduplication is not a second local declaration. The hierarchy can hold two types of
+     * one canonical name, a type of a named package and a type of the unnamed package. The declarations of each are
+     * exported, but a member both declare with one name and with parameter types of the same canonical names is kept
+     * once, as the type met first declares it.
      */
     private static List<Declaration> declarations(DeclarationIndex index, TypeHeader host) {
         List<Declaration> declarations = new ArrayList<>();
         Set<String> signatures = new LinkedHashSet<>();
         declare(index, host, host, true, declarations, signatures);
-        if (host.markers().stream().anyMatch(marker -> index.marks(host, marker, BINDINGS))) {
+        if (host.markers().stream()
+                .anyMatch((TypeHeader.Marker marker) -> index.marksInHeader(host, marker, BINDINGS))) {
             for (TypeHeader ancestor : ancestors(index, host)) {
                 declare(index, host, ancestor, false, declarations, signatures);
             }
@@ -168,11 +191,14 @@ public final class ExportDeclarations {
         return declared.isEmpty() ? Optional.empty() : Optional.of(declared.get(0));
     }
 
-    /** The supertypes of {@code host}, nearest first, skipping the ones no header declares. */
+    /**
+     * The supertypes of {@code host}, nearest first, skipping the ones no header declares. Each is met once, and
+     * told apart by identity from a type of the other package of its canonical name, named or unnamed.
+     */
     private static List<TypeHeader> ancestors(DeclarationIndex index, TypeHeader host) {
         List<TypeHeader> ancestors = new ArrayList<>();
-        Set<String> visited = new LinkedHashSet<>();
-        visited.add(host.canonicalName());
+        Set<TypeHeader> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        visited.add(host);
         Deque<TypeHeader> pending = new ArrayDeque<>();
         pending.addLast(host);
         while (!pending.isEmpty()) {
@@ -181,8 +207,8 @@ public final class ExportDeclarations {
                 if (!(supertype instanceof TypeUse.Declared declared)) {
                     continue;
                 }
-                Optional<TypeHeader> resolved = index.resolve(current, declared.name());
-                if (resolved.isEmpty() || !visited.add(resolved.get().canonicalName())) {
+                Optional<TypeHeader> resolved = index.resolveInHeader(current, declared.name());
+                if (resolved.isEmpty() || !visited.add(resolved.get())) {
                     continue;
                 }
                 ancestors.add(resolved.get());
@@ -205,10 +231,10 @@ public final class ExportDeclarations {
     }
 
     /**
-     * One candidate, kept exactly as its declaration spells it. Type variables are canonicalized but never
-     * substituted: the host's specialization is the processor's to apply. A declaration read from a binary has
-     * no original source, so it is anchored at the host that exports it while {@code declaringType} keeps its
-     * provenance.
+     * One candidate, typed as its declaration spells it, with every type name the index resolves replaced by its
+     * canonical name. Type variables are kept, never substituted: the host's specialization is the processor's to
+     * apply. A declaration read from a binary has no original source, so it is anchored at the host that exports it
+     * while {@code declaringType} keeps its provenance.
      */
     private static MemberDescriptor candidate(DeclarationIndex index, TypeHeader host,
             Declaration declaration) {

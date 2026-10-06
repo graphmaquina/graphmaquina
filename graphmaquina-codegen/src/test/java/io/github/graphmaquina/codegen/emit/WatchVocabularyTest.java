@@ -26,10 +26,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies the vocabulary emitted for one ordered pair of local machines: the owner's enums and the peer's enum
+ * Verifies the vocabulary emitted for ordered pairs of local machines: the owner's enums and the peer's enum
  * are used where the specification places them, a rule executes a transition of the owner, the watch repeats
- * through its container, every optional array may be omitted, an unknown peer is refused, and an empty model
- * still carries its compilation.
+ * through its container, every optional array may be omitted, a machine has such a vocabulary over each peer it
+ * declares and over no other machine, an unknown peer is refused, and an empty model still carries its compilation.
  */
 class WatchVocabularyTest {
 
@@ -109,7 +109,7 @@ class WatchVocabularyTest {
         return Map.copyOf(sources);
     }
 
-    /** Repeats the watch, omits every optional array once and fills each of them once. */
+    /** Repeats the watch and, across its three rules, omits each optional array in some and fills it in another. */
     private static final Map<String, String> USAGE = Map.of("use.WatchUsage", """
         package use;
         @fx.DocsPages.Watch(
@@ -142,9 +142,10 @@ class WatchVocabularyTest {
         assertTrue(watch.contains("fx.DocStatus state();"), watch);
         assertTrue(watch.contains("fx.DocTransition transition();"), watch);
         assertTrue(watch.contains("fx.PageStatus[] allIn() default {};"), watch);
-        assertTrue(watch.contains("Class<? extends ConditionSymbol>[] condition() default {};"), watch);
-        assertTrue(watch.contains("@Repeatable(DocsPages.Watches.class)"), watch);
-        assertTrue(watch.contains("@Target({})"), watch);
+        assertTrue(watch.contains("java.lang.Class<? extends io.github.graphmaquina.symbol.ConditionSymbol>[] "
+                + "condition() default {};"), watch);
+        assertTrue(watch.contains("@java.lang.annotation.Repeatable(DocsPages.Watches.class)"), watch);
+        assertTrue(watch.contains("@java.lang.annotation.Target({})"), watch);
 
         SourceFiles.Compilation compilation = compile(emitted, USAGE);
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
@@ -173,11 +174,22 @@ class WatchVocabularyTest {
                 () -> String.valueOf(compilation.codes()));
     }
 
+    /**
+     * A machine has the watch vocabulary of each peer it declares, and no pair it does not declare has one: here
+     * {@code Docs} watches {@code Pages} and {@code Notes}, {@code Pages} watches {@code Docs}, and {@code Notes}
+     * declares no peer.
+     */
     @Test
-    void namesTheWatchAnnotationsOfEveryOrderedPair() {
-        assertTrue(ApiEmitter.annotationTypes(model()).containsAll(
-                List.of("fx.DocsPages.Watch", "fx.DocsPages.Watches", "fx.DocsPages.When")),
-                () -> String.valueOf(ApiEmitter.annotationTypes(model())));
+    void namesTheWatchAnnotationsOfEveryOrderedPairAMachineDeclaresAndOfNoOther() {
+        GenerationModel model = new GenerationModel(List.of(graph("Docs", List.of("fx.Pages", "fx.Notes")),
+                graph("Notes", List.of()), graph("Pages", List.of("fx.Docs"))), List.of());
+
+        List<String> watches = ApiEmitter.annotationTypes(model).stream()
+                .filter((String name) -> !name.contains("Graph.")).toList();
+
+        assertEquals(List.of("fx.DocsPages.Watch", "fx.DocsPages.Watches", "fx.DocsPages.When",
+                "fx.DocsNotes.Watch", "fx.DocsNotes.Watches", "fx.DocsNotes.When",
+                "fx.PagesDocs.Watch", "fx.PagesDocs.Watches", "fx.PagesDocs.When"), watches);
     }
 
     @Test
@@ -208,6 +220,13 @@ class WatchVocabularyTest {
         List<Path> files = write(directory.resolve("generated"), emitted);
         SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, directory.resolve("classes"));
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+    }
+
+    /** A machine {@code fx.<name>} over enums of its own, declaring {@code peers}. */
+    private static GraphDescriptor graph(String name, List<String> peers) {
+        return new GraphDescriptor("fx." + name, "fx", "fx." + name + "Entity", "fx." + name + "Status",
+                List.of("OPEN"), "fx." + name + "Transition", List.of("CLOSE"), peers,
+                new SourceLocation("fx/" + name + ".java", 1L, 1L));
     }
 
     private GenerationModel model() {

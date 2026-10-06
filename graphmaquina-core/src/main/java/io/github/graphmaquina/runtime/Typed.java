@@ -7,7 +7,7 @@ import io.github.graphmaquina.api.TransitionSpec;
 
 /**
  * The one place where a heterogeneous log entry is brought back to a machine's own generics. Every cast is
- * checked against the {@link MachineKey} that owns the entry, so the rest of the runtime carries no suppression.
+ * checked against the {@link MachineKey} that owns the entry, so the code that reads the log carries no suppression.
  */
 final class Typed {
 

@@ -1,14 +1,19 @@
 package io.github.graphmaquina.processor;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Duration;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
  * A timeout is declared as seconds and a nanosecond adjustment, the two fields {@link java.time.Duration} is
- * built from, so nothing is rounded on the way in. The representation is checked before the duration is built:
- * every combination the class refuses, and every one that would overflow, is reported as {@code SG511} instead.
+ * built from, so nothing is rounded on the way in. The pair is checked before the duration is built: a zero or
+ * negative timeout, and a nanosecond adjustment outside 0 to 999,999,999, are reported as {@code SG511}, a pair
+ * {@code Duration.ofSeconds} overflows on among them, and the longest pair a {@code Duration} holds is kept.
  */
 class TypedTimeoutTest {
 
@@ -69,6 +74,24 @@ class TypedTimeoutTest {
 
         assertFalse(below.success(), below.describe());
         assertTrue(below.hasError("SG511"), below.describe());
+    }
+
+    /**
+     * {@code Duration.ofSeconds} overflows only when the nanosecond adjustment moves the seconds out of the range of
+     * a {@code long}, which an adjustment from 0 to 999,999,999 never does, so a pair it overflows on is refused as
+     * {@code SG511} like any other adjustment out of range, before a duration is built, and nothing else is reported.
+     */
+    @Test
+    void refusesAPairTheDurationWouldOverflowOn() {
+        assertThrows(ArithmeticException.class, () -> Duration.ofSeconds(Long.MAX_VALUE, 1_000_000_000));
+
+        Compilation.Result result = Compilation.compileTyped(TypedFixtures.graph(HEADER,
+                archive(", timeout = @Timeout(seconds = Long.MAX_VALUE, nanos = 1000000000)")));
+
+        assertFalse(result.success(), result.describe());
+        assertEquals(List.of("[SG511] timeout must be a positive duration: seconds 9223372036854775807 and nanos"
+                + " 1000000000 must not be negative, nanos must be at most 999999999, and the two must not both be"
+                + " zero"), result.errors(), result.describe());
     }
 
     @Test

@@ -7,7 +7,10 @@ import java.util.Objects;
 import lombok.Getter;
 import lombok.NonNull;
 
-/** build() of the DSL found problems. Tests assert on codes(), never on the text. */
+/**
+ * build() of the DSL found problems, listed by code, then origin state, then identifier. {@code codes()} returns
+ * their codes alone, in that order.
+ */
 public final class InvalidGraphException extends StateMachineException {
 
     /** One problem found while validating a graph: a stable code paired with a human-readable message. */

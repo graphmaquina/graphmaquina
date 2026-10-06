@@ -2,7 +2,11 @@ package io.github.graphmaquina.error;
 
 import lombok.Getter;
 
-/** Thrown when a chain of watch reactions goes longer than the configured maximum. */
+/**
+ * A chain of watch reactions grew longer than the registry's {@code maxWatchChain}. The reaction one step past the
+ * limit evaluates no watch rule and ends as a {@link io.github.graphmaquina.api.Reaction.Aborted} carrying this
+ * exception, so it reaches the application only there: neither execute nor reevaluate throws it to its caller.
+ */
 @Getter
 public final class WatchChainExceededException extends TransitionAbortedException {
 

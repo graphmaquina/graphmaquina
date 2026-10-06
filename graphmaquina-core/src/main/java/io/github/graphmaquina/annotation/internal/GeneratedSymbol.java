@@ -17,7 +17,10 @@ public @interface GeneratedSymbol {
     /** Concrete host used to resolve and invoke the exported member. */
     Class<?> host();
 
-    /** Name of the original exported member. */
+    /**
+     * Name of the exported member: a method's own name, or the logical name of a property, such as {@code status}
+     * for a getter {@code getStatus()}.
+     */
     String member();
 
     /** Roles exported by the symbol family. */

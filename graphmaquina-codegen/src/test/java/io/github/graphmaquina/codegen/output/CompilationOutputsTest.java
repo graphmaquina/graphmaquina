@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
@@ -13,13 +14,17 @@ import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.manifest.OwnedOutputs;
+import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.source.SourceFiles;
+import io.github.graphmaquina.codegen.source.SymbolicLinks;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,8 +40,10 @@ import org.junit.jupiter.params.provider.ValueSource;
  * what {@code complete} seals once it succeeded.
  *
  * <p>Every root is a temporary directory of its own, so nothing here can pass because two outputs happen to
- * share a parent. The inventory is the only authority on what may be deleted: a class file whose name starts
- * like an owned one but which no inventory lists survives {@code prepare} byte for byte.</p>
+ * share a parent. The inventory decides what may be deleted: a class file that no inventory lists survives
+ * {@code prepare} byte for byte, unless an interrupted cycle left it and it was compiled from one of the units the
+ * inventories, the manifest or the processor inventory name. A class file whose name merely starts like such a
+ * unit's, as {@code fx/DocsGraph$Manual.class} of a top-level class beside {@code fx.DocsGraph}, was not.</p>
  */
 class CompilationOutputsTest {
 
@@ -147,6 +154,38 @@ class CompilationOutputsTest {
                 pending.excludedBinaries());
     }
 
+    /**
+     * The pending inventory is the evidence an interrupted cycle leaves, so it is replaced whole, never rewritten
+     * where it lies: a second link to the previous file still reads what that file said before.
+     */
+    @Test
+    void replacesThePendingInventoryInsteadOfRewritingItInPlace() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        Path pending = workDirectory.resolve(PENDING_INVENTORY);
+        ManifestCodec.writeOwned(pending,
+                new OwnedOutputs(2, List.of(CARRIER_SOURCE), List.of(), List.of(), List.of()));
+        byte[] interrupted = Files.readAllBytes(pending);
+        Path snapshot = Files.createLink(workDirectory.resolve("snapshot.json"), pending);
+
+        CompilationOutputs.prepare(request());
+
+        assertArrayEquals(interrupted, Files.readAllBytes(snapshot));
+        assertEquals(List.of("fx/DocsGraph.java", CARRIER_SOURCE), ManifestCodec.readOwned(pending).sources());
+    }
+
+    /** A truncated pending inventory names itself, so the user knows which file stands in the way. */
+    @Test
+    void namesAPendingInventoryThatIsNotWellFormedJson() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        Path pending = workDirectory.resolve(PENDING_INVENTORY);
+        Files.writeString(pending, "{\n  \"schemaVersion\": 2,\n  \"sources\": [\n", StandardCharsets.UTF_8);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
+
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().startsWith("malformed JSON in " + pending + ": "), failure.getMessage());
+    }
+
     @Test
     void refusesToPrepareACompilationTheGeneratorNeverDescribed() {
         CodegenException failure =
@@ -156,17 +195,22 @@ class CompilationOutputsTest {
         assertTrue(failure.getMessage().contains("annotation-manifest.json"), failure.getMessage());
     }
 
-    @Test
-    void refusesAnInventoryPathThatEscapesItsRoot() throws IOException {
+    /**
+     * An entry that leads up out of its root, or that has a root of its own, as {@code /outside.class} has here and
+     * {@code \outside.class} or {@code C:outside.class} would have on Windows, is refused with {@code SG603}.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"../outside.class", "/outside.class"})
+    void refusesAnInventoryPathThatEscapesItsRoot(String entry) throws IOException {
         writeManifest(List.of(CARRIER_SOURCE));
         ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
-                List.of(), List.of("../outside.class"), List.of(), List.of()));
+                List.of(), List.of(entry), List.of(), List.of()));
 
         CodegenException failure =
                 assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
 
         assertEquals("SG603", failure.code());
-        assertTrue(failure.getMessage().contains("../outside.class"), failure.getMessage());
+        assertTrue(failure.getMessage().contains(entry), failure.getMessage());
     }
 
     /**
@@ -200,6 +244,96 @@ class CompilationOutputsTest {
             assertEquals("SG603", failure.code());
             assertTrue(Files.exists(kept));
         }
+    }
+
+    /**
+     * An entry no path can spell, such as one holding the NUL character, is refused like an entry outside its root,
+     * with {@code SG603} naming it, in the sealed and in the pending inventory, before any output is changed.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {INVENTORY, PENDING_INVENTORY})
+    void refusesAnInventoryPathThatNoPathCanSpell(String inventoryName) throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        ManifestCodec.writeOwned(workDirectory.resolve(inventoryName), new OwnedOutputs(2,
+                List.of("fx/Old_\u0000.java"), List.of(), List.of(), List.of()));
+        Path kept = write(classesOutput.resolve(PUBLISHED), new byte[] {1});
+
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(failure.getMessage().contains("fx/Old_"), failure.getMessage());
+        assertTrue(Files.exists(kept));
+    }
+
+    /**
+     * A symbolic link inside the class output that leads outside it would take an inventory entry's file out of the
+     * root, whether the entry goes through the link or through the link and back up. The entry is refused with
+     * {@code SG603} before any output is changed, and the files outside survive.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"link/x.class", "link/../x.class"})
+    void refusesAnInventoryPathThatASymbolicLinkTakesOutOfItsRoot(String entry) throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        Path outside = Files.createDirectories(project.resolve("outside/deep/er"));
+        Path throughLink = write(outside.resolve("x.class"), new byte[] {1});
+        Path upFromLink = write(outside.getParent().resolve("x.class"), new byte[] {2});
+        SymbolicLinks.create(classesOutput.resolve("link"), outside);
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
+                List.of(), List.of(entry), List.of(), List.of()));
+        Path kept = write(classesOutput.resolve(PUBLISHED), new byte[] {1});
+
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
+
+        assertEquals("SG603", failure.code());
+        assertTrue(Files.exists(throughLink));
+        assertTrue(Files.exists(upFromLink));
+        assertTrue(Files.exists(kept));
+    }
+
+    /**
+     * A file that {@code prepare} removes without an entry of the sealed or pending inventory naming it, here a source
+     * the processor inventory names and the published index, is left alone when a symbolic link inside its root takes
+     * it out of that root.
+     */
+    @Test
+    void leavesAFileThatASymbolicLinkInsideItsRootTakesOutOfIt() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        Path linkedSources = Files.createDirectories(project.resolve("outside/sources"));
+        Path source = write(linkedSources.resolve("Old_.java"), new byte[] {1});
+        SymbolicLinks.create(processorSourcesOutput.resolve("fx"), linkedSources);
+        Path linkedMeta = Files.createDirectories(project.resolve("outside/meta/graphmaquina"));
+        Path index = write(linkedMeta.resolve("exports.json"), new byte[] {2});
+        SymbolicLinks.create(classesOutput.resolve("META-INF"), linkedMeta.getParent());
+        ManifestCodec.writeProcessorInventory(workDirectory.resolve("processor-inventory.json"), List.of("fx.Old_"));
+
+        CompilationOutputs.prepare(request());
+
+        assertTrue(Files.exists(source));
+        assertTrue(Files.exists(index));
+    }
+
+    /**
+     * After a removal, the emptied directories are pruned only while each stands under its root by its real path: a
+     * directory reached through a link that leaves the root, here a link outside that leads back into it, stays.
+     */
+    @Test
+    void prunesNoDirectoryThatASymbolicLinkTakesOutOfItsRoot() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        Path inside = Files.createDirectories(classesOutput.resolve("inside"));
+        write(inside.resolve("x.class"), new byte[] {1});
+        Path outside = Files.createDirectories(project.resolve("outside"));
+        Path back = SymbolicLinks.create(outside.resolve("back"), inside);
+        SymbolicLinks.create(classesOutput.resolve("out"), outside);
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
+                List.of(), List.of("out/back/x.class"), List.of(), List.of()));
+
+        CompilationOutputs.prepare(request());
+
+        assertFalse(Files.exists(inside.resolve("x.class")));
+        assertTrue(Files.isSymbolicLink(back));
     }
 
     @Test
@@ -258,11 +392,37 @@ class CompilationOutputsTest {
         assertFalse(Files.exists(classesOutput.resolve(CARRIER_BINARY)));
         assertFalse(Files.exists(classesOutput.resolve("io/github/graphmaquina")));
         assertTrue(Files.isRegularFile(classesOutput.resolve("fx/Manual.class")));
+        assertTrue(Files.isRegularFile(classesOutput.resolve("fx/DocsGraph$Manual.class")));
         assertArrayEquals(index, Files.readAllBytes(classesOutput.resolve(PUBLISHED)));
         assertFalse(Files.exists(classesOutput.resolve(PENDING)));
         assertFalse(Files.exists(workDirectory.resolve(PENDING_INVENTORY)));
         assertEquals(List.of("annotation-manifest.json", INVENTORY, "processor-inventory.json"),
                 sorted(names(workDirectory)));
+    }
+
+    /**
+     * A symbolic link inside the class output that leads outside it takes the index {@code complete} would publish,
+     * which the inventory it seals lists, out of the class output: the compilation is refused with {@code SG603}
+     * before any output is changed.
+     */
+    @Test
+    void refusesToCompleteWhenASymbolicLinkTakesTheIndexOutOfTheClassOutput() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileOwnedAndManualSources();
+        Path outside = Files.createDirectories(project.resolve("outside"));
+        SymbolicLinks.create(classesOutput.resolve("META-INF"), outside);
+        byte[] index = writeProvisionalIndex();
+        writeProcessorInventory(List.of("fx.Docs_"));
+
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> CompilationOutputs.complete(request()));
+
+        assertEquals("SG603", failure.code());
+        assertArrayEquals(index, Files.readAllBytes(outside.resolve("graphmaquina/pending-exports.json")));
+        assertFalse(Files.exists(outside.resolve("graphmaquina/exports.json")));
+        assertTrue(Files.isRegularFile(classesOutput.resolve(CARRIER_BINARY)));
+        assertTrue(Files.isRegularFile(workDirectory.resolve(PENDING_INVENTORY)));
     }
 
     @Test
@@ -288,12 +448,76 @@ class CompilationOutputsTest {
         assertArrayEquals(index, Files.readAllBytes(classesOutput.resolve(PENDING)));
     }
 
+    /**
+     * {@code -g:none} is not the only setting that leaves the {@code SourceFile} attribute out: a {@code -g:} list
+     * without {@code source} does too, and the refusal names that case as well.
+     */
+    @Test
+    void namesEveryDebugSettingThatLeavesTheSourceFileAttributeOut() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileOwnedAndManualSources(List.of("-g:lines,vars"));
+        writeProvisionalIndex();
+        writeProcessorInventory(List.of("fx.Docs_"));
+
+        CodegenException failure =
+                assertThrows(CodegenException.class, () -> CompilationOutputs.complete(request()));
+
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().contains("-g:lines,vars"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("-g:source"), failure.getMessage());
+    }
+
+    /**
+     * A class file the interrupted cycle cannot own, here one javac left truncated, is never read: only the files
+     * named after an owned unit, in that unit's package directory, can be its binaries.
+     */
+    @Test
+    void retiresAnInterruptedCompilationWithoutReadingClassFilesItCannotOwn() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileOwnedAndManualSources();
+        Path unrelated = classesOutput.resolve("fx/Manual.class");
+        byte[] truncated = Arrays.copyOf(Files.readAllBytes(unrelated), 30);
+        Files.write(unrelated, truncated);
+
+        CompilationOutputs.prepare(request());
+
+        assertFalse(Files.exists(classesOutput.resolve(CARRIER_BINARY)));
+        assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph$Transition.class")));
+        assertArrayEquals(truncated, Files.readAllBytes(unrelated));
+    }
+
+    /** A resource that merely ends in {@code .class}, as Maven may copy into the class output, is never read. */
+    @Test
+    void sealsTheInventoryWithoutReadingAResourceNamedLikeAClassFile() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileOwnedAndManualSources();
+        byte[] text = "plain text fixture\n".getBytes(StandardCharsets.UTF_8);
+        Path resource = write(classesOutput.resolve("samples/legacy.class"), text);
+        writeProvisionalIndex();
+        writeProcessorInventory(List.of("fx.Docs_"));
+
+        CompilationOutputs.complete(request());
+
+        assertEquals(new TreeSet<>(List.of("fx/DocsGraph.class", "fx/DocsGraph$Transition.class", "fx/Docs_.class")),
+                new TreeSet<>(ManifestCodec.readOwned(workDirectory.resolve(INVENTORY)).binaries()));
+        assertArrayEquals(text, Files.readAllBytes(resource));
+    }
+
+    /**
+     * The binaries an interrupted cycle left of the units it owned are retired, while a class file whose name merely
+     * starts like an owned unit's, that of the top-level {@code fx.DocsGraph$Manual}, is read and kept.
+     */
     @Test
     void retiresTheClassFilesAnInterruptedCompilationLeftBehind() throws IOException {
         writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
         CompilationOutputs.prepare(request());
         compileOwnedAndManualSources();
         byte[] manualBytes = Files.readAllBytes(classesOutput.resolve("fx/Manual.class"));
+        byte[] namedAlikeBytes = Files.readAllBytes(classesOutput.resolve("fx/DocsGraph$Manual.class"));
 
         CompilationOutputs.prepare(request());
 
@@ -302,6 +526,206 @@ class CompilationOutputsTest {
         assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph.class")));
         assertFalse(Files.exists(classesOutput.resolve("fx/DocsGraph$Transition.class")));
         assertArrayEquals(manualBytes, Files.readAllBytes(classesOutput.resolve("fx/Manual.class")));
+        assertArrayEquals(namedAlikeBytes, Files.readAllBytes(classesOutput.resolve("fx/DocsGraph$Manual.class")));
+    }
+
+    /**
+     * The pending inventory lists the generator's sources beside the processor's, but they stand under the
+     * generated source output. After an interrupted cycle, a generation that no longer writes one of them has already
+     * retired it from there itself, so a file of the same path in the processor's source output, which another
+     * annotation processor may have written, is not the generator's and survives.
+     */
+    @Test
+    void keepsAFileOfTheProcessorSourceOutputNamedLikeASourceAnInterruptedGenerationOwned() throws IOException {
+        generate(request(), List.of(CARRIER, "fx.OldRefs"));
+        CompilationOutputs.prepare(request());
+        generate(request(), List.of(CARRIER, "fx.NewRefs"));
+        byte[] foreign = "package fx;\nfinal class OldRefs { }\n".getBytes(StandardCharsets.UTF_8);
+        Path other = write(processorSourcesOutput.resolve("fx/OldRefs.java"), foreign);
+
+        CompilationOutputs.prepare(request());
+
+        assertArrayEquals(foreign, Files.readAllBytes(other));
+        assertFalse(Files.exists(sourcesOutput.resolve("fx/OldRefs.java")));
+        assertTrue(Files.isRegularFile(sourcesOutput.resolve("fx/NewRefs.java")));
+    }
+
+    /**
+     * A source the sealed inventory lists is the processor's, so it is retired from the processor's source output
+     * even when the generation now writes a source of the same path under its own output, which stays.
+     */
+    @Test
+    void retiresAProcessorSourceEvenWhenTheGenerationWritesASourceOfTheSamePath() throws IOException {
+        generate(request(), List.of(CARRIER, "fx.Docs_"));
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
+                List.of("fx/Docs_.java"), List.of(), List.of(PUBLISHED), List.of()));
+        Path stale = write(processorSourcesOutput.resolve("fx/Docs_.java"),
+                "package fx;\npublic class Docs_ { }\n".getBytes(StandardCharsets.UTF_8));
+
+        CompilationOutputs.prepare(request());
+
+        assertFalse(Files.exists(stale));
+        assertTrue(Files.isRegularFile(sourcesOutput.resolve("fx/Docs_.java")));
+    }
+
+    /** Where the two source outputs are one directory, a source of the generation there is its own and stays. */
+    @Test
+    void keepsTheGeneratedSourceWhereBothSourceOutputsAreOneDirectory() throws IOException {
+        GenerationRequest shared = new GenerationRequest(project, List.of(project.resolve("originals")),
+                SourceFiles.classpath(), sourcesOutput, sourcesOutput, classesOutput, workDirectory, "fx:test:main");
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
+                List.of("fx/Docs_.java"), List.of(), List.of(PUBLISHED), List.of()));
+        generate(shared, List.of(CARRIER, "fx.Docs_"));
+
+        CompilationOutputs.prepare(shared);
+
+        assertTrue(Files.isRegularFile(sourcesOutput.resolve("fx/Docs_.java")));
+    }
+
+    /**
+     * One directory spelled two ways is still one directory: when the processor's source output names the generated
+     * source output through a symbolic link, or in another case on a volume that does not tell names apart by case, a
+     * source of the generation there is its own and stays.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"symbolic link", "case"})
+    void keepsTheGeneratedSourceWhereBothSourceOutputsAreOneDirectorySpelledTwoWays(String spelling)
+            throws IOException {
+        Path alias = spelling.equals("case")
+                ? sourcesOutput.resolveSibling(otherCase(sourcesOutput.getFileName().toString()))
+                : SymbolicLinks.create(project.resolve("processor-alias"), sourcesOutput);
+        assumeTrue(!alias.equals(sourcesOutput) && Files.isDirectory(alias) && Files.isSameFile(alias, sourcesOutput),
+                "only a case-insensitive volume finds a directory under another case");
+        GenerationRequest shared = new GenerationRequest(project, List.of(project.resolve("originals")),
+                SourceFiles.classpath(), sourcesOutput, alias, classesOutput, workDirectory, "fx:test:main");
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
+                List.of("fx/Docs_.java"), List.of(), List.of(PUBLISHED), List.of()));
+        generate(shared, List.of(CARRIER, "fx.Docs_"));
+
+        CompilationOutputs.prepare(shared);
+
+        assertTrue(Files.isRegularFile(sourcesOutput.resolve("fx/Docs_.java")));
+    }
+
+    /**
+     * A companion the processor generated for the first time in a javac run that was interrupted is in no inventory
+     * of this tool, but the processor inventory that run left names it. The next preparation, which comes before
+     * javac could generate it again, retires its source and its class files, nested ones included, and leaves the
+     * source and the class file of a type that inventory does not name, such as one another processor wrote.
+     */
+    @Test
+    void retiresWhatTheProcessorFirstGeneratedInAnInterruptedCompilation() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileProcessorSources();
+        ManifestCodec.writeProcessorInventory(workDirectory.resolve("processor-inventory.json"), List.of("fx.Old_"));
+
+        CompilationOutputs.prepare(request());
+
+        assertFalse(Files.exists(processorSourcesOutput.resolve("fx/Old_.java")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/Old_.class")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/Old_$Builder.class")));
+        assertTrue(Files.isRegularFile(processorSourcesOutput.resolve("fx/Other_.java")));
+        assertTrue(Files.isRegularFile(classesOutput.resolve("fx/Other_.class")));
+    }
+
+    /**
+     * Nothing says what the processor generated without a processor inventory, with one the codec refuses, such as
+     * one the interrupted javac stopped writing halfway or one holding a number whose exponent is out of range, or
+     * with one that names anything but a qualified or binary Java name, as the processor writes them: a name holding
+     * the NUL character, which javac leaves out of every identifier it reads and no path can hold, a path, an empty
+     * name or a Windows path. The preparation goes on and deletes nothing such an inventory names, not even what its
+     * valid names name.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"missing", "half-written", "an exponent out of range", "NUL in a name", "a path",
+        "an empty name", "a Windows path"})
+    void retiresNothingThatOnlyAnUnusableProcessorInventoryWouldName(String inventory) throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        compileProcessorSources();
+        Path file = workDirectory.resolve("processor-inventory.json");
+        switch (inventory) {
+            case "missing" -> { }
+            case "half-written" -> Files.writeString(file,
+                    "{\n  \"schemaVersion\": 2,\n  \"generatedTypes\": [\n    \"fx.Old_\"", StandardCharsets.UTF_8);
+            case "an exponent out of range" -> Files.writeString(file,
+                    "{\n  \"schemaVersion\": 1e99999999999,\n  \"generatedTypes\": [\n    \"fx.Old_\"\n  ]\n}\n",
+                    StandardCharsets.UTF_8);
+            case "NUL in a name" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "fx.Old_\u0000"));
+            case "a path" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "../outside/Victim"));
+            case "an empty name" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", ""));
+            case "a Windows path" -> ManifestCodec.writeProcessorInventory(file, List.of("fx.Old_", "C:\\x"));
+            default -> throw new IllegalArgumentException(inventory);
+        }
+
+        CompilationOutputs.prepare(request());
+
+        assertTrue(Files.isRegularFile(processorSourcesOutput.resolve("fx/Old_.java")));
+        assertTrue(Files.isRegularFile(classesOutput.resolve("fx/Old_.class")));
+        assertTrue(Files.isRegularFile(classesOutput.resolve("fx/Old_$Builder.class")));
+    }
+
+    /**
+     * javac leaves out of an identifier only the ignorable characters that fit in one {@code char}, so a supplementary
+     * one, such as U+E0001, stays in the name of a type the processor generates. A processor inventory naming such a
+     * type is used like any other: its source and its class file are retired.
+     */
+    @Test
+    void retiresATypeWhoseNameHoldsASupplementaryCharacterJavacKeeps() throws IOException {
+        String simpleName = "Tag" + Character.toString(0xE0001) + "_";
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        CompilationOutputs.prepare(request());
+        List<Path> files = SourceFiles.write(processorSourcesOutput,
+                Map.of("fx." + simpleName, "package fx;\npublic final class " + simpleName + " { }\n"));
+        SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, classesOutput);
+        assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+        assertTrue(Files.isRegularFile(classesOutput.resolve("fx/" + simpleName + ".class")));
+        ManifestCodec.writeProcessorInventory(workDirectory.resolve("processor-inventory.json"),
+                List.of("fx." + simpleName));
+
+        CompilationOutputs.prepare(request());
+
+        assertFalse(Files.exists(processorSourcesOutput.resolve("fx/" + simpleName + ".java")));
+        assertFalse(Files.exists(classesOutput.resolve("fx/" + simpleName + ".class")));
+    }
+
+    /**
+     * The sources the processor inventory names keep the same exception as the sealed inventory's: where both source
+     * outputs are one directory, a source the generation writes there stays, even when the processor inventory an
+     * interrupted cycle left names its type.
+     */
+    @Test
+    void keepsTheGeneratedSourceThatTheProcessorInventoryOfAnInterruptedCompilationNames() throws IOException {
+        GenerationRequest shared = new GenerationRequest(project, List.of(project.resolve("originals")),
+                SourceFiles.classpath(), sourcesOutput, sourcesOutput, classesOutput, workDirectory, "fx:test:main");
+        generate(shared, List.of(CARRIER, "fx.Docs_"));
+        CompilationOutputs.prepare(shared);
+        ManifestCodec.writeProcessorInventory(workDirectory.resolve("processor-inventory.json"), List.of("fx.Docs_"));
+
+        CompilationOutputs.prepare(shared);
+
+        assertTrue(Files.isRegularFile(sourcesOutput.resolve("fx/Docs_.java")));
+    }
+
+    /**
+     * The processor inventory is read only after an interrupted cycle: once a cycle completed, the sealed inventory
+     * says what the processor generated, so a source the processor inventory names, but the sealed inventory does
+     * not, stays.
+     */
+    @Test
+    void readsNoProcessorInventoryAfterACompletedCycle() throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE, "fx/DocsGraph.java"));
+        ManifestCodec.writeOwned(workDirectory.resolve(INVENTORY), new OwnedOutputs(2,
+                List.of("fx/Docs_.java"), List.of(), List.of(PUBLISHED), List.of()));
+        ManifestCodec.writeProcessorInventory(workDirectory.resolve("processor-inventory.json"),
+                List.of("fx.Docs_", "fx.Other_"));
+        Path other = write(processorSourcesOutput.resolve("fx/Other_.java"),
+                "package fx;\npublic final class Other_ { }\n".getBytes(StandardCharsets.UTF_8));
+
+        CompilationOutputs.prepare(request());
+
+        assertTrue(Files.isRegularFile(other));
     }
 
     /** The request every test runs against: five roots that share no parent but the temporary file system. */
@@ -310,16 +734,72 @@ class CompilationOutputsTest {
                 sourcesOutput, processorSourcesOutput, classesOutput, workDirectory, "fx:test:main");
     }
 
-    /** A manifest describing a compilation that owns {@code ownedSources} and writes its inventory in work. */
+    /** Writes the manifest of a compilation that owns {@code ownedSources}, as {@link #manifest} describes it. */
     private void writeManifest(List<String> ownedSources) throws IOException {
-        ExportIndex local = new ExportIndex(2, ToolVersion.current(), "fx:test:main",
-                new GenerationModel(List.of(), List.of()), List.of());
-        ManifestCodec.writeCompile(workDirectory.resolve("annotation-manifest.json"),
-                new CompileManifest(2, ToolVersion.current(), local, List.of(),
-                        workDirectory.resolve("processor-inventory.json").toString(), ownedSources));
+        ManifestCodec.writeCompile(workDirectory.resolve("annotation-manifest.json"), manifest(ownedSources));
     }
 
-    /** Compiles the two owned units and one unowned type into the class output, as javac would. */
+    /** A manifest describing a compilation that owns {@code ownedSources} and writes its inventory in work. */
+    private CompileManifest manifest(List<String> ownedSources) {
+        ExportIndex local = new ExportIndex(2, ToolVersion.current(), "fx:test:main",
+                new GenerationModel(List.of(), List.of()), List.of());
+        return new CompileManifest(2, ToolVersion.current(), local, List.of(),
+                workDirectory.resolve("processor-inventory.json").toString(), ownedSources);
+    }
+
+    /**
+     * Publishes, as the generator does, a generation that writes a source for each of {@code types} and owns them:
+     * the sources the previous generation owned are retired from the generated source output first.
+     */
+    private void generate(GenerationRequest request, List<String> types) throws IOException {
+        List<GeneratedSource> sources = new ArrayList<>();
+        List<String> owned = new ArrayList<>();
+        for (String type : types) {
+            sources.add(new GeneratedSource(type, "// " + type + "\n"));
+            owned.add(type.replace('.', '/') + ".java");
+        }
+        GenerationOutput.publish(request, sources, manifest(owned), List.of());
+    }
+
+    /**
+     * Writes into the processor's source output, as annotation processors do, {@code fx.Old_}, a companion with a
+     * nested builder, and {@code fx.Other_}, and compiles both into the class output, as an interrupted javac may have.
+     */
+    private void compileProcessorSources() {
+        List<Path> files = SourceFiles.write(processorSourcesOutput, Map.of(
+                "fx.Old_", """
+                        package fx;
+                        public final class Old_ {
+                            private Old_() { }
+                            public static final class Builder { }
+                        }
+                        """,
+                "fx.Other_", """
+                        package fx;
+                        public final class Other_ { }
+                        """));
+        SourceFiles.Compilation compilation = SourceFiles.compileStrict(files, classesOutput);
+        assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
+    }
+
+    /** {@code name} with its first letter that has another case in that case; {@code name} itself when none has. */
+    private static String otherCase(String name) {
+        for (int index = 0; index < name.length(); index++) {
+            char letter = name.charAt(index);
+            char other = Character.isUpperCase(letter) ? Character.toLowerCase(letter) : Character.toUpperCase(letter);
+            if (other != letter) {
+                return name.substring(0, index) + other + name.substring(index + 1);
+            }
+        }
+        return name;
+    }
+
+    /**
+     * Compiles into the class output, as javac would, the generator's {@code fx.DocsGraph} and the carrier,
+     * {@code fx.Docs_} as the annotation processor would write it, and two classes no generation owns:
+     * {@code fx.Manual}, and {@code fx.DocsGraph$Manual}, a top-level class of its own file whose class file is named
+     * like a nested class of {@code fx.DocsGraph}.
+     */
     private void compileOwnedAndManualSources() {
         compileOwnedAndManualSources(List.of());
     }
@@ -342,6 +822,10 @@ class CompilationOutputsTest {
         sources.put("fx.Manual", """
                 package fx;
                 public class Manual { }
+                """);
+        sources.put("fx.DocsGraph$Manual", """
+                package fx;
+                public class DocsGraph$Manual { }
                 """);
         List<Path> files = SourceFiles.write(project.resolve("originals"), sources);
         Map<String, String> generated = Map.of("fx.Docs_", """

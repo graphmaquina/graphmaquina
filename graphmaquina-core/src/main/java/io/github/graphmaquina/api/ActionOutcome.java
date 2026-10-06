@@ -8,7 +8,7 @@ public sealed interface ActionOutcome permits ActionOutcome.Ok, ActionOutcome.Fa
     /** Successful outcome of an action. */
     record Ok() implements ActionOutcome { }
 
-    /** Failed outcome of an action, carrying the reason it failed. */
+    /** Failed outcome of an action, carrying the reason it failed, which must not be blank. */
     record Failed(@NonNull String reason) implements ActionOutcome {
         public Failed {
             if (reason.isBlank()) {

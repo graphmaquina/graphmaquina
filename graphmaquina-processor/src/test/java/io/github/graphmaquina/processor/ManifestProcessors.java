@@ -15,8 +15,9 @@ import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
 
 /**
- * The processors {@link ManifestDiscoveryTest} runs instead of, or beside, the real one. They are public and
- * top-level because javac instantiates a processor reflectively from the name given to {@code -processor}.
+ * The processors {@link ManifestDiscoveryTest} runs instead of, or beside, the real one. Each is a public static
+ * class of this public top-level class because javac instantiates a processor reflectively from the name given to
+ * {@code -processor}.
  */
 public final class ManifestProcessors {
 
@@ -51,7 +52,7 @@ public final class ManifestProcessors {
             return List.copyOf(POLICIES);
         }
 
-        /** The action each {@code Transition} of {@code fx.Docs} names, in the order the machine spells them. */
+        /** The action each {@code Transition} on a method of {@code fx.Docs} names, in the order they are spelled. */
         static List<String> actions() {
             return List.copyOf(ACTIONS);
         }
@@ -103,6 +104,45 @@ public final class ManifestProcessors {
                         }
                     }
                 }
+            }
+            return true;
+        }
+    }
+
+    /**
+     * Supports {@code javax.annotation.processing.Generated} alone, as the processors of other tools do, and
+     * records whether javac ever offered it: a processor ordered before this one that claims it hides it.
+     */
+    public static final class GeneratedProbe extends AbstractProcessor {
+
+        static final String GENERATED = "javax.annotation.processing.Generated";
+
+        private static final Set<String> SEEN = new LinkedHashSet<>();
+
+        /** Forgets what a previous compilation recorded. */
+        static void reset() {
+            SEEN.clear();
+        }
+
+        /** The annotation types this processor was actually handed. */
+        static Set<String> seen() {
+            return Set.copyOf(SEEN);
+        }
+
+        @Override
+        public Set<String> getSupportedAnnotationTypes() {
+            return Set.of(GENERATED);
+        }
+
+        @Override
+        public SourceVersion getSupportedSourceVersion() {
+            return SourceVersion.latestSupported();
+        }
+
+        @Override
+        public boolean process(Set<? extends TypeElement> annotations, RoundEnvironment round) {
+            for (TypeElement annotation : annotations) {
+                SEEN.add(annotation.getQualifiedName().toString());
             }
             return true;
         }

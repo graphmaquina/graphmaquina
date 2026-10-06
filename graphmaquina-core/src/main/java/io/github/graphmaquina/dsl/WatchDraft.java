@@ -14,7 +14,10 @@ import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
-/** Draft of the watch declared on one state, accumulating its when(...).execute(...) rules. */
+/**
+ * Draft of the watch declared on one state, accumulating its when(...).execute(...) rules. A condition is pending
+ * until its execute(...) arrives; one that never gets it is reported, not dropped.
+ */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>
         implements WatchBuilder<E, S, T, P, Q, U>, WatchRuleBuilder<E, S, T, P, Q, U> {
@@ -31,26 +34,38 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
 
     @Override
     public WatchRuleBuilder<E, S, T, P, Q, U> when(@NonNull NamedCondition<E, P, Q, U> condition) {
+        requireUnbuilt();
+        return pend(condition);
+    }
+
+    @Override
+    public WatchRuleBuilder<E, S, T, P, Q, U> when(@NonNull String name, @NonNull WatchCondition<E, P, Q, U> condition) {
+        requireUnbuilt();
+        if (name.isBlank()) {
+            graph.problems().add("SG107", state.ordinal(), -1,
+                    "a condition of the watch of " + state + " has a blank name");
+            return pend(new NamedCondition<>("(unnamed)", condition));
+        }
+        return pend(new NamedCondition<>(name, condition));
+    }
+
+    /** A condition still waiting for its execute(...) is reported as SG404 before the new one takes its place. */
+    private WatchDraft<E, S, T, P, Q, U> pend(NamedCondition<E, P, Q, U> condition) {
+        reportPending(graph.problems());
         pending = Optional.of(condition);
         return this;
     }
 
     @Override
-    public WatchRuleBuilder<E, S, T, P, Q, U> when(@NonNull String name, @NonNull WatchCondition<E, P, Q, U> condition) {
-        if (name.isBlank()) {
-            graph.problems().add("SG107", state.ordinal(), -1,
-                    "a condition of the watch of " + state + " has a blank name");
-            pending = Optional.of(new NamedCondition<>("(unnamed)", condition));
-        } else {
-            pending = Optional.of(new NamedCondition<>(name, condition));
-        }
-        return this;
-    }
-
-    @Override
     public WatchBuilder<E, S, T, P, Q, U> execute(@NonNull T transition) {
+        requireUnbuilt();
         graph.requireTransition(transition);
-        rules.add(new WatchRule<>(pending.orElseThrow(), transition));
+        if (pending.isEmpty()) {
+            graph.problems().add("SG404", state.ordinal(), transition.ordinal(),
+                    "the watch of " + state + " declares execute(" + transition + ") without when(...)");
+            return this;
+        }
+        rules.add(new WatchRule<>(pending.get(), transition));
         pending = Optional.empty();
         return this;
     }
@@ -60,7 +75,20 @@ final class WatchDraft<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enu
         return graph;
     }
 
+    /** Once the graph is built nothing reads this watch any more, so a late call would be lost. */
+    private void requireUnbuilt() {
+        graph.requireUnbuilt("the watch of " + state);
+    }
+
+    private void reportPending(Problems problems) {
+        if (pending.isPresent()) {
+            problems.add("SG404", state.ordinal(), -1, "the watch of " + state + " declares when("
+                    + pending.get().name() + ") without execute(...)");
+        }
+    }
+
     Optional<WatchSpec<E, S, T, P, Q, U>> toSpec(Problems problems) {
+        reportPending(problems);
         if (rules.isEmpty()) {
             problems.add("SG404", state.ordinal(), -1,
                     "the watch of " + state + " declares no when(...).execute(...) rule");

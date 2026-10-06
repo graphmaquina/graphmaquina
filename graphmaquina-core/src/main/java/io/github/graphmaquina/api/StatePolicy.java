@@ -8,13 +8,15 @@ import lombok.NonNull;
 
 /**
  * Rejection policy of one state: the reason given when a requested transition has no edge from it, plus the
- * reasons declared for specific identifiers. It is not an edge and never becomes one.
+ * reasons declared for specific identifiers. It is not an edge and never becomes one. No reason may be blank,
+ * the default one or one declared for an identifier.
  *
  * @param <S> state enum
  * @param <T> transition identifier enum
  * @param state the state this policy describes
  * @param otherwise the reason used for any identifier without its own
- * @param rejectionReasons reasons declared for specific identifiers, in the order they were declared
+ * @param rejectionReasons reasons declared for specific identifiers, in the iteration order of the given map, which
+ *     for the DSL is the order they were declared
  */
 public record StatePolicy<S extends Enum<S>, T extends Enum<T>>(@NonNull S state, @NonNull String otherwise,
                                                                 @NonNull Map<T, String> rejectionReasons) {
@@ -27,7 +29,7 @@ public record StatePolicy<S extends Enum<S>, T extends Enum<T>>(@NonNull S state
                 Objects.requireNonNull(transition, "rejected transition"),
                 Objects.requireNonNull(reason, "rejection reason")));
         rejectionReasons = Collections.unmodifiableMap(ordered);
-        if (otherwise.isBlank()) {
+        if (otherwise.isBlank() || ordered.values().stream().anyMatch(String::isBlank)) {
             throw new IllegalArgumentException("the policy of " + state + " has a blank reason");
         }
     }

@@ -149,8 +149,9 @@ class OrderFlowTest {
     }
 
     /**
-     * PACK is the only way a PENDING item ever reaches PACKED, and START_PACKING is the only edge that leaves
-     * PENDING. The engine still refuses PACK rather than taking the edge that happens to be available.
+     * PACK is the only way an item ever reaches PACKED, and it leaves PACKING, not PENDING, whose edges are
+     * START_PACKING and CANCEL. The engine still refuses PACK from PENDING, with the policy's reason, rather than
+     * taking an edge that happens to be available.
      */
     @Test
     void anAbsentIdentifierIsNeverServedByTheOtherEdgeLeavingTheSameState() {

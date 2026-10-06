@@ -126,8 +126,8 @@ final class TypedFixtures {
      * <p>The watch declares its two rules in order, an explicit condition first and a filter over the peers'
      * states second, so the first rule that holds is the one the engine applies. The condition is declared
      * twice on its host, once marked and once not, with only the marked declaration taking an {@code Iterable}:
-     * whichever of the two the generated code calls records its own name in {@code selected}, so a test can
-     * tell which method really ran instead of reading the generated source.</p>
+     * whichever of the two the generated code calls records {@code "marked"} or {@code "unmarked"} in
+     * {@code selected}, so a test can tell which method really ran instead of reading the generated source.</p>
      */
     static Map<String, String> watching() {
         return watching(PEERS, WATCH);

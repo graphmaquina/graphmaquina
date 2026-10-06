@@ -8,7 +8,8 @@ import java.util.Objects;
  * <p>A {@code get} or {@code is} prefix followed by an upper-case letter is removed and the JavaBeans
  * decapitalization is applied to what remains: a name whose first two letters are upper-case keeps them, so
  * {@code getURL} exports {@code URL}, and any other name lowers its first letter. A fluent reader that spells
- * no prefix keeps its own name.</p>
+ * no prefix goes through the same decapitalization, so {@code total} keeps its name while {@code Total} exports
+ * {@code total}.</p>
  */
 public final class PropertyNames {
 

@@ -8,11 +8,14 @@ import com.google.gson.JsonParser;
 import org.gradle.testkit.runner.BuildResult;
 import org.gradle.testkit.runner.GradleRunner;
 
+import javax.tools.JavaCompiler;
+import javax.tools.ToolProvider;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,8 +33,9 @@ import java.util.zip.ZipOutputStream;
  * Test-only helper that materializes minimal Gradle projects applying the StateGraph plugin and runs them through
  * TestKit. This is test-support code, not a production API.
  *
- * <p>The project directory carries a space and a non-ASCII character in its name, so every functional test also
- * exercises the request encoding and the process invocation over a path that is not plain ASCII.</p>
+ * <p>The project directory of every fixture but {@link #applicationOnly} carries a space and a non-ASCII character
+ * in its name, so the functional tests that run a generation also exercise the request encoding and the process
+ * invocation over a path that is not plain ASCII.</p>
  */
 public final class PluginFixture {
 
@@ -97,13 +101,14 @@ public final class PluginFixture {
     /**
      * Writes the shared adapter domain — {@code fx.Status}, {@code fx.Transition}, {@code fx.Order},
      * {@code fx.Actions}, {@code fx.Orders} and the unmarked {@code fx.Unrelated} — into a build that resolves
-     * StateGraph from {@code repository}, compiles with Lombok before the StateGraph processor and uses the
-     * project's own strict compiler options.
+     * StateGraph from {@code repository}, compiles with Lombok before the StateGraph processor, declares that
+     * processor for both the main and the test source set and uses the project's own strict compiler options.
      *
      * @param directory the temporary directory to materialize the project under
      * @param repository the file Maven repository the StateGraph artifacts were published to
      * @return a fixture bound to the written project
      * @throws IOException if the project cannot be written
+     * @throws IllegalStateException if {@code repository} is not an existing directory
      */
     public static PluginFixture basic(Path directory, Path repository) throws IOException {
         return materialize(directory, repository, "", true,
@@ -113,7 +118,7 @@ public final class PluginFixture {
     /**
      * The same domain, in a build that declares the plugin with a version and resolves it — plugin marker and
      * plugin jar — from the fixture repository, with nothing injected by TestKit. It is the shape of a consumer
-     * build outside this repository.
+     * build outside this repository. Only its main source set declares the StateGraph processor.
      *
      * @param directory the temporary directory to materialize the project under
      * @param repository the file Maven repository the StateGraph artifacts and the plugin were published to
@@ -207,6 +212,110 @@ public final class PluginFixture {
                 """.formatted(relativePath), StandardCharsets.UTF_8);
     }
 
+    /**
+     * Appends {@code snippet} to the build script, which is what a build script that carried it from the start
+     * declares last.
+     *
+     * @param snippet the Kotlin DSL to append
+     * @throws IOException if the build script cannot be rewritten
+     */
+    public void appendToBuildScript(String snippet) throws IOException {
+        Path script = directory.resolve("build.gradle.kts");
+        Files.writeString(script, Files.readString(script, StandardCharsets.UTF_8) + "\n" + snippet,
+                StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Replaces the one occurrence of {@code target} in the build script with {@code replacement}.
+     *
+     * @param target the text to replace, which the build script must carry exactly once
+     * @param replacement the text to put in its place
+     * @throws IOException if the build script cannot be rewritten
+     * @throws IllegalStateException if the build script does not carry {@code target} exactly once
+     */
+    public void replaceInBuildScript(String target, String replacement) throws IOException {
+        Path script = directory.resolve("build.gradle.kts");
+        String content = Files.readString(script, StandardCharsets.UTF_8);
+        int index = content.indexOf(target);
+        if (index < 0 || content.indexOf(target, index + 1) >= 0) {
+            throw new IllegalStateException("the build script does not carry exactly one " + target);
+        }
+        Files.writeString(script, content.substring(0, index) + replacement
+                + content.substring(index + target.length()), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Writes {@code content} to {@code relativePath} under the project directory in UTF-8, creating its directory.
+     *
+     * @param relativePath the path of the file, relative to the project directory
+     * @param content the text of the file
+     * @throws IOException if the file cannot be written
+     */
+    public void writeFile(String relativePath, String content) throws IOException {
+        writeFile(relativePath, content.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Writes {@code content} as it is to {@code relativePath} under the project directory, creating its directory,
+     * so a test can leave a file that is not text at all.
+     *
+     * @param relativePath the path of the file, relative to the project directory
+     * @param content the bytes of the file
+     * @throws IOException if the file cannot be written
+     */
+    public void writeFile(String relativePath, byte[] content) throws IOException {
+        Path file = directory.resolve(relativePath);
+        Files.createDirectories(file.getParent());
+        Files.write(file, content);
+    }
+
+    /**
+     * Replaces the generator with a stand-in that only prints {@code line} on its error stream and exits with
+     * status {@code 0}, so a test can watch what the build does with a generator that completes while it
+     * reports something. The stand-in is compiled here and declared in the {@code graphmaquinaGenerator}
+     * configuration, which keeps the real generator out of it.
+     *
+     * @param line the line the stand-in prints, without quotes or backslashes
+     * @throws IOException if the stand-in cannot be written or packaged
+     * @throws IllegalStateException if the stand-in does not compile
+     */
+    public void replaceGeneratorWithOneThatReports(String line) throws IOException {
+        Path sources = Files.createDirectories(directory.resolve("stand-in-generator/src"));
+        Path classes = Files.createDirectories(directory.resolve("stand-in-generator/classes"));
+        Path main = sources.resolve("CodegenMain.java");
+        Files.writeString(main, """
+                package io.github.graphmaquina.codegen;
+
+                /** A stand-in generator that reports on its error stream and completes. */
+                public final class CodegenMain {
+
+                    private CodegenMain() {
+                    }
+
+                    public static void main(String[] arguments) {
+                        System.err.println("%s");
+                    }
+                }
+                """.formatted(line), StandardCharsets.UTF_8);
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        int status = compiler.run(null, null, null, "--release", "21", "-d", classes.toString(), main.toString());
+        if (status != 0) {
+            throw new IllegalStateException("the stand-in generator does not compile: status " + status);
+        }
+        String entry = "io/github/graphmaquina/codegen/CodegenMain.class";
+        try (ZipOutputStream out = new ZipOutputStream(
+                Files.newOutputStream(directory.resolve("stand-in-codegen.jar")), StandardCharsets.UTF_8)) {
+            out.putNextEntry(new ZipEntry(entry));
+            out.write(Files.readAllBytes(classes.resolve(entry)));
+            out.closeEntry();
+        }
+        appendToBuildScript("""
+                dependencies {
+                    "graphmaquinaGenerator"(files("stand-in-codegen.jar"))
+                }
+                """);
+    }
+
     /** Writes the shared project with {@code testProcessors} and {@code extraConfiguration} spliced into it. */
     private static PluginFixture materialize(Path directory, Path repository, String pluginVersion,
             boolean injectedPluginClasspath, String testProcessors, String extraConfiguration)
@@ -234,7 +343,10 @@ public final class PluginFixture {
         return fixture;
     }
 
-    /** The settings file: both the plugin and the dependency repositories point at the fixture repository. */
+    /**
+     * The settings file: the plugin repositories and the dependency repositories both start with the fixture
+     * repository, followed by Maven Central, and the plugin repositories end with the Gradle plugin portal.
+     */
     private static String settings(Path repository) {
         String url = repository.toUri().toString();
         return """
@@ -259,7 +371,8 @@ public final class PluginFixture {
 
     /**
      * The build script: the plugin, a Java 21 toolchain, the strict compiler options, Lombok before the
-     * StateGraph processor, and the two reporting tasks the assertions read.
+     * StateGraph processor, and the three reporting tasks the assertions read: {@code printRuntimeClasspath},
+     * {@code printSourceRoots} and {@code printGeneratorLauncher}.
      */
     private static String buildScript(String pluginVersion, String testProcessors,
             String extraConfiguration, String earlyConfiguration) {
@@ -324,6 +437,7 @@ public final class PluginFixture {
                                 + generator.get().metadata.languageVersion.asInt())
                         println("TOOLCHAIN_LAUNCHER=" + toolchain.get().executablePath.asFile.absolutePath)
                         println("DAEMON_JAVA_HOME=" + System.getProperty("java.home"))
+                        println("DAEMON_LANGUAGE_VERSION=" + Runtime.version().feature())
                     }
                 }
 
@@ -442,11 +556,22 @@ public final class PluginFixture {
      * @throws IOException if the sources cannot be written
      */
     public void writeSources(Map<String, String> sources) throws IOException {
+        writeSources(sources, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The same, with every source written in {@code encoding}, as a project that declares that encoding keeps them.
+     *
+     * @param sources the compilation units, keyed by qualified name
+     * @param encoding the encoding the files are written in
+     * @throws IOException if the sources cannot be written
+     */
+    public void writeSources(Map<String, String> sources, Charset encoding) throws IOException {
         Path root = directory.resolve("src/main/java");
         deleteRecursively(root);
         Files.createDirectories(root);
         for (Map.Entry<String, String> source : sources.entrySet()) {
-            write(root, source.getKey(), source.getValue());
+            write(root, source.getKey(), source.getValue(), encoding);
         }
     }
 
@@ -458,18 +583,20 @@ public final class PluginFixture {
      * @throws IOException if the source cannot be written
      */
     public void writeTestSource(String qualifiedName, String content) throws IOException {
-        write(Files.createDirectories(directory.resolve("src/test/java")), qualifiedName, content);
+        write(Files.createDirectories(directory.resolve("src/test/java")), qualifiedName, content,
+                StandardCharsets.UTF_8);
     }
 
-    private static void write(Path root, String qualifiedName, String content) throws IOException {
+    private static void write(Path root, String qualifiedName, String content, Charset encoding)
+            throws IOException {
         Path file = root.resolve(qualifiedName.replace('.', '/') + ".java");
         Files.createDirectories(file.getParent());
-        Files.writeString(file, content, StandardCharsets.UTF_8);
+        Files.writeString(file, content, encoding);
     }
 
     /**
-     * Replaces the sources with the one type that carries no StateGraph marker, so the next build generates and
-     * publishes nothing while still compiling the project.
+     * Replaces the sources with the one type that carries no StateGraph marker, so the next build generates no
+     * vocabulary and publishes an empty index while still compiling the project.
      *
      * @throws IOException if the sources cannot be rewritten
      */
@@ -593,6 +720,7 @@ public final class PluginFixture {
      * compilation carrier the generator emits for every run.
      *
      * @return {@code true} if one of the excluded binaries reached the jar
+     * @throws IllegalStateException if the sealed inventory excluded no binary, which leaves nothing to look for
      */
     public boolean jarContainsGraphCompilationCarrier() {
         JsonObject inventory = readJson(directory.resolve("build/graphmaquina/main/owned-outputs.json"));
@@ -648,7 +776,7 @@ public final class PluginFixture {
      * The source directories the {@code main} source set declares, as the project model reports them — which is
      * what an IDE import and every consumer of {@code sourceSets.main.java} read.
      *
-     * @return the absolute paths of the source roots
+     * @return the absolute paths of the source roots, sorted
      */
     public List<String> mainSourceRoots() {
         List<String> roots = new ArrayList<>();
@@ -662,7 +790,7 @@ public final class PluginFixture {
 
     /**
      * The compiler arguments {@code compileTestJava} runs with, argument providers included, as the fixture's
-     * own reporting task prints them.
+     * own reporting task prints them. Only the build of {@link #plainJUnitTests} declares that task.
      *
      * @return the effective compiler arguments of the test compilation
      */
@@ -731,10 +859,38 @@ public final class PluginFixture {
         return readJson(directory.resolve("build/graphmaquina/" + sourceSet + "/request.json"));
     }
 
+    /**
+     * The identities of the dependency indexes the annotation manifest of {@code sourceSet} carries: the indexes
+     * the generation read from the compile classpath of that source set.
+     *
+     * @param sourceSet the name of the source set
+     * @return the compilation identities, in the order the manifest lists them
+     */
+    public List<String> manifestDependencies(String sourceSet) {
+        JsonObject manifest = readJson(
+                directory.resolve("build/graphmaquina/" + sourceSet + "/annotation-manifest.json"));
+        List<String> identities = new ArrayList<>();
+        for (JsonElement dependency : manifest.getAsJsonArray("dependencies")) {
+            identities.add(dependency.getAsJsonObject().get("compilationId").getAsString());
+        }
+        return List.copyOf(identities);
+    }
+
     /** The names of every entry of the project's jar. */
     private List<String> jarEntries() {
+        return archiveEntries(directory.relativize(jar()).toString());
+    }
+
+    /**
+     * The names of every entry of the archive at {@code relativePath}, such as the sources jar or the javadoc jar
+     * a build assembles beside the binary one.
+     *
+     * @param relativePath the path of the archive, relative to the project directory
+     * @return the entry names, in the order the archive lists them
+     */
+    public List<String> archiveEntries(String relativePath) {
         List<String> entries = new ArrayList<>();
-        try (ZipFile jar = new ZipFile(jar().toFile(), StandardCharsets.UTF_8)) {
+        try (ZipFile jar = new ZipFile(directory.resolve(relativePath).toFile(), StandardCharsets.UTF_8)) {
             for (ZipEntry entry : jar.stream().toList()) {
                 entries.add(entry.getName());
             }

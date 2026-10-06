@@ -40,6 +40,11 @@ import java.util.Optional;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
+/**
+ * After-commit hooks declared with {@code afterCommit}: they run once the state is written and, for a cascade, in log
+ * order at the root commit; a failure route runs the hook of the recovering edge; none runs on Rejected or Ignored; a
+ * hook that throws surfaces an AfterCommitException and keeps the state; and a hook may open a new root transaction.
+ */
 class HooksTest {
 
     final List<String> log = new ArrayList<>();

@@ -30,14 +30,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Three compilations of the same project, in the same directories, as a developer runs them: the full graph,
- * a rename of a method, a property and an enum constant, and the deletion of the last export.
+ * Compilations of the same project, in the same directories, as a developer runs them, and what each leaves
+ * behind. The first test runs three: the full graph, a rename of a method, a property and two enum constants, and
+ * the deletion of the last export.
  *
- * <p>javac never removes a class file it no longer produces, so what proves the cycle correct is what is
+ * <p>javac never removes a class file it no longer produces, so what proves that cycle correct is what is
  * <em>absent</em> afterwards: the binaries of the previous names, the vocabulary of a machine that no longer
  * exists, and the carrier, which belongs to the compilation and never to the jar. The published index follows
  * the declarations down to the empty one, and the inventory that made the cleanup possible is sealed with no
  * pending file left behind.</p>
+ *
+ * <p>The other tests rerun javac over the same directories without the build's lifecycle, give its
+ * {@code prepare} step an inventory of the retired schema, and compile a half-finished rename that javac
+ * rejects.</p>
  */
 class RepeatedCompilationTest {
 
@@ -88,6 +93,34 @@ class RepeatedCompilationTest {
         assertEquals(List.of(PUBLISHED), owned.resources());
         assertEquals(1, owned.excludedBinaries().size(), owned.excludedBinaries().toString());
         assertFalse(Files.exists(request.workDirectory().resolve("owned-outputs.pending.json")));
+    }
+
+    /**
+     * A rerun of javac over the same directories, without the lifecycle that retires the previous outputs, finds
+     * the companions the previous run generated already compiled. They are this processor's own outputs, which the
+     * previous inventory lists, so they are reported as stale outputs to retire, not as hand-written types that
+     * collide with the generated names.
+     */
+    @Test
+    void reportsItsOwnPreviousCompanionsAsStaleOutputRatherThanAsCollisions() {
+        Map<String, String> sources = TypedFixtures.minimal();
+        sources.put("fx.Library", """
+                package fx;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                @StateGraphs public interface Library extends Machines { Docs docs(); }
+                """);
+        Compilation.Prepared prepared = Compilation.prepare(project, sources);
+        Compilation.Result first = Compilation.compilePrepared(prepared);
+        assertTrue(first.success(), first.describe());
+
+        Compilation.Result rerun = Compilation.recompileWithoutLifecycle(prepared);
+
+        assertFalse(rerun.success(), rerun.describe());
+        assertEquals(0, rerun.countError("SG603"), rerun.describe());
+        assertEquals(2, rerun.countError("SG602"), rerun.describe());
+        assertTrue(rerun.errors().stream().allMatch((String error) -> error.contains("previous compilation")
+                && error.contains("prepare-compile")), rerun.describe());
     }
 
     @Test
@@ -161,7 +194,10 @@ class RepeatedCompilationTest {
         assertFalse(Files.exists(request.classesOutput().resolve(PUBLISHED)));
     }
 
-    /** The fixture of {@link TypedFixtures#minimal()} with its action, its property and one state renamed. */
+    /**
+     * The fixture of {@link TypedFixtures#minimal()} with its action, its property, one state and its identifier
+     * renamed.
+     */
     private static Map<String, String> renamed() {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("fx.DocStatus", """

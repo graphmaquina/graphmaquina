@@ -30,6 +30,7 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
     private final CallTrace trace;
     private final ProbeCalls<GuardCall<E, S, T>> calls;
     private final ResponseScript<GuardResult> script;
+    private final Object entry = new Object();
     private volatile Consumer<GuardContext<E, S, T>> onCall = context -> { };
 
     private GuardProbe(String name, CallTrace trace) {
@@ -39,7 +40,11 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
         this.script = new ResponseScript<>(name);
     }
 
-    /** The name must be the one the graph gives this guard, since that is what the trace reports. */
+    /**
+     * The trace reports {@code name} exactly as given and nothing checks it against the graph, so pass the name
+     * the graph gives this guard if the trace is to read like the graph. A null argument raises
+     * {@link NullPointerException} and a blank name {@link IllegalArgumentException}.
+     */
     public static <E, S extends Enum<S>, T extends Enum<T>> GuardProbe<E, S, T> create(String name,
             CallTrace trace) {
         Objects.requireNonNull(name, "name");
@@ -72,8 +77,9 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
     }
 
     /**
-     * Replaces the side effect run on every call. It receives the live context, which the engine invalidates
-     * when the transaction ends, so read it now rather than storing it.
+     * Replaces the side effect run on every call the script answers, a throwing response included but not a
+     * call the script no longer covers. It receives the live context, which the engine invalidates when the
+     * transaction ends, so read it now rather than storing it.
      */
     public GuardProbe<E, S, T> onCall(Consumer<GuardContext<E, S, T>> onCall) {
         this.onCall = Objects.requireNonNull(onCall, "onCall");
@@ -88,9 +94,12 @@ public final class GuardProbe<E, S extends Enum<S>, T extends Enum<T>> implement
     public GuardResult test(GuardContext<E, S, T> context) {
         GuardCall<E, S, T> call = new GuardCall<>(context.entity(), context.from(), context.transition(),
                 context.to(), context.input());
-        calls.record(call);
-        trace.record(name, call);
-        Supplier<GuardResult> response = script.next();
+        Supplier<GuardResult> response;
+        synchronized (entry) {
+            calls.record(call);
+            trace.record(name, call);
+            response = script.next();
+        }
         onCall.accept(context);
         return response.get();
     }

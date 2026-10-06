@@ -17,9 +17,13 @@ import java.util.function.Supplier;
  * covers raises a {@link GraphAssertionError} naming the probe and the ordinal of the call.
  *
  * <p>Configuration is meant to finish before the probe reaches a machine; after that, invoking it from several
- * threads is safe and each thread is served a different queued response. The side effect registered with
- * {@link #onCall} runs on the calling thread, after the response has been withdrawn and before it is returned
- * or thrown, so it also runs for a call whose response is an exception.
+ * threads is safe and each thread is served a different queued response. Recording a call, adding it to the
+ * trace and withdrawing its response are one step, so the invocation at position p of {@link #calls()} is the
+ * one that was served the response of call p + 1, and this probe's own entries in the trace keep the order of
+ * its calls, however the threads interleave. The side effect registered with {@link #onCall} runs on the
+ * calling thread, after the response has been withdrawn and before it is returned or thrown, so it also runs
+ * for a call whose response is an exception, and does not run for a call the script no longer covers, which is
+ * recorded and then fails.
  *
  * @param <E> the entity type of the machine the action belongs to
  * @param <S> the state enum of that machine
@@ -31,6 +35,7 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
     private final CallTrace trace;
     private final ProbeCalls<ActionCall<E, S, T>> calls;
     private final ResponseScript<ActionOutcome> script;
+    private final Object entry = new Object();
     private volatile Consumer<TransitionContext<E, S, T>> onCall = context -> { };
 
     private ActionProbe(String name, CallTrace trace) {
@@ -40,7 +45,11 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
         this.script = new ResponseScript<>(name);
     }
 
-    /** The name must be the one the graph gives this action, since that is what the trace reports. */
+    /**
+     * The trace reports {@code name} exactly as given and nothing checks it against the graph, so pass the name
+     * the graph gives this action if the trace is to read like the graph. A null argument raises
+     * {@link NullPointerException} and a blank name {@link IllegalArgumentException}.
+     */
     public static <E, S extends Enum<S>, T extends Enum<T>> ActionProbe<E, S, T> create(String name,
             CallTrace trace) {
         Objects.requireNonNull(name, "name");
@@ -73,8 +82,9 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
     }
 
     /**
-     * Replaces the side effect run on every call. It receives the live context, which the engine invalidates
-     * when the transaction ends, so read it now rather than storing it.
+     * Replaces the side effect run on every call the script answers, a throwing response included but not a
+     * call the script no longer covers. It receives the live context, which the engine invalidates when the
+     * transaction ends, so read it now rather than storing it.
      */
     public ActionProbe<E, S, T> onCall(Consumer<TransitionContext<E, S, T>> onCall) {
         this.onCall = Objects.requireNonNull(onCall, "onCall");
@@ -89,9 +99,12 @@ public final class ActionProbe<E, S extends Enum<S>, T extends Enum<T>> implemen
     public ActionOutcome process(TransitionContext<E, S, T> context) {
         ActionCall<E, S, T> call = new ActionCall<>(context.entity(), context.from(), context.transition(),
                 context.to(), context.depth(), context.input());
-        calls.record(call);
-        trace.record(name, call);
-        Supplier<ActionOutcome> response = script.next();
+        Supplier<ActionOutcome> response;
+        synchronized (entry) {
+            calls.record(call);
+            trace.record(name, call);
+            response = script.next();
+        }
         onCall.accept(context);
         return response.get();
     }

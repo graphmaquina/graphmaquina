@@ -10,6 +10,8 @@ import io.github.graphmaquina.codegen.model.GenerationModel;
 import io.github.graphmaquina.codegen.output.GenerationOutput;
 import io.github.graphmaquina.codegen.source.Bootstrap;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
@@ -28,15 +30,38 @@ public final class StateGraphCodegen {
     /**
      * Generates the typed graph API of {@code request} and returns the sources it wrote and its manifest.
      *
-     * @throws CodegenException if the request's sources, its classpath indexes or its outputs are not usable
-     * @throws IOException if the sources or the manifests cannot be read or written
+     * <p>The original sources are walked and parsed once: the publication checks the generated types against the
+     * very sources the model was read from. The dependencies of the manifest are the indexes the classpath
+     * publishes, except the one in this compilation's own class output: a caller may put that output on the
+     * classpath as its previous run left it, and its index describes this compilation, never a dependency of
+     * it.</p>
+     *
+     * @throws CodegenException if the request's sources, its classpath indexes or its outputs are not usable, an
+     *     original source that javac cannot read or parse included
+     * @throws java.io.UncheckedIOException if a source directory cannot be walked, or a file manager javac reads
+     *     with cannot be opened or closed
+     * @throws IOException if a classpath entry, a manifest or a generated source cannot be read or written, or an
+     *     original source or the class output the collision checks look up cannot be examined
      */
     public static GenerationResult generate(GenerationRequest request) throws IOException {
         Objects.requireNonNull(request, "request");
-        GenerationModel model = Bootstrap.inspect(request);
+        Bootstrap.Inspection inspection = Bootstrap.read(request);
+        GenerationModel model = inspection.model();
         List<GeneratedSource> sources = ApiEmitter.emit(model, request.compilationId());
-        List<ExportIndex> dependencies = DependencyExports.read(request.classpath());
+        List<ExportIndex> dependencies = DependencyExports.read(dependencyClasspath(request));
         CompileManifest manifest = ManifestAssembler.assemble(request, model, sources, dependencies);
-        return GenerationOutput.publish(request, sources, manifest);
+        return GenerationOutput.publish(request, sources, manifest, inspection.sources());
+    }
+
+    /** The classpath of {@code request} without its own class output, compared as absolute, normalized paths. */
+    private static List<Path> dependencyClasspath(GenerationRequest request) {
+        Path classes = request.classesOutput().toAbsolutePath().normalize();
+        List<Path> entries = new ArrayList<>();
+        for (Path entry : request.classpath()) {
+            if (!entry.toAbsolutePath().normalize().equals(classes)) {
+                entries.add(entry);
+            }
+        }
+        return entries;
     }
 }

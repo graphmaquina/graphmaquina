@@ -13,8 +13,13 @@ import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Contracts of the small API values: machine keys, action outcomes, guard results, action references, outcomes, state
+ * policies and named conditions.
+ */
 class ValuesTest {
 
+    /** A second transition catalogue over the same state enum, to tell two machine keys apart. */
     enum Other { A }
 
     @Test
@@ -98,6 +103,33 @@ class ValuesTest {
         assertEquals("January is closed", policy.reasonFor(Month.JANUARY));
         assertEquals("not from here", policy.reasonFor(Month.MARCH));
         assertThrows(IllegalArgumentException.class, () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, " ", Map.of()));
+    }
+
+    /** A reason declared for one identifier is read like the default one, so it is refused blank the same way. */
+    @Test
+    void statePolicyRefusesABlankReasonForAnIdentifier() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new StatePolicy<DayOfWeek, Month>(DayOfWeek.MONDAY, "not from here",
+                        Map.of(Month.JANUARY, "  ")));
+        assertEquals("the policy of MONDAY has a blank reason", error.getMessage());
+    }
+
+    /** The reason is what the caller reads about a refusal: a blank one says nothing. */
+    @Test
+    void rejectedRefusesABlankReason() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new Outcome.Rejected<String, DayOfWeek, Month>("e", DayOfWeek.MONDAY, Month.JANUARY, " ",
+                        RejectionKind.NO_TRANSITION, Optional.empty()));
+        assertEquals("reason must not be blank", error.getMessage());
+    }
+
+    /** The reason is what the caller reads about a routed failure: a blank one says nothing. */
+    @Test
+    void failedRefusesABlankReason() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new Outcome.Failed<String, DayOfWeek, Month>("e", DayOfWeek.MONDAY, Month.JANUARY,
+                        DayOfWeek.TUESDAY, Month.MARCH, DayOfWeek.SUNDAY, "", Optional.empty(), List.of(), List.of()));
+        assertEquals("reason must not be blank", error.getMessage());
     }
 
     @Test

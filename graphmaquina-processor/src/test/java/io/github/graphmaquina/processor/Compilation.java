@@ -30,9 +30,10 @@ import javax.tools.ToolProvider;
  * processor and the manifest the generator wrote.
  *
  * <p>Every stage works on real files, laid out the way a build does: {@code originals/} holds the fixture,
- * {@code bootstrap/} the sources the generator emits, {@code processor/} the ones the processor emits and
- * {@code classes/} the compiled result. Compilation always uses the project's own strict options,
- * {@code -Xlint:all,-serial -Werror}, so a fixture that only compiles under laxer rules is a failure here.</p>
+ * {@code bootstrap/} the sources the generator emits, {@code processor/} the ones the processor emits,
+ * {@code classes/} the compiled result and {@code work/} the manifest and the inventories. Compilation always uses
+ * the project's own strict options, {@code -Xlint:all,-serial -Werror}, so a fixture that only compiles under
+ * laxer rules is a failure here.</p>
  */
 final class Compilation {
 
@@ -41,7 +42,10 @@ final class Compilation {
     /** One prepared fixture: the request the generator ran for and what it produced, manifest included. */
     record Prepared(GenerationRequest request, GenerationResult generation) { }
 
-    /** What a compilation produced: diagnostics, the processor's source output, and a loader over the classes. */
+    /**
+     * What a compilation produced: whether it succeeded, its diagnostics, the processor's source output and a loader
+     * over the classes.
+     */
     record Result(boolean success, List<Diagnostic<? extends JavaFileObject>> diagnostics, Path output, ClassLoader classes) {
 
         List<String> errors() {
@@ -186,6 +190,53 @@ final class Compilation {
         return run(files, options, request);
     }
 
+    /**
+     * Prepares the outputs of {@code prepared} and runs javac the way a build that hands it only some sources
+     * does: the originals named by {@code explicit} and the generated bootstrap are given to javac, and every
+     * other original is left to the source path, from which javac compiles, under {@code -implicit:class}, the
+     * ones the compilation needs, without processing them. Completion does not run: the test observes what javac
+     * and the processor did.
+     */
+    static Result compileWithImplicitSources(Prepared prepared, List<String> explicit) {
+        return compileWithSourcePath(prepared, explicit, List.of("-implicit:class"));
+    }
+
+    /**
+     * Prepares the outputs of {@code prepared} and runs javac the way Maven's compiler plugin does: the originals
+     * named by {@code listed} and the generated bootstrap are given to javac, the source path holds the originals
+     * and the bootstrap, and no {@code -implicit} policy is set. Any other file under the originals stands for one
+     * the build leaves out of the compilation. Should javac read such a file, it reports what is wrong in it, or
+     * else warns that it compiled a file no processor saw, which {@code -Werror} turns into a failure. Completion
+     * does not run.
+     */
+    static Result compileWithSourcePath(Prepared prepared, List<String> listed) {
+        return compileWithSourcePath(prepared, listed, List.of());
+    }
+
+    /**
+     * Prepares the outputs of {@code prepared}, then runs javac over {@code explicit} and the bootstrap, with the
+     * source path and then {@code extra}.
+     */
+    private static Result compileWithSourcePath(Prepared prepared, List<String> explicit, List<String> extra) {
+        GenerationRequest request = prepared.request();
+        try {
+            CompilationOutputs.prepare(request);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        Path originals = request.sources().get(0);
+        List<Path> files = new ArrayList<>();
+        for (String name : explicit) {
+            files.add(originals.resolve(name.replace('.', File.separatorChar) + ".java"));
+        }
+        files.addAll(javaFiles(request.sourcesOutput()));
+        List<String> options = new ArrayList<>(standardOptions(request));
+        options.add("-Agraphmaquina.annotationManifest=" + prepared.generation().annotationManifest());
+        options.addAll(List.of("-sourcepath", originals + File.pathSeparator + request.sourcesOutput()));
+        options.addAll(extra);
+        return run(files, options, request);
+    }
+
     /** Prepares {@code sources} and compiles them, which is what a consumer build does. */
     static Result compileTyped(Map<String, String> sources) {
         return compilePrepared(prepare(sources));
@@ -230,10 +281,32 @@ final class Compilation {
         }
     }
 
+    /**
+     * Runs javac over {@code prepared} once more, without the build's lifecycle and with the class output of the
+     * previous run on its classpath, which is what an IDE or a plain rerun of javac over the same directories
+     * does: nothing retires what the previous compilation produced.
+     */
+    static Result recompileWithoutLifecycle(Prepared prepared) {
+        GenerationRequest request = prepared.request();
+        List<Path> files = new ArrayList<>(javaFiles(request.sources().get(0)));
+        files.addAll(javaFiles(request.sourcesOutput()));
+        List<String> options = new ArrayList<>(standardOptions(request, List.of(request.classesOutput())));
+        options.add("-Agraphmaquina.annotationManifest=" + prepared.generation().annotationManifest());
+        return run(files, options, request);
+    }
+
     /** javac compiles against the very classpath the request names, so both stages see one set of dependencies. */
     private static List<String> standardOptions(GenerationRequest request) {
+        return standardOptions(request, List.of());
+    }
+
+    /** The same, with {@code extraClasspath} after the request's own classpath, for javac alone. */
+    private static List<String> standardOptions(GenerationRequest request, List<Path> extraClasspath) {
         List<String> entries = new ArrayList<>();
         for (Path entry : request.classpath()) {
+            entries.add(entry.toString());
+        }
+        for (Path entry : extraClasspath) {
             entries.add(entry.toString());
         }
         return List.of(

@@ -39,6 +39,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.function.BiConsumer;
 import org.junit.jupiter.api.Test;
 
+/**
+ * What an {@code afterCommitWith} hook receives and when: the context (origin, identifier, destination, kind and
+ * terminal flag) of a direct hop, a failure route, an asynchronous action and a cascaded hop, the committed state a
+ * failing hook leaves, and the declaration rules for hook names and for the one hook an edge may carry.
+ */
 class CommitContextHooksTest {
 
     @Test

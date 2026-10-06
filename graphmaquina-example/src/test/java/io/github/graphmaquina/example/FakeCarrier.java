@@ -6,7 +6,10 @@ import io.github.graphmaquina.example.order.OrderStatus;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Records the state the order had when the carrier was told: SHIPPED, because the hook runs after the commit. */
+/**
+ * Records one entry per shipment: the order id, the state the order had when the carrier was told, which is SHIPPED
+ * because the hook runs after the commit, and {@code :closed} when the shipment ended the order's flow.
+ */
 final class FakeCarrier implements Carrier {
 
     final List<String> notified = new ArrayList<>();

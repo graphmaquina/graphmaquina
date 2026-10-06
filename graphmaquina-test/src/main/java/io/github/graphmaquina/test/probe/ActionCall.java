@@ -5,10 +5,11 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * What an {@link ActionProbe} recorded about one invocation. The live {@code TransitionContext} is deliberately
- * not kept: the engine invalidates it when the transaction ends, so holding it would hand a test an object that
- * throws when read afterwards. Only the values read on entry are stored. The entity is the live instance and
- * keeps moving after the call, so read it for identity rather than for the state it had then.
+ * What an {@link ActionProbe} or a {@link ControlledAsyncAction} recorded about one invocation. The live
+ * {@code TransitionContext} is deliberately not kept: the engine invalidates it when the transaction ends, and
+ * from then on its peer and cascade operations throw {@code StaleContextException}, so holding it would hand a
+ * test an object that fails when used afterwards. Only the values read on entry are stored. The entity is the
+ * live instance and keeps moving after the call, so read it for identity rather than for the state it had then.
  * Input is also the reference read on entry, not a deep copy; mutations to that object remain visible.
  *
  * <p>The identifier is recorded alongside the endpoints, because it is what selected this edge: two edges

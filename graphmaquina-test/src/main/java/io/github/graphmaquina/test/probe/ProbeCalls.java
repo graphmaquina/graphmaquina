@@ -13,7 +13,8 @@ import java.util.Objects;
  *
  * <p>The positions of that list count from 0. The call ordinal the owning probe names when it runs out of
  * scripted responses counts from 1, as {@link StateWriteProbe#failOnCall} does, so the same invocation is
- * position 1 here and call 2 there.
+ * position 1 here and call 2 there. That holds when several threads call the probe at once, because the probe
+ * records a call and withdraws its ordinal in one step.
  *
  * @param <C> what the owning probe records per call: an {@link ActionCall}, a {@link GuardCall} or, for a
  *        hook, the entity it was handed

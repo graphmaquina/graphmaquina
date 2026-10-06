@@ -41,6 +41,11 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Cascades from an order's action to its items: peers moved atomically and reverted with their parent, FAIL_FAST
+ * against COLLECT, cycles, the depth limit, peer views, ambiguous identities, an unregistered peer machine, the poison
+ * a failed cascade leaves, and the input that a cascaded call does not inherit.
+ */
 class CascadeTest {
 
     final Probe<Order, OrderStatus, OrderTransition> shipOrder = new Probe<>();

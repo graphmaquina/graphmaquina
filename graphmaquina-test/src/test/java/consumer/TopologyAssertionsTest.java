@@ -24,9 +24,10 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Contract of {@link TopologyAssert}. Every expectation gets a match and a mismatch read off the fields
- * of the {@link GraphAssertionError}, every method gets its own null-subject case, and the three answers
- * this view only forwards — reachability, shortest path and cycles — are pinned against a graph that
- * cycles, so neither the exclusion of the origin nor the canonical rotation of a cycle can drift.
+ * of the {@link GraphAssertionError}, every method gets its own null-subject case, and the answers this view
+ * only forwards are pinned — reachability on the acyclic fixture and on a graph that cycles, so the origin is
+ * listed only when a cycle leads back to it, cycles on the graph that cycles, so the canonical rotation of a
+ * cycle cannot drift, and the shortest path on the acyclic fixture.
  */
 class TopologyAssertionsTest {
 

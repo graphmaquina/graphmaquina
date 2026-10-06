@@ -5,7 +5,11 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-/** The only thing the runtime consults. The DSL implements it today; a processor generates it tomorrow. */
+/**
+ * The graph as the runtime reads it: the runtime reaches edges, policies, watches and terminal states only through
+ * this interface. The library's only implementation is the one the DSL builds, and the code the annotation processor
+ * generates builds its graph through the DSL.
+ */
 public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
 
     MachineKey<E, S, T> key();

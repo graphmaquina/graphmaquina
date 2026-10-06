@@ -11,7 +11,7 @@ because you have to recognise what you are replacing. They are not supported alt
 the documentation describes only nodes, edges, guards and policies.
 
 Read it in this order: what maps to what, a whole machine before and after, the four conventions that do not
-survive, then the module-by-module detail.
+survive, then the module-by-module detail and the behaviour changes that come with the same release.
 
 ## The shape of a machine
 
@@ -45,10 +45,12 @@ entity and state enum with different transition catalogues: two engines would ot
 | `edge(from, to)` and `/cells` snapshots | `findTransition(from, id)` and `/transitions` in a v2 snapshot. |
 | A return to the origin, or a terminal with an ACTION self-loop, in the DSL | A terminal forbids every outgoing edge. A non-terminal self-loop is legal and requires `allowsCycle`. |
 
-Preserved exactly: guard order, timeouts and deadlines, no automatic cancellation of external stages, the
-UnitOfWork with its poison and savepoints, the `COLLECT` policy, the journal of actions that actually ran,
-hooks after the setters, one write per entity, the separation of post-commit reactions, and the exception
-types of technical failures. Rollback of external side effects was never promised and still is not.
+Preserved, apart from the fixes listed under
+[Behaviour changes in this release](#behaviour-changes-in-this-release): guard order, timeouts and deadlines,
+no automatic cancellation of external stages, the UnitOfWork with its poison and savepoints, the `COLLECT`
+policy, the journal of actions that actually ran, hooks after the setters, one write per entity, the separation
+of post-commit reactions, and the exception types of technical failures. Rollback of external side effects was
+never promised and still is not.
 
 ## A machine, before and after
 
@@ -307,7 +309,7 @@ inventing one was how a caller could end up believing a route existed.
 | A cascade whose peer already holds the requested state is a convergent no-op, recorded with `TransitionRecord.convergent`. | Convergence by destination is gone, and so is `convergent`. A peer that used to converge now resolves the identifier from its own pending state and runs that edge: its guards are evaluated, its action runs, its hook runs and its record is an ordinary one, where 1.x ran none of the three and marked the record `convergent`. If no edge is keyed by that pair, the rejection aborts the whole cascade. A cascade whose peers used to converge therefore does work 1.x skipped, which is what declaring edges instead of choosing them by destination costs. A nested request on an entity already in flight is always `CascadeCycleException`, even when it asks for the transition that entity is running. Once the entity is no longer in flight, the request resolves from its pending state. |
 | `CascadeCycleException` reports `inFlightTarget` and `requestedTarget` as states. | It reports `inFlightTransition` and `requestedTransition` as identifiers. |
 | `onFailure(state)` routes to the cell `(origin, state)`. | `onFailure(transition)` names the recovering edge and resolves it from the failing edge's origin. A route may legitimately share the destination of the edge it recovers, because identity removes the old ambiguity. Its guards are still skipped and its own route is still not chained. |
-| `TransitionAbortedException.to()` always reports a destination. | `transition()` and `to()` are `Optional`: an abort before an edge is resolved invents neither. Messages read `FROM -ID-> TO`, or `FROM` when nothing was resolved yet. |
+| `TransitionAbortedException.to()` always reports a destination. | `transition()` and `to()` are `Optional`: an abort before an edge is resolved reports the requested identifier and no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither. Messages read `FROM -ID-> TO`, `FROM -ID-> ?` when no edge was resolved, or `FROM` when no identifier was read. |
 | `ActionRecord` and `TransitionRecord` identify a hop by its endpoints and action name. | Both carry the transition identity as well, so two actions with the same name and endpoints stay distinguishable. |
 | `CommitContext<S>` carries `from`, `to`, `EdgeKind` and `isTerminal`; `HookRef<E>` takes only the entity. | `CommitContext<S, T>` adds the committed identifier and uses `TransitionKind`. `HookRef<E, S, T>.run(entity, context)` receives the context of the edge that committed; `HookRef.of(name, consumer)` adapts a one-argument hook. |
 | A watch rule moves to a state: `.when(c).goTo(state)`. | A watch rule executes a transition of the owner: `.when(c).execute(transition)`. The rule runs that very edge, never another one reaching the same state. |
@@ -375,6 +377,7 @@ Only schema 2 is supported. The user is responsible for migrating source code an
 Run `clean` once, or delete the build directory. The first 2.0 build over a 1.x work directory stops at
 `SG602` before it generates anything, because the `annotation-manifest.json` that cycle left behind is a
 schema 1 document and 2.0 reads schema 2 only. That is the diagnostic doing its job; the fix is one `clean`.
+The schema 1 manifest is left in place, so every build stops there until that `clean` runs.
 
 Producer and consumer move together. A dependency whose published index was written by another tool version is
 refused with SG602 just as a schema 1 document is, so a build that upgrades one module at a time stops with a
@@ -440,19 +443,262 @@ Every generic of the library gains the third parameter: `GraphAssert<E, S, T>`, 
 | `IgnoredOutcomeAssert` carries only the shared expectations. | `hasReason(IgnoreReason)` says whether the state declared no watch or no rule held. |
 | `TransitionRecordAssert.isConvergent()` / `isNotConvergent()`. | Retired with `TransitionRecord.convergent`. A hop is identified by `hasTransition(id)` in addition to its endpoints, and `containsExactly` compares the identifier too. |
 | `JournalAssert.hasEntry(key, entity, from, to, action, depth, status)`. | `hasEntry(key, entity, from, transition, to, action, depth, status)`. |
-| `AbortAssert.at(key, entity, from, to)`. | `at(key, entity, from, transition, to)` for an abort that resolved its edge, and `atUnresolved(key, entity, from, transition)` for one refused before resolving any, which reports no destination. `AfterCommitAssert.at` is unchanged: the exception still names the committed hop by its endpoints. |
+| `AbortAssert.at(key, entity, from, to)`. | `at(key, entity, from, transition, to)` for an abort that resolved its edge, `atUnresolved(key, entity, from, transition)` for one refused before resolving any, which reports no destination, and `atUnread(key, entity, from)` for one raised before any identifier was read, such as a chain of watch reactions that exceeds its limit, which reports neither. `AfterCommitAssert.at` is unchanged: the exception still names the committed hop by its endpoints. |
 | `WatchRuleExpectation<S>(condition, target)`. | `WatchRuleExpectation<T>(condition, transition)`: a rule names the identifier it executes. |
 | `ActionCall<E, S>(entity, from, to, depth[, input])` and `GuardCall<E, S>(entity, from, to[, input])`. | `ActionCall<E, S, T>(entity, from, transition, to, depth[, input])` and `GuardCall<E, S, T>(entity, from, transition, to[, input])`. The recorded per-invocation input of #5 is unchanged, and `CallInputAssert` is untouched. |
 | `GraphGoldens.assertMatches(definition, resource, Detail, options)`. | `Detail` is gone, so the overloads are `(definition, resource)` and `(definition, resource, options)`. The rendering draws the declared edges only. |
 | Structural snapshots are `graphmaquina-snapshot-v1` with `/cells/<from>/<to>/…`. | `graphmaquina-snapshot-v2` with `/transitions/<from>/<id>/…`, `/policies/<state>/…`, `/catalog/<index>` for the identifier enum and `/machine/transitions`. A watch rule records `/rules/<i>/transition` instead of `/target`. Absence has no path at all. `GraphSnapshot.parse` refuses a v1 document by name and says to regenerate it; it is never converted. |
 
 `GraphSnapshot.capture`, `GraphSnapshot.parse`, `GraphSnapshot.serialize`, `GraphDiff` and the golden store keep
-their signatures and their formats; only the paths inside a snapshot changed.
+their signatures and their file formats; inside a snapshot only the paths changed.
 
-## What did not change
+## Behaviour changes in this release
 
-Guard order, timeouts and deadlines, no automatic cancellation of external stages, the UnitOfWork with its poison
-and savepoints, the COLLECT policy, the journal of actions that actually ran, hooks after the setters, one write
-per entity, the separation of post-commit reactions, the exception types of technical failures, and the per
-invocation operation input of #5 with the default `afterCommit` of #3. `Graph.cycles()` keeps its public meaning:
-strongly connected components are used internally for validation and do not replace it.
+Besides the contract above, this release changes behaviour that code written against an earlier one can
+observe. Most items refuse up front what used to fail later, in generated code or at runtime, or not at all.
+
+### Runtime
+
+- **Builders are single-use.** Once a build that uses it succeeds, standalone or within a registry, every
+  method of a `StateMachines.Builder` throws `IllegalStateException`, and so does every method of
+  `MachineRegistry.Builder` and of a generated set's `Builder` once its own `build()` succeeds. A build that
+  fails consumes none of them, so it can be fixed and retried. A generated set's `Builder` checks each setting
+  where it is given and refuses a second `listener(...)`. In the DSL, an edge's stage refuses every call once
+  `endTransition()` closed it, and every stage refuses further declarations once `build()` has run.
+- **Watch functions may not start transitions.** A watch's owner lookup, peer lookup or condition that calls
+  `execute` or `reevaluate` gets `ReentrantTransitionException`, reported as `Reaction.Aborted` in a reaction.
+  It used to start a root of its own, which `maxWatchChain` did not count.
+- **Checked exceptions are handled like unchecked ones.** One that a guard, action, hook, listener, state setter
+  or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code can, now goes through
+  `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch reaction, is
+  reported as `Reaction.Aborted` wrapped in `UndeclaredThrowableException`. It used to escape unchanged.
+- **A failed cascade always poisons.** An `Error`, or an exception from a callback the engine does not wrap,
+  that leaves a cascade poisons the unit of work as an engine failure does, even when the action catches it, and
+  a `failsOn` match after it no longer takes the failure route. `cascadeAll` refuses a null element before any
+  element runs, and an unknown machine even over an empty collection; an unknown facade in a cascade poisons
+  like an unknown key.
+- **`cascadeAll` reads its collection once.** It copies the collection before any element runs, so elements
+  added or removed while the cascade runs change neither which elements run nor their order. It used to fail with
+  a `ConcurrentModificationException` of its own iteration or stop early, which could let the root commit a
+  partial batch. An exception or an `Error` the collection throws while it is copied propagates as it is and
+  poisons nothing.
+- **Library exceptions pass through.** A `StateMachineException` that a guard or action throws wrapped in
+  `CompletionException` or `ExecutionException` is rethrown as is, never matched against `failsOn`, as it
+  already was bare or through a stage.
+- **A listener failure says whether state was written.** After a `Rejected` or `Ignored` outcome, its
+  `AfterCommitException` reads `the call on ... wrote no state, and the post-commit step 'listener' failed`. The
+  new public constructor `AfterCommitException(key, entity, from, to, step, written, cause)` carries that.
+- **Unbounded timeouts.** An `asyncTimeout` or edge timeout of `Duration.ofNanos(Long.MAX_VALUE)` or more means
+  no limit, and the other limit stays in charge. Such budgets used to overflow, into `ArithmeticException` or a
+  deadline silently switched off, and an `asyncTimeout` above that left its thread refusing every later
+  transition.
+- **An async wait runs no other task.** A root waiting on a `ForkJoinPool` worker no longer runs other queued
+  tasks on its thread, as `CompletableFuture`'s own wait could, on a common-pool worker for instance, where such a
+  task could fail with `ReentrantTransitionException`, keep the wait past its timeout, or cascade through the
+  root's context. A task the stage needs must now run on another worker, so on a pool whose other workers are all
+  busy, or blocked where the pool cannot see them, the wait can run to its timeout. A pool that refuses to let its
+  worker block now aborts the transition, with its `RejectedExecutionException` as the cause; that exception used
+  to escape the call.
+- **Standalone machines.** `StateMachines.Builder.build()` registers the `as(...)` facade and dispatches the
+  machine's own watches; a watch on another machine is refused at `build()`.
+- **Blank reasons are refused.** `StatePolicy` refuses a blank reason for an identifier, as it refused a blank
+  `otherwise`, and `Outcome.Rejected` and `Outcome.Failed` refuse a blank reason. The reason of a failure that an
+  exception of an anonymous class caused names that class by its binary name, where the name used to be empty.
+- **Graph utilities and contexts.** `Graph.of` refuses a null node with `NullPointerException`;
+  `StrongComponents.cycleWitness` finds a cycle in any set whose induced subgraph holds one, where a set that is
+  not a strongly connected component could be refused as holding none; `Graph.inducedSubgraph` and
+  `GraphView.terminals()` keep the declared order; `MachineOutlineValidator` no longer takes two names that
+  contain `/` for one key; and a context's `peer(Class)` reports a wrong thread, a stale context or a poisoned
+  transaction before an unknown facade, as its other calls do.
+
+### Graph declarations
+
+- **New DSL refusals.** `SG507` for an edge never closed with `endTransition()`, which used to be dropped, and
+  for an edge that declares more than one action, `onFailure` or `timeout`, where the last one used to win.
+  `SG404` for a `when(...)` that no `execute(...)` follows, and an `execute(...)` with no pending `when(...)`.
+- **`failsOn`.** `SG302` also refuses a `CancellationException` or one of its subtypes, and
+  `CompletionException` and `ExecutionException` themselves, in the DSL and in the processor. A cancellation
+  never matched, and the two wrappers are unwrapped before matching whenever they carry a cause.
+
+### Annotation processor
+
+- **Companions carry `@GeneratedCompanion`.** The new
+  `io.github.graphmaquina.annotation.internal.GeneratedCompanion`, retained in class files, replaces
+  `javax.annotation.processing.Generated`, which the processor no longer claims. A compilation whose only
+  annotation is another tool's `@Generated` is no longer refused with `SG602`; under `-Xlint:processing`, javac
+  itself warns that no processor claimed that annotation, and `-Werror` turns the warning into an error.
+- **Refused by the processor.** Each of these used to be dropped without a word, reported under a
+  misleading diagnostic, refused by javac inside the generated companion, or accepted until the set's `build()`
+  threw: vocabulary on a default, static or private method, or anywhere but a facade and its abstract operations
+  (`SG504`, `SG606`); an abstract method a facade or set inherits from another interface (`SG504`, `SG510`); an
+  operation that overrides a `Machine` method, or a redeclaration of one with a result the companion cannot
+  return (`SG504`); a parameterized entity (`SG601`, `SG509`); an instance binding of a generic host, and a type
+  the companion's package cannot access (`SG505`, `SG509`, `SG510`); two machines of one set that write the
+  same entity and state enum (`SG510`); an instance method, declared or inherited, abstract or default, with the
+  signature of the companion's static `graph(...)` on a facade (`SG504`) or `builder(...)` on a set (`SG510`),
+  the former reported once the facade's declarations have no other error and none of its vocabulary is misplaced,
+  the latter only once the set's accessors and machines have no other error; a name the companion writes whose first
+  segment a type, member type or constant of its scope takes, so that no spelling reaches it (`SG603`); and a
+  machine javac compiled implicitly, from the source path, that the export index or a set names (`SG602`). The index
+  case used to publish nothing and report nothing.
+- **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a
+  member type of the facade named like a type they write, with parameter names that would have been keywords,
+  with deprecated bound members under `-Werror`, with a cast whose type annotations name enum constants, beside
+  static overloads of the state and identity accessors, in a set with an accessor named `machineRegistry`, and
+  for a bound member or accessor that declares a checked exception, which is now handled as the same exception
+  thrown undeclared would be.
+- **One problem no longer hides the others.** A failed export check (`SG604`) or a refused companion name no
+  longer stops the rest of the compilation from being checked, and javac rerun over the previous companions
+  reports them as stale output (`SG602`) instead of a collision (`SG603`).
+
+### Generator and build plugins
+
+- **The generator reads what javac compiles.** The request carries the compilation's release and source
+  encoding: the generator parses at that release, reads and writes in that encoding, and refuses syntax the
+  release does not have with `SG601`. Gradle source-set patterns and Maven `<includes>` and `<excludes>` are
+  honoured, files Ant's default excludes name, such as `._*` copies and `.git` directories, are left out (the
+  build guide says where Maven's longer list differs), and symbolic links are followed. See the
+  [build guide](typed-annotations-build.md).
+- **New generator refusals:** a generic facade, a marker whose annotation type is not on the generator's
+  classpath, and a facade, enum, host or peer that the generated code cannot access (`SG601`, `SG604`, `SG608`);
+  a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or
+  like a `java.lang` type (`SG603`); a generated type that an original source declares in a file of another
+  name, or that differs from one only in case where the volume does not tell names apart (`SG603`); and an
+  inventory entry whose file the generator's steps would remove through a symbolic link inside its output root
+  that leads out of it, a generated source that would be written through such a link, and an inventory entry
+  that no path can spell, such as one holding a NUL character (`SG603`).
+- **Declarations the generator misread.** An inner class that extends a sibling inner class, which overflowed the
+  stack, a member class of a generic interface, a type named in a declaration's header like a member type the
+  declaration declares or inherits, an on-demand import of a type the source cannot access, and a sibling type in
+  the unnamed package are resolved as javac resolves them, where generation used to fail or resolve them wrongly.
+- **A class of the unnamed package named like a package.** Beside such a class, as a class `shop` beside the
+  package `shop`, the generator and the annotation processor read a canonical name as javac does: in code of a
+  named package it names the package's type, in code of the unnamed package the class's member type when the
+  class has one. Such layouts could get false diagnostics, a processor crash, or wrong output, such as missing
+  `*Refs` types, a dropped machine or host, or another enum's states. What a canonical name alone cannot tell
+  apart is refused with `SG603`: two machines that share a canonical name, and two types of one canonical name
+  that the generator has to tell apart in a class file of the unnamed package, such as two of its supertypes.
+- **Builds that used to fail.** A machine renamed only in case on a case-insensitive volume, which got a false
+  `SG603`, a compilation id that holds a line break, whose carrier javac refused, and a class output holding an
+  unreadable `.class` file, which stopped `prepare-compile` and `complete-compile`, now build.
+- **Manifests.** A schema 1 manifest is left in place and refused on every build until `clean`; malformed JSON
+  in a manifest or an index is `SG602` naming the file, and so is a `schemaVersion` or a source position that is
+  not an exact integer, which used to be truncated. So is an owned source of a manifest that no path can spell,
+  such as one holding a NUL character, that has a root, as `\x` and `C:x` have on Windows, or that names the
+  directory itself, such as `.`. A number whose exponent is out of range, such as `1e99999999999`, in the request,
+  a manifest, an index or an inventory a step needs is `SG602` too, where an unchecked `NumberFormatException`
+  used to escape; a processor inventory read only to clean up after an earlier run is then read as listing
+  nothing, as one that cannot be read is.
+- **A failed pending-manifest write keeps the record.** A `generate` that fails while it first writes its pending
+  manifest, on a full disk for instance, leaves `annotation-manifest.json` in place; a later failure deletes it
+  but leaves the pending manifest, which still records the previous sources, so either way the next run retires
+  and replaces its files once the cause is gone. A failed first write used to delete the manifest, and every
+  later run then refused its own previous sources with `SG603` ("would overwrite the unowned file") until
+  `clean`.
+- **Maven.** `maven.main.skip`, `<skipMain>`, `maven.test.skip` and `<skip>` skip the goals of that compilation
+  with an info line instead of failing, and a project packaged as `pom` skips all six. Refused before anything is
+  retired: `proc=only`, `-proc:only`, `failOnError=false`, `useIncrementalCompilation=false`, a `-processor`
+  list or `<annotationProcessors>` that leaves out `io.github.graphmaquina.processor.StateGraphProcessor` or
+  holds a name that is not a valid qualified class name, includes or excludes that leave out the compilation
+  carrier, includes that hold only empty values, a test release below 21, a generator `java` with no `javac`
+  beside it or whose JDK declares a release below 21, from `javaExecutable` or a toolchain alike, and a generator
+  `java` that is not the `java` of the JDK javac compiles with, compared by JDK home, so a wrapper launcher outside
+  that JDK's `bin` directory is refused. A `-processor` list or `<annotationProcessors>` that the plugin now
+  refuses used to fail only after the preparation had retired the previous outputs, in javac or in the `complete`
+  goal, and so could a rebuild without `clean` under `useIncrementalCompilation=false`. The last `-proc:` option
+  decides, as for javac, so `-proc:none` followed by a `-proc:full` argument is no longer refused, nor is
+  `<proc>none</proc>` with a `-proc:full` argument. The deprecated `<compilerArguments>` map, and for the test
+  compilation `<testCompilerArguments>` and `<testCompilerArgument>`, are read as `maven-compiler-plugin` 3.15.0
+  passes them, so a manifest argument given only there is no longer refused, and `<compilerArgs>`,
+  `<annotationProcessors>`, `<includes>`, `<excludes>`, `<testIncludes>` and `<testExcludes>` written as
+  comma-separated text are split as Maven splits them. A `<jdkToolchain>` that matches no toolchain falls back as
+  the compiler does, properties given on the command line or to the JVM win over those of the project, and an
+  execution's `<compilerArgs>` replace the plugin-level ones, as Maven merges them, where both used to be read.
+  The plugin's descriptor declares Java 21 as the Java version it requires.
+- **Maven: more refusals.** Also refused before anything is retired: a `-processorpath` or `--processor-path`
+  compiler argument, the last one given, that, once evaluated, holds no `${` and does not reach the processor
+  through its entries, a jar's manifest `Class-Path`, as a pathing jar's, or the versioned entries a multi-release
+  jar holds for the release of javac's JDK, any of them when its `release` file declares none; a
+  `--processor-module-path`; with a javac whose JDK declares release 23 or later, a processor that is only a
+  dependency when neither `-proc:full`, `-proc:only` nor a `-processor` list requests processing, since such a javac
+  then runs no processor it finds on the class path; a `<debuglevel>` or `-g:` arguments that leave out `source`,
+  which drops the `SourceFile` attribute; an `<outputDirectory>`, `maven.compiler.outputDirectory`,
+  `<multiReleaseOutput>true` or last `-d` argument that moves the classes, and a last `-s` argument that moves the
+  processor's sources; `<compileSourceRoots>` without the generated directory; and a `<testIncrementalExcludes>` or
+  main `<incrementalExcludes>` pattern that matches the compilation carrier.
+- **Maven: settings read as the compiler applies them.** `<testIncrementalExcludes>` narrow the test sources the
+  generator reads, so it no longer fails with `SG601` on a source javac never compiles; the compiler's
+  `<compileSourceRoots>` are the roots the generator parses, an empty element standing for the project's; an
+  empty `<annotationProcessorPaths/>` counts as no processor path, where it used to be refused; a `-processorpath`
+  or `--processor-path` argument, the last one given, that reaches the processor is accepted where
+  `<annotationProcessorPaths>`, or without one the dependencies, leave the processor out, which used to be refused;
+  an empty `<jdkToolchain/>` selects the first jdk toolchain of the build, as the compiler does, where it used to be
+  ignored; include and exclude patterns match as plexus-utils matches them, `%ant[...]` and `%regex[...]` included;
+  compiler arguments are evaluated as Maven evaluates them, as far as that can be told when the checks run,
+  `${settings.localRepository}` for instance, and one that is a single expression Maven turns into nothing, such as
+  `${project.file}`, is left out, as javac never gets it; and on Windows a `javaExecutable` without an extension
+  stands for the `.exe` beside it.
+- **Maven: paths.** A relative manifest path is resolved where javac runs, in the directory Maven was started in
+  or, for a forked javac, in the project directory, so a module of a build started from its parent is refused
+  up front, where javac used to fail on it after the preparation. Paths are compared with their symbolic links
+  resolved, as javac resolves them, so `mvn -f <link>/pom.xml` is checked like a build of the real directory and
+  publishes the same source positions, unless the absolute path of `<link>` has fewer names than the `..` that lead
+  from the real directory up to a source root outside it: the positions of that root's sources then differ, though,
+  read lexically from `<link>`, they still lead to them.
+- **Gradle.** `prepare-compile` refuses, before it retires anything: `options.failOnError = false`, `-proc:only`
+  or `-proc:none` as the last `-proc:` option, an `options.annotationProcessorPath` that is empty or null, unless
+  javac runs from the command line with a `-proc:` argument after it, a `-processor` list, the last one given,
+  that leaves out the StateGraph processor or holds a name that is not a valid qualified class name, an empty one
+  after its last comma included, a debug setting that leaves out the `SourceFile` attribute, a last `-encoding`
+  compiler argument that names another charset than `options.encoding`, when Gradle's own compiler runs javac and
+  this JVM supports both, argument providers that change the release or the encoding javac takes, a compilation
+  that no longer compiles every generated source, and one that compiles other original sources than the
+  generation reads, through a spec or closure filter or a source given to the compile task, which the generation
+  also refuses before the generator runs. Sources given to the compile task alone used to build and are now
+  refused. Adding `options.failOnError = false` or a compiler argument changes the compile task's options, so
+  Gradle's own full rebuild has already removed the previous classes, index and sealed inventory when the
+  preparation refuses: unlike Maven's, such a refusal does not keep them. The generation parses only what
+  the compile task's include and exclude pattern strings select as well, at the release and in the encoding javac
+  takes, a `--release` or `-encoding` in `options.compilerArgs` included, but never one an argument provider
+  gives. The generated directory joins the source set as a source directory set of its own, which the source
+  set's patterns do not filter, and the sources jar and javadoc leave out the compilation carrier. The generation
+  runs after the tasks that build the source set's other directories. Its locations, launcher and generator
+  classpath are conventions that `prepare-compile` and `complete-compile` follow, and `classesOutput`,
+  `processorSourcesOutput` and `annotationManifest` cannot be set. A processor declaration the build removes no
+  longer counts, and the compilation id reads the group the build script settles on, even when something
+  realized the generation task before the group was set. What a generator that completes writes on its error
+  stream is logged as a warning.
+
+### Testing library
+
+- **`AbortAssert.atUnread(key, entity, from)`** is new: it locates an abort raised before any identifier was
+  read, such as a chain of watch reactions that exceeds its limit.
+- **Closed controlled fixtures.** A closed `ControlledAsyncAction` refuses an invocation with
+  `GraphAssertionError`, which no `failsOn` route can take for a failure of the action, where it threw
+  `IllegalStateException`; `awaitInvocation` on a closed fixture fails at once, a wait already blocked included.
+- **`GoldenOptions.defaults()` ignores `graphmaquina.goldens.root` in read mode:** `sourceRoot()` is empty there,
+  and a value that is not a path no longer fails a read-mode run.
+- **Goldens.** Update mode replaces a source golden that is not valid UTF-8 and writes through a symbolic link
+  that stays inside the source root, even one whose target does not exist yet, which it creates with any
+  directory missing on the way; a link that leads out of the root is refused with `IllegalArgumentException`, a
+  dangling one included, which used to fail with `IllegalStateException`; a leading byte order mark is ignored; a
+  resource that names a directory is reported instead of read; and a malformed resource name is reported before
+  the system properties are read.
+- **Failure reports.** A view opened from another one names the path it came from; a value whose `toString()`
+  throws a runtime exception or returns null is still reported; a throwable reported as the actual value is the
+  error's cause; and a null element of a list no longer raises `NullPointerException`: an exact comparison reports
+  it, and a search skips it.
+- **Other fixes.** `GraphDiff.render` escapes a quote inside a value; `AsyncAssertions` waits on a stage that
+  cannot be converted to a `CompletableFuture`, without converting or cancelling it; and the outcome of a done
+  reaction or of a recorded callback is refused with `IllegalArgumentException` when its recovery identifier
+  belongs to another machine's catalogue, where reading that identifier later threw `ClassCastException`.
+
+## What the 2.0 contract keeps
+
+Apart from the fixes listed under [Behaviour changes in this release](#behaviour-changes-in-this-release), these
+did not change: guard order, timeouts and deadlines, no automatic cancellation of external stages, the
+UnitOfWork with its poison and savepoints, the COLLECT policy, the journal of actions that actually ran, hooks
+after the setters, one write per entity, the separation of post-commit reactions, the exception types of
+technical failures, and the per invocation operation input of #5 with the default `afterCommit` of #3.
+`Graph.cycles()` keeps its public meaning: strongly connected components are used internally for validation and
+do not replace it.

@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,9 +24,9 @@ import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
 
 /**
- * Test support for the source reading and emission layers: materializes source texts on disk, exposes the
- * classpath of the test JVM, compiles a fixture into a temporary jar so binary headers are exercised for real,
- * and compiles original plus generated sources under the project's own strict compiler options.
+ * Test support for the tests of the generator: materializes source texts on disk, exposes the classpath of the
+ * test JVM, compiles a fixture into a jar so binary headers are exercised for real, and compiles original plus
+ * generated sources under the project's own strict compiler options.
  */
 public final class SourceFiles {
 
@@ -64,7 +65,10 @@ public final class SourceFiles {
         return List.copyOf(entries);
     }
 
-    /** Compiles {@code sources} with {@code -proc:none} and packs the result into {@code jar}. */
+    /**
+     * Compiles {@code sources} with {@code -proc:none --release 21} and packs the result into {@code jar}. The
+     * sources stay in {@code jar-sources} and the classes in {@code jar-classes}, both under {@code workDirectory}.
+     */
     public static Path compileToJar(Path workDirectory, Map<String, String> sources, Path jar) {
         try {
             Path sourceRoot = Files.createDirectories(workDirectory.resolve("jar-sources"));
@@ -78,8 +82,8 @@ public final class SourceFiles {
     }
 
     /**
-     * Compiles {@code files} against the test classpath with the options every module of this project uses,
-     * {@code -proc:none -Xlint:all,-serial -Werror}, and returns what javac reported.
+     * Compiles {@code files} against the test classpath with {@code -proc:none --release 21} and the options every
+     * module of this project compiles with, {@code -Xlint:all,-serial -Werror}, and returns what javac reported.
      */
     public static Compilation compileStrict(List<Path> files, Path classes) {
         return compileStrict(files, classes, List.of());
@@ -90,39 +94,60 @@ public final class SourceFiles {
      * for example {@code -g:none}, which drops the attributes a class output is normally read back through.
      */
     public static Compilation compileStrict(List<Path> files, Path classes, List<String> extra) {
+        return compileStrict(files, classes, extra, StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The same, reading every source in {@code encoding}, as javac reads the sources of a project that declares
+     * that encoding. The encoding is the file manager's own: javac lets it win over an {@code -encoding} option.
+     */
+    public static Compilation compileStrict(List<Path> files, Path classes, Charset encoding) {
+        return compileStrict(files, classes, List.of(), encoding);
+    }
+
+    private static Compilation compileStrict(List<Path> files, Path classes, List<String> extra, Charset encoding) {
         try {
             Files.createDirectories(classes);
             List<String> options =
                 new ArrayList<>(List.of("-proc:none", "-Xlint:all,-serial", "-Werror", "--release", "21"));
             options.addAll(extra);
-            return run(files, classes, options);
+            return run(files, classes, options, encoding);
         } catch (IOException failure) {
             throw new UncheckedIOException(failure);
         }
     }
 
     private static void compile(List<Path> files, Path classes) throws IOException {
-        Compilation compilation = run(files, classes, List.of("-proc:none", "--release", "21"));
+        Compilation compilation =
+                run(files, classes, List.of("-proc:none", "--release", "21"), StandardCharsets.UTF_8);
         if (!compilation.success()) {
             throw new IllegalStateException("fixture compilation failed: " + compilation.diagnostics());
         }
     }
 
-    private static Compilation run(List<Path> files, Path classes, List<String> options) throws IOException {
+    private static Compilation run(List<Path> files, Path classes, List<String> options, Charset encoding)
+            throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         try (StandardJavaFileManager fileManager =
-                compiler.getStandardFileManager(diagnostics, Locale.ROOT, StandardCharsets.UTF_8)) {
+                compiler.getStandardFileManager(diagnostics, Locale.ROOT, encoding)) {
             fileManager.setLocationFromPaths(StandardLocation.CLASS_PATH, classpath());
             fileManager.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classes));
             JavaCompiler.CompilationTask task = compiler.getTask(null, fileManager, diagnostics, options, null,
                     fileManager.getJavaFileObjectsFromPaths(files));
-            boolean success = Boolean.TRUE.equals(task.call());
-            return new Compilation(success, List.copyOf(diagnostics.getDiagnostics()));
+            boolean called = Boolean.TRUE.equals(task.call());
+            List<Diagnostic<? extends JavaFileObject>> reported = List.copyOf(diagnostics.getDiagnostics());
+            boolean success = called && reported.stream().noneMatch(
+                    (Diagnostic<? extends JavaFileObject> diagnostic) -> diagnostic.getKind() == Diagnostic.Kind.ERROR);
+            return new Compilation(success, reported);
         }
     }
 
-    /** What one compilation reported: whether javac succeeded and every diagnostic it produced, in order. */
+    /**
+     * What one compilation reported: whether it succeeded, which takes javac's task returning {@code true} and no
+     * diagnostic of kind {@code ERROR}, since javac reports some errors without failing its task, such as a byte the
+     * encoding cannot decode in a comment; and every diagnostic it produced, in order.
+     */
     public record Compilation(boolean success, List<Diagnostic<? extends JavaFileObject>> diagnostics) {
 
         /** The javac codes of the diagnostics, for assertions that must not depend on a localized message. */

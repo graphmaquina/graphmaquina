@@ -1,6 +1,8 @@
 package io.github.graphmaquina.gradle;
 
 import org.gradle.api.GradleException;
+import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
 import org.gradle.jvm.toolchain.JavaInstallationMetadata;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.process.ExecOperations;
@@ -21,12 +23,14 @@ import java.util.Objects;
 /**
  * Runs one operation of the StateGraph generator as a separate process and writes the request it reads.
  *
- * <p>The generator is never loaded into the plugin's own classloader: it runs under the launcher the project's
- * Java toolchain selected, over the classpath of the {@code graphmaquinaGenerator} configuration, so the build's
- * daemon JVM and the generator's JVM stay independent. Its command line is fixed —
- * {@code <operation> --request <file>} — and so is its contract: status {@code 0} means the operation completed,
- * anything else means the build must fail rather than compile against the vocabulary of a previous run. Whatever
- * the generator wrote on its error stream becomes the message of the exception this class throws.</p>
+ * <p>The generator is never loaded into the plugin's own classloader: it runs under the launcher and over the
+ * classpath the generation task of the source set holds — by convention the launcher the project's Java toolchain
+ * selected and the {@code graphmaquinaGenerator} configuration — so the build's daemon JVM and the generator's
+ * JVM stay independent. Its command line is fixed — {@code <operation> --request <file>} — and so is its
+ * contract: status {@code 0} means the operation completed, anything else means the build must fail rather than
+ * compile against the vocabulary of a previous run. Whatever the generator wrote on its error stream is never
+ * dropped: it ends the message of the exception this class throws when the operation failed, and it is a warning
+ * of the build log when the operation completed.</p>
  *
  * <p>The request itself is serialized here, by the small encoder below, rather than through the generator's own
  * codec: the plugin depends on the documented JSON shape, not on the {@code graphmaquina-codegen} classes. Strings
@@ -40,6 +44,9 @@ public final class CodegenProcess {
 
     /** The lowest Java feature release the generator and the compilation it prepares are supported on. */
     private static final int MINIMUM_LANGUAGE_VERSION = 21;
+
+    /** Where what a completed operation wrote on its error stream is reported. */
+    private static final Logger LOGGER = Logging.getLogger(CodegenProcess.class);
 
     private final File executable;
     private final List<File> generatorClasspath;
@@ -60,11 +67,12 @@ public final class CodegenProcess {
     /**
      * The process for {@code launcher}, refusing a toolchain that cannot run this generator at all.
      *
-     * @param launcher the launcher the project's Java toolchain selected
+     * @param launcher the launcher to run the generator under
      * @param generatorClasspath the resolved runtime classpath of {@code graphmaquina-codegen}
      * @param execOperations the service that starts the process
      * @return a process bound to that launcher's executable
-     * @throws GradleException if the launcher is below Java 21 or carries no {@code jdk.compiler}
+     * @throws GradleException if the launcher is below Java 21, or if its installation has no {@code javac} in
+     *         {@code bin}, which marks a runtime without {@code jdk.compiler}
      */
     public static CodegenProcess of(JavaLauncher launcher, Iterable<File> generatorClasspath,
             ExecOperations execOperations) {
@@ -87,7 +95,8 @@ public final class CodegenProcess {
     }
 
     /**
-     * Runs {@code operation} over {@code requestFile}.
+     * Runs {@code operation} over {@code requestFile}. What a completed operation wrote on its error stream is
+     * logged as a warning.
      *
      * @param operation one of {@code generate}, {@code prepare-compile} and {@code complete-compile}
      * @param requestFile the request the generator reads
@@ -105,11 +114,16 @@ public final class CodegenProcess {
             spec.setErrorOutput(diagnostics);
             spec.setIgnoreExitValue(true);
         });
+        String reported = diagnostics.toString(StandardCharsets.UTF_8).strip();
         if (result.getExitValue() != 0) {
-            String reported = diagnostics.toString(StandardCharsets.UTF_8).strip();
             throw new GradleException("the StateGraph generator failed with status " + result.getExitValue()
                 + " running '" + operation + "' for " + requestFile
                 + (reported.isEmpty() ? "" : System.lineSeparator() + reported));
+        }
+        if (!reported.isEmpty()) {
+            // The operation completed, so this is not a failure; it is still the only place the generator has to
+            // report something a build should look at, and a silent error stream loses it.
+            LOGGER.warn("the StateGraph generator reported while running '" + operation + "': " + reported);
         }
     }
 
@@ -132,8 +146,9 @@ public final class CodegenProcess {
     }
 
     /**
-     * Encodes {@code request} as the flat JSON object documented by the generator's manifest codec: exactly the
-     * eight members of the request, in the order the codec lists them.
+     * Encodes {@code request} as the flat JSON object documented by the generator's manifest codec: the eight
+     * members every request carries, then the release and the encoding of the compilation when they are known, in
+     * the order the codec lists them.
      *
      * @param request the values of the request
      * @return the JSON document, ending with a newline
@@ -149,8 +164,16 @@ public final class CodegenProcess {
         member(json, "processorSourcesOutput", request.processorSourcesOutput()).append(",\n");
         member(json, "classesOutput", request.classesOutput()).append(",\n");
         member(json, "workDirectory", request.workDirectory()).append(",\n");
-        member(json, "compilationId", request.compilationId()).append('\n');
-        json.append("}\n");
+        member(json, "compilationId", request.compilationId());
+        if (request.release() != null) {
+            json.append(",\n  ");
+            string(json, "release").append(": ").append(request.release().intValue());
+        }
+        if (request.encoding() != null) {
+            json.append(",\n");
+            member(json, "encoding", request.encoding());
+        }
+        json.append("\n}\n");
         return json.toString();
     }
 
@@ -220,17 +243,23 @@ public final class CodegenProcess {
      * absolute execution path, written exactly as the build resolved it.
      *
      * @param projectDirectory the directory the compilation belongs to
-     * @param sources the original source roots, which never overlap an output directory
+     * @param sources the original sources, as source roots or, for a root the build filters, as the files
+     *         it selects; none of them overlaps an output directory
      * @param classpath the compile classpath the generator resolves headers and published indexes against
      * @param sourcesOutput where the generated vocabulary is written
      * @param processorSourcesOutput where the annotation processor writes its own sources
      * @param classesOutput where javac writes the classes of this compilation
      * @param workDirectory where the manifests and the inventories of this compilation live
-     * @param compilationId the identity of the project and source set, as {@code group:name:sourceSet}
+     * @param compilationId the identity of the project and source set, by default {@code group:name:sourceSet},
+     *         or {@code name:sourceSet} when the project's group is empty
+     * @param release the Java release javac compiles the source set at, or {@code null} when it is not known,
+     *         which the generator reads as release 21
+     * @param encoding the name of the charset javac reads the sources in, or {@code null} when the compilation
+     *         names none, which the generator reads as UTF-8
      */
     public record Request(String projectDirectory, List<String> sources, List<String> classpath,
             String sourcesOutput, String processorSourcesOutput, String classesOutput, String workDirectory,
-            String compilationId) {
+            String compilationId, Integer release, String encoding) {
 
         /** Copies the two lists, so a request never reflects a later change of the collection it was built from. */
         public Request {
@@ -242,6 +271,25 @@ public final class CodegenProcess {
             Objects.requireNonNull(classesOutput, "classesOutput");
             Objects.requireNonNull(workDirectory, "workDirectory");
             Objects.requireNonNull(compilationId, "compilationId");
+        }
+
+        /**
+         * A request that names neither the release nor the encoding of the compilation.
+         *
+         * @param projectDirectory the directory the compilation belongs to
+         * @param sources the original sources
+         * @param classpath the compile classpath
+         * @param sourcesOutput where the generated vocabulary is written
+         * @param processorSourcesOutput where the annotation processor writes its own sources
+         * @param classesOutput where javac writes the classes of this compilation
+         * @param workDirectory where the manifests and the inventories of this compilation live
+         * @param compilationId the identity of the project and source set
+         */
+        public Request(String projectDirectory, List<String> sources, List<String> classpath,
+                String sourcesOutput, String processorSourcesOutput, String classesOutput, String workDirectory,
+                String compilationId) {
+            this(projectDirectory, sources, classpath, sourcesOutput, processorSourcesOutput, classesOutput,
+                    workDirectory, compilationId, null, null);
         }
     }
 }

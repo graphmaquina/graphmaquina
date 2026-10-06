@@ -8,8 +8,10 @@ import java.util.Properties;
 /**
  * The version of this generator, as the build stamped it into {@code io/github/graphmaquina/codegen/version.properties}.
  *
- * <p>Every manifest this tool writes carries it, and every index it reads back is refused when it was written by
- * another version, so a stale artifact is diagnosed instead of being interpreted with the wrong rules.</p>
+ * <p>The compile manifest and every export index this tool writes carry it; the inventories and the request do not.
+ * Of what it reads back, only the export index a classpath entry publishes is compared with it: one written by
+ * another version is refused, so a stale artifact is diagnosed instead of being interpreted with the wrong rules.
+ * The manifests and inventories of its own work directory are read whatever tool version wrote them.</p>
  */
 public final class ToolVersion {
 
@@ -22,7 +24,8 @@ public final class ToolVersion {
      * The version of the running generator.
      *
      * @throws IllegalStateException if the resource is missing or carries no {@code version}, which means the
-     *     tool was packaged without its own build stamp
+     *     tool was packaged without its own build stamp; a value that still holds the unexpanded
+     *     {@code ${version}} placeholder, as resources the build never filtered do, carries no version either
      */
     public static String current() {
         Properties properties = new Properties();
@@ -39,6 +42,11 @@ public final class ToolVersion {
         if (version == null || version.isBlank()) {
             throw new IllegalStateException("the StateGraph generator resource io/github/graphmaquina/codegen/" + RESOURCE
                 + " declares no version; this tool jar is incomplete");
+        }
+        if (version.contains("${")) {
+            throw new IllegalStateException("the StateGraph generator resource io/github/graphmaquina/codegen/"
+                + RESOURCE + " declares " + version + ", a placeholder its build never replaced, instead of a"
+                + " version; this tool runs from resources that carry no build stamp");
         }
         return version;
     }

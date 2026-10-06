@@ -14,7 +14,13 @@ import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
-/** Executes the README's literal Gradle and Ticket sources against locally staged Maven artifacts. */
+/**
+ * Executes the Gradle and Ticket sources of the guide against locally staged Maven artifacts. The guide is the file
+ * the {@code readmePath} system property names, which the build points at {@code docs/guide.md}. The settings script
+ * gets the staged repository in front of every {@code mavenCentral()}, the build script is followed by the guide's
+ * test dependencies and {@code gradle.properties} is written with the staged version; every other source is copied
+ * from its fence as written.
+ */
 class ReadmeQuickstartTest {
 
     @Test

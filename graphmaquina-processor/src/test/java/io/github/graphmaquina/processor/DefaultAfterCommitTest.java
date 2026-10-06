@@ -37,7 +37,8 @@ class DefaultAfterCommitTest {
         Compilation.Prepared prepared = Compilation.prepare(sources);
         Path vocabulary = prepared.request().sourcesOutput().resolve("fx/DocsGraph.java");
         String generated = Files.readString(vocabulary);
-        String member = "Class<? extends HookSymbol>[] afterCommit() default {};";
+        String member =
+            "java.lang.Class<? extends io.github.graphmaquina.symbol.HookSymbol>[] afterCommit() default {};";
         int definition = generated.indexOf("@interface Definition {");
         assertTrue(definition >= 0, generated);
         int at = generated.indexOf(member, definition);
@@ -151,7 +152,10 @@ class DefaultAfterCommitTest {
         assertFalse(result.hasGenerated("fx.LibraryRuntime"));
     }
 
-    /** An explicit self-loop is a real edge, so it commits and runs exactly the one hook in force on it. */
+    /**
+     * An explicit self-loop is a real edge, so the transition generated for it registers exactly the one hook in
+     * force on it; {@link DefaultAfterCommitRuntimeTest} runs it.
+     */
     @Test void explicitSelfLoopCarriesOneEffectiveHook() {
         Map<String, String> sources = DefaultHookFixtures.sources(DEFAULT, "");
         sources.compute("fx.Docs", (key, text) -> text.replace(

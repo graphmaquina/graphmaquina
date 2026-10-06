@@ -5,6 +5,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.Test;
 
+/**
+ * Verifies the names derived for a host and its members: underscores and dots are dropped, the first letter of a
+ * name and the one after each of them are upper-cased and no other letter changes case, the runtime and container
+ * names add their suffix, and a name that does not normalize to a Java identifier is refused.
+ */
 class SymbolNamesTest {
     @Test
     void normalizesWordSeparatorsAndPreservesExistingCase() {

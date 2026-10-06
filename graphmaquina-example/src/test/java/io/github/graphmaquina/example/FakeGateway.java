@@ -9,7 +9,10 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.function.Supplier;
 
-/** Queue of scheduled responses; without any scheduled, it accepts. Completes from the common pool, like an HTTP client. */
+/**
+ * Queue of scheduled responses; without any scheduled, it accepts. Accepted and declined charges complete from the
+ * common pool, like an HTTP client; a scheduled failure is a stage that has already failed.
+ */
 final class FakeGateway implements PaymentGateway {
 
     private final Deque<Supplier<CompletionStage<Charge>>> responses = new ArrayDeque<>();

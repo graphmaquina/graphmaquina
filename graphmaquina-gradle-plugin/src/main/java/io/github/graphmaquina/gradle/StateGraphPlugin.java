@@ -1,30 +1,39 @@
 package io.github.graphmaquina.gradle;
 
+import org.gradle.api.Action;
+import org.gradle.api.GradleException;
 import org.gradle.api.NamedDomainObjectProvider;
 import org.gradle.api.Plugin;
 import org.gradle.api.Project;
 import org.gradle.api.Task;
 import org.gradle.api.artifacts.Configuration;
 import org.gradle.api.artifacts.Dependency;
+import org.gradle.api.artifacts.DependencySet;
 import org.gradle.api.artifacts.ProjectDependency;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.Directory;
+import org.gradle.api.file.DirectoryTree;
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.file.SourceDirectorySet;
 import org.gradle.api.model.ObjectFactory;
 import org.gradle.api.plugins.JavaPlugin;
 import org.gradle.api.plugins.JavaPluginExtension;
+import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
-import org.gradle.api.provider.SetProperty;
 import org.gradle.api.specs.Spec;
 import org.gradle.api.tasks.SourceSet;
 import org.gradle.api.tasks.TaskProvider;
+import org.gradle.api.tasks.bundling.Jar;
 import org.gradle.api.tasks.compile.JavaCompile;
+import org.gradle.api.tasks.javadoc.Javadoc;
+import org.gradle.api.tasks.util.PatternFilterable;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.jvm.toolchain.JavaToolchainService;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Properties;
@@ -35,30 +44,60 @@ import java.util.concurrent.Callable;
  * Gradle plugin that generates the StateGraph typed API for each Java source set that asks for it, and wires
  * that source set's compilation to the lifecycle the generated vocabulary needs.
  *
- * <p>A source set asks for it by declaring {@code graphmaquina-processor} in its own annotation processor
- * configuration — {@code annotationProcessor}, {@code testAnnotationProcessor}, and so on. That is the one
- * declaration the cycle cannot work without: the processor is what publishes the index of what javac accepted,
- * so a source set compiled without it could never complete a compilation this plugin prepared. Reading the same
- * declaration as the switch means a project never has to repeat itself, and a source set that compiles plain
- * Java — a test source set holding only JUnit tests, typically — is left as the {@code java} plugin configured
- * it: no generated source root, no annotation manifest and no lifecycle around javac, so no compiler warning
- * about a processor that claims none of its annotations. The one thing every compilation of the project gets is
- * {@code options.isIncremental = false}, which is not a lazy property and therefore cannot wait for an answer
- * that is only known once the build script has been read.</p>
+ * <p>A source set asks for it by declaring {@code graphmaquina-processor} in its annotation processor
+ * configuration — {@code annotationProcessor}, {@code testAnnotationProcessor}, and so on — or in a
+ * configuration that one extends, as a module or a project dependency: a file dependency on its jar names no
+ * coordinates and does not count. That is the one declaration the cycle cannot work without: the processor is
+ * what publishes the index of what javac accepted, so a source set compiled without it could never complete a
+ * compilation this plugin prepared. Reading the same declaration as the switch means a project never has to
+ * repeat itself, and a source set that compiles plain Java — a test source set holding only JUnit tests,
+ * typically — is left as the {@code java} plugin configured it: no generated source root, no annotation manifest
+ * and no lifecycle around javac, so no compiler warning about a processor that claims none of its annotations.
+ * The one thing the compilation of every source set gets is {@code options.isIncremental = false}, which is not
+ * a lazy property and therefore cannot wait for an answer that is only known once the build script has been
+ * read.</p>
  *
- * <p>Per participating source set the plugin registers one {@link GenerateGraphApi} task and makes that source
- * set's {@code JavaCompile} compile what it generated, pass it the annotation manifest and run the two steps of
- * {@link CompilationLifecycle} around javac. The generation task is registered for every source set whether or
- * not it participates, so it is always there to be named and to be listed, and skips itself with the
+ * <p>The plugin registers one {@link GenerateGraphApi} task per source set and, for a participating one, makes
+ * that source set's {@code JavaCompile} compile what it generated, pass it the annotation manifest and run the
+ * two steps of {@link CompilationLifecycle} around javac. The generation task is registered whether or not the
+ * source set participates, so it is always there to be named and to be listed, and skips itself with the
  * declaration it is waiting for as its reason.</p>
  *
+ * <p>The generation parses the original sources javac compiles: the files of every source directory of the source
+ * set but the generated ones, as the include and exclude patterns of the source set and the include and exclude
+ * pattern strings of its compilation task filter them, and it runs after every task those directories are built by.
+ * A compilation task that compiles other original sources than those, through a filter it is given as a spec or a
+ * closure, or a source added to it or put in place of the source set's, is refused before the generator runs, and
+ * before the preparation when the generation is up to date. The generation parses the sources in the encoding javac
+ * reads them in and at the release javac compiles them at, as the generation task's
+ * {@link GenerateGraphApi#getEncoding() encoding} and {@link GenerateGraphApi#getRelease() release} describe.
+ * What it generates joins the source set's java sources as a source directory set of its own, which the source set's
+ * patterns do not filter, so javac compiles all of it unless a pattern of the compilation task leaves some of it out,
+ * which the preparation refuses. The locations the generation task holds are the ones the
+ * compilation follows — the source root it writes, and the work directory the manifest, the request and the
+ * sealed inventory live in — and so are the launcher and the generator classpath it holds, which run the
+ * preparation and the completion too.
+ * Each of them is a convention of the task, so a value a build sets for any of them wins whenever the build sets
+ * it, and so does one it sets for whether the task takes part or for the compilation's output locations it names.
+ * Paths a build adds to the generator classpath join the plugin's default only when they are added after the
+ * plugin configured the task, and replace it when they are added before. The class output, the processor's source
+ * output and the annotation manifest are derived instead: the first two stay the compiler's own, the manifest
+ * follows the work directory, and a build that sets any of them on the generation task is refused.</p>
+ *
+ * <p>The compilation carrier the generator emits is tool-internal. The completion removes its class from the
+ * class output, so the jar never carries it, and the plugin leaves its source out of the sources jar and the
+ * API documentation of the source set, when the build has those tasks.</p>
+ *
  * <p>Nothing of that is decided while the build is configured. The sources, the classpaths and the toolchain
- * are all providers; the declared dependencies are collected as they are declared rather than resolved; and
- * every piece of the compilation's wiring — the manifest argument, the two lifecycle actions, the sealed
- * inventory and the dependency on the generation task — is registered unconditionally and carries an empty
- * value when the source set takes no part. A build script that realizes {@code compileTestJava} before its own
- * {@code dependencies} block therefore gets the same answer as one that does not, instead of a compilation
- * generated for but never prepared. The generator itself only ever runs as a separate process.</p>
+ * are all providers; the declared dependencies are counted as they are declared and removed rather than
+ * resolved, and the answer they give is settled when the task graph is built; and every piece of the
+ * compilation's wiring — the manifest argument, the two lifecycle actions, the sealed inventory and the
+ * dependency on the generation task — is registered unconditionally and carries an empty value when the source
+ * set takes no part. A build script that realizes {@code compileTestJava} before its own {@code dependencies}
+ * block therefore gets the same answer as one that does not, instead of a compilation generated for but never
+ * prepared, and a processor that a {@code withDependencies} action only adds once javac's processor path is
+ * resolved cannot switch the lifecycle on halfway through the build. The generator itself only ever runs as a
+ * separate process.</p>
  */
 public final class StateGraphPlugin implements Plugin<Project> {
 
@@ -113,6 +152,9 @@ public final class StateGraphPlugin implements Plugin<Project> {
     /** The request every step of one source set's cycle reads. */
     private static final String REQUEST = "request.json";
 
+    /** The package the generator emits the carrier of every compilation into, as a pattern of its sources. */
+    private static final String CARRIER_SOURCES = "io/github/graphmaquina/generated/bootstrap/**";
+
     @Override
     public void apply(Project project) {
         project.getPlugins().withType(JavaPlugin.class, plugin -> configure(project));
@@ -138,13 +180,10 @@ public final class StateGraphPlugin implements Plugin<Project> {
     /** Registers the generation task of {@code sourceSet} and gives its compilation the lifecycle it needs. */
     private void wire(Project project, SourceSet sourceSet, Provider<JavaLauncher> launcher) {
         ObjectFactory objects = project.getObjects();
-        Provider<Boolean> participates = participates(project, sourceSet);
+        ProcessorDeclarations declarations = processorDeclarations(project, sourceSet);
+        Provider<Boolean> participates = project.provider(declarations::takesPart);
         TaskProvider<JavaCompile> compile =
                 project.getTasks().named(sourceSet.getCompileJavaTaskName(), JavaCompile.class);
-        Provider<Directory> sourcesOutput = project.getLayout().getBuildDirectory()
-                .dir("generated/sources/graphmaquina/" + sourceSet.getName());
-        Provider<Directory> workDirectory = project.getLayout().getBuildDirectory()
-                .dir("graphmaquina/" + sourceSet.getName());
         // Location only: these belong to the compiler and are read while it has not run yet.
         Provider<Directory> classesOutput =
                 compile.flatMap(task -> task.getDestinationDirectory().getLocationOnly());
@@ -158,49 +197,100 @@ public final class StateGraphPlugin implements Plugin<Project> {
             task.setGroup("graphmaquina");
             task.setDescription("Generates the StateGraph API sources for the '" + sourceSet.getName()
                     + "' source set.");
-            task.getParticipates().set(participates);
+            task.getParticipates().convention(participates);
             task.onlyIf(declaresProcessor(sourceSet), new Participation());
-            task.getSources().from(project.provider(
-                    () -> originalSourceDirectories(sourceSet, sourcesOutput, processorSourcesOutput)));
+            // Defaults a build may replace: conventions rather than values, so a value the build sets wins
+            // whether it was set before this action ran — a block configuring every generation task ahead of a
+            // source set that does not exist yet — or after it.
+            task.getSourcesOutput().convention(project.getLayout().getBuildDirectory()
+                    .dir("generated/sources/graphmaquina/" + sourceSet.getName()));
+            task.getWorkDirectory().convention(project.getLayout().getBuildDirectory()
+                    .dir("graphmaquina/" + sourceSet.getName()));
+            task.getRequestFile().convention(task.getWorkDirectory().file(REQUEST));
+            task.getProjectDirectory().convention(project.getLayout().getProjectDirectory());
+            task.getJavaLauncher().convention(launcher);
+            task.getCompilationId().convention(project.provider(() -> compilationId(project, sourceSet)));
+            // The generator reads the sources in the encoding javac reads them in, and at the release javac compiles
+            // at. Both are read through a plain provider: one derived from the compile task would carry that task as
+            // its producer, and the generation, which the compilation depends on, would depend on it in turn. Both are
+            // derived from options.compilerArgs alone: the compilation's argument providers may need files other
+            // tasks write before it runs, and the preparation refuses providers that change either.
+            task.getRelease().convention(project.provider(() -> CompilerSettings.release(compile.get(),
+                    CompilerSettings.declaredArguments(compile.get().getOptions()))));
+            task.getEncoding().convention(project.provider(() -> CompilerSettings.encoding(compile.get(),
+                    CompilerSettings.declaredArguments(compile.get().getOptions()))));
+            task.getSources().from(project.provider(() -> originalSources(objects, sourceSet, task, compile.get())));
+            // Those sources are plain locations, so the tasks that write them are declared here instead: every
+            // task the source set's directories are built by, except this one.
+            task.dependsOn((Callable<Object>) () ->
+                    declarations.settle() ? producers(sourceSet, task) : List.of());
+            // What javac compiles is what the compile task's own source holds, as all of its filters select it, which
+            // can differ from what this task reads; a generation whose sources differ is refused before the
+            // generator reads them. The compile task's source carries the dependency on this very task, so it is
+            // held by the action alone, never as an input.
+            task.doFirst(new RequireCompiledSources(
+                    objects.fileCollection().from(project.provider(() -> compile.get().getSource())),
+                    project.provider(() -> compile.get().toString())));
             task.getApplicationClasspath().from(sourceSet.getCompileClasspath()
                     .filter(entry -> !entry.equals(classesOutput.get().getAsFile())));
-            task.getGeneratorClasspath().from(generatorClasspath);
-            task.getProjectDirectory().set(project.getLayout().getProjectDirectory());
-            task.getSourcesOutput().set(sourcesOutput);
-            task.getProcessorSourcesOutput().set(processorSourcesOutput);
-            task.getClassesOutput().set(classesOutput);
-            task.getCompilationOutputLocations().set(locations(classesOutput, processorSourcesOutput));
-            task.getWorkDirectory().set(workDirectory);
-            task.getCompilationId().set(compilationId(project, sourceSet));
-            task.getJavaLauncher().set(launcher);
-            task.getAnnotationManifest().set(workDirectory.map(work -> work.file(ANNOTATION_MANIFEST)));
-            task.getRequestFile().set(workDirectory.map(work -> work.file(REQUEST)));
+            // A convention too: a classpath the build sets replaces it, and paths the build adds once this action
+            // has run join it.
+            task.getGeneratorClasspath().convention(generatorClasspath);
+            // Locations the task only names: javac's own outputs, which a build moves on the compilation, and the
+            // manifest the generator always writes into the work directory, whatever this task says.
+            derivedOnly(task, "processorSourcesOutput", task.getProcessorSourcesOutput(), processorSourcesOutput,
+                    "it follows options.generatedSourceOutputDirectory of " + compile.getName()
+                            + ", which is where a build moves it");
+            derivedOnly(task, "classesOutput", task.getClassesOutput(), classesOutput,
+                    "it follows the destinationDirectory of " + compile.getName()
+                            + ", which is where a build moves it");
+            derivedOnly(task, "annotationManifest", task.getAnnotationManifest(),
+                    task.getWorkDirectory().file(ANNOTATION_MANIFEST),
+                    "the generator writes it into the workDirectory of this task, which is where a build moves it");
+            task.getCompilationOutputLocations().convention(locations(classesOutput, processorSourcesOutput));
         });
 
         // The generated vocabulary is a source root of the source set, not extra source handed to one task:
-        // that is what javadoc, a sources jar and an IDE import all read. The directory is contributed through
-        // a collection that is empty until the source set declares the processor, so a source set that takes no
-        // part keeps exactly the roots the java plugin gave it, and the dependency on the generation task
-        // travels with the directory to every consumer of the source set.
+        // that is what javadoc, a sources jar and an IDE import all read. It joins the source set's java sources
+        // as a source directory set of its own, so the include and exclude patterns a build gives the source set
+        // filter the original sources only: javac compiles all of what the generation wrote, the compilation
+        // carrier included. The directory is contributed through a collection that is empty until the source
+        // set declares the processor, so a source set that takes no part keeps exactly the roots the java plugin
+        // gave it, and the dependency on the generation task travels with the directory to every consumer of the
+        // source set. It is the location the generation task holds, so a build that moves it there moves the
+        // root javac compiles.
         ConfigurableFileCollection produced = objects.fileCollection();
-        produced.from(sourcesOutput);
+        produced.from(generate.flatMap(GenerateGraphApi::getSourcesOutput));
         produced.builtBy(generate);
         FileCollection none = objects.fileCollection();
         ConfigurableFileCollection generated = objects.fileCollection();
         generated.from(project.provider(() -> Boolean.TRUE.equals(participates.get()) ? produced : none));
-        sourceSet.getJava().srcDir(generated);
+        SourceDirectorySet generatedJava = objects.sourceDirectorySet("graphmaquina",
+                sourceSet.getName() + " StateGraph source");
+        generatedJava.srcDir(generated);
+        sourceSet.getJava().source(generatedJava);
 
         // Every one of these is a file collection that is empty while the source set takes no part, and each is
         // read when the task graph is built or when the compilation runs — never while the build script is
         // still being read. That is what keeps a compilation that realizes early from being generated for
-        // without being prepared.
+        // without being prepared. Each is read from the generation task, so the compilation follows the
+        // locations that task holds.
         FileCollection manifest = whenParticipating(project, participates,
                 generate.flatMap(GenerateGraphApi::getAnnotationManifest));
         FileCollection request = whenParticipating(project, participates,
                 generate.flatMap(GenerateGraphApi::getRequestFile));
         FileCollection sealedInventory = whenParticipating(project, participates,
-                workDirectory.map(work -> work.file(SEALED_INVENTORY)));
-        FileCollection lifecycleClasspath = whenParticipating(project, participates, generatorClasspath);
+                generate.flatMap(GenerateGraphApi::getWorkDirectory)
+                        .map((Directory work) -> work.file(SEALED_INVENTORY)));
+        FileCollection generatedSources = whenParticipating(project, participates,
+                generate.flatMap(GenerateGraphApi::getSourcesOutput));
+        // The generator classpath the generation task holds, so the three steps of one compilation run the same
+        // generator, just as they share the launcher the task holds.
+        FileCollection lifecycleClasspath = whenParticipating(project, participates,
+                generate.map(GenerateGraphApi::getGeneratorClasspath));
+        // The original sources the generation task holds, which the preparation compares with what javac compiles.
+        FileCollection originalSources = whenParticipating(project, participates,
+                generate.map(GenerateGraphApi::getSources));
 
         compile.configure(task -> {
             ManifestArguments manifestArguments = objects.newInstance(ManifestArguments.class);
@@ -210,16 +300,22 @@ public final class StateGraphPlugin implements Plugin<Project> {
             CompilationLifecycle.CompleteCompilation complete =
                     objects.newInstance(CompilationLifecycle.CompleteCompilation.class);
             for (CompilationLifecycle.LifecycleAction action : List.of(prepare, complete)) {
-                action.getJavaLauncher().set(launcher);
+                // The launcher the generation task holds, so the three steps of one compilation share one JDK.
+                action.getJavaLauncher().set(generate.flatMap(GenerateGraphApi::getJavaLauncher));
                 action.getGeneratorClasspath().from(lifecycleClasspath);
                 action.getRequestFile().from(request);
             }
-            task.dependsOn((Callable<Object>) () ->
-                    Boolean.TRUE.equals(participates.get()) ? generate : List.of());
+            prepare.getGeneratedSources().from(generatedSources);
+            prepare.getGenerationTask().set(generate.getName());
+            prepare.readOriginalSourcesFrom(originalSources);
+            // Resolving this dependency, which only happens while the task graph is built, settles whether the
+            // source set takes part: every later read gets the answer the graph was built with.
+            task.dependsOn((Callable<Object>) () -> declarations.settle() ? generate : List.of());
             // The completion step enumerates every class file this compilation produced, which an incremental
             // recompilation of a subset would leave incomplete. Whether this compilation runs that step is only
-            // known once the build script has been read, and this switch is not a lazy property, so it is set
-            // for every compilation of a project that applies the plugin.
+            // known once the build script has been read, and this switch is not a lazy property, so it is set on
+            // the compile task of every source set, whether that source set takes part or not, and on no other
+            // compilation of the project.
             task.getOptions().setIncremental(false);
             task.getOptions().getCompilerArgumentProviders().add(manifestArguments);
             // Only the sealed inventory, never the whole work directory: the manifest is the generation's own
@@ -227,6 +323,21 @@ public final class StateGraphPlugin implements Plugin<Project> {
             task.getOutputs().files(sealedInventory).withPropertyName("graphmaquinaOwnedOutputs");
             task.doFirst(prepare);
             task.doLast(complete);
+        });
+
+        // The compilation carrier is tool-internal: the completion removes its class from the class output, so the
+        // jar never carries it, and the sources jar and the API documentation of the source set leave its source
+        // out, whenever the build has those tasks. That package belongs to this plugin, so a source set that takes
+        // no part has nothing there to leave out.
+        project.getTasks().withType(Jar.class).configureEach((Jar jar) -> {
+            if (jar.getName().equals(sourceSet.getSourcesJarTaskName())) {
+                jar.exclude(CARRIER_SOURCES);
+            }
+        });
+        project.getTasks().withType(Javadoc.class).configureEach((Javadoc javadoc) -> {
+            if (javadoc.getName().equals(sourceSet.getJavadocTaskName())) {
+                javadoc.exclude(CARRIER_SOURCES);
+            }
         });
     }
 
@@ -250,21 +361,35 @@ public final class StateGraphPlugin implements Plugin<Project> {
     }
 
     /**
-     * Whether {@code sourceSet} takes part, read from the dependencies its annotation processor configuration
-     * declares.
+     * Gives {@code property} of {@code task} the value this plugin derives for it, and refuses any other whenever
+     * a build sets one: a value set before this configuration ran — by a block configuring every generation task
+     * ahead of a source set that did not exist yet — is refused here, and one set afterwards is refused by Gradle,
+     * since the property then disallows changes.
      *
-     * <p>The coordinates are collected as the build script declares them, one plain {@code group:name} string
-     * per dependency, so the answer is a value and not a live view of a configuration: it is complete once the
-     * build script has been read, it resolves nothing, and it is the same answer whenever it is asked. The
-     * provider is queried when a task runs or when the task graph is built, never while the plugin is applied,
-     * because the declaration it reads may be the last line of the build script.</p>
+     * @throws GradleException if a build already set the property
      */
-    private static Provider<Boolean> participates(Project project, SourceSet sourceSet) {
-        Configuration processors = project.getConfigurations()
-                .getByName(sourceSet.getAnnotationProcessorConfigurationName());
-        SetProperty<String> declared = project.getObjects().setProperty(String.class);
-        processors.getAllDependencies().all(dependency -> declared.add(coordinates(dependency)));
-        return declared.map(coordinates -> coordinates.contains(PROCESSOR_COORDINATES));
+    private static <T> void derivedOnly(Task task, String name, Property<T> property,
+            Provider<? extends T> value, String reason) {
+        if (property.isPresent()) {
+            throw new GradleException("The value for " + task + " property '" + name + "' cannot be changed: "
+                    + reason + ".");
+        }
+        property.set(value);
+        property.disallowChanges();
+    }
+
+    /**
+     * The StateGraph processor declarations of the annotation processor configuration of {@code sourceSet}, those
+     * it inherits from the configurations it extends included, counted as the build declares and removes
+     * dependencies there.
+     */
+    private static ProcessorDeclarations processorDeclarations(Project project, SourceSet sourceSet) {
+        ProcessorDeclarations declarations = new ProcessorDeclarations();
+        DependencySet dependencies = project.getConfigurations()
+                .getByName(sourceSet.getAnnotationProcessorConfigurationName()).getAllDependencies();
+        dependencies.all(declarations::added);
+        dependencies.whenObjectRemoved(declarations::removed);
+        return declarations;
     }
 
     /**
@@ -296,9 +421,10 @@ public final class StateGraphPlugin implements Plugin<Project> {
     }
 
     /**
-     * The identity of one compilation, {@code group:name:sourceSet}, or {@code name:sourceSet} when the project
-     * declares no group. It is read here, while the task is being configured, so the value is the one the build
-     * script settled on and no {@code Project} reaches the task.
+     * The identity of one compilation, {@code group:name:sourceSet}, or {@code name:sourceSet} when the project's
+     * group is empty. The generation task asks for it only when it needs the value — when it fingerprints its
+     * inputs, or when the configuration cache stores it — so the group is the one the build script settled on
+     * even if something realized the task before the script set it, and no {@code Project} reaches the task.
      */
     private static String compilationId(Project project, SourceSet sourceSet) {
         String group = String.valueOf(project.getGroup());
@@ -308,17 +434,99 @@ public final class StateGraphPlugin implements Plugin<Project> {
     }
 
     /**
-     * The original source directories of {@code sourceSet}: everything it declares except the two directories
-     * this build generates into. The result is a plain set of files rather than a view over the source set, so
-     * that the generation task's own input never inherits the dependency the source set now carries on that
-     * very task, which would be a cycle.
+     * The original sources of {@code sourceSet}, as {@code compilation} reads them: every source directory except
+     * the two this build generates into, filtered by the include and exclude patterns of the source set and by the
+     * include and exclude pattern strings of {@code compilation}. A directory none of them filters is named as a
+     * directory, which the generator walks for its Java sources itself; a directory they filter is named file by
+     * file, as those patterns and the source set's Java filter select them. A filter {@code compilation} is given as
+     * a spec or a closure, and a source it is given beyond the source set, are not followed here. One that changes
+     * the original Java sources javac compiles is refused: by {@link RequireCompiledSources} before the generator
+     * runs, and by the preparation when the generation is up to date.
+     *
+     * <p>Each directory is named by its location alone, so the generation task's input never inherits the
+     * dependency the source set carries on that very task, which would be a cycle; the generation task depends
+     * on the tasks that write the other directories instead. A filtered directory is walked when the generation
+     * task reads its input, not here.</p>
      */
-    private static Set<File> originalSourceDirectories(SourceSet sourceSet, Provider<Directory> sourcesOutput,
-            Provider<Directory> processorSourcesOutput) {
-        Set<File> directories = new LinkedHashSet<>(sourceSet.getJava().getSrcDirs());
-        directories.remove(sourcesOutput.get().getAsFile());
-        directories.remove(processorSourcesOutput.get().getAsFile());
-        return directories;
+    private static FileCollection originalSources(ObjectFactory objects, SourceSet sourceSet,
+            GenerateGraphApi generation, JavaCompile compilation) {
+        SourceDirectorySet java = sourceSet.getJava();
+        List<File> generatedDirectories = List.of(generation.getSourcesOutput().get().getAsFile(),
+                generation.getProcessorSourcesOutput().get().getAsFile());
+        Set<String> includes = Set.copyOf(compilation.getIncludes());
+        Set<String> excludes = Set.copyOf(compilation.getExcludes());
+        boolean compilationFilters = !includes.isEmpty() || !excludes.isEmpty();
+        ConfigurableFileCollection sources = objects.fileCollection();
+        for (DirectoryTree tree : java.getSrcDirTrees()) {
+            File directory = tree.getDir();
+            if (generatedDirectories.contains(directory)) {
+                continue;
+            }
+            if (tree.getPatterns().isEmpty() && !compilationFilters) {
+                sources.from(directory);
+            } else {
+                sources.from(objects.fileTree().from(directory)
+                        .matching(tree.getPatterns())
+                        .matching(java.getFilter())
+                        .matching((PatternFilterable patterns) ->
+                                patterns.setIncludes(includes).setExcludes(excludes)));
+            }
+        }
+        return sources;
+    }
+
+    /**
+     * The tasks that write the original sources of {@code sourceSet}: every task its source directories are
+     * built by, except {@code generation}, which only writes the directory it never reads.
+     */
+    private static Set<Task> producers(SourceSet sourceSet, Task generation) {
+        Set<Task> producers = new LinkedHashSet<>(sourceSet.getJava().getSourceDirectories()
+                .getBuildDependencies().getDependencies(generation));
+        producers.remove(generation);
+        return producers;
+    }
+
+    /**
+     * Whether one source set takes part, from the StateGraph processor declarations of its annotation processor
+     * configuration.
+     *
+     * <p>Every declared dependency is counted by its coordinates as it is added and uncounted as it is removed,
+     * so the answer is read from values and resolves nothing, and a declaration the build removes again no
+     * longer counts. While the build is being configured, the answer follows the declarations as they stand:
+     * the declaration may be the last line of the build script, and something may ask before it is read. The
+     * task graph then settles the answer, once and for the rest of the build: resolving the dependencies of the
+     * compilation or of the generation calls {@link #settle()}. A dependency that a {@code defaultDependencies}
+     * or {@code withDependencies} action only adds when javac's processor path is resolved, which is after the
+     * graph was built, therefore cannot change what the compilation's lifecycle does halfway through.</p>
+     */
+    private static final class ProcessorDeclarations {
+
+        /** The coordinates of every declared dependency, once per declaration. */
+        private final List<String> declared = new ArrayList<>();
+
+        /** The settled answer, or {@code null} while the task graph has not asked yet. */
+        private Boolean settled;
+
+        synchronized void added(Dependency dependency) {
+            declared.add(coordinates(dependency));
+        }
+
+        synchronized void removed(Dependency dependency) {
+            declared.remove(coordinates(dependency));
+        }
+
+        /** Whether the source set takes part: the settled answer, or the declarations as they stand. */
+        synchronized boolean takesPart() {
+            return settled != null ? settled : declared.contains(PROCESSOR_COORDINATES);
+        }
+
+        /** Settles the answer unless the task graph already settled it, and returns it. */
+        synchronized boolean settle() {
+            if (settled == null) {
+                settled = declared.contains(PROCESSOR_COORDINATES);
+            }
+            return settled;
+        }
     }
 
     /**
@@ -330,6 +538,36 @@ public final class StateGraphPlugin implements Plugin<Project> {
         @Override
         public boolean isSatisfiedBy(Task task) {
             return ((GenerateGraphApi) task).getParticipates().get();
+        }
+    }
+
+    /**
+     * The action the plugin adds ahead of a generation task's own: it refuses, before the generator reads anything, a
+     * generation whose original sources are not the ones its compilation compiles, as {@link OriginalSources} compares
+     * them. It holds the sources and the name of the compilation as a file collection and a provider, so it captures
+     * no project.
+     */
+    private static final class RequireCompiledSources implements Action<Task> {
+
+        /** The source of the compilation task, which javac compiles. */
+        private final FileCollection compiled;
+
+        /** The compilation task, as a refusal names it. */
+        private final Provider<String> compilation;
+
+        RequireCompiledSources(FileCollection compiled, Provider<String> compilation) {
+            this.compiled = compiled;
+            this.compilation = compilation;
+        }
+
+        @Override
+        public void execute(Task task) {
+            GenerateGraphApi generation = (GenerateGraphApi) task;
+            OriginalSources.requireSame(generation.getSources().getAsFileTree().getFiles(),
+                    OriginalSources.withRoots(compiled.getAsFileTree()),
+                    List.of(generation.getSourcesOutput().get().getAsFile(),
+                            generation.getProcessorSourcesOutput().get().getAsFile()),
+                    generation.getName(), compilation.get());
         }
     }
 }

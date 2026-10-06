@@ -12,9 +12,9 @@ import java.util.Objects;
  * Chainable assertion over a throwable the engine raised, and the entry point to the views that know what
  * each phase carries. Four narrowing methods keep the transition phases apart: an abort discarded the unit
  * of work and nothing moved, a commit failure got partway through writing, and an after-commit failure
- * arrived once every state was already written. A fifth, {@link #isInvalidGraph()}, narrows to the one
- * failure that is not a transition at all. A subject of the wrong kind — or no subject at all — fails
- * there, so a narrowed view always has one.
+ * came from a hook or the registry listener with nothing rolled back. A fifth, {@link #isInvalidGraph()},
+ * narrows to the one failure that is not a transition at all. A subject of the wrong kind — or no subject
+ * at all — fails there, so a narrowed view always has one.
  */
 public final class TransitionFailureAssert extends BaseFailureAssert<TransitionFailureAssert> {
 
@@ -30,7 +30,9 @@ public final class TransitionFailureAssert extends BaseFailureAssert<TransitionF
      * Runs {@code operation} and returns the exception it threw. It asserts nothing about that exception and
      * catches no {@link Error}, so an {@link AssertionError} raised inside the body — by another assertion, or
      * by the test itself — propagates untouched rather than being reported as the operation's failure. A body
-     * that completes normally is the one thing it does report, as a {@link GraphAssertionError}.
+     * that completes normally is the one thing it does report, as a {@link GraphAssertionError}. An
+     * {@link InterruptedException} is returned like any other exception, with the thread's interrupt status
+     * set again.
      */
     public static Throwable captureFailure(ThrowingRunnable operation) {
         Objects.requireNonNull(operation, "operation");

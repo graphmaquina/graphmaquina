@@ -9,14 +9,18 @@ import lombok.NonNull;
 /**
  * Common payload of every abort: what was being attempted, how far the cascade had gone, and which actions
  * managed to run. The requested identifier and the destination are optional because an abort can happen before
- * any edge was resolved, and no destination is invented for a request that matched none.
+ * any edge was resolved, and no destination is invented for a request that matched none. An abort raised for the
+ * caller of a cascade or a peer read, such as a cycle, the depth limit, a failed cascade, COLLECT's aggregate or a
+ * poisoned transaction, describes the caller's own step.
  *
  * @param key the machine that was running
  * @param entity the entity it was running on
  * @param from the state the entity was in
  * @param transition the identifier that was requested, if the abort happened after reading it
  * @param to the destination of the resolved edge, present only once one was selected
- * @param action the name of the action that was running, if any
+ * @param action the action whose own run caused the abort, when one did; absent for a guard, a rejection, the
+ *     watch chain limit and an abort raised for the caller of a cascade or a peer read, even when that caller is a
+ *     running action
  * @param cascadePath the entities in flight, outermost first
  * @param journal the actions that ran, in order, with their status
  */
@@ -30,7 +34,10 @@ public record AbortDetails(@NonNull MachineKey<?, ?, ?> key, @NonNull Object ent
         journal = List.copyOf(journal);
     }
 
-    /** {@code FROM -ID-> TO}, with the parts that are not known yet left out. */
+    /**
+     * {@code FROM -ID-> TO}: only {@code FROM} when no identifier was read, and {@code ?} in place of a destination
+     * that was never selected.
+     */
     public String describeEdge() {
         if (transition.isEmpty()) {
             return from.toString();

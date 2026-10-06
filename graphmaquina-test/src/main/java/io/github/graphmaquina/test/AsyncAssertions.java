@@ -5,6 +5,7 @@ import io.github.graphmaquina.test.internal.Checks;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -14,7 +15,9 @@ import java.util.concurrent.TimeoutException;
  * Bounded waits that turn an asynchronous transition into the same typed views a synchronous one produces.
  * Each wait takes a budget of its own, which belongs to the test and not to the machine: when it expires the
  * failure says the test stopped waiting, never that the engine timed out, and the stage is left exactly as it
- * was — neither wait ever cancels a stage it was handed.
+ * was — neither wait ever cancels a stage it was handed. A stage is awaited through a callback of its own, as
+ * the engine awaits one, so even a stage that refuses {@link CompletionStage#toCompletableFuture()} can be
+ * handed in.
  *
  * <p>The two entry points split the two things a stage can do. {@link #await} expects a result and reports
  * anything else — an exceptional completion, a cancellation, an expired budget — as a
@@ -35,8 +38,7 @@ public final class AsyncAssertions {
         CompletionStage<? extends Outcome<E, S, T>> awaited =
                 Checks.subject(CONTEXT, "completion", "a stage to await", stage);
         try {
-            return OutcomeAssert.assertThat(
-                    awaited.toCompletableFuture().get(nanos, TimeUnit.NANOSECONDS));
+            return OutcomeAssert.assertThat(join(awaited, nanos));
         } catch (TimeoutException timeout) {
             throw new GraphAssertionError(CONTEXT, "completion", "within " + budget, "test wait expired");
         } catch (InterruptedException interrupted) {
@@ -55,7 +57,7 @@ public final class AsyncAssertions {
         CompletionStage<?> awaited = Checks.subject(CONTEXT, "failure", "a stage to await", stage);
         Object completed;
         try {
-            completed = awaited.toCompletableFuture().get(nanos, TimeUnit.NANOSECONDS);
+            completed = join(awaited, nanos);
         } catch (TimeoutException timeout) {
             throw new GraphAssertionError(CONTEXT, "completion", "within " + budget, "test wait expired");
         } catch (InterruptedException interrupted) {
@@ -67,6 +69,23 @@ public final class AsyncAssertions {
             return TransitionFailureAssert.assertThat(execution.getCause());
         }
         throw new GraphAssertionError(CONTEXT, "failure", "an exception", completed);
+    }
+
+    /**
+     * Waits through a future of this class's own, completed by a callback on the stage, which is how the engine
+     * waits as well. A stage is never converted to a future, since a stage may refuse that, and never cancelled.
+     */
+    private static <T> T join(CompletionStage<? extends T> stage, long nanos)
+            throws InterruptedException, ExecutionException, TimeoutException {
+        CompletableFuture<T> owned = new CompletableFuture<>();
+        stage.whenComplete((T value, Throwable error) -> {
+            if (error != null) {
+                owned.completeExceptionally(error);
+            } else {
+                owned.complete(value);
+            }
+        });
+        return owned.get(nanos, TimeUnit.NANOSECONDS);
     }
 
     private static long budgetNanos(Duration budget) {

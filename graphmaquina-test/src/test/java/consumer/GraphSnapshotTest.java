@@ -185,7 +185,7 @@ class GraphSnapshotTest {
         assertEquals(expected, under(snapshot, "/catalog/"));
     }
 
-    /** Parallel identifiers share a destination, and the snapshot keeps both because it keys by identifier. */
+    /** Two identifiers leave the same state and the snapshot keeps both, because it keys by identifier and origin. */
     @Test
     void twoIdentifiersLeavingTheSameStateAreTwoEntries() {
         GraphSnapshot snapshot = GraphSnapshot.capture(SnapshotGraphs.variant().build());

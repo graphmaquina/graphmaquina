@@ -20,6 +20,9 @@ import java.util.Objects;
  * out. The call ordinals of the scripted half count from 1 instead: the ordinal
  * {@link StateWriteProbe#failOnCall} arms, and the one a probe names when it runs out of scripted
  * responses. Both bases are consumer-visible and neither follows the other.
+ *
+ * <p>A probe adds its entry in the same step in which it records its call, so the entries of one probe keep
+ * the order of that probe's own calls even when several threads invoke it.
  */
 public final class CallTrace {
 

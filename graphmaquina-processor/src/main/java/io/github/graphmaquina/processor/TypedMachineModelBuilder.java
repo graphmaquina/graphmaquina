@@ -43,8 +43,20 @@ import javax.lang.model.type.TypeMirror;
  * already reported it precisely.</p>
  *
  * <p>Everything the model must hold beyond that is a rule about a graph and not about a declaration, so it is
- * asked of {@link StructuralChecks}: the signature of an operation, the duplicated keys and the full outline of
- * the graph.</p>
+ * asked of {@link StructuralChecks}: the signature of an operation and the full outline of the graph. A key two
+ * edges claim, a state given two policies, a rejection declared twice and a blank reason are reported here instead,
+ * as {@code SG102} and {@code SG103}, the codes the outline check gives a duplicate and a blank reason.</p>
+ *
+ * <p>Only what the companion can implement is accepted. The operations are the abstract methods the facade
+ * declares itself, so an abstract method it inherits from another interface than {@code Machine} is refused as
+ * {@code SG504}, except a redeclaration of a method of {@code Machine} or a public method of {@code Object} that
+ * the method the companion writes or inherits for it implements; one whose result that method cannot return is
+ * refused with that reason. A method the facade declares that overrides one of those is no operation, and is
+ * refused as {@code SG504} when it carries vocabulary or declares a result the companion's method cannot return.
+ * So is an instance method the facade declares or inherits that has the signature of the companion's static
+ * {@code graph(...)}, which only a model whose bindings all resolved tells, and only when no vocabulary of the machine
+ * is missing from it. An entity of a parameterized type, which generated code can only name by its class, is refused
+ * as {@code SG601}.</p>
  */
 final class TypedMachineModelBuilder {
 
@@ -76,8 +88,14 @@ final class TypedMachineModelBuilder {
         this.annotations = new Annotations(signatures.elements());
     }
 
-    /** Empty when the machine has errors; nothing is generated for it then. */
-    Optional<MachineModel> build(TypeElement type) {
+    /**
+     * Empty when the machine has an error this processor reports, or a value javac refused that the model cannot do
+     * without; nothing is generated for it then. {@code complete} is false when part of the machine's vocabulary is
+     * written where no builder reads it, or on the facade of another machine, whose builder refuses it: every
+     * declaration is still checked, but no conclusion is drawn from the graph as a whole, nor from the classes it
+     * binds, since that graph misses what the author declared.
+     */
+    Optional<MachineModel> build(TypeElement type, boolean complete) {
         int before = diagnostics.errors();
         List<AnnotationMirror> definitions = own(type, VocabularyKind.DEFINITION, type);
         if (definitions.isEmpty()) {
@@ -104,6 +122,12 @@ final class TypedMachineModelBuilder {
             return Optional.empty();
         }
         MachineTypes types = resolved.get();
+        if (StructuralChecks.hasParameterizedEntity(types)) {
+            header.report(diagnostics, GENERICS, type.getSimpleName() + " declares its entity as " + types.entity()
+                    + ", a parameterized type: generated code names the entity by its class, so the entity type must"
+                    + " not be parameterized");
+            return Optional.empty();
+        }
 
         Optional<AnnotationValue> declaredInitial = annotations.find(definition, "initial");
         Optional<AnnotationValue> declaredState = annotations.find(definition, "state");
@@ -130,6 +154,7 @@ final class TypedMachineModelBuilder {
         List<RejectionModel> rejections = rejections(type, types);
         List<TransitionModel> declared = declared(type, types, defaultAfterCommit);
         List<OperationModel> operations = operations(type, types, defaultAfterCommit);
+        structure.checkInheritedOperations(type);
         List<WatchModel> watched = watches.read(type, types);
         checkDuplicateKeys(type, declared, operations);
         if (state.isEmpty() || id.isEmpty() || diagnostics.errors() > before) {
@@ -137,7 +162,10 @@ final class TypedMachineModelBuilder {
         }
         MachineModel model = new MachineModel(types, packageName(type), initial.get(), terminals.get(), cycleAllowed.get(),
                 state.get().reader(), state.get().writer(), id.get(), policies, rejections, declared, operations, watched);
-        structure.checkOutline(model, header);
+        if (complete) {
+            structure.checkOutline(model, header);
+            structure.checkGraphFactory(model);
+        }
         return diagnostics.errors() > before ? Optional.empty() : Optional.of(model);
     }
 
@@ -201,7 +229,10 @@ final class TypedMachineModelBuilder {
         return rejections;
     }
 
-    /** The edges the interface declares itself, which no operation of the facade executes. */
+    /**
+     * The edges the interface declares itself rather than on an operation; one of them may be a further branch, from
+     * another origin, of an identifier an operation executes.
+     */
     private List<TransitionModel> declared(TypeElement type, MachineTypes types, Optional<Binding> defaultAfterCommit) {
         List<TransitionModel> declared = new ArrayList<>();
         for (AnnotationMirror transition : own(type, VocabularyKind.TRANSITION, type)) {
@@ -212,7 +243,10 @@ final class TypedMachineModelBuilder {
 
     /**
      * The operations of the facade, each with the identifier it executes and every edge its own declarations
-     * open. All of a method's annotations must name one identifier, and no two methods may own the same one.
+     * open. All of a method's annotations must name one identifier, and no two methods may own the same one. A
+     * redeclaration of a method of {@code Machine} or a public method of {@code Object} is no operation, since the
+     * companion writes or inherits that method already: one that carries vocabulary, or declares a result the
+     * companion's method cannot return, is refused as {@code SG504}.
      */
     private List<OperationModel> operations(TypeElement type, MachineTypes types, Optional<Binding> defaultAfterCommit) {
         List<OperationModel> operations = new ArrayList<>();
@@ -226,6 +260,11 @@ final class TypedMachineModelBuilder {
                 continue;
             }
             List<AnnotationMirror> mirrors = own(method, VocabularyKind.TRANSITION, type);
+            Optional<ExecutableElement> builtIn = structure.overriddenBuiltIn(method, type);
+            if (builtIn.isPresent()) {
+                structure.checkNotAnOperation(method, builtIn.get(), type, !mirrors.isEmpty());
+                continue;
+            }
             if (!structure.checkOperationDeclared(method, !mirrors.isEmpty())
                     || !structure.checkOperationSignature(method, types)) {
                 continue;

@@ -14,6 +14,7 @@ import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
+import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
@@ -35,16 +36,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The per-call input of {@code execute(entity, id, input)}: guards, actions and the recovery of a failure route read
+ * the call's own value, an absent or null input reads as empty, and neither a cascaded call, a cascade's failure
+ * route nor a watch reevaluation inherits it. A wrong input type aborts the call, the value stays readable after the
+ * call and on another thread, and overlapping asynchronous calls keep theirs apart.
+ */
 class OperationInputTest {
 
+    /** States of the entity machine. */
     enum S { OPEN, DONE, FAILED }
 
+    /** Transition identifiers of the entity machine: WORK, its recovery, and the one a watch rule runs. */
     enum T { WORK, RECOVER, WATCH_IT }
 
+    /** The entity: a single mutable state, OPEN at the start. */
     static final class Entity {
         S state = S.OPEN;
     }
 
+    /** The value the tests pass as input: a record of one flag. */
     record Verdict(boolean eligible) { }
 
     static final MachineKey<Entity, S, T> KEY = MachineKey.of(Entity.class, S.class, T.class);
@@ -164,8 +175,14 @@ class OperationInputTest {
         assertEquals(1, recoveries.get());
     }
 
-    /** A watch reevaluation opens its own root: it never inherits the input of the call that moved the peer. */
+    /**
+     * A watch reaction opens a root of its own: the call that moves the peer passes an input, and the transition the
+     * owner's rule then selects runs without it.
+     */
     @Test void watchReevaluationRunsItsTransitionWithoutTheCallersInput() {
+        Entity owner = new Entity();
+        Entity peer = new Entity();
+        Verdict callers = new Verdict(true);
         List<Optional<?>> seen = new ArrayList<>();
         GraphDefinition<Entity, S, T> watched = StateGraph.define(KEY).initial(S.OPEN).terminal(S.DONE).terminal(S.FAILED)
                 .statePolicy(S.OPEN, "closed")
@@ -175,7 +192,8 @@ class OperationInputTest {
                 .transition(T.WATCH_IT, S.OPEN, S.FAILED)
                     .action("watched", (TransitionContext<Entity, S, T> ctx) -> { seen.add(ctx.input()); return ActionOutcome.ok(); })
                     .endTransition()
-                .watch(S.OPEN, KEY, (Entity e) -> List.of(e), (Entity e) -> Optional.of(e))
+                .watch(S.OPEN, KEY, (Entity e) -> List.of(peer),
+                        (Entity moved) -> moved == peer ? Optional.of(owner) : Optional.<Entity>empty())
                     .when("always", (Entity e, Collection<? extends Entity> peers,
                             PeerView<Entity, S, T> view) -> true).execute(T.WATCH_IT)
                     .endWatch()
@@ -183,10 +201,13 @@ class OperationInputTest {
         try (MachineRegistry registry = MachineRegistry.builder()
                 .add(StateMachines.from(watched).state((Entity e) -> e.state, (Entity e, S s) -> e.state = s)
                         .identity(System::identityHashCode)).build()) {
-            Entity entity = new Entity();
-            assertInstanceOf(Outcome.Applied.class, registry.of(KEY).reevaluate(entity));
-            assertEquals(List.of(Optional.empty()), seen);
-            assertEquals(S.FAILED, entity.state);
+            Outcome.Applied<?, ?, ?> applied = assertInstanceOf(Outcome.Applied.class,
+                    registry.of(KEY).execute(peer, T.WORK, callers));
+            Reaction.Done reaction = assertInstanceOf(Reaction.Done.class, applied.reactions().getFirst());
+            assertInstanceOf(Outcome.Applied.class, reaction.outcome());
+            assertEquals(List.of(Optional.of(callers), Optional.empty()), seen);
+            assertEquals(S.DONE, peer.state);
+            assertEquals(S.FAILED, owner.state);
         }
     }
 

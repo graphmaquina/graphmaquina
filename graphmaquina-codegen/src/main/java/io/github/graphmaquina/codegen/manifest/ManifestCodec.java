@@ -6,41 +6,53 @@ import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import java.io.IOException;
 import java.io.StringWriter;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.StandardCharsets;
+import java.nio.charset.UnsupportedCharsetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 
 /**
- * Reads and writes the generator's manifests as deterministic, UTF-8, LF-terminated JSON. This is the only JSON
- * boundary of the {@code io.github.graphmaquina.codegen} module: every other type in this package and in
- * {@code io.github.graphmaquina.codegen.model} is a plain value read or written only through this class.
+ * Reads and writes the generator's manifests as deterministic UTF-8 JSON, indented by two spaces with LF line
+ * breaks; only the processor inventory ends with one. This is the only public JSON boundary of the
+ * {@code io.github.graphmaquina.codegen} module, with two package-private helpers behind it: the manifests of this
+ * package and the model of {@code io.github.graphmaquina.codegen.model} are plain values, read and written as JSON
+ * only through this class.
  *
  * <p>Schema 2 is the only schema this tool reads, including inventories of owned outputs. A schema 1 document
  * is refused with a message asking the user to clean the build, then regenerate and recompile producer and
  * consumer. There is no conversion, partial model reading or cleanup using retired inventories.
  *
- * <p>Every read method parses the document with a strict {@link com.google.gson.stream.JsonReader}: unknown
- * {@code schemaVersion} values, a missing mandatory member, a member of the wrong JSON type, a duplicate key at
- * any nesting level, and an inventory path ({@link CompileManifest#ownedSources()}) that is absolute or escapes
- * its root through a {@code ..} segment are all rejected with a {@link CodegenException} carrying code
- * {@code SG602}. A genuine I/O failure (the file cannot be read or written, or its low-level JSON is malformed)
- * is reported as an {@link IOException} instead, exactly as declared.
+ * <p>Every read method parses the document with a strict {@link com.google.gson.stream.JsonReader}: a document
+ * that is not well-formed strict JSON, holds bytes that are not UTF-8 text or carries content after its end,
+ * unknown {@code schemaVersion} values, a missing mandatory member, a member of the wrong JSON type, a number
+ * member that is not an exact integer of its range (a fraction, or a value beyond 32 bits for
+ * {@code schemaVersion} and 64 bits for an origin's {@code line} and {@code column}), a number anywhere in the
+ * document whose exponent lies beyond the range a {@link java.math.BigDecimal} holds, such as
+ * {@code 1e99999999999}, a duplicate key at any nesting level, and an inventory path
+ * ({@link CompileManifest#ownedSources()}) that no path can spell, that is absolute or has a root, that holds a
+ * {@code ..} segment or that names the root itself, as {@code .} does, are all rejected with a
+ * {@link CodegenException} carrying code {@code SG602} and naming the file. A genuine I/O failure
+ * (the file cannot be opened, read or written) is reported as an {@link IOException} instead, exactly as declared.
  *
  * <p>Every write method sorts identity lists (a model's graphs by {@code facade}, its symbols by
- * {@code qualifiedName}, a symbol's {@code kinds} and {@code candidates} by name, an index's
- * {@code annotationTypes}, a manifest's {@code dependencies} by {@code compilationId} and its
- * {@code ownedSources}) so that two equal values always serialize to byte-identical files; a graph's
- * {@code states}, its {@code transitions} and a member's {@code parameterTypes} keep the order they were given
- * in, since that order is semantically significant. A
+ * {@code qualifiedName}, a graph's {@code peers}, a symbol's {@code kinds} by name and its {@code candidates} by
+ * name, then by their parameter types, an index's {@code annotationTypes}, a manifest's {@code dependencies} by
+ * {@code compilationId} and its {@code ownedSources}, the four lists of an owned-outputs inventory and the
+ * processor inventory's {@code generatedTypes}) so that two equal values always serialize to byte-identical files;
+ * a graph's {@code states}, its {@code transitions}, a member's {@code parameterTypes} and a request's
+ * {@code sources} and {@code classpath} keep the order they were given in, since that order is semantically
+ * significant. A
  * {@link io.github.graphmaquina.codegen.model.SymbolDescriptor#property()} that is empty is omitted from the
  * JSON entirely, never written as {@code null}.
  *
  * <h2>{@code GenerationRequest} JSON (readRequest/writeRequest)</h2>
  *
- * <p>A flat JSON object whose members are exactly the record's components, so that a build plugin can produce
- * it with its own minimal JSON encoder without depending on this module:
+ * <p>A flat JSON object whose members are the record's components, so that a build plugin can produce it with
+ * its own minimal JSON encoder without depending on this module:
  *
  * <pre>{@code
  * {
@@ -51,9 +63,20 @@ import java.util.List;
  *   "processorSourcesOutput": "<string, Path.toString()>",
  *   "classesOutput": "<string, Path.toString()>",
  *   "workDirectory": "<string, Path.toString()>",
- *   "compilationId": "<string>"
+ *   "compilationId": "<string>",
+ *   "release": <number, optional: the Java release javac compiles at>,
+ *   "encoding": "<string, optional: the name of the charset javac reads the sources in>"
  * }
  * }</pre>
+ *
+ * <p>{@code release} and {@code encoding} are optional: a request without them, as every request was before they
+ * existed, is read at release {@value GenerationRequest#DEFAULT_RELEASE} in UTF-8. A {@code release} that is not
+ * an exact integer, and an {@code encoding} that names no charset of the running JVM, are rejected with
+ * {@code SG602}. {@link #writeRequest} always writes both. No member carries {@code --enable-preview}: the
+ * generator parses the original sources without it, whatever javac is given. An original source using a preview
+ * feature that javac's parser checks, such as string templates on JDK 21, is refused with {@code SG601}; one using
+ * a preview feature javac checks only after parsing, such as primitive patterns at release 25, is read like any
+ * other source.</p>
  *
  * <h2>{@code ExportIndex} JSON (readExports/writeExports)</h2>
  *
@@ -122,6 +145,9 @@ import java.util.List;
  * }
  * }</pre>
  *
+ * <p>The pending inventory, written before javac runs, also lists among its {@code sources} the sources the
+ * generator wrote, relative to {@code sourcesOutput}, as {@link OwnedOutputs} explains.</p>
+ *
  * <p>Unlike {@link CompileManifest#ownedSources()}, the four inventory lists are not validated against their
  * roots here: an inventory is read to decide what a build may delete, and that decision belongs to
  * {@link io.github.graphmaquina.codegen.output.CompilationOutputs}, which knows each root and reports a path that
@@ -142,8 +168,13 @@ public final class ManifestCodec {
     }
 
     /**
-     * Reads a {@link GenerationRequest} from the flat JSON object at {@code path}.
+     * Reads a {@link GenerationRequest} from the flat JSON object at {@code path}; one that names no release or
+     * no encoding is read at release {@value GenerationRequest#DEFAULT_RELEASE} or in UTF-8.
      *
+     * @throws CodegenException {@code SG602} if a member is missing or malformed, the release included, or the
+     *     encoding names no charset of the running JVM
+     * @throws IllegalArgumentException if a path member is not a valid path, or if {@link GenerationRequest}
+     *     refuses the request: a blank {@code compilationId}, or a source that overlaps an output
      * @throws IOException if {@code path} cannot be read
      */
     public static GenerationRequest readRequest(Path path) throws IOException {
@@ -156,8 +187,22 @@ public final class ManifestCodec {
         Path classesOutput = Path.of(JsonSupport.requireString(object, "classesOutput", path));
         Path workDirectory = Path.of(JsonSupport.requireString(object, "workDirectory", path));
         String compilationId = JsonSupport.requireString(object, "compilationId", path);
+        int release = JsonSupport.optionalInt(object, "release", path).orElse(GenerationRequest.DEFAULT_RELEASE);
+        Charset encoding = JsonSupport.optionalString(object, "encoding", path)
+            .map((String name) -> charset(name, path))
+            .orElse(GenerationRequest.DEFAULT_ENCODING);
         return new GenerationRequest(projectDirectory, sources, classpath, sourcesOutput,
-            processorSourcesOutput, classesOutput, workDirectory, compilationId);
+            processorSourcesOutput, classesOutput, workDirectory, compilationId, release, encoding);
+    }
+
+    /** The charset {@code name} names, refusing a name the running JVM supports no charset under. */
+    private static Charset charset(String name, Path file) {
+        try {
+            return Charset.forName(name);
+        } catch (IllegalCharsetNameException | UnsupportedCharsetException unknown) {
+            throw new CodegenException(JsonSupport.ERROR_CODE,
+                "member 'encoding' names no charset this JVM supports in " + file + ": " + name);
+        }
     }
 
     /**
@@ -178,6 +223,8 @@ public final class ManifestCodec {
             writer.name("classesOutput").value(request.classesOutput().toString());
             writer.name("workDirectory").value(request.workDirectory().toString());
             writer.name("compilationId").value(request.compilationId());
+            writer.name("release").value(request.release());
+            writer.name("encoding").value(request.encoding().name());
             writer.endObject();
         }
     }
@@ -227,6 +274,9 @@ public final class ManifestCodec {
     /**
      * Writes {@code manifest} to {@code path}, in the canonical order documented on this class.
      *
+     * @throws CodegenException {@code SG602} if {@link #readCompile} would refuse an owned source: one that no path
+     *     can spell, that is absolute or has a root, that holds a {@code ..} segment or that names the root itself;
+     *     nothing is written then
      * @throws IOException if {@code path} cannot be written
      */
     public static void writeCompile(Path path, CompileManifest manifest) throws IOException {

@@ -27,6 +27,10 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
+/**
+ * The builder rules of {@link StateMachines} and {@link MachineRegistry}: mandatory state accessors and asyncTimeout,
+ * single use, identity and conflicting machines within a registry, and key lookup.
+ */
 class BuilderTest {
 
     /** Another catalogue over the same entity and states: the registry must not let two engines write it. */

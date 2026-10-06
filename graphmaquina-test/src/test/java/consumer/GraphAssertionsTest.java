@@ -18,6 +18,7 @@ import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -25,9 +26,9 @@ import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 /**
- * Contract of {@link GraphAssert}. Every expectation gets a match and a mismatch read off the fields of
- * the {@link GraphAssertionError}, every method gets its own null-subject case, and the edge selector is
- * pinned to the pair of an origin and an identifier — never to a destination.
+ * Contract of {@link GraphAssert}. Every expectation gets a match and a mismatch read off the fields of the
+ * {@link GraphAssertionError}, every one but {@code rejects} gets its own null-subject case, and the edge
+ * selector is pinned to the pair of an origin and an identifier — never to a destination.
  */
 class GraphAssertionsTest {
 
@@ -40,10 +41,16 @@ class GraphAssertionsTest {
     /** An enum that belongs to no graph under test, used to reach the selectors through raw types. */
     enum Foreign { OTHER }
 
-    /** States of a graph that cycles for ever and therefore declares no terminal. */
+    /**
+     * States of two small graphs: one that cycles for ever and therefore declares no terminal, and one whose
+     * two identifiers leave {@code A} for the terminal {@code B}.
+     */
     enum Cycle { A, B }
 
-    /** Transition identifiers of the cyclic graph. */
+    /**
+     * Transition identifiers of both graphs over {@link Cycle}; in the parallel one {@code BACK} also leaves
+     * {@code A} for {@code B}.
+     */
     enum CycleId { FORWARD, BACK }
 
     private static final Duration TIMEOUT = Duration.ofSeconds(1);
@@ -170,9 +177,16 @@ class GraphAssertionsTest {
     @Test
     void everyStateCarriesARejectionPolicy() {
         GraphAssert<Entity, State, Id> graph = GraphAssert.assertThat(TestDomain.graph(TIMEOUT));
-        graph.policy(State.NEW).hasDefaultReason("prepare first").rejects(Id.ABANDON, "prepare first");
-        graph.policy(State.READY).hasDefaultReason("finish only");
-        graph.policy(State.DONE).hasDefaultReason("terminal state DONE accepts no transitions");
+        Map<State, String> defaultReasons = Map.of(
+                State.NEW, "prepare first",
+                State.READY, "finish only",
+                State.DONE, "terminal state DONE accepts no transitions",
+                State.FAILED, "terminal state FAILED accepts no transitions");
+        assertEquals(Set.of(State.values()), defaultReasons.keySet(), "this test must list every state");
+        for (State state : State.values()) {
+            graph.policy(state).hasDefaultReason(defaultReasons.get(state))
+                    .rejects(Id.ABANDON, defaultReasons.get(state));
+        }
     }
 
     @Test
@@ -262,9 +276,10 @@ class GraphAssertionsTest {
     }
 
     /**
-     * Absence is the one expectation a foreign identifier could satisfy by accident: the index is keyed by
-     * {@code (from, id)}, so a constant of another enum would simply miss it and report a green absence.
-     * Every selector that names an identifier refuses one that is not in the machine's catalogue.
+     * A foreign identifier could satisfy an expectation of absence by accident, {@code hasNoTransition} and
+     * {@code rejects} alike: the index is keyed by {@code (from, id)}, so a constant of another enum would
+     * simply miss it and report a green absence. Every selector that names an identifier refuses one that is
+     * not in the machine's catalogue.
      */
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -333,7 +348,7 @@ class GraphAssertionsTest {
                 () -> graph.hasTransitionsExactly(State.NEW, Id.PREPARE, null));
     }
 
-    // --- one null-subject case per expectation method ----------------------------------------------
+    // --- one null-subject case per expectation method, except rejects ------------------------------
 
     @Test
     void nullDefinitionFailsHasInitialWithContext() {

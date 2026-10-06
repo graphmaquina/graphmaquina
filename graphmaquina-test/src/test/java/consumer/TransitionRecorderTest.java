@@ -12,6 +12,7 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionListener;
 import io.github.graphmaquina.dsl.StateGraph;
@@ -301,6 +302,39 @@ class TransitionRecorderTest {
                 context + "[0]", "recorded state", State.NEW, State.READY);
     }
 
+    /**
+     * Narrowing keeps where the outcome came from: a failure after it names the position in the sequence as
+     * well as the variant, so two outcomes of one entity that fail the same expectation are told apart.
+     */
+    @Test
+    void aFailureAfterNarrowingNamesThePositionAndTheVariantItCameFrom() {
+        TransitionRecorder recorder = TransitionRecorder.create();
+        Entity entity = new Entity("e", State.NEW);
+        recorder.onOutcome(TestDomain.KEY, applied(entity));
+        recorder.onOutcome(TestDomain.KEY, new Outcome.Failed<>(entity, State.NEW, Id.PREPARE, State.READY,
+                Id.RECOVER, State.FAILED, "boom", Optional.empty(), List.of(), List.of()));
+        recorder.onOutcome(TestDomain.KEY, new Outcome.Rejected<>(entity, State.NEW, Id.PREPARE, "not ready",
+                RejectionKind.GUARD, Optional.of("first")));
+        recorder.onOutcome(TestDomain.KEY, ignored(entity));
+        OutcomeSequenceAssert<Entity, State, Id> view =
+                recorder.assertRecorded().forEntity(TestDomain.KEY, entity);
+        String context = "recorded transitions for " + TestDomain.KEY;
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> view.atIndex(0).isApplied().movedTo(State.NEW)),
+                context + "[0] (applied)", "moved to", State.NEW, State.READY);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> view.atIndex(1).isFailed().movedTo(State.READY)),
+                context + "[1] (failed)", "moved to", State.READY, State.FAILED);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> view.atIndex(2).isRejected().hasReason("other")),
+                context + "[2] (rejected)", "reason", "other", "not ready");
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> view.atIndex(3).isIgnored().hasReason(IgnoreReason.NO_RULE_MATCHED)),
+                context + "[3] (ignored)", "reason", IgnoreReason.NO_RULE_MATCHED, IgnoreReason.NO_WATCH);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.atIndex(0).isApplied().records().hasSize(1)),
+                context + "[0] (applied).records", "size", 1, 0);
+    }
+
     @Test
     void nullSelectionArgumentsAreRejected() {
         TransitionRecorder recorder = TransitionRecorder.create();
@@ -435,7 +469,10 @@ class TransitionRecorderTest {
                 recorder.snapshot().stream().map(RecordedTransition::projection).toList());
     }
 
-    /** A listener that throws reaches the caller as an after-commit failure, and the recorder before it kept its callback. */
+    /**
+     * A listener that throws reaches the caller as an after-commit failure, and the recorder before it kept its
+     * callback.
+     */
     @Test
     void aComposedListenerThatThrowsStillLeavesTheRecordingBehind() {
         TransitionRecorder recorder = TransitionRecorder.create();
@@ -464,7 +501,10 @@ class TransitionRecorderTest {
     private static final MachineKey<Parcel, ParcelStatus, Loading> PARCELS =
             MachineKey.of(Parcel.class, ParcelStatus.class, Loading.class);
 
-    /** A second state enum of {@link Twin}: one entity class belongs to as many machines as it has states. */
+    /**
+     * A second state enum of {@link Twin}, which makes it the entity of a second machine: a registry holds at most
+     * one machine per entity class and state enum.
+     */
     enum Flag { OFF, ON }
 
     /** Transition identifiers of the twin machines. */

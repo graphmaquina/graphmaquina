@@ -32,8 +32,9 @@ public record MachineKey<E, S extends Enum<S>, T extends Enum<T>>(@NonNull Class
     }
 
     /**
-     * Entity and state enum only: a registry never holds two machines over the same pair, so this name stays
-     * unique within it while remaining short enough for diagnostics.
+     * Simple names of the entity and the state enum only, short enough for diagnostics. A registry never holds two
+     * machines over the same pair of classes, so two of its keys print alike only when two such pairs share their
+     * simple names.
      */
     @Override
     public String toString() {

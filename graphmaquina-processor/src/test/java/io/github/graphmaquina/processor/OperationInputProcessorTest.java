@@ -21,7 +21,10 @@ import org.junit.jupiter.api.Test;
  */
 class OperationInputProcessorTest {
 
-    /** The minimal fixture, with two payload types to draw from and {@code declaration} as its operation. */
+    /**
+     * The minimal fixture, with two payload types to draw from, a second transition identifier and
+     * {@code declaration} as its operation.
+     */
     private Map<String, String> source(String declaration) {
         Map<String, String> src = TypedFixtures.minimal();
         src.put("fx.DocTransition", "package fx; public enum DocTransition { PUBLISH, AUTO_PUBLISH }");

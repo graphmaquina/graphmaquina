@@ -115,6 +115,37 @@ class MachineOutlineValidatorTest {
         assertTrue(problems.get(0).message().contains("declares onFailure without an action"));
     }
 
+    /**
+     * A key is the pair (from, transition), not its printed form: {@code (A, X/Y)} and {@code (A/X, Y)} both print
+     * {@code A/X/Y}, and must neither collide nor stand in for each other in any lookup.
+     */
+    @Test
+    void namesHoldingASlashNeverMakeTwoKeysAlike() {
+        List<String> states = List.of("A", "A/X", "END");
+        List<String> catalog = List.of("X/Y", "Y", "GO");
+        List<PolicyOutline> policies = List.of(new PolicyOutline("A", "a", Map.of()),
+                new PolicyOutline("A/X", "ax", Map.of()), new PolicyOutline("END", "end", Map.of()));
+        MachineOutline distinct = new MachineOutline("M", states, catalog, "A", Set.of("END"), Set.of(),
+                List.of(move("A", "X/Y", "A/X"), move("A/X", "Y", "END")), policies, List.of());
+        assertEquals(List.of(), MachineOutlineValidator.validate(distinct));
+
+        MachineOutline watched = new MachineOutline("M", states, catalog, "A", Set.of("END"), Set.of(),
+                List.of(move("A", "X/Y", "A/X"), move("A/X", "X/Y", "END")), policies,
+                List.of(new WatchOutline("A/X", List.of("Y"))));
+        assertEquals(List.of("SG401"), codes(MachineOutlineValidator.validate(watched)));
+
+        MachineOutline rejecting = new MachineOutline("M", states, catalog, "A", Set.of("END"), Set.of(),
+                List.of(move("A", "GO", "A/X"), move("A/X", "Y", "END")),
+                List.of(new PolicyOutline("A", "a", Map.of("X/Y", "not from A")),
+                        new PolicyOutline("A/X", "ax", Map.of()), new PolicyOutline("END", "end", Map.of())),
+                List.of());
+        assertEquals(List.of(), MachineOutlineValidator.validate(rejecting));
+
+        MachineOutline recovering = new MachineOutline("M", states, catalog, "A", Set.of("END"), Set.of(),
+                List.of(action("A", "GO", "A/X", "X/Y"), move("A/X", "Y", "END")), policies, List.of());
+        assertEquals(List.of("SG301"), codes(MachineOutlineValidator.validate(recovering)));
+    }
+
     @Test
     void outlineMustUseKnownStatesAndIdentifiers() {
         assertThrows(IllegalArgumentException.class, () -> new MachineOutline("X", STATES, CATALOG, "NOPE", Set.of(),

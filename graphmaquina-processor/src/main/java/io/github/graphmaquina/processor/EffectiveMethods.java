@@ -29,7 +29,7 @@ import javax.lang.model.type.TypeMirror;
 
 /**
  * The methods a host really has, as javac sees them: one entry per declaration that is still reachable after
- * overriding, each with the role it carries and with the signature it has in that host.
+ * overriding and carries a role, each with that role and with the signature it has in that host.
  *
  * <p>A role is part of the contract a marker declares, so an override that spells no marker of its own keeps
  * the role of the declaration it overrides; {@link javax.lang.model.util.Elements#overrides} decides that, not
@@ -128,14 +128,14 @@ final class EffectiveMethods {
     /** Every supertype of {@code host}, transitively, each one once. */
     private List<TypeElement> supertypes(TypeElement host) {
         List<TypeElement> found = new ArrayList<>();
-        Set<String> visited = new LinkedHashSet<>();
+        Set<TypeElement> visited = new LinkedHashSet<>();
         Deque<TypeMirror> pending = new ArrayDeque<>(signatures.types().directSupertypes(host.asType()));
         while (!pending.isEmpty()) {
             TypeMirror current = pending.removeFirst();
             if (!(current instanceof DeclaredType declared) || !(declared.asElement() instanceof TypeElement element)) {
                 continue;
             }
-            if (!visited.add(element.getQualifiedName().toString())) {
+            if (!visited.add(element)) {
                 continue;
             }
             found.add(element);

@@ -2,7 +2,10 @@ package io.github.graphmaquina.codegen.emit;
 
 import io.github.graphmaquina.codegen.model.GeneratedSource;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Emits the watch vocabulary of one ordered pair of machines: the top-level {@code <Owner><Peer>} declared in the
@@ -11,20 +14,19 @@ import java.util.List;
  * <p>The pair is fixed by the vocabulary itself, so no declaration repeats it. The owner's state enum types the
  * state being watched, the owner's transition enum types the edge each rule executes, and the peer's state enum
  * types the three filters, which makes a constant of the wrong machine a javac error rather than a diagnostic of
- * this tool.</p>
+ * this tool. As in the machine vocabulary, nothing is imported and every name this file does not declare itself is
+ * written qualified, so the pair's name can never collide with an import, as {@code RetentionPolicy} would.</p>
+ *
+ * <p>Each name is still read through its first segment, and any type in scope here under that simple name takes the
+ * name over: an annotation nested here shadows a type of that name (JLS 6.4.1) and obscures a package of that name,
+ * and a type of the owner's package, a top-level type generated in that package, this file included, or a public
+ * type of {@code java.lang} obscures the package it starts with (JLS 6.4.2). The bootstrap refuses a declaration
+ * whose name a type of the package or of {@code java.lang} would take, and {@link #emit} one whose name a nested
+ * annotation or a generated type would take, all with {@code SG603}.</p>
  */
 final class WatchVocabularyEmitter {
 
-    private static final List<String> IMPORTS = List.of(
-        "io.github.graphmaquina.annotation.internal.GeneratedVocabulary",
-        "io.github.graphmaquina.annotation.internal.VocabularyKind",
-        "io.github.graphmaquina.symbol.ConditionSymbol",
-        "io.github.graphmaquina.symbol.PropertySymbol",
-        "java.lang.annotation.ElementType",
-        "java.lang.annotation.Repeatable",
-        "java.lang.annotation.Retention",
-        "java.lang.annotation.RetentionPolicy",
-        "java.lang.annotation.Target");
+    private static final List<String> ANNOTATIONS = List.of("Watch", "Watches", "When");
 
     private WatchVocabularyEmitter() {
     }
@@ -38,17 +40,35 @@ final class WatchVocabularyEmitter {
     /** The canonical names of the annotations the pair declares, in declaration order. */
     static List<String> annotationTypes(GraphDescriptor owner, GraphDescriptor peer) {
         String vocabulary = vocabularyName(owner, peer);
-        return List.of(vocabulary + ".Watch", vocabulary + ".Watches", vocabulary + ".When");
+        return ANNOTATIONS.stream().map((String name) -> vocabulary + '.' + name).toList();
     }
 
-    /** The compilation unit carrying the watch vocabulary of {@code owner} over {@code peer}. */
-    static GeneratedSource emit(GraphDescriptor owner, GraphDescriptor peer) {
+    /**
+     * The compilation unit carrying the watch vocabulary of {@code owner} over {@code peer}.
+     *
+     * @param generated the simple names of the top-level types generated in each package
+     * @throws io.github.graphmaquina.codegen.CodegenException {@code SG603} if a nested annotation of the
+     *     vocabulary, or a top-level type generated in the owner's package, takes over the first segment of a
+     *     machine or an enum it names
+     */
+    static GeneratedSource emit(GraphDescriptor owner, GraphDescriptor peer, Map<String, Set<String>> generated) {
         String vocabulary = vocabularyName(owner, peer);
         String simpleName = SymbolNames.nameWithin(owner.packageName(), vocabulary);
         String pair = "machine = " + owner.facade() + ".class, peer = " + peer.facade() + ".class";
+        String unit = "the watch vocabulary " + simpleName;
+        Map<String, String> named = new LinkedHashMap<>();
+        named.put(owner.facade(), "the machine " + owner.facade());
+        named.put(peer.facade(), "the peer machine " + peer.facade());
+        named.put(owner.stateType(), "the state type " + owner.stateType() + " of " + owner.facade());
+        named.put(owner.transitionType(), "the transition type " + owner.transitionType() + " of " + owner.facade());
+        named.put(peer.stateType(), "the state type " + peer.stateType() + " of " + peer.facade());
+        Map<String, String> meanings = ApiEmitter.meanings(simpleName, owner.packageName(), ANNOTATIONS, generated);
+        for (Map.Entry<String, String> name : named.entrySet()) {
+            ApiEmitter.requireNameable(unit, meanings, name.getValue(), name.getKey(), owner.origin());
+        }
 
         JavaSource source = new JavaSource();
-        source.header(owner.packageName(), IMPORTS);
+        source.header(owner.packageName(), List.of());
         source.javadoc("Typed watch vocabulary generated for {@link " + owner.facade() + "} over {@link "
                 + peer.facade() + "}.",
             "",
@@ -71,10 +91,10 @@ final class WatchVocabularyEmitter {
     private static void watch(JavaSource source, String vocabulary, String pair, GraphDescriptor owner) {
         describe(source, "Watches the peers of {@link " + owner.facade() + "} while it is in one state and",
             "executes the transition of the first rule that holds.");
-        annotation(source, pair, "WATCH", "ElementType.TYPE", vocabulary + ".Watches", "Watch");
+        annotation(source, pair, "WATCH", "java.lang.annotation.ElementType.TYPE", vocabulary + ".Watches", "Watch");
         source.line(owner.stateType() + " state();");
-        source.line("Class<? extends PropertySymbol> peers();");
-        source.line("Class<? extends PropertySymbol> owner();");
+        source.line(MachineVocabularyEmitter.symbolClass("PropertySymbol") + " peers();");
+        source.line(MachineVocabularyEmitter.symbolClass("PropertySymbol") + " owner();");
         source.line(vocabulary + ".When[] rules();");
         close(source);
     }
@@ -83,7 +103,7 @@ final class WatchVocabularyEmitter {
             GraphDescriptor owner, GraphDescriptor peer) {
         describe(source, "Holds the repeated {@link " + vocabulary + ".Watch} declarations of {@link "
             + owner.facade() + "} over {@link " + peer.facade() + "}.");
-        annotation(source, pair, "WATCHES", "ElementType.TYPE", null, "Watches");
+        annotation(source, pair, "WATCHES", "java.lang.annotation.ElementType.TYPE", null, "Watches");
         source.line(vocabulary + ".Watch[] value();");
         close(source);
     }
@@ -92,7 +112,7 @@ final class WatchVocabularyEmitter {
         describe(source, "One watch rule: the condition or the filter over the peers' states that must hold,",
             "and the transition of {@link " + owner.facade() + "} the entity executes.");
         annotation(source, pair, "WHEN", "{}", null, "When");
-        source.line("Class<? extends ConditionSymbol>[] condition() default {};");
+        source.line(MachineVocabularyEmitter.symbolClass("ConditionSymbol") + "[] condition() default {};");
         source.line(peer.stateType() + "[] allIn() default {};");
         source.line(peer.stateType() + "[] anyIn() default {};");
         source.line(peer.stateType() + "[] noneIn() default {};");
@@ -109,11 +129,12 @@ final class WatchVocabularyEmitter {
     /** Writes the metadata, target, retention and repeatability of one nested annotation and opens its body. */
     private static void annotation(JavaSource source, String pair, String kind, String target,
             String container, String name) {
-        source.line("@GeneratedVocabulary(" + pair + ", value = VocabularyKind." + kind + ")");
-        source.line("@Target(" + target + ")");
-        source.line("@Retention(RetentionPolicy.CLASS)");
+        source.line("@io.github.graphmaquina.annotation.internal.GeneratedVocabulary(" + pair
+            + ", value = io.github.graphmaquina.annotation.internal.VocabularyKind." + kind + ")");
+        source.line("@java.lang.annotation.Target(" + target + ")");
+        source.line("@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)");
         if (container != null) {
-            source.line("@Repeatable(" + container + ".class)");
+            source.line("@java.lang.annotation.Repeatable(" + container + ".class)");
         }
         source.line("public @interface " + name + " {");
         source.indent();

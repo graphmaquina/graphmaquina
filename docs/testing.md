@@ -432,7 +432,10 @@ A `ControlledAsyncAction` or `ControlledAsyncGuard` is declared on the edge in p
 callback. The test resumes when the engine has entered it, and the engine resumes when the test answers that
 very invocation, so an asynchronous transition is asserted without a single sleep. `awaitInvocation` and
 `AsyncAssertions.await` each take a budget that belongs to the test. The fixture is `AutoCloseable`; closing
-is idempotent, cancels the stages it created itself and rejects any invocation that arrives afterwards.
+is idempotent, cancels the stages it created itself and rejects any invocation that arrives afterwards: the
+action with a `GraphAssertionError`, an `Error` that no `failsOn` route can take for a failure of the action,
+and the guard with an `IllegalStateException`, which aborts the transition. `awaitInvocation` on a closed
+fixture fails at once, and a wait already blocked when the fixture closes is woken and fails the same way.
 Concurrent invocations are independent: each arrives with its own handle and is answered on its own. From
 [ControlledAsyncTest](../graphmaquina-test/src/test/java/consumer/ControlledAsyncTest.java), where
 `GENEROUS` is that test's own two-second budget:
@@ -536,7 +539,9 @@ what checks the change.
 
 ### Reading and updating
 
-The two directions deliberately resolve differently, and neither can overwrite the other's file:
+The two directions resolve differently. Read mode never writes, and update mode writes only under the source
+root. Nothing compares that root with the class path, so point it at the source directory, never at a
+class-path output:
 
 | Mode | Resource resolved through | Written to |
 | --- | --- | --- |
@@ -545,9 +550,16 @@ The two directions deliberately resolve differently, and neither can overwrite t
 
 Two system properties select the mode. `graphmaquina.goldens.update` accepts only the exact values `true`
 and `false`; `graphmaquina.goldens.root` names the source root an update writes into and is required when
-update mode is on. The resource string is a class-path-relative path such as `golden/order.dot`, and update
-mode writes it at that same relative path under the root, so pointing the root at `src/test/resources` puts
-the file back where the class path picked it up.
+update mode is on. Read mode ignores it: `GoldenOptions.defaults()` makes it a path only in update mode, so in
+read mode `sourceRoot()` is empty and a value that is not a path fails nothing. The resource string is a
+class-path-relative path such as `golden/order.dot`, and update mode writes it at that same relative path under
+the root, so pointing the root at `src/test/resources` puts the file back where the class path picked it up.
+
+Update mode writes through a symbolic link inside the root, at the golden itself or at a directory above it, and
+keeps the link. It does so even when what the link names does not exist yet: it creates that file, with any
+directory missing on the way, unless a `.` or `..` follows a missing name in the path the link holds, which
+fails with `IllegalStateException`. A link that leads out of the root, a dangling one included, is refused with
+`IllegalArgumentException`, and nothing is written.
 
 ### Gradle
 
@@ -616,7 +628,7 @@ A test that needs no properties at all can pass options explicitly —
 | `isRejected().hasNoTransition()`: nothing was keyed by `(from, id)` | that the entity cannot move at all. Another identifier may well have an edge from the same state. |
 | `calls().assertCount(n)`: a callback was entered n times | that the machine wrote a state. Only `StateWriteProbe.writes()` sees the setter. |
 | `journal()`: which actions the aborted attempt entered, and how each ended | that the entities were put back. `StateSnapshot.assertUnchanged()` is the expectation that asserts the rollback. |
-| the recorder: every outcome the engine published to the listener | anything about a call that aborted. An abort throws instead of producing an outcome, so no callback is made for it; capture the throwable instead. |
+| the recorder: every outcome the engine published to the listener | anything about a call that threw before the listener, such as one whose step aborts, whose commit fails, whose hook throws, or whose reaction raises an `Error`. Such a call throws instead of notifying, so no callback is made for it; capture the throwable instead. |
 | `AsyncAssertions.await(stage, budget)`: the engine's transition finished | that work the action started in the background ended. Neither wait ever cancels a stage it was handed. |
 | that budget: how long the test is willing to wait | the engine's deadline. That is `asyncTimeout(...)` on the machine and `hasTimeout(...)` on the edge, and an expired engine deadline leaves the user's stage alive. |
 
@@ -652,7 +664,8 @@ A test that needs no properties at all can pass options explicitly —
 - **`hasTerminalsExactly` compares as a set; records, guards and reactions keep order and multiplicity.**
 - **Assert on the fields, not the type.** A `GraphAssertionError` carries `context()`, `property()`,
   `expected()` and `actual()`. A test that only checks that something was thrown cannot tell a real
-  rejection from an incidental failure.
+  rejection from an incidental failure. When the actual value is a throwable, it is the error's cause as well,
+  so a report shows where it was thrown.
 
 ## Maintaining test support
 

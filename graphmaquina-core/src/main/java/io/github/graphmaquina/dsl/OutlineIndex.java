@@ -12,8 +12,8 @@ import java.util.Map;
 /**
  * What one validation needs to read again and again about a {@link MachineOutline}: the declaration index of
  * every state and of every transition identifier, the edges that leave each state, and the node topology of
- * the declared edges. It is built once per validation from a single pass over each list and a single pass over
- * the edges, and then never changes, so no diagnostic has to scan a list to position itself.
+ * the declared edges. It is built once per validation, in a few linear passes over the outline's lists, and then
+ * never changes, so no diagnostic has to scan a list to position itself.
  *
  * <p>It indexes what the outline holds, valid or not: an outline may declare two edges under the same key and
  * both stay, in declaration order, because reporting that duplicate is the validator's job. Answers match

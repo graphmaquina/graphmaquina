@@ -19,6 +19,18 @@ final class SourceWriter {
         return this;
     }
 
+    /**
+     * The package declaration of a file of {@code packageName} and the blank line after it, and nothing for the
+     * unnamed package: a compilation unit of the unnamed package declares no package at all.
+     */
+    SourceWriter packageDeclaration(String packageName) {
+        if (!packageName.isEmpty()) {
+            line("package " + packageName + ";");
+            blank();
+        }
+        return this;
+    }
+
     SourceWriter open(String content) {
         line(content + " {");
         depth++;

@@ -9,11 +9,12 @@ public enum WriteStatus {
 
     /**
      * The call was entered and has not left yet. That is what a setter blocked on a latch or on a slow
-     * dependency looks like while another thread reads the probe; the record settles when the call leaves.
+     * dependency looks like while another thread reads the probe; when the call leaves, the probe replaces the
+     * record with a {@link #RETURNED} or {@link #THREW} one.
      */
     RUNNING,
 
-    /** The call returned normally, whether it was answered by the wrapped setter or by nothing at all. */
+    /** The call returned normally: the wrapped setter returned without throwing. */
     RETURNED,
 
     /** The call left by throwing, either the scheduled failure or whatever the wrapped setter threw. */

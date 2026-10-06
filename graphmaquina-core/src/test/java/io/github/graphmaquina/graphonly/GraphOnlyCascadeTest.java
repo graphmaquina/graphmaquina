@@ -30,9 +30,17 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Cascades and failure routes over graph-only machines: the recovering edge taken as declared, parallel edges that do
+ * not merge, cycles by identifier, the pending state between cascades and after a failure route, hooks of reverted
+ * edges, a cascade with no edge, and a failure with no route.
+ */
 class GraphOnlyCascadeTest {
 
-    /** The peer every cascading test drives; the actions reach it through this field, not through a lookup. */
+    /**
+     * The peer the tests that cascade to a second entity drive; the actions reach it through this field, not through
+     * a lookup.
+     */
     final Ticket peer = new Ticket(9, OPEN);
 
     @Test void onlyTheRecoveringEdgeCommitsItsActionAndHook() {

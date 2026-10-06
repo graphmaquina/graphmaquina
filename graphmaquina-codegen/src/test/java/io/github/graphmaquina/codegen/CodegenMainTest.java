@@ -9,6 +9,7 @@ import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GenerationModel;
+import io.github.graphmaquina.codegen.model.SourceLocation;
 import io.github.graphmaquina.codegen.source.SourceFiles;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -42,7 +43,7 @@ class CodegenMainTest {
     @TempDir
     Path directory;
 
-    /** One invocation of the tool: what it wrote on the error stream and the status it left. */
+    /** One invocation of the tool: what it wrote, error stream and standard output merged, and the status it left. */
     private record Invocation(int exitCode, String errors) { }
 
     @Test
@@ -130,6 +131,35 @@ class CodegenMainTest {
                 + ": [SG603] the inventory claims a file it does not own", described);
     }
 
+    /** A diagnostic anchored to an original source carries that anchor onto the line the build prints. */
+    @Test
+    void describesTheSourceLocationADiagnosticIsAnchoredTo() {
+        String described = CodegenMain.describe(new CodegenException("SG601",
+                "the type Status is ambiguous between a.Status and b.Status",
+                new SourceLocation("src/fx/Docs.java", 8, 1)));
+
+        assertEquals("[SG601] the type Status is ambiguous between a.Status and b.Status (at src/fx/Docs.java:8:1)",
+                described);
+    }
+
+    /**
+     * An {@link Error} the JVM raises while an operation runs, here because the runtime carries no
+     * {@code jdk.compiler}, is reported like any other failure: one line naming the operation, the request and
+     * the cause, and status 1, never a bare stack trace.
+     */
+    @Test
+    void reportsAnErrorTheJvmRaisesLikeAnyOtherFailure() throws IOException {
+        Path request = request();
+
+        Invocation invocation = launch(List.of("--limit-modules", "java.se"), List.of("generate", "--request",
+                request.toString()));
+
+        assertEquals(1, invocation.exitCode(), invocation.errors());
+        assertTrue(invocation.errors().startsWith("graphmaquina: generate failed for " + request
+                + ": java.lang.NoClassDefFoundError: com/sun/source/"), invocation.errors());
+        assertEquals(1, invocation.errors().strip().lines().count(), invocation.errors());
+    }
+
     @Test
     void describesACyclicCauseChainWithoutRepeatingIt() throws IOException, InterruptedException {
         Path output = directory.resolve("cyclic-cause.log");
@@ -168,15 +198,24 @@ class CodegenMainTest {
         return file;
     }
 
-    /** Runs {@code operation} over {@code request} in the JVM the test itself runs on. */
+    /**
+     * Runs {@code operation} over {@code request} in a new JVM, of the same runtime and with the same class path as
+     * the one the test itself runs on.
+     */
     private Invocation run(String operation, Path request) {
         return launch(List.of(operation, "--request", request.toString()));
     }
 
     private Invocation launch(List<String> arguments) {
-        List<String> command = new ArrayList<>(List.of(
-                Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-cp", System.getProperty("java.class.path"), MAIN));
+        return launch(List.of(), arguments);
+    }
+
+    /** Runs the tool with {@code jvmOptions} given to the JVM that runs it, ahead of its own arguments. */
+    private Invocation launch(List<String> jvmOptions, List<String> arguments) {
+        List<String> command = new ArrayList<>();
+        command.add(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+        command.addAll(jvmOptions);
+        command.addAll(List.of("-cp", System.getProperty("java.class.path"), MAIN));
         command.addAll(arguments);
         try {
             Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
@@ -199,7 +238,10 @@ class CodegenMainTest {
         assertTrue(compilation.success(), () -> String.valueOf(compilation.messages()));
     }
 
-    /** The provisional index the processor leaves behind for the completion step to promote. */
+    /**
+     * Writes, in place of the processor, the provisional index it leaves behind for the completion step to promote,
+     * and returns its bytes.
+     */
     private byte[] writeProvisionalIndex() throws IOException {
         Path pending = directory.resolve("classes").resolve(PENDING);
         Files.createDirectories(pending.getParent());
@@ -226,7 +268,10 @@ class CodegenMainTest {
         }
     }
 
-    /** The smallest fixture the generator produces a full vocabulary for. */
+    /**
+     * The sources {@link #request()} writes and names: an entity with one property, its two enums, the machine over
+     * them and an action host.
+     */
     private static final Map<String, String> ORIGINALS = originals();
 
     private static Map<String, String> originals() {

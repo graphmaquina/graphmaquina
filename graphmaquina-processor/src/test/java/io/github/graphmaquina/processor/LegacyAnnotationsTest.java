@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -15,13 +16,16 @@ import org.junit.jupiter.params.provider.ValueSource;
  *
  * <p>Those annotation types are gone from this release, so a project that has not been migrated only still
  * resolves them from the older release it compiles against. The fixtures supply them the way that classpath
- * would, and every one of them expects {@code SG609} at the declaration that carries it, and no companion at
- * all: half a migration is refused as loudly as none. A project whose imports no longer resolve is told by
+ * would, and every test expects {@code SG609}; the one that mixes the old vocabulary with the new also expects no
+ * companion: half a migration is refused as loudly as none. A project whose imports no longer resolve is told by
  * javac itself, and {@code docs/migration-2.0.md} supplies the replacement.</p>
  */
 class LegacyAnnotationsTest {
 
-    /** The retired annotation types as an older release still on the classpath declares them. */
+    /**
+     * The five retired annotation types the machine fixtures use, declared under the qualified names and with the
+     * targets an older release still on the classpath gives them.
+     */
     private static Map<String, String> retiredVocabulary() {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("io.github.graphmaquina.annotation.StateGraph", """
@@ -64,7 +68,10 @@ class LegacyAnnotationsTest {
         return sources;
     }
 
-    /** The entity and the host a retired facade binds, with neither markers nor generated references. */
+    /**
+     * The retired vocabulary, the state enum, the entity and the host a retired facade binds, with neither markers
+     * nor generated references.
+     */
     private static Map<String, String> domain() {
         Map<String, String> sources = retiredVocabulary();
         sources.put("fx.DocStatus", """
@@ -89,7 +96,7 @@ class LegacyAnnotationsTest {
         return sources;
     }
 
-    /** A complete machine of the retired vocabulary. {@code @StateGraph} is on line 6. */
+    /** A complete machine of the retired vocabulary. {@code @StateGraph} is on line 5. */
     private static final String LEGACY_DOCS = """
             package fx;
             import io.github.graphmaquina.annotation.Action;
@@ -114,13 +121,89 @@ class LegacyAnnotationsTest {
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG609"), result.describe());
         assertEquals(5, result.lineOf("SG609"), result.describe());
-        String reported = result.errors().stream().filter(error -> error.contains("[SG609]")).findFirst()
+        String reported = result.errors().stream().filter((String error) -> error.contains("[SG609]")).findFirst()
                 .orElseThrow(() -> new AssertionError(result.describe()));
         assertTrue(reported.contains("@GenerateGraphApi"), reported);
         assertTrue(reported.contains("DocsGraph.Definition"), reported);
         assertTrue(reported.contains("DocsGraph.Transition"), reported);
         assertTrue(reported.contains("Refs"), reported);
-        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+    }
+
+    /**
+     * The vocabulary {@code SG609} tells the author to write is the one the generator writes once the facade is
+     * marked: named after the facade's simple name, normalized to PascalCase, so the author of {@code docs_api} is
+     * told {@code DocsApiGraph}. For a name with no PascalCase form, which the generator refuses, the author is told
+     * a placeholder rather than a type nothing generates.
+     */
+    @Test
+    void spellsTheVocabularyWithTheNameTheGeneratorGivesIt() {
+        Map<String, String> sources = domain();
+        sources.put("fx.docs_api", LEGACY_DOCS.replace("public interface Docs", "public interface docs_api"));
+        sources.put("fx.__", """
+                package fx;
+                import io.github.graphmaquina.annotation.StateGraph;
+                @StateGraph(initial = "DRAFT")
+                public interface __ { }
+                """);
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(3, result.countError("SG609"), result.describe());
+        String facade = reported(result, "fx.docs_api declares its graph");
+        for (String annotation : List.of("Definition(initial", "StatePolicy", "Transition", "Reject")) {
+            assertTrue(facade.contains("@DocsApiGraph." + annotation), facade);
+        }
+        assertFalse(facade.contains("top-level"), facade);
+        assertTrue(reported(result, "fx.docs_api.publish declares its transition")
+                .contains("use @DocsApiGraph.Transition(id"), result.describe());
+        assertTrue(reported(result, "fx.__ declares its graph").contains("@<Machine>Graph.Definition(initial"),
+                result.describe());
+        assertFalse(result.describe().contains("docs_apiGraph"), result.describe());
+        assertFalse(result.describe().contains("@__Graph."), result.describe());
+    }
+
+    /**
+     * A machine's companion lives next to its facade in the package, so a nested facade is refused as
+     * {@code SG502} once it is marked. {@code SG609} says so first, at the facade and at each of its operations,
+     * and names the vocabulary of the top-level interface it must become, which the generator names after its
+     * simple name.
+     */
+    @Test
+    void aNestedLegacyFacadeIsToldToBecomeATopLevelInterface() {
+        Map<String, String> sources = domain();
+        sources.put("fx.Outer", """
+                package fx;
+                import io.github.graphmaquina.annotation.Move;
+                import io.github.graphmaquina.annotation.StateGraph;
+                public final class Outer {
+                    @StateGraph(initial = "DRAFT")
+                    public interface Docs {
+                        @Move(from = "DRAFT", to = "PUBLISHED")
+                        void publish(Doc doc);
+                    }
+                }
+                """);
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(2, result.countError("SG609"), result.describe());
+        String facade = reported(result, "fx.Outer.Docs declares its graph");
+        assertTrue(facade.contains("which this version no longer reads: make it a top-level interface of its package,"
+                + " since its generated companion lives next to it there, mark it @GenerateGraphApi"), facade);
+        assertTrue(facade.contains("@DocsGraph.Definition(initial"), facade);
+        String operation = reported(result, "fx.Outer.Docs.publish declares its transition");
+        assertTrue(operation.contains("which this version no longer reads: make fx.Outer.Docs a top-level interface"
+                + " of its package, since its generated companion lives next to it there, then use"
+                + " @DocsGraph.Transition(id"), operation);
+        assertFalse(result.describe().contains("OuterDocsGraph"), result.describe());
+    }
+
+    /** The SG609 message that contains {@code text}, which a test expects exactly once. */
+    private static String reported(Compilation.Result result, String text) {
+        List<String> matching = result.errors().stream()
+                .filter((String error) -> error.contains("[SG609]") && error.contains(text)).toList();
+        assertEquals(1, matching.size(), result.describe());
+        return matching.get(0);
     }
 
     @Test
@@ -132,7 +215,8 @@ class LegacyAnnotationsTest {
 
         assertFalse(result.success(), result.describe());
         assertTrue(result.hasError("SG609"), result.describe());
-        assertTrue(result.errors().stream().anyMatch(error -> error.contains("[SG609]") && error.contains("publish")),
+        assertTrue(result.errors().stream()
+                .anyMatch((String error) -> error.contains("[SG609]") && error.contains("publish")),
                 result::describe);
     }
 
@@ -192,7 +276,7 @@ class LegacyAnnotationsTest {
         assertEquals(1, result.countError("SG609"), () -> retired + "\n" + result.describe());
     }
 
-    /** One retired annotation type, as an older release still on the classpath declares it. */
+    /** One retired annotation type, without elements, under the name and target an older release gives it. */
     private static String marker(String name, String target) {
         return """
                 package io.github.graphmaquina.annotation;
@@ -237,6 +321,5 @@ class LegacyAnnotationsTest {
 
         assertFalse(result.success(), result.describe());
         assertEquals(4, result.countError("SG609"), result.describe());
-        assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());
     }
 }

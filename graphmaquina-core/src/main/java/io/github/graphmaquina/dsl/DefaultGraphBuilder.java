@@ -22,7 +22,10 @@ import java.util.Set;
 import java.util.function.Function;
 import lombok.NonNull;
 
-/** Default, single-use implementation of {@link GraphBuilder}: accumulates drafts and assembles them on build(). */
+/**
+ * Default, single-use implementation of {@link GraphBuilder}: accumulates drafts and assembles them on build().
+ * It keeps every edge draft it opens, so that build() reports one that was never closed.
+ */
 final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> implements GraphBuilder<E, S, T> {
 
     private final MachineKey<E, S, T> key;
@@ -34,6 +37,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final Set<S> cycleAllowed;
     private final Map<S, String> statePolicies;
     private final Map<S, Map<T, String>> rejections;
+    private final List<TransitionDraft<E, S, T>> drafts = new ArrayList<>();
     private final List<TransitionSpec<E, S, T>> declared = new ArrayList<>();
     private final Map<S, WatchDraft<E, S, T, ?, ?, ?>> watches;
     private final Problems problems = new Problems();
@@ -52,6 +56,23 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     Problems problems() { return problems; }
 
+    MachineKey<E, S, T> key() { return key; }
+
+    /** Refuses any declaration once build() has run: nothing reads it any more, so it could only be lost. */
+    private void requireUnbuilt() {
+        if (built) {
+            throw new IllegalStateException("build() was already called on the graph " + key);
+        }
+    }
+
+    /** The same refusal for a stage this graph opened; {@code stage} names the edge or the watch it would change. */
+    void requireUnbuilt(String stage) {
+        if (built) {
+            throw new IllegalStateException(
+                    "build() was already called on the graph " + key + ", so " + stage + " can no longer change");
+        }
+    }
+
     private void requireState(S state) {
         if (!key.states().isInstance(state)) {
             throw new IllegalArgumentException("state must belong to " + key.states().getName() + ": " + state);
@@ -66,6 +87,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public GraphBuilder<E, S, T> initial(@NonNull S state) {
+        requireUnbuilt();
         requireState(state);
         initialDeclarations++;
         initial = Optional.of(state);
@@ -74,6 +96,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public GraphBuilder<E, S, T> terminal(@NonNull S state) {
+        requireUnbuilt();
         requireState(state);
         terminals.add(state);
         return this;
@@ -81,6 +104,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public GraphBuilder<E, S, T> allowsCycle(@NonNull S state) {
+        requireUnbuilt();
         requireState(state);
         cycleAllowed.add(state);
         return this;
@@ -88,6 +112,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public GraphBuilder<E, S, T> statePolicy(@NonNull S state, @NonNull String otherwise) {
+        requireUnbuilt();
         requireState(state);
         if (statePolicies.putIfAbsent(state, otherwise) != null) {
             problems.add("SG102", state.ordinal(), -1, "the state " + state + " declares two policies");
@@ -97,6 +122,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public GraphBuilder<E, S, T> reject(@NonNull S state, @NonNull T transition, @NonNull String reason) {
+        requireUnbuilt();
         requireState(state);
         requireTransition(transition);
         Map<T, String> forState = rejections.computeIfAbsent(state, (S ignored) -> new LinkedHashMap<>());
@@ -109,10 +135,13 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public TransitionBuilder<E, S, T> transition(@NonNull T transition, @NonNull S from, @NonNull S to) {
+        requireUnbuilt();
         requireTransition(transition);
         requireState(from);
         requireState(to);
-        return new TransitionDraft<>(this, from, transition, to);
+        TransitionDraft<E, S, T> draft = new TransitionDraft<>(this, from, transition, to);
+        drafts.add(draft);
+        return draft;
     }
 
     @Override
@@ -120,6 +149,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             @NonNull S state, @NonNull MachineKey<P, Q, U> peer,
             @NonNull Function<? super E, ? extends Collection<? extends P>> peersOf,
             @NonNull Function<? super P, Optional<E>> ownerOf) {
+        requireUnbuilt();
         requireState(state);
         WatchDraft<E, S, T, P, Q, U> draft = new WatchDraft<>(this, state, peer, peersOf, ownerOf);
         if (watches.putIfAbsent(state, draft) != null) {
@@ -128,21 +158,22 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         return draft;
     }
 
-    /** Called by {@code endTransition()}: exactly one edge per closed draft. */
+    /** Called by {@code endTransition()}: a closed draft adds its one edge, or records its problems and adds none. */
     void close(TransitionDraft<E, S, T> draft) {
         draft.toSpec(problems).ifPresent(declared::add);
     }
 
     @Override
     public GraphDefinition<E, S, T> build() {
-        if (built) {
-            throw new IllegalStateException("build() was already called on the graph " + key);
-        }
+        requireUnbuilt();
         built = true;
         if (initialDeclarations == 0) {
             problems.add("SG201", "the graph " + key + " does not declare initial(...)");
         } else if (initialDeclarations > 1) {
             problems.add("SG201", "initial(...) was declared " + initialDeclarations + " times in " + key);
+        }
+        for (TransitionDraft<E, S, T> draft : drafts) {
+            draft.checkClosed(problems);
         }
         Map<TransitionKey<S, T>, TransitionSpec<E, S, T>> index = new LinkedHashMap<>();
         for (TransitionSpec<E, S, T> transition : declared) {
@@ -157,8 +188,9 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
                 .thenComparingInt((TransitionSpec<E, S, T> spec) -> spec.to().ordinal()));
         Map<S, StatePolicy<S, T>> policies = resolvePolicies();
         Map<S, WatchSpec<E, S, T, ?, ?, ?>> watchSpecs = resolveWatches();
-        // A missing initial state, or a draft that could not be assembled, leaves the machine without an edge it
-        // was meant to have, and every structural check downstream would report noise about a graph nobody wrote.
+        // A missing initial state, or a draft that was never closed or could not be assembled, leaves the machine
+        // without an edge it was meant to have, and every structural check downstream would report noise about a
+        // graph nobody wrote.
         if (problems.isEmpty()) {
             MachineOutlineValidator.validate(outline(ordered, policies, watchSpecs), problems);
         }
@@ -168,7 +200,10 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         return new DslGraphDefinition<>(key, states, initial.orElseThrow(), terminals, ordered, policies, watchSpecs);
     }
 
-    /** A declared policy wins; a terminal without one gets the stable generated text. */
+    /**
+     * A declared policy wins; a terminal without one gets the stable generated text. A policy holding a blank
+     * reason is left out, because {@link StatePolicy} refuses it and the validator reports it as SG103.
+     */
     private Map<S, StatePolicy<S, T>> resolvePolicies() {
         Map<S, StatePolicy<S, T>> resolved = new EnumMap<>(key.states());
         for (S state : states) {
@@ -176,11 +211,12 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
             if (otherwise.isEmpty() && terminals.contains(state)) {
                 otherwise = Optional.of("terminal state " + state.name() + " accepts no transitions");
             }
-            if (otherwise.isEmpty() || otherwise.get().isBlank()) {
+            Map<T, String> reasons = rejections.getOrDefault(state, Map.of());
+            if (otherwise.isEmpty() || otherwise.get().isBlank()
+                    || reasons.values().stream().anyMatch(String::isBlank)) {
                 continue;
             }
-            resolved.put(state, new StatePolicy<>(state, otherwise.get(),
-                    rejections.getOrDefault(state, Map.of())));
+            resolved.put(state, new StatePolicy<>(state, otherwise.get(), reasons));
         }
         return resolved;
     }

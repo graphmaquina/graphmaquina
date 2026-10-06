@@ -13,6 +13,12 @@ import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
+/**
+ * What the header of a machine must hold: a top-level interface ({@code SG502}) over an entity and two distinct
+ * enums ({@code SG601}), properties that can serve the use they are named for ({@code SG503}), and, for every state
+ * that is not terminal, one policy with a reason ({@code SG701}, {@code SG102}, {@code SG103}). A state that is not
+ * a constant of the machine's own enum is javac's to refuse.
+ */
 class MachineHeaderErrorsTest {
 
     @Test

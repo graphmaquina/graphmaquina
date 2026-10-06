@@ -9,7 +9,7 @@ import lombok.NonNull;
 /**
  * Renders a {@link GraphView} as Graphviz DOT text with deterministic ordering and LF line endings.
  * Export requires no Graphviz installation; use Graphviz separately to render DOT as an image.
- * State names are escaped labels on internal node IDs. Initial states have an incoming point arrow,
+ * State names are escaped labels on internal node IDs. The initial state has an incoming arrow from a point,
  * terminals use double circles, and watches use notes with dashed connections. Only declared edges are
  * drawn; a rejection policy is a tooltip on its node, never an arrow.
  */

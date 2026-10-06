@@ -6,8 +6,14 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import com.sun.source.tree.ClassTree;
+import com.sun.source.tree.CompilationUnitTree;
+import com.sun.source.util.JavacTask;
+import com.sun.source.util.TreeScanner;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -21,38 +27,38 @@ import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
 import javax.tools.JavaFileObject;
+import javax.tools.SimpleJavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The retired matrix contract as a consumer can still reach it, which is to say not at all. The other tests of
- * this module run against the classes Gradle compiled, and a type that is absent from that classpath may still
- * be shipped: a jar carries compiled classes, a sources jar carries the sources and a javadoc jar carries the
- * rendered pages, and each of the three is part of the product. So this test reads the published files from a
- * local Maven repository, compiles a consumer against those jars alone, runs it in a separate JVM whose
- * classpath holds nothing else, and separately walks the entries of every published jar of every module.
+ * The retired matrix contract as a consumer can still reach it, which is to say not at all. The tests of this
+ * module's {@code test} task run against the classes Gradle compiled, and a type that is absent from that
+ * classpath may still be shipped: a jar carries compiled classes, a sources jar carries the sources and a
+ * javadoc jar carries the rendered pages, and each of the three is part of the product. So this test reads the
+ * published files from a local Maven repository, compiles a consumer against those jars alone, runs it in a
+ * separate JVM whose classpath holds nothing else, and separately walks the entries of every published jar of
+ * every module and parses the source files of every sources jar.
  *
  * <p>{@code Class.forName} alone would prove too little, and a scan of entry names alone would prove too
- * little; the two together cover the compiled, the source and the documented form of every retired name. The
- * repository and the release arrive as the {@code artifactRepository} and {@code artifactVersion} system
- * properties, from the Gradle task that publishes them first.
+ * little: an entry name shows a retired nested type in the binary and the javadoc jars, but a sources jar names
+ * each file after its top-level type, so its text is read as well. Together they cover the compiled, the
+ * source and the documented form of every retired name. The repository and the release arrive as the
+ * {@code artifactRepository} and {@code artifactVersion} system properties, from the Gradle task that
+ * publishes them first.
  */
 class GraphOnlySurfaceTest {
-
-    /** Every module a release publishes; each of them ships the three jars below. */
-    private static final List<String> MODULES = List.of("graphmaquina-core", "graphmaquina-codegen",
-            "graphmaquina-processor", "graphmaquina-test", "graphmaquina-maven-plugin", "graphmaquina-gradle-plugin");
 
     /** The binary, the sources and the documentation: a retired type in any one of them is still shipped. */
     private static final List<String> JARS = List.of(".jar", "-sources.jar", "-javadoc.jar");
 
     /**
-     * The qualified names of the retired contract: the total edge model, the row and cell builders and the
-     * whole string annotation vocabulary, its repeatable containers included. Kept in one list because the
-     * consumer below is written from it and the jar walk looks for each of them as a file, so a name added
-     * here is covered by both checks.
+     * The qualified names of the retired contract: the total edge model, the row builder and the cell and graph
+     * outlines of the matrix DSL, and the whole string annotation vocabulary, its repeatable containers included.
+     * Kept in one list because the consumer below is written from it and the jar walk looks for each of them as
+     * a file, so a name added here is covered by both checks.
      */
     private static final List<String> RETIRED = List.of(
             "io.github.graphmaquina.api.EdgeSpec",
@@ -74,10 +80,12 @@ class GraphOnlySurfaceTest {
             "io.github.graphmaquina.annotation.Forbids");
 
     /**
-     * The simple names the generator once nested inside a machine's own vocabulary. A published artifact
-     * declares a nested type of none of them, whatever outer type it belongs to.
+     * The simple names of the retired annotations the generator once nested inside a machine's own vocabulary,
+     * their repeatable containers {@code Rows}, {@code Cells} and {@code Forbids} included. A published
+     * artifact declares a nested type of none of them, whatever outer type it belongs to.
      */
-    private static final List<String> RETIRED_NESTED = List.of("Row", "Cell", "Forbid", "Action", "Move");
+    private static final List<String> RETIRED_NESTED = List.of("Row", "Rows", "Cell", "Cells", "Forbid", "Forbids",
+            "Action", "Move");
 
     /**
      * What a consumer sees of the retired contract, written as a consumer writes it and run from the jars: the
@@ -134,7 +142,7 @@ class GraphOnlySurfaceTest {
     @Test
     void noRetiredTypeResolvesForAConsumerOfThePublishedJars(@TempDir Path workDir)
             throws IOException, InterruptedException {
-        String jars = MODULES.stream().map((String module) -> artifact(module, ".jar").toString())
+        String jars = PublishedModules.ALL.stream().map((String module) -> artifact(module, ".jar").toString())
                 .collect(Collectors.joining(File.pathSeparator));
         Path classes = Files.createDirectories(workDir.resolve("classes"));
         assertEquals(List.of(), compile(workDir, jars, classes),
@@ -158,11 +166,15 @@ class GraphOnlySurfaceTest {
     /**
      * What the classloader cannot answer for: a sources jar and a javadoc jar ship a retired type as text
      * rather than as a class, and an internal or nested declaration never has to be resolvable to be shipped.
+     * The entry names answer for a retired type of its own, and for a nested one wherever a name shows the
+     * nesting, which is {@code Outer$Row.class} in the binary jar and {@code Outer.Row.html} in the javadoc
+     * jar. A sources jar names a file after its top-level type alone, so the source of every file in it is
+     * parsed as well, and a retired nested type declared there is reported with the file that holds it.
      */
     @Test
     void noPublishedJarCarriesARetiredDeclaration() throws IOException {
         List<String> shipped = new ArrayList<>();
-        for (String module : MODULES) {
+        for (String module : PublishedModules.ALL) {
             for (String suffix : JARS) {
                 Path artifact = artifact(module, suffix);
                 assertTrue(Files.isRegularFile(artifact), "missing published artifact: " + artifact);
@@ -172,17 +184,52 @@ class GraphOnlySurfaceTest {
                     }
                 }
             }
+            for (String declaration : retiredNestedDeclarations(artifact(module, "-sources.jar"))) {
+                shipped.add(module + "-sources.jar!" + declaration);
+            }
         }
         assertEquals(List.of(), shipped, "the published artifacts still carry the retired contract");
     }
 
     /**
+     * The source check parses, so it reports a retired name that a file declares inside another type and
+     * nothing else: a name that is only mentioned, in a comment or a string or as an enum constant, is not a
+     * declaration, and a top-level type with one of these simple names is not nested, so it is judged by the
+     * qualified list alone.
+     */
+    @Test
+    void aRetiredNestedTypeIsFoundInTheTextOfASourceFile() throws IOException {
+        List<SourceText> sources = List.of(
+                new SourceText("pkg/Outer.java", """
+                        package pkg;
+                        public final class Outer {
+                            public static final class Row { }
+                            interface Holder { enum Move { SELL } }
+                        }
+                        """),
+                new SourceText("pkg/Mentions.java", """
+                        package pkg;
+                        /** A class Row and an enum Move are only words here. */
+                        public final class Mentions {
+                            static final String TEXT = "static class Forbid { }";
+                            enum Kind { Action, Cell }
+                        }
+                        """),
+                new SourceText("pkg/Action.java", """
+                        package pkg;
+                        public final class Action { }
+                        """));
+        assertEquals(List.of("pkg/Outer.java declares Outer.Row", "pkg/Outer.java declares Outer.Holder.Move"),
+                retiredNestedDeclarations(sources));
+    }
+
+    /**
      * Whether {@code entry} declares a retired type: its own file, one of its members, or a retired nesting.
      *
-     * <p>The three jars spell a nesting differently — a class file and a source file join the outer and inner
-     * names with {@code $}, a javadoc page joins them with {@code .} — so the extension comes off first and
-     * both separators are then read the same way. Only the segments after the first are nestings; a bare outer
-     * name is what the qualified list above already answers for.
+     * <p>The jars spell a nesting differently — a class file joins the outer and inner names with {@code $} and a
+     * javadoc page joins them with {@code .}, while a source file is named after its top-level type alone — so
+     * the extension comes off first and both separators are then read the same way. Only the segments after the
+     * first are nestings; a bare outer name is what the qualified list above already answers for.
      */
     private static boolean isRetired(String entry) {
         for (String retired : RETIRED) {
@@ -233,6 +280,80 @@ class GraphOnlySurfaceTest {
                 names.add(found.nextElement().getName());
             }
             return names;
+        }
+    }
+
+    /** Each retired nested type that a source file of the sources jar declares, with the file that holds it. */
+    private static List<String> retiredNestedDeclarations(Path sourcesJar) throws IOException {
+        List<SourceText> sources = new ArrayList<>();
+        try (JarFile jar = new JarFile(sourcesJar.toFile())) {
+            Enumeration<JarEntry> found = jar.entries();
+            while (found.hasMoreElements()) {
+                JarEntry entry = found.nextElement();
+                if (entry.getName().endsWith(".java")) {
+                    try (InputStream content = jar.getInputStream(entry)) {
+                        sources.add(new SourceText(entry.getName(), new String(content.readAllBytes(), UTF_8)));
+                    }
+                }
+            }
+        }
+        return retiredNestedDeclarations(sources);
+    }
+
+    /**
+     * Parses the sources without resolving anything, so that it needs no classpath, and reports each type
+     * declared inside another one whose simple name is retired, as {@code file declares Outer.Name}. Anything
+     * javac reports while parsing, a source that does not parse included, fails the assertion.
+     */
+    private static List<String> retiredNestedDeclarations(List<SourceText> sources) throws IOException {
+        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
+        assertNotNull(compiler, "this surface test needs a JDK compiler, not a JRE");
+        DiagnosticCollector<JavaFileObject> collector = new DiagnosticCollector<>();
+        JavacTask task = (JavacTask) compiler.getTask(null, null, collector, List.of("-proc:none"), null, sources);
+        List<String> declared = new ArrayList<>();
+        for (CompilationUnitTree unit : task.parse()) {
+            String file = unit.getSourceFile().getName();
+            new TreeScanner<Void, String>() {
+                @Override
+                public Void visitClass(ClassTree type, String outer) {
+                    String name = type.getSimpleName().toString();
+                    if (!outer.isEmpty() && RETIRED_NESTED.contains(name)) {
+                        declared.add(file + " declares " + outer + "." + name);
+                    }
+                    String qualified = outer.isEmpty() ? name : name.isEmpty() ? outer : outer + "." + name;
+                    return super.visitClass(type, qualified);
+                }
+            }.scan(unit, "");
+        }
+        List<String> unparsed = new ArrayList<>();
+        for (Diagnostic<? extends JavaFileObject> diagnostic : collector.getDiagnostics()) {
+            unparsed.add(diagnostic.getKind() + " in " + diagnostic.getSource() + " at line "
+                    + diagnostic.getLineNumber() + ": " + diagnostic.getMessage(null));
+        }
+        assertEquals(List.of(), unparsed, "every published source file must parse");
+        return declared;
+    }
+
+    /** A source file held in memory under the name it has in its jar. */
+    private static final class SourceText extends SimpleJavaFileObject {
+
+        private final String name;
+        private final String text;
+
+        SourceText(String name, String text) {
+            super(URI.create("string:///" + name), Kind.SOURCE);
+            this.name = name;
+            this.text = text;
+        }
+
+        @Override
+        public String getName() {
+            return name;
+        }
+
+        @Override
+        public CharSequence getCharContent(boolean ignoreEncodingErrors) {
+            return text;
         }
     }
 

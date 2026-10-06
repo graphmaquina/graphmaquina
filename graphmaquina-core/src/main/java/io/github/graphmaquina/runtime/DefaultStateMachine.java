@@ -36,7 +36,10 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import lombok.Getter;
 
-/** Runtime {@link StateMachine}: resolves edges by identity, runs a root transaction and commits in two phases. */
+/**
+ * Runtime {@link StateMachine}: runs a root transaction per call, which resolves the edge from the entity's current
+ * state and the identifier and commits in two phases; a reevaluation that selects no edge runs none.
+ */
 final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> implements StateMachine<E, S, T> {
 
     @Getter
@@ -104,20 +107,35 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         return reevaluate(entity, 0);
     }
 
-    /** chain counts reaction -> transition -> reaction. Exceeding maxWatchChain aborts before evaluating anything. */
+    /**
+     * chain counts reaction -> transition -> reaction. Exceeding maxWatchChain throws WatchChainExceededException
+     * after the reentrancy check and the state read, before any watch function runs. The state read and the watch
+     * functions, peersOf and the conditions, run with the reentrancy marker set, so none of them can start a
+     * transition on this thread: a nested root would begin a chain of its own that maxWatchChain never counts. The
+     * marker is released before the selected edge runs as a root.
+     */
     Outcome<E, S, T> reevaluate(E entity, int chain) {
-        Reentrancy.check(key(), entity);
-        S state = readState(entity);
-        if (chain > registry.maxWatchChain()) {
-            AbortDetails details = new AbortDetails(key(), entity, state, Optional.empty(), Optional.empty(),
-                    Optional.empty(), List.of(), List.of());
-            throw new WatchChainExceededException(details, registry.maxWatchChain());
+        S state;
+        Optional<WatchSpec<E, S, T, ?, ?, ?>> watch;
+        Optional<T> selected = Optional.empty();
+        Reentrancy.enter(key(), entity);
+        try {
+            state = readState(entity);
+            if (chain > registry.maxWatchChain()) {
+                AbortDetails details = new AbortDetails(key(), entity, state, Optional.empty(), Optional.empty(),
+                        Optional.empty(), List.of(), List.of());
+                throw new WatchChainExceededException(details, registry.maxWatchChain());
+            }
+            watch = definition.watch(state);
+            if (watch.isPresent()) {
+                selected = firstMatch(watch.get(), entity);
+            }
+        } finally {
+            Reentrancy.exit();
         }
-        Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = definition.watch(state);
         if (watch.isEmpty()) {
             return notify(new Outcome.Ignored<>(entity, state, IgnoreReason.NO_WATCH));
         }
-        Optional<T> selected = firstMatch(watch.get(), entity);
         if (selected.isEmpty()) {
             return notify(new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
@@ -153,13 +171,16 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     /**
-     * Root transaction: reentrancy marker, new UoW, step, phase 2, context invalidation.
-     * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction.
+     * Root transaction: new UoW with its deadline, reentrancy marker, step, phase 2, context invalidation.
+     * Everything is prepared before the marker is set, so that from {@code Reentrancy.enter} on, the only way out
+     * runs through the {@code finally} that releases it, whatever the step throws.
+     * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
+     * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      */
     Outcome<E, S, T> runRoot(E entity, Function<Transaction, StepResult<S, T>> body, int chain) {
-        Reentrancy.enter(key(), entity);
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), deadlineNanos());
         Transaction tx = new Transaction(registry, uow);
+        Reentrancy.enter(key(), entity);
         StepResult<S, T> step;
         List<TransitionRecord<?, ?, ?>> records;
         List<LogEntry> committed;
@@ -194,7 +215,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         });
     }
 
-    /** The registry listener sees every outcome of every call. */
+    /**
+     * The registry listener sees the outcome of every call that gets this far. A call that throws first notifies
+     * nothing, such as one whose step aborts, whose commit fails, whose hook throws or whose reaction raises an Error.
+     * Any Exception the listener throws, checked ones included, becomes an AfterCommitException that says whether the
+     * call wrote states: only Applied and Failed outcomes did. An Error propagates unchanged.
+     */
     private Outcome<E, S, T> notify(Outcome<E, S, T> outcome) {
         Optional<TransitionListener> listener = registry.listener();
         if (listener.isEmpty()) {
@@ -202,13 +228,18 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         }
         try {
             listener.get().onOutcome(key(), outcome);
-        } catch (RuntimeException e) {
-            throw new AfterCommitException(key(), outcome.entity(), outcome.from(), outcome.current(), "listener", e);
+        } catch (Exception e) {
+            boolean written = outcome instanceof Outcome.Applied<E, S, T> || outcome instanceof Outcome.Failed<E, S, T>;
+            throw new AfterCommitException(key(), outcome.entity(), outcome.from(), outcome.current(), "listener",
+                    written, e);
         }
         return outcome;
     }
 
-    /** Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected. */
+    /**
+     * Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected. Any
+     * Exception a hook throws, checked ones included, becomes an AfterCommitException; an Error propagates unchanged.
+     */
     private void runHooks(List<LogEntry> committed) {
         for (LogEntry entry : committed) {
             runHook(registry.anyMachineFor(entry.ref().key()), entry);
@@ -226,7 +257,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 owner.definition().terminals().contains(spec.to()));
         try {
             hook.run(target, context);
-        } catch (RuntimeException e) {
+        } catch (Exception e) {
             throw new AfterCommitException(owner.key(), target, spec.from(), spec.to(), hook.name(), e);
         }
     }
@@ -260,11 +291,17 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         setter.accept(key().entity().cast(instance), key().states().cast(state));
     }
 
+    /**
+     * The root's deadline, or Long.MAX_VALUE for no limit: no asyncTimeout, or one of
+     * {@code Duration.ofNanos(Long.MAX_VALUE)} or more. It never throws. A sum that wraps past Long.MAX_VALUE stays
+     * exact for Await, which only subtracts from it.
+     */
     long deadlineNanos() {
         if (asyncTimeout.isEmpty()) {
             return Long.MAX_VALUE;
         }
-        return System.nanoTime() + asyncTimeout.get().toNanos();
+        long budget = Await.budgetNanos(asyncTimeout.get());
+        return budget == Long.MAX_VALUE ? Long.MAX_VALUE : System.nanoTime() + budget;
     }
 
     void closeIfOwned() {

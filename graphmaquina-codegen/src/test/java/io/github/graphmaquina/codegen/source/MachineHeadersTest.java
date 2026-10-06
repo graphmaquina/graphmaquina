@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.sun.source.util.JavacTask;
 import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -76,7 +77,7 @@ class MachineHeadersTest {
             assertEquals("fx.DocTransition", descriptor.transitionType());
             assertEquals(List.of("SUBMIT", "PUBLISH", "ARCHIVE"), descriptor.transitions());
             assertEquals(List.of(), descriptor.peers());
-            assertEquals(Path.of("fx", "Orders.java").toString(), descriptor.origin().path());
+            assertEquals("fx/Orders.java", descriptor.origin().path());
             assertEquals(3L, descriptor.origin().line());
         }
     }
@@ -219,7 +220,75 @@ class MachineHeadersTest {
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
             assertEquals("SG601", failure.code());
             assertEquals("the type Status is ambiguous between a.Status and b.Status", failure.getMessage());
-            assertEquals(Path.of("fx", "Orders.java").toString(), failure.location().orElseThrow().path());
+            assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
+        }
+    }
+
+    /**
+     * An on-demand import only imports the types it can access (JLS 7.5.2): a package-private type of another
+     * package is never offered, so it makes no name ambiguous. A member type of an interface is implicitly
+     * public, so an on-demand import of its interface does offer it.
+     */
+    @Test
+    void ignoresTypesAnOnDemandImportCannotAccess() {
+        Map<String, String> sources = Map.of(
+                "a.Status", "package a; enum Status { HIDDEN }",
+                "a.Tools", "package a; public class Tools {}",
+                "b.Status", "package b; public enum Status { DRAFT, LIVE }",
+                "c.Api", "package c; public interface Api { enum Step { GO } }",
+                "fx.Doc", "package fx; public class Doc {}",
+                "fx.Docs", """
+                    package fx;
+                    import a.*;
+                    import b.*;
+                    import c.Api.*;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Docs extends Machine<Doc, Status, Step> {
+                        Tools tools();
+                    }
+                    """);
+        List<Path> files = SourceFiles.write(directory, sources);
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            GraphDescriptor graph = MachineHeaders.resolve(index, "fx.Docs");
+            assertEquals(List.of("fx.Doc", "b.Status", "c.Api.Step"),
+                    List.of(graph.entityType(), graph.stateType(), graph.transitionType()));
+            assertEquals(machineArgumentsAccordingToJavac(files, "fx.Docs"),
+                    List.of(graph.entityType(), graph.stateType(), graph.transitionType()));
+        }
+    }
+
+    /** In the unnamed package a sibling's canonical name is its simple name, and it resolves like any sibling. */
+    @Test
+    void resolvesSiblingsOfTheUnnamedPackage() {
+        Map<String, String> sources = Map.of(
+                "Doc", "public class Doc { public enum Status { DRAFT, LIVE } public enum Step { PUBLISH } }",
+                "Base", """
+                    import io.github.graphmaquina.api.Machine;
+                    public interface Base<E> extends Machine<E, Doc.Status, Doc.Step> {}
+                    """,
+                "Pages", """
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Pages extends Machine<Doc, Doc.Status, Doc.Step> {}
+                    """,
+                "Docs", """
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.annotation.GraphPeers;
+                    @GenerateGraphApi
+                    @GraphPeers(Pages.class)
+                    public interface Docs extends Base<Doc> {}
+                    """);
+        List<Path> files = SourceFiles.write(directory, sources);
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            GraphDescriptor graph = MachineHeaders.resolve(index, "Docs");
+            assertEquals(List.of("Doc", "Doc.Status", "Doc.Step"),
+                    List.of(graph.entityType(), graph.stateType(), graph.transitionType()));
+            assertEquals(List.of("Pages"), graph.peers());
         }
     }
 
@@ -285,7 +354,7 @@ class MachineHeadersTest {
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
             assertEquals("SG601", failure.code());
             assertEquals("the state type fx.Status of fx.Orders is not an enum", failure.getMessage());
-            assertEquals(Path.of("fx", "Orders.java").toString(), failure.location().orElseThrow().path());
+            assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
         }
     }
 
@@ -309,7 +378,7 @@ class MachineHeadersTest {
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
             assertEquals("SG601", failure.code());
             assertEquals("the transition type fx.DocTransition of fx.Orders is not an enum", failure.getMessage());
-            assertEquals(Path.of("fx", "Orders.java").toString(), failure.location().orElseThrow().path());
+            assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
         }
     }
 
@@ -331,7 +400,9 @@ class MachineHeadersTest {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
             assertEquals("SG601", failure.code());
-            assertEquals("states and transitions require distinct enum types", failure.getMessage());
+            assertEquals("the machine fx.Orders uses fx.Status as both its state type and its transition type; "
+                    + "states and transitions require distinct enum types", failure.getMessage());
+            assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
         }
     }
 
@@ -353,8 +424,241 @@ class MachineHeadersTest {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Orders"));
             assertEquals("SG601", failure.code());
-            assertEquals("unresolved transition enum DocTransition", failure.getMessage());
+            assertEquals("the transition type DocTransition of fx.Orders is unresolved", failure.getMessage());
+            assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
         }
+    }
+
+    /**
+     * The vocabulary names its machine by a class literal, and the raw literal of a generic facade is not a
+     * {@code Class<? extends Machine<?, ?, ?>>}: such a facade is refused before anything is generated for it.
+     */
+    @Test
+    void reportsAFacadeThatDeclaresTypeParameters() {
+        Map<String, String> sources = Map.of(
+                "fx.Doc", "package fx; public class Doc { public enum Status { DRAFT } public enum Step { GO } }",
+                "fx.Docs", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Docs<X, Y> extends Machine<Doc, Doc.Status, Doc.Step> {}
+                    """);
+        List<Path> files = SourceFiles.write(directory, sources);
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            CodegenException failure =
+                    assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Docs"));
+            assertEquals("SG601", failure.code());
+            assertEquals("the machine fx.Docs declares the type parameters <X, Y>; a @GenerateGraphApi machine "
+                    + "cannot be generic", failure.getMessage());
+            assertEquals("fx/Docs.java", failure.location().orElseThrow().path());
+        }
+    }
+
+    /**
+     * The vocabulary is a top-level type of the facade's package that names the facade and both of its enums,
+     * so a facade or an enum that is private, or nested in a private type, is refused at the facade.
+     */
+    @Test
+    void refusesAMachineWhoseVocabularyCannotNameItsFacadeOrItsEnums() {
+        List<String[]> cases = List.of(
+                new String[] {"fx.Shop.Flow", "the state type fx.Shop.Phase", "fx.Shop.Phase", """
+                    public class Shop {
+                        private enum Phase { OPEN, CLOSED }
+                        enum Step { CLOSE }
+                        @GenerateGraphApi
+                        interface Flow extends Machine<Doc, Phase, Step> {}
+                    }
+                    """},
+                new String[] {"fx.Shop.Flow", "the transition type fx.Shop.Step", "fx.Shop.Step", """
+                    public class Shop {
+                        enum Phase { OPEN, CLOSED }
+                        private enum Step { CLOSE }
+                        @GenerateGraphApi
+                        interface Flow extends Machine<Doc, Phase, Step> {}
+                    }
+                    """},
+                new String[] {"fx.Shop.Hidden.Flow", "the machine interface fx.Shop.Hidden.Flow", "fx.Shop.Hidden", """
+                    public class Shop {
+                        enum Phase { OPEN, CLOSED }
+                        enum Step { CLOSE }
+                        private static class Hidden {
+                            @GenerateGraphApi
+                            interface Flow extends Machine<Doc, Phase, Step> {}
+                        }
+                    }
+                    """});
+        for (String[] shop : cases) {
+            Path project = directory.resolve(String.valueOf(cases.indexOf(shop)));
+            List<Path> files = SourceFiles.write(project, Map.of(
+                    "fx.Doc", "package fx; public class Doc {}",
+                    "fx.Shop", """
+                        package fx;
+                        import io.github.graphmaquina.annotation.GenerateGraphApi;
+                        import io.github.graphmaquina.api.Machine;
+                        """ + shop[3]));
+            List<SourceUnit> units = SourceDeclarations.parse(project, files);
+            try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+                CodegenException failure =
+                        assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, shop[0]));
+                assertEquals("SG601", failure.code());
+                assertEquals(shop[1] + (shop[1].startsWith("the machine") ? "" : " of " + shop[0])
+                        + " is not accessible to the vocabulary generated in package fx: " + shop[2]
+                        + " is private", failure.getMessage());
+                assertEquals("fx/Shop.java", failure.location().orElseThrow().path());
+            }
+        }
+    }
+
+    /**
+     * The watch vocabulary of a pair is generated in the owner's package and names the peer's state enum, so a
+     * peer whose state enum is not public, in a package of its own, is refused at the owner.
+     */
+    @Test
+    void refusesAPeerWhoseStateTypeTheOwnersPackageCannotName() {
+        Path sources = directory.resolve("src");
+        SourceFiles.write(sources, Map.of(
+                "shop.Order",
+                    "package shop; public class Order { public enum Status { OPEN } public enum Step { GO } }",
+                "shop.Orders", """
+                    package shop;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.annotation.GraphPeers;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    @GraphPeers(stock.Stocks.class)
+                    public interface Orders extends Machine<Order, Order.Status, Order.Step> {}
+                    """,
+                "stock.Move", "package stock; public enum Move { SELL }",
+                "stock.Stock", "package stock; public class Stock {}",
+                "stock.StockState", "package stock; enum StockState { IN_STOCK, SOLD_OUT }",
+                "stock.Stocks", """
+                    package stock;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Stocks extends Machine<Stock, StockState, Move> {}
+                    """));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> Bootstrap.inspect(
+                new GenerationRequest(directory, List.of(sources), SourceFiles.classpath(),
+                        directory.resolve("out/sources"), directory.resolve("out/processor"),
+                        directory.resolve("out/classes"), directory.resolve("out/work"), "shop:main")));
+
+        assertEquals("SG608", failure.code());
+        assertEquals("the peer machine stock.Stocks declared by shop.Orders cannot be watched from package shop,"
+                + " where its watch vocabulary is generated: stock.StockState is not public and belongs to package"
+                + " stock", failure.getMessage());
+        assertEquals("src/shop/Orders.java", failure.location().orElseThrow().path());
+    }
+
+    /**
+     * Inside the vocabulary, a type of its package named like the first segment of a qualified name obscures the
+     * package of that name (JLS 6.4.2), so the name would mean a member of that type. That is refused at the
+     * facade, naming the type, for each package the vocabulary names: StateGraph's {@code io} package, the JDK's
+     * {@code java} package, the package of an enum, and the facade's own package.
+     */
+    @Test
+    void refusesAMachineWhosePackageObscuresAPackageItsVocabularyNames() {
+        List<String[]> cases = List.of(
+                new String[] {"fx.io", "package fx; public class io {}", "", "io.github.graphmaquina"},
+                new String[] {"fx.java", "package fx; public class java {}", "", "java.lang"},
+                new String[] {"fx.shop", "package fx; public class shop {}", "import shop.Status;\n", "shop.Status"},
+                new String[] {"fx.fx", "package fx; public class fx {}", "", "fx.Docs"});
+        for (String[] obscured : cases) {
+            Path project = directory.resolve(obscured[0]);
+            List<Path> files = SourceFiles.write(project, Map.of(
+                    obscured[0], obscured[1],
+                    "shop.Status", "package shop; public enum Status { DRAFT, LIVE }",
+                    "fx.Doc", "package fx; public class Doc { public enum Status { DRAFT } public enum Step { GO } }",
+                    "fx.Docs", "package fx;\n" + obscured[2] + """
+                        import io.github.graphmaquina.annotation.GenerateGraphApi;
+                        import io.github.graphmaquina.api.Machine;
+                        @GenerateGraphApi
+                        public interface Docs extends Machine<Doc, %s, Doc.Step> {}
+                        """.formatted(obscured[2].isEmpty() ? "Doc.Status" : "Status")));
+            List<SourceUnit> units = SourceDeclarations.parse(project, files);
+            try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+                CodegenException failure =
+                        assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Docs"));
+                assertEquals("SG603", failure.code(), obscured[0]);
+                assertEquals("the vocabulary generated for the machine fx.Docs in package fx cannot name "
+                        + obscured[3] + ": the type " + obscured[0] + " obscures the package "
+                        + obscured[3].substring(0, obscured[3].indexOf('.')) + " there", failure.getMessage());
+                assertEquals("fx/Docs.java", failure.location().orElseThrow().path());
+            }
+        }
+    }
+
+    /**
+     * Every compilation unit imports the public types of {@code java.lang} on demand, so inside the vocabulary a
+     * package named like one of them is obscured by it too (JLS 6.4.2): an enum of package {@code String} is
+     * refused at the facade, naming {@code java.lang.String}.
+     */
+    @Test
+    void refusesAMachineWhoseEnumPackageIsNamedLikeAJavaLangType() {
+        List<Path> files = SourceFiles.write(directory, Map.of(
+                "String.Doc",
+                    "package String; public class Doc { public enum Status { DRAFT } public enum Step { GO } }",
+                "fx.Docs", """
+                    package fx;
+                    import String.Doc;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Docs extends Machine<Doc, Doc.Status, Doc.Step> {}
+                    """));
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            CodegenException failure =
+                    assertThrows(CodegenException.class, () -> MachineHeaders.resolve(index, "fx.Docs"));
+            assertEquals("SG603", failure.code());
+            assertEquals("the vocabulary generated for the machine fx.Docs in package fx cannot name String.Doc.Status:"
+                    + " the type java.lang.String obscures the package String there", failure.getMessage());
+            assertEquals("fx/Docs.java", failure.location().orElseThrow().path());
+        }
+    }
+
+    /**
+     * The watch vocabulary of a pair is generated in the owner's package and names the peer machine and its state
+     * enum there, so a type of the owner's package named like the peer's package is refused at the owner, naming it.
+     */
+    @Test
+    void refusesAPeerWhosePackageTheOwnersPackageObscures() {
+        Path sources = directory.resolve("src");
+        SourceFiles.write(sources, Map.of(
+                "shop.Order",
+                    "package shop; public class Order { public enum Status { OPEN } public enum Step { GO } }",
+                "shop.Orders", """
+                    package shop;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Orders extends Machine<Order, Order.Status, Order.Step> {}
+                    """,
+                "fx.shop", "package fx; public class shop {}",
+                "fx.Doc", "package fx; public class Doc { public enum Status { DRAFT } public enum Step { GO } }",
+                "fx.Docs", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.annotation.GraphPeers;
+                    import io.github.graphmaquina.api.Machine;
+                    import shop.Orders;
+                    @GenerateGraphApi
+                    @GraphPeers(Orders.class)
+                    public interface Docs extends Machine<Doc, Doc.Status, Doc.Step> {}
+                    """));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> Bootstrap.inspect(
+                new GenerationRequest(directory, List.of(sources), SourceFiles.classpath(),
+                        directory.resolve("out/sources"), directory.resolve("out/processor"),
+                        directory.resolve("out/classes"), directory.resolve("out/work"), "fx:main")));
+
+        assertEquals("SG603", failure.code());
+        assertEquals("the watch vocabulary generated for the machine fx.Docs over shop.Orders in package fx cannot"
+                + " name shop.Orders: the type fx.shop obscures the package shop there", failure.getMessage());
+        assertEquals("src/fx/Docs.java", failure.location().orElseThrow().path());
     }
 
     @Test
@@ -393,8 +697,81 @@ class MachineHeadersTest {
         List<SourceUnit> units = SourceDeclarations.parse(directory, files);
         try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
             GraphDescriptor graph = MachineHeaders.resolve(index, "fx.Orders");
-            assertEquals(machineArgumentsAccordingToJavac(files),
+            assertEquals(machineArgumentsAccordingToJavac(files, "fx.Orders"),
                     List.of(graph.entityType(), graph.stateType(), graph.transitionType()));
+        }
+    }
+
+    /**
+     * A header is spelled in the scope that encloses its declaration (JLS 6.3): the member types the declaration
+     * declares or inherits are not visible in its extends clause, so neither shadows the package's own enum.
+     */
+    @Test
+    void resolvesTheSupertypesOfAFacadeWithoutTheMemberTypesItDeclaresOrInherits() {
+        Map<String, String> sources = Map.of(
+                "fx.Status", "package fx; public enum Status { DRAFT, LIVE }",
+                "fx.Step", "package fx; public enum Step { PUBLISH }",
+                "fx.Doc", "package fx; public class Doc {}",
+                "fx.Base", "package fx; public interface Base { enum Status { INHERITED } }",
+                "fx.Docs", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Docs extends Machine<Doc, Status, Step> {
+                        enum Status { ARCHIVED }
+                    }
+                    """,
+                "fx.Pages", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Pages extends Base, Machine<Doc, Status, Step> {}
+                    """);
+        List<Path> files = SourceFiles.write(directory, sources);
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            for (String facade : List.of("fx.Docs", "fx.Pages")) {
+                GraphDescriptor graph = MachineHeaders.resolve(index, facade);
+                assertEquals(List.of("fx.Doc", "fx.Status", "fx.Step"),
+                        List.of(graph.entityType(), graph.stateType(), graph.transitionType()), facade);
+                assertEquals(List.of("DRAFT", "LIVE"), graph.states(), facade);
+                assertEquals(machineArgumentsAccordingToJavac(files, facade),
+                        List.of(graph.entityType(), graph.stateType(), graph.transitionType()), facade);
+            }
+        }
+    }
+
+    /** The peers of a facade are named by its own annotation, which javac also resolves in the enclosing scope. */
+    @Test
+    void resolvesThePeersOfAFacadeWithoutTheMemberTypesItDeclares() {
+        Map<String, String> sources = Map.of(
+                "fx.Status", "package fx; public enum Status { DRAFT, LIVE }",
+                "fx.Step", "package fx; public enum Step { PUBLISH }",
+                "fx.Doc", "package fx; public class Doc {}",
+                "fx.Pages", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    public interface Pages extends Machine<Doc, Status, Step> {}
+                    """,
+                "fx.Docs", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.annotation.GraphPeers;
+                    import io.github.graphmaquina.api.Machine;
+                    @GenerateGraphApi
+                    @GraphPeers(Pages.class)
+                    public interface Docs extends Machine<Doc, Status, Step> {
+                        interface Pages {}
+                    }
+                    """);
+        List<Path> files = SourceFiles.write(directory, sources);
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            assertEquals(List.of("fx.Pages"), MachineHeaders.resolve(index, "fx.Docs").peers());
         }
     }
 
@@ -406,7 +783,7 @@ class MachineHeadersTest {
     }
 
     /** Compiles the same fixture for real and reads the {@code Machine} specialization javac itself computes. */
-    private List<String> machineArgumentsAccordingToJavac(List<Path> files) {
+    private List<String> machineArgumentsAccordingToJavac(List<Path> files, String facade) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         try (StandardJavaFileManager fileManager =
@@ -425,7 +802,7 @@ class MachineHeadersTest {
             Elements elements = task.getElements();
             Types types = task.getTypes();
             Deque<TypeMirror> pending = new ArrayDeque<>();
-            pending.add(elements.getTypeElement("fx.Orders").asType());
+            pending.add(elements.getTypeElement(facade).asType());
             while (!pending.isEmpty()) {
                 TypeMirror current = pending.removeFirst();
                 if (current instanceof DeclaredType declared

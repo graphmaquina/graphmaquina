@@ -215,9 +215,10 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
     }
 
     /**
-     * Shared by every view this class hands out, so that an identifier of a foreign enum — reachable only
-     * through raw types — is refused wherever it is named instead of quietly missing an index and reporting
-     * a green absence.
+     * Shared by {@link #hasNoTransition(Enum, Enum)}, {@link #transition(Enum, Enum)} and
+     * {@link StatePolicyAssert#rejects(Enum, String)}, so that an identifier of a foreign enum — reachable
+     * only through raw types — is refused there instead of quietly missing an index and reporting a green
+     * absence.
      */
     static <T extends Enum<T>> void requireDeclaredTransition(Class<T> transitions, T transition) {
         if (!transitions.isInstance(transition)) {

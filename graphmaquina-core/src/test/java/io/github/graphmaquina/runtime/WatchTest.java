@@ -28,9 +28,11 @@ import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionRecord;
+import io.github.graphmaquina.api.WatchCondition;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.error.ReentrantTransitionException;
+import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.WatchChainExceededException;
@@ -52,8 +54,16 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
+/**
+ * Watches over the order and item fixtures, and over a doc machine that watches itself: which commits notify a watch,
+ * the reactions an outcome carries, a failed or unreadable reaction, manual reevaluation, the bounded reaction chain,
+ * the reads a rule makes, the input a reaction runs with, and the watch functions that cannot start a transition on
+ * the thread that runs them.
+ */
 class WatchTest {
 
     final Probe<Order, OrderStatus, OrderTransition> shipOrder = new Probe<>();
@@ -117,6 +127,36 @@ class WatchTest {
                     doc.setStatus(status);
                 }).identity(Doc::id))
                 .build();
+    }
+
+    /**
+     * A registry of one doc machine whose watch, from PUBLISHED, runs the test's {@code peersOf}, {@code ownerOf} and
+     * condition, and archives the owner when the condition holds.
+     */
+    private static MachineRegistry docsWatchingThrough(Function<Doc, List<Doc>> peersOf,
+                                                       Function<Doc, Optional<Doc>> ownerOf,
+                                                       WatchCondition<Doc, Doc, DocStatus, DocTransition> condition) {
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)
+                .initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .watch(PUBLISHED, DOCS, peersOf, ownerOf)
+                    .when("rule", condition).execute(ARCHIVE)
+                    .endWatch()
+                .build();
+        return MachineRegistry.builder()
+                .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id))
+                .build();
+    }
+
+    /** A reaction as {@code Done <outcome>} or {@code Aborted <cause>}, by simple names. */
+    private static String describe(Reaction reaction) {
+        return switch (reaction) {
+            case Reaction.Done done -> "Done " + done.outcome().getClass().getSimpleName();
+            case Reaction.Aborted aborted -> "Aborted " + aborted.cause().getClass().getSimpleName();
+        };
     }
 
     private static List<MachineKey<?, ?, ?>> keysOf(List<TransitionRecord<?, ?, ?>> records) {
@@ -338,6 +378,93 @@ class WatchTest {
         assertThrows(ReentrantTransitionException.class, () -> items.execute(item, ItemTransition.PACK));
         assertEquals(ItemStatus.PACKING, item.status());
         assertEquals(OrderStatus.PAID, order.status());
+    }
+
+    /**
+     * A watch's functions cannot start a transition on the thread that runs them, as a guard cannot. A peersOf, an
+     * ownerOf or a condition that calls execute is refused with ReentrantTransitionException: the reaction ends
+     * aborted, and the doc it tried to move and the observer stay where they were. A reevaluation called directly
+     * refuses peersOf and the condition the same way.
+     */
+    @Test
+    void aWatchFunctionThatStartsATransitionIsRefusedLikeAGuard() {
+        List<String> ends = new ArrayList<>();
+        for (String function : List.of("peersOf", "ownerOf", "condition")) {
+            for (boolean direct : List.of(false, true)) {
+                if (direct && function.equals("ownerOf")) {
+                    continue;
+                }
+                Doc observer = new Doc("observer", PUBLISHED);
+                Doc peer = new Doc("peer", DRAFT);
+                Doc bystander = new Doc("bystander", DRAFT);
+                AtomicReference<MachineRegistry> registry = new AtomicReference<>();
+                Runnable moveBystander = () -> registry.get().of(DOCS).execute(bystander, SUBMIT);
+                try (MachineRegistry docs = docsWatchingThrough(
+                        (Doc owner) -> {
+                            if (function.equals("peersOf")) {
+                                moveBystander.run();
+                            }
+                            return List.of(peer);
+                        },
+                        (Doc moved) -> {
+                            if (function.equals("ownerOf")) {
+                                moveBystander.run();
+                            }
+                            return moved == peer ? Optional.of(observer) : Optional.<Doc>empty();
+                        },
+                        (Doc owner, Collection<? extends Doc> peers, PeerView<Doc, DocStatus, DocTransition> view) -> {
+                            if (function.equals("condition")) {
+                                moveBystander.run();
+                            }
+                            return true;
+                        })) {
+                    registry.set(docs);
+                    String end;
+                    try {
+                        Outcome<Doc, DocStatus, DocTransition> outcome = direct
+                                ? docs.of(DOCS).reevaluate(observer) : docs.of(DOCS).execute(peer, SUBMIT);
+                        end = outcome.getClass().getSimpleName();
+                        if (outcome instanceof Outcome.Applied<Doc, DocStatus, DocTransition> applied && !direct) {
+                            end += " with reactions " + applied.reactions().stream().map(WatchTest::describe).toList();
+                        }
+                    } catch (StateMachineException thrown) {
+                        end = thrown.getClass().getSimpleName();
+                    }
+                    ends.add(function + (direct ? " in a direct reevaluation: " : " in a reaction: ") + end
+                            + ", bystander " + bystander.status() + ", observer " + observer.status());
+                }
+            }
+        }
+        assertEquals(List.of(
+                "peersOf in a reaction: Applied with reactions [Aborted ReentrantTransitionException],"
+                        + " bystander DRAFT, observer PUBLISHED",
+                "peersOf in a direct reevaluation: ReentrantTransitionException, bystander DRAFT, observer PUBLISHED",
+                "ownerOf in a reaction: Applied with reactions [Aborted ReentrantTransitionException],"
+                        + " bystander DRAFT, observer PUBLISHED",
+                "condition in a reaction: Applied with reactions [Aborted ReentrantTransitionException],"
+                        + " bystander DRAFT, observer PUBLISHED",
+                "condition in a direct reevaluation: ReentrantTransitionException,"
+                        + " bystander DRAFT, observer PUBLISHED"),
+                ends);
+    }
+
+    /**
+     * A condition that reevaluates its own owner is refused instead of recursing. Every reevaluation it started
+     * would begin at chain 0 again, so maxWatchChain could not bound that recursion.
+     */
+    @Test
+    void aConditionThatReevaluatesItsOwnerIsRefusedRatherThanRecursing() {
+        Doc observer = new Doc("observer", PUBLISHED);
+        AtomicReference<MachineRegistry> registry = new AtomicReference<>();
+        try (MachineRegistry docs = docsWatchingThrough((Doc owner) -> List.of(), (Doc moved) -> Optional.<Doc>empty(),
+                (Doc owner, Collection<? extends Doc> peers, PeerView<Doc, DocStatus, DocTransition> view) -> {
+                    registry.get().of(DOCS).reevaluate(owner);
+                    return true;
+                })) {
+            registry.set(docs);
+            assertThrows(ReentrantTransitionException.class, () -> docs.of(DOCS).reevaluate(observer));
+            assertEquals(PUBLISHED, observer.status());
+        }
     }
 
     @Test

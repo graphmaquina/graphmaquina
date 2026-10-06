@@ -31,17 +31,17 @@ import org.junit.jupiter.api.parallel.Resources;
 /**
  * Contract of the Graphviz DOT golden. Update writes the source file, read mode resolves the very same resource
  * through the class loader, and a second update over matching content writes nothing. The checked-in
- * {@code golden/simple.dot} pins the rendering of the fixture — every declared edge and nothing else — so the
- * example module's diagrams stay valid, and a mismatch reports the lines that moved.
+ * {@code golden/simple.dot} pins the rendering of the fixture — every declared edge and no other — and a
+ * mismatch reports the lines that moved.
  */
 class GraphGoldensTest {
 
     private static final String RESOURCE = "golden/simple.dot";
 
     /**
-     * The negative cases name the checked-in fixtures with content that deliberately does not match, so they
-     * must never follow {@code graphmaquina.goldens.update}: a regeneration run would rewrite the fixtures
-     * with that wrong content instead of asserting. Explicit options read no property.
+     * The negative cases name the checked-in fixture with content that deliberately does not match, or a
+     * resource that has to stay absent, so they must never follow {@code graphmaquina.goldens.update}: a
+     * regeneration run would write that golden instead of asserting. Explicit options read no property.
      */
     private static final GoldenOptions READ_ONLY =
             GoldenOptions.readOnly(GraphGoldensTest.class.getClassLoader());
@@ -89,6 +89,18 @@ class GraphGoldensTest {
         }
     }
 
+    @Test
+    void aDiagramSavedWithAByteOrderMarkIsReadLikeAnyOther(@TempDir Path root) throws Exception {
+        String checkedIn = Files.readString(
+                Path.of(GraphGoldensTest.class.getClassLoader().getResource(RESOURCE).toURI()));
+        Files.createDirectories(root.resolve("golden"));
+        Files.writeString(root.resolve(RESOURCE), "\uFEFF" + checkedIn);
+        try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {
+            GraphGoldens.assertMatches(TestDomain.graph(Duration.ofSeconds(1)), RESOURCE,
+                    GoldenOptions.readOnly(loader));
+        }
+    }
+
     // --- the checked-in fixture ----------------------------------------------------------------------
 
     @Test
@@ -98,8 +110,8 @@ class GraphGoldensTest {
     }
 
     /**
-     * The rendering draws declared edges only, so the identifier of every arrow is in its label and an
-     * identifier without an edge appears nowhere: there is no exhaustive mode that could draw it.
+     * Between states the rendering draws declared edges only, so the identifier of every such arrow is in its
+     * label and an identifier without an edge appears nowhere: there is no exhaustive mode that could draw it.
      */
     @Test
     void theDiagramNamesEveryIdentifierItDrawsAndNoIdentifierItDoesNot() throws Exception {
@@ -163,6 +175,51 @@ class GraphGoldensTest {
         assertNull(error.actual());
     }
 
+    /**
+     * A malformed name is an error of the calling test whatever else is wrong, so the two-argument entry point
+     * reports it before it reads a system property that may be wrong too.
+     */
+    @Test
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    void aMalformedNameIsReportedBeforeTheSystemProperties() {
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
+        String previousUpdate = System.getProperty(GoldenOptions.UPDATE_PROPERTY);
+        String previousRoot = System.getProperty(GoldenOptions.ROOT_PROPERTY);
+        try {
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "yes");
+            assertEquals("the resource </abs.dot> must be relative", assertThrows(IllegalArgumentException.class,
+                    () -> GraphGoldens.assertMatches(graph, "/abs.dot")).getMessage());
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "true");
+            System.clearProperty(GoldenOptions.ROOT_PROPERTY);
+            assertEquals("the resource <../x.dot> carries an empty or relative segment",
+                    assertThrows(IllegalArgumentException.class,
+                            () -> GraphGoldens.assertMatches(graph, "../x.dot")).getMessage());
+        } finally {
+            restore(GoldenOptions.UPDATE_PROPERTY, previousUpdate);
+            restore(GoldenOptions.ROOT_PROPERTY, previousRoot);
+        }
+    }
+
+    /**
+     * The two-argument entry point reads the properties, and read mode never uses the root: a value of
+     * {@code graphmaquina.goldens.root} that is not a path therefore cannot fail a run that only reads.
+     */
+    @Test
+    @ResourceLock(Resources.SYSTEM_PROPERTIES)
+    void aRootThatIsNotAPathDoesNotFailAReadModeRun() {
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
+        String previousUpdate = System.getProperty(GoldenOptions.UPDATE_PROPERTY);
+        String previousRoot = System.getProperty(GoldenOptions.ROOT_PROPERTY);
+        try {
+            System.setProperty(GoldenOptions.UPDATE_PROPERTY, "false");
+            System.setProperty(GoldenOptions.ROOT_PROPERTY, "bad" + (char) 0 + "root");
+            GraphGoldens.assertMatches(graph, RESOURCE);
+        } finally {
+            restore(GoldenOptions.UPDATE_PROPERTY, previousUpdate);
+            restore(GoldenOptions.ROOT_PROPERTY, previousRoot);
+        }
+    }
+
     @Test
     void aNullDefinitionFailsTheThreeArgumentAssertion() {
         GraphAssertionError error = assertThrows(GraphAssertionError.class,
@@ -181,5 +238,13 @@ class GraphGoldensTest {
                 () -> GraphGoldens.assertMatches(graph, RESOURCE, null)).getMessage());
         assertThrows(IllegalArgumentException.class,
                 () -> GraphGoldens.assertMatches(graph, "../escape.dot", READ_ONLY));
+    }
+
+    private static void restore(String key, String value) {
+        if (value == null) {
+            System.clearProperty(key);
+        } else {
+            System.setProperty(key, value);
+        }
     }
 }

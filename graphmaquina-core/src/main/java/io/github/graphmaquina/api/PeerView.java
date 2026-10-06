@@ -3,7 +3,10 @@ package io.github.graphmaquina.api;
 import java.util.Collection;
 import lombok.NonNull;
 
-/** Read-only view over another machine. Reads the UnitOfWork first, then the entity. */
+/**
+ * Read-only view over a machine's states. The view a context hands out reads the transaction's pending state first,
+ * then the entity; the view a watch condition receives reads the entity only.
+ */
 public interface PeerView<P, Q extends Enum<Q>, U extends Enum<U>> {
 
     MachineKey<P, Q, U> key();

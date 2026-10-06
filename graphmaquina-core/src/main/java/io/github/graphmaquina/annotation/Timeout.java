@@ -5,7 +5,11 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Describes an asynchronous action timeout without losing nanosecond precision. */
+/**
+ * Describes an asynchronous action timeout without losing nanosecond precision. The processor reads it as
+ * {@code Duration.ofSeconds(seconds, nanos)} and reports SG511 unless neither is negative, {@code nanos} is at most
+ * 999,999,999 and the two are not both zero.
+ */
 @Target({})
 @Retention(RetentionPolicy.CLASS)
 public @interface Timeout {

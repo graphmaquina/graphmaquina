@@ -5,10 +5,10 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * What a {@link GuardProbe} recorded about one invocation. A guard decides and does not cascade, so there is no
- * depth to record; as with {@link ActionCall}, the live {@code GuardContext} is not kept and the identifier of
- * the edge under evaluation is recorded alongside its endpoints. Input is the reference read on entry, not a
- * deep copy, and remains readable after the transaction ends.
+ * What a {@link GuardProbe} or a {@link ControlledAsyncGuard} recorded about one invocation. A guard decides and
+ * does not cascade, so there is no depth to record; as with {@link ActionCall}, the live {@code GuardContext} is
+ * not kept and the identifier of the edge under evaluation is recorded alongside its endpoints. Input is the
+ * reference read on entry, not a deep copy, and remains readable after the transaction ends.
  *
  * @param entity the entity the guard was asked about
  * @param from the state the entity was in when the guard was entered

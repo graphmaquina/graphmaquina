@@ -102,6 +102,31 @@ class DependencyExportsTest {
                 failure.getMessage());
     }
 
+    /** A truncated index is reported against the classpath entry that carries it, which is what a user can fix. */
+    @Test
+    void namesTheEntryWhoseIndexIsNotWellFormedJson() throws IOException {
+        Path metadata = Files.createDirectories(directory.resolve("classes/META-INF/graphmaquina"));
+        Files.writeString(metadata.resolve("exports.json"),
+                "{\"schemaVersion\": 2, \"toolVersion\": \"" + ToolVersion.current(), StandardCharsets.UTF_8);
+
+        CodegenException failure = assertThrows(CodegenException.class,
+                () -> DependencyExports.read(List.of(directory.resolve("classes"))));
+
+        assertEquals("SG602", failure.code());
+        assertTrue(failure.getMessage().startsWith("the StateGraph export index published by "
+                + directory.resolve("classes") + " cannot be read: malformed JSON in "), failure.getMessage());
+    }
+
+    /** An archive that cannot be opened is named, rather than surfacing the archive library's bare complaint. */
+    @Test
+    void namesAnArchiveItCannotOpen() throws IOException {
+        Path archive = Files.writeString(directory.resolve("broken.jar"), "not an archive", StandardCharsets.UTF_8);
+
+        IOException failure = assertThrows(IOException.class, () -> DependencyExports.read(List.of(archive)));
+
+        assertTrue(failure.getMessage().contains(archive.toString()), failure.getMessage());
+    }
+
     private static ExportIndex index(String toolVersion, String compilationId) {
         return new ExportIndex(2, toolVersion, compilationId, EMPTY, List.of("fx.OrdersGraph.Transition"));
     }

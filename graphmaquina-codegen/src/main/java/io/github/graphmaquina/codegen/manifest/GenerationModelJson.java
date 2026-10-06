@@ -20,9 +20,10 @@ import java.util.Set;
 
 /**
  * Converts {@link GenerationModel} and its parts to and from the JSON shape documented on {@link ManifestCodec}.
- * Identity lists (graphs, symbols, a symbol's candidates, a symbol's kinds) are sorted by name before writing;
- * a graph's declared states, its declared transition identifiers and a member's parameter types keep their
- * original, semantically ordered sequence.
+ * Identity lists are sorted before writing: graphs by facade, symbols by qualified name, a graph's peers, a
+ * symbol's kinds by name and its candidates by name, then by their parameter types. A graph's declared states,
+ * its declared transition identifiers and a member's parameter types keep their original, semantically ordered
+ * sequence.
  *
  * <p>Package-private: {@link ManifestCodec} is the only public JSON boundary of this package.
  */

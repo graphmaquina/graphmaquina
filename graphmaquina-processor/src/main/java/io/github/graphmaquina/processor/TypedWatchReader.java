@@ -41,6 +41,10 @@ import javax.lang.model.type.TypeMirror;
  * <p>Everything else is resolved through the same resolvers the rest of the typed frontend uses: the peers of
  * the entity and the owner of a peer are properties, and a condition is a symbol resolved against the machine
  * and its peer together, so the method the generated code calls is the one the author marked.</p>
+ *
+ * <p>The companion of the watching machine names the peer's entity and enums, so a peer is refused as
+ * {@code SG509} when its entity is a parameterized type, or when one of those types is not accessible from the
+ * package the companion is generated in.</p>
  */
 final class TypedWatchReader {
 
@@ -78,8 +82,8 @@ final class TypedWatchReader {
     private record Peers(Optional<AnnotationMirror> mirror, Map<String, TypeElement> declared, Set<String> usable) { }
 
     /**
-     * The watches {@code facade} declares, in the order it spells them; a watch with a problem is reported and
-     * left out, so the machine that carries it is refused as a whole by its own builder.
+     * The watches {@code facade} declares, in the order it spells them; a watch with a problem is left out, and one
+     * whose problem this processor reports makes the machine's own builder refuse the machine as a whole.
      */
     List<WatchModel> read(TypeElement facade, MachineTypes machine) {
         Peers peers = peers(facade);
@@ -107,9 +111,9 @@ final class TypedWatchReader {
     }
 
     /**
-     * The peers of {@code facade}, with {@code SG608} for one it names twice and for one that is not a machine
-     * this compilation generates an API for: watch vocabulary needs the peer's own states, which only such a
-     * machine declares.
+     * The peers of {@code facade}, with {@code SG608} for one it names twice and for one not marked
+     * {@code @GenerateGraphApi}: watch vocabulary is typed with the peer's own states, which only such a machine's
+     * generated API declares.
      */
     private Peers peers(TypeElement facade) {
         Optional<AnnotationMirror> mirror = annotations.find(facade, GraphPeers.class);
@@ -187,6 +191,14 @@ final class TypedWatchReader {
             return Optional.empty();
         }
         MachineTypes peer = resolved.get();
+        if (StructuralChecks.hasParameterizedEntity(peer)) {
+            DiagnosticAnchor.of(facade, watch).report(diagnostics, NOT_A_MACHINE, peerElement.getQualifiedName()
+                    + " declares its entity as " + peer.entity() + ", a parameterized type, which a watch cannot follow");
+            return Optional.empty();
+        }
+        if (!reachable(facade, watch, peer)) {
+            return Optional.empty();
+        }
         Optional<String> state = TypedValues.constantName(declaredState.get(), machine.statesElement());
         if (state.isEmpty()) {
             return Optional.empty();
@@ -214,6 +226,27 @@ final class TypedWatchReader {
         }
         return Optional.of(new WatchModel(state.get(), peer, peersOf.get(), ownerOf.get(),
                 isOptional(ownerOf.get(), machine), rules));
+    }
+
+    /**
+     * Whether the companion of {@code facade}, generated in the facade's package, can name the types it watches
+     * {@code peer} with: the peer's entity and its two enums, which it writes in the key and the lambdas of the
+     * watch. {@code SG509} otherwise, naming each type that package cannot access.
+     */
+    private boolean reachable(TypeElement facade, AnnotationMirror watch, MachineTypes peer) {
+        String packageName = Accessibility.packageOf(facade);
+        Set<String> inaccessible = new LinkedHashSet<>();
+        for (TypeMirror type : List.of(peer.entity(), peer.states(), peer.transitions())) {
+            inaccessible.addAll(Accessibility.inaccessible(type, packageName));
+        }
+        if (inaccessible.isEmpty()) {
+            return true;
+        }
+        DiagnosticAnchor.of(facade, watch).report(diagnostics, NOT_A_MACHINE, peer.facade().getQualifiedName()
+                + " is watched with " + String.join(" and ", inaccessible) + ", which "
+                + Accessibility.describe(packageName) + ", where the companion of " + facade.getSimpleName()
+                + " is generated, cannot access: make " + (inaccessible.size() == 1 ? "it" : "them") + " public");
+        return false;
     }
 
     /**

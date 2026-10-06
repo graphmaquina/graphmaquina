@@ -18,10 +18,11 @@
   <goalPrefix>graphmaquina</goalPrefix>
   <isolatedRealm>false</isolatedRealm>
   <inheritedByDefault>true</inheritedByDefault>
+  <requiredJavaVersion>21</requiredJavaVersion>
   <mojos>
     <mojo>
       <goal>generate</goal>
-      <description>Emits the typed StateGraph vocabulary of the main compilation and the manifest the annotation processor reads, and adds the generated directory as a compile source root.</description>
+      <description>Emits the typed StateGraph vocabulary of the main compilation and the manifest the annotation processor reads, and adds the generated directory as a compile source root. Before it writes anything, it stops the build when the default-compile execution of maven-compiler-plugin is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path or in the list of annotation processors javac runs, useIncrementalCompilation set to false, or no manifest argument. Does nothing in a project packaged as pom, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
       <requiresDependencyResolution>compile</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -62,14 +63,14 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+          <description>The java executable the generator runs under. Left unset, the goal uses the java of the jdk toolchain selected for the build, else the java of the JVM running Maven. Whichever it is must belong to a JDK 21 or later, and to the JDK javac compiles with.</description>
         </parameter>
         <parameter>
           <name>compilationId</name>
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>
@@ -88,7 +89,7 @@
     </mojo>
     <mojo>
       <goal>prepare</goal>
-      <description>Retires the outputs the previous cycle of the main compilation owned and invalidates its published index, before javac runs.</description>
+      <description>Retires the outputs the previous cycle of the main compilation owned and invalidates its published index, before javac runs. Does nothing in a project packaged as pom, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
       <requiresDependencyResolution>compile</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -129,14 +130,14 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+          <description>The java executable the generator runs under. Left unset, the goal uses the java of the jdk toolchain selected for the build, else the java of the JVM running Maven. Whichever it is must belong to a JDK 21 or later, and to the JDK javac compiles with.</description>
         </parameter>
         <parameter>
           <name>compilationId</name>
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>
@@ -155,7 +156,7 @@
     </mojo>
     <mojo>
       <goal>complete</goal>
-      <description>Publishes the index of what javac accepted for the main compilation and seals its inventory, after the compiler goal of the same phase succeeded.</description>
+      <description>Publishes the index of what javac accepted for the main compilation and seals its inventory, after the compiler goal of the same phase succeeded. Does nothing in a project packaged as pom, or when maven.main.skip or &lt;skipMain&gt; switches the main compilation off.</description>
       <requiresDependencyResolution>compile</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -196,14 +197,14 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+          <description>The java executable the generator runs under. Left unset, the goal uses the java of the jdk toolchain selected for the build, else the java of the JVM running Maven. Whichever it is must belong to a JDK 21 or later, and to the JDK javac compiles with.</description>
         </parameter>
         <parameter>
           <name>compilationId</name>
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>
@@ -222,7 +223,7 @@
     </mojo>
     <mojo>
       <goal>generate-test</goal>
-      <description>Emits the typed StateGraph vocabulary of the test compilation and adds the generated directory as a test compile source root.</description>
+      <description>Emits the typed StateGraph vocabulary of the test compilation and the manifest the annotation processor reads, and adds the generated directory as a test compile source root. Before it writes anything, it stops the build when the default-testCompile execution of maven-compiler-plugin is configured in a way the generated vocabulary does not support, such as another JDK, a release below Java 21, annotation processing switched off, no StateGraph annotation processor on the processor path or in the list of annotation processors javac runs, useIncrementalCompilation set to false, or no manifest argument. Does nothing in a project packaged as pom, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
       <requiresDependencyResolution>test</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -263,14 +264,14 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+          <description>The java executable the generator runs under. Left unset, the goal uses the java of the jdk toolchain selected for the build, else the java of the JVM running Maven. Whichever it is must belong to a JDK 21 or later, and to the JDK javac compiles with.</description>
         </parameter>
         <parameter>
           <name>compilationId</name>
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>
@@ -289,7 +290,7 @@
     </mojo>
     <mojo>
       <goal>prepare-test</goal>
-      <description>Retires the outputs the previous cycle of the test compilation owned and invalidates its published index, before javac runs.</description>
+      <description>Retires the outputs the previous cycle of the test compilation owned and invalidates its published index, before javac runs. Does nothing in a project packaged as pom, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
       <requiresDependencyResolution>test</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -330,14 +331,14 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+          <description>The java executable the generator runs under. Left unset, the goal uses the java of the jdk toolchain selected for the build, else the java of the JVM running Maven. Whichever it is must belong to a JDK 21 or later, and to the JDK javac compiles with.</description>
         </parameter>
         <parameter>
           <name>compilationId</name>
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>
@@ -356,7 +357,7 @@
     </mojo>
     <mojo>
       <goal>complete-test</goal>
-      <description>Publishes the index of what javac accepted for the test compilation and seals its inventory, after the compiler goal of the same phase succeeded.</description>
+      <description>Publishes the index of what javac accepted for the test compilation and seals its inventory, after the compiler goal of the same phase succeeded. Does nothing in a project packaged as pom, or when maven.test.skip or &lt;skip&gt; switches the test compilation off.</description>
       <requiresDependencyResolution>test</requiresDependencyResolution>
       <requiresDirectInvocation>false</requiresDirectInvocation>
       <requiresProject>true</requiresProject>
@@ -397,14 +398,14 @@
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The java executable the generator runs under. Left unset, the goal uses the selected jdk toolchain, and the JVM running Maven only when it is a JDK 21 or later.</description>
+          <description>The java executable the generator runs under. Left unset, the goal uses the java of the jdk toolchain selected for the build, else the java of the JVM running Maven. Whichever it is must belong to a JDK 21 or later, and to the JDK javac compiles with.</description>
         </parameter>
         <parameter>
           <name>compilationId</name>
           <type>java.lang.String</type>
           <required>false</required>
           <editable>true</editable>
-          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one.</description>
+          <description>The identity of this compilation. Left unset, the goal uses groupId:artifactId:main for the main source set and groupId:artifactId:test for the test one. A value that is set is used as it is, whatever the source set: given through the graphmaquina.compilationId property, which every goal of this plugin reads, it gives the main and the test compilation the same identity.</description>
         </parameter>
       </parameters>
       <configuration>

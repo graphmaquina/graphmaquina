@@ -36,17 +36,19 @@ import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
- * Contract of the reaction views. A reaction never propagates its failure to the commit that triggered it,
- * so the two questions a test asks — "did this commit's own re-evaluations abort?" and "did anything abort
- * anywhere below it?" — are kept apart and each is pinned here. Selection is by entity identity rather than
- * equality, an outcome published untyped is never cast without checking it against the key, every mismatch
- * is read off the fields of the {@link GraphAssertionError} rather than off its type alone, and every public
- * expectation whose subject can be null gets its own null-subject case.
+ * Contract of the reaction views. An exception thrown by a reaction never propagates to the commit that
+ * triggered it, so the two questions a test asks — "did this commit's own re-evaluations abort?" and "did
+ * anything abort anywhere below it?" — are kept apart and each is pinned here. Selection is by entity identity
+ * rather than equality, an outcome published untyped is never cast without checking it against the key, every
+ * mismatch is read off the fields of the {@link GraphAssertionError} rather than off its type alone, except in
+ * the few cases that only need a check to fail, and every public expectation whose subject can be null gets its
+ * own null-subject case.
  */
 class ReactionAssertionsTest {
 
@@ -116,6 +118,16 @@ class ReactionAssertionsTest {
         assertEquals("aborted reaction", error.property());
         assertEquals("none", error.expected());
         assertSame(cause, error.actual());
+    }
+
+    @Test
+    void hasNoAbortedChainsTheCauseOfTheAbortItNames() {
+        Entity entity = new Entity("e", State.READY);
+        IllegalStateException cause = new IllegalStateException("down");
+        ReactionsAssert view =
+                ReactionsAssert.assertThat(List.of(new Reaction.Aborted(TestDomain.KEY, entity, cause)));
+        GraphAssertionError error = assertThrows(GraphAssertionError.class, view::hasNoAborted);
+        assertSame(cause, error.getCause());
     }
 
     @Test
@@ -210,9 +222,9 @@ class ReactionAssertionsTest {
      * subtrees are isomorphic and no path, cause or verdict can tell "descended twice" from "descended
      * once". A shared-outcome chain is where the difference becomes measurable. Thirty levels, each one a
      * pair of reactions over the SAME child outcome, is 31 outcomes to visit with the identity set and
-     * 2^30 frames without it; and a {@code HashSet} in its place is no better, because hashing one of
-     * these outcomes walks the same doubling tree. Either mutation turns this assertion into a hang, so
-     * the deadline is what kills them.
+     * 2^31 - 1 reactions to visit without it; and a {@code HashSet} in its place is no better, because
+     * hashing one of these outcomes walks the same doubling tree. Either mutation turns this assertion into
+     * a hang, so the deadline is what kills them.
      */
     @Test
     void aSharedOutcomeIsDescendedIntoOnceSoADeepSharedGraphStaysLinear() {
@@ -399,6 +411,65 @@ class ReactionAssertionsTest {
                 TransitionAbortedException.class, cause);
     }
 
+    // --- a narrowed view keeps where it came from -------------------------------------------------------
+
+    @Test
+    void aNestedOutcomeNamesThePathToTheReactionItCameFrom() {
+        Entity entity = new Entity("e", State.READY);
+        ReactionAssert<Entity, State, Id> reaction = single(done(entity, applied(entity)), entity);
+        String where = "reactions for " + TestDomain.KEY + "[0].outcome";
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reaction.isDone().outcome().from(State.READY)), where, "from", State.READY, State.NEW);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reaction.isDone().outcome().isApplied().movedTo(State.NEW)),
+                where + " (applied)", "moved to", State.NEW, State.READY);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reaction.isDone().outcome().isApplied().reactions().hasSize(1)),
+                where + " (applied).reactions", "size", 1, 0);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reaction.isDone().outcome().isApplied().records().hasSize(1)),
+                where + " (applied).records", "size", 1, 0);
+    }
+
+    /**
+     * One abort, reached by the direct check of a narrowed nested list and by the recursive check of the root, is
+     * named by the path each of them took to reach it. Reading the nested list of reaction 1 as if it were the
+     * root would name the abort {@code reactions[0]}, which in the root list is a reaction that did not abort.
+     */
+    @Test
+    void anAbortBelowANarrowedOutcomeIsNamedByThePathOfTheViewThatFoundIt() {
+        Entity entity = new Entity("e", State.READY);
+        IllegalStateException cause = new IllegalStateException("nested boom");
+        Outcome.Applied<Entity, State, Id> aborting = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE,
+                State.READY, List.of(), List.of(new Reaction.Aborted(TestDomain.KEY, entity, cause)));
+        List<Reaction> root = List.of(
+                done(entity, new Outcome.Ignored<>(entity, State.READY, IgnoreReason.NO_RULE_MATCHED)),
+                done(entity, aborting));
+        String nested = "reactions for " + TestDomain.KEY + "[1].outcome (applied).reactions";
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> ReactionsAssert.assertThat(root).forEntity(TestDomain.KEY, entity).atIndex(1)
+                                .isDone().outcome().isApplied().reactions().hasNoAborted()),
+                nested + "[0]", "aborted reaction", "none", cause);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                        () -> ReactionsAssert.assertThat(root).hasNoAbortedRecursively()),
+                "reactions[1].outcome.reactions[0]", "aborted reaction", "none", cause);
+    }
+
+    @Test
+    void theRecursiveCheckOfANestedListStartsFromThePathOfThatList() {
+        Entity entity = new Entity("e", State.READY);
+        IllegalStateException cause = new IllegalStateException("deepest");
+        Outcome.Applied<Entity, State, Id> grandchild = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE,
+                State.READY, List.of(), List.of(new Reaction.Aborted(TestDomain.KEY, entity, cause)));
+        Outcome.Applied<Entity, State, Id> child = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE,
+                State.READY, List.of(), List.of(done(entity, grandchild)));
+        ReactionsAssert nested = ReactionsAssert.assertThat(List.of(done(entity, child)))
+                .forEntity(TestDomain.KEY, entity).single().isDone().outcome().isApplied().reactions();
+        assertFailure(assertThrows(GraphAssertionError.class, nested::hasNoAbortedRecursively),
+                "reactions for " + TestDomain.KEY + "[0].outcome (applied).reactions[0].outcome.reactions[0]",
+                "aborted reaction", "none", cause);
+    }
+
     // --- the localized cast ---------------------------------------------------------------------------
 
     @Test
@@ -426,7 +497,8 @@ class ReactionAssertionsTest {
     /**
      * A failed outcome names three states that can diverge — its origin, the destination it was heading for
      * and the route it committed — and every outcome but an ignored one names the identifier it was asked
-     * for. Only a raw construction can carry a foreign enum in one of them, and each is checked on its own.
+     * for. Only a raw construction can carry a foreign enum in one of them: here one in the route of a failed
+     * outcome and one in the identifier of a rejected one, each checked on its own.
      */
     @Test
     @SuppressWarnings({"rawtypes", "unchecked"})
@@ -445,6 +517,29 @@ class ReactionAssertionsTest {
                         + " but was " + Optional.of(Flag.ON),
                 assertThrows(IllegalArgumentException.class,
                         () -> CheckedTypes.outcome(TestDomain.KEY, foreignTransition)).getMessage());
+    }
+
+    /**
+     * A failed outcome names a second identifier of the machine, the recovery edge it was routed through, and
+     * the typed outcome the check returns fails with a {@link ClassCastException} wherever that identifier is
+     * read as the machine's own. Only a raw construction can carry a foreign one, and it is refused like the
+     * other values the key describes, while a recovery identifier of the machine passes and the outcome comes
+     * back as it was.
+     */
+    @Test
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    void aForeignRecoveryIdentifierIsNeverCast() {
+        Entity entity = new Entity("e", State.READY);
+        Outcome<?, ?, ?> own = new Outcome.Failed<>(entity, State.NEW, Id.PREPARE, State.READY, Id.RECOVER,
+                State.FAILED, "boom", Optional.empty(), List.of(), List.of());
+        assertSame(own, CheckedTypes.outcome(TestDomain.KEY, own));
+        Outcome<?, ?, ?> foreignRecovery = (Outcome<?, ?, ?>) new Outcome.Failed(
+                entity, State.NEW, Id.PREPARE, State.READY, Switch.FLIP, State.FAILED, "boom", Optional.empty(),
+                List.of(), List.of());
+        assertEquals("outcome does not belong to the machine: transitions expected " + Id.class
+                        + " but was " + Switch.FLIP,
+                assertThrows(IllegalArgumentException.class,
+                        () -> CheckedTypes.outcome(TestDomain.KEY, foreignRecovery)).getMessage());
     }
 
     @Test
@@ -490,6 +585,21 @@ class ReactionAssertionsTest {
         Outcome<Entity, State, Id> outcome = new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
                 List.of(), List.of());
         OutcomeAssert.assertThat(outcome).isApplied().reactions().isEmpty();
+    }
+
+    /**
+     * A subject built by hand may hold a null; the view skips it, since it is neither an aborted reaction, nor a
+     * source of nested ones, nor selected by any entity, and never crashes on it.
+     */
+    @Test
+    void aNullReactionInTheSubjectIsNeverACrash() {
+        Entity entity = new Entity("e", State.READY);
+        ReactionsAssert view =
+                ReactionsAssert.assertThat(new ArrayList<>(Arrays.asList(done(entity, applied(entity)), null)));
+        assertSame(view, view.hasSize(2));
+        assertSame(view, view.hasNoAborted());
+        assertSame(view, view.hasNoAbortedRecursively());
+        view.forEntity(TestDomain.KEY, entity).single().isDone().outcome().isApplied().movedTo(State.READY);
     }
 
     // --- null subjects: one case per expectation whose subject can be absent --------------------------
@@ -616,7 +726,9 @@ class ReactionAssertionsTest {
     void aWatchThatMatchesNoRuleIsADoneReactionWithAnIgnoredOutcome() {
         Shipment shipment = new Shipment("s1", ShipmentStatus.OPEN);
         Parcel first = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
-        new Parcel("p2", ParcelStatus.LOADING, Optional.of(shipment));
+        Parcel second = new Parcel("p2", ParcelStatus.LOADING, Optional.of(shipment));
+        // Building a parcel registers it with its shipment, and this second one stays loading, so no rule holds.
+        assertEquals(List.of(first, second), shipment.parcels());
 
         try (MachineRegistry registry = registry()) {
             Outcome<Parcel, ParcelStatus, Loading> outcome =
@@ -659,7 +771,10 @@ class ReactionAssertionsTest {
     private static final MachineKey<Parcel, ParcelStatus, Loading> PARCELS =
             MachineKey.of(Parcel.class, ParcelStatus.class, Loading.class);
 
-    /** States of {@link Other}, an enum that belongs to no machine the assertions here narrow to. */
+    /**
+     * States of the machine over {@link Other}, whose key is not {@code TestDomain.KEY}: a selection by
+     * {@code TestDomain.KEY} skips its reactions, and a cast to that key refuses its outcomes.
+     */
     enum Flag { OFF, ON }
 
     /** Transition identifiers of the machine over {@link Flag}. */
@@ -668,7 +783,10 @@ class ReactionAssertionsTest {
     /** Entity of a second machine, so a selection has something of another key to skip. */
     record Other(String id) { }
 
-    /** A second state enum of {@link Entity}: one entity class belongs to as many machines as it has states. */
+    /**
+     * A second state enum of {@link Entity}, which makes it the entity of a second machine: a registry holds at
+     * most one machine per entity class and state enum.
+     */
     enum Shelf { OUT, IN }
 
     /** Transition identifiers of the machine over {@link Shelf}. */
@@ -778,7 +896,8 @@ class ReactionAssertionsTest {
 
     /**
      * {@code depth} nested outcomes where every level holds the SAME child outcome twice: linear to build
-     * and to visit once, and a tree of 2^depth reactions to anything that visits a shared outcome twice.
+     * and to visit once, and 2^depth paths down to the innermost outcome for anything that visits a shared
+     * outcome twice.
      */
     private static Outcome<Entity, State, Id> sharedChain(Entity entity, int depth) {
         Outcome<Entity, State, Id> level = applied(entity);
