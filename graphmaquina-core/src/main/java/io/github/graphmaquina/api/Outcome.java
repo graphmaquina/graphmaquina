@@ -26,6 +26,20 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     Optional<T> requestedTransition();
 
     /**
+     * Why this outcome is what it is: its variant, refined by the kind of a rejection and by the reason a
+     * reevaluation selected nothing.
+     */
+    OutcomeCode code();
+
+    /**
+     * Which variant this is, as the status of {@link #code()}. Inside a cascade, {@link OutcomeStatus#APPLIED} and
+     * {@link OutcomeStatus#FAILED} are provisional: they are written only if the root commits.
+     */
+    default OutcomeStatus status() {
+        return code().status();
+    }
+
+    /**
      * The selected edge ran. Returned by a root call, it committed: {@code records} holds every hop the root
      * committed, cascaded ones included, in log order, and {@code reactions} the watch reactions of that commit.
      * Returned by a cascade, it is written only if its root commits, and both lists are empty.
@@ -48,6 +62,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         public Optional<T> requestedTransition() {
             return Optional.of(transition);
         }
+
+        @Override
+        public OutcomeCode code() {
+            return OutcomeCode.APPLIED;
+        }
     }
 
     /** A reevaluation that selected no edge: no watch on the state, or no rule of its watch held. */
@@ -61,6 +80,14 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         @Override
         public Optional<T> requestedTransition() {
             return Optional.empty();
+        }
+
+        @Override
+        public OutcomeCode code() {
+            return switch (reason) {
+                case NO_WATCH -> OutcomeCode.NO_WATCH;
+                case NO_RULE_MATCHED -> OutcomeCode.NO_RULE_MATCHED;
+            };
         }
     }
 
@@ -94,6 +121,14 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         public Optional<T> requestedTransition() {
             return Optional.of(transition);
         }
+
+        @Override
+        public OutcomeCode code() {
+            return switch (kind) {
+                case NO_TRANSITION -> OutcomeCode.NO_TRANSITION;
+                case GUARD -> OutcomeCode.GUARD_REJECTED;
+            };
+        }
     }
 
     /**
@@ -124,6 +159,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         @Override
         public Optional<T> requestedTransition() {
             return Optional.of(transition);
+        }
+
+        @Override
+        public OutcomeCode code() {
+            return OutcomeCode.FAILURE_ROUTED;
         }
     }
 }
