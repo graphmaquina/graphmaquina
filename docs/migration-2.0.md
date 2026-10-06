@@ -496,7 +496,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   tasks on its thread, as `CompletableFuture`'s own wait could, on a common-pool worker for instance, where such a
   task could fail with `ReentrantTransitionException`, keep the wait past its timeout, or cascade through the
   root's context. A task the stage needs must now run on another worker, so on a pool whose other workers are all
-  busy, or blocked where the pool cannot see it, the wait can run to its timeout. A pool that refuses to let its
+  busy, or blocked where the pool cannot see them, the wait can run to its timeout. A pool that refuses to let its
   worker block now aborts the transition, with its `RejectedExecutionException` as the cause; that exception used
   to escape the call.
 - **Standalone machines.** `StateMachines.Builder.build()` registers the `as(...)` facade and dispatches the
@@ -536,10 +536,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
   the companion's package cannot access (`SG505`, `SG509`, `SG510`); two machines of one set that write the
   same entity and state enum (`SG510`); an instance method, declared or inherited, abstract or default, with the
   signature of the companion's static `graph(...)` on a facade (`SG504`) or `builder(...)` on a set (`SG510`),
-  each reported only once the machine, or the set's accessors and machines, have no other error; a name the
-  companion writes whose first segment a type, member type or constant of its scope takes, so that no spelling
-  reaches it (`SG603`); and a machine javac compiled implicitly, from the source path, that the export index or a
-  set names (`SG602`). The index case used to publish nothing and report nothing.
+  the former reported once the facade's declarations have no other error and none of its vocabulary is misplaced,
+  the latter only once the set's accessors and machines have no other error; a name the companion writes whose first
+  segment a type, member type or constant of its scope takes, so that no spelling reaches it (`SG603`); and a
+  machine javac compiled implicitly, from the source path, that the export index or a set names (`SG602`). The index
+  case used to publish nothing and report nothing.
 - **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a
   member type of the facade named like a type they write, with parameter names that would have been keywords,
   with deprecated bound members under `-Werror`, with a cast whose type annotations name enum constants, beside
@@ -615,28 +616,35 @@ observe. Most items refuse up front what used to fail later, in generated code o
   execution's `<compilerArgs>` replace the plugin-level ones, as Maven merges them, where both used to be read.
   The plugin's descriptor declares Java 21 as the Java version it requires.
 - **Maven: more refusals.** Also refused before anything is retired: a `-processorpath` or `--processor-path`
-  compiler argument, the last one given, that does not reach the processor through its entries, a jar's manifest
-  `Class-Path`, as a pathing jar's, or a multi-release jar's versioned entries; a `--processor-module-path`; with
-  a javac whose JDK declares release 23 or later, a processor that is only a dependency when neither
-  `-proc:full`, `-proc:only` nor a `-processor` list requests processing, since such a javac then runs no
-  processor it finds on the class path; a `<debuglevel>` or `-g:` arguments that leave out `source`, which drops
-  the `SourceFile` attribute; an `<outputDirectory>`, `maven.compiler.outputDirectory`, `<multiReleaseOutput>true`
-  or last `-d` argument that moves the classes, and a last `-s` argument that moves the processor's sources;
-  `<compileSourceRoots>` without the generated directory; and a `<testIncrementalExcludes>` or main
-  `<incrementalExcludes>` pattern that matches the compilation carrier.
+  compiler argument, the last one given, that, once evaluated, holds no `${` and does not reach the processor
+  through its entries, a jar's manifest `Class-Path`, as a pathing jar's, or the versioned entries a multi-release
+  jar holds for the release of javac's JDK, any of them when its `release` file declares none; a
+  `--processor-module-path`; with a javac whose JDK declares release 23 or later, a processor that is only a
+  dependency when neither `-proc:full`, `-proc:only` nor a `-processor` list requests processing, since such a javac
+  then runs no processor it finds on the class path; a `<debuglevel>` or `-g:` arguments that leave out `source`,
+  which drops the `SourceFile` attribute; an `<outputDirectory>`, `maven.compiler.outputDirectory`,
+  `<multiReleaseOutput>true` or last `-d` argument that moves the classes, and a last `-s` argument that moves the
+  processor's sources; `<compileSourceRoots>` without the generated directory; and a `<testIncrementalExcludes>` or
+  main `<incrementalExcludes>` pattern that matches the compilation carrier.
 - **Maven: settings read as the compiler applies them.** `<testIncrementalExcludes>` narrow the test sources the
   generator reads, so it no longer fails with `SG601` on a source javac never compiles; the compiler's
   `<compileSourceRoots>` are the roots the generator parses, an empty element standing for the project's; an
-  empty `<annotationProcessorPaths/>` counts as no processor path, where it used to be refused; an empty
-  `<jdkToolchain/>` selects the first jdk toolchain of the build, as the compiler does, where it used to be
-  ignored; include and exclude patterns match as plexus-utils matches them, `%ant[...]` and `%regex[...]`
-  included; compiler arguments are evaluated as Maven evaluates them, `${settings.localRepository}` for instance;
-  and on Windows a `javaExecutable` without an extension stands for the `.exe` beside it.
+  empty `<annotationProcessorPaths/>` counts as no processor path, where it used to be refused; a `-processorpath`
+  or `--processor-path` argument, the last one given, that reaches the processor is accepted where
+  `<annotationProcessorPaths>`, or without one the dependencies, leave the processor out, which used to be refused;
+  an empty `<jdkToolchain/>` selects the first jdk toolchain of the build, as the compiler does, where it used to be
+  ignored; include and exclude patterns match as plexus-utils matches them, `%ant[...]` and `%regex[...]` included;
+  compiler arguments are evaluated as Maven evaluates them, as far as that can be told when the checks run,
+  `${settings.localRepository}` for instance, and one that is a single expression Maven turns into nothing, such as
+  `${project.file}`, is left out, as javac never gets it; and on Windows a `javaExecutable` without an extension
+  stands for the `.exe` beside it.
 - **Maven: paths.** A relative manifest path is resolved where javac runs, in the directory Maven was started in
   or, for a forked javac, in the project directory, so a module of a build started from its parent is refused
   up front, where javac used to fail on it after the preparation. Paths are compared with their symbolic links
-  resolved, as javac resolves them, so `mvn -f <link>/pom.xml` is checked like a build of the real directory,
-  and the published index's source positions do not depend on how a source root is spelled.
+  resolved, as javac resolves them, so `mvn -f <link>/pom.xml` is checked like a build of the real directory and
+  publishes the same source positions, unless the absolute path of `<link>` has fewer names than the `..` that lead
+  from the real directory up to a source root outside it: the positions of that root's sources then differ, though,
+  read lexically from `<link>`, they still lead to them.
 - **Gradle.** `prepare-compile` refuses, before it retires anything: `options.failOnError = false`, `-proc:only`
   or `-proc:none` as the last `-proc:` option, an `options.annotationProcessorPath` that is empty or null, unless
   javac runs from the command line with a `-proc:` argument after it, a `-processor` list, the last one given,

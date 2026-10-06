@@ -579,15 +579,15 @@ The adapter validates the effective Java release, processor path, manifest paths
 argument, `failOnError=false`, `useIncrementalCompilation=false`, missing processor configuration, a
 `-processor` list or `<annotationProcessors>` that leaves out
 `io.github.graphmaquina.processor.StateGraphProcessor` or holds a name that is not a valid qualified class name,
-a processor path compiler argument that does not reach the processor, a `--processor-module-path`, a processor
-that is only a dependency when javac 23 or later is not asked to process, debug settings that leave out the
-`SourceFile` attribute, classes or processor sources sent elsewhere than the project keeps them, as
-`<outputDirectory>`, `<multiReleaseOutput>`, `-d` or `-s` can, `<compileSourceRoots>` without the generated
-directory, divergent main/test manifests, compiler includes or excludes, incremental excludes included, that
-leave out the compilation carrier the generator emits, and includes that hold only empty values. A compilation
-the build switches off is skipped instead: `maven.main.skip` or `<skipMain>` makes the three main goals log that
-and do nothing, `maven.test.skip` or `<skip>` the three test goals, and a project packaged as `pom` skips all
-six. Run the normal lifecycle when generating graphs.
+a processor path compiler argument that does not reach the processor, unless it still holds a `${` once the check
+evaluates it, a `--processor-module-path`, a processor that is only a dependency when javac 23 or later is not asked
+to process, debug settings that leave out the `SourceFile` attribute, classes or processor sources sent elsewhere
+than the project keeps them, as `<outputDirectory>`, `<multiReleaseOutput>`, `-d` or `-s` can,
+`<compileSourceRoots>` without the generated directory, divergent main/test manifests, compiler includes or
+excludes, incremental excludes included, that leave out the compilation carrier the generator emits, and includes
+that hold only empty values. A compilation the build switches off is skipped instead: `maven.main.skip` or
+`<skipMain>` makes the three main goals log that and do nothing, `maven.test.skip` or `<skip>` the three test goals,
+and a project packaged as `pom` skips all six. Run the normal lifecycle when generating graphs.
 
 | Optional property | Meaning |
 | --- | --- |
@@ -2110,9 +2110,8 @@ TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
 
 Close `machines` through the application's lifecycle. A listener sees watch-reaction outcomes through their
 own calls; do not recursively emit them again from the parent's `reactions()` list. Reaction outcomes can
-arrive before the triggering root's notification. A call that throws before it returns an outcome notifies
-nothing, such as one that ends in a technical abort, a commit failure, a failing hook or an `Error` from a
-reaction.
+arrive before the triggering root's notification. A call that throws before it returns an outcome, such as one
+that ends in a technical abort, a commit failure, a failing hook or an `Error` from a reaction, notifies nothing.
 
 Any exception a listener throws, checked ones included, also surfaces as `AfterCommitException`, and its
 message says whether the call wrote state. For an ignored or rejected outcome, no state change occurred, and the
@@ -2616,7 +2615,7 @@ code runs.
 | `SG404` | A watch has no rules. In the DSL, also a `when(...)` that no `execute(...)` follows, and an `execute(...)` with no pending `when(...)`. |
 | `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
 | `SG503` | Missing or incompatible public property accessor. |
-| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes one parameter per class with instance members the machine binds, or none. That last refusal is reported only once the machine has no other error, its vocabulary included. |
+| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes one parameter per class with instance members the machine binds, or none. That last refusal is reported once the machine's declarations have no other error and none of its vocabulary is misplaced, since fixing one can change what `graph(...)` takes; an error of its graph as a whole, such as `SG202`, `SG203` or `SG701`, and a refused companion name (`SG603`) are reported beside it. |
 | `SG505` | Exported method does not uniquely fit the action, guard, hook or condition role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
 | `SG507` | Invalid transition elements: empty `from`, `onFailure` or `failsOn` without an action, or a timeout without an asynchronous action. In the DSL, also an edge never closed with `endTransition()`, and an edge that declares more than one action, `onFailure` or `timeout`. |
 | `SG508` | Watch rule must choose exactly one supported predicate alternative. |

@@ -558,8 +558,11 @@ written or retired, and every failure names what to change:
   class path, so the processor must be where javac looks:
   - a `-processorpath` or `--processor-path` compiler argument, the last one given, must reach the processor's
     class through one of its entries, resolved where javac runs, the jars the `Class-Path` of a jar's manifest
-    names, or the versioned entries of a multi-release jar. The argument is evaluated as Maven evaluates it
-    first, and a value that still holds `${` after that is not checked;
+    names, or the versioned entries a multi-release jar holds for the release the `release` file of javac's JDK
+    declares, any of them when that file declares none. The argument is evaluated first, as the compiler arguments
+    are (below): a value that evaluates to nothing is left out, so javac takes the argument after it as the path,
+    and a value that still holds `${` after that, such as a property that a plugin bound to a later phase sets, is
+    not checked;
   - otherwise `<annotationProcessorPaths>`, when it holds a path, must name
     `io.github.graphmaquina:graphmaquina-processor`; an empty `<annotationProcessorPaths/>` counts as absent, as
     it does for the compiler;
@@ -591,8 +594,8 @@ written or retired, and every failure names what to change:
   are refused; `<debug>false</debug>` passes no `-g` option and is accepted, and a `-g:` option javac cannot read
   is left to javac. The classes must also go to the project's class output: an `<outputDirectory>` (for the main
   compilation also `maven.compiler.outputDirectory`) that names another directory, `<multiReleaseOutput>true`,
-  and a last `-d` compiler argument that names another directory are refused; move the class output with
-  `<outputDirectory>` or `<testOutputDirectory>` in the `<build>` of the POM instead.
+  and a last `-d` compiler argument that names another directory, resolved where javac runs, are refused; move the
+  class output with `<outputDirectory>` or `<testOutputDirectory>` in the `<build>` of the POM instead.
 - **Source roots that hold the generated directory.** `<compileSourceRoots>` that leave out the directory the
   generator writes into are refused, since they replace the project's source roots for javac.
 - **A compilation of the whole module.** `useIncrementalCompilation` set to false, by
@@ -638,16 +641,19 @@ The checks read the compiler arguments as `maven-compiler-plugin` 3.15.0 passes 
 the deprecated `<compilerArguments>` map, sorted by key, each key once with its last value, as Maven converts
 that map; then `<compilerArgument>`; then the values of `<compilerArgs>`. The test compilation takes
 `<testCompilerArguments>` and `<testCompilerArgument>` over the first two when they are set. Each argument is
-evaluated as Maven evaluates the parameters it hands the compiler, so `${settings.localRepository}` or
-`${session.executionRootDirectory}` is completed and `$$` becomes `$`; an expression about the running goal or
-its plugin, or one Maven cannot complete, stays as it is written. A list parameter
-written as comma-separated text, such as `<compilerArgs>-Xlint:all,-Werror</compilerArgs>`, is split on every
-comma, as Maven splits it, and so are `<annotationProcessors>`, `<compileSourceRoots>` and every list of
-patterns, for these checks and, for the roots and the patterns that select sources, for the sources passed to the
-generator. `<annotationProcessors>` can therefore name its processors as text,
-`<annotationProcessors>p.First,p.Second</annotationProcessors>`, or in one element that holds a comma list,
-`<annotationProcessor>p.First,p.Second</annotationProcessor>`, as well as one name per element: javac gets the
-names joined by commas and splits them on every comma again.
+evaluated as Maven evaluates a `String` parameter it hands the compiler, as far as that can be told when the checks
+run: `${settings.localRepository}` or `${session.executionRootDirectory}` is completed, and `$$` becomes `$` in a
+value that holds no `${…}`, or after the last `${…}` of one that does. An argument that is one expression naming an
+object Maven does not take for a `String`, such as `${project.file}`, or that evaluates to an empty text, is left
+out, as javac never gets it, and a `<compilerArguments>` value that does so leaves its key alone. An expression that
+cannot be completed yet stays as it is written: one about the running goal or its plugin, or a property not set when
+the checks run, which a plugin bound to a later phase may still set. A list parameter written as comma-separated
+text, such as `<compilerArgs>-Xlint:all,-Werror</compilerArgs>`, is split on every comma, as Maven splits it, and so
+are `<annotationProcessors>`, `<compileSourceRoots>` and every list of patterns, for these checks and, for the roots
+and the patterns that select sources, for the sources passed to the generator. `<annotationProcessors>` can
+therefore name its processors as text, `<annotationProcessors>p.First,p.Second</annotationProcessors>`, or in one
+element that holds a comma list, `<annotationProcessor>p.First,p.Second</annotationProcessor>`, as well as one name
+per element: javac gets the names joined by commas and splits them on every comma again.
 
 The processor-list check refuses only a list that leaves out the StateGraph processor or holds a name that is
 not a valid qualified class name. Other mistakes in a processor list are javac's to report, such as a
@@ -679,8 +685,8 @@ inventory it left.
 | "the StateGraph generator needs a Java 21 toolchain or later" (Gradle), "…needs Java 21 or later, but … belongs to Java …" (Maven) | raise the Gradle toolchain to 21+, or point Maven's `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
 | "…needs the jdk.compiler module…" | the Gradle toolchain, or Maven's `graphmaquina.javaExecutable` or `jdk` toolchain, has no `javac` beside its `java`: it is a runtime, or, in Maven, a launcher outside a JDK's `bin` directory. Point it at a full JDK 21 or later, in Maven at the `java` in that JDK's `bin`. |
 | "…The two must be the same JDK…" | the generator's `java` and javac belong to different JDK homes. Point `graphmaquina.javaExecutable` at the `java` in the `bin` directory of the JDK javac compiles with, not at a wrapper launcher, or have javac compile with the generator's JDK. |
-| "…is not on the `<annotationProcessorPaths>` …" | the processor is missing from the compiler's processor path; declare it after Lombok. |
-| "…gives javac the processor path it takes, the only place it then looks for annotation processors, and no entry of it holds…" (Maven) | a `-processorpath` or `--processor-path` compiler argument does not reach the processor. Add the processor's jar and the jars it depends on to that path, or remove the argument and declare the processor in `<annotationProcessorPaths>`. |
+| "…is not on the `<annotationProcessorPaths>` …", "…is not on the dependencies of this project, and the … declares no path in `<annotationProcessorPaths>`…" (Maven) | the processor is missing from the compiler's processor path, or, when the execution declares none, from the project's dependencies. Declare it in `<annotationProcessorPaths>`, after Lombok. |
+| "…gives javac the processor path it takes, the only place it then looks for annotation processors, and that path reaches no …StateGraphProcessor.class…" (Maven) | a `-processorpath` or `--processor-path` compiler argument does not reach the processor. When the path the message names is another compiler argument, the value after the option is missing or evaluated to nothing, as `${project.file}` does, so javac takes the next argument as the path. Add the processor's jar and the jars it depends on to that path, or remove the argument and declare the processor in `<annotationProcessorPaths>`. |
 | "…makes javac look for annotation processors on a module path…" (Maven) | remove the `--processor-module-path` argument, and declare the processor in `<annotationProcessorPaths>`. |
 | "…is only a dependency of this project…: from Java 23 on, javac runs no annotation processor it finds on the class path unless annotation processing is requested…" (Maven) | configure `<proc>full</proc>` for that execution, or declare the processor in `<annotationProcessorPaths>`, after Lombok. |
 | "…switches annotation processing off…" | remove `proc=none` / `-proc:none`. |
@@ -690,7 +696,7 @@ inventory it left.
 | "…compile only the sources whose class file is missing or older than the source…" | `useIncrementalCompilation` is set to false. Leave it at its default, `true`. |
 | "…select no …/GraphCompilation….java…", "…leaves out …/GraphCompilation….java…" | the compiler's includes or excludes leave out the compilation carrier. Add `<include>io/github/graphmaquina/generated/**</include>`, or change the exclude so it matches nothing under `io/github/graphmaquina/generated`. |
 | "…hold only empty values, which Maven turns into null…" | the compiler's includes hold only empty values, so it would select no source. Remove those empty values, so that `maven-compiler-plugin` includes every source. |
-| "…reads the annotation manifest X…, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. A relative path is resolved where javac runs, so in a module of a build started from its parent it names another file; the printed argument is absolute. |
+| "…reads the annotation manifest X…, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. A relative path is resolved where javac runs, so, when javac compiles inside Maven, in a module of a build started from its parent it names another file; the printed argument is absolute. |
 | "…javac write the class files of … without the SourceFile attribute…" (Maven) | a `<debuglevel>` or a `-g:` compiler argument leaves `source` out. Remove that setting, or have one `-g:` option list `source`, as `<debuglevel>lines,vars,source</debuglevel>` does. |
 | "…write its classes …, while StateGraph completes this compilation in …" (Maven) | an `<outputDirectory>`, `maven.compiler.outputDirectory`, `<multiReleaseOutput>true` or a `-d` compiler argument moves the classes. Remove it, or move the project's class output with `<outputDirectory>` or `<testOutputDirectory>` in `<build>`. |
 | "…makes the annotation processor write its sources to …" (Maven) | a `-s` compiler argument names another directory than the processor's generated-sources directory. Remove that argument. |
