@@ -322,8 +322,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /**
      * Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected. Any
-     * Exception a hook throws, checked ones included, becomes an AfterCommitException of the call, naming the hop and
-     * carrying every hop the call committed; an Error propagates unchanged.
+     * throwable a hook throws that is not an Error, checked ones included, becomes an AfterCommitException of the call,
+     * naming the hop and carrying every hop the call committed; an Error propagates unchanged.
      */
     private void runHooks(Transaction tx, List<TransitionRecord<?, ?, ?>> records, List<LogEntry> committed) {
         for (LogEntry entry : committed) {

@@ -19,11 +19,10 @@ import lombok.NonNull;
  *     identity or state could not be read
  * @param transition the identifier that was requested, if the abort happened after reading it
  * @param to the destination of the resolved edge, present only once one was selected
- * @param action the action whose own run caused the abort, when one did; absent for a guard, a rejection, the
- *     watch chain limit and an abort raised for the caller of a cascade or a peer read, even when that caller is a
- *     running action,
- *     and the abort the engine raises when its own code lets a failure through, which names no action even while
- *     one ran
+ * @param action the action whose own run caused the abort, when one did; absent for a guard, a rejection, the watch
+ *     chain limit and an abort raised for the caller of a cascade or a peer read, even when that caller is a running
+ *     action, and the abort the engine raises when its own code lets a failure through, which names no action even
+ *     while one ran
  * @param cascadePath the entities in flight, outermost first
  * @param journal the actions that ran, in order, with their status
  */

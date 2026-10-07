@@ -1424,9 +1424,9 @@ written. [Handle a failed call](#handle-a-failed-call) shows how to read them.
   reactions even when the root operation succeeded. `Reaction.Aborted` can also report a hook failure after the reaction
   itself committed; it is not proof that the reaction left state unchanged. A reevaluation that failed carries its
   `CallFailedException`, whose `statesWritten()` says whether the reaction wrote anything. An owner lookup fails before
-  any reevaluation, so the reaction carries what it threw, a checked exception or any other throwable that is not an
-  `Error` wrapped in `UndeclaredThrowableException`. An `Error` is not caught: it propagates to the caller whose commit
-  triggered the reaction.
+  any reevaluation, so the reaction carries what it threw: a `RuntimeException` as it is, and a checked exception or any
+  other throwable that is neither a `RuntimeException` nor an `Error` wrapped in `UndeclaredThrowableException`. An
+  `Error` is not caught: it propagates to the caller whose commit triggered the reaction.
 
 ### Handle a failed call
 
@@ -2034,7 +2034,9 @@ refuses before any element runs, or an identifier from another machine's catalog
 once, before any element runs, and never reads it again, so elements added or removed while the cascade runs change
 neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
 propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
-facade operation from inside an action: nested facade entry points violate the runtime's reentrancy rules.
+facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
+reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
+runs tasks inline.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.
@@ -2127,10 +2129,10 @@ transaction. A reaction failure does not roll back the peer commit that triggere
 The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the engine
 evaluates the watch, before that root starts, and may not start a transition on their own thread: `execute` or
 `reevaluate` called from one of them throws `ReentrantTransitionException`; a call submitted through `async(...)` runs
-as a separate call on the executor's thread. Inside a reevaluation, the refusal ends the reevaluation in a
-`TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as `Reaction.Aborted` and
-a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so its reaction carries the
-refusal itself.
+as a separate call on the executor's thread, unless that executor runs tasks inline, which refuses it the same way.
+Inside a reevaluation, the refusal ends the reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that
+carries it: a reaction reports the abort as `Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An
+owner lookup runs before the reevaluation, so its reaction carries the refusal itself.
 
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
@@ -2250,20 +2252,19 @@ TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
 ```
 
 Each call notifies `onStarted` once, then exactly one of `onCompleted` and `onFailed`, on the thread that runs it,
-before the operation returns or throws. `MachineCall` names the machine, the entity, the requested identifier
-(empty for `reevaluate`) and whether a watch reaction made the call. Its `toString()` never prints the entity, and
-the same instance reaches every event of the call. A reaction starts and ends inside the call that triggered it,
-so events nest like a stack on their thread. `onFailed`
-receives the very throwable the caller gets, with the phase the call was in and how far it got in writing states;
-an `Error` is reported too, then propagates.
+before the operation returns or throws. `MachineCall` names the machine, the entity, the requested identifier (empty for
+`reevaluate`) and whether a watch reaction made the call. Its `toString()` never prints the entity, and the same
+instance reaches every event of the call. A reaction starts and ends inside the call that triggered it, so events nest
+like a stack on their thread. `onFailed` receives the very throwable the caller gets, with the phase the call was in and
+how far it got in writing states; an `Error` is reported too, then propagates.
 
 An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
 `System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
 propagates. It cannot start a transition on its own thread either: an operation called from an observer throws
 `ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread as
-a call of its own. When a failure must fail the call, write a hook, or a `Definition.afterCommit` default for every edge
-of a machine. Observers run on the thread of every call, so keep them thread-safe and quick. Add as many as you need:
-they are notified in the order they were added.
+a call of its own, unless that executor runs tasks inline, which refuses it the same way. When a failure must fail the
+call, write a hook, or a `Definition.afterCommit` default for every edge of a machine. Observers run on the thread of
+every call, so keep them thread-safe and quick. Add as many as you need: they are notified in the order they were added.
 
 ## Concurrency, identity and persistence
 

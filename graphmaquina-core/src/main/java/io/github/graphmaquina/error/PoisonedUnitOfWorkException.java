@@ -17,15 +17,14 @@ import lombok.Getter;
  * poisons through an abort of the caller's step that names the cascade and carries it as cause, and the action receives
  * that abort, or the Error itself. A cascade that names an unknown machine, by key or by facade type, poisons too, and
  * {@code cascadeAll} refuses it that way even over an empty collection. COLLECT handles one case differently: it rolls
- * back an element that ends in a transition abort of the call, unless a nested cascade of that element poisoned
- * the transaction with a failure that is no failure of the call, and poisons once, with the aggregate, after the last
- * element.
- * Nothing else poisons. Refusing a cascade's arguments happens before anything is staged, and a peer read stages
- * nothing. A null argument or element, or an exception or an Error the collection throws while {@code cascadeAll}
- * copies it, comes before the machine is resolved, so even with an unknown machine it poisons nothing. An identifier
- * from another machine's catalogue is refused, without poisoning, as soon as that catalogue is known: before the lookup
- * for a key, which carries it, and once the facade has resolved for a facade type, so an unknown facade is refused
- * first, and poisons.
+ * back an element that ends in a transition abort of the call, unless a nested cascade of that element poisoned the
+ * transaction with a failure that is no failure of the call, and poisons once, with the aggregate, after the last
+ * element. Nothing else poisons. Refusing a cascade's arguments happens before anything is staged, and a peer read
+ * stages nothing. A null argument or element, or an exception or an Error the collection throws while
+ * {@code cascadeAll} copies it, comes before the machine is resolved, so even with an unknown machine it poisons
+ * nothing. An identifier from another machine's catalogue is refused, without poisoning, as soon as that catalogue is
+ * known: before the lookup for a key, which carries it, and once the facade has resolved for a facade type, so an
+ * unknown facade is refused first, and poisons.
  *
  * <p>A poisoned transaction never commits. When the action that caught the failure returns, returns a failure,
  * throws an exception its failsOn lists, or lets a failure of the call through, this exception included, the engine

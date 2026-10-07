@@ -7,15 +7,15 @@ import lombok.NonNull;
 
 /**
  * execute or reevaluate was called on a thread that is already running a root transaction, evaluating a watch or
- * notifying an observer, from one of the callbacks that run there: a guard, an action, a state accessor or an
- * identity function inside the transaction; a watch's peersOf, ownerOf or condition, or a state accessor or identity
- * function the engine calls while it evaluates the watch; or a registry observer's callback. A thread runs one
- * transition at a time, whatever the machine or the entity of the second call, and a watch selects an edge without
- * running one. Only an action can move other entities inside the transaction, through its context's cascade.
- * After-commit hooks run once the transaction has released the thread, so they can start transitions;
- * a watch reaction runs the edge its rule selected as a root of its own, once the watch's functions are done.
- * A call that one of those callbacks submits through {@code async(...)} runs as a separate call on the executor's
- * thread.
+ * notifying an observer, from one of the callbacks that run there: a guard, an action, a state accessor or an identity
+ * function inside the transaction; a watch's peersOf, ownerOf or condition, or a state accessor or identity function
+ * the engine calls while it evaluates the watch; or a registry observer's callback. A thread runs one transition at a
+ * time, whatever the machine or the entity of the second call, and a watch selects an edge without running one. Only an
+ * action can move other entities inside the transaction, through its context's cascade. After-commit hooks run once the
+ * transaction has released the thread, so they can start transitions; a watch reaction runs the edge its rule selected
+ * as a root of its own, once the watch's functions are done. A guard, an action, a watch function, a state accessor, an
+ * identity function or an observer callback that submits a call through {@code async(...)} gets a separate call on the
+ * executor's thread, unless that executor runs tasks inline, which refuses the call the same way.
  */
 @Getter
 public final class ReentrantTransitionException extends StateMachineException {

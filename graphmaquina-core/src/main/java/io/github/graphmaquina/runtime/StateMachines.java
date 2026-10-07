@@ -42,8 +42,8 @@ public final class StateMachines {
         private boolean used;
 
         /**
-         * Setters must be total: one that throws an Exception breaks the atomicity of phase 2 and ends the call with a
-         * {@code CommitFailedException}.
+         * Setters must be total: one that throws a throwable that is not an Error breaks the atomicity of phase 2 and
+         * ends the call with a {@code CommitFailedException}.
          */
         public Builder<E, S, T> state(Function<? super E, ? extends S> getter,
                                       BiConsumer<? super E, ? super S> setter) {
