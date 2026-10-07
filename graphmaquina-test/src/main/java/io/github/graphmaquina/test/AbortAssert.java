@@ -88,8 +88,9 @@ public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
     }
 
     /**
-     * The abort raised before the entity's state was read, by an {@code execute} asked for {@code transition}: the
-     * entity's identity or its state could not be read, so it reports neither a state nor a destination.
+     * The abort raised before the entity's state was read, by an {@code execute} asked for {@code transition}, or by
+     * the edge {@code transition} a reevaluation selected: the entity's identity or its state could not be read, so it
+     * reports neither a state nor a destination.
      */
     public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnreadState(MachineKey<E, S, T> key, E entity,
             T transition) {

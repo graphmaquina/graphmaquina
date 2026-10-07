@@ -2089,8 +2089,8 @@ transaction. A reaction failure does not roll back the peer commit that triggere
 
 The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the
 engine evaluates the watch, before that root starts, and may not start a transition themselves: `execute` or
-`reevaluate` called from one of them throws `ReentrantTransitionException`. Inside a reevaluation that ends it in a
-`TransitionAbortedException` of phase `RESOLVE` that carries the refusal: a reaction reports the abort as
+`reevaluate` called from one of them throws `ReentrantTransitionException`. Inside a reevaluation, the refusal ends the
+reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as
 `Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation,
 so its reaction carries the refusal itself.
 
@@ -2231,9 +2231,9 @@ Add as many as you need: they are notified in the order they were added.
 ### Initialize and protect state
 
 The entity owns its state. Initialize it in the constructor or field declaration, and persist it with your
-normal entity mapping. A null state ends the call in a `TransitionAbortedException`
-of phase `RESOLVE` whose cause is an `UninitializedStateException`; the runtime does not silently replace it with
-the graph's initial state.
+normal entity mapping. A null root state ends the call in a `TransitionAbortedException`
+of phase `RESOLVE` whose cause is an `UninitializedStateException`, and a cascaded peer's in one of phase `ACTION`;
+the runtime does not silently replace it with the graph's initial state.
 
 During a transition, only the runtime should call the state setter. It checks state again before commit to
 catch action code or outside code that changed it unexpectedly. This check is not a lock: your application

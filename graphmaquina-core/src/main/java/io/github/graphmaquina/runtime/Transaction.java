@@ -510,7 +510,10 @@ final class Transaction {
         return poisonIfNested(depth, error);
     }
 
-    /** The root entity's identity or state could not be read: the call aborts in RESOLVE before it read any state. */
+    /**
+     * The root entity's identity or state could not be read: the call aborts in RESOLVE before this step read the
+     * entity's state.
+     */
     private TransitionAbortedException unread(DefaultStateMachine<?, ?, ?> machine, Object entity, Enum<?> id,
                                               Exception error) {
         Throwable cause = Unwrap.unwrap(error);

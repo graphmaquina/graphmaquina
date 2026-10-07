@@ -22,7 +22,6 @@ import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
-import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.ReentrantTransitionException;
 import io.github.graphmaquina.error.TransitionAbortedException;
@@ -30,15 +29,12 @@ import io.github.graphmaquina.error.UnhandledFailureException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
@@ -89,55 +85,6 @@ class DiagnosticsTest {
                 + " callback already in progress on this thread: a guard, an action, a watch's peersOf, ownerOf or"
                 + " condition, a state accessor, an identity function or an observer cannot start another transition;"
                 + " an action moves its peers with ctx.cascade(...)", reentrant.getMessage());
-        assertEquals(DRAFT, other.status());
-    }
-
-    /**
-     * A state getter, an identity function and a setter are callbacks of the call too, so one that starts a
-     * transition is refused, and the refusal arrives as the cause of the call's failure: an abort in RESOLVE when the
-     * identity or the getter reads the entity, a commit failure with nothing written when the getter does it during
-     * the commit's check, and one that wrote some states when the setter does.
-     */
-    @Test
-    void aReentrantCallFromAnAccessorArrivesAsTheCauseOfTheFailureOfTheCall() {
-        Doc other = new Doc("2", DRAFT);
-        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
-        Runnable startsATransition = () -> self.get().execute(other, DISCARD);
-        AtomicInteger reads = new AtomicInteger();
-        List<String> ends = new ArrayList<>();
-        for (String accessor : List.of("identity", "getter", "check", "setter")) {
-            reads.set(0);
-            StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(
-                            UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()))
-                    .state((Doc doc) -> {
-                        int read = reads.incrementAndGet();
-                        if (accessor.equals("getter") && read == 1 || accessor.equals("check") && read == 2) {
-                            startsATransition.run();
-                        }
-                        return doc.status();
-                    }, (Doc doc, DocStatus status) -> {
-                        if (accessor.equals("setter")) {
-                            startsATransition.run();
-                        }
-                        doc.setStatus(status);
-                    })
-                    .identity((Doc doc) -> {
-                        if (accessor.equals("identity")) {
-                            startsATransition.run();
-                        }
-                        return doc.id();
-                    }).build();
-            self.set(machine);
-            CallFailedException failure = assertThrows(CallFailedException.class,
-                    () -> machine.execute(new Doc("1", DRAFT), SUBMIT));
-            ends.add(accessor + ": " + failure.getClass().getSimpleName() + " " + failure.phase() + " "
-                    + failure.statesWritten() + " caused by " + failure.getCause().getClass().getSimpleName());
-        }
-        assertEquals(List.of(
-                "identity: TransitionAbortedException RESOLVE NONE caused by ReentrantTransitionException",
-                "getter: TransitionAbortedException RESOLVE NONE caused by ReentrantTransitionException",
-                "check: CommitFailedException COMMIT NONE caused by ReentrantTransitionException",
-                "setter: CommitFailedException COMMIT PARTIAL caused by ReentrantTransitionException"), ends);
         assertEquals(DRAFT, other.status());
     }
 

@@ -288,8 +288,21 @@ class FailureAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> resolved.atUnreadState(TestDomain.KEY, entity, Id.PREPARE)),
                 "abort", "from", Optional.empty(), Optional.of(State.NEW));
+        Entity twin = new Entity("e", State.NEW);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> executed.atUnreadState(OTHERS, new Other("o"), Switch.FLIP)),
+                "abort", "key", OTHERS, TestDomain.KEY);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> executed.atUnreadState(TestDomain.KEY, twin, Id.PREPARE)),
+                "abort", "entity", twin, entity);
+        AbortAssert withDestination = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL,
+                CallPhase.RESOLVE, new AbortDetails(TestDomain.KEY, entity, Optional.empty(), Optional.of(Id.PREPARE),
+                        Optional.of(State.READY), Optional.empty(), List.of(), List.of()), "no")).isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> withDestination.atUnreadState(TestDomain.KEY, entity, Id.PREPARE)),
+                "abort", "to", Optional.empty(), Optional.of(State.READY));
         assertThrows(NullPointerException.class, () -> executed.atUnreadState(null, entity, Id.PREPARE));
-        assertThrows(NullPointerException.class, () -> executed.atUnreadState(TestDomain.KEY, null));
+        assertThrows(NullPointerException.class, () -> executed.atUnreadState(TestDomain.KEY, null, Id.PREPARE));
         assertThrows(NullPointerException.class, () -> executed.atUnreadState(TestDomain.KEY, entity, null));
     }
 
@@ -308,6 +321,27 @@ class FailureAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> reevaluated.atUnread(TestDomain.KEY, entity, State.NEW)),
                 "abort", "from", Optional.of(State.NEW), Optional.empty());
+        Entity twin = new Entity("e", State.NEW);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reevaluated.atUnreadState(OTHERS, new Other("o"))),
+                "abort", "key", OTHERS, TestDomain.KEY);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> reevaluated.atUnreadState(TestDomain.KEY, twin)),
+                "abort", "entity", twin, entity);
+        AbortAssert withState = TransitionFailureAssert.assertThat(new TransitionAbortedException(
+                new MachineCall(TestDomain.KEY, entity, Optional.empty(), false), CallPhase.RESOLVE,
+                new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW), Optional.empty(), Optional.empty(),
+                        Optional.empty(), List.of(), List.of()), "no")).isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> withState.atUnreadState(TestDomain.KEY, entity)),
+                "abort", "from", Optional.empty(), Optional.of(State.NEW));
+        AbortAssert withDestination = TransitionFailureAssert.assertThat(new TransitionAbortedException(
+                new MachineCall(TestDomain.KEY, entity, Optional.empty(), false), CallPhase.RESOLVE,
+                new AbortDetails(TestDomain.KEY, entity, Optional.empty(), Optional.empty(),
+                        Optional.of(State.READY), Optional.empty(), List.of(), List.of()), "no")).isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> withDestination.atUnreadState(TestDomain.KEY, entity)),
+                "abort", "to", Optional.empty(), Optional.of(State.READY));
+        assertThrows(NullPointerException.class, () -> reevaluated.atUnreadState(null, entity));
+        assertThrows(NullPointerException.class, () -> reevaluated.atUnreadState(TestDomain.KEY, null));
     }
 
     @Test

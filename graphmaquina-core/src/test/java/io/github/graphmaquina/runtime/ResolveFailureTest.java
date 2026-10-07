@@ -218,4 +218,113 @@ class ResolveFailureTest {
                 error.getMessage());
         assertEquals(DRAFT, doc.status());
     }
+
+    /** An identity whose hashCode throws once {@code armed}: the grouping of the log is where it is first called. */
+    private static final class Key {
+
+        private final String name;
+        private final AtomicBoolean armed;
+        private final RuntimeException boom;
+
+        Key(String name, AtomicBoolean armed, RuntimeException boom) {
+            this.name = name;
+            this.armed = armed;
+            this.boom = boom;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof Key that && that.name.equals(name);
+        }
+
+        @Override
+        public int hashCode() {
+            if (armed.get()) {
+                throw boom;
+            }
+            return name.hashCode();
+        }
+    }
+
+    /**
+     * A root whose action cascades PUBLISH to {@code a}, then ARCHIVE to {@code a} again, then PUBLISH to {@code b}:
+     * three entities, one of them logged twice, and {@code armed} set when the last cascade returned, so that what
+     * fails does so only once the commit starts to prepare.
+     */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> threeEntities(Doc a, Doc b, AtomicBoolean armed) {
+        return StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        ctx.cascade(DOCS, a, PUBLISH);
+                        ctx.cascade(DOCS, a, ARCHIVE);
+                        ctx.cascade(DOCS, b, PUBLISH);
+                        armed.set(true);
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+    }
+
+    /**
+     * The grouping of the log fails before the first setter: the entities that were planned are pending, each once,
+     * by reference and in order of first appearance, although the identities cannot be hashed any more.
+     */
+    @Test
+    void aGroupingThatFailsListsEveryPlannedEntityOnceInOrderOfFirstAppearance() {
+        IllegalStateException boom = new IllegalStateException("hashCode failed");
+        AtomicBoolean armed = new AtomicBoolean();
+        Doc root = new Doc("root", DRAFT);
+        Doc a = new Doc("a", REVIEW);
+        Doc b = new Doc("b", REVIEW);
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(threeEntities(a, b, armed)).state(Doc::status, Doc::setStatus)
+                        .identity((Doc doc) -> new Key(doc.id(), armed, boom)))
+                .build()) {
+            CommitFailedException error = assertThrows(CommitFailedException.class,
+                    () -> registry.of(DOCS).execute(root, SUBMIT));
+            assertSame(boom, error.getCause());
+            assertEquals(CallPhase.COMMIT, error.phase());
+            assertEquals(StatesWritten.NONE, error.statesWritten());
+            assertEquals(Optional.empty(), error.failedEntity());
+            assertEquals(3, error.pending().size());
+            assertSame(root, error.pending().get(0));
+            assertSame(a, error.pending().get(1));
+            assertSame(b, error.pending().get(2));
+        }
+        assertEquals(List.of(DRAFT, REVIEW, REVIEW), List.of(root.status(), a.status(), b.status()));
+    }
+
+    /** The same three entities when the state read of the check fails instead: pending, by reference, in order. */
+    @Test
+    void aCheckThatFailsListsEveryPlannedEntityOnceInOrderOfFirstAppearance() {
+        IllegalStateException boom = new IllegalStateException("row locked");
+        AtomicBoolean armed = new AtomicBoolean();
+        Doc root = new Doc("root", DRAFT);
+        Doc a = new Doc("a", REVIEW);
+        Doc b = new Doc("b", REVIEW);
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(threeEntities(a, b, armed)).state((Doc doc) -> {
+                    if (armed.get()) {
+                        throw boom;
+                    }
+                    return doc.status();
+                }, Doc::setStatus).identity(Doc::id))
+                .build()) {
+            CommitFailedException error = assertThrows(CommitFailedException.class,
+                    () -> registry.of(DOCS).execute(root, SUBMIT));
+            assertSame(boom, error.getCause());
+            assertEquals(CallPhase.COMMIT, error.phase());
+            assertEquals(StatesWritten.NONE, error.statesWritten());
+            assertEquals(Optional.empty(), error.failedEntity());
+            assertEquals(3, error.pending().size());
+            assertSame(root, error.pending().get(0));
+            assertSame(a, error.pending().get(1));
+            assertSame(b, error.pending().get(2));
+        }
+        assertEquals(List.of(DRAFT, REVIEW, REVIEW), List.of(root.status(), a.status(), b.status()));
+    }
 }

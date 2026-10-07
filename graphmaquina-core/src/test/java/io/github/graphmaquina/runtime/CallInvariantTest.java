@@ -20,13 +20,17 @@ import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineObserver;
+import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
@@ -36,6 +40,7 @@ import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
+import io.github.graphmaquina.fixtures.Facades;
 import io.github.graphmaquina.fixtures.Item;
 import io.github.graphmaquina.fixtures.ItemStatus;
 import io.github.graphmaquina.fixtures.ItemTransition;
@@ -104,7 +109,7 @@ class CallInvariantTest {
                                             Function<Doc, Object> identity, MachineObserver observer) {
         return MachineRegistry.builder()
                 .add(StateMachines.from(graph).state(getter, setter).identity(identity)
-                        .asyncTimeout(Duration.ofSeconds(5)))
+                        .asyncTimeout(Duration.ofMillis(300)))
                 .observer(observer)
                 .build();
     }
@@ -115,6 +120,41 @@ class CallInvariantTest {
         try (MachineRegistry registry = registry(graph, getter, setter, identity, recorder)) {
             registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT);
         }
+    }
+
+    /** DRAFT -SUBMIT-> REVIEW runs {@code submit}; REVIEW -PUBLISH-> PUBLISHED is shaped by {@code publish}. */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> cascading(
+            TransitionAction<Doc, DocStatus, DocTransition> submit,
+            UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> publish) {
+        return publish.apply(StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                        .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                        .transition(SUBMIT, DRAFT, REVIEW).action("Submit", submit).endTransition()
+                        .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
+                        .transition(PUBLISH, REVIEW, PUBLISHED))
+                .endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+    }
+
+    /** The action of SUBMIT cascades PUBLISH to {@code peer}. */
+    private static TransitionAction<Doc, DocStatus, DocTransition> cascadeTo(Doc peer) {
+        return (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+            ctx.cascade(DOCS, peer, PUBLISH);
+            return ActionOutcome.ok();
+        };
+    }
+
+    private static void run(Recorder recorder, GraphDefinition<Doc, DocStatus, DocTransition> graph) {
+        execute(recorder, graph, Doc::status, Doc::setStatus, Doc::id);
+    }
+
+    /** Another machine whose SUBMIT action throws, which a call can join. */
+    private static StateMachine<Doc, DocStatus, DocTransition> failingElsewhere(RuntimeException boom) {
+        return StateMachines.from(docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw boom;
+                        })))
+                .state(Doc::status, Doc::setStatus).build();
     }
 
     @Test
@@ -188,6 +228,148 @@ class CallInvariantTest {
                         (Doc doc) -> {
                             throw boom;
                         })), Doc::status, Doc::setStatus, Doc::id));
+        scenarios.put("reevaluate getter throws", (Recorder recorder) -> {
+            try (MachineRegistry registry = registry(plain(), (Doc doc) -> {
+                throw boom;
+            }, Doc::setStatus, Doc::id, recorder)) {
+                registry.of(DOCS).reevaluate(new Doc("1", PUBLISHED));
+            }
+        });
+        scenarios.put("reevaluate peersOf throws", (Recorder recorder) -> {
+            GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT)
+                    .terminal(ARCHIVED)
+                    .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                    .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                    .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                    .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                    .watch(PUBLISHED, DOCS, (Doc doc) -> {
+                        throw boom;
+                    }, (Doc moved) -> Optional.<Doc>empty())
+                        .when("rule", (Doc doc, Collection<? extends Doc> peers,
+                                PeerView<Doc, DocStatus, DocTransition> view) -> true).execute(ARCHIVE)
+                        .endWatch()
+                    .build();
+            try (MachineRegistry registry = registry(graph, Doc::status, Doc::setStatus, Doc::id, recorder)) {
+                registry.of(DOCS).reevaluate(new Doc("1", PUBLISHED));
+            }
+        });
+        scenarios.put("sync guard throws", (Recorder recorder) -> run(recorder, docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw boom;
+                        }))));
+        scenarios.put("async guard throws", (Recorder recorder) -> run(recorder, docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                                CompletableFuture.<GuardResult>failedFuture(boom)))));
+        scenarios.put("guard returns null", (Recorder recorder) -> run(recorder, docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> null))));
+        scenarios.put("guard times out", (Recorder recorder) -> run(recorder, docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("CanSubmit",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> new CompletableFuture<GuardResult>()))));
+        scenarios.put("action throws", (Recorder recorder) -> run(recorder, docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw boom;
+                        }))));
+        scenarios.put("action returns null", (Recorder recorder) -> run(recorder, docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> null))));
+        scenarios.put("action times out", (Recorder recorder) -> run(recorder, docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                new CompletableFuture<ActionOutcome>()).timeout(Duration.ofMillis(100)))));
+        scenarios.put("action fails with no route", (Recorder recorder) -> run(recorder, docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ActionOutcome.failed("no")))));
+        scenarios.put("cascaded peer's guard throws", (Recorder recorder) -> run(recorder,
+                cascading(cascadeTo(new Doc("peer", REVIEW)),
+                        (TransitionBuilder<Doc, DocStatus, DocTransition> publish) -> publish.guard("CanPublish",
+                                (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                                    throw boom;
+                                }))));
+        scenarios.put("cascaded peer's action throws", (Recorder recorder) -> run(recorder,
+                cascading(cascadeTo(new Doc("peer", REVIEW)),
+                        (TransitionBuilder<Doc, DocStatus, DocTransition> publish) -> publish.action("Publish",
+                                (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                                    throw boom;
+                                }))));
+        scenarios.put("cascade cycle", (Recorder recorder) -> run(recorder, cascading(
+                (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    ctx.cascade(DOCS, ctx.entity(), PUBLISH);
+                    return ActionOutcome.ok();
+                }, UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity())));
+        scenarios.put("cascade depth exceeded", (Recorder recorder) -> {
+            Doc second = new Doc("second", REVIEW);
+            Doc third = new Doc("third", REVIEW);
+            GraphDefinition<Doc, DocStatus, DocTransition> graph = cascading(cascadeTo(second),
+                    (TransitionBuilder<Doc, DocStatus, DocTransition> publish) -> publish.action("Publish",
+                            (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                                if (ctx.entity() == second) {
+                                    ctx.cascade(DOCS, third, PUBLISH);
+                                }
+                                return ActionOutcome.ok();
+                            }));
+            try (MachineRegistry registry = MachineRegistry.builder()
+                    .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id))
+                    .observer(recorder).maxCascadeDepth(1).build()) {
+                registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT);
+            }
+        });
+        scenarios.put("COLLECT aggregate", (Recorder recorder) -> run(recorder, cascading(
+                (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    ctx.cascadeAll(DOCS, List.of(new Doc("ready", REVIEW), new Doc("not ready", DRAFT)), PUBLISH,
+                            CascadePolicy.COLLECT);
+                    return ActionOutcome.ok();
+                }, UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity())));
+        scenarios.put("setter throws on the second entity", (Recorder recorder) -> execute(recorder,
+                cascading(cascadeTo(new Doc("peer", REVIEW)),
+                        UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()),
+                Doc::status, (Doc doc, DocStatus status) -> {
+                    if (doc.id().equals("peer")) {
+                        throw boom;
+                    }
+                    doc.setStatus(status);
+                }, Doc::id));
+        scenarios.put("hook throws in a multi-hop cascade", (Recorder recorder) -> run(recorder,
+                cascading(cascadeTo(new Doc("peer", REVIEW)),
+                        (TransitionBuilder<Doc, DocStatus, DocTransition> publish) -> publish.afterCommit(
+                                "Published", (Doc doc) -> {
+                                    throw boom;
+                                }))));
+        scenarios.put("another call's failure through an action's stage", (Recorder recorder) -> {
+            StateMachine<Doc, DocStatus, DocTransition> other = failingElsewhere(boom);
+            run(recorder, docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction(
+                    "Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                            other.async().execute(new Doc("other", DRAFT), SUBMIT)
+                                    .thenApply((Outcome<Doc, DocStatus, DocTransition> outcome) ->
+                                            ActionOutcome.ok()))));
+        });
+        scenarios.put("PoisonedUnitOfWorkException the action lets through", (Recorder recorder) -> run(recorder,
+                docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            try {
+                                ctx.cascade(DOCS, new Doc("peer", DRAFT), PUBLISH);
+                            } catch (TransitionAbortedException failure) {
+                                ctx.peer(DOCS);
+                            }
+                            return ActionOutcome.ok();
+                        }))));
+        scenarios.put("unknown facade", (Recorder recorder) -> run(recorder, cascading(
+                (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    ctx.cascade(Facades.Docs.class, new Doc("peer", REVIEW), PUBLISH);
+                    return ActionOutcome.ok();
+                }, UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity())));
+        scenarios.put("ambiguous identity", (Recorder recorder) -> run(recorder, cascading(
+                (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    ctx.cascadeAll(DOCS, List.of(new Doc("2", REVIEW), new Doc("2", REVIEW)), PUBLISH,
+                            CascadePolicy.FAIL_FAST);
+                    return ActionOutcome.ok();
+                }, UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity())));
+        scenarios.put("null peer state", (Recorder recorder) -> run(recorder,
+                cascading(cascadeTo(new Doc("unset", null)),
+                        UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity())));
         List<String> ends = new ArrayList<>();
         for (Map.Entry<String, Scenario> scenario : scenarios.entrySet()) {
             Recorder recorder = new Recorder();
@@ -195,6 +377,7 @@ class CallInvariantTest {
             CallFailedException failure = assertInstanceOf(CallFailedException.class, thrown, scenario.getKey());
             assertEquals(1, recorder.started.size(), scenario.getKey());
             assertSame(recorder.started.get(0), failure.call(), scenario.getKey());
+            assertEquals(1, recorder.failed.size(), scenario.getKey());
             CallFailure told = recorder.failed.get(0);
             assertSame(failure, told.error(), scenario.getKey());
             assertEquals(failure.phase(), told.phase(), scenario.getKey());
@@ -211,7 +394,29 @@ class CallInvariantTest {
                 "cascade to an unknown machine: TransitionAbortedException ACTION NONE",
                 "pre-check getter throws: CommitFailedException COMMIT NONE",
                 "setter throws: CommitFailedException COMMIT PARTIAL",
-                "hook throws: AfterCommitException HOOK ALL"), ends);
+                "hook throws: AfterCommitException HOOK ALL",
+                "reevaluate getter throws: TransitionAbortedException RESOLVE NONE",
+                "reevaluate peersOf throws: TransitionAbortedException RESOLVE NONE",
+                "sync guard throws: TransitionAbortedException GUARD NONE",
+                "async guard throws: TransitionAbortedException GUARD NONE",
+                "guard returns null: TransitionAbortedException GUARD NONE",
+                "guard times out: TransitionAbortedException GUARD NONE",
+                "action throws: TransitionAbortedException ACTION NONE",
+                "action returns null: TransitionAbortedException ACTION NONE",
+                "action times out: TransitionAbortedException ACTION NONE",
+                "action fails with no route: UnhandledFailureException ACTION NONE",
+                "cascaded peer's guard throws: TransitionAbortedException ACTION NONE",
+                "cascaded peer's action throws: TransitionAbortedException ACTION NONE",
+                "cascade cycle: CascadeCycleException ACTION NONE",
+                "cascade depth exceeded: CascadeDepthExceededException ACTION NONE",
+                "COLLECT aggregate: CascadeException ACTION NONE",
+                "setter throws on the second entity: CommitFailedException COMMIT PARTIAL",
+                "hook throws in a multi-hop cascade: AfterCommitException HOOK ALL",
+                "another call's failure through an action's stage: TransitionAbortedException ACTION NONE",
+                "PoisonedUnitOfWorkException the action lets through: TransitionAbortedException ACTION NONE",
+                "unknown facade: TransitionAbortedException ACTION NONE",
+                "ambiguous identity: TransitionAbortedException ACTION NONE",
+                "null peer state: TransitionAbortedException ACTION NONE"), ends);
     }
 
     /** Through async(), the future fails with the very failure the observer received. */
@@ -228,6 +433,7 @@ class CallInvariantTest {
                     () -> registry.of(DOCS).async().execute(new Doc("1", DRAFT), SUBMIT).join());
             CallFailedException failure = assertInstanceOf(CallFailedException.class, wrapped.getCause());
             synchronized (recorder) {
+                assertEquals(1, recorder.failed.size());
                 assertSame(failure, recorder.failed.get(0).error());
                 assertSame(recorder.started.get(0), failure.call());
             }
@@ -262,5 +468,54 @@ class CallInvariantTest {
         assertEquals(List.of(ActionStatus.THREW),
                 error.journal().stream().map((ActionRecord record) -> record.status()).toList());
         assertEquals(DRAFT, doc.status());
+    }
+
+    /**
+     * A state getter, an identity function and a setter are callbacks of the call too, so one that starts a
+     * transition is refused, and the refusal arrives as the cause of the call's failure: an abort in RESOLVE when the
+     * identity or the getter reads the entity, a commit failure with nothing written when the getter does it during
+     * the commit's check, and one that wrote some states when the setter does.
+     */
+    @Test
+    void aReentrantCallFromAnAccessorArrivesAsTheCauseOfTheFailureOfTheCall() {
+        Doc other = new Doc("2", DRAFT);
+        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> self = new AtomicReference<>();
+        Runnable startsATransition = () -> self.get().execute(other, DISCARD);
+        AtomicInteger reads = new AtomicInteger();
+        List<String> ends = new ArrayList<>();
+        for (String accessor : List.of("identity", "getter", "check", "setter")) {
+            reads.set(0);
+            StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(
+                            UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()))
+                    .state((Doc doc) -> {
+                        int read = reads.incrementAndGet();
+                        if (accessor.equals("getter") && read == 1 || accessor.equals("check") && read == 2) {
+                            startsATransition.run();
+                        }
+                        return doc.status();
+                    }, (Doc doc, DocStatus status) -> {
+                        if (accessor.equals("setter")) {
+                            startsATransition.run();
+                        }
+                        doc.setStatus(status);
+                    })
+                    .identity((Doc doc) -> {
+                        if (accessor.equals("identity")) {
+                            startsATransition.run();
+                        }
+                        return doc.id();
+                    }).build();
+            self.set(machine);
+            CallFailedException failure = assertThrows(CallFailedException.class,
+                    () -> machine.execute(new Doc("1", DRAFT), SUBMIT));
+            ends.add(accessor + ": " + failure.getClass().getSimpleName() + " " + failure.phase() + " "
+                    + failure.statesWritten() + " caused by " + failure.getCause().getClass().getSimpleName());
+        }
+        assertEquals(List.of(
+                "identity: TransitionAbortedException RESOLVE NONE caused by ReentrantTransitionException",
+                "getter: TransitionAbortedException RESOLVE NONE caused by ReentrantTransitionException",
+                "check: CommitFailedException COMMIT NONE caused by ReentrantTransitionException",
+                "setter: CommitFailedException COMMIT PARTIAL caused by ReentrantTransitionException"), ends);
+        assertEquals(DRAFT, other.status());
     }
 }
