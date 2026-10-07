@@ -9,7 +9,8 @@ import java.util.Set;
 
 /**
  * Emits the typed vocabulary of one machine: the top-level {@code <Machine>Graph} holding {@code Definition},
- * {@code StatePolicy}, {@code Transition} and {@code Reject} with their repeatable containers.
+ * {@code StatePolicy}, {@code Transition} and {@code Reject} with their repeatable containers, and
+ * {@code Recovery}, which is written only inside a {@code Transition}.
  *
  * <p>Every element that names a state is declared with the machine's own state enum and every element that
  * names an edge is declared with its own transition enum, so a constant of another machine, or a state written
@@ -30,7 +31,7 @@ import java.util.Set;
 final class MachineVocabularyEmitter {
 
     private static final List<String> ANNOTATIONS = List.of("Definition", "StatePolicy", "StatePolicies",
-        "Transition", "Transitions", "Reject", "Rejects");
+        "Transition", "Transitions", "Recovery", "Reject", "Rejects");
     private static final String TYPE_TARGET = "java.lang.annotation.ElementType.TYPE";
     private static final String EDGE_TARGETS =
         "{java.lang.annotation.ElementType.TYPE, java.lang.annotation.ElementType.METHOD}";
@@ -96,6 +97,7 @@ final class MachineVocabularyEmitter {
         statePolicies(source, simpleName, machine);
         transition(source, simpleName, machine, state, transition);
         transitions(source, simpleName, machine);
+        recovery(source, simpleName, machine, transition);
         reject(source, simpleName, machine, state, transition);
         rejects(source, simpleName, machine);
 
@@ -149,6 +151,9 @@ final class MachineVocabularyEmitter {
         source.line(symbolClass("GuardSymbol") + "[] guards() default {};");
         source.line(transition + "[] onFailure() default {};");
         source.line("java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};");
+        source.line("/** The recovery rules of this edge, each a {@link " + vocabulary
+            + ".Recovery}; none by default. */");
+        source.line(vocabulary + ".Recovery[] recoveries() default {};");
         source.line("io.github.graphmaquina.annotation.Timeout[] timeout() default {};");
         source.line(symbolClass("HookSymbol") + "[] afterCommit() default {};");
         close(source);
@@ -159,6 +164,17 @@ final class MachineVocabularyEmitter {
             + machine + "}.");
         annotation(source, machine, "TRANSITIONS", EDGE_TARGETS, null, "Transitions");
         source.line(vocabulary + ".Transition[] value();");
+        close(source);
+    }
+
+    private static void recovery(JavaSource source, String vocabulary, String machine, String transition) {
+        describe(source, "One recovery rule in the {@code recoveries} of a {@link " + vocabulary + ".Transition} of",
+            "{@link " + machine + "}: the failure kind {@code kind}, the transition identifier {@code transition}",
+            "and the throwable types {@code failsOn}, none by default.");
+        annotation(source, machine, "RECOVERY", "{}", null, "Recovery");
+        source.line("java.lang.Class<? extends io.github.graphmaquina.api.FailureKind> kind();");
+        source.line(transition + " transition();");
+        source.line("java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};");
         close(source);
     }
 

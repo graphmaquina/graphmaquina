@@ -190,7 +190,8 @@ their handwritten declarations:
 | `TicketActionsRefs.java` | Same directory | Same directory |
 
 `TicketsGraph.java` contains the nested annotations `Definition`, `StatePolicy`, `Transition` and `Reject`,
-with `StatePolicies`, `Transitions` and `Rejects` as their repeatable containers. `TicketRefs` contains
+with `StatePolicies`, `Transitions` and `Rejects` as their repeatable containers, and `Recovery`, which is
+written only inside a `Transition`. `TicketRefs` contains
 symbols for `@GraphProperty` members; `TicketActionsRefs` contains symbols for marked actions, guards and
 hooks. Generation alone does not produce `TicketsRuntime` or `TicketMachinesRuntime`.
 
@@ -1115,7 +1116,7 @@ symbol from the graph declaration.
 
 | Handwritten declaration | Generated API |
 | --- | --- |
-| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Reject`, `.Rejects` |
+| `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects` |
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
 | `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches` and `.When`, in the owner's package |
@@ -1145,7 +1146,8 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 | --- | --- | --- | --- |
 | `Definition` | type | `initial: S`, `state: P`, `id: P` | `terminals: S[]`, `allowsCycle: S[]`, `afterCommit: HookSymbol` |
 | `StatePolicy` | type | `state: S`, `otherwise: String` | None |
-| `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `timeout`, `afterCommit` |
+| `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `recoveries: Recovery[]`, `timeout`, `afterCommit` |
+| `Recovery` | none, nested in `Transition.recoveries` | `kind: Class<? extends FailureKind>`, `transition: T` | `failsOn` |
 | `Reject` | type | `from: S`, `transition: T`, `reason: String` | None |
 
 `StatePolicy`, `Transition` and `Reject` are repeatable, through the generated `StatePolicies`, `Transitions` and

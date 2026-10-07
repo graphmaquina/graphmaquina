@@ -77,8 +77,8 @@ class ManifestDiscoveryTest {
     /** The vocabulary the generator emits for the machine of {@link TypedFixtures#minimal()}. */
     private static final Set<String> GENERATED = Set.of(
             "fx.DocsGraph.Definition", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.StatePolicies",
-            "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsGraph.Reject",
-            "fx.DocsGraph.Rejects");
+            "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsGraph.Recovery",
+            "fx.DocsGraph.Reject", "fx.DocsGraph.Rejects");
 
     @Test
     void claimsTheFixedSetAndEveryAnnotationTheManifestLists() {

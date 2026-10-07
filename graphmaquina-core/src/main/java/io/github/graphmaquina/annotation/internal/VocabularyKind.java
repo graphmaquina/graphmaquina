@@ -11,6 +11,8 @@ public enum VocabularyKind {
     STATE_POLICIES,
     TRANSITION,
     TRANSITIONS,
+    /** One recovery rule, written only inside the {@code recoveries} of a {@link #TRANSITION}. */
+    RECOVERY,
     REJECT,
     REJECTS,
     WATCH,
