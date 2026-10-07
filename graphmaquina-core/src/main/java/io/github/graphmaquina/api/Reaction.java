@@ -14,8 +14,8 @@ public sealed interface Reaction permits Reaction.Done, Reaction.Aborted {
     Object entity();
 
     /** A watch re-evaluation that ran to completion, carrying its outcome. */
-    record Done(@NonNull MachineKey<?, ?, ?> key,
-                @NonNull Object entity, @NonNull Outcome<?, ?, ?> outcome) implements Reaction {
+    record Done(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity,
+                @NonNull Outcome<?, ?, ?> outcome) implements Reaction {
     }
 
     /**
@@ -24,7 +24,7 @@ public sealed interface Reaction permits Reaction.Done, Reaction.Aborted {
      * A checked exception, which a watch condition or an owner lookup can throw without declaring it, arrives wrapped
      * in {@link java.lang.reflect.UndeclaredThrowableException}.
      */
-    record Aborted(@NonNull MachineKey<?, ?, ?> key,
-                   @NonNull Object entity, @NonNull RuntimeException cause) implements Reaction {
+    record Aborted(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity,
+                   @NonNull RuntimeException cause) implements Reaction {
     }
 }
