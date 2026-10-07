@@ -236,7 +236,8 @@ exception to its failure route.
 
 `movedTo` reads the state the outcome recorded; `hasEntityState` reads the entity through a getter at the
 moment the expectation runs. A reaction is reached from the outcome that carries it, selected by machine and
-by entity identity. From [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
+by entity identity. From
+[OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
 
 ```java
 assertThat(orders.pay(order)).isApplied().movedTo(OrderStatus.PAID)

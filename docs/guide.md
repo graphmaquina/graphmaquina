@@ -51,7 +51,8 @@ files. Later examples are extensions or fragments of the repository's shop examp
 - [Known limitations](#known-limitations)
 - [Build, verify and release this repository](#build-verify-and-release-this-repository)
 - [Migrating from 1.x](migration-2.0.md)
-- [Component benchmarks](../benchmarks/README.md) — graph-only harness and the V/E cost evidence; the 1.x figures are historical
+- [Component benchmarks](../benchmarks/README.md) — graph-only harness and the V/E cost evidence; the 1.x figures are
+  historical
 - [Further reference](#further-reference)
 - [License](#license)
 
@@ -71,7 +72,8 @@ files. Later examples are extensions or fragments of the repository's shop examp
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
-a durable job queue, HTTP endpoints or distributed transactions. See [persistence and concurrency](#concurrency-identity-and-persistence)
+a durable job queue, HTTP endpoints or distributed transactions. See
+[persistence and concurrency](#concurrency-identity-and-persistence)
 for the responsibilities that remain with your application.
 
 The build and runtime have separate jobs:
@@ -1898,7 +1900,8 @@ its size allows. Start roots off `ForkJoinPool` workers, or give asynchronous wo
 
 Multiple virtual threads do not serialize access to a shared entity. Two concurrent operations on the same
 ticket need an application-level concurrency policy. The commit precheck detects some state conflicts; it
-is not a lock or a compare-and-set transaction with your database. See [concurrency](#concurrency-identity-and-persistence).
+is not a lock or a compare-and-set transaction with your database. See
+[concurrency](#concurrency-identity-and-persistence).
 
 ### Test async behavior
 
@@ -2121,10 +2124,10 @@ pairs that are actually watched; duplicate or unused `@GraphPeers` entries are e
 
 ### Triggering and observing watches
 
-After a root commit, the runtime finds watched owners from peers whose final state differs from their
-original state. Intermediate hops that return a peer to its original state do not trigger dispatch. It reevaluates an owner only if it
-is currently in the watched state and deduplicates owners within that dispatch. Each reaction is a new root
-transaction. A reaction failure does not roll back the peer commit that triggered it.
+After a root commit, the runtime finds watched owners from peers whose final state differs from their original state.
+Intermediate hops that return a peer to its original state do not trigger dispatch. It reevaluates an owner only if it
+is currently in the watched state and deduplicates owners within that dispatch. Each reaction is a new root transaction.
+A reaction failure does not roll back the peer commit that triggered it.
 
 The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the engine
 evaluates the watch, before that root starts, and may not start a transition on their own thread: `execute` or
@@ -2143,9 +2146,9 @@ Outcome<Order, OrderStatus, OrderTransition> outcome = shop.orders().reevaluate(
 ```
 
 No watch produces `Outcome.Ignored` with `IgnoreReason.NO_WATCH`, and a watch whose rules all fail produces
-`IgnoreReason.NO_RULE_MATCHED`. These are the only two ways an `Ignored` is produced. A matching rule can
-still be rejected by the named edge's guards. Rules are not polled on a timer, and creating or paying an owner does not automatically mean all
-of its existing peers changed state.
+`IgnoreReason.NO_RULE_MATCHED`. These are the only two ways an `Ignored` is produced. A matching rule can still be
+rejected by the named edge's guards. Rules are not polled on a timer, and creating or paying an owner does not
+automatically mean all of its existing peers changed state.
 
 Cross-JAR watches are not supported yet. The owner and peer APIs must be generated in the same compilation.
 A peer in another module or dependency JAR is rejected with `SG608`. Track the enhancement in
@@ -2498,20 +2501,19 @@ class TicketsTest {
 }
 ```
 
-`isFailed()` narrows the outcome and fails with the kind it actually got. `hasTarget` is where `SUBMIT` was
-heading, `hasFailureTransition` is the identifier of the edge that recovered, `movedTo` is where that edge
-landed, and `hasEntityState` reads the entity itself. Run `./gradlew test` in your application.
-The repository's [ReadmeQuickstartTest](../graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java)
-extracts these literal Gradle blocks and Ticket Java files, generates and compiles the main sources, runs
-`App`, and verifies this named JUnit test and its result counts in an external Gradle consumer using locally
-staged artifacts. This verifies the local Gradle workflow; it does not execute this JUnit sample through
-Maven or against released artifacts. This test consumes generated main code; it does not declare test graphs
-and needs no `testAnnotationProcessor`. In Maven, add JUnit and a compatible test runner through your application's usual
-test configuration, together with the test-scoped `graphmaquina-test` dependency shown under
+`isFailed()` narrows the outcome and fails with the kind it actually got. `hasTarget` is where `SUBMIT` was heading,
+`hasFailureTransition` is the identifier of the edge that recovered, `movedTo` is where that edge landed, and
+`hasEntityState` reads the entity itself. Run `./gradlew test` in your application. The repository's
+[ReadmeQuickstartTest](../graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java) extracts these literal
+Gradle blocks and Ticket Java files, generates and compiles the main sources, runs `App`, and verifies this named JUnit
+test and its result counts in an external Gradle consumer using locally staged artifacts. This verifies the local Gradle
+workflow; it does not execute this JUnit sample through Maven or against released artifacts. This test consumes
+generated main code; it does not declare test graphs and needs no `testAnnotationProcessor`. In Maven, add JUnit and a
+compatible test runner through your application's usual test configuration, together with the test-scoped
+`graphmaquina-test` dependency shown under
 [typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots); the
-[install command](#configure-gradle) writes into the `~/.m2` repository Maven already reads, so it needs no
-repository entry.
-Preserve the graph generation lifecycle for any test graphs.
+[install command](#configure-gradle) writes into the `~/.m2` repository Maven already reads, so it needs no repository
+entry. Preserve the graph generation lifecycle for any test graphs.
 
 ### Typed assertions, probes and graph snapshots
 
