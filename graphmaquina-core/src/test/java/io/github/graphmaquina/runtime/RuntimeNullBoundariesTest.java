@@ -46,6 +46,7 @@ class RuntimeNullBoundariesTest {
                 Arguments.of("builder", (Executable) () -> MachineRegistry.builder().add(null)),
                 Arguments.of("key", (Executable) () -> MachineRegistry.builder().build().of(null)),
                 Arguments.of("listener", (Executable) () -> MachineRegistry.builder().listener(null)),
+                Arguments.of("observer", (Executable) () -> MachineRegistry.builder().observer(null)),
                 Arguments.of("facade", (Executable) () -> StateMachines.from(GRAPH).as(null)),
                 Arguments.of("call", (Executable) () -> machine.supplyAsync(null)));
     }

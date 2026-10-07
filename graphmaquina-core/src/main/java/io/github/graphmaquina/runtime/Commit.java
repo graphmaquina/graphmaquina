@@ -10,13 +10,16 @@ import java.util.Optional;
  * refuses a state that changed while the transaction ran, which an action that called the setter or a concurrent
  * transition on the same entity can cause; it is not a lock, so it catches only the interleavings that leave a
  * different state behind. A setter that throws any Exception, checked ones included, stops phase 2 where it stood.
+ * It tells the transaction before each setter call, so that a failure during phase 2 is known to have written some
+ * states or none.
  */
 final class Commit {
 
     private Commit() { }
 
     /** Returns the summary it committed, so the root does not group the log a second time to dispatch watches. */
-    static CommitSummary apply(MachineRegistry registry, UnitOfWork uow) {
+    static CommitSummary apply(MachineRegistry registry, Transaction tx) {
+        UnitOfWork uow = tx.uow();
         CommitSummary summary = uow.commitSummary();
         List<CommitSummary.Change> changes = summary.changes();
         List<Object> all = new ArrayList<>(changes.size());
@@ -37,6 +40,7 @@ final class Commit {
         List<Object> applied = new ArrayList<>();
         for (CommitSummary.Change change : changes) {
             DefaultStateMachine<?, ?, ?> machine = registry.anyMachineFor(change.ref().key());
+            tx.writing();
             try {
                 machine.writeState(change.ref().instance(), change.last().to());
             } catch (Exception e) {

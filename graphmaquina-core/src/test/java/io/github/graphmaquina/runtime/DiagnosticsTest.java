@@ -117,10 +117,10 @@ class DiagnosticsTest {
         self.set(machine);
         ReentrantTransitionException error = assertThrows(ReentrantTransitionException.class,
                 () -> machine.execute(new Doc("1", DRAFT), SUBMIT));
-        assertEquals("execute/reevaluate on Doc/DocStatus from within a transition or a watch evaluation already in"
-                + " progress on this thread: a guard, an action, a watch's peersOf, ownerOf or condition, a state"
-                + " accessor or an identity function cannot start another transition; an action moves its peers with"
-                + " ctx.cascade(...)", error.getMessage());
+        assertEquals("execute/reevaluate on Doc/DocStatus from within a transition, a watch evaluation or an observer"
+                + " callback already in progress on this thread: a guard, an action, a watch's peersOf, ownerOf or"
+                + " condition, a state accessor, an identity function or an observer cannot start another transition;"
+                + " an action moves its peers with ctx.cascade(...)", error.getMessage());
         assertEquals(DRAFT, other.status());
     }
 

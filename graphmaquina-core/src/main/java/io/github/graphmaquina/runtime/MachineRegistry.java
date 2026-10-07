@@ -3,6 +3,7 @@ package io.github.graphmaquina.runtime;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionListener;
@@ -30,11 +31,13 @@ import lombok.RequiredArgsConstructor;
  * asynchronous waits are bounded by the asyncTimeout of the machine whose call started the root, not by its own.
  * When that root machine declares no asyncTimeout, those waits are unbounded, whatever the peer's own asyncTimeout;
  * only an edge that declares a timeout of its own still bounds its action's wait.
- * Nothing serializes two roots on one entity. The pre-check of phase 2 refuses a state that changed while a root
- * ran, but it catches only the interleavings that leave a different state behind, so concurrent calls on one entity
- * are the application's to serialize. {@link #close()} closes the default executors of the registry's machines. A
- * standalone machine runs in a registry of its own too, but that registry is internal and unreachable, so nothing can
- * close it, and the machine's default executor is never closed.
+ * Nothing serializes two roots on one entity. Its observers see every call of its machines, as
+ * {@link io.github.graphmaquina.api.MachineObserver} describes; a standalone machine's registry has none.
+ * The pre-check of phase 2 refuses a state that changed while a root ran, but it catches only the interleavings that
+ * leave a different state behind, so concurrent calls on one entity are the application's to serialize.
+ * {@link #close()} closes the default executors of the registry's machines. A standalone machine runs in a registry
+ * of its own too, but that registry is internal and unreachable, so nothing can close it, and the machine's default
+ * executor is never closed.
  */
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class MachineRegistry implements AutoCloseable {
@@ -45,6 +48,7 @@ public final class MachineRegistry implements AutoCloseable {
     private final int maxCascadeDepth;
     private final int maxWatchChain;
     private final Optional<TransitionListener> listener;
+    private final Observers observers;
 
     public static Builder builder() {
         return new Builder();
@@ -52,7 +56,7 @@ public final class MachineRegistry implements AutoCloseable {
 
     /** A registry of one, assembled as a registry builder would assemble it, with the default limits and no listener. */
     static <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> standalone(StateMachines.Builder<E, S, T> builder) {
-        return assemble(List.of(builder), 10, 10, Optional.empty()).machineFor(builder.key());
+        return assemble(List.of(builder), 10, 10, Optional.empty(), Observers.NONE).machineFor(builder.key());
     }
 
     /**
@@ -60,7 +64,7 @@ public final class MachineRegistry implements AutoCloseable {
      * builder is consumed, so a build that fails leaves every builder as it was, ready to be fixed and built again.
      */
     private static MachineRegistry assemble(List<? extends StateMachines.Builder<?, ?, ?>> builders, int maxCascadeDepth,
-                                            int maxWatchChain, Optional<TransitionListener> listener) {
+                                            int maxWatchChain, Optional<TransitionListener> listener, Observers observers) {
         Set<MachineKey<?, ?, ?>> keys = new HashSet<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             keys.add(builder.key());
@@ -76,7 +80,7 @@ public final class MachineRegistry implements AutoCloseable {
                 throw new IllegalStateException("the facade type " + facade.get().getSimpleName() + " is registered twice");
             }
         }
-        MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, listener);
+        MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, listener, observers);
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             DefaultStateMachine<?, ?, ?> machine = builder.build(registry);
             registry.machines.put(machine.key(), machine);
@@ -127,6 +131,8 @@ public final class MachineRegistry implements AutoCloseable {
     int maxWatchChain() { return maxWatchChain; }
 
     Optional<TransitionListener> listener() { return listener; }
+
+    Observers observers() { return observers; }
 
     <E, S extends Enum<S>, T extends Enum<T>> DefaultStateMachine<E, S, T> machineFor(MachineKey<E, S, T> key) {
         DefaultStateMachine<?, ?, ?> machine = anyMachineFor(key);
@@ -217,6 +223,7 @@ public final class MachineRegistry implements AutoCloseable {
         private int maxCascadeDepth = 10;
         private int maxWatchChain = 10;
         private Optional<TransitionListener> listener = Optional.empty();
+        private final List<MachineObserver> observers = new ArrayList<>();
         private boolean used;
 
         private Builder() { }
@@ -273,6 +280,17 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
+         * Adds an observer of every call of the registry's machines. Observers add up and are notified in the order
+         * they were added; see {@link MachineObserver} for what an observer is told and what it cannot do.
+         */
+        public Builder observer(MachineObserver observer) {
+            requireUnused();
+            Objects.requireNonNull(observer, "observer");
+            observers.add(observer);
+            return this;
+        }
+
+        /**
          * Checks every machine builder, its identity, accessors, asyncTimeout, watches and facade, before it consumes
          * any of them; only a build that succeeds marks this builder and its machine builders used.
          */
@@ -283,7 +301,7 @@ public final class MachineRegistry implements AutoCloseable {
                     throw new IllegalStateException("the machine " + builder.key() + " must declare identity(...) within a registry");
                 }
             }
-            MachineRegistry registry = assemble(builders, maxCascadeDepth, maxWatchChain, listener);
+            MachineRegistry registry = assemble(builders, maxCascadeDepth, maxWatchChain, listener, new Observers(observers));
             used = true;
             return registry;
         }

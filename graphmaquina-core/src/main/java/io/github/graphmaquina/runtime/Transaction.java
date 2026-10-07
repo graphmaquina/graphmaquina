@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionRef;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.GuardResult;
@@ -12,6 +13,7 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.RejectionKind;
+import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AbortDetails;
 import io.github.graphmaquina.error.CascadeCycleException;
@@ -31,15 +33,37 @@ import java.util.concurrent.CompletionStage;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 
-/** Engine of a root transaction. All the state of the transition lives here and in the UnitOfWork. */
+/** Engine of a root transaction. All the state of the transition lives here and in the UnitOfWork, the phase of its call included. */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class Transaction {
 
     private final MachineRegistry registry;
     private final UnitOfWork uow;
     private final List<ContextHandle> contexts = new ArrayList<>();
+    private CallPhase phase = CallPhase.RESOLVE;
+    private boolean writing;
 
     UnitOfWork uow() { return uow; }
+
+    /**
+     * Where the call stands. Only the root's own step moves it, to GUARD before its first guard and to ACTION once
+     * its guards passed; a cascaded step leaves it at ACTION. The root moves it on to COMMIT, HOOK and REACTIONS.
+     */
+    CallPhase phase() { return phase; }
+
+    void enter(CallPhase next) { phase = next; }
+
+    /** Phase 2 is about to call a setter: from here a failure in COMMIT may leave the states partially written. */
+    void writing() { writing = true; }
+
+    /** How far the call got in writing states: none before the commit, all after it, and during it what the setters did. */
+    StatesWritten statesWritten() {
+        return switch (phase) {
+            case RESOLVE, GUARD, ACTION -> StatesWritten.NONE;
+            case COMMIT -> writing ? StatesWritten.PARTIAL : StatesWritten.NONE;
+            case HOOK, REACTIONS -> StatesWritten.ALL;
+        };
+    }
 
     <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> keyFor(Class<? extends Machine<P, Q, U>> facade) {
         return registry.keyFor(facade);
@@ -71,6 +95,9 @@ final class Transaction {
         TransitionSpec<E, S, T> transition = selected.orElseThrow();
         uow.push(ref, transition);
         try {
+            if (depth == 0 && !transition.guards().isEmpty()) {
+                phase = CallPhase.GUARD;
+            }
             for (GuardRef<E, S, T> guard : transition.guards()) {
                 DefaultGuardContext<E, S, T> guardContext =
                         new DefaultGuardContext<>(this, machine, entity, transition, depth, input);
@@ -80,6 +107,9 @@ final class Transaction {
                     return rejected(machine, ref, from, id, Optional.of(transition.to()), depth, reject.reason(),
                             RejectionKind.GUARD, Optional.of(guard.name()));
                 }
+            }
+            if (depth == 0) {
+                phase = CallPhase.ACTION;
             }
             int savepoint = uow.savepoint();
             uow.append(new LogEntry(ref, transition, depth));

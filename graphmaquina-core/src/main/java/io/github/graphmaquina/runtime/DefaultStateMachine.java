@@ -1,16 +1,20 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.AsyncStateMachine;
+import io.github.graphmaquina.api.CallFailure;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CommitContext;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.HookRef;
 import io.github.graphmaquina.api.IgnoreReason;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionListener;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
@@ -93,7 +97,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(transition, "transition");
         requireTransition(transition);
-        return runRoot(entity, (Transaction tx) -> tx.transition(this, entity, transition, 0, input), 0);
+        Reentrancy.check(key(), entity);
+        Optional<Observed> observed = observe(entity, transition, false);
+        return runRoot(entity, observed, (Transaction tx) -> tx.transition(this, entity, transition, 0, input), 0);
     }
 
     void requireTransition(T transition) {
@@ -109,39 +115,58 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     /**
-     * chain counts reaction -> transition -> reaction. Exceeding maxWatchChain throws WatchChainExceededException
-     * after the reentrancy check and the state read, before any watch function runs. The state read and the watch
-     * functions, peersOf and the conditions, run with the reentrancy marker set, so none of them can start a
-     * transition on this thread: a nested root would begin a chain of its own that maxWatchChain never counts. The
-     * marker is released before the selected edge runs as a root.
+     * chain counts reaction -> transition -> reaction, so a chain above 0 is a watch reaction. Exceeding
+     * maxWatchChain throws WatchChainExceededException after the reentrancy check and the state read, before any
+     * watch function runs. The state read and the watch functions, peersOf and the conditions, run with the
+     * reentrancy marker set, so none of them can start a transition on this thread: a nested root would begin a chain
+     * of its own that maxWatchChain never counts. The marker is released before the selected edge runs as a root.
+     * Observers see the whole of it as one call, which ends in RESOLVE if it throws before an edge runs.
      */
     Outcome<E, S, T> reevaluate(E entity, int chain) {
+        Reentrancy.check(key(), entity);
+        Optional<Observed> observed = observe(entity, null, chain > 0);
         S state;
         Optional<WatchSpec<E, S, T, ?, ?, ?>> watch;
         Optional<T> selected = Optional.empty();
-        Reentrancy.enter(key(), entity);
         try {
-            state = readState(entity);
-            if (chain > registry.maxWatchChain()) {
-                AbortDetails details = new AbortDetails(key(), entity, state, Optional.empty(), Optional.empty(),
-                        Optional.empty(), List.of(), List.of());
-                throw new WatchChainExceededException(details, registry.maxWatchChain());
+            Reentrancy.enter(key(), entity);
+            try {
+                state = readState(entity);
+                if (chain > registry.maxWatchChain()) {
+                    AbortDetails details = new AbortDetails(key(), entity, state, Optional.empty(), Optional.empty(),
+                            Optional.empty(), List.of(), List.of());
+                    throw new WatchChainExceededException(details, registry.maxWatchChain());
+                }
+                watch = definition.watch(state);
+                if (watch.isPresent()) {
+                    selected = firstMatch(watch.get(), entity);
+                }
+            } finally {
+                Reentrancy.exit();
             }
-            watch = definition.watch(state);
-            if (watch.isPresent()) {
-                selected = firstMatch(watch.get(), entity);
-            }
-        } finally {
-            Reentrancy.exit();
+        } catch (Throwable thrown) {
+            failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, thrown);
+            throw thrown;
         }
         if (watch.isEmpty()) {
-            return notify(new Outcome.Ignored<>(entity, state, IgnoreReason.NO_WATCH));
+            return ignored(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_WATCH));
         }
         if (selected.isEmpty()) {
-            return notify(new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
+            return ignored(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
         T resolved = selected.orElseThrow();
-        return runRoot(entity, (Transaction tx) -> tx.transition(this, entity, resolved, 0), chain);
+        return runRoot(entity, observed, (Transaction tx) -> tx.transition(this, entity, resolved, 0), chain);
+    }
+
+    /** A reevaluation that selected nothing: the listener is told inside the call, so an observer sees its failure. */
+    private Outcome<E, S, T> ignored(Optional<Observed> observed, Outcome<E, S, T> outcome) {
+        try {
+            notify(outcome);
+        } catch (Throwable thrown) {
+            failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, thrown);
+            throw thrown;
+        }
+        return completed(observed, outcome);
     }
 
     /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */
@@ -178,42 +203,86 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      */
-    Outcome<E, S, T> runRoot(E entity, Function<Transaction, StepResult<S, T>> body, int chain) {
+    /**
+     * Root transaction: new UoW with its deadline, reentrancy marker, step, phase 2, context invalidation, then the
+     * hooks and the watch reactions of what it committed. Everything is prepared before the marker is set, so that
+     * from {@code Reentrancy.enter} on, the only way out runs through the {@code finally} that releases it, whatever
+     * the step throws. The transaction keeps the phase of the call, which the observers are told when it throws.
+     * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
+     * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
+     */
+    Outcome<E, S, T> runRoot(E entity, Optional<Observed> observed, Function<Transaction, StepResult<S, T>> body,
+                             int chain) {
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), deadlineNanos());
         Transaction tx = new Transaction(registry, uow);
-        Reentrancy.enter(key(), entity);
-        StepResult<S, T> step;
-        List<TransitionRecord<?, ?, ?>> records;
-        List<LogEntry> committed;
-        CommitSummary summary;
+        Outcome<E, S, T> outcome;
         try {
-            step = body.apply(tx);
-            boolean commits = step instanceof StepResult.Applied<S, T> || step instanceof StepResult.Failed<S, T>;
-            if (commits) {
-                summary = Commit.apply(registry, uow);
-                records = uow.records();
-                committed = uow.entries();
-            } else {
-                summary = CommitSummary.EMPTY;
-                records = List.of();
-                committed = List.of();
+            StepResult<S, T> step;
+            List<TransitionRecord<?, ?, ?>> records;
+            List<LogEntry> committed;
+            CommitSummary summary;
+            Reentrancy.enter(key(), entity);
+            try {
+                step = body.apply(tx);
+                boolean commits = step instanceof StepResult.Applied<S, T> || step instanceof StepResult.Failed<S, T>;
+                if (commits) {
+                    tx.enter(CallPhase.COMMIT);
+                    summary = Commit.apply(registry, tx);
+                    records = uow.records();
+                    committed = uow.entries();
+                } else {
+                    summary = CommitSummary.EMPTY;
+                    records = List.of();
+                    committed = List.of();
+                }
+            } finally {
+                tx.invalidate();
+                Reentrancy.exit();
             }
-        } finally {
-            tx.invalidate();
-            Reentrancy.exit();
+            List<Reaction> reactions = List.of();
+            if (!committed.isEmpty()) {
+                tx.enter(CallPhase.HOOK);
+                runHooks(committed);
+                tx.enter(CallPhase.REACTIONS);
+                reactions = registry.dispatchWatches(summary, chain);
+            }
+            outcome = notify(switch (step) {
+                case StepResult.Applied<S, T> applied ->
+                        new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(), records, reactions);
+                case StepResult.Ignored<S, T> ignored -> new Outcome.Ignored<>(entity, ignored.from(), ignored.reason());
+                case StepResult.Rejected<S, T> rejected -> new Outcome.Rejected<>(entity, rejected.from(),
+                        rejected.transition(), rejected.reason(), rejected.kind(), rejected.guard());
+                case StepResult.Failed<S, T> failed -> new Outcome.Failed<>(entity, failed.from(), failed.transition(),
+                        failed.to(), failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
+                        records, reactions);
+            });
+        } catch (Throwable thrown) {
+            failed(observed, tx.phase(), tx.statesWritten(), thrown);
+            throw thrown;
         }
-        runHooks(committed);
-        List<Reaction> reactions = committed.isEmpty() ? List.of() : registry.dispatchWatches(summary, chain);
-        return notify(switch (step) {
-            case StepResult.Applied<S, T> applied ->
-                    new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(), records, reactions);
-            case StepResult.Ignored<S, T> ignored -> new Outcome.Ignored<>(entity, ignored.from(), ignored.reason());
-            case StepResult.Rejected<S, T> rejected -> new Outcome.Rejected<>(entity, rejected.from(),
-                    rejected.transition(), rejected.reason(), rejected.kind(), rejected.guard());
-            case StepResult.Failed<S, T> failed -> new Outcome.Failed<>(entity, failed.from(), failed.transition(),
-                    failed.to(), failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
-                    records, reactions);
-        });
+        return completed(observed, outcome);
+    }
+
+    /** Tells the registry's observers that a call starts; reads no clock and allocates nothing when it has none. */
+    private Optional<Observed> observe(E entity, T requested, boolean reaction) {
+        Observers observers = registry.observers();
+        if (observers.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(observers.started(new MachineCall(key(), entity, Optional.ofNullable(requested), reaction)));
+    }
+
+    private static <O extends Outcome<?, ?, ?>> O completed(Optional<Observed> observed, O outcome) {
+        if (observed.isPresent()) {
+            observed.get().completed(outcome);
+        }
+        return outcome;
+    }
+
+    private static void failed(Optional<Observed> observed, CallPhase phase, StatesWritten written, Throwable thrown) {
+        if (observed.isPresent()) {
+            observed.get().failed(new CallFailure(phase, written, thrown));
+        }
     }
 
     /**
