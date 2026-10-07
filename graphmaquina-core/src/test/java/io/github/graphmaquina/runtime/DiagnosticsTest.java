@@ -24,6 +24,7 @@ import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.ReentrantTransitionException;
+import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UnhandledFailureException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
@@ -77,12 +78,13 @@ class DiagnosticsTest {
                             return GuardResult.pass();
                         })));
         self.set(machine);
-        ReentrantTransitionException error = assertThrows(ReentrantTransitionException.class,
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                 () -> machine.execute(new Doc("1", DRAFT), SUBMIT));
+        ReentrantTransitionException reentrant = assertInstanceOf(ReentrantTransitionException.class, error.getCause());
         assertEquals("execute/reevaluate on Doc/DocStatus from within a transition, a watch evaluation or an observer"
                 + " callback already in progress on this thread: a guard, an action, a watch's peersOf, ownerOf or"
                 + " condition, a state accessor, an identity function or an observer cannot start another transition;"
-                + " an action moves its peers with ctx.cascade(...)", error.getMessage());
+                + " an action moves its peers with ctx.cascade(...)", reentrant.getMessage());
         assertEquals(DRAFT, other.status());
     }
 

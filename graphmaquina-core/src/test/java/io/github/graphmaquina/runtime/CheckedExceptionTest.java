@@ -72,7 +72,7 @@ import org.junit.jupiter.api.Test;
  * {@code @SneakyThrows} compile to. Each one takes the route an unchecked exception from the same callback takes.
  * An {@code Error} is never routed: thrown by a callback it propagates unchanged, while one that completes a stage
  * is the cause of a technical abort. An engine exception from an action or a guard is never routed either: bare or
- * wrapped however deeply, thrown or completing a stage, it reaches the caller as it was thrown. An action that
+ * wrapped however deeply, thrown or completing a stage, it aborts the call and becomes its cause. An action that
  * throws a chain of wrappers looping back on itself still ends in a technical abort.
  */
 class CheckedExceptionTest {
@@ -459,13 +459,12 @@ class CheckedExceptionTest {
     }
 
     /**
-     * An engine exception keeps its identity on every path that brings it back from an action or a guard: thrown
-     * bare or in a CompletionException or an ExecutionException, by a synchronous or an asynchronous action or guard
-     * or by a recovery action, or completing a stage, it reaches the caller as it was thrown, never as the cause of
-     * an abort.
+     * An engine exception that is not a failure of the call is a cause like any other, on every path that brings it
+     * back from an action or a guard: thrown bare or in a CompletionException or an ExecutionException, by a
+     * synchronous or an asynchronous action or guard or by a recovery action, or completing a stage.
      */
     @Test
-    void anEngineExceptionReachesTheCallerAsItWasThrownOnEveryPath() {
+    void anEngineExceptionFromACallbackAbortsTheCallOnEveryPath() {
         StateMachineException engine = new StateMachineException("the ledger refused the entry");
         Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths = new LinkedHashMap<>();
         paths.put("sync action, bare", docs(
@@ -540,18 +539,17 @@ class CheckedExceptionTest {
                         + " caused by " + (thrown.getCause() == engine ? "the engine exception" : thrown.getCause());
             }
             ends.add(path.getKey() + ": " + end + ", " + doc.status());
-            expected.add(path.getKey() + ": the engine exception itself, DRAFT");
+            expected.add(path.getKey() + ": TransitionAbortedException caused by the engine exception, DRAFT");
         }
         assertEquals(expected, ends);
     }
 
     /**
-     * The same holds for an engine exception that comes from another root. An action that joins another machine's
-     * failing asynchronous call receives that root's abort in a CompletionException, and the caller of the action's
-     * own call gets that abort unchanged: its details describe the other root and its entity, not this call.
+     * An engine exception from another call is never this call's failure. An action that joins another machine's
+     * failing asynchronous call aborts its own call, whose details describe it, with the other call's abort as cause.
      */
     @Test
-    void anEngineExceptionFromAnotherRootKeepsTheDetailsOfThatRoot() {
+    void anEngineExceptionFromAnotherCallBecomesTheCauseOfThisCallsAbort() {
         IllegalStateException ledger = new IllegalStateException("ledger down");
         StateMachine<Doc, DocStatus, DocTransition> other = standalone(docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
@@ -568,19 +566,21 @@ class CheckedExceptionTest {
         Doc doc = new Doc("1", DRAFT);
         TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                 () -> machine.execute(doc, SUBMIT));
-        assertSame(elsewhere, error.details().entity());
-        assertSame(ledger, error.getCause());
+        assertSame(doc, error.details().entity());
+        assertSame(doc, error.call().entity());
+        TransitionAbortedException otherFailure = assertInstanceOf(TransitionAbortedException.class, error.getCause());
+        assertSame(elsewhere, otherFailure.details().entity());
+        assertSame(ledger, otherFailure.getCause());
         assertEquals(DRAFT, doc.status());
         assertEquals(DRAFT, elsewhere.status());
     }
 
     /**
-     * An engine exception keeps its identity however deeply it is wrapped. Inside 10,000 nested CompletionExceptions,
-     * far more than the 16 hops the unwrap was once bounded to, it still reaches the caller as it was thrown: thrown by
-     * a synchronous or an asynchronous action or guard or by a recovery action, or completing a stage.
+     * An engine exception is found as the cause however deeply it is wrapped: inside 10,000 nested
+     * CompletionExceptions, far more than the 16 hops the unwrap was once bounded to, on every path.
      */
     @Test
-    void anEngineExceptionReachesTheCallerAsItWasThrownHoweverDeeplyItIsWrapped() {
+    void anEngineExceptionIsTheCauseHoweverDeeplyItIsWrapped() {
         StateMachineException engine = new StateMachineException("the ledger refused the entry");
         CompletionException deep = nested(10_000, engine);
         Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths = new LinkedHashMap<>();
@@ -637,7 +637,7 @@ class CheckedExceptionTest {
                         + " caused by " + (thrown.getCause() == engine ? "the engine exception" : thrown.getCause());
             }
             ends.add(path.getKey() + ": " + end + ", " + doc.status());
-            expected.add(path.getKey() + ": the engine exception itself, DRAFT");
+            expected.add(path.getKey() + ": TransitionAbortedException caused by the engine exception, DRAFT");
         }
         assertEquals(expected, ends);
     }

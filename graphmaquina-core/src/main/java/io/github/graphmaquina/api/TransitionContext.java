@@ -5,14 +5,14 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Context handed to a {@link TransitionAction} or an {@link AsyncTransitionAction}: the edge, the depth, peer views
- * and cascades. A cascade runs the peer's step in this transaction and returns Applied or Failed; once its arguments
- * are accepted, whatever else it ends in propagates and poisons the transaction, so the root cannot commit even if
- * the action catches it. {@code cascadeAll} copies its collection before any element runs and never reads it again:
- * a change made to the collection while the cascade runs, by an element's action for instance, changes neither which
- * elements run nor their order. Peer views and cascades work only on the thread that called {@code process()} and only
- * until the root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards
- * {@code StaleContextException}.
+ * Context handed to a {@link TransitionAction} or an {@link AsyncTransitionAction}: the edge, the depth, peer views and
+ * cascades. A cascade runs the peer's step in this transaction and returns Applied or Failed; once its arguments are
+ * accepted, whatever else it ends in poisons the transaction, so the root cannot commit even if the action catches it:
+ * the action receives a failure of the call as it is, anything else as an abort of the call that carries it, and an
+ * Error as itself. {@code cascadeAll} copies its collection before any element runs and never reads it again: a change
+ * made to the collection while the cascade runs, by an element's action for instance, changes neither which elements
+ * run nor their order. Peer views and cascades work only on the thread that called {@code process()} and only until the
+ * root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}.
  */
 public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 

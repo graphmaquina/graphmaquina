@@ -409,7 +409,9 @@ class SingleMachineTest {
     void reentrancyIsDetected() {
         submit.onCall = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> machine.execute(ctx.entity(), DISCARD);
         Doc doc = new Doc("1", DRAFT);
-        assertThrows(ReentrantTransitionException.class, () -> machine.execute(doc, SUBMIT));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
+        assertInstanceOf(ReentrantTransitionException.class, error.getCause());
         assertEquals(DRAFT, doc.status());
         Outcome<Doc, DocStatus, DocTransition> later = machine.execute(new Doc("2", REVIEW), SEND_BACK);
         assertInstanceOf(Outcome.Applied.class, later);

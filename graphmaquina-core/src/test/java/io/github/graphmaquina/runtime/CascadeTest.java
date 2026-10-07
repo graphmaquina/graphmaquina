@@ -263,9 +263,10 @@ class CascadeTest {
             return ActionOutcome.ok();
         };
         StateMachine<Order, OrderStatus, OrderTransition> orders = registry(10).of(ORDERS);
-        AmbiguousIdentityException error = assertThrows(AmbiguousIdentityException.class,
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                 () -> orders.execute(first, OrderTransition.SHIP));
-        assertEquals("o1", error.id());
+        AmbiguousIdentityException ambiguous = assertInstanceOf(AmbiguousIdentityException.class, error.getCause());
+        assertEquals("o1", ambiguous.id());
         assertEquals(OrderStatus.PAID, first.status());
     }
 
@@ -281,7 +282,9 @@ class CascadeTest {
                                 shipOrder, cancelOrder, retryBudget, allPacked))
                         .state(Order::status, Order::setStatus).identity(Order::id).asyncTimeout(Duration.ofSeconds(5)))
                 .build();
-        assertThrows(UnknownPeerMachineException.class, () -> onlyOrders.of(ORDERS).execute(order, OrderTransition.CANCEL));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> onlyOrders.of(ORDERS).execute(order, OrderTransition.CANCEL));
+        assertInstanceOf(UnknownPeerMachineException.class, error.getCause());
         assertEquals(OrderStatus.NEW, order.status());
     }
 

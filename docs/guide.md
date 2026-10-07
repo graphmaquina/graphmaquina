@@ -1283,10 +1283,12 @@ declared `throws IOException` with `failsOn = IOException.class` takes the failu
 declaring it, as Kotlin or `@SneakyThrows` code can. A guard, a hook, a watch condition, a state or identity
 accessor, or a watch's peers or owner reader may declare a checked exception too: the generated companion
 compiles, and the exception is handled as the same exception thrown undeclared would be. `failsOn` applies to
-action failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a
-guard or action throws or completes its stage with, bare or wrapped in one of those two classes, is rethrown as
-it is and never matched against `failsOn`. An `Error` is never routed either: thrown as itself it propagates
-unchanged, and one that completes a stage, or that one of those two classes carries, aborts.
+action failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a guard
+or action throws or completes its stage with, bare or wrapped in one of those two classes, is never matched against
+`failsOn`: it aborts the call and becomes its cause, so a failure of another call never passes for a failure of this
+one. A failure of the call itself, which a failed cascade throws into the action, is the exception: it ends the call
+as it is. An `Error` is never routed either: thrown as itself it propagates unchanged, and one that completes a stage,
+or that one of those two classes carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine
 exception, or a `CancellationException` or one of its subtypes, which are never domain failures; nor
@@ -1975,22 +1977,24 @@ from its pending state like any other.
 | Policy | Behavior |
 | --- | --- |
 | `FAIL_FAST` | Stop when a cascade fails. |
-| `COLLECT` | Try peers under savepoints, aggregate transition-abort errors, then abort the whole root if any were collected. Other engine failures can abort immediately. |
+| `COLLECT` | Try peers under savepoints, aggregate transition-abort errors, then abort the whole root if any were collected. Any other failure stops it at once. |
 
 `COLLECT` is not partial commit. A nested transition that no edge carries, or that a guard rejected, is an
 abort rather than an ordinary root-level `Rejected` result. A handled domain failure can select the child's
-declared failure route. Any failure that leaves a cascade poisons the unit of work, whether it is an engine
-failure, an exception from a callback the engine does not wrap, such as an identity function, or an `Error`;
-catching it in your action does not make the transaction safe to commit. When the action then returns, or
-throws an exception its `failsOn` lists, the root throws that failure instead, commits nothing and runs no
-failure route; an `Error` or a callback exception arrives wrapped in a `TransitionAbortedException`. A cascade
-that names an unknown machine poisons too, by key or by facade type, even over an empty collection. A refused
-argument poisons nothing: a null peer, a null element, which `cascadeAll` refuses before any element runs, or
-an identifier from another machine's catalogue. `cascadeAll` copies its collection once, before any element runs,
-and never reads it again, so elements added or removed while the cascade runs change neither which elements run
-nor their order; an exception or an `Error` the collection throws while it is copied propagates as it is and
-poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another facade operation
-from inside an action: nested facade entry points violate the runtime's reentrancy rules.
+declared failure route. Any failure that leaves a cascade poisons the unit of work. A failure of the call itself, such
+as an abort in the peer's step, a cycle or the depth limit, reaches your action as it is. Anything else reaches it as
+a `TransitionAbortedException` that names the cascade and carries the failure as its cause: an engine exception that
+describes no call, such as an unknown machine or an ambiguous identity, an exception from a callback the engine does
+not wrap, such as an identity function, or an `Error`, which itself still propagates. Catching it in your action does
+not make the transaction safe to commit. When the action then returns, throws an exception its `failsOn` lists, or
+lets a failure of the call through, the root throws the failure that poisoned it, commits nothing and runs no failure
+route. A cascade that names an unknown machine poisons too, by key or by facade type, even over an empty collection. A
+refused argument poisons nothing: a null peer, a null element, which `cascadeAll` refuses before any element runs, or
+an identifier from another machine's catalogue. `cascadeAll` copies its collection once, before any element runs, and
+never reads it again, so elements added or removed while the cascade runs change neither which elements run nor their
+order; an exception or an `Error` the collection throws while it is copied propagates as it is and poisons nothing,
+even when the machine is unknown. Use `ctx.cascade` instead of calling another facade operation from inside an action:
+nested facade entry points violate the runtime's reentrancy rules.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.
@@ -2752,12 +2756,12 @@ code runs.
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
-| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. |
-| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions, observers may not. |
-| `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. |
-| `StaleContextException` | A context or context-derived view was used after invalidation. |
+| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Inside a call it arrives as the cause of an abort. |
+| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions, observers may not. Inside a call it arrives as the cause of that call's abort. |
+| `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. The caller receives that failure, never this exception. |
+| `StaleContextException` | A context or context-derived view was used after invalidation. Used inside another call, it arrives as the cause of that call's abort. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
-| `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. |
+| `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Inside a call it arrives as the cause of an abort. |
 | `CommitFailedException` | Phase `COMMIT`: the pre-commit check failed (`NONE` written) or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
 | `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()` and `records()` say what. |
 | `InvalidGraphException` | Programmatic DSL definition failed validation; inspect its problem list. |

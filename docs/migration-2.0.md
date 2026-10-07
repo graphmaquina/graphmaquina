@@ -480,15 +480,19 @@ observe. Most items refuse up front what used to fail later, in generated code o
   that leaves a cascade poisons the unit of work as an engine failure does, even when the action catches it, and
   a `failsOn` match after it no longer takes the failure route. `cascadeAll` refuses a null element before any
   element runs, and an unknown machine even over an empty collection; an unknown facade in a cascade poisons
-  like an unknown key.
+  like an unknown key. What poisons without being a failure of the call, an unknown machine or facade, an
+  ambiguous identity, a null peer state, reaches the action and the caller as an abort that carries it.
 - **`cascadeAll` reads its collection once.** It copies the collection before any element runs, so elements
   added or removed while the cascade runs change neither which elements run nor their order. It used to fail with
   a `ConcurrentModificationException` of its own iteration or stop early, which could let the root commit a
   partial batch. An exception or an `Error` the collection throws while it is copied propagates as it is and
   poisons nothing.
-- **Library exceptions pass through.** A `StateMachineException` that a guard or action throws wrapped in
-  `CompletionException` or `ExecutionException` is rethrown as is, never matched against `failsOn`, as it
-  already was bare or through a stage.
+- **A library exception from a guard or an action is a cause.** A `StateMachineException` that a guard or an
+  action throws or completes its stage with, bare or wrapped, aborts the call with it as cause, a failure of
+  another call included. It used to reach the caller as it was, so another call's abort, or an
+  `AfterCommitException` of another call whose states were written, could pass for this call's. A failure of the
+  call itself, from a cascade, still ends the call as it is, and a `PoisonedUnitOfWorkException` the action lets
+  through ends it with the original failure.
 - **Observers replace the listener.** A `MachineObserver`, added with `observer(...)` to a registry or a generated
   set builder as many times as needed, sees every call start and end, failures and `Error`s included. What it
   throws is logged and never changes the call. `TransitionListener`, `listener(...)` and

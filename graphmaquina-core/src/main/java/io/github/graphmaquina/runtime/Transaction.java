@@ -184,6 +184,9 @@ final class Transaction {
         } catch (ActionFailure failure) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
             Throwable cause = failure.getCause();
+            if (cause instanceof CallFailedException own && owns(own)) {
+                throw poisonOr(own);
+            }
             if (matchesFailsOn(transition, cause)) {
                 // A poisoned unit of work never commits, and the failure route commits: the poison is thrown before
                 // any recovery action can run, as it is when the action returns.
@@ -193,9 +196,10 @@ final class Transaction {
                 return failureRoute(machine, ref, entity, transition, depth, savepoint, describe(cause),
                         Optional.of(cause), input);
             }
-            throw abort(machine, ref, transition.from(), Optional.of(transition.transition()), Optional.of(transition.to()),
-                    Optional.of(action.name()), depth, "the action " + action.name() + " threw " + cause, Optional.of(cause));
-        } catch (StateMachineException e) {
+            throw abort(machine, ref, transition.from(), Optional.of(transition.transition()),
+                    Optional.of(transition.to()), Optional.of(action.name()), depth,
+                    "the action " + action.name() + " threw " + cause, Optional.of(cause));
+        } catch (CallFailedException e) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
             throw e;
         }
@@ -212,14 +216,33 @@ final class Transaction {
     }
 
     /**
-     * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. A
-     * StateMachineException the action throws, or that completes its stage, bare or wrapped in CompletionException
-     * or ExecutionException, is rethrown as is: an engine exception is never matched against failsOn. It propagates
-     * unchanged even when it comes from another root, such as the failure of another machine's call that the action
-     * joined: a TransitionAbortedException thrown that way carries details that describe that root, not this call.
-     * Any other Exception, thrown or completing the stage, checked ones included, which Kotlin or
-     * {@code @SneakyThrows} code can throw without declaring them, becomes an ActionFailure that failsOn classifies.
-     * An Error is never routed: thrown as itself, it propagates; wrapped in CompletionException or
+     * What a failure of this call that a callback let through ends the call with: the failure that poisoned the
+     * transaction when one did, which a failed cascade always does, or the failure itself.
+     */
+    private StateMachineException poisonOr(CallFailedException own) {
+        return uow.isPoisoned() ? uow.poison().orElseThrow() : own;
+    }
+
+    /**
+     * What a guard's exception ends the call with: a failure of this call as {@link #poisonOr} says; anything else, a
+     * library exception of another call included, an abort of the call in its current phase with it as cause.
+     */
+    private StateMachineException guardFailure(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
+                                               TransitionSpec<?, ?, ?> transition, int depth, GuardRef<?, ?, ?> guard,
+                                               String what, Throwable cause) {
+        if (cause instanceof CallFailedException own && owns(own)) {
+            return poisonOr(own);
+        }
+        return abort(machine, ref, transition.from(), Optional.of(transition.transition()),
+                Optional.of(transition.to()), Optional.empty(), depth,
+                "the guard " + guard.name() + " " + what + " " + cause, Optional.of(cause));
+    }
+
+    /**
+     * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. Whatever the
+     * action throws, or completes its stage with, checked exceptions and library exceptions included, which Kotlin or
+     * {@code @SneakyThrows} code can throw without declaring them, becomes an ActionFailure that its caller
+     * classifies. An Error is never routed: thrown as itself, it propagates; wrapped in CompletionException or
      * ExecutionException, it is unwrapped and aborts.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
@@ -229,10 +252,8 @@ final class Transaction {
             case ActionRef.Sync<E, S, T> sync -> {
                 try {
                     yield sync.action().process(ctx);
-                } catch (StateMachineException e) {
-                    throw e;
                 } catch (Exception e) {
-                    throw new ActionFailure(Unwrap.foreignCause(e));
+                    throw new ActionFailure(e);
                 }
             }
             case ActionRef.Async<E, S, T> async -> {
@@ -240,10 +261,8 @@ final class Transaction {
                 CompletionStage<ActionOutcome> stage;
                 try {
                     stage = async.action().process(ctx);
-                } catch (StateMachineException e) {
-                    throw e;
                 } catch (Exception e) {
-                    throw new ActionFailure(Unwrap.foreignCause(e));
+                    throw new ActionFailure(e);
                 }
                 if (stage == null) {
                     throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
@@ -264,12 +283,10 @@ final class Transaction {
     }
 
     /**
-     * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. A
-     * StateMachineException the guard throws, or that completes its stage, bare or wrapped in CompletionException or
-     * ExecutionException, is rethrown as is, even one that comes from another root: a TransitionAbortedException
-     * thrown that way carries details that describe that root. Any other exceptional completion of the stage, an
-     * Error included, and any other Exception the guard throws, checked ones included, are technical aborts; an
-     * Error thrown as itself propagates.
+     * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. Whatever
+     * the guard throws or completes its stage with, an Error inside the stage included, ends the call as
+     * {@link #guardFailure} says: a library exception of another call is a cause like any other. An Error thrown as
+     * itself propagates.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> GuardResult evaluateGuard(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition, int depth,
@@ -280,24 +297,16 @@ final class Transaction {
             case GuardRef.Sync<E, S, T> sync -> {
                 try {
                     yield sync.guard().test(ctx);
-                } catch (StateMachineException e) {
-                    throw e;
                 } catch (Exception e) {
-                    Throwable cause = Unwrap.foreignCause(e);
-                    throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
-                            "the guard " + guard.name() + " threw " + cause, Optional.of(cause));
+                    throw guardFailure(machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
                 }
             }
             case GuardRef.Async<E, S, T> async -> {
                 CompletionStage<GuardResult> stage;
                 try {
                     stage = async.guard().test(ctx);
-                } catch (StateMachineException e) {
-                    throw e;
                 } catch (Exception e) {
-                    Throwable cause = Unwrap.foreignCause(e);
-                    throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
-                            "the guard " + guard.name() + " threw " + cause, Optional.of(cause));
+                    throw guardFailure(machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
                 }
                 if (stage == null) {
                     throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
@@ -307,8 +316,7 @@ final class Transaction {
                     yield await(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                             "the guard " + guard.name(), stage, uow.deadlineNanos());
                 } catch (ActionFailure failure) {
-                    throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
-                            "the guard " + guard.name() + " failed: " + failure.getCause(), Optional.of(failure.getCause()));
+                    throw guardFailure(machine, ref, transition, depth, guard, "failed:", failure.getCause());
                 }
             }
         };
@@ -401,11 +409,16 @@ final class Transaction {
                 outcome = executeAction(machine, ref, route, action, ctx);
             } catch (ActionFailure failure) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
+                Throwable recoveryCause = failure.getCause();
+                if (recoveryCause instanceof CallFailedException own && owns(own)) {
+                    throw poisonOr(own);
+                }
                 throw abort(machine, ref, from, Optional.of(recoveryId), Optional.of(route.to()),
                         Optional.of(action.name()), depth,
-                        "the failure route action " + action.name() + " threw after the original failure (" + reason + ")",
-                        Optional.of(failure.getCause()));
-            } catch (StateMachineException e) {
+                        "the failure route action " + action.name() + " threw after the original failure ("
+                                + reason + ")",
+                        Optional.of(recoveryCause));
+            } catch (CallFailedException e) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
                 throw e;
             }
@@ -523,7 +536,7 @@ final class Transaction {
 
     /**
      * Resolves the facade a cascade names inside the poisoning scope: an unknown facade poisons, as an unknown key
-     * does once the cascade looks its machine up.
+     * does once the cascade looks its machine up, and the action receives the abort that carries it.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> cascadeKeyFor(ContextHandle caller,
                                                                               Class<? extends Machine<P, Q, U>> facade) {
@@ -531,16 +544,15 @@ final class Transaction {
         try {
             return keyFor(facade);
         } catch (StateMachineException e) {
-            uow.poison(e);
-            throw e;
+            throw poisonWith(caller, facade.getSimpleName(), e);
         }
     }
 
     /**
      * Cascade to a single peer. An identifier from another catalogue is refused before anything starts, as the context
      * refuses a null argument before calling this: such a refusal stages nothing and poisons nothing. Once the cascade
-     * starts, any failure poisons the UnitOfWork: the parent cannot carry on as if nothing happened. The failure itself
-     * reaches the parent unchanged, an Error included.
+     * starts, any failure poisons the UnitOfWork: the parent cannot carry on as if nothing happened. The action
+     * receives what poisoned it, as {@link #poisonWith} says, and an Error as itself.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(ContextHandle caller, MachineKey<P, Q, U> key,
                                                                        P peer, U id) {
@@ -549,8 +561,11 @@ final class Transaction {
         try {
             return cascadeOne(caller, key, peer, id);
         } catch (Throwable error) {
-            poison(caller, key, error);
-            throw error;
+            CallFailedException poisoned = poisonWith(caller, key.toString(), error);
+            if (error instanceof Error fatal) {
+                throw fatal;
+            }
+            throw poisoned;
         }
     }
 
@@ -562,16 +577,18 @@ final class Transaction {
     }
 
     /**
-     * An engine failure is the poison itself. Anything else, an Error or an exception from a callback the engine does
-     * not wrap such as an identity function, poisons through an abort that names the cascade and carries it as cause.
+     * Poisons the transaction with a failure that left a cascade, and returns what poisoned it: a failure of this call
+     * as it is; anything else, an engine exception that describes no call, an exception from a callback the engine
+     * does not wrap such as an identity function, a library exception of another call or an Error, through an abort of
+     * the caller's step that names the cascade and carries it as cause. A transaction keeps its first poison.
      */
-    private void poison(ContextHandle caller, MachineKey<?, ?, ?> key, Throwable error) {
-        if (error instanceof StateMachineException engine) {
-            uow.poison(engine);
-        } else {
-            uow.poison(new TransitionAbortedException(call(), phase, details(caller),
-                    "the cascade to " + key + " failed: " + error, error));
-        }
+    private CallFailedException poisonWith(ContextHandle caller, String target, Throwable error) {
+        CallFailedException failure = error instanceof CallFailedException own && owns(own)
+                ? own
+                : new TransitionAbortedException(call(), phase, details(caller),
+                        "the cascade to " + target + " failed: " + error, error);
+        uow.poison(failure);
+        return failure;
     }
 
     /**
@@ -620,15 +637,15 @@ final class Transaction {
     /**
      * FAIL_FAST aborts at the first failure. COLLECT tries every element under its own savepoint, rolls back
      * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
-     * COLLECT gathers transition aborts only: any other failure poisons and propagates at once. Once the poison is
-     * checked, the collection is copied, and every later step reads the copy alone: the elements checked are the
-     * elements run, and a change to the collection while the cascade runs, by an element's action for instance,
-     * changes neither which elements run nor their order. Copying is part of accepting the arguments: an exception or
-     * an Error the collection throws while it is copied propagates as it is, and stages and poisons nothing. The
-     * arguments are refused before any element runs, as cascade refuses its own, and the refusal stages nothing and
-     * poisons nothing: a null element first, then an identifier from another catalogue, which the key carries. The
-     * machine is looked up next, before any element runs, so an unknown key poisons whatever valid elements the
-     * collection holds, and an empty collection too, as it does in cascade.
+     * COLLECT gathers the aborts of the call only: any other failure poisons, through an abort that carries it, and
+     * stops the cascade at once. Once the poison is checked, the collection is copied, and every later step reads the
+     * copy alone: the elements checked are the elements run, and a change to the collection while the cascade runs, by
+     * an element's action for instance, changes neither which elements run nor their order. Copying is part of
+     * accepting the arguments: an exception or an Error the collection throws while it is copied propagates as it is,
+     * and stages and poisons nothing. The arguments are refused before any element runs, as cascade refuses its own,
+     * and the refusal stages nothing and poisons nothing: a null element first, then an identifier from another
+     * catalogue, which the key carries. The machine is looked up next, before any element runs, so an unknown key
+     * poisons whatever valid elements the collection holds, and an empty collection too, as it does in cascade.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(ContextHandle caller,
                                                                                 MachineKey<P, Q, U> key,
@@ -665,7 +682,7 @@ final class Transaction {
     private <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeEach(
             ContextHandle caller, MachineKey<P, Q, U> key, List<P> elements, U id, CascadePolicy policy) {
         requireTransition(key, id);
-        requireMachine(key);
+        requireMachine(caller, key);
         List<Outcome<P, Q, U>> outcomes = new ArrayList<>();
         List<TransitionAbortedException> errors = new ArrayList<>();
         for (P peer : elements) {
@@ -676,13 +693,18 @@ final class Transaction {
             int savepoint = uow.savepoint();
             try {
                 outcomes.add(cascadeOne(caller, key, peer, id));
-            } catch (TransitionAbortedException e) {
-                uow.rollbackTo(savepoint);
-                uow.clearPoison();
-                errors.add(e);
             } catch (Throwable error) {
-                poison(caller, key, error);
-                throw error;
+                if (error instanceof TransitionAbortedException abort && owns(abort)) {
+                    uow.rollbackTo(savepoint);
+                    uow.clearPoison();
+                    errors.add(abort);
+                    continue;
+                }
+                CallFailedException poisoned = poisonWith(caller, key.toString(), error);
+                if (error instanceof Error fatal) {
+                    throw fatal;
+                }
+                throw poisoned;
             }
         }
         if (!errors.isEmpty()) {
@@ -694,12 +716,11 @@ final class Transaction {
     }
 
     /** Looks the machine of a cascade up inside the poisoning scope: an unknown key poisons, as in cascadeOne. */
-    private void requireMachine(MachineKey<?, ?, ?> key) {
+    private void requireMachine(ContextHandle caller, MachineKey<?, ?, ?> key) {
         try {
             registry.anyMachineFor(key);
         } catch (StateMachineException e) {
-            uow.poison(e);
-            throw e;
+            throw poisonWith(caller, key.toString(), e);
         }
     }
 

@@ -28,12 +28,10 @@ import java.util.concurrent.TimeoutException;
  * comes first, then completion, then the deadline. A wait that an interrupt ends leaves the thread interrupted. Once
  * complete, the stage's outcome is read with get, which then returns or throws at once.
  * A deadline of Long.MAX_VALUE means no limit. Any other deadline is only ever subtracted from, so one that wrapped
- * past Long.MAX_VALUE when its budget was added still leaves the exact time remaining. A stage that completes with a
- * StateMachineException, bare or wrapped in CompletionException or ExecutionException, rethrows it as is, as the
- * engine does with one a callback throws, even one from another root: a TransitionAbortedException thrown that way
- * carries details that describe that root. Any other exceptional completion surfaces as an ActionFailure, an Error
- * included: the engine learns of that Error only through the stage, so it reports it as the cause of an abort, while
- * an Error thrown as itself on the calling thread propagates unchanged.
+ * past Long.MAX_VALUE when its budget was added still leaves the exact time remaining. Any exceptional
+ * completion surfaces as an ActionFailure, a library exception and an Error included: the engine learns of that
+ * Error only through the stage, so it reports it as the cause of an abort, while an Error thrown as itself on the
+ * calling thread propagates unchanged.
  */
 final class Await {
 
@@ -100,7 +98,7 @@ final class Await {
         } catch (CancellationException e) {
             throw new ActionFailure(e);
         } catch (ExecutionException e) {
-            throw new ActionFailure(Unwrap.foreignCause(e));
+            throw new ActionFailure(e);
         }
     }
 

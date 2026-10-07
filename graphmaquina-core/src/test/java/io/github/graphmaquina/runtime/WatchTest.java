@@ -375,7 +375,9 @@ class WatchTest {
         };
         Order order = new Order("o1", OrderStatus.PAID);
         Item item = new Item("i1", ItemStatus.PACKING, Optional.of(order));
-        assertThrows(ReentrantTransitionException.class, () -> items.execute(item, ItemTransition.PACK));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> items.execute(item, ItemTransition.PACK));
+        assertInstanceOf(ReentrantTransitionException.class, error.getCause());
         assertEquals(ItemStatus.PACKING, item.status());
         assertEquals(OrderStatus.PAID, order.status());
     }
