@@ -26,11 +26,11 @@ import lombok.Getter;
  * known: before the lookup for a key, which carries it, and once the facade has resolved for a facade type, so an
  * unknown facade is refused first, and poisons.
  *
- * <p>A poisoned transaction never commits. When the action that caught the failure returns, returns a failure,
- * throws an exception its failsOn lists, or lets a failure of the call through, this exception included, the engine
- * throws the failure that poisoned the transaction, the one {@code original()} reports, and never this exception:
- * an abort of the call, the abort that carries an Error or any other exception, or COLLECT's aggregate. No failure
- * route is taken, so no recovery action runs.
+ * <p>A poisoned transaction never commits. When the action that caught the failure returns, returns a failure, throws a
+ * throwable its failsOn lists, or lets a failure of the call through, this exception included, the engine throws the
+ * failure that poisoned the transaction, the one {@code original()} reports, and never this exception: an abort of the
+ * call, the abort that carries an Error or any other exception, or COLLECT's aggregate. No failure route is taken, so
+ * no recovery action runs.
  */
 @Getter
 public final class PoisonedUnitOfWorkException extends TransitionAbortedException {

@@ -1425,7 +1425,7 @@ written. [Handle a failed call](#handle-a-failed-call) shows how to read them.
   itself committed; it is not proof that the reaction left state unchanged. A reevaluation that failed carries its
   `CallFailedException`, whose `statesWritten()` says whether the reaction wrote anything. An owner lookup fails before
   any reevaluation, so the reaction carries what it threw: a `RuntimeException` as it is, and a checked exception or any
-  other throwable that is neither a `RuntimeException` nor an `Error` wrapped in `UndeclaredThrowableException`. An
+  other throwable that is neither a `RuntimeException` nor an `Error`, wrapped in `UndeclaredThrowableException`. An
   `Error` is not caught: it propagates to the caller whose commit triggered the reaction.
 
 ### Handle a failed call
@@ -2027,7 +2027,7 @@ step, a cycle or the depth limit, reaches your action as it is. Anything else re
 describes no call, such as an unknown machine or an ambiguous identity, or an exception from a callback the engine does
 not wrap, such as an identity function. An `Error` poisons through such an abort too, but reaches your action as itself.
 Catching it in your action does not make the transaction safe to commit. When the action then returns, throws an
-exception its `failsOn` lists, or lets a failure of the call through, the root throws the failure that poisoned it,
+throwable its `failsOn` lists, or lets a failure of the call through, the root throws the failure that poisoned it,
 commits nothing and runs no failure route. A cascade that names an unknown machine poisons too, by key or by facade
 type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which `cascadeAll`
 refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its collection
@@ -2036,7 +2036,7 @@ neither which elements run nor their order; an exception or an `Error` the colle
 propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
 facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
 reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
-runs tasks inline.
+runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.
@@ -2129,10 +2129,11 @@ transaction. A reaction failure does not roll back the peer commit that triggere
 The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the engine
 evaluates the watch, before that root starts, and may not start a transition on their own thread: `execute` or
 `reevaluate` called from one of them throws `ReentrantTransitionException`; a call submitted through `async(...)` runs
-as a separate call on the executor's thread, unless that executor runs tasks inline, which refuses it the same way.
-Inside a reevaluation, the refusal ends the reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that
-carries it: a reaction reports the abort as `Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An
-owner lookup runs before the reevaluation, so its reaction carries the refusal itself.
+as a separate call on the executor's thread, unless that executor runs tasks inline, in which case the returned future
+fails with that exception. Inside a reevaluation, a refusal on its own thread ends the reevaluation in a
+`TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as `Reaction.Aborted` and
+a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so its reaction carries the
+refusal itself.
 
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
@@ -2262,9 +2263,10 @@ An observer watches without taking part. A throwable that is not an `Error` is l
 `System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
 propagates. It cannot start a transition on its own thread either: an operation called from an observer throws
 `ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread as
-a call of its own, unless that executor runs tasks inline, which refuses it the same way. When a failure must fail the
-call, write a hook, or a `Definition.afterCommit` default for every edge of a machine. Observers run on the thread of
-every call, so keep them thread-safe and quick. Add as many as you need: they are notified in the order they were added.
+a call of its own, unless that executor runs tasks inline, in which case the returned future fails with that exception.
+When a failure must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a machine.
+Observers run on the thread of every call, so keep them thread-safe and quick. Add as many as you need: they are
+notified in the order they were added.
 
 ## Concurrency, identity and persistence
 

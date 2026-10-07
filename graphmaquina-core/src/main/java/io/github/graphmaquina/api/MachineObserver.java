@@ -22,7 +22,8 @@ import java.time.Duration;
  *   <li>Its callbacks run with the thread marked as running a call, so an {@code execute} or {@code reevaluate} it
  *   makes on its own thread throws {@code ReentrantTransitionException}, contained like any other exception; one
  *   submitted through {@code async()} runs as a separate call on the executor's thread, unless that executor runs
- *   tasks inline, which refuses it the same way. To act on a commit, use a hook or a watch.</li>
+ *   tasks inline, in which case the returned future fails with that exception. To act on a commit, use a hook or a
+ *   watch.</li>
  * </ul>
  * Observers are called on the thread of every call, concurrently when calls are, so they must be thread-safe and
  * quick.

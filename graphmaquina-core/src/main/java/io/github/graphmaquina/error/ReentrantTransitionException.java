@@ -15,7 +15,8 @@ import lombok.NonNull;
  * transaction has released the thread, so they can start transitions; a watch reaction runs the edge its rule selected
  * as a root of its own, once the watch's functions are done. A guard, an action, a watch function, a state accessor, an
  * identity function or an observer callback that submits a call through {@code async(...)} gets a separate call on the
- * executor's thread, unless that executor runs tasks inline, which refuses the call the same way.
+ * executor's thread, unless that executor runs tasks inline, in which case the returned future fails with that
+ * exception.
  */
 @Getter
 public final class ReentrantTransitionException extends StateMachineException {

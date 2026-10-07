@@ -45,7 +45,7 @@ entity and state enum with different transition catalogues: two engines would ot
 | `edge(from, to)` and `/cells` snapshots | `findTransition(from, id)` and `/transitions` in a v2 snapshot. |
 | A return to the origin, or a terminal with an ACTION self-loop, in the DSL | A terminal forbids every outgoing edge. A non-terminal self-loop is legal and requires `allowsCycle`. |
 | `Outcome.current()` | `Outcome.recordedState()`: the same value, the state the call recorded, not a read of the entity. |
-| `TransitionListener` and `listener(...)` on a builder | `MachineObserver` and `observer(...)`, any number of them. A throwable that is not an `Error` that an observer throws never fails the call: it is logged. An `Error` still propagates. What must fail the call belongs in a hook, or in `Definition.afterCommit` for every edge of a machine. |
+| `TransitionListener` and `listener(...)` on a builder | `MachineObserver` and `observer(...)`, any number of them. A throwable an observer throws, unless it is an `Error`, never fails the call: it is logged. An `Error` still propagates. What must fail the call belongs in a hook, or in `Definition.afterCommit` for every edge of a machine. |
 | `AfterCommitException.step()`, `key()`, `entity()`, `from()`, `to()` | `hook()`, and `hop()`: a `TransitionRecord` that also names the identifier. `records()` lists every hop the call committed. |
 | `CommitFailedException.pending()` that included the entity whose setter threw | `failedEntity()` names it; `pending()` lists only the entities never tried. |
 
@@ -502,8 +502,8 @@ observe. Most items refuse up front what used to fail later, in generated code o
   during the pre-commit check is a `CommitFailedException` with nothing written. `AbortDetails.from()` and
   `TransitionAbortedException.from()` are `Optional`.
 - **Observers replace the listener.** A `MachineObserver`, added with `observer(...)` to a registry or a generated set
-  builder as many times as needed, sees every call start and end, failures and `Error`s included. A throwable that is
-  not an `Error` that it throws is logged and never changes the call; an `Error` propagates. `TransitionListener`,
+  builder as many times as needed, sees every call start and end, failures and `Error`s included. A throwable it throws,
+  unless it is an `Error`, is logged and never changes the call; an `Error` propagates. `TransitionListener`,
   `listener(...)` and `TransitionRecorder.compose(...)` are gone, and an `AfterCommitException` now always means that a
   hook failed.
 - **Call failures share `CallFailedException`.** `TransitionAbortedException`, `CommitFailedException` and
