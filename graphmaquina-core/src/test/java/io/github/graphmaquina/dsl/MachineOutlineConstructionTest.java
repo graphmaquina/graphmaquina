@@ -19,7 +19,8 @@ import org.junit.jupiter.params.provider.MethodSource;
 /**
  * Characterizes the exact {@link IllegalArgumentException} messages, null handling and check order of
  * {@link MachineOutline}'s compact constructor, which looks references up in local {@link Set}s instead of
- * {@link List#contains}. These tests exist to prove that swap does not alter any observable outcome.
+ * {@link List#contains}. These tests exist to prove that swap does not alter any observable outcome, and they pin
+ * where in that order the recovery transitions of an edge are checked.
  */
 class MachineOutlineConstructionTest {
 
@@ -33,6 +34,12 @@ class MachineOutlineConstructionTest {
 
     private static TransitionOutline edgeWithFailure(String from, String transition, String to, String onFailure) {
         return new TransitionOutline(from, transition, to, TransitionKind.ACTION, Optional.of(onFailure));
+    }
+
+    private static TransitionOutline edgeWithRecoveries(String from, String transition, String to,
+            String... recoveries) {
+        return new TransitionOutline(from, transition, to, TransitionKind.ACTION, Optional.empty(),
+                List.of(recoveries));
     }
 
     private static void assertRejected(String expectedMessage, Executable call) {
@@ -100,6 +107,13 @@ class MachineOutlineConstructionTest {
     }
 
     @Test
+    void unknownRecoveryTransitionIsRejected() {
+        assertRejected("M: transition.recovery NOPE is not one of [Z, X]", () -> new MachineOutline(NAME, STATES,
+                CATALOG, "A", Set.of(), Set.of(), List.of(edgeWithRecoveries("A", "Z", "B", "X", "NOPE")), List.of(),
+                List.of()));
+    }
+
+    @Test
     void unknownPolicyStateIsRejected() {
         assertRejected("M: policy.state NOPE is not one of [A, B]", () -> new MachineOutline(NAME, STATES, CATALOG,
                 "A", Set.of(), Set.of(), List.of(), List.of(new PolicyOutline("NOPE", "why", Map.of())), List.of()));
@@ -137,8 +151,8 @@ class MachineOutlineConstructionTest {
 
     // --- check order: when several defects coexist, the earliest one in source order is reported ---------------
     // This chains every membership check, adjacent pair by adjacent pair, in the constructor's exact order:
-    // states -> catalog -> initial -> terminal -> allowsCycle -> (from -> to -> id -> onFailure) per edge
-    // -> (policy.state -> policy.reject) per policy -> (watch.state -> watch.transition) per watch.
+    // states -> catalog -> initial -> terminal -> allowsCycle -> (from -> to -> id -> onFailure -> recovery) per
+    // edge -> (policy.state -> policy.reject) per policy -> (watch.state -> watch.transition) per watch.
 
     @Test
     void emptyStatesWinsOverDuplicateCatalog() {
@@ -193,6 +207,22 @@ class MachineOutlineConstructionTest {
     void onFailureWinsOverPolicyState() {
         assertRejected("M: transition.onFailure NOPE_FAIL is not one of [Z, X]", () -> new MachineOutline(NAME,
                 STATES, CATALOG, "A", Set.of(), Set.of(), List.of(edgeWithFailure("A", "Z", "B", "NOPE_FAIL")),
+                List.of(new PolicyOutline("NOPE_POLICY_STATE", "why", Map.of())), List.of()));
+    }
+
+    @Test
+    void onFailureWinsOverRecovery() {
+        assertRejected("M: transition.onFailure NOPE_FAIL is not one of [Z, X]", () -> new MachineOutline(NAME,
+                STATES, CATALOG, "A", Set.of(), Set.of(),
+                List.of(new TransitionOutline("A", "Z", "B", TransitionKind.ACTION, Optional.of("NOPE_FAIL"),
+                        List.of("NOPE_RECOVERY"))),
+                List.of(), List.of()));
+    }
+
+    @Test
+    void recoveryWinsOverPolicyState() {
+        assertRejected("M: transition.recovery NOPE_RECOVERY is not one of [Z, X]", () -> new MachineOutline(NAME,
+                STATES, CATALOG, "A", Set.of(), Set.of(), List.of(edgeWithRecoveries("A", "Z", "B", "NOPE_RECOVERY")),
                 List.of(new PolicyOutline("NOPE_POLICY_STATE", "why", Map.of())), List.of()));
     }
 
