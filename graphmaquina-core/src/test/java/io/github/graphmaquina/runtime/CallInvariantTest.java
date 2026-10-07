@@ -12,6 +12,7 @@ import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static io.github.graphmaquina.fixtures.Keys.ITEMS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -34,7 +35,10 @@ import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
+import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.error.CallFailedException;
+import io.github.graphmaquina.error.CommitFailedException;
+import io.github.graphmaquina.error.ReentrantTransitionException;
 import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Doc;
@@ -107,9 +111,16 @@ class CallInvariantTest {
     private static MachineRegistry registry(GraphDefinition<Doc, DocStatus, DocTransition> graph,
                                             Function<Doc, DocStatus> getter, BiConsumer<Doc, DocStatus> setter,
                                             Function<Doc, Object> identity, MachineObserver observer) {
+        return registry(graph, getter, setter, identity, observer, Duration.ofMillis(300));
+    }
+
+    private static MachineRegistry registry(GraphDefinition<Doc, DocStatus, DocTransition> graph,
+                                            Function<Doc, DocStatus> getter, BiConsumer<Doc, DocStatus> setter,
+                                            Function<Doc, Object> identity, MachineObserver observer,
+                                            Duration asyncTimeout) {
         return MachineRegistry.builder()
                 .add(StateMachines.from(graph).state(getter, setter).identity(identity)
-                        .asyncTimeout(Duration.ofMillis(300)))
+                        .asyncTimeout(asyncTimeout))
                 .observer(observer)
                 .build();
     }
@@ -157,9 +168,36 @@ class CallInvariantTest {
                 .state(Doc::status, Doc::setStatus).build();
     }
 
+    /** Another machine whose SUBMIT commit fails: its setter throws. */
+    private static StateMachine<Doc, DocStatus, DocTransition> failingCommitElsewhere(RuntimeException boom) {
+        return StateMachines.from(plain()).state(Doc::status, (Doc doc, DocStatus status) -> {
+            throw boom;
+        }).build();
+    }
+
+    /** Another machine whose SUBMIT hook throws, after its states were written. */
+    private static StateMachine<Doc, DocStatus, DocTransition> failingHookElsewhere(RuntimeException boom) {
+        return StateMachines.from(docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                .afterCommit("Notify", (Doc doc) -> {
+                    throw boom;
+                }))).state(Doc::status, Doc::setStatus).build();
+    }
+
+    /** A sync action of this call that joins a call of {@code other}, whose failure the join throws. */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> joiningAction(
+            StateMachine<Doc, DocStatus, DocTransition> other) {
+        return docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    other.async().execute(new Doc("other", DRAFT), SUBMIT).join();
+                    return ActionOutcome.ok();
+                }));
+    }
+
     @Test
     void everyExceptionACallThrowsIsAFailureOfThatCall() {
         IllegalStateException boom = new IllegalStateException("boom");
+        Map<String, Class<? extends Throwable>> causes = new LinkedHashMap<>();
+        Map<String, AtomicReference<Throwable>> caughtFailures = new LinkedHashMap<>();
         Map<String, Scenario> scenarios = new LinkedHashMap<>();
         scenarios.put("identity throws", (Recorder recorder) -> execute(recorder, plain(), Doc::status, Doc::setStatus,
                 (Doc doc) -> {
@@ -340,12 +378,18 @@ class CallInvariantTest {
                                 }))));
         scenarios.put("another call's failure through an action's stage", (Recorder recorder) -> {
             StateMachine<Doc, DocStatus, DocTransition> other = failingElsewhere(boom);
-            run(recorder, docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction(
-                    "Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
-                            other.async().execute(new Doc("other", DRAFT), SUBMIT)
-                                    .thenApply((Outcome<Doc, DocStatus, DocTransition> outcome) ->
-                                            ActionOutcome.ok()))));
+            GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                    (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
+                            (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                    other.async().execute(new Doc("other", DRAFT), SUBMIT)
+                                            .thenApply((Outcome<Doc, DocStatus, DocTransition> outcome) ->
+                                                    ActionOutcome.ok())));
+            try (MachineRegistry registry = registry(graph, Doc::status, Doc::setStatus, Doc::id, recorder,
+                    Duration.ofSeconds(5))) {
+                registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT);
+            }
         });
+        causes.put("another call's failure through an action's stage", TransitionAbortedException.class);
         scenarios.put("PoisonedUnitOfWorkException the action lets through", (Recorder recorder) -> run(recorder,
                 docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
                         (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
@@ -370,6 +414,84 @@ class CallInvariantTest {
         scenarios.put("null peer state", (Recorder recorder) -> run(recorder,
                 cascading(cascadeTo(new Doc("unset", null)),
                         UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity())));
+        scenarios.put("root identity returns null", (Recorder recorder) -> execute(recorder, plain(), Doc::status,
+                Doc::setStatus, (Doc doc) -> null));
+        scenarios.put("root state getter throws", (Recorder recorder) -> execute(recorder, plain(),
+                (Doc doc) -> {
+                    throw boom;
+                }, Doc::setStatus, Doc::id));
+        scenarios.put("pre-check finds another state", (Recorder recorder) -> run(recorder, docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.entity().setStatus(PUBLISHED);
+                            return ActionOutcome.ok();
+                        }))));
+        scenarios.put("action joins an aborted call", (Recorder recorder) -> run(recorder,
+                joiningAction(failingElsewhere(boom))));
+        causes.put("action joins an aborted call", TransitionAbortedException.class);
+        scenarios.put("guard joins an aborted call", (Recorder recorder) -> {
+            StateMachine<Doc, DocStatus, DocTransition> other = failingElsewhere(boom);
+            run(recorder, docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("CanSubmit",
+                    (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        other.async().execute(new Doc("other", DRAFT), SUBMIT).join();
+                        return GuardResult.pass();
+                    })));
+        });
+        causes.put("guard joins an aborted call", TransitionAbortedException.class);
+        scenarios.put("action joins a call whose commit failed", (Recorder recorder) -> run(recorder,
+                joiningAction(failingCommitElsewhere(boom))));
+        causes.put("action joins a call whose commit failed", CommitFailedException.class);
+        scenarios.put("action joins a call whose hook failed", (Recorder recorder) -> run(recorder,
+                joiningAction(failingHookElsewhere(boom))));
+        causes.put("action joins a call whose hook failed", AfterCommitException.class);
+        AtomicReference<Throwable> caught = new AtomicReference<>();
+        caughtFailures.put("action catches the abort that poisoned the call", caught);
+        scenarios.put("action catches the abort that poisoned the call", (Recorder recorder) -> run(recorder,
+                docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            try {
+                                ctx.cascade(DOCS, new Doc("peer", DRAFT), PUBLISH);
+                            } catch (TransitionAbortedException failure) {
+                                caught.set(failure);
+                            }
+                            return ActionOutcome.ok();
+                        }))));
+        scenarios.put("guard starts a call", (Recorder recorder) -> {
+            AtomicReference<MachineRegistry> self = new AtomicReference<>();
+            GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                    (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("CanSubmit",
+                            (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                                self.get().of(DOCS).execute(new Doc("2", DRAFT), DISCARD);
+                                return GuardResult.pass();
+                            }));
+            try (MachineRegistry registry = registry(graph, Doc::status, Doc::setStatus, Doc::id, recorder)) {
+                self.set(registry);
+                registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT);
+            }
+        });
+        causes.put("guard starts a call", ReentrantTransitionException.class);
+        scenarios.put("watch condition starts a call", (Recorder recorder) -> {
+            AtomicReference<MachineRegistry> self = new AtomicReference<>();
+            GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT)
+                    .terminal(ARCHIVED)
+                    .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                    .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                    .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                    .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                    .watch(PUBLISHED, DOCS, (Doc doc) -> List.of(doc), (Doc moved) -> Optional.<Doc>empty())
+                        .when("rule", (Doc doc, Collection<? extends Doc> peers,
+                                PeerView<Doc, DocStatus, DocTransition> view) -> {
+                            self.get().of(DOCS).execute(new Doc("2", DRAFT), SUBMIT);
+                            return true;
+                        }).execute(ARCHIVE)
+                        .endWatch()
+                    .build();
+            try (MachineRegistry registry = registry(graph, Doc::status, Doc::setStatus, Doc::id, recorder)) {
+                self.set(registry);
+                registry.of(DOCS).reevaluate(new Doc("1", PUBLISHED));
+            }
+        });
+        causes.put("watch condition starts a call", ReentrantTransitionException.class);
         List<String> ends = new ArrayList<>();
         for (Map.Entry<String, Scenario> scenario : scenarios.entrySet()) {
             Recorder recorder = new Recorder();
@@ -382,6 +504,18 @@ class CallInvariantTest {
             assertSame(failure, told.error(), scenario.getKey());
             assertEquals(failure.phase(), told.phase(), scenario.getKey());
             assertEquals(failure.statesWritten(), told.statesWritten(), scenario.getKey());
+            if (causes.containsKey(scenario.getKey())) {
+                assertInstanceOf(causes.get(scenario.getKey()), failure.getCause(), scenario.getKey());
+            }
+            if (caughtFailures.containsKey(scenario.getKey())) {
+                assertSame(caughtFailures.get(scenario.getKey()).get(), failure, scenario.getKey());
+            }
+            if (scenario.getKey().equals("pre-check finds another state")) {
+                assertNull(failure.getCause());
+            }
+            if (scenario.getKey().equals("another call's failure through an action's stage")) {
+                assertSame(boom, failure.getCause().getCause());
+            }
             ends.add(scenario.getKey() + ": " + failure.getClass().getSimpleName() + " " + failure.phase() + " "
                     + failure.statesWritten());
         }
@@ -416,7 +550,17 @@ class CallInvariantTest {
                 "PoisonedUnitOfWorkException the action lets through: TransitionAbortedException ACTION NONE",
                 "unknown facade: TransitionAbortedException ACTION NONE",
                 "ambiguous identity: TransitionAbortedException ACTION NONE",
-                "null peer state: TransitionAbortedException ACTION NONE"), ends);
+                "null peer state: TransitionAbortedException ACTION NONE",
+                "root identity returns null: TransitionAbortedException RESOLVE NONE",
+                "root state getter throws: TransitionAbortedException RESOLVE NONE",
+                "pre-check finds another state: CommitFailedException COMMIT NONE",
+                "action joins an aborted call: TransitionAbortedException ACTION NONE",
+                "guard joins an aborted call: TransitionAbortedException GUARD NONE",
+                "action joins a call whose commit failed: TransitionAbortedException ACTION NONE",
+                "action joins a call whose hook failed: TransitionAbortedException ACTION NONE",
+                "action catches the abort that poisoned the call: TransitionAbortedException ACTION NONE",
+                "guard starts a call: TransitionAbortedException GUARD NONE",
+                "watch condition starts a call: TransitionAbortedException RESOLVE NONE"), ends);
     }
 
     /** Through async(), the future fails with the very failure the observer received. */

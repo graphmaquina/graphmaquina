@@ -497,7 +497,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **Failures before the state is read are aborts.** The root entity's identity function or state getter that throws,
   a null root state, and a watch's peers reader or condition that throws while a `reevaluate` resolves end the call
   in a `TransitionAbortedException` of phase `RESOLVE` that carries the failure; they used to escape as themselves.
-  The same failures of a cascaded peer are aborts of phase `ACTION`, as the cascade item above says. A state getter
+  The same failures of a cascaded peer are aborts of phase `ACTION`. A state getter
   that throws during the pre-commit check is a `CommitFailedException` with nothing written.
   `AbortDetails.from()` and `TransitionAbortedException.from()` are `Optional`.
 - **Observers replace the listener.** A `MachineObserver`, added with `observer(...)` to a registry or a generated
