@@ -44,6 +44,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
@@ -399,6 +400,42 @@ class RawThrowableTest {
             assertEquals(CallPhase.GUARD, error.phase());
             assertSame(RAW, error.getCause());
             assertTrue(error.getMessage().contains(": the guard CanSubmit threw " + RAW), error.getMessage());
+            assertOneEnd(recorder, error);
+        }
+    }
+
+    @Test
+    void aRawThrowableLeavingACascadeEndsTheCallInAnActionAbortCarryingIt() {
+        Doc peer = new Doc("peer", REVIEW);
+        AtomicReference<Throwable> received = new AtomicReference<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            try {
+                                ctx.cascade(DOCS, peer, PUBLISH);
+                            } catch (RuntimeException e) {
+                                received.set(e);
+                                throw e;
+                            }
+                            return ActionOutcome.ok();
+                        }));
+        ObserverTest.Recorder recorder = new ObserverTest.Recorder();
+        try (MachineRegistry registry = registry(graph, Doc::status, Doc::setStatus, (Doc doc) -> {
+            if (doc == peer) {
+                throw sneaky(RAW);
+            }
+            return doc.id();
+        }, recorder)) {
+            Doc doc = new Doc("1", DRAFT);
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(doc, SUBMIT));
+            assertEquals(CallPhase.ACTION, error.phase());
+            assertSame(RAW, error.getCause());
+            assertTrue(error.getMessage().contains(": the cascade to Doc/DocStatus failed: "), error.getMessage());
+            assertSame(error, received.get());
+            assertEquals(StatesWritten.NONE, error.statesWritten());
+            assertEquals(DRAFT, doc.status());
+            assertEquals(REVIEW, peer.status());
             assertOneEnd(recorder, error);
         }
     }
