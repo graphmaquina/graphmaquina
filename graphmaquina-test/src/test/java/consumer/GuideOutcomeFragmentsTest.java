@@ -20,12 +20,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Compiles the Java fragments of the guide's "Handle transition outcomes" section, plus its async completion
- * callback and observer examples, against the published core jar. The fragments are cut out of
- * {@code docs/guide.md} verbatim and wrapped only by stand-in types and methods, so a renamed accessor in the
- * guide breaks this test the way it would break a reader. A heading or block that cannot be found fails the test
- * instead of compiling nothing. The guide, the repository and the release come from the {@code readmePath},
- * {@code artifactRepository} and {@code artifactVersion} system properties that {@code publishedArtifactTest} sets.
+ * Compiles the Java fragments of the guide's "Handle transition outcomes" section, its failed-call handler
+ * included, plus its async completion callback and observer examples, against the published core jar. The
+ * fragments are cut out of {@code docs/guide.md} verbatim and wrapped only by stand-in types and methods, so a
+ * renamed accessor in the guide breaks this test the way it would break a reader. A heading or block that
+ * cannot be found fails the test instead of compiling nothing. The guide, the repository and the release come
+ * from the {@code readmePath}, {@code artifactRepository} and {@code artifactVersion} system properties that
+ * {@code publishedArtifactTest} sets.
  */
 class GuideOutcomeFragmentsTest {
 
@@ -42,6 +43,7 @@ class GuideOutcomeFragmentsTest {
             import io.github.graphmaquina.api.Outcome;
             import io.github.graphmaquina.api.OutcomeCode;
             import io.github.graphmaquina.api.OutcomeStatus;
+            import io.github.graphmaquina.error.CallFailedException;
             import java.time.Duration;
             import java.util.Optional;
             import java.util.concurrent.CompletableFuture;
@@ -90,6 +92,8 @@ class GuideOutcomeFragmentsTest {
         source.append(blockAfter(guide, 3)).append("    }\n\n");
         source.append("    // --- block 4 (detail switch)\n");
         source.append(blockAfter(guide, 4)).append('\n');
+        source.append("    // --- block 5 (handle a failed call)\n");
+        source.append(blockAfter(guide, 5)).append('\n');
         source.append("    // --- the async completion callback block, wrapped in a method\n").append(STUBS);
         source.append("    static void handle(StubTickets tickets, Ticket ticket) {\n");
         source.append(blockStarting(guide, FUTURE_PREFIX)).append("    }\n\n");

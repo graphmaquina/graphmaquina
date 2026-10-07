@@ -1407,7 +1407,7 @@ Technical failures throw instead of becoming a fifth outcome. An abort (`Transit
 failure (`CommitFailedException`) and a failing hook (`AfterCommitException`) share the supertype
 `CallFailedException`. It says as values which call failed (`call()`), where it was (`phase()`), how far it got
 in writing states (`statesWritten()`) and which actions ran (`journal()`). A hook fails after state was already
-written.
+written. [Handle a failed call](#handle-a-failed-call) shows how to read them.
 
 ### Records, journals and reactions
 
@@ -1426,6 +1426,40 @@ written.
   wrote anything. An owner lookup fails before any reevaluation, so the reaction carries what it threw, a checked
   exception wrapped in `UndeclaredThrowableException`. An `Error` is not caught: it propagates
   to the caller whose commit triggered the reaction.
+
+### Handle a failed call
+
+A call that does not return an outcome throws an `Error` or one of three `CallFailedException`s, always one of that
+very call. A request refused before the call starts is not a call failure: a null argument throws
+`NullPointerException`, an identifier of another catalogue `IllegalArgumentException`, and a call made where
+no call may start `ReentrantTransitionException`. Read what happened from its values, not from its message:
+
+| Type | `phase()` | `statesWritten()` |
+| --- | --- | --- |
+| `TransitionAbortedException` | `RESOLVE`, `GUARD` or `ACTION` | `NONE` |
+| `CommitFailedException` | `COMMIT` | `NONE`, or `PARTIAL` when a setter threw |
+| `AfterCommitException` | `HOOK` | `ALL` |
+
+`call()` is the call that failed, the same `MachineCall` an observer received, and `journal()` lists the actions that
+ran. Any other exception involved is the cause, a failure of another call included. This method can be added to the
+quickstart's `App`:
+
+```java
+static String describe(CallFailedException failure) {
+    String written = switch (failure.statesWritten()) {
+        case NONE -> "no state was written";
+        case PARTIAL -> "some states were written";
+        case ALL -> "every state was written";
+    };
+    String actions = failure.journal().isEmpty() ? "no action ran" : failure.journal().size() + " action(s) ran";
+    return failure.call() + " failed in " + failure.phase() + ": " + written + ", " + actions;
+}
+```
+
+`statesWritten()` describes the setters only: a JPA or other transaction around the call commits or rolls back later,
+on its own. Neither the phase nor `statesWritten()` decides a retry by itself. `NONE` with an action in the journal
+that called a payment service means the payment may have happened although no state moved. Retry only what your
+actions make idempotent, and reconcile the rest.
 
 ## Asynchronous work and timeouts
 
@@ -1701,9 +1735,12 @@ handled.whenComplete((Void unused, Throwable error) -> {
 
 Keep or return the relevant future to the caller. `join()` wraps an exceptional completion in
 `CompletionException`; `get()` uses `ExecutionException` and can be interrupted. If the outer future itself
-is cancelled, either method can throw `CancellationException` directly. Inspect the underlying
-cause before deciding whether to retry. `AfterCommitException` may mean the requested state was already
-written; an exceptional future is not proof that nothing happened. A callback you attach can also fail
+is cancelled, either method can throw `CancellationException` directly. When the call ran and failed, the cause is
+that call's `CallFailedException`, or an `Error`: read its `statesWritten()` and `journal()`, as
+[Handle a failed call](#handle-a-failed-call) shows, before deciding whether to retry; an exceptional future is not
+proof that nothing happened. A request refused before it started, by an executor that refused it
+(`RejectedExecutionException`) or for an identifier of another catalogue (`IllegalArgumentException`), ran nothing.
+A callback you attach can also fail
 independently of the machine operation.
 
 Avoid a blanket `exceptionally(error -> ActionOutcome.failed(...))` inside an action unless every covered
