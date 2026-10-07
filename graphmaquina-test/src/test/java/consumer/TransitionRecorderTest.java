@@ -18,7 +18,6 @@ import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
-import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
 import io.github.graphmaquina.test.GraphAssertionError;
@@ -30,26 +29,26 @@ import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.logging.Handler;
-import java.util.logging.Level;
-import java.util.logging.LogRecord;
-import java.util.logging.Logger;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.time.Duration;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import java.util.stream.LongStream;
 import org.junit.jupiter.api.Test;
 
 /**
  * Contract of the transition recorder. The recorder observes completed calls and nothing else, so a reaction
  * is one observation of its own and no nested reaction is ever walked; a projection is captured when the
- * callback arrives rather than read back later; selection is by entity identity rather than equality;
+ * call completes rather than read back later; selection is by entity identity rather than equality;
  * and every mismatch is read off the fields of the {@link GraphAssertionError} rather than off its type
  * alone.
  */
@@ -153,8 +152,10 @@ class TransitionRecorderTest {
     void nullCallbackArgumentsAreRejected() {
         TransitionRecorder recorder = TransitionRecorder.create();
         Entity entity = new Entity("e", State.NEW);
-        assertThrows(NullPointerException.class, () -> complete(recorder, null, applied(entity)));
-        assertThrows(NullPointerException.class, () -> complete(recorder, TestDomain.KEY, null));
+        MachineCall call = new MachineCall(TestDomain.KEY, entity, Optional.empty(), false);
+        assertThrows(NullPointerException.class, () -> recorder.onCompleted(null, applied(entity), Duration.ZERO));
+        assertThrows(NullPointerException.class, () -> recorder.onCompleted(call, null, Duration.ZERO));
+        assertThrows(NullPointerException.class, () -> recorder.onCompleted(call, applied(entity), null));
         assertThrows(NullPointerException.class, () -> TransitionRecorder.projecting(null));
         assertEquals(List.of(), recorder.snapshot());
     }
@@ -363,6 +364,78 @@ class TransitionRecorderTest {
         RecordedTransitionsAssert view = recorder.assertRecorded();
         assertTrue(assertThrows(IllegalArgumentException.class, () -> view.forEntity(TWINS, twin))
                 .getMessage().startsWith("outcome does not belong to the machine: states"));
+    }
+
+    // --- concurrent calls ---------------------------------------------------------------------------
+
+    @Test
+    void everyConcurrentCallIsRecordedOnceWithItsOwnSequence() throws Exception {
+        TransitionRecorder recorder = TransitionRecorder.create();
+        int workers = 8;
+        int perWorker = 64;
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(workers);
+        try {
+            List<Future<?>> futures = new ArrayList<>();
+            for (int worker = 0; worker < workers; worker++) {
+                Entity entity = new Entity("e" + worker, State.NEW);
+                futures.add(pool.submit(() -> {
+                    start.await();
+                    for (int call = 0; call < perWorker; call++) {
+                        complete(recorder, TestDomain.KEY, applied(entity));
+                    }
+                    return entity;
+                }));
+            }
+            start.countDown();
+            for (Future<?> future : futures) {
+                future.get(30, TimeUnit.SECONDS);
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+        List<RecordedTransition> snapshot = recorder.snapshot();
+        assertEquals(workers * perWorker, snapshot.size());
+        assertEquals(LongStream.range(0, workers * perWorker).boxed().toList(),
+                snapshot.stream().map(RecordedTransition::sequence).sorted().toList());
+        assertThrows(UnsupportedOperationException.class, () -> snapshot.add(snapshot.get(0)));
+    }
+
+    // --- against the real engine --------------------------------------------------------------------------
+
+    /**
+     * A reaction completes in its own call, before the call that triggered it, and each call is
+     * recorded exactly once: the recorder never descends into the reactions the root outcome carries.
+     */
+    @Test
+    void aReactionIsOneObservationOfItsOwnBeforeTheRootCall() {
+        TransitionRecorder recorder = TransitionRecorder.create();
+        Shipment shipment = new Shipment("s1", ShipmentStatus.OPEN);
+        Parcel parcel = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
+        try (MachineRegistry registry = registry(recorder)) {
+            registry.of(PARCELS).execute(parcel, Loading.LOAD);
+        }
+        RecordedTransitionsAssert recorded = recorder.assertRecorded();
+        recorded.hasSize(2).hasKeysExactly(SHIPMENTS, PARCELS)
+                .hasStatusesExactly(OutcomeStatus.APPLIED, OutcomeStatus.APPLIED);
+        recorded.forEntity(SHIPMENTS, shipment).single().isApplied()
+                .movedTo(ShipmentStatus.SENT).hasEntitySameAs(shipment);
+        recorded.forEntity(PARCELS, parcel).single().isApplied().movedTo(ParcelStatus.LOADED);
+    }
+
+    /** The projection is what survives the run: the entities moved on afterwards, the recorded values did not. */
+    @Test
+    void aProjectionSurvivesTheTransitionsThatFollowIt() {
+        TransitionRecorder recorder = TransitionRecorder.projecting(
+                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> outcome.recordedState());
+        Shipment shipment = new Shipment("s1", ShipmentStatus.OPEN);
+        Parcel parcel = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
+        try (MachineRegistry registry = registry(recorder)) {
+            registry.of(PARCELS).execute(parcel, Loading.LOAD);
+        }
+        shipment.setStatus(ShipmentStatus.OPEN);
+        assertEquals(List.of(Optional.of(ShipmentStatus.SENT), Optional.of(ParcelStatus.LOADED)),
+                recorder.snapshot().stream().map(RecordedTransition::projection).toList());
     }
 
     /**

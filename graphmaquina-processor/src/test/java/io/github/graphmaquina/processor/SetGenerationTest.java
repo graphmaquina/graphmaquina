@@ -8,8 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineCall;
-import io.github.graphmaquina.api.Machines;
 import io.github.graphmaquina.api.MachineObserver;
+import io.github.graphmaquina.api.Machines;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.Reaction;
 import java.lang.reflect.InvocationTargetException;
@@ -83,15 +83,17 @@ class SetGenerationTest {
         Class<?> companion = result.load("fx.LibraryRuntime");
         Object builder = companion.getMethod("builder", Duration.class, docActions).invoke(null, Duration.ofSeconds(5), actions);
         List<String> seen = new ArrayList<>();
-        io.github.graphmaquina.api.MachineObserver observer = new io.github.graphmaquina.api.MachineObserver() {
+        MachineObserver observer = new MachineObserver() {
             @Override
-            public void onCompleted(io.github.graphmaquina.api.MachineCall call, Outcome<?, ?, ?> outcome,
-                    Duration elapsed) {
+            public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
                 seen.add(call.key().entity().getSimpleName() + ":" + outcome.status().name());
             }
         };
-        builder.getClass().getMethod("observer", io.github.graphmaquina.api.MachineObserver.class)
-                .invoke(builder, observer);
+        List<String> events = new ArrayList<>();
+        Method register = builder.getClass().getMethod("observer", MachineObserver.class);
+        register.invoke(builder, observer);
+        register.invoke(builder, recording("first", events));
+        register.invoke(builder, recording("second", events));
         Object library = builder.getClass().getMethod("build").invoke(builder);
         assertInstanceOf(Machines.class, library);
         try {
@@ -112,9 +114,30 @@ class SetGenerationTest {
             List<String> calls = (List<String>) docActions.getField("calls").get(actions);
             assertEquals(List.of("publish", "notify:d1"), calls);
             assertEquals(List.of("Doc:APPLIED", "Doc:APPLIED", "Page:APPLIED"), seen);
+            assertEquals(12, events.size(), events.toString());
+            for (int index = 0; index < events.size(); index += 2) {
+                assertTrue(events.get(index).startsWith("first "), events.toString());
+                assertEquals(events.get(index).replaceFirst("^first ", "second "), events.get(index + 1));
+            }
+            assertEquals(3, events.stream().filter((String event) -> event.startsWith("first completed")).count());
         } finally {
             ((Machines) library).close();
         }
+    }
+
+    /** An observer that appends "name event" to the shared list for every start and completion it is told of. */
+    private static MachineObserver recording(String name, List<String> events) {
+        return new MachineObserver() {
+            @Override
+            public void onStarted(MachineCall call) {
+                events.add(name + " started " + call.key().entity().getSimpleName());
+            }
+
+            @Override
+            public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                events.add(name + " completed " + call.key().entity().getSimpleName());
+            }
+        };
     }
 
     @Test
@@ -147,14 +170,14 @@ class SetGenerationTest {
         Class<?> docActions = result.load("fx.DocActions");
         Object builder = result.load("fx.LibraryRuntime").getMethod("builder", Duration.class, docActions)
                 .invoke(null, Duration.ofSeconds(5), docActions.getConstructor().newInstance());
-        Method observer = builder.getClass().getMethod("observer", io.github.graphmaquina.api.MachineObserver.class);
+        Method observer = builder.getClass().getMethod("observer", MachineObserver.class);
         Method depth = builder.getClass().getMethod("maxCascadeDepth", int.class);
         Method chain = builder.getClass().getMethod("maxWatchChain", int.class);
         Method timeout = builder.getClass().getMethod("asyncTimeout", Class.class, Duration.class);
         Method executor = builder.getClass().getMethod("asyncExecutor", Executor.class);
         Method build = builder.getClass().getMethod("build");
-        io.github.graphmaquina.api.MachineObserver first = new io.github.graphmaquina.api.MachineObserver() { };
-        io.github.graphmaquina.api.MachineObserver second = new io.github.graphmaquina.api.MachineObserver() { };
+        MachineObserver first = new MachineObserver() { };
+        MachineObserver second = new MachineObserver() { };
         Executor direct = (Runnable command) -> command.run();
 
         observer.invoke(builder, first);

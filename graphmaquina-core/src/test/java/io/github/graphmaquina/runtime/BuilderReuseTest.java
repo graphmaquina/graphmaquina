@@ -13,7 +13,6 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
-import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;

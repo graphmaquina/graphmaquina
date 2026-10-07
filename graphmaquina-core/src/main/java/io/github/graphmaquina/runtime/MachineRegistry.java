@@ -52,7 +52,7 @@ public final class MachineRegistry implements AutoCloseable {
         return new Builder();
     }
 
-    /** A registry of one, assembled as a registry builder would, with default limits and no observer. */
+    /** A registry of one, assembled as a registry builder would, with the default limits and no observer. */
     static <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> standalone(StateMachines.Builder<E, S, T> builder) {
         return assemble(List.of(builder), 10, 10, Observers.NONE).machineFor(builder.key());
     }

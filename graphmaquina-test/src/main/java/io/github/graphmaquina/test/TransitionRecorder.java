@@ -36,13 +36,15 @@ public final class TransitionRecorder implements MachineObserver {
         this.projector = projector;
     }
 
-    /** A recorder that keeps the callbacks as published, with no projection. */
+    /** A recorder that keeps the completed calls as published, with no projection. */
     public static TransitionRecorder create() {
         return new TransitionRecorder(Optional.empty());
     }
 
-    /** The projection runs on the thread of the call that completed and must return a value; a null projection is
-     * rejected. */
+    /**
+     * The projection runs on the thread of the call that completed and must return a value; a null projection is
+     * rejected.
+     */
     public static TransitionRecorder projecting(BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?> projector) {
         Objects.requireNonNull(projector, "projector");
         return new TransitionRecorder(Optional.of(projector));
@@ -62,7 +64,7 @@ public final class TransitionRecorder implements MachineObserver {
         }
     }
 
-    /** The callbacks recorded so far, copied, so later callbacks do not change a list already handed out. */
+    /** The calls recorded so far, copied, so later calls do not change a list already handed out. */
     public List<RecordedTransition> snapshot() {
         synchronized (events) {
             return List.copyOf(events);

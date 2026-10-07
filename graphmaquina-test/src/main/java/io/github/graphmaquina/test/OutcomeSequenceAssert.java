@@ -30,7 +30,7 @@ public final class OutcomeSequenceAssert<E, S extends Enum<S>, T extends Enum<T>
         return this;
     }
 
-    /** The one callback about this entity; a selection of any other size fails rather than picking the first. */
+    /** The one completed call about this entity; a selection of any other size fails rather than picking the first. */
     public OutcomeAssert<E, S, T> single() {
         Checks.equal(context, "size", 1, actual.size());
         return atIndex(0);

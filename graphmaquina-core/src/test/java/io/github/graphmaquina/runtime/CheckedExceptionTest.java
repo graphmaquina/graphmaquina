@@ -22,7 +22,6 @@ import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.MachineCall;
-import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeStatus;
@@ -50,8 +49,6 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.time.Duration;
-import java.util.logging.Level;
-import java.util.logging.LogRecord;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -66,6 +63,8 @@ import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import org.junit.jupiter.api.Test;
 
 /**

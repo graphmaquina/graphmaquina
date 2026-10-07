@@ -22,7 +22,6 @@ import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
-import java.time.Duration;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.fixtures.GatewayException;
@@ -32,6 +31,7 @@ import io.github.graphmaquina.fixtures.GraphOnlyFixture.State;
 import io.github.graphmaquina.fixtures.GraphOnlyFixture.Ticket;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -41,7 +41,7 @@ import org.junit.jupiter.api.Test;
 /**
  * The outcome's classification read from the real engine: every code an operation or a reevaluation produces with
  * the explanation it carries, a failure routed from an exception that keeps its text out of the explanation, a
- * cascade's provisional outcome, and a listener that classifies what it receives without a cast.
+ * cascade's provisional outcome, and an observer that classifies what it receives without a cast.
  */
 class OutcomeClassificationTest {
 

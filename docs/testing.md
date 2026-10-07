@@ -290,7 +290,7 @@ assertThat(pending, Item::status).isIn(ItemStatus.PENDING);
 ### The call recorder
 
 The recorder keeps the outcome of every call that completed, in the order the calls completed, and nothing else. It
-never walks `reactions()`, so a reaction is counted once — as its own callback — even though the root
+never walks `reactions()`, so a reaction is counted once — as its own call — even though the root
 outcome carries it too. From
 [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
 
@@ -304,7 +304,7 @@ recorder.assertRecorded()
 ```
 
 A registry accepts any number of observers, so a test adds its own beside the recorder. An entity keeps
-moving after its callback, so if the assertion must see the entity as it was, record a projection with
+moving after its call completes, so if the assertion must see the entity as it was, record a projection with
 `TransitionRecorder.projecting(...)` instead of the live outcome.
 
 ### Tracked entity state

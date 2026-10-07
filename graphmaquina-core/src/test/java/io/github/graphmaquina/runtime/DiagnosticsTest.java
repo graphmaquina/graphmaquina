@@ -62,7 +62,6 @@ class DiagnosticsTest {
         return StateMachines.from(graph).state(Doc::status, Doc::setStatus).build();
     }
 
-
     /**
      * A guard has no cascade to turn to: the message names the callbacks that cannot start a transition, those of a
      * transition and those of a watch, and keeps the cascade advice for actions.
