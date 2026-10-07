@@ -1312,8 +1312,8 @@ only needs to know what happened and why reads it without narrowing:
 | `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` routed an exception | Yes, the failure route committed |
 | `Ignored` | `IGNORED` | `NO_WATCH`, or `NO_RULE_MATCHED` | empty | No |
 
-A cascade returns the same variants to the action that called `cascade(...)`. There, `Applied` and `Failed` are
-provisional: their hops are written only if the root commits.
+A cascade returns `Applied` or `Failed` to the action that called `cascade(...)`; a rejection inside it aborts the
+root instead. Both are provisional there: their hops are written only if the root commits.
 
 Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransition()`, `records()` and
 `reactions()`. `recordedState()` is `to` for `Applied`, `movedTo` for `Failed` and `from` for the other two.
