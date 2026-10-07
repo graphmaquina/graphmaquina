@@ -2101,7 +2101,8 @@ A peer in another module or dependency JAR is rejected with `SG608`. Track the e
 ## Commit, hooks and observers
 
 ![Root actions and cascades stage changes in a shared unit of work. Commit checks original states and writes
-final states; hooks and independent watch reactions follow, then the observers learn how the call ended.](images/commit-lifecycle.svg)
+final states; hooks and independent watch reactions follow, then the observers learn how the call
+ended.](images/commit-lifecycle.svg)
 
 Observers are told that the call starts before step 1, and how it ended after the last step, whether it returned
 or threw.
