@@ -37,8 +37,6 @@ import javax.lang.model.type.TypeMirror;
 public final class SetGenerator {
 
     private static final String MACHINE = "io.github.graphmaquina.api.Machine";
-    /** The longest comment text that fits one emitted line of a method of the {@code Builder}, within 120 columns. */
-    private static final int DOC_LINE_WIDTH = 100;
     private static final String MACHINE_OBSERVER = "io.github.graphmaquina.api.MachineObserver";
     private static final String MACHINE_REGISTRY = "io.github.graphmaquina.runtime.MachineRegistry";
     private static final String STATE_MACHINES = "io.github.graphmaquina.runtime.StateMachines";
@@ -61,6 +59,12 @@ public final class SetGenerator {
      */
     private static final List<String> SETTER_PARAMETERS = List.of("machine", "timeout", "executor", "depth", "chain",
             "observer", "built");
+
+    /**
+     * The longest forwarder doc text emitted as a one-line comment; a longer one takes the multi-line form. The bound
+     * stays below what one emitted line can hold within 120 columns at the Builder's indentation.
+     */
+    private static final int DOC_LINE_WIDTH = 100;
 
     private SetGenerator() { }
 
@@ -276,7 +280,8 @@ public final class SetGenerator {
 
     /**
      * One setting the {@code Builder} hands to the registry's builder as soon as it is given, documented by
-     * {@code doc}: on one line when it fits the emitted line's 120 columns, else in the multi-line form.
+     * {@code doc}: on one line when the text is at most {@code DOC_LINE_WIDTH} characters, else in the multi-line
+     * form, so that no emitted line passes 120 columns.
      */
     private static void forward(SourceWriter out, String doc, String method, String parameter, String statement) {
         if (doc.length() <= DOC_LINE_WIDTH) {
