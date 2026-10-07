@@ -7,10 +7,12 @@ import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
 import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
 import static io.github.graphmaquina.fixtures.DocTransition.DISCARD;
 import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
+import static io.github.graphmaquina.fixtures.DocTransition.SEND_BACK;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static io.github.graphmaquina.fixtures.Keys.ITEMS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -26,11 +28,14 @@ import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.PeerView;
+import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.ReentrantTransitionException;
+import io.github.graphmaquina.error.TransitionAbortedException;
+import io.github.graphmaquina.error.WatchChainExceededException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
@@ -347,6 +352,84 @@ class ObserverTest {
                 "failed Doc/DocStatus SUBMIT REACTIONS ALL AssertionError"), recorder.events);
         assertEquals(REVIEW, watched.status());
         assertEquals(PUBLISHED, observer.status());
+    }
+
+    /** The reaction that went over maxWatchChain ends in RESOLVE with the very abort its Reaction.Aborted carries. */
+    @Test
+    void aReactionOverTheWatchChainLimitFailsWithTheAbortItsReactionCarries() {
+        GraphDefinition<Doc, DocStatus, DocTransition> pingPong = StateGraph.define(DOCS)
+                .initial(DRAFT).terminal(ARCHIVED).allowsCycle(REVIEW)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(SEND_BACK, REVIEW, DRAFT).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .watch(DRAFT, DOCS, (Doc doc) -> List.of(doc), (Doc moved) -> Optional.of(moved))
+                    .when("always", (Doc doc, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> true).execute(SUBMIT)
+                    .endWatch()
+                .watch(REVIEW, DOCS, (Doc doc) -> List.of(doc), (Doc moved) -> Optional.of(moved))
+                    .when("always", (Doc doc, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> true).execute(SEND_BACK)
+                    .endWatch()
+                .build();
+        Recorder recorder = new Recorder();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(pingPong).state(Doc::status, Doc::setStatus).identity(Doc::id))
+                .maxWatchChain(1)
+                .observer(recorder)
+                .build()) {
+            Outcome.Applied<?, ?, ?> root = assertInstanceOf(Outcome.Applied.class,
+                    registry.of(DOCS).execute(new Doc("d1", DRAFT), SUBMIT));
+            Reaction.Done first = assertInstanceOf(Reaction.Done.class, root.reactions().get(0));
+            Outcome.Applied<?, ?, ?> sentBack = assertInstanceOf(Outcome.Applied.class, first.outcome());
+            Reaction.Aborted second = assertInstanceOf(Reaction.Aborted.class, sentBack.reactions().get(0));
+            WatchChainExceededException cause = assertInstanceOf(WatchChainExceededException.class, second.cause());
+            assertTrue(recorder.calls.get(2).reaction());
+            assertEquals("failed Doc/DocStatus reevaluate (watch reaction) RESOLVE NONE WatchChainExceededException",
+                    recorder.events.get(3));
+            assertSame(cause, recorder.delivered.get(3));
+            assertSame(cause.call(), recorder.calls.get(3));
+            assertSame(recorder.calls.get(2), recorder.calls.get(3));
+        }
+    }
+
+    /** The reaction whose selected action throws ends in ACTION, and the call that triggered it still completes. */
+    @Test
+    void aReactionWhoseActionThrowsFailsInActionWithTheAbortItsReactionCarries() {
+        IllegalStateException boom = new IllegalStateException("archive down");
+        Doc observer = new Doc("observer", PUBLISHED);
+        Doc watched = new Doc("watched", DRAFT);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED)
+                    .action("Archive", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        throw boom;
+                    })
+                    .endTransition()
+                .watch(PUBLISHED, DOCS, (Doc doc) -> List.of(watched),
+                        (Doc moved) -> moved == watched ? Optional.of(observer) : Optional.<Doc>empty())
+                    .when("always", (Doc doc, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> true).execute(ARCHIVE)
+                    .endWatch()
+                .build();
+        Recorder recorder = new Recorder();
+        try (MachineRegistry registry = registry(graph, Doc::setStatus, recorder)) {
+            Outcome.Applied<?, ?, ?> applied = assertInstanceOf(Outcome.Applied.class,
+                    registry.of(DOCS).execute(watched, SUBMIT));
+            Reaction.Aborted aborted = assertInstanceOf(Reaction.Aborted.class, applied.reactions().get(0));
+            TransitionAbortedException cause = assertInstanceOf(TransitionAbortedException.class, aborted.cause());
+            assertSame(boom, cause.getCause());
+            assertEquals(List.of(
+                    "started Doc/DocStatus SUBMIT",
+                    "started Doc/DocStatus reevaluate (watch reaction)",
+                    "failed Doc/DocStatus reevaluate (watch reaction) ACTION NONE TransitionAbortedException",
+                    "completed Doc/DocStatus SUBMIT APPLIED"), recorder.events);
+            assertSame(cause, recorder.delivered.get(2));
+            assertSame(cause.call(), recorder.calls.get(2));
+        }
     }
 
     @Test
