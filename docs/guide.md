@@ -2024,15 +2024,15 @@ than an ordinary root-level `Rejected` result. A handled domain failure can sele
 Any failure that leaves a cascade poisons the unit of work. A failure of the call itself, such as an abort in the peer's
 step, a cycle or the depth limit, reaches your action as it is. Anything else reaches it as a
 `TransitionAbortedException` that names the cascade and carries the failure as its cause: an engine exception that
-describes no call, such as an unknown machine or an ambiguous identity, or a throwable from a callback the engine does
-not wrap, such as an identity function. An `Error` poisons through such an abort too, but reaches your action as itself.
-Catching it in your action does not make the transaction safe to commit. When the action then returns, throws an
-throwable its `failsOn` lists, or lets a failure of the call through, the root throws the failure that poisoned it,
-commits nothing and runs no failure route. A cascade that names an unknown machine poisons too, by key or by facade
-type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which `cascadeAll`
-refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its collection
-once, before any element runs, and never reads it again, so elements added or removed while the cascade runs change
-neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
+describes no call, such as an unknown machine or an ambiguous identity, or a throwable other than an `Error` from a
+callback the engine does not wrap, such as an identity function. An `Error` poisons through such an abort too, but
+reaches your action as itself. Catching it in your action does not make the transaction safe to commit. When the action
+then returns, throws a throwable its `failsOn` lists, or lets a failure of the call through, the root throws the failure
+that poisoned it, commits nothing and runs no failure route. A cascade that names an unknown machine poisons too, by key
+or by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
+`cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its
+collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
+change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
 propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
 facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
 reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
@@ -2130,10 +2130,10 @@ The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and
 evaluates the watch, before that root starts, and may not start a transition on their own thread: `execute` or
 `reevaluate` called from one of them throws `ReentrantTransitionException`; a call submitted through `async(...)` runs
 as a separate call on the executor's thread, unless that executor runs tasks inline, in which case the returned future
-fails with that exception as its cause. Inside a reevaluation, a refusal it lets through ends the reevaluation in a
-`TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as `Reaction.Aborted` and
-a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so its reaction carries the
-refusal itself.
+fails with that exception as its cause. Inside a reevaluation, a refusal that one of these functions lets through ends
+the reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as
+`Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so
+its reaction carries the refusal itself.
 
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
