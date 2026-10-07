@@ -24,8 +24,8 @@ import org.junit.jupiter.api.io.TempDir;
  * callback and observer examples, against the published core jar. The fragments are cut out of
  * {@code docs/guide.md} verbatim and wrapped only by stand-in types and methods, so a renamed accessor in the
  * guide breaks this test the way it would break a reader. A heading or block that cannot be found fails the test
- * instead of compiling nothing. The guide, the repository and the release come from the {@code readmePath}, {@code artifactRepository} and
- * {@code artifactVersion} system properties that {@code publishedArtifactTest} sets.
+ * instead of compiling nothing. The guide, the repository and the release come from the {@code readmePath},
+ * {@code artifactRepository} and {@code artifactVersion} system properties that {@code publishedArtifactTest} sets.
  */
 class GuideOutcomeFragmentsTest {
 
