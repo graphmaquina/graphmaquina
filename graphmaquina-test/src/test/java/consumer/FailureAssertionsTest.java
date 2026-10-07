@@ -19,6 +19,7 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
+import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionKind;
@@ -26,6 +27,7 @@ import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.AbortDetails;
 import io.github.graphmaquina.error.AfterCommitException;
+import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.CascadeException;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.InvalidGraphException;
@@ -36,6 +38,7 @@ import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
 import io.github.graphmaquina.test.AbortAssert;
 import io.github.graphmaquina.test.AfterCommitAssert;
+import io.github.graphmaquina.test.CallFailureAssert;
 import io.github.graphmaquina.test.CascadeAbortAssert;
 import io.github.graphmaquina.test.CommitFailureAssert;
 import io.github.graphmaquina.test.GraphAssertionError;
@@ -479,6 +482,56 @@ class FailureAssertionsTest {
                 "cascade abort.journal", "size", 2, 1);
         assertFailure(assertThrows(GraphAssertionError.class, () -> cascade.error(0).journal().hasSize(2)),
                 "cascade abort[0].journal", "size", 2, 0);
+    }
+
+    // --- what every failure of a call shares -------------------------------------------------------
+
+    @Test
+    void anyCallFailureIsReadByItsPhaseItsStatesWrittenItsCallAndItsJournal() {
+        Entity entity = new Entity("e", State.NEW);
+        ActionRecord ran = new ActionRecord(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY, "prepare", 0,
+                ActionStatus.OK);
+        CommitFailedException commit = new CommitFailedException(CALL, List.of(ran), List.of(entity),
+                "the state moved");
+        CallFailureAssert view = TransitionFailureAssert.assertThat(commit).isCallFailure();
+        assertSame(view, view.hasPhase(CallPhase.COMMIT).hasStatesWritten(StatesWritten.NONE).hasCallSameAs(CALL));
+        view.journal().hasActionsExactly("prepare").hasStatusesExactly(ActionStatus.OK);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasPhase(CallPhase.HOOK)),
+                "call failure", "phase", CallPhase.HOOK, CallPhase.COMMIT);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasStatesWritten(StatesWritten.PARTIAL)),
+                "call failure", "states written", StatesWritten.PARTIAL, StatesWritten.NONE);
+        MachineCall other = new MachineCall(TestDomain.KEY, entity, Optional.of(Id.PREPARE), false);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCallSameAs(other)),
+                "call failure", "call", other, CALL);
+        assertThrows(NullPointerException.class, () -> view.hasPhase(null));
+        assertThrows(NullPointerException.class, () -> view.hasStatesWritten(null));
+        assertThrows(NullPointerException.class, () -> view.hasCallSameAs(null));
+    }
+
+    @Test
+    void everyNarrowedViewOfACallFailureSharesThoseExpectations() {
+        TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.GUARD, details(), "no"))
+                .isAbort().hasPhase(CallPhase.GUARD).hasStatesWritten(StatesWritten.NONE).hasCallSameAs(CALL);
+        TransitionFailureAssert.assertThat(new CascadeException(CALL, details(), List.of(elementAbort(new Other("a")))))
+                .isCascadeAbort().hasPhase(CallPhase.ACTION).hasStatesWritten(StatesWritten.NONE);
+        CommitFailedException commitFailed = new CommitFailedException(CALL, List.of(), List.of(), new Other("f"),
+                List.of(), new IllegalStateException("a setter threw"));
+        TransitionFailureAssert.assertThat(commitFailed)
+                .isCommitFailure().hasPhase(CallPhase.COMMIT).hasStatesWritten(StatesWritten.PARTIAL);
+        TransitionFailureAssert.assertThat(afterCommit(TestDomain.KEY, new Entity("e", State.READY), State.NEW,
+                        Id.PREPARE, State.READY, "audit", new IllegalStateException("audit down")))
+                .isAfterCommit().hasPhase(CallPhase.HOOK).hasStatesWritten(StatesWritten.ALL).hasCallSameAs(CALL);
+    }
+
+    @Test
+    void aThrowableThatIsNotACallFailureIsNotReadAsOne() {
+        IllegalStateException plain = new IllegalStateException("not a call");
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(plain).isCallFailure()),
+                "failure", "type", CallFailedException.class, plain);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(null).isCallFailure()),
+                "failure", "type", CallFailedException.class, null);
     }
 
     // --- the collected cascade ----------------------------------------------------------------------

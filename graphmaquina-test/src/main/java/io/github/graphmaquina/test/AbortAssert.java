@@ -21,7 +21,7 @@ import java.util.Optional;
  * {@link #atUnreadState(MachineKey, Object, Enum)} and {@link #atUnreadState(MachineKey, Object)} describe one raised
  * before the entity's state was read, which reports no state either.
  */
-public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
+public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
 
     private final TransitionAbortedException abort;
 
@@ -135,10 +135,5 @@ public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
         List<String> wanted = List.copyOf(expected);
         Checks.equal(context, "cascade path", wanted, abort.cascadePath());
         return this;
-    }
-
-    /** The actions that ran before the abort, which survive it even though nothing was committed. */
-    public JournalAssert journal() {
-        return new JournalAssert(context + ".journal", abort.journal());
     }
 }

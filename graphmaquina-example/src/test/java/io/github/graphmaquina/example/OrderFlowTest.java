@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.example.item.Item;
 import io.github.graphmaquina.example.item.ItemActions;
 import io.github.graphmaquina.example.item.ItemStatus;
@@ -129,7 +131,7 @@ class OrderFlowTest {
         items.pack(packed);
 
         assertThat(captureFailure(() -> orders.cancel(order))).isCascadeAbort()
-                .hasErrorCount(1)
+                .hasErrorCount(1).hasPhase(CallPhase.ACTION).hasStatesWritten(StatesWritten.NONE)
                 .journal().hasActionsExactly("cancel").hasStatusesExactly(ActionStatus.THREW);
         assertThat(order, Order::status).isIn(OrderStatus.NEW);
         assertThat(packed, Item::status).isIn(ItemStatus.PACKED);

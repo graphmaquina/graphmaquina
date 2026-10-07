@@ -456,6 +456,9 @@ Every generic of the library gains the third parameter: `GraphAssert<E, S, T>`, 
 `GraphSnapshot.capture`, `GraphSnapshot.parse`, `GraphSnapshot.serialize`, `GraphDiff` and the golden store keep
 their signatures and their file formats; inside a snapshot only the paths changed.
 
+- **`CallFailureAssert`**, reached through `isCallFailure()`, and every narrowed failure view expect a call failure's
+  `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` is available on all of them.
+
 ## Behaviour changes in this release
 
 Besides the contract above, this release changes behaviour that code written against an earlier one can

@@ -13,7 +13,7 @@ import java.util.Optional;
  * ones never tried. The lists are compared entity by entity, by reference and in order, so a rollback expectation is
  * never satisfied by the exception type alone.
  */
-public final class CommitFailureAssert extends BaseFailureAssert<CommitFailureAssert> {
+public final class CommitFailureAssert extends BaseCallFailureAssert<CommitFailureAssert> {
 
     private final CommitFailedException failure;
 

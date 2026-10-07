@@ -1,6 +1,7 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.error.AfterCommitException;
+import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.CascadeException;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.InvalidGraphException;
@@ -9,12 +10,12 @@ import io.github.graphmaquina.test.internal.Checks;
 import java.util.Objects;
 
 /**
- * Chainable assertion over a throwable the engine raised, and the entry point to the views that know what
- * each phase carries. Four narrowing methods keep the transition phases apart: an abort discarded the unit
- * of work and nothing moved, a commit failure wrote none or part of the states, and an after-commit failure
- * came from a hook with nothing rolled back. A fifth, {@link #isInvalidGraph()},
- * narrows to the one failure that is not a transition at all. A subject of the wrong kind — or no subject
- * at all — fails there, so a narrowed view always has one.
+ * Chainable assertion over a throwable the engine raised, and the entry point to the views that know what each kind
+ * of failure carries. Four narrowing methods keep the phases of a call apart: an abort discarded the unit of work and
+ * nothing moved, a commit failure wrote none or part of the states, and an after-commit failure came from a hook with
+ * nothing rolled back. {@link #isCallFailure()} reads any of them through what they share instead, and
+ * {@link #isInvalidGraph()} narrows to the one failure that is not a call at all. A subject of the wrong kind — or no
+ * subject at all — fails there, so a narrowed view always has one.
  */
 public final class TransitionFailureAssert extends BaseFailureAssert<TransitionFailureAssert> {
 
@@ -70,6 +71,11 @@ public final class TransitionFailureAssert extends BaseFailureAssert<TransitionF
 
     public AfterCommitAssert isAfterCommit() {
         return new AfterCommitAssert("after-commit failure", narrow(AfterCommitException.class));
+    }
+
+    /** Any failure of a call, read through what every kind shares: phase, states written, call and journal. */
+    public CallFailureAssert isCallFailure() {
+        return new CallFailureAssert("call failure", narrow(CallFailedException.class));
     }
 
     /**

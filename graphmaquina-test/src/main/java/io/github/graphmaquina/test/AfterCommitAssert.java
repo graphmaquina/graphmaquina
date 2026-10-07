@@ -12,7 +12,7 @@ import java.util.Objects;
  * {@link #at(MachineKey, Object, Enum, Enum, Enum)} names a hop that really happened, and {@link #records()} every
  * hop the call committed.
  */
-public final class AfterCommitAssert extends BaseFailureAssert<AfterCommitAssert> {
+public final class AfterCommitAssert extends BaseCallFailureAssert<AfterCommitAssert> {
 
     private final AfterCommitException failure;
 

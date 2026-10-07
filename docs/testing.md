@@ -122,7 +122,7 @@ constant of another machine's catalogue does not compile inside it.
 | Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED` |
 | Transition records | `.records()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
-| Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal |
+| Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal; phase, states written and the failing call |
 | Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, and the reason |
 | Live entity | `assertThat(entity, Order::status)` | the state the getter reads at that moment |
 | Completed calls | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome statuses, and the outcome sequence of one entity |
@@ -280,12 +280,13 @@ An aborted transition throws rather than returning an outcome, so the subject is
 
 ```java
 assertThat(captureFailure(() -> orders.cancel(order))).isCascadeAbort()
-        .hasErrorCount(1)
+        .hasErrorCount(1).hasPhase(CallPhase.ACTION).hasStatesWritten(StatesWritten.NONE)
         .journal().hasActionsExactly("cancel").hasStatusesExactly(ActionStatus.THREW);
-assertThat(order, Order::status).isIn(OrderStatus.NEW);
-assertThat(packed, Item::status).isIn(ItemStatus.PACKED);
-assertThat(pending, Item::status).isIn(ItemStatus.PENDING);
 ```
+
+`isCallFailure()` reads any failure of a call through what every kind shares, and the narrowed views offer the same
+expectations: `hasPhase(...)`, `hasStatesWritten(...)`, `hasCallSameAs(...)`, which compares by reference with the
+`MachineCall` an observer received, and `journal()`.
 
 ### The call recorder
 
