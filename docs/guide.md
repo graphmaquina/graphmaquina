@@ -1686,7 +1686,7 @@ CompletableFuture<Void> observed = pending.thenAccept((Outcome<Ticket, TicketSta
     }
 });
 
-observed.whenComplete((unused, error) -> {
+observed.whenComplete((Void unused, Throwable error) -> {
     if (error != null) {
         System.err.println("Operation or observer failed: " + error);
     }
