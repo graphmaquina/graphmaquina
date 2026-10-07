@@ -56,6 +56,7 @@ import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
@@ -109,6 +110,39 @@ class AsyncRecoveryTest {
     private <T> CompletableFuture<T> pending() {
         CompletableFuture<T> stage = new CompletableFuture<>();
         pendingStages.add(stage);
+        return stage;
+    }
+
+    /**
+     * A producer stage that acknowledges real handle registration only after super.handle returns. The signal
+     * records whether the producer stayed incomplete across registration, so an entered action cannot stand in
+     * for the engine actually observing a pending stage.
+     */
+    private static final class RegisteredStage<T> extends CompletableFuture<T> {
+        private final CompletableFuture<Boolean> registered = new CompletableFuture<>();
+
+        /** Registers the real callback before reporting whether its producer remained incomplete. */
+        @Override
+        public <U> CompletableFuture<U> handle(BiFunction<? super T, Throwable, ? extends U> action) {
+            boolean incompleteBefore = !isDone();
+            CompletableFuture<U> dependent = super.handle(action);
+            registered.complete(incompleteBefore && !isDone());
+            return dependent;
+        }
+
+        /** Bounds the acknowledgement wait and proves the producer was pending at registration and remains so. */
+        private void awaitPendingRegistration() throws Exception {
+            assertEquals(Boolean.TRUE, registered.get(WAIT_SECONDS, TimeUnit.SECONDS),
+                    "the engine must register handle against an incomplete producer");
+            assertFalse(isDone(), "the producer must remain pending until the test completes it");
+        }
+    }
+
+    /** Retains both the producer and its acknowledgement for the common finally cleanup. */
+    private <T> RegisteredStage<T> registeredStage() {
+        RegisteredStage<T> stage = new RegisteredStage<>();
+        pendingStages.add(stage);
+        pendingStages.add(stage.registered);
         return stage;
     }
 
@@ -236,24 +270,22 @@ class AsyncRecoveryTest {
 
     /**
      * Publishes {@code ticket} with {@code input} through the async facade over {@link #tickets(UnaryOperator)}.
-     * PUBLISH logs "publish" and returns a stage that stays pending until the test, once the action was entered,
-     * completes it with {@code completion}; {@code rules} declares what PUBLISH recovers from.
+     * PUBLISH logs "publish" and returns a stage that stays pending until handle is registered against it; the test
+     * then completes it with {@code completion}. The {@code rules} declare what PUBLISH recovers from.
      */
     private Outcome<Ticket, TicketState, TicketChange> publishLater(
             Ticket ticket, Object input, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> rules,
             Consumer<CompletableFuture<ActionOutcome>> completion) throws Exception {
-        CompletableFuture<ActionOutcome> stage = pending();
-        CompletableFuture<Void> entered = pending();
+        RegisteredStage<ActionOutcome> stage = registeredStage();
         StateMachine<Ticket, TicketState, TicketChange> machine = machine(tickets(
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> rules.apply(publish.asyncAction(
                         "publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                             ctx.entity().calls.add("publish");
-                            entered.complete(null);
                             return stage;
                         }))));
         CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
                 start(machine, ticket, input);
-        entered.get(WAIT_SECONDS, TimeUnit.SECONDS);
+        stage.awaitPendingRegistration();
         completion.accept(stage);
         return call.get(WAIT_SECONDS, TimeUnit.SECONDS);
     }
@@ -394,8 +426,7 @@ class AsyncRecoveryTest {
                     Request input = new Request(scenario);
                     ActionOutcome result = row.kind() == null ? ActionOutcome.failed("provider refused")
                             : ActionOutcome.failed(row.kind(), "provider refused");
-                    CompletableFuture<ActionOutcome> stage = pending();
-                    CompletableFuture<Void> entered = pending();
+                    RegisteredStage<ActionOutcome> stage = registeredStage();
                     UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> configure =
                             (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> {
                                 TransitionBuilder<Ticket, TicketState, TicketChange> configured;
@@ -411,7 +442,6 @@ class AsyncRecoveryTest {
                                             (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                                                 assertSame(input, ctx.input(Request.class).orElseThrow());
                                                 ctx.entity().calls.add("publish");
-                                                entered.complete(null);
                                                 return path.equals("completed stage")
                                                         ? CompletableFuture.completedFuture(result) : stage;
                                             });
@@ -424,7 +454,7 @@ class AsyncRecoveryTest {
                     CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
                             start(machine(tickets(configure)), ticket, input);
                     if (path.equals("pending stage")) {
-                        entered.get(WAIT_SECONDS, TimeUnit.SECONDS);
+                        stage.awaitPendingRegistration();
                         stage.complete(result);
                     }
                     if (row.route() == null) {
@@ -476,7 +506,7 @@ class AsyncRecoveryTest {
                 Ticket peer = new Ticket("peer");
                 Ticket root = new Ticket("root");
                 UnreadableFailure unreadable = new UnreadableFailure();
-                CompletableFuture<ActionOutcome> stage = pending();
+                RegisteredStage<ActionOutcome> stage = registeredStage();
                 CompletableFuture<TransitionAbortedException> poisoned = pending();
                 StateMachine<Ticket, TicketState, TicketChange> machine = machine(tickets(
                         (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish
@@ -502,6 +532,7 @@ class AsyncRecoveryTest {
                 CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call = start(machine, root, null);
                 TransitionAbortedException poison = poisoned.get(WAIT_SECONDS, TimeUnit.SECONDS);
                 if (!alreadyCompleted) {
+                    stage.awaitPendingRegistration();
                     stage.completeExceptionally(unreadable);
                 }
                 ExecutionException transport = assertThrows(ExecutionException.class,
@@ -756,6 +787,7 @@ class AsyncRecoveryTest {
                         return e;
                     }
                 }, pool);
+                calls.add(call);
                 thrown = call.get(WAIT_SECONDS, TimeUnit.SECONDS);
             } finally {
                 pool.shutdownNow();
@@ -858,19 +890,17 @@ class AsyncRecoveryTest {
             Ticket syncTicket = new Ticket("sync");
             Outcome<Ticket, TicketState, TicketChange> sync =
                     machine(tickets(unavailable())).execute(syncTicket, TicketChange.PUBLISH);
-            CompletableFuture<ActionOutcome> retried = pending();
-            CompletableFuture<Void> retryEntered = pending();
+            RegisteredStage<ActionOutcome> retried = registeredStage();
             StateMachine<Ticket, TicketState, TicketChange> asyncMachine = machine(tickets(unavailable(),
                     (TransitionBuilder<Ticket, TicketState, TicketChange> edge) -> edge.asyncAction("schedule retry",
                             (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                                 ctx.entity().calls.add("schedule retry");
-                                retryEntered.complete(null);
                                 return retried;
                             })));
             Ticket asyncTicket = new Ticket("async");
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
                     start(asyncMachine, asyncTicket, null);
-            retryEntered.get(WAIT_SECONDS, TimeUnit.SECONDS);
+            retried.awaitPendingRegistration();
             retried.complete(ActionOutcome.ok());
             Outcome<Ticket, TicketState, TicketChange> async = call.get(WAIT_SECONDS, TimeUnit.SECONDS);
             String expected = "FAILURE_ROUTED SCHEDULE_RETRY to RETRY_PENDING, kind Unavailable, no cause;"
@@ -959,13 +989,11 @@ class AsyncRecoveryTest {
     @Test
     void theRecoveryEdgesOwnHookRunsAfterTheCommit() throws Exception {
         bounded(() -> {
-            CompletableFuture<ActionOutcome> stage = pending();
-            CompletableFuture<Void> entered = pending();
+            RegisteredStage<ActionOutcome> stage = registeredStage();
             StateMachine<Ticket, TicketState, TicketChange> machine = machine(tickets(
                     (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
                             publish.asyncAction("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                                 ctx.entity().calls.add("publish");
-                                entered.complete(null);
                                 return stage;
                             }).afterCommit("published", (Ticket ticket) -> ticket.calls.add("hook of PUBLISH"))),
                     (TransitionBuilder<Ticket, TicketState, TicketChange> edge) -> edge
@@ -977,7 +1005,7 @@ class AsyncRecoveryTest {
             Ticket ticket = new Ticket("t1");
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
                     start(machine, ticket, null);
-            entered.get(WAIT_SECONDS, TimeUnit.SECONDS);
+            stage.awaitPendingRegistration();
             stage.completeExceptionally(new ServiceUnavailableException("provider down"));
             assertEquals(OutcomeCode.FAILURE_ROUTED, call.get(WAIT_SECONDS, TimeUnit.SECONDS).code());
             assertEquals(List.of("publish", "schedule retry",
@@ -1240,15 +1268,12 @@ class AsyncRecoveryTest {
     @Test
     void twoPublicationsCompletedInReverseOrderKeepTheirOwnRecovery() throws Exception {
         bounded(() -> {
-            Map<String, CompletableFuture<ActionOutcome>> stages =
-                    Map.of("first", pending(), "second", pending());
-            Map<String, CompletableFuture<Void>> entered =
-                    Map.of("first", pending(), "second", pending());
+            Map<String, RegisteredStage<ActionOutcome>> stages =
+                    Map.of("first", registeredStage(), "second", registeredStage());
             StateMachine<Ticket, TicketState, TicketChange> machine = machine(tickets(
                     (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
                             publish.asyncAction("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                                 ctx.entity().calls.add("publish");
-                                entered.get(ctx.entity().id).complete(null);
                                 return stages.get(ctx.entity().id);
                             }))), Duration.ofMinutes(1));
             Ticket first = new Ticket("first");
@@ -1257,10 +1282,10 @@ class AsyncRecoveryTest {
             Request secondInput = new Request("second request");
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> firstCall =
                     start(machine, first, firstInput);
-            entered.get("first").get(WAIT_SECONDS, TimeUnit.SECONDS);
+            stages.get("first").awaitPendingRegistration();
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> secondCall =
                     start(machine, second, secondInput);
-            entered.get("second").get(WAIT_SECONDS, TimeUnit.SECONDS);
+            stages.get("second").awaitPendingRegistration();
             stages.get("second").complete(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"));
             Outcome<Ticket, TicketState, TicketChange> secondOutcome = secondCall.get(WAIT_SECONDS, TimeUnit.SECONDS);
             assertFalse(firstCall.isDone(), "the first publication must still be waiting for its own stage");
