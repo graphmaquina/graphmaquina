@@ -136,7 +136,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             try {
                 try {
                     state = readState(entity);
-                } catch (Exception e) {
+                } catch (Error fatal) {
+                    throw fatal;
+                } catch (Throwable e) {
                     throw unresolved(entity, observed, reaction, Optional.empty(), "reading the entity threw ", e);
                 }
                 if (chain > registry.maxWatchChain()) {
@@ -149,7 +151,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 if (watch.isPresent()) {
                     try {
                         selected = firstMatch(watch.get(), entity);
-                    } catch (Exception e) {
+                    } catch (Error fatal) {
+                        throw fatal;
+                    } catch (Throwable e) {
                         throw unresolved(entity, observed, reaction, Optional.of(state), "the watch threw ", e);
                     }
                 }
@@ -176,7 +180,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * the failure, unwrapped from CompletionException and ExecutionException.
      */
     private TransitionAbortedException unresolved(E entity, Optional<Observed> observed, boolean reaction,
-                                                  Optional<Enum<?>> from, String what, Exception error) {
+                                                  Optional<Enum<?>> from, String what, Throwable error) {
         Throwable cause = Unwrap.unwrap(error);
         AbortDetails details = new AbortDetails(key(), entity, from, Optional.empty(), Optional.empty(),
                 Optional.empty(), List.of(), List.of());
@@ -340,7 +344,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 owner.definition().terminals().contains(spec.to()));
         try {
             hook.run(target, context);
-        } catch (Exception e) {
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
             throw new AfterCommitException(tx.call(), tx.uow().journal(), records, Typed.record(owner.key(), entry),
                     hook.name(), e);
         }

@@ -50,6 +50,10 @@ final class Transaction {
     private final boolean reaction;
     /** Created by the first exception that needs it, unless an observer brought it; the same instance afterwards. */
     private Optional<MachineCall> call;
+    /**
+     * Where the call stands. Only the root's own step moves it, to GUARD before its first guard and to ACTION once
+     * its guards passed; a cascaded step leaves it at ACTION. The root moves it on to COMMIT, HOOK and REACTIONS.
+     */
     private CallPhase phase = CallPhase.RESOLVE;
     private boolean writing;
     /** The state the root's own step read, null until it was read. */
@@ -94,12 +98,6 @@ final class Transaction {
 
     UnitOfWork uow() { return uow; }
 
-    /**
-     * Where the call stands. Only the root's own step moves it, to GUARD before its first guard and to ACTION once
-     * its guards passed; a cascaded step leaves it at ACTION. The root moves it on to COMMIT, HOOK and REACTIONS.
-     */
-    CallPhase phase() { return phase; }
-
     void enter(CallPhase next) { phase = next; }
 
     /** Phase 2 is about to call a setter: from here a failure in COMMIT may leave the states partially written. */
@@ -142,7 +140,9 @@ final class Transaction {
         try {
             ref = uow.register(machine.refOf(entity));
             from = currentState(machine, ref, entity);
-        } catch (Exception e) {
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
             if (depth > 0) {
                 throw e;
             }
@@ -521,7 +521,7 @@ final class Transaction {
      * entity's state.
      */
     private TransitionAbortedException unread(DefaultStateMachine<?, ?, ?> machine, Object entity, Enum<?> id,
-                                              Exception error) {
+                                              Throwable error) {
         Throwable cause = Unwrap.unwrap(error);
         AbortDetails details = new AbortDetails(machine.key(), entity, Optional.empty(), Optional.of(id),
                 Optional.empty(), Optional.empty(), uow.path(), uow.journal());
@@ -702,7 +702,8 @@ final class Transaction {
      * FAIL_FAST aborts at the first failure. COLLECT tries every element under its own savepoint, rolls back
      * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
      * COLLECT gathers the aborts of the call only: any other failure poisons, through an abort that carries it, and
-     * stops the cascade at once, a nested one too, when an element's action lets through the abort that carries it.
+     * stops the cascade at once, a nested one too, once an element's step was poisoned through such an abort, whether
+     * its action let it through, caught it or replaced it.
      * Once the poison is checked, the collection is copied, and every later step reads the copy alone: the elements
      * checked are the elements run, and a change to the collection while the cascade runs, by an element's action for
      * instance, changes neither which elements run nor their order. Copying is part of accepting the arguments: an

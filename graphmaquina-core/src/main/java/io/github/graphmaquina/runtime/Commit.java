@@ -7,12 +7,12 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Phase 2: pre-read of each entity and a single setter per entity with the to of its last entry. The pre-read
- * refuses a state that changed while the transaction ran, which an action that called the setter or a concurrent
- * transition on the same entity can cause; it is not a lock, so it catches only the interleavings that leave a
- * different state behind. A setter that throws any Exception, checked ones included, stops phase 2 where it stood.
- * It tells the transaction before each setter call, so that a failure during phase 2 is known to have written some
- * states or none. Whatever throws before the first setter, the state read of the check or the grouping of the log,
+ * Phase 2: pre-read of each entity and a single setter per entity with the to of its last entry. The pre-read refuses a
+ * state that changed while the transaction ran, which an action that called the setter or a concurrent transition on
+ * the same entity can cause; it is not a lock, so it catches only the interleavings that leave a different state
+ * behind. A setter that throws any throwable that is not an Error, a checked exception included, stops phase 2 where it
+ * stood. It tells the transaction before each setter call, so that a failure during phase 2 is known to have written
+ * some states or none. Whatever throws before the first setter, the state read of the check or the grouping of the log,
  * stops phase 2 with nothing written.
  */
 final class Commit {
@@ -27,7 +27,9 @@ final class Commit {
         try {
             summary = uow.commitSummary();
             conflict = conflict(registry, summary);
-        } catch (Exception e) {
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
             throw new CommitFailedException(tx.call(), uow.journal(), plannedEntities(uow), e);
         }
         List<CommitSummary.Change> changes = summary.changes();
@@ -40,7 +42,9 @@ final class Commit {
             tx.writing();
             try {
                 machine.writeState(change.ref().instance(), change.last().to());
-            } catch (Exception e) {
+            } catch (Error fatal) {
+                throw fatal;
+            } catch (Throwable e) {
                 throw new CommitFailedException(tx.call(), uow.journal(), instancesOf(changes.subList(0, index)),
                         change.ref().instance(), instancesOf(changes.subList(index + 1, changes.size())), e);
             }

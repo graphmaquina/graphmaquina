@@ -12,9 +12,10 @@ import java.util.function.Consumer;
 
 /**
  * The observers of a registry, notified in the order they were added. Each callback runs with the reentrancy marker
- * set, so an observer cannot start a transition. An exception an observer throws, checked ones included, is logged as
- * a warning that names the observer, the callback and the call, never the entity, and the next observer is still
- * notified. An Error propagates unchanged, and the marker is released whatever the callback throws.
+ * set, so an observer cannot start a transition on its own thread. A throwable that is not an Error, a checked
+ * exception included, is logged as a warning that names the observer, the callback and the call, never the entity, and
+ * the next observer is still notified. An Error propagates unchanged, and the marker is released whatever the callback
+ * throws.
  */
 final class Observers {
 
@@ -58,7 +59,9 @@ final class Observers {
             Reentrancy.enter(call.key(), call.entity());
             try {
                 event.accept(observer);
-            } catch (Exception e) {
+            } catch (Error fatal) {
+                throw fatal;
+            } catch (Throwable e) {
                 logger.log(Level.WARNING, () -> "the observer " + observer.getClass().getName() + " threw in "
                         + callback + " for " + call, e);
             } finally {
