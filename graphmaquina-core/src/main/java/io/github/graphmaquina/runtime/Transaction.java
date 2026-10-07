@@ -4,11 +4,13 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionRef;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.Machine;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
@@ -16,6 +18,7 @@ import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AbortDetails;
+import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.CascadeCycleException;
 import io.github.graphmaquina.error.CascadeDepthExceededException;
 import io.github.graphmaquina.error.CascadeException;
@@ -30,21 +33,60 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionStage;
-import lombok.AccessLevel;
-import lombok.RequiredArgsConstructor;
 
 /**
  * Engine of a root transaction. All the state of the transition lives here and in the UnitOfWork, the phase of its
  * call included.
  */
-@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class Transaction {
 
     private final MachineRegistry registry;
     private final UnitOfWork uow;
     private final List<ContextHandle> contexts = new ArrayList<>();
+    private final MachineKey<?, ?, ?> callKey;
+    private final Object callEntity;
+    /** The identifier the call requested; null for a reevaluation, which requests none. */
+    private final Enum<?> requested;
+    private final boolean reaction;
+    /** Created by the first exception that needs it, unless an observer brought it; the same instance afterwards. */
+    private Optional<MachineCall> call;
     private CallPhase phase = CallPhase.RESOLVE;
     private boolean writing;
+
+    Transaction(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
+                Enum<?> requested, boolean reaction, Optional<MachineCall> call) {
+        this.registry = registry;
+        this.uow = uow;
+        this.callKey = callKey;
+        this.callEntity = callEntity;
+        this.requested = requested;
+        this.reaction = reaction;
+        this.call = call;
+    }
+
+    /** The call this transaction runs: created the first time it is needed, the same instance afterwards. */
+    MachineCall call() {
+        if (call.isEmpty()) {
+            call = Optional.of(new MachineCall(callKey, callEntity, Optional.ofNullable(requested), reaction));
+        }
+        return call.get();
+    }
+
+    /** Whether {@code failure} is a failure of this very call. */
+    boolean owns(CallFailedException failure) {
+        return call.isPresent() && failure.call() == call.get();
+    }
+
+    /**
+     * What the observers are told of {@code thrown}: a failure of this call keeps its own values, anything else gets
+     * the call's.
+     */
+    CallFailure failureOf(Throwable thrown) {
+        if (thrown instanceof CallFailedException failure && owns(failure)) {
+            return new CallFailure(failure.phase(), failure.statesWritten(), failure);
+        }
+        return new CallFailure(phase, statesWritten(), thrown);
+    }
 
     UnitOfWork uow() { return uow; }
 
@@ -338,8 +380,8 @@ final class Transaction {
             AbortDetails details = details(machine, ref, from, Optional.of(failing.transition()),
                     Optional.of(failing.to()), actionName);
             UnhandledFailureException unhandled = cause.isPresent()
-                    ? new UnhandledFailureException(details, reason, cause.get())
-                    : new UnhandledFailureException(details, reason);
+                    ? new UnhandledFailureException(call(), details, reason, cause.get())
+                    : new UnhandledFailureException(call(), details, reason);
             throw poisonIfNested(depth, unhandled);
         }
         T recoveryId = failing.onFailure().orElseThrow();
@@ -431,8 +473,8 @@ final class Transaction {
                                              String message, Optional<Throwable> cause) {
         AbortDetails details = details(machine, ref, from, id, to, action);
         TransitionAbortedException error = cause.isPresent()
-                ? new TransitionAbortedException(details, message, cause.get())
-                : new TransitionAbortedException(details, message);
+                ? new TransitionAbortedException(call(), phase, details, message, cause.get())
+                : new TransitionAbortedException(call(), phase, details, message);
         return poisonIfNested(depth, error);
     }
 
@@ -527,7 +569,8 @@ final class Transaction {
         if (error instanceof StateMachineException engine) {
             uow.poison(engine);
         } else {
-            uow.poison(new TransitionAbortedException(details(caller), "the cascade to " + key + " failed: " + error, error));
+            uow.poison(new TransitionAbortedException(call(), phase, details(caller),
+                    "the cascade to " + key + " failed: " + error, error));
         }
     }
 
@@ -546,7 +589,7 @@ final class Transaction {
             throw cascadeCycle(caller, flight.orElseThrow(), id);
         }
         if (depth > uow.maxDepth()) {
-            throw new CascadeDepthExceededException(details(caller), uow.maxDepth());
+            throw new CascadeDepthExceededException(call(), details(caller), uow.maxDepth());
         }
         return outcomeOf(peer, transition(machine, peer, id, depth, null));
     }
@@ -555,7 +598,7 @@ final class Transaction {
     private CascadeCycleException cascadeCycle(ContextHandle caller, InFlight flight, Enum<?> requested) {
         List<String> route = new ArrayList<>(uow.path());
         route.add(flight.ref().toString());
-        return new CascadeCycleException(details(caller), route, flight.transition(), requested);
+        return new CascadeCycleException(call(), details(caller), route, flight.transition(), requested);
     }
 
     /** Adapts a nested step to an outcome: records and reactions belong to the root, so they stay empty here. */
@@ -643,7 +686,7 @@ final class Transaction {
             }
         }
         if (!errors.isEmpty()) {
-            CascadeException aggregate = new CascadeException(details(caller), errors);
+            CascadeException aggregate = new CascadeException(call(), details(caller), errors);
             uow.poison(aggregate);
             throw aggregate;
         }
@@ -662,7 +705,7 @@ final class Transaction {
 
     private void checkPoison(ContextHandle caller) {
         if (uow.isPoisoned()) {
-            throw new PoisonedUnitOfWorkException(details(caller), uow.poison().orElseThrow());
+            throw new PoisonedUnitOfWorkException(call(), details(caller), uow.poison().orElseThrow());
         }
     }
 }

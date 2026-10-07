@@ -344,7 +344,10 @@ class SingleMachineTest {
                 "an action called the setter, or a concurrent transition on the same entity wrote it first"));
     }
 
-    /** A setter that throws stops phase 2 where it stood: what was written is applied, the rest stays pending. */
+    /**
+     * A setter that throws stops phase 2 where it stood: what was written is applied, the entity whose setter threw
+     * is named, and nothing is left pending here.
+     */
     @Test
     void aSetterThatThrowsReportsExactlyWhatWasAppliedAndWhatWasNot() {
         Doc peer = new Doc("2", REVIEW);
@@ -353,7 +356,8 @@ class SingleMachineTest {
         Doc doc = new Doc("1", DRAFT);
         CommitFailedException error = assertThrows(CommitFailedException.class, () -> recording.execute(doc, SUBMIT));
         assertEquals(List.of(doc), error.applied());
-        assertEquals(List.of(peer), error.pending());
+        assertEquals(Optional.of(peer), error.failedEntity());
+        assertEquals(List.of(), error.pending());
         assertInstanceOf(IllegalStateException.class, error.getCause());
         assertEquals(List.of("1:REVIEW", "2:PUBLISHED"), writes);
         assertEquals(REVIEW, doc.status());

@@ -1,5 +1,7 @@
 package io.github.graphmaquina.error;
 
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.MachineCall;
 import java.util.Objects;
 import lombok.Getter;
 
@@ -32,8 +34,9 @@ public final class PoisonedUnitOfWorkException extends TransitionAbortedExceptio
 
     private final StateMachineException original;
 
-    public PoisonedUnitOfWorkException(AbortDetails details, StateMachineException original) {
-        super(details, "the transaction already failed earlier: " + Objects.requireNonNull(original, "original").getMessage(), original);
+    public PoisonedUnitOfWorkException(MachineCall call, AbortDetails details, StateMachineException original) {
+        super(call, CallPhase.ACTION, details, "the transaction already failed earlier: "
+                + Objects.requireNonNull(original, "original").getMessage(), original);
         this.original = original;
     }
 }

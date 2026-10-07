@@ -262,7 +262,8 @@ class StateWriteProbeTest {
         });
         TransitionFailureAssert.assertThat(failure).isCommitFailure()
                 .hasAppliedExactly(order)
-                .hasPendingExactly(first, second)
+                .hasFailedEntity(first)
+                .hasPendingExactly(second)
                 .hasCauseSameAs(boom);
         assertEquals(State.READY, order.state());
         assertEquals(State.NEW, first.state());

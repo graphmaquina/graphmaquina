@@ -94,9 +94,10 @@ class CommitContextHooksTest {
         Doc doc = new Doc("1", DRAFT);
         AfterCommitException error = assertThrows(AfterCommitException.class, () -> machine.execute(doc, SUBMIT));
         assertSame(boom, error.getCause());
-        assertEquals("committed", error.step());
-        assertEquals(DRAFT, error.from());
-        assertEquals(REVIEW, error.to());
+        assertEquals("committed", error.hook());
+        assertEquals(DRAFT, error.hop().from());
+        assertEquals(REVIEW, error.hop().to());
+        assertEquals(SUBMIT, error.hop().transition());
         assertEquals(REVIEW, doc.status());
     }
 

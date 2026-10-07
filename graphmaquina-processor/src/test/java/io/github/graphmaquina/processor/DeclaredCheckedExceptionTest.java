@@ -253,7 +253,7 @@ class DeclaredCheckedExceptionTest {
                         try {
                             ends.add("returned " + (call == 0 ? library.docs().submit(doc) : library.docs().publish(doc)));
                         } catch (AfterCommitException failed) {
-                            ends.add(failed.step() + (failed.getCause() == actions.failure ? " threw it, "
+                            ends.add(failed.hook() + (failed.getCause() == actions.failure ? " threw it, "
                                     : " threw " + failed.getCause() + ", ") + doc.status());
                         }
                     }

@@ -22,32 +22,37 @@ final class Commit {
         UnitOfWork uow = tx.uow();
         CommitSummary summary = uow.commitSummary();
         List<CommitSummary.Change> changes = summary.changes();
-        List<Object> all = new ArrayList<>(changes.size());
-        for (CommitSummary.Change change : changes) {
-            all.add(change.ref().instance());
-        }
         for (CommitSummary.Change change : changes) {
             DefaultStateMachine<?, ?, ?> machine = registry.anyMachineFor(change.ref().key());
             Optional<Enum<?>> current = machine.peekState(change.ref().instance());
             Enum<?> expected = change.first().from();
             if (current.isEmpty() || current.get() != expected) {
-                throw new CommitFailedException(List.of(), all, "the state of " + change.ref()
-                        + " changed during the transaction: expected " + expected + " but is "
+                throw new CommitFailedException(tx.call(), uow.journal(), instancesOf(changes), "the state of "
+                        + change.ref() + " changed during the transaction: expected " + expected + " but is "
                         + current.map(Enum::name).orElse("null")
                         + "; an action called the setter, or a concurrent transition on the same entity wrote it first");
             }
         }
-        List<Object> applied = new ArrayList<>();
-        for (CommitSummary.Change change : changes) {
+        for (int index = 0; index < changes.size(); index++) {
+            CommitSummary.Change change = changes.get(index);
             DefaultStateMachine<?, ?, ?> machine = registry.anyMachineFor(change.ref().key());
             tx.writing();
             try {
                 machine.writeState(change.ref().instance(), change.last().to());
             } catch (Exception e) {
-                throw new CommitFailedException(applied, all.subList(applied.size(), all.size()), e);
+                throw new CommitFailedException(tx.call(), uow.journal(), instancesOf(changes.subList(0, index)),
+                        change.ref().instance(), instancesOf(changes.subList(index + 1, changes.size())), e);
             }
-            applied.add(change.ref().instance());
         }
         return summary;
+    }
+
+    /** The entities of {@code changes}, in order. */
+    private static List<Object> instancesOf(List<CommitSummary.Change> changes) {
+        List<Object> instances = new ArrayList<>(changes.size());
+        for (CommitSummary.Change change : changes) {
+            instances.add(change.ref().instance());
+        }
+        return instances;
     }
 }

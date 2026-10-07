@@ -255,7 +255,7 @@ class CheckedExceptionTest {
         Doc doc = new Doc("1", DRAFT);
         AfterCommitException error = assertThrows(AfterCommitException.class, () -> machine.execute(doc, SUBMIT));
         assertSame(mail, error.getCause());
-        assertEquals("Notify", error.step());
+        assertEquals("Notify", error.hook());
         assertEquals(REVIEW, doc.status());
     }
 
@@ -299,7 +299,8 @@ class CheckedExceptionTest {
         CommitFailedException error = assertThrows(CommitFailedException.class, () -> machine.execute(doc, SUBMIT));
         assertSame(flush, error.getCause());
         assertEquals(List.of(), error.applied());
-        assertEquals(List.of(doc), error.pending());
+        assertEquals(Optional.of(doc), error.failedEntity());
+        assertEquals(List.of(), error.pending());
         assertEquals(DRAFT, doc.status());
     }
 

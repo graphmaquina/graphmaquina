@@ -593,7 +593,7 @@ class WatchTest {
             failingHook = "review:peer";
             AfterCommitException error = assertThrows(AfterCommitException.class,
                     () -> docs.of(DOCS).execute(peer, SUBMIT));
-            assertEquals("onReview", error.step());
+            assertEquals("onReview", error.hook());
             assertEquals(List.of("review:peer"), hooks);
             assertEquals(List.of("peer:REVIEW"), writes);
             assertEquals(REVIEW, peer.status());

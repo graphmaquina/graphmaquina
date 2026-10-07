@@ -1,5 +1,7 @@
 package io.github.graphmaquina.error;
 
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.MachineCall;
 import lombok.Getter;
 
 /** Thrown when a cascade goes deeper than the configured maximum. */
@@ -8,8 +10,9 @@ public final class CascadeDepthExceededException extends TransitionAbortedExcept
 
     private final int maxDepth;
 
-    public CascadeDepthExceededException(AbortDetails details, int maxDepth) {
-        super(details, "the cascade exceeds maxCascadeDepth = " + maxDepth);
+    public CascadeDepthExceededException(MachineCall call, AbortDetails details, int maxDepth) {
+        super(call, CallPhase.ACTION, details,
+                "the cascade exceeds maxCascadeDepth = " + maxDepth);
         this.maxDepth = maxDepth;
     }
 }

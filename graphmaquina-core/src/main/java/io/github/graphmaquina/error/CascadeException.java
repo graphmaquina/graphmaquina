@@ -1,5 +1,7 @@
 package io.github.graphmaquina.error;
 
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.MachineCall;
 import java.util.List;
 import java.util.Objects;
 import lombok.Getter;
@@ -15,8 +17,9 @@ public final class CascadeException extends TransitionAbortedException {
 
     private final List<TransitionAbortedException> errors;
 
-    public CascadeException(AbortDetails details, List<TransitionAbortedException> errors) {
-        super(details, Objects.requireNonNull(errors, "errors").size() + " cascade element(s) failed");
+    public CascadeException(MachineCall call, AbortDetails details, List<TransitionAbortedException> errors) {
+        super(call, CallPhase.ACTION, details,
+                Objects.requireNonNull(errors, "errors").size() + " cascade element(s) failed");
         this.errors = List.copyOf(errors);
     }
 }

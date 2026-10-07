@@ -1,5 +1,7 @@
 package io.github.graphmaquina.error;
 
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.MachineCall;
 import lombok.Getter;
 
 /**
@@ -12,8 +14,9 @@ public final class WatchChainExceededException extends TransitionAbortedExceptio
 
     private final int maxChain;
 
-    public WatchChainExceededException(AbortDetails details, int maxChain) {
-        super(details, "the chain of watch reactions exceeds maxWatchChain = " + maxChain);
+    public WatchChainExceededException(MachineCall call, AbortDetails details, int maxChain) {
+        super(call, CallPhase.RESOLVE, details,
+                "the chain of watch reactions exceeds maxWatchChain = " + maxChain);
         this.maxChain = maxChain;
     }
 }

@@ -18,10 +18,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.AfterCommitException;
@@ -98,8 +100,11 @@ class HooksTest {
         Doc doc = new Doc("1", DRAFT);
         AfterCommitException error = assertThrows(AfterCommitException.class, () -> docs.execute(doc, SUBMIT));
         assertSame(boom, error.getCause());
-        assertEquals("onReview", error.step());
-        assertEquals(DOCS, error.key());
+        assertEquals("onReview", error.hook());
+        assertEquals(DOCS, error.hop().key());
+        assertEquals(SUBMIT, error.hop().transition());
+        assertEquals(CallPhase.HOOK, error.phase());
+        assertEquals(StatesWritten.ALL, error.statesWritten());
         assertEquals(REVIEW, doc.status());
     }
 

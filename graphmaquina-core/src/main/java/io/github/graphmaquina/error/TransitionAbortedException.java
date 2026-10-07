@@ -1,14 +1,18 @@
 package io.github.graphmaquina.error;
 
 import io.github.graphmaquina.api.ActionRecord;
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.StatesWritten;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import lombok.Getter;
 
 /**
- * ABORT: nothing moved; the unit of work, if one was started, was discarded.
+ * ABORT: nothing moved; the unit of work, if one was started, was discarded. Its phase is RESOLVE, GUARD or ACTION,
+ * and it never wrote a state.
  *
  * <p>When a guard or an action failed, the cause is what it threw, checked exceptions included, once unwrapped from
  * CompletionException and ExecutionException; a {@link StateMachineException} found there never becomes a cause,
@@ -20,20 +24,36 @@ import lombok.Getter;
  * when a guard or an action threw it wrapped in CompletionException or ExecutionException, or when an action
  * swallowed it from a cascade and the poison it left aborted the root.
  */
-public class TransitionAbortedException extends StateMachineException {
+public class TransitionAbortedException extends CallFailedException {
 
     @Getter
     private final AbortDetails details;
+    private final CallPhase phase;
 
-    public TransitionAbortedException(AbortDetails details, String message) {
-        super(describe(details, message));
+    public TransitionAbortedException(MachineCall call, CallPhase phase, AbortDetails details, String message) {
+        super(call, describe(details, message));
+        this.phase = beforeTheCommit(phase);
         this.details = details;
     }
 
-    public TransitionAbortedException(AbortDetails details, String message, Throwable cause) {
-        super(describe(details, message), cause);
+    public TransitionAbortedException(MachineCall call, CallPhase phase, AbortDetails details, String message,
+                                      Throwable cause) {
+        super(call, describe(details, message), cause);
+        this.phase = beforeTheCommit(phase);
         this.details = details;
     }
+
+    /** RESOLVE, GUARD or ACTION: an abort always happens before the commit. */
+    @Override
+    public CallPhase phase() { return phase; }
+
+    /** NONE: an abort discards the unit of work before any setter runs. */
+    @Override
+    public StatesWritten statesWritten() { return StatesWritten.NONE; }
+
+    /** Actions that ran, in order, with their status. The only record of which external effects were left loose. */
+    @Override
+    public List<ActionRecord> journal() { return details.journal(); }
 
     public MachineKey<?, ?, ?> key() { return details.key(); }
 
@@ -51,8 +71,13 @@ public class TransitionAbortedException extends StateMachineException {
 
     public List<String> cascadePath() { return details.cascadePath(); }
 
-    /** Actions that ran, in order, with their status. The only record of which external effects were left loose. */
-    public List<ActionRecord> journal() { return details.journal(); }
+    private static CallPhase beforeTheCommit(CallPhase phase) {
+        Objects.requireNonNull(phase, "phase");
+        if (phase != CallPhase.RESOLVE && phase != CallPhase.GUARD && phase != CallPhase.ACTION) {
+            throw new IllegalArgumentException("an abort happens before the commit, not in " + phase);
+        }
+        return phase;
+    }
 
     private static String describe(AbortDetails details, String message) {
         Objects.requireNonNull(details, "details");

@@ -1,15 +1,16 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Objects;
 
 /**
- * Chainable assertion over an {@link AfterCommitException}: an after-commit hook threw, and nothing is rolled back.
- * A hook runs only for a committed hop, once every state was written, so {@link #at(MachineKey, Object, Enum, Enum)}
- * names a hop that really happened. The step is the hook's name. The exception carries only the endpoints, so the
- * identifier of the committed edge is read from the records rather than here.
+ * Chainable assertion over an {@link AfterCommitException}: an after-commit hook threw, and nothing is rolled back:
+ * every state of the call was written. A hook runs only for a committed hop, so
+ * {@link #at(MachineKey, Object, Enum, Enum, Enum)} names a hop that really happened, and {@link #records()} every
+ * hop the call committed.
  */
 public final class AfterCommitAssert extends BaseFailureAssert<AfterCommitAssert> {
 
@@ -25,25 +26,31 @@ public final class AfterCommitAssert extends BaseFailureAssert<AfterCommitAssert
         return this;
     }
 
-    public AfterCommitAssert hasStepNamed(String expected) {
+    public AfterCommitAssert hasHookNamed(String expected) {
         Objects.requireNonNull(expected, "expected");
-        Checks.equal(context, "step", expected, failure.step());
+        Checks.equal(context, "hook", expected, failure.hook());
         return this;
     }
 
-    /**
-     * The endpoints of the committed hop the failing hook ran for. The entity is matched by reference.
-     */
-    public <E, S extends Enum<S>, T extends Enum<T>> AfterCommitAssert at(MachineKey<E, S, T> key, E entity,
-            S from, S to) {
+    /** The committed hop the failing hook ran for. The entity is matched by reference. */
+    public <E, S extends Enum<S>, T extends Enum<T>> AfterCommitAssert at(MachineKey<E, S, T> key, E entity, S from,
+            T transition, S to) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(from, "from");
+        Objects.requireNonNull(transition, "transition");
         Objects.requireNonNull(to, "to");
-        Checks.equal(context, "key", key, failure.key());
-        Checks.same(context, "entity", entity, failure.entity());
-        Checks.equal(context, "from", from, failure.from());
-        Checks.equal(context, "to", to, failure.to());
+        TransitionRecord<?, ?, ?> hop = failure.hop();
+        Checks.equal(context, "key", key, hop.key());
+        Checks.same(context, "entity", entity, hop.entity());
+        Checks.equal(context, "from", from, hop.from());
+        Checks.equal(context, "transition", transition, hop.transition());
+        Checks.equal(context, "to", to, hop.to());
         return this;
+    }
+
+    /** Every hop the call committed, in log order. */
+    public TransitionRecordsAssert records() {
+        return new TransitionRecordsAssert(context + ".records", failure.records());
     }
 }

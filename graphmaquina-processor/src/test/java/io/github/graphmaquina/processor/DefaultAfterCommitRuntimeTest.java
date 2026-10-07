@@ -231,7 +231,7 @@ class DefaultAfterCommitRuntimeTest {
                 library.docs().submit(doc);
                 return false;
             } catch (AfterCommitException failure) {
-                return failure.step().equals("persist")
+                return failure.hook().equals("persist")
                     && failure.getCause() instanceof IllegalStateException
                     && doc.status() == DocStatus.REVIEW
                     && recorder.events.equals(List.of("persist:REVIEW"));

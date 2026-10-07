@@ -46,6 +46,8 @@ entity and state enum with different transition catalogues: two engines would ot
 | A return to the origin, or a terminal with an ACTION self-loop, in the DSL | A terminal forbids every outgoing edge. A non-terminal self-loop is legal and requires `allowsCycle`. |
 | `Outcome.current()` | `Outcome.recordedState()`: the same value, the state the call recorded, not a read of the entity. |
 | `TransitionListener` and `listener(...)` on a builder | `MachineObserver` and `observer(...)`, any number of them. An observer cannot fail a call: what must fail it belongs in a hook, or in `Definition.afterCommit` for every edge of a machine. |
+| `AfterCommitException.step()`, `key()`, `entity()`, `from()`, `to()` | `hook()`, and `hop()`: a `TransitionRecord` that also names the identifier. `records()` lists every hop the call committed. |
+| `CommitFailedException.pending()` that included the entity whose setter threw | `failedEntity()` names it; `pending()` lists only the entities never tried. |
 
 Preserved, apart from the fixes listed under
 [Behaviour changes in this release](#behaviour-changes-in-this-release): guard order, timeouts and deadlines,
@@ -445,7 +447,7 @@ Every generic of the library gains the third parameter: `GraphAssert<E, S, T>`, 
 | `IgnoredOutcomeAssert` carries only the shared expectations. | `hasReason(IgnoreReason)` says whether the state declared no watch or no rule held. |
 | `TransitionRecordAssert.isConvergent()` / `isNotConvergent()`. | Retired with `TransitionRecord.convergent`. A hop is identified by `hasTransition(id)` in addition to its endpoints, and `containsExactly` compares the identifier too. |
 | `JournalAssert.hasEntry(key, entity, from, to, action, depth, status)`. | `hasEntry(key, entity, from, transition, to, action, depth, status)`. |
-| `AbortAssert.at(key, entity, from, to)`. | `at(key, entity, from, transition, to)` for an abort that resolved its edge, `atUnresolved(key, entity, from, transition)` for one refused before resolving any, which reports no destination, and `atUnread(key, entity, from)` for one raised before any identifier was read, such as a chain of watch reactions that exceeds its limit, which reports neither. `AfterCommitAssert.at` is unchanged: the exception still names the committed hop by its endpoints. |
+| `AbortAssert.at(key, entity, from, to)`. | `at(key, entity, from, transition, to)` for an abort that resolved its edge, `atUnresolved(key, entity, from, transition)` for one refused before resolving any, which reports no destination, and `atUnread(key, entity, from)` for one raised before any identifier was read, such as a chain of watch reactions that exceeds its limit, which reports neither. `AfterCommitAssert.at` gains the identifier the same way: `at(key, entity, from, transition, to)` compares the committed hop the failing hook ran for. |
 | `WatchRuleExpectation<S>(condition, target)`. | `WatchRuleExpectation<T>(condition, transition)`: a rule names the identifier it executes. |
 | `ActionCall<E, S>(entity, from, to, depth[, input])` and `GuardCall<E, S>(entity, from, to[, input])`. | `ActionCall<E, S, T>(entity, from, transition, to, depth[, input])` and `GuardCall<E, S, T>(entity, from, transition, to[, input])`. The recorded per-invocation input of #5 is unchanged, and `CallInputAssert` is untouched. |
 | `GraphGoldens.assertMatches(definition, resource, Detail, options)`. | `Detail` is gone, so the overloads are `(definition, resource)` and `(definition, resource, options)`. The rendering draws the declared edges only. |
@@ -491,6 +493,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   set builder as many times as needed, sees every call start and end, failures and `Error`s included. What it
   throws is logged and never changes the call. `TransitionListener`, `listener(...)` and
   `TransitionRecorder.compose(...)` are gone, and an `AfterCommitException` now always means that a hook failed.
+- **Call failures share `CallFailedException`.** `TransitionAbortedException`, `CommitFailedException` and
+  `AfterCommitException` extend it and report, as values, the call that failed, its phase, how far it got in
+  writing states and the actions that ran. Their constructors take the `MachineCall`.
 - **Unbounded timeouts.** An `asyncTimeout` or edge timeout of `Duration.ofNanos(Long.MAX_VALUE)` or more means
   no limit, and the other limit stays in charge. Such budgets used to overflow, into `ArithmeticException` or a
   deadline silently switched off, and an `asyncTimeout` above that left its thread refusing every later
@@ -676,6 +681,12 @@ observe. Most items refuse up front what used to fail later, in generated code o
 
 - **`TransitionRecorder` is a `MachineObserver`.** Install it with `observer(recorder)`.
   `compose(...)` is gone: a registry takes any number of observers.
+- **`CommitFailureAssert.hasFailedEntity(entity)` and `hasNoFailedEntity()`** are new: they read the entity whose
+  setter threw, by reference. `hasPendingExactly(...)` now expects only the entities whose setter was never
+  called, since `pending()` no longer lists the one that threw.
+- **`AfterCommitAssert` reads the hook and its hop.** `hasHookNamed(name)` replaces `hasStepNamed(name)`,
+  `at(key, entity, from, transition, to)` compares the committed hop the failing hook ran for, its identifier
+  included, and `records()` reads every hop the call committed.
 - **`AbortAssert.atUnread(key, entity, from)`** is new: it locates an abort raised before any identifier was
   read, such as a chain of watch reactions that exceeds its limit.
 - **Closed controlled fixtures.** A closed `ControlledAsyncAction` refuses an invocation with

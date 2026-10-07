@@ -97,7 +97,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         requireTransition(transition);
         Reentrancy.check(key(), entity);
         Optional<Observed> observed = observe(entity, transition, false);
-        return runRoot(entity, observed, (Transaction tx) -> tx.transition(this, entity, transition, 0, input), 0);
+        return runRoot(entity, transition, false, observed,
+                (Transaction tx) -> tx.transition(this, entity, transition, 0, input), 0);
     }
 
     void requireTransition(T transition) {
@@ -133,7 +134,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 if (chain > registry.maxWatchChain()) {
                     AbortDetails details = new AbortDetails(key(), entity, state, Optional.empty(), Optional.empty(),
                             Optional.empty(), List.of(), List.of());
-                    throw new WatchChainExceededException(details, registry.maxWatchChain());
+                    throw new WatchChainExceededException(callOf(entity, observed, chain > 0), details,
+                            registry.maxWatchChain());
                 }
                 watch = definition.watch(state);
                 if (watch.isPresent()) {
@@ -153,7 +155,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             return completed(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
         T resolved = selected.orElseThrow();
-        return runRoot(entity, observed, (Transaction tx) -> tx.transition(this, entity, resolved, 0), chain);
+        return runRoot(entity, null, chain > 0, observed,
+                (Transaction tx) -> tx.transition(this, entity, resolved, 0), chain);
     }
 
     /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */
@@ -191,10 +194,11 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      */
-    Outcome<E, S, T> runRoot(E entity, Optional<Observed> observed, Function<Transaction, StepResult<S, T>> body,
-                             int chain) {
+    Outcome<E, S, T> runRoot(E entity, T requested, boolean reaction, Optional<Observed> observed,
+                             Function<Transaction, StepResult<S, T>> body, int chain) {
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), deadlineNanos());
-        Transaction tx = new Transaction(registry, uow);
+        Transaction tx = new Transaction(registry, uow, key(), entity, requested, reaction,
+                observed.map(Observed::call));
         Outcome<E, S, T> outcome;
         try {
             StepResult<S, T> step;
@@ -222,7 +226,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             List<Reaction> reactions = List.of();
             if (!committed.isEmpty()) {
                 tx.enter(CallPhase.HOOK);
-                runHooks(committed);
+                runHooks(tx, records, committed);
                 tx.enter(CallPhase.REACTIONS);
                 reactions = registry.dispatchWatches(summary, chain);
             }
@@ -241,7 +245,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                                 records, reactions);
             };
         } catch (Throwable thrown) {
-            failed(observed, tx.phase(), tx.statesWritten(), thrown);
+            if (observed.isPresent()) {
+                observed.get().failed(tx.failureOf(thrown));
+            }
             throw thrown;
         }
         return completed(observed, outcome);
@@ -254,6 +260,13 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             return Optional.empty();
         }
         return Optional.of(observers.started(new MachineCall(key(), entity, Optional.ofNullable(requested), reaction)));
+    }
+
+    /** The call a reevaluation's own failure carries: the observed one, or a new one when nobody observes it. */
+    private MachineCall callOf(E entity, Optional<Observed> observed, boolean reaction) {
+        return observed.isPresent()
+                ? observed.get().call()
+                : new MachineCall(key(), entity, Optional.empty(), reaction);
     }
 
     private static <O extends Outcome<?, ?, ?>> O completed(Optional<Observed> observed, O outcome) {
@@ -271,15 +284,18 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /**
      * Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected. Any
-     * Exception a hook throws, checked ones included, becomes an AfterCommitException; an Error propagates unchanged.
+     * Exception a hook throws, checked ones included, becomes an AfterCommitException of the call, naming the hop and
+     * carrying every hop the call committed; an Error propagates unchanged.
      */
-    private void runHooks(List<LogEntry> committed) {
+    private void runHooks(Transaction tx, List<TransitionRecord<?, ?, ?>> records, List<LogEntry> committed) {
         for (LogEntry entry : committed) {
-            runHook(registry.anyMachineFor(entry.ref().key()), entry);
+            runHook(tx, records, registry.anyMachineFor(entry.ref().key()), entry);
         }
     }
 
-    private <P, Q extends Enum<Q>, U extends Enum<U>> void runHook(DefaultStateMachine<P, Q, U> owner, LogEntry entry) {
+    private <P, Q extends Enum<Q>, U extends Enum<U>> void runHook(
+            Transaction tx, List<TransitionRecord<?, ?, ?>> records, DefaultStateMachine<P, Q, U> owner,
+            LogEntry entry) {
         TransitionSpec<P, Q, U> spec = Typed.spec(owner.key(), entry);
         if (spec.afterCommit().isEmpty()) {
             return;
@@ -291,7 +307,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         try {
             hook.run(target, context);
         } catch (Exception e) {
-            throw new AfterCommitException(owner.key(), target, spec.from(), spec.to(), hook.name(), e);
+            throw new AfterCommitException(tx.call(), tx.uow().journal(), records, Typed.record(owner.key(), entry),
+                    hook.name(), e);
         }
     }
 

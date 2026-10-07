@@ -1401,8 +1401,11 @@ static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
 }
 ```
 
-Technical failures throw instead of becoming a fifth outcome. Inspect the exception type before retrying: an
-after-commit failure of a hook occurs after state was already written.
+Technical failures throw instead of becoming a fifth outcome. An abort (`TransitionAbortedException`), a commit
+failure (`CommitFailedException`) and a failing hook (`AfterCommitException`) share the supertype
+`CallFailedException`. It says as values which call failed (`call()`), where it was (`phase()`), how far it got
+in writing states (`statesWritten()`) and which actions ran (`journal()`). A hook fails after state was already
+written.
 
 ### Records, journals and reactions
 
@@ -2128,7 +2131,8 @@ Use a `@GraphHook` when code must run after GraphMaquina has written state. The 
 committed hop from such a hook. The shop notifies its carrier after the shipping edge commits.
 
 Hooks run synchronously on the operation's thread. Any exception a hook throws, checked ones included, becomes
-`AfterCommitException`: the state is already committed. An `Error` propagates unchanged instead. Either stops
+`AfterCommitException`: the state is already committed. Its `hook()` names the hook, `hop()` the committed
+hop it ran for, and `records()` every hop the call committed. An `Error` propagates unchanged instead. Either stops
 the remaining normal post-commit sequence, so do not assume later hooks or watch dispatch ran; the
 observers are told the call failed. Make externally visible notifications idempotent and choose durable
 delivery separately if your application needs it.
@@ -2226,8 +2230,10 @@ catch action code or outside code that changed it unexpectedly. This check is no
 must serialize conflicting operations, or provide an appropriate database locking/versioning strategy.
 
 The runtime does not roll back a setter that already ran if a subsequent setter throws.
-`CommitFailedException` reports applied and pending entities. Keep state setters simple and total for valid
-states; avoid remote calls, persistence flushes and unrelated business logic inside them.
+`CommitFailedException` reports the entities whose setter returned (`applied()`), the one whose setter threw
+(`failedEntity()`), which may or may not have been written, and those never tried (`pending()`); its
+`statesWritten()` is `PARTIAL`, or `NONE` when the pre-commit check refused the commit. Keep state setters simple
+and total for valid states; avoid remote calls, persistence flushes and unrelated business logic inside them.
 
 ### Stable identity
 
@@ -2740,7 +2746,7 @@ code runs.
 | Exception | What to investigate |
 | --- | --- |
 | `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. |
-| `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `transition()` and `to()` are `Optional`: an abort before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither. |
+| `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `transition()` and `to()` are `Optional`: an abort before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
 | `UnhandledFailureException` | An action failed without an `onFailure` route. |
 | `CascadeException` | Collected nested transition errors; inspect `errors()` and the journal. |
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
@@ -2752,8 +2758,8 @@ code runs.
 | `StaleContextException` | A context or context-derived view was used after invalidation. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
 | `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. |
-| `CommitFailedException` | Pre-commit state check failed or a setter threw; inspect applied/pending entities before retrying. |
-| `AfterCommitException` | A hook threw. State is already written. |
+| `CommitFailedException` | Phase `COMMIT`: the pre-commit check failed (`NONE` written) or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
+| `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()` and `records()` say what. |
 | `InvalidGraphException` | Programmatic DSL definition failed validation; inspect its problem list. |
 
 A refused request is not an exception. `Rejected` with `RejectionKind.NO_TRANSITION` is the ordinary answer

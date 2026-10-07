@@ -1,41 +1,71 @@
 package io.github.graphmaquina.error;
 
-import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.ActionRecord;
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.MachineCall;
+import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.api.TransitionRecord;
+import java.util.List;
 import java.util.Objects;
-import lombok.Getter;
 
 /**
  * An after-commit hook threw an exception, checked ones included; an Error propagates unchanged instead. A hook runs
- * only for committed hops, so it always fails after phase 2 had written the states in memory. Nothing is rolled back:
- * the caller's transaction decides. The hooks after it and the watch reactions of the call do not run, and the call
- * ends in this exception.
+ * only for committed hops, so it fails after phase 2 had written every state of the call: its phase is HOOK and its
+ * states written ALL. Nothing is rolled back: the caller's transaction decides. {@link #hop()} is the committed hop
+ * whose hook threw and {@link #records()} every hop the call committed, in log order. The hooks of the hops before
+ * {@link #hop()} ran; the later hooks and the watch reactions of the call did not.
  */
-@Getter
-public final class AfterCommitException extends StateMachineException {
+public final class AfterCommitException extends CallFailedException {
 
-    private final MachineKey<?, ?, ?> key;
-    private final Object entity;
-    private final Enum<?> from;
-    private final Enum<?> to;
-    /** The hook's name. */
-    private final String step;
+    private final List<ActionRecord> journal;
+    private final List<TransitionRecord<?, ?, ?>> records;
+    private final TransitionRecord<?, ?, ?> hop;
+    private final String hook;
 
-    /** A hook that failed after phase 2 had written the states. */
-    public AfterCommitException(MachineKey<?, ?, ?> key, Object entity, Enum<?> from, Enum<?> to, String step, Throwable cause) {
-        super(describe(key, from, to, step), cause);
-        this.key = key;
-        this.entity = Objects.requireNonNull(entity, "entity");
-        this.from = from;
-        this.to = to;
-        this.step = step;
+    public AfterCommitException(MachineCall call, List<ActionRecord> journal, List<TransitionRecord<?, ?, ?>> records,
+                                TransitionRecord<?, ?, ?> hop, String hook, Throwable cause) {
+        super(call, describe(call, hook), cause);
+        this.journal = List.copyOf(journal);
+        this.records = List.copyOf(records);
+        this.hop = Objects.requireNonNull(hop, "hop");
+        this.hook = hook;
     }
 
-    private static String describe(MachineKey<?, ?, ?> key, Enum<?> from, Enum<?> to, String step) {
-        Objects.requireNonNull(key, "key");
-        Objects.requireNonNull(from, "from");
-        Objects.requireNonNull(to, "to");
-        Objects.requireNonNull(step, "step");
-        return "the states of " + key + " " + from + " → " + to + " are already written, but the post-commit step '"
-                + step + "' failed";
+    /** HOOK. */
+    @Override
+    public CallPhase phase() {
+        return CallPhase.HOOK;
+    }
+
+    /** ALL: a hook runs only once every state of the call was written. */
+    @Override
+    public StatesWritten statesWritten() {
+        return StatesWritten.ALL;
+    }
+
+    @Override
+    public List<ActionRecord> journal() {
+        return journal;
+    }
+
+    /** The name of the hook that threw. */
+    public String hook() {
+        return hook;
+    }
+
+    /** The committed hop whose hook threw: its machine, entity, endpoints, identifier, kind, action and depth. */
+    public TransitionRecord<?, ?, ?> hop() {
+        return hop;
+    }
+
+    /** Every hop the call committed, in log order, the one whose hook threw included. */
+    public List<TransitionRecord<?, ?, ?>> records() {
+        return records;
+    }
+
+    private static String describe(MachineCall call, String hook) {
+        Objects.requireNonNull(call, "call");
+        Objects.requireNonNull(hook, "hook");
+        return "the states of " + call + " are already written, but the hook '" + hook + "' failed";
     }
 }
