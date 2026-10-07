@@ -11,10 +11,10 @@ import java.util.Optional;
 /**
  * Phase 2 of a call failed, so its phase is COMMIT. Before its first write, phase 2 checks that every entity is still
  * in the state the call started from. One that is not was written while the call ran, by an action that called the
- * setter or by a concurrent writer of the same entity, and nothing is written:
- * {@link #statesWritten()} is NONE and every entity is {@link #pending()}, as when reading the states or grouping the
- * entities before the first setter throws, which this exception then carries as its cause. Afterwards, a setter that
- * throws an exception, checked ones included, stops phase 2 where it stood: {@link #statesWritten()} is PARTIAL,
+ * setter or by a concurrent writer of the same entity, and nothing is written: {@link #statesWritten()} is NONE and
+ * every entity is {@link #pending()}, as when reading the states or grouping the entities before the first setter
+ * throws, which this exception then carries as its cause. Afterwards, a setter that throws a throwable that is not an
+ * Error, a checked exception included, stops phase 2 where it stood: {@link #statesWritten()} is PARTIAL,
  * {@link #applied()} lists the entities whose setter returned, {@link #failedEntity()} the one whose setter threw,
  * which may or may not have been written, and {@link #pending()} the ones never tried. A setter's Error propagates
  * unchanged instead of this exception. The journal still lists the actions that ran: their external effects happened

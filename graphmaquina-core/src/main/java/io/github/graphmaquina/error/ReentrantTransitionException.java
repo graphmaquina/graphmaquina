@@ -14,6 +14,8 @@ import lombok.NonNull;
  * running one. Only an action can move other entities inside the transaction, through its context's cascade.
  * After-commit hooks run once the transaction has released the thread, so they can start transitions;
  * a watch reaction runs the edge its rule selected as a root of its own, once the watch's functions are done.
+ * A call that one of those callbacks submits through {@code async(...)} runs as a separate call on the executor's
+ * thread.
  */
 @Getter
 public final class ReentrantTransitionException extends StateMachineException {

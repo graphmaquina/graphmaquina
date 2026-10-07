@@ -40,9 +40,9 @@ import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /**
- * Diagnostics whose text has to be true where it is produced: the reentrancy message
- * for a call from a guard, the pre-check message when a concurrent transition moved the state, and the failure
- * reason of an anonymous exception without a message.
+ * Diagnostics whose text has to be true where it is produced: the reentrancy message for a call from a guard, the
+ * pre-check message when a concurrent transition moved the state, and the failure reason of an anonymous exception
+ * without a message.
  */
 class DiagnosticsTest {
 

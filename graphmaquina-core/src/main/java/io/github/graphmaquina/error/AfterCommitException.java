@@ -9,11 +9,11 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * An after-commit hook threw an exception, checked ones included; an Error propagates unchanged instead. A hook runs
- * only for committed hops, so it fails after phase 2 had written every state of the call: its phase is HOOK and its
- * states written ALL. Nothing is rolled back: the caller's transaction decides. {@link #hop()} is the committed hop
- * whose hook threw and {@link #records()} every hop the call committed, in log order. The hooks of the hops before
- * {@link #hop()} ran; the later hooks and the watch reactions of the call did not.
+ * An after-commit hook threw a throwable that is not an Error, a checked exception included; an Error propagates
+ * unchanged instead. A hook runs only for committed hops, so it fails after phase 2 had written every state of the
+ * call: its phase is HOOK and its states written ALL. Nothing is rolled back: the caller's transaction decides.
+ * {@link #hop()} is the committed hop whose hook threw and {@link #records()} every hop the call committed, in log
+ * order. The hooks of the hops before {@link #hop()} ran; the later hooks and the watch reactions of the call did not.
  */
 public final class AfterCommitException extends CallFailedException {
 
@@ -22,6 +22,10 @@ public final class AfterCommitException extends CallFailedException {
     private final TransitionRecord<?, ?, ?> hop;
     private final String hook;
 
+    /**
+     * The hook {@code hook} of the committed {@code hop} threw {@code cause}; {@code records} are every hop the call
+     * committed.
+     */
     public AfterCommitException(MachineCall call, List<ActionRecord> journal, List<TransitionRecord<?, ?, ?>> records,
                                 TransitionRecord<?, ?, ?> hop, String hook, Throwable cause) {
         super(call, describe(call, hook), cause);

@@ -57,5 +57,5 @@
 <path d="M 1023 676 L 1090 676" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 1080 669 L 1090 676 L 1080 683" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 52 766 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
-<text x="52" y="801" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">Normal completion path. A throwing hook stops the remaining post-commit sequence; committed state remains.</text>
+<text x="52" y="801" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">Normal completion path. A throwing hook stops the remaining post-commit sequence, but observers are told it failed; committed state remains.</text>
 </svg>

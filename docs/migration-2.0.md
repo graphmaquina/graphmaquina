@@ -45,7 +45,7 @@ entity and state enum with different transition catalogues: two engines would ot
 | `edge(from, to)` and `/cells` snapshots | `findTransition(from, id)` and `/transitions` in a v2 snapshot. |
 | A return to the origin, or a terminal with an ACTION self-loop, in the DSL | A terminal forbids every outgoing edge. A non-terminal self-loop is legal and requires `allowsCycle`. |
 | `Outcome.current()` | `Outcome.recordedState()`: the same value, the state the call recorded, not a read of the entity. |
-| `TransitionListener` and `listener(...)` on a builder | `MachineObserver` and `observer(...)`, any number of them. An observer cannot fail a call: what must fail it belongs in a hook, or in `Definition.afterCommit` for every edge of a machine. |
+| `TransitionListener` and `listener(...)` on a builder | `MachineObserver` and `observer(...)`, any number of them. An exception an observer throws never fails the call: it is logged. An `Error` still propagates. What must fail the call belongs in a hook, or in `Definition.afterCommit` for every edge of a machine. |
 | `AfterCommitException.step()`, `key()`, `entity()`, `from()`, `to()` | `hook()`, and `hop()`: a `TransitionRecord` that also names the identifier. `records()` lists every hop the call committed. |
 | `CommitFailedException.pending()` that included the entity whose setter threw | `failedEntity()` names it; `pending()` lists only the entities never tried. |
 
@@ -463,26 +463,27 @@ observe. Most items refuse up front what used to fail later, in generated code o
 
 ### Runtime
 
-- **Builders are single-use.** Once a build that uses it succeeds, standalone or within a registry, every
-  method of a `StateMachines.Builder` throws `IllegalStateException`, and so does every method of
-  `MachineRegistry.Builder` and of a generated set's `Builder` once its own `build()` succeeds. A build that
-  fails consumes none of them, so it can be fixed and retried. A generated set's `Builder` checks each setting
-  where it is given. In the DSL, an edge's stage refuses every call once
-  `endTransition()` closed it, and every stage refuses further declarations once `build()` has run.
-- **Watch functions may not start transitions.** A watch's owner lookup, peer lookup or condition that calls
-  `execute` or `reevaluate` gets `ReentrantTransitionException`, reported as `Reaction.Aborted` in a reaction.
-  It used to start a root of its own, which `maxWatchChain` did not count.
-- **Checked exceptions are handled like unchecked ones.** One that a guard, action, hook, state setter
-  or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code can, now goes through
-  `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch reaction, aborts the
-  reevaluation that `Reaction.Aborted` reports; one an owner lookup throws arrives wrapped in
+- **Builders are single-use.** Once a build that uses it succeeds, standalone or within a registry, every method of a
+  `StateMachines.Builder` throws `IllegalStateException`, and so does every method of `MachineRegistry.Builder` and of a
+  generated set's `Builder` once its own `build()` succeeds. A build that fails consumes none of them, so it can be
+  fixed and retried. A generated set's `Builder` checks each setting where it is given. In the DSL, an edge's stage
+  refuses every call once `endTransition()` closed it, and every stage refuses further declarations once `build()` has
+  run.
+- **Watch functions may not start transitions on their own thread.** A watch's owner lookup, peer lookup or condition
+  that calls `execute` or `reevaluate` gets `ReentrantTransitionException`, reported as `Reaction.Aborted` in a
+  reaction. It used to start a root of its own, which `maxWatchChain` did not count.
+- **Checked exceptions are handled like unchecked ones.** So is any other throwable that is not an `Error`. One that a
+  guard, action, hook, state setter or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code
+  can, now goes through `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch
+  reaction, aborts the reevaluation that `Reaction.Aborted` reports; one an owner lookup throws arrives wrapped in
   `UndeclaredThrowableException`. It used to escape unchanged.
-- **A failed cascade always poisons.** An `Error`, or an exception from a callback the engine does not wrap,
-  that leaves a cascade poisons the unit of work as an engine failure does, even when the action catches it, and
-  a `failsOn` match after it no longer takes the failure route. `cascadeAll` refuses a null element before any
-  element runs, and an unknown machine even over an empty collection; an unknown facade in a cascade poisons
-  like an unknown key. What poisons without being a failure of the call, an unknown machine or facade, an
-  ambiguous identity, a null peer state, reaches the action and the caller as an abort that carries it.
+- **A failed cascade always poisons.** An `Error`, or an exception from a callback the engine does not wrap, that leaves
+  a cascade poisons the unit of work as an engine failure does, even when the action catches it, and a `failsOn` match
+  after it no longer takes the failure route. `cascadeAll` refuses a null element before any element runs, and an
+  unknown machine even over an empty collection; an unknown facade in a cascade poisons like an unknown key. What
+  poisons without being a failure of the call, an unknown machine or facade, an ambiguous identity, a null peer state,
+  reaches the action as an abort that carries it, and that abort ends the call unless the action replaces it with an
+  exception of its own.
 - **`cascadeAll` reads its collection once.** It copies the collection before any element runs, so elements
   added or removed while the cascade runs change neither which elements run nor their order. It used to fail with
   a `ConcurrentModificationException` of its own iteration or stop early, which could let the root commit a
@@ -494,15 +495,15 @@ observe. Most items refuse up front what used to fail later, in generated code o
   another call's abort, or an `AfterCommitException` of another call whose states were written, could pass for this
   call's. A failure of the call itself, from a cascade, still ends the call with the failure that poisoned it, and a
   `PoisonedUnitOfWorkException` the action lets through ends it with the original failure.
-- **Failures before the state is read are aborts.** The root entity's identity function that throws or returns null,
-  its state getter that throws, a null root state, and a watch's peers reader or condition that throws while a
-  `reevaluate` resolves end the call in a `TransitionAbortedException` of phase `RESOLVE` that carries the failure;
-  they used to escape as themselves. The same failures of a cascaded peer are aborts of phase `ACTION`. A state getter
-  that throws during the pre-commit check is a `CommitFailedException` with nothing written.
-  `AbortDetails.from()` and `TransitionAbortedException.from()` are `Optional`.
-- **Observers replace the listener.** A `MachineObserver`, added with `observer(...)` to a registry or a generated
-  set builder as many times as needed, sees every call start and end, failures and `Error`s included. What it
-  throws is logged and never changes the call. `TransitionListener`, `listener(...)` and
+- **Failures before the state is read are aborts.** The root entity's identity function that throws or returns null, its
+  state getter that throws, a null root state, and a watch's peers reader or condition that throws while a `reevaluate`
+  resolves end the call in a `TransitionAbortedException` of phase `RESOLVE` that carries the failure; they used to
+  escape as themselves. The same failures of a cascaded peer are aborts of phase `ACTION`. A state getter that throws
+  during the pre-commit check is a `CommitFailedException` with nothing written. `AbortDetails.from()` and
+  `TransitionAbortedException.from()` are `Optional`.
+- **Observers replace the listener.** A `MachineObserver`, added with `observer(...)` to a registry or a generated set
+  builder as many times as needed, sees every call start and end, failures and `Error`s included. An exception it throws
+  is logged and never changes the call; an `Error` propagates. `TransitionListener`, `listener(...)` and
   `TransitionRecorder.compose(...)` are gone, and an `AfterCommitException` now always means that a hook failed.
 - **Call failures share `CallFailedException`.** `TransitionAbortedException`, `CommitFailedException` and
   `AfterCommitException` extend it and report, as values, the call that failed, its phase, how far it got in

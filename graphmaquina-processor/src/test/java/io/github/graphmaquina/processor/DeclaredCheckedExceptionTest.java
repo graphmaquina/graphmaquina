@@ -9,18 +9,17 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * A bound method or a property accessor may declare a checked exception, which no functional interface the
- * companion implements declares. The companion throws it on unchanged, so the engine receives the very exception the
- * member threw and routes it as it routes one thrown without being declared, which the core's
- * {@code CheckedExceptionTest} pins for actions, guards, hooks, watch conditions, owner lookups and state writers.
- * Here, run through the generated companions: an action whose {@code failsOn} lists it takes its failure route,
- * synchronous or not, and a synchronous one aborts when its {@code failsOn} does not list it; a guard aborts,
- * synchronous or not; a hook ends in an {@code AfterCommitException}; a watch condition and a peers reader end in an
- * aborted reaction whose abort, the reevaluation's, carries it as its cause, and an owner reader in one that carries
- * it in an {@code UndeclaredThrowableException}; a state writer ends in a {@code CommitFailedException}; a state or
- * identity reader ends the call in an abort in RESOLVE that carries it. Each scenario
- * tells the very exception the member threw from any other. A member that declares only unchecked exceptions is
- * called as before.
+ * A bound method or a property accessor may declare a checked exception, which no functional interface the companion
+ * implements declares. The companion throws it on unchanged, so the engine receives the very exception the member threw
+ * and routes it as it routes one thrown without being declared, which the core's {@code CheckedExceptionTest} pins for
+ * actions, guards, hooks, watch conditions, owner lookups and state writers. Here, run through the generated
+ * companions: an action whose {@code failsOn} lists it takes its failure route, synchronous or not, and a synchronous
+ * one aborts when its {@code failsOn} does not list it; a guard aborts, synchronous or not; a hook ends in an
+ * {@code AfterCommitException}; a watch condition and a peers reader end in an aborted reaction whose abort, the
+ * reevaluation's, carries it as its cause, and an owner reader in one that carries it in an
+ * {@code UndeclaredThrowableException}; a state writer ends in a {@code CommitFailedException}; a state or identity
+ * reader ends the call in an abort in RESOLVE that carries it. Each scenario tells the very exception the member threw
+ * from any other. A member that declares only unchecked exceptions is called as before.
  */
 class DeclaredCheckedExceptionTest {
 

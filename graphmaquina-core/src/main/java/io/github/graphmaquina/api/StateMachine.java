@@ -34,7 +34,11 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      */
     Outcome<E, S, T> execute(E entity, T transition);
 
-    /** Evaluates the watch of the current state. Ignored if there is no watch or no rule holds. */
+    /**
+     * Evaluates the watch of the current state. Ignored if there is no watch or no rule holds. A failure throws,
+     * always a {@code CallFailedException} of this call or an Error; a null argument and a call made where no call
+     * may start are refused before the call starts and throw as themselves.
+     */
     Outcome<E, S, T> reevaluate(E entity);
 
     /** Structural inspection: the identifiers declared from {@code state}. Evaluates no guard. */

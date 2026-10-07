@@ -27,12 +27,11 @@ import javax.lang.model.type.TypeMirror;
  * it serves, or after the class a parameter of {@code builder(...)} takes. {@link #emit} answers, beside the source,
  * what the processor checks against that scope before writing it.</p>
  *
- * <p>Its {@code Builder} mirrors {@code MachineRegistry.Builder} and {@code StateMachines.Builder}: it creates
- * them when it is created and hands every setting to them as soon as it is given, so a setting they refuse is
- * refused where it is given, observers add up in the order they are given, and the builder is
- * single-use. The state and the identity of each machine are read and written by lambdas that call the very
- * accessors the property selected, never by a method reference, which would also consider a static overload of
- * the same name.</p>
+ * <p>Its {@code Builder} mirrors {@code MachineRegistry.Builder} and {@code StateMachines.Builder}: it creates them
+ * when it is created and hands every setting to them as soon as it is given, so a setting they refuse is refused where
+ * it is given, observers add up in the order they are given, and the builder is single-use. The state and the identity
+ * of each machine are read and written by lambdas that call the very accessors the property selected, never by a method
+ * reference, which would also consider a static overload of the same name.</p>
  */
 public final class SetGenerator {
 
@@ -281,7 +280,7 @@ public final class SetGenerator {
     /**
      * One setting the {@code Builder} hands to the registry's builder as soon as it is given, documented by
      * {@code doc}: on one line when the text is at most {@code DOC_LINE_WIDTH} characters, else in the multi-line
-     * form, so that no emitted line passes 120 columns.
+     * form, so that no emitted comment line passes 120 columns.
      */
     private static void forward(SourceWriter out, String doc, String method, String parameter, String statement) {
         if (doc.length() <= DOC_LINE_WIDTH) {

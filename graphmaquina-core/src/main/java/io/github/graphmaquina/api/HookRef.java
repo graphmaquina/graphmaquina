@@ -6,11 +6,11 @@ import lombok.NonNull;
 
 /**
  * Named post-commit hook of a transition. It runs on the calling thread after phase 2 wrote every state of the
- * transaction and before the watch reactions. If it throws an Exception, checked ones included, the states stay
- * written in memory and the transaction surfaces {@code AfterCommitException}, which carries the hook's name
- * ({@code hook()}), the committed hop it ran for ({@code hop()}) and every hop the call committed
- * ({@code records()}): the application's own transaction decides what to do. An Error propagates unchanged. Either
- * way, the later hooks and the watch reactions of that call do not run.
+ * transaction and before the watch reactions. If it throws a throwable that is not an Error, a checked exception
+ * included, the states stay written in memory and the transaction surfaces {@code AfterCommitException}, which carries
+ * the hook's name ({@code hook()}), the committed hop it ran for ({@code hop()}) and every hop the call committed
+ * ({@code records()}): the application's own transaction decides what to do. An Error propagates unchanged. Either way,
+ * the later hooks and the watch reactions of that call do not run.
  *
  * @param <E> entity type
  * @param <S> state enum

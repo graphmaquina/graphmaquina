@@ -13,15 +13,16 @@ import java.time.Duration;
  *
  * <p>An observer watches without taking part:
  * <ul>
- *   <li>An exception it throws, checked ones included, changes neither the call nor what the other observers are
- *   told. It is logged as a warning through {@code System.getLogger("io.github.graphmaquina")}, naming the observer,
- *   the callback and the call, never the entity.</li>
+ *   <li>A throwable that is not an Error, a checked exception included, changes neither the call nor what the other
+ *   observers are told. It is logged as a warning through {@code System.getLogger("io.github.graphmaquina")}, naming
+ *   the observer, the callback and the call, never the entity.</li>
  *   <li>An observer whose {@code onStarted} threw still receives its end event.</li>
  *   <li>An Error it throws propagates unchanged, as everywhere in the library, and voids these guarantees for that
  *   call.</li>
  *   <li>Its callbacks run with the thread marked as running a call, so an {@code execute} or {@code reevaluate} it
- *   makes throws {@code ReentrantTransitionException}, contained like any other exception. To act on a commit, use a
- *   hook or a watch.</li>
+ *   makes on its own thread throws {@code ReentrantTransitionException}, contained like any other exception; one
+ *   submitted through {@code async()} runs as a separate call on another thread. To act on a commit, use a hook or a
+ *   watch.</li>
  * </ul>
  * Observers are called on the thread of every call, concurrently when calls are, so they must be thread-safe and
  * quick.
