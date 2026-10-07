@@ -1287,8 +1287,8 @@ action failures; a guard exception is a technical abort. A library exception, a 
 or action throws or completes its stage with, bare or wrapped in one of those two classes, is never matched against
 `failsOn`: it aborts the call and becomes its cause, so a failure of another call never passes for a failure of this
 one. A failure of the call itself, which a failed cascade throws into the action, is the exception: it ends the call
-as it is. An `Error` is never routed either: thrown as itself it propagates unchanged, and one that completes a stage,
-or that one of those two classes carries, aborts.
+with the failure that poisoned it. An `Error` is never routed either: thrown as itself it propagates unchanged, and
+one that completes a stage, or that one of those two classes carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine
 exception, or a `CancellationException` or one of its subtypes, which are never domain failures; nor
@@ -1984,8 +1984,9 @@ abort rather than an ordinary root-level `Rejected` result. A handled domain fai
 declared failure route. Any failure that leaves a cascade poisons the unit of work. A failure of the call itself, such
 as an abort in the peer's step, a cycle or the depth limit, reaches your action as it is. Anything else reaches it as
 a `TransitionAbortedException` that names the cascade and carries the failure as its cause: an engine exception that
-describes no call, such as an unknown machine or an ambiguous identity, an exception from a callback the engine does
-not wrap, such as an identity function, or an `Error`, which itself still propagates. Catching it in your action does
+describes no call, such as an unknown machine or an ambiguous identity, or an exception from a callback the engine
+does not wrap, such as an identity function. An `Error` poisons through such an abort too, but reaches your action as
+itself. Catching it in your action does
 not make the transaction safe to commit. When the action then returns, throws an exception its `failsOn` lists, or
 lets a failure of the call through, the root throws the failure that poisoned it, commits nothing and runs no failure
 route. A cascade that names an unknown machine poisons too, by key or by facade type, even over an empty collection. A
@@ -2757,11 +2758,11 @@ code runs.
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
 | `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Inside a call it arrives as the cause of an abort. |
-| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions, observers may not. Inside a call it arrives as the cause of that call's abort. |
+| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions, observers may not. Thrown by a guard or an action, it arrives as the cause of that call's abort. |
 | `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. The caller receives that failure, never this exception. |
-| `StaleContextException` | A context or context-derived view was used after invalidation. Used inside another call, it arrives as the cause of that call's abort. |
+| `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
-| `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Inside a call it arrives as the cause of an abort. |
+| `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Thrown by a guard or an action, it arrives as the cause of that call's abort. |
 | `CommitFailedException` | Phase `COMMIT`: the pre-commit check failed (`NONE` written) or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
 | `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()` and `records()` say what. |
 | `InvalidGraphException` | Programmatic DSL definition failed validation; inspect its problem list. |

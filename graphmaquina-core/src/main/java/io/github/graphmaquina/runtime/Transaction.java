@@ -239,11 +239,11 @@ final class Transaction {
     }
 
     /**
-     * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. Whatever the
-     * action throws, or completes its stage with, checked exceptions and library exceptions included, which Kotlin or
-     * {@code @SneakyThrows} code can throw without declaring them, becomes an ActionFailure that its caller
-     * classifies. An Error is never routed: thrown as itself, it propagates; wrapped in CompletionException or
-     * ExecutionException, it is unwrapped and aborts.
+     * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. Whatever the action
+     * throws, or completes its stage with, checked exceptions included, which Kotlin or {@code @SneakyThrows} code can
+     * throw without declaring them, and library exceptions too, becomes an ActionFailure that its caller classifies. An
+     * Error is never routed: thrown as itself, it propagates; wrapped in CompletionException or ExecutionException, it
+     * is unwrapped and aborts.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -552,7 +552,8 @@ final class Transaction {
      * Cascade to a single peer. An identifier from another catalogue is refused before anything starts, as the context
      * refuses a null argument before calling this: such a refusal stages nothing and poisons nothing. Once the cascade
      * starts, any failure poisons the UnitOfWork: the parent cannot carry on as if nothing happened. The action
-     * receives what poisoned it, as {@link #poisonWith} says, and an Error as itself.
+     * receives the failure of this call as it is, or else the new abort, as {@link #poisonWith} says, and an Error as
+     * itself.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(ContextHandle caller, MachineKey<P, Q, U> key,
                                                                        P peer, U id) {
@@ -577,18 +578,21 @@ final class Transaction {
     }
 
     /**
-     * Poisons the transaction with a failure that left a cascade, and returns what poisoned it: a failure of this call
-     * as it is; anything else, an engine exception that describes no call, an exception from a callback the engine
-     * does not wrap such as an identity function, a library exception of another call or an Error, through an abort of
-     * the caller's step that names the cascade and carries it as cause. A transaction keeps its first poison.
+     * Poisons the transaction with a failure that left a cascade, and returns the failure of this call as it is, or
+     * else the new abort. A failure of this call is itself the poison. Anything else, an engine exception that
+     * describes no call, an exception from a callback the engine does not wrap such as an identity function, a library
+     * exception of another call or an Error, poisons through an abort of the caller's step that names the cascade and
+     * carries it as cause; COLLECT never collects that abort. A transaction keeps its first poison.
      */
     private CallFailedException poisonWith(ContextHandle caller, String target, Throwable error) {
-        CallFailedException failure = error instanceof CallFailedException own && owns(own)
-                ? own
-                : new TransitionAbortedException(call(), phase, details(caller),
-                        "the cascade to " + target + " failed: " + error, error);
-        uow.poison(failure);
-        return failure;
+        if (error instanceof CallFailedException own && owns(own)) {
+            uow.poison(own);
+            return own;
+        }
+        TransitionAbortedException wrapper = new TransitionAbortedException(call(), phase, details(caller),
+                "the cascade to " + target + " failed: " + error, error);
+        uow.poisonWrapping(wrapper);
+        return wrapper;
     }
 
     /**
@@ -638,14 +642,15 @@ final class Transaction {
      * FAIL_FAST aborts at the first failure. COLLECT tries every element under its own savepoint, rolls back
      * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
      * COLLECT gathers the aborts of the call only: any other failure poisons, through an abort that carries it, and
-     * stops the cascade at once. Once the poison is checked, the collection is copied, and every later step reads the
-     * copy alone: the elements checked are the elements run, and a change to the collection while the cascade runs, by
-     * an element's action for instance, changes neither which elements run nor their order. Copying is part of
-     * accepting the arguments: an exception or an Error the collection throws while it is copied propagates as it is,
-     * and stages and poisons nothing. The arguments are refused before any element runs, as cascade refuses its own,
-     * and the refusal stages nothing and poisons nothing: a null element first, then an identifier from another
-     * catalogue, which the key carries. The machine is looked up next, before any element runs, so an unknown key
-     * poisons whatever valid elements the collection holds, and an empty collection too, as it does in cascade.
+     * stops the cascade at once, a nested one too, when an element's action lets through the abort that carries it.
+     * Once the poison is checked, the collection is copied, and every later step reads the copy alone: the elements
+     * checked are the elements run, and a change to the collection while the cascade runs, by an element's action for
+     * instance, changes neither which elements run nor their order. Copying is part of accepting the arguments: an
+     * exception or an Error the collection throws while it is copied propagates as it is, and stages and poisons
+     * nothing. The arguments are refused before any element runs, as cascade refuses its own, and the refusal stages
+     * nothing and poisons nothing: a null element first, then an identifier from another catalogue, which the key
+     * carries. The machine is looked up next, before any element runs, so an unknown key poisons whatever valid
+     * elements the collection holds, and an empty collection too, as it does in cascade.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(ContextHandle caller,
                                                                                 MachineKey<P, Q, U> key,
@@ -694,7 +699,8 @@ final class Transaction {
             try {
                 outcomes.add(cascadeOne(caller, key, peer, id));
             } catch (Throwable error) {
-                if (error instanceof TransitionAbortedException abort && owns(abort)) {
+                if (error instanceof TransitionAbortedException abort && owns(abort)
+                        && !uow.poisonWrapsAForeignFailure()) {
                     uow.rollbackTo(savepoint);
                     uow.clearPoison();
                     errors.add(abort);

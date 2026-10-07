@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
@@ -280,6 +281,7 @@ class PoisonTest {
                     () -> machine.execute(doc, SUBMIT));
             assertSame(caught.get(), error);
             assertInstanceOf(UnknownFacadeException.class, error.getCause());
+            assertEquals(CallPhase.ACTION, error.phase());
             assertEquals(DRAFT, doc.status());
             assertEquals(REVIEW, peer.status());
         }

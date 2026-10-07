@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.ActionRecord;
+import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
@@ -55,8 +57,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * What a call throws when a guard, an action or a hook lets an exception through. A failure of another call is the
- * cause of this call's own failure, never this call's failure itself. A failure of this call ends it as it is. What
- * fails a cascade without being a failure of the call reaches the action as an abort of the call that carries it.
+ * cause of this call's own failure, never this call's failure itself. A failure of this call ends it with the failure
+ * that poisoned it. What fails a cascade without being a failure of the call reaches the action as an abort of the call
+ * that carries it.
  */
 class PropagationTest {
 
@@ -268,6 +271,7 @@ class PropagationTest {
             TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(DOCS).execute(doc, SUBMIT));
             assertInstanceOf(AmbiguousIdentityException.class, error.getCause());
+            assertEquals(CallPhase.ACTION, error.phase());
             assertEquals(List.of("2"), published);
             assertEquals(List.of(DRAFT, REVIEW, REVIEW, REVIEW),
                     List.of(doc.status(), first.status(), twin.status(), last.status()));
@@ -354,5 +358,119 @@ class PropagationTest {
         assertSame(boom, cause.getCause());
         assertEquals(REVIEW, doc.status());
         assertEquals(DRAFT, elsewhere.status());
+    }
+
+    /** A recovery action that lets a failure of this call through ends the call with it, and its entry threw. */
+    @Test
+    void aRecoveryActionThatLetsAPeersAbortThroughEndsTheCallWithItAndThrew() {
+        Doc peer = new Doc("peer", REVIEW);
+        AtomicReference<RuntimeException> rethrown = new AtomicReference<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT)
+                .terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                            ActionOutcome.failed("declined"))
+                    .onFailure(DISCARD).endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED)
+                    .action("Discard", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        try {
+                            ctx.cascade(DOCS, peer, PUBLISH);
+                        } catch (RuntimeException failure) {
+                            rethrown.set(failure);
+                            throw failure;
+                        }
+                        return ActionOutcome.ok();
+                    }).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED)
+                    .action("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        throw new IllegalStateException("could not publish");
+                    }).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> standalone(graph).execute(new Doc("1", DRAFT), SUBMIT));
+        assertSame(rethrown.get(), error);
+        List<ActionStatus> discard = error.journal().stream()
+                .filter((ActionRecord record) -> record.action().equals("Discard"))
+                .map(ActionRecord::status).toList();
+        assertEquals(List.of(ActionStatus.THREW), discard);
+    }
+
+    /** COLLECT stops at once on a nested failure that is not an abort of the call, as it does on a direct one. */
+    @Test
+    void collectStopsAtOnceOnANestedFailureThatIsNotAnAbortOfTheCall() {
+        Doc unset = new Doc("unset", null);
+        Doc first = new Doc("p1", REVIEW);
+        Doc second = new Doc("p2", REVIEW);
+        List<String> ran = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT)
+                .terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        ctx.cascadeAll(DOCS, List.of(first, second), PUBLISH, CascadePolicy.COLLECT);
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED)
+                    .action("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        if (ctx.entity().id().equals("p1")) {
+                            ctx.cascade(DOCS, unset, PUBLISH);
+                        }
+                        ran.add(ctx.entity().id());
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> standalone(graph).execute(new Doc("1", DRAFT), SUBMIT));
+        assertInstanceOf(UninitializedStateException.class, error.getCause());
+        assertTrue(error.getMessage().contains("the cascade to Doc/DocStatus failed: "), error.getMessage());
+        assertEquals(CallPhase.ACTION, error.phase());
+        assertEquals(StatesWritten.NONE, error.statesWritten());
+        assertEquals(List.of(), ran);
+        assertEquals(REVIEW, second.status());
+    }
+
+    /** The failure that poisoned the call is what ends it, even when a nested action replaced it with its own. */
+    @Test
+    void theFailureThatPoisonedTheCallEndsItEvenWhenANestedActionReplacedIt() {
+        Doc first = new Doc("p1", REVIEW);
+        Doc second = new Doc("p2", PUBLISHED);
+        AtomicReference<RuntimeException> caught = new AtomicReference<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT)
+                .terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        ctx.cascade(DOCS, first, PUBLISH);
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED)
+                    .action("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        try {
+                            ctx.cascade(DOCS, second, ARCHIVE);
+                        } catch (TransitionAbortedException failure) {
+                            caught.set(failure);
+                            throw new IllegalArgumentException("replaced");
+                        }
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED)
+                    .action("Archive", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        throw new IllegalStateException("could not archive");
+                    })
+                    .endTransition()
+                .build();
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> standalone(graph).execute(new Doc("1", DRAFT), SUBMIT));
+        assertSame(caught.get(), error);
+        assertInstanceOf(IllegalStateException.class, error.getCause());
     }
 }

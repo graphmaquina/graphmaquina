@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
@@ -267,6 +268,7 @@ class CascadeTest {
                 () -> orders.execute(first, OrderTransition.SHIP));
         AmbiguousIdentityException ambiguous = assertInstanceOf(AmbiguousIdentityException.class, error.getCause());
         assertEquals("o1", ambiguous.id());
+        assertEquals(CallPhase.ACTION, error.phase());
         assertEquals(OrderStatus.PAID, first.status());
     }
 

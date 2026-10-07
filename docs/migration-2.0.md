@@ -489,10 +489,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
   poisons nothing.
 - **A library exception from a guard or an action is a cause.** A `StateMachineException` that a guard or an
   action throws or completes its stage with, bare or wrapped, aborts the call with it as cause, a failure of
-  another call included. It used to reach the caller as it was, so another call's abort, or an
-  `AfterCommitException` of another call whose states were written, could pass for this call's. A failure of the
-  call itself, from a cascade, still ends the call as it is, and a `PoisonedUnitOfWorkException` the action lets
-  through ends it with the original failure.
+  another call included. It used to reach the caller as it was, so another call's abort, or an `AfterCommitException`
+  of another call whose states were written, could pass for this call's. A failure of the call itself, from a cascade,
+  still ends the call with the failure that poisoned it, and a `PoisonedUnitOfWorkException` the action lets through
+  ends it with the original failure.
 - **Observers replace the listener.** A `MachineObserver`, added with `observer(...)` to a registry or a generated
   set builder as many times as needed, sees every call start and end, failures and `Error`s included. What it
   throws is logged and never changes the call. `TransitionListener`, `listener(...)` and

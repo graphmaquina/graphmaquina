@@ -39,6 +39,12 @@ final class UnitOfWork {
     private final long deadlineNanos;
     private Optional<StateMachineException> poison = Optional.empty();
 
+    /**
+     * Whether the poison is an abort that wraps a failure of no step of the call, such as a peer's null state or an
+     * unknown machine. COLLECT never collects such an abort: it stops at once.
+     */
+    private boolean poisonWrapsAForeignFailure;
+
     UnitOfWork(int maxDepth, long deadlineNanos) {
         this.maxDepth = maxDepth;
         this.deadlineNanos = deadlineNanos;
@@ -200,8 +206,21 @@ final class UnitOfWork {
         }
     }
 
+    /** Poisons with an abort that wraps a failure of no step of the call, if nothing poisoned yet. */
+    void poisonWrapping(StateMachineException abort) {
+        if (poison.isEmpty()) {
+            poison = Optional.of(abort);
+            poisonWrapsAForeignFailure = true;
+        }
+    }
+
+    boolean poisonWrapsAForeignFailure() { return poisonWrapsAForeignFailure; }
+
     /** Only cascadeAll with COLLECT can clear it, after reverting the failed element. */
-    void clearPoison() { poison = Optional.empty(); }
+    void clearPoison() {
+        poison = Optional.empty();
+        poisonWrapsAForeignFailure = false;
+    }
 
     /** The log grouped into one change per entity, read straight off the log without copying its entries. */
     CommitSummary commitSummary() { return CommitSummary.from(log); }
