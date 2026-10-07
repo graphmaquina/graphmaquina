@@ -1436,13 +1436,13 @@ no call may start `ReentrantTransitionException`. Read what happened from its va
 
 | Type | `phase()` | `statesWritten()` |
 | --- | --- | --- |
-| `TransitionAbortedException` | `RESOLVE`, `GUARD` or `ACTION` | `NONE` |
+| `TransitionAbortedException` and its subclasses | `RESOLVE`, `GUARD` or `ACTION` | `NONE` |
 | `CommitFailedException` | `COMMIT` | `NONE`, or `PARTIAL` when a setter threw |
 | `AfterCommitException` | `HOOK` | `ALL` |
 
 `call()` is the call that failed, the same `MachineCall` an observer received, and `journal()` lists the actions that
-ran. Any other exception involved is the cause, a failure of another call included. This method can be added to the
-quickstart's `App`:
+ran. Any other exception involved is the cause, a failure of another call included. With
+`import io.github.graphmaquina.error.CallFailedException;`, this method can be added to the quickstart's `App`:
 
 ```java
 static String describe(CallFailedException failure) {
@@ -1736,12 +1736,12 @@ handled.whenComplete((Void unused, Throwable error) -> {
 Keep or return the relevant future to the caller. `join()` wraps an exceptional completion in
 `CompletionException`; `get()` uses `ExecutionException` and can be interrupted. If the outer future itself
 is cancelled, either method can throw `CancellationException` directly. When the call ran and failed, the cause is
-that call's `CallFailedException`, or an `Error`: read its `statesWritten()` and `journal()`, as
-[Handle a failed call](#handle-a-failed-call) shows, before deciding whether to retry; an exceptional future is not
-proof that nothing happened. A request refused before it started, by an executor that refused it
-(`RejectedExecutionException`) or for an identifier of another catalogue (`IllegalArgumentException`), ran nothing.
-A callback you attach can also fail
-independently of the machine operation.
+that call's `CallFailedException`, or an `Error`. Read the `CallFailedException`'s `statesWritten()` and `journal()`,
+as [Handle a failed call](#handle-a-failed-call) shows, before deciding whether to retry; an exceptional future is not
+proof that nothing happened. A request refused before it started ran nothing: one an executor refused
+(`RejectedExecutionException`), one for an identifier of another catalogue (`IllegalArgumentException`), and one made
+where no call may start (`ReentrantTransitionException`, possible with an executor that runs tasks inline). A callback
+you attach can also fail independently of the machine operation.
 
 Avoid a blanket `exceptionally(error -> ActionOutcome.failed(...))` inside an action unless every covered
 exception truly means a business decline. It would also turn unexpected service/programming errors into a
