@@ -16,9 +16,9 @@ import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 
 /**
- * Contracts of what every outcome answers without being narrowed: its code and status, the explanation only the
- * graph's author writes, the records and reactions only a commit carries, and the narrowing accessors; plus the
- * bijections that keep both enums in step with the variants and their kinds.
+ * Contracts of what every outcome answers without being narrowed: its code and status, the explanation, which only a
+ * rejection and a failure the action returned give, the records and reactions only a commit carries, and the narrowing
+ * accessors; plus the bijections that keep both enums in step with the variants and their kinds.
  */
 class OutcomeAccessorsTest {
 
@@ -99,9 +99,9 @@ class OutcomeAccessorsTest {
         assertEquals(EnumSet.allOf(OutcomeCode.class), produced);
     }
 
-    /** Only author-written text comes out: a policy's or a guard's reason, and the reason an action returned. */
+    /** A rejection's reason, and the reason an action returned with its failure, come out as the explanation. */
     @Test
-    void theExplanationIsTheReasonTheAuthorWrote() {
+    void theExplanationIsTheReasonOfARejectionOrOfAReturnedFailure() {
         assertEquals(Optional.of("not from here"), rejected(RejectionKind.NO_TRANSITION).explanation());
         assertEquals(Optional.of("gate closed"), rejected(RejectionKind.GUARD).explanation());
         assertEquals(Optional.of("declined"), failed(Optional.empty()).explanation());
