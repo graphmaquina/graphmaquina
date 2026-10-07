@@ -45,7 +45,8 @@ public final class StateMachines {
          * Setters must be total: one that throws an Exception breaks the atomicity of phase 2 and ends the call with a
          * {@code CommitFailedException}.
          */
-        public Builder<E, S, T> state(Function<? super E, ? extends S> getter, BiConsumer<? super E, ? super S> setter) {
+        public Builder<E, S, T> state(Function<? super E, ? extends S> getter,
+                                      BiConsumer<? super E, ? super S> setter) {
             requireUnused();
             Objects.requireNonNull(getter, "getter");
             Objects.requireNonNull(setter, "setter");
@@ -94,7 +95,8 @@ public final class StateMachines {
             requireUnused();
             Objects.requireNonNull(facade, "facade");
             if (this.facade.isPresent()) {
-                throw new IllegalStateException("the machine " + key() + " already declares as(" + this.facade.get().getSimpleName() + ")");
+                throw new IllegalStateException(
+                        "the machine " + key() + " already declares as(" + this.facade.get().getSimpleName() + ")");
             }
             this.facade = Optional.of(facade);
             return this;
@@ -103,12 +105,12 @@ public final class StateMachines {
         Optional<Class<? extends Machine<E, S, T>>> facade() { return facade; }
 
         /**
-         * Standalone machine: a registry of one, built by the same code as {@link MachineRegistry.Builder#build()}, but
-         * with no observer, since only {@link MachineRegistry.Builder#observer} adds one.
-         * Its own facade from {@code as(...)} and its own key are the only peers it reaches, with reference identity
-         * if none was declared. Its watches react after each commit, and a watch on any other machine is refused here.
-         * That registry is internal and unreachable, so nothing can close it: when no {@code asyncExecutor} was given,
-         * its default executor is never closed.
+         * Standalone machine: a registry of one, built by the same code as {@link MachineRegistry.Builder#build()},
+         * but with no observer, since only {@link MachineRegistry.Builder#observer} adds one. Its own facade from
+         * {@code as(...)} and its own key are the only peers it reaches, with reference identity if none was
+         * declared. Its watches react after each commit, and a watch on any other machine is refused here. That
+         * registry is internal and unreachable, so nothing can close it: when no {@code asyncExecutor} was given, its
+         * default executor is never closed.
          */
         public StateMachine<E, S, T> build() {
             return MachineRegistry.standalone(this);
@@ -127,7 +129,8 @@ public final class StateMachines {
                 throw new IllegalStateException("the machine " + key() + " does not declare state(getter, setter)");
             }
             if (definition.hasAsync() && asyncTimeout.isEmpty()) {
-                throw new IllegalStateException("the machine " + key() + " has asynchronous transitions and does not declare asyncTimeout(...)");
+                throw new IllegalStateException("the machine " + key()
+                        + " has asynchronous transitions and does not declare asyncTimeout(...)");
             }
         }
 
@@ -136,7 +139,8 @@ public final class StateMachines {
             used = true;
             boolean owns = executor.isEmpty();
             Executor resolved = executor.isPresent() ? executor.get() : Executors.newVirtualThreadPerTaskExecutor();
-            return new DefaultStateMachine<>(definition, getter.get(), setter.get(), identity, asyncTimeout, resolved, owns, registry);
+            return new DefaultStateMachine<>(definition, getter.get(), setter.get(), identity, asyncTimeout, resolved,
+                    owns, registry);
         }
 
         private void requireUnused() {

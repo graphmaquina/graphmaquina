@@ -1285,10 +1285,10 @@ accessor, or a watch's peers or owner reader may declare a checked exception too
 compiles, and the exception is handled as the same exception thrown undeclared would be. `failsOn` applies to
 action failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a guard
 or action throws or completes its stage with, bare or wrapped in one of those two classes, is never matched against
-`failsOn`: it aborts the call and becomes its cause, so a failure of another call never passes for a failure of this
-one. A failure of the call itself, which a failed cascade throws into the action, is the exception: it ends the call
-with the failure that poisoned it. An `Error` is never routed either: thrown as itself it propagates unchanged, and
-one that completes a stage, or that one of those two classes carries, aborts.
+`failsOn`, whatever the edge lists: it aborts the call and becomes its cause, so a failure of another call never
+passes for a failure of this one. A failure of the call itself, which a failed cascade throws into the action, is the
+exception: it ends the call with the failure that poisoned it. An `Error` is never routed either: thrown as itself it
+propagates unchanged, and one that completes a stage, or that one of those two classes carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine
 exception, or a `CancellationException` or one of its subtypes, which are never domain failures; nor
@@ -1417,8 +1417,9 @@ written. [Handle a failed call](#handle-a-failed-call) shows how to read them.
 - `records()` and `reactions()` answer on every outcome. A root `Applied` or `Failed` returns the
   transaction's records and the reactions of its commit; `Rejected`, `Ignored` and a nested `cascade` result
   return empty lists, the last because it is provisional and has no independent root commit or reaction list.
-- An abort journal uses `ActionRecord` and `ActionStatus` (`RUNNING`, `OK`, `FAILED`, `THREW`) to report actions
-  that actually ran. A journal is execution evidence, not an undo log for external side effects.
+- A failed call's journal uses `ActionRecord` and `ActionStatus` (`OK`, `FAILED`, `THREW`; never `RUNNING` once the
+  call failed) to report actions that actually ran. A journal is execution evidence, not an undo log for external
+  side effects.
 - A watch produces `Reaction.Done`, carrying its own outcome, or `Reaction.Aborted`, carrying its exception.
   Inspect reactions even when the root operation succeeded. `Reaction.Aborted` can also report a hook
   failure after the reaction itself committed; it is not proof that the reaction left state unchanged. A
@@ -2280,8 +2281,8 @@ The runtime does not roll back a setter that already ran if a subsequent setter 
 `CommitFailedException` reports the entities whose setter returned (`applied()`), the one whose setter threw
 (`failedEntity()`), which may or may not have been written, and those never tried (`pending()`); its
 `statesWritten()` is `PARTIAL`, or `NONE` when the commit stopped before its first setter: the pre-commit check
-refused it, or reading or grouping the states threw. Keep state setters simple
-and total for valid states; avoid remote calls, persistence flushes and unrelated business logic inside them.
+refused it, or reading the states or grouping the log by entity threw. Keep state setters simple and total for valid
+states; avoid remote calls, persistence flushes and unrelated business logic inside them.
 
 ### Stable identity
 
@@ -2806,7 +2807,7 @@ code runs.
 | `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
 | `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Thrown by a guard or an action, it arrives as the cause of that call's abort. |
-| `CommitFailedException` | Phase `COMMIT`: the commit stopped before its first setter, because the pre-commit check failed or reading the states threw (`NONE` written), or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
+| `CommitFailedException` | Phase `COMMIT`: the commit stopped before its first setter, because the pre-commit check failed or reading the states or grouping the log by entity threw (`NONE` written), or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
 | `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()` and `records()` say what. |
 | `InvalidGraphException` | Programmatic DSL definition failed validation; inspect its problem list. |
 

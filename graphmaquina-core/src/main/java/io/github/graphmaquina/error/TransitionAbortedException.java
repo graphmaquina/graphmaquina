@@ -29,12 +29,24 @@ public class TransitionAbortedException extends CallFailedException {
     private final AbortDetails details;
     private final CallPhase phase;
 
+    /**
+     * An abort of {@code call} in {@code phase}, described by {@code details}.
+     *
+     * @throws IllegalArgumentException if {@code phase} is COMMIT, HOOK or REACTIONS: an abort happens before the
+     *     commit
+     */
     public TransitionAbortedException(MachineCall call, CallPhase phase, AbortDetails details, String message) {
         super(call, describe(details, message));
         this.phase = beforeTheCommit(phase);
         this.details = details;
     }
 
+    /**
+     * An abort of {@code call} in {@code phase}, described by {@code details}, caused by {@code cause}.
+     *
+     * @throws IllegalArgumentException if {@code phase} is COMMIT, HOOK or REACTIONS: an abort happens before the
+     *     commit
+     */
     public TransitionAbortedException(MachineCall call, CallPhase phase, AbortDetails details, String message,
                                       Throwable cause) {
         super(call, describe(details, message), cause);

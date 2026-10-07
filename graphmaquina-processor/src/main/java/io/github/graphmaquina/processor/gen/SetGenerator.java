@@ -243,11 +243,14 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
-        forward(out, "maxCascadeDepth", "int " + setters.get("depth"),
+        forward(out, "Bounds how deep a cascade may go, the root being at depth 0; the default is 10, and a value"
+                + " below 1 is refused.", "maxCascadeDepth", "int " + setters.get("depth"),
                 registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
-        forward(out, "maxWatchChain", "int " + setters.get("chain"),
+        forward(out, "Bounds how many watch reactions may follow one another; the default is 10, and a value below 1"
+                + " is refused.", "maxWatchChain", "int " + setters.get("chain"),
                 registry + ".maxWatchChain(" + setters.get("chain") + ");");
-        forward(out, "observer", names.of(MACHINE_OBSERVER) + " " + setters.get("observer"),
+        forward(out, "Adds an observer of every call of the set; observers add up and are notified in the order they"
+                + " are given.", "observer", names.of(MACHINE_OBSERVER) + " " + setters.get("observer"),
                 registry + ".observer(" + setters.get("observer") + ");");
         String built = setters.get("built");
         String companion = names.of(qualifiedName(model));
@@ -269,8 +272,12 @@ public final class SetGenerator {
         out.close();
     }
 
-    /** One setting the {@code Builder} hands to the registry's builder as soon as it is given. */
-    private static void forward(SourceWriter out, String method, String parameter, String statement) {
+    /**
+     * One setting the {@code Builder} hands to the registry's builder as soon as it is given, documented by the
+     * one-line {@code doc}.
+     */
+    private static void forward(SourceWriter out, String doc, String method, String parameter, String statement) {
+        out.line("/** " + doc + " */");
         out.open("public Builder " + method + "(" + parameter + ")");
         out.line("checkUnused();");
         out.line(statement);

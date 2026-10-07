@@ -280,9 +280,9 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     }
 
     /**
-     * Types the engine never matches against failsOn: an Error or a cancellation is always a technical failure, the
-     * library's own exceptions are never domain failures, and the exact wrapper classes are unwrapped before
-     * matching. The broad roots are refused because they would capture technical failures too.
+     * Types a failsOn may not list: the engine never matches an Error, a cancellation or a library exception, which
+     * are never domain failures, and unwraps the exact wrapper classes before matching. The broad roots are refused
+     * because they would capture technical failures too.
      */
     private static boolean isForbiddenFailsOn(Class<? extends Throwable> type) {
         return type == Throwable.class || type == Exception.class || type == RuntimeException.class

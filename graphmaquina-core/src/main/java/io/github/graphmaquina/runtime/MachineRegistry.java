@@ -248,6 +248,10 @@ public final class MachineRegistry implements AutoCloseable {
             return this;
         }
 
+        /**
+         * Bounds how deep a cascade may go, the root being at depth 0; the default is 10, and a value below 1 is
+         * refused.
+         */
         public Builder maxCascadeDepth(int depth) {
             requireUnused();
             if (depth < 1) {
@@ -257,6 +261,10 @@ public final class MachineRegistry implements AutoCloseable {
             return this;
         }
 
+        /**
+         * Bounds how many watch reactions may follow one another; the default is 10, and a value below 1 is
+         * refused.
+         */
         public Builder maxWatchChain(int chain) {
             requireUnused();
             if (chain < 1) {

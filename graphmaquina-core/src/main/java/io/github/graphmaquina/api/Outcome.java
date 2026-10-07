@@ -6,11 +6,11 @@ import lombok.NonNull;
 
 /**
  * Domain-level result of a request. Technical failures are not modeled here: they throw, as a
- * {@code CallFailedException} of the call or an Error. {@link #status()} and
- * {@link #code()} classify an outcome as a value and {@link #explanation()} carries the reason given for it, so
- * reading what happened needs no narrowing. {@code asApplied()}, {@code asRejected()}, {@code asFailed()} and
- * {@code asIgnored()} return the outcome as that variant, with the outcome's type arguments, or empty for the other
- * three; the sealed variants stay available to a switch.
+ * {@code CallFailedException} of the call or an Error. {@link #status()} and {@link #code()} classify an outcome as a
+ * value and {@link #explanation()} carries the reason given for it, so reading what happened needs no narrowing.
+ * {@code asApplied()}, {@code asRejected()}, {@code asFailed()} and {@code asIgnored()} return the outcome as that
+ * variant, with the outcome's type arguments, or empty for the other three; the sealed variants stay available to a
+ * switch.
  */
 public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         permits Outcome.Applied, Outcome.Ignored, Outcome.Rejected, Outcome.Failed {
@@ -93,10 +93,10 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * committed, cascaded ones included, in log order, and {@code reactions} the watch reactions of that commit.
      * Returned by a cascade, it is written only if its root commits, and both lists are empty.
      */
-    record Applied<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from, @NonNull T transition,
-                                                            @NonNull S to,
-                                                            @NonNull List<TransitionRecord<?, ?, ?>> records,
-                                                            @NonNull List<Reaction> reactions) implements Outcome<E, S, T> {
+    record Applied<E, S extends Enum<S>, T extends Enum<T>>(
+            @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,
+            @NonNull List<TransitionRecord<?, ?, ?>> records,
+            @NonNull List<Reaction> reactions) implements Outcome<E, S, T> {
         public Applied {
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
@@ -166,9 +166,10 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * empty for NO_TRANSITION. It reports no destination. Only a root call returns it: inside a cascade, a rejection
      * aborts the root instead. The reason is never blank.
      */
-    record Rejected<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from, @NonNull T transition,
-                                                             @NonNull String reason, @NonNull RejectionKind kind,
-                                                             @NonNull Optional<String> guard) implements Outcome<E, S, T> {
+    record Rejected<E, S extends Enum<S>, T extends Enum<T>>(
+            @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull String reason,
+            @NonNull RejectionKind kind,
+            @NonNull Optional<String> guard) implements Outcome<E, S, T> {
         public Rejected {
             if (reason.isBlank()) {
                 throw new IllegalArgumentException("reason must not be blank");
@@ -218,11 +219,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * reason is never blank. When failsOn routed the failure, it carries the exception as {@code cause} and a reason
      * composed from it, so {@link #explanation()} leaves that reason out.
      */
-    record Failed<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from, @NonNull T transition,
-                                                           @NonNull S to, @NonNull T failureTransition, @NonNull S movedTo,
-                                                           @NonNull String reason, @NonNull Optional<Throwable> cause,
-                                                           @NonNull List<TransitionRecord<?, ?, ?>> records,
-                                                           @NonNull List<Reaction> reactions) implements Outcome<E, S, T> {
+    record Failed<E, S extends Enum<S>, T extends Enum<T>>(
+            @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,
+            @NonNull T failureTransition, @NonNull S movedTo,
+            @NonNull String reason, @NonNull Optional<Throwable> cause,
+            @NonNull List<TransitionRecord<?, ?, ?>> records,
+            @NonNull List<Reaction> reactions) implements Outcome<E, S, T> {
         public Failed {
             if (reason.isBlank()) {
                 throw new IllegalArgumentException("reason must not be blank");
