@@ -40,8 +40,8 @@ final class UnitOfWork {
     private Optional<StateMachineException> poison = Optional.empty();
 
     /**
-     * Whether the poison is an abort that wraps a failure of no step of the call, such as a peer's null state or an
-     * unknown machine. COLLECT never collects such an abort: it stops at once.
+     * Whether the poison is an abort that wraps what is not a failure of this call, such as a peer's null state, an
+     * unknown machine or an Error. COLLECT never collects such an abort: it stops at once.
      */
     private boolean poisonWrapsAForeignFailure;
 
@@ -206,7 +206,7 @@ final class UnitOfWork {
         }
     }
 
-    /** Poisons with an abort that wraps a failure of no step of the call, if nothing poisoned yet. */
+    /** Poisons with an abort that wraps what is not a failure of this call, if nothing poisoned yet. */
     void poisonWrapping(StateMachineException abort) {
         if (poison.isEmpty()) {
             poison = Optional.of(abort);
