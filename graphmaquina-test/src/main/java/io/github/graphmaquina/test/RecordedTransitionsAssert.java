@@ -9,12 +9,12 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Chainable assertion over the callbacks a {@link TransitionRecorder} observed, obtained from
- * {@link TransitionRecorder#assertRecorded()}. One registry notifies every machine it holds, so the list
+ * Chainable assertion over the completed calls a {@link TransitionRecorder} recorded, obtained from
+ * {@link TransitionRecorder#assertRecorded()}. One registry's observers see every machine it holds, so the list
  * is untyped as a whole and {@link #forEntity(MachineKey, Object)} is what narrows it: it selects by
  * machine key and by entity IDENTITY, never by entity equality. Order and multiplicity are part of the
- * contract, and the list was copied out of the recorder when the view was built, so callbacks that
- * arrive afterwards are not seen by this view.
+ * contract, and the list was copied out of the recorder when the view was built, so calls that
+ * complete afterwards are not seen by this view.
  */
 public final class RecordedTransitionsAssert {
 

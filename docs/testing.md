@@ -76,7 +76,7 @@ final FakeGateway gateway = new FakeGateway();
 final FakeCarrier carrier = new FakeCarrier();
 final TransitionRecorder recorder = TransitionRecorder.create();
 final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
-        .listener(recorder)
+        .observer(recorder)
         .build();
 final Orders orders = shop.orders();
 final Items items = shop.items();
@@ -287,7 +287,7 @@ assertThat(packed, Item::status).isIn(ItemStatus.PACKED);
 assertThat(pending, Item::status).isIn(ItemStatus.PENDING);
 ```
 
-### The listener recorder
+### The call recorder
 
 The recorder keeps the callbacks the engine published, in the order it published them, and nothing else. It
 never walks `reactions()`, so a reaction is counted once — as its own callback — even though the root

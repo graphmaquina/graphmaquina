@@ -85,11 +85,13 @@ class SetGenerationTest {
         List<String> seen = new ArrayList<>();
         io.github.graphmaquina.api.MachineObserver observer = new io.github.graphmaquina.api.MachineObserver() {
             @Override
-            public void onCompleted(io.github.graphmaquina.api.MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+            public void onCompleted(io.github.graphmaquina.api.MachineCall call, Outcome<?, ?, ?> outcome,
+                    Duration elapsed) {
                 seen.add(call.key().entity().getSimpleName() + ":" + outcome.status().name());
             }
         };
-        builder.getClass().getMethod("observer", io.github.graphmaquina.api.MachineObserver.class).invoke(builder, observer);
+        builder.getClass().getMethod("observer", io.github.graphmaquina.api.MachineObserver.class)
+                .invoke(builder, observer);
         Object library = builder.getClass().getMethod("build").invoke(builder);
         assertInstanceOf(Machines.class, library);
         try {

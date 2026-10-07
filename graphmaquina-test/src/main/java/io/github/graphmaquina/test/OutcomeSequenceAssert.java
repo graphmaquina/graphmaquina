@@ -8,7 +8,7 @@ import java.util.List;
 /**
  * The outcomes of one machine and one entity, in the order the recorder observed them, obtained from
  * {@link RecordedTransitionsAssert#forEntity(MachineKey, Object)}. Selection has already happened, so
- * the list is never null here and a missing callback is reported as a size or index expectation rather
+ * the list is never null here and a missing call is reported as a size or index expectation rather
  * than as an out-of-bounds crash.
  *
  * @param <E> entity type of the machine

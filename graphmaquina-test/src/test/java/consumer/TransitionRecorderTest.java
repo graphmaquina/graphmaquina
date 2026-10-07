@@ -67,7 +67,8 @@ class TransitionRecorderTest {
         TransitionRecorder recorder = TransitionRecorder.projecting(
                 (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> ((Entity) outcome.entity()).state());
         Entity entity = new Entity("e", State.READY);
-        complete(recorder, TestDomain.KEY, new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY, List.of(), List.of()));
+        complete(recorder, TestDomain.KEY, new Outcome.Applied<>(entity, State.NEW, Id.PREPARE, State.READY,
+                List.of(), List.of()));
         entity.setState(State.DONE);
         assertEquals(Optional.of(State.READY), recorder.snapshot().get(0).projection());
         recorder.assertRecorded().forEntity(TestDomain.KEY, entity).single()
@@ -81,7 +82,8 @@ class TransitionRecorderTest {
         Entity entity = new Entity("e", State.NEW);
         Twin twin = new Twin("t", State.NEW);
         complete(recorder, TestDomain.KEY, applied(entity));
-        complete(recorder, TWINS, new Outcome.Applied<>(twin, State.NEW, TwinId.ADVANCE, State.READY, List.of(), List.of()));
+        complete(recorder, TWINS, new Outcome.Applied<>(twin, State.NEW, TwinId.ADVANCE, State.READY,
+                List.of(), List.of()));
         assertEquals(List.of(Optional.of("Entity/State=READY"), Optional.of("Twin/State=READY")),
                 recorder.snapshot().stream().map(RecordedTransition::projection).toList());
     }
@@ -187,7 +189,8 @@ class TransitionRecorderTest {
         Entity entity = new Entity("e", State.NEW);
         Twin twin = new Twin("t", State.NEW);
         complete(recorder, TestDomain.KEY, applied(entity));
-        complete(recorder, TWINS, new Outcome.Applied<>(twin, State.NEW, TwinId.ADVANCE, State.READY, List.of(), List.of()));
+        complete(recorder, TWINS, new Outcome.Applied<>(twin, State.NEW, TwinId.ADVANCE, State.READY,
+                List.of(), List.of()));
         RecordedTransitionsAssert view = recorder.assertRecorded();
         assertSame(view, view.hasKeysExactly(TestDomain.KEY, TWINS));
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -231,9 +234,12 @@ class TransitionRecorderTest {
         Twin one = new Twin("same", State.NEW);
         Twin other = new Twin("same", State.NEW);
         assertEquals(one, other);
-        complete(recorder, TWINS, new Outcome.Applied<>(one, State.NEW, TwinId.ADVANCE, State.READY, List.of(), List.of()));
-        complete(recorder, TWINS, new Outcome.Applied<>(other, State.NEW, TwinId.ADVANCE, State.DONE, List.of(), List.of()));
-        complete(recorder, TWIN_FLAGS, new Outcome.Applied<>(one, Flag.OFF, TwinId.ADVANCE, Flag.ON, List.of(), List.of()));
+        complete(recorder, TWINS, new Outcome.Applied<>(one, State.NEW, TwinId.ADVANCE, State.READY,
+                List.of(), List.of()));
+        complete(recorder, TWINS, new Outcome.Applied<>(other, State.NEW, TwinId.ADVANCE, State.DONE,
+                List.of(), List.of()));
+        complete(recorder, TWIN_FLAGS, new Outcome.Applied<>(one, Flag.OFF, TwinId.ADVANCE, Flag.ON,
+                List.of(), List.of()));
         complete(recorder, TestDomain.KEY, applied(new Entity("e", State.NEW)));
         RecordedTransitionsAssert view = recorder.assertRecorded();
         view.hasSize(4);
@@ -249,7 +255,8 @@ class TransitionRecorderTest {
         MachineKey<Twin, State, TwinId> sameValue = MachineKey.of(Twin.class, State.class, TwinId.class);
         assertEquals(TWINS, sameValue);
         assertNotSame(TWINS, sameValue);
-        complete(recorder, TWINS, new Outcome.Applied<>(one, State.NEW, TwinId.ADVANCE, State.READY, List.of(), List.of()));
+        complete(recorder, TWINS, new Outcome.Applied<>(one, State.NEW, TwinId.ADVANCE, State.READY,
+                List.of(), List.of()));
         RecordedTransitionsAssert view = recorder.assertRecorded();
         assertSame(view, view.hasKeysExactly(sameValue));
         view.forEntity(sameValue, one).single().isApplied().movedTo(State.READY);

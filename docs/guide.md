@@ -40,7 +40,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 - [Build and manage machine sets](#build-and-manage-machine-sets)
 - [Read peers and cascade transitions](#read-peers-and-cascade-transitions)
 - [Watch other machines](#watch-other-machines)
-- [Commit, hooks and listeners](#commit-hooks-and-listeners)
+- [Commit, hooks and observers](#commit-hooks-and-observers)
 - [Concurrency, identity and persistence](#concurrency-identity-and-persistence)
 - [Inspect graphs and export diagrams](#inspect-graphs-and-export-diagrams)
 - [Test your machines](#test-your-machines)
@@ -94,7 +94,7 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 | What can I safely use in a callback? | [Context and thread boundary](images/async-context-boundary.svg) | [Context ownership](#contexts-and-completion-callbacks) |
 | Does a completed future mean the operation succeeded? | [Future result branches](images/async-future-results.svg) | [Result handling](#read-the-future-and-domain-result) |
 | Do both machines commit together? | [Cascade versus watch](images/cascade-vs-watch.svg) | [Machine coordination](#read-peers-and-cascade-transitions) |
-| When do hooks and reactions run? | [Commit lifecycle](images/commit-lifecycle.svg) | [Commit and hooks](#commit-hooks-and-listeners) |
+| When do hooks and reactions run? | [Commit lifecycle](images/commit-lifecycle.svg) | [Commit and hooks](#commit-hooks-and-observers) |
 
 ## Requirements and artifacts
 
@@ -1226,7 +1226,7 @@ erased generic arguments. Input operations do not support method type parameters
 
 The same input reaches the transition's guards, action and handled failure action. Cascades, watch reactions
 and reevaluation have no input of their own and receive an empty optional. A shared guard must handle that
-absence. Hooks, listeners and transition records retain their existing contracts.
+absence. Hooks, observers and transition records retain their existing contracts.
 
 ### Domain failures
 
@@ -1669,13 +1669,13 @@ There are two layers of result. A future that completes normally does not imply 
 
 ![The operation future branches into normal completion carrying Applied, Failed, Rejected or Ignored, and exceptional completion carrying a technical or post-commit failure. Watch reactions must also be inspected.](images/async-future-results.svg)
 
-With the `tickets` and `ticket` from the example, this fragment observes completion without joining:
+With the `tickets` and `ticket` from the example, this fragment reacts to completion without joining:
 
 ```java
 CompletableFuture<Outcome<Ticket, TicketState, TicketTransition>> pending =
         tickets.async(() -> tickets.approve(ticket));
 
-CompletableFuture<Void> observed = pending.thenAccept((Outcome<Ticket, TicketState, TicketTransition> outcome) -> {
+CompletableFuture<Void> handled = pending.thenAccept((Outcome<Ticket, TicketState, TicketTransition> outcome) -> {
     switch (outcome.status()) {
         case APPLIED -> System.out.println("Committed: " + outcome.requestedTransition().orElseThrow()
                 + " -> " + outcome.recordedState());
@@ -1686,9 +1686,9 @@ CompletableFuture<Void> observed = pending.thenAccept((Outcome<Ticket, TicketSta
     }
 });
 
-observed.whenComplete((Void unused, Throwable error) -> {
+handled.whenComplete((Void unused, Throwable error) -> {
     if (error != null) {
-        System.err.println("Operation or observer failed: " + error);
+        System.err.println("Operation or callback failed: " + error);
     }
 });
 ```
@@ -1742,7 +1742,7 @@ with a stage returned at second four.
 These settings are wait budgets, not a hard end-to-end execution timeout. They do not preempt synchronous
 code, including blocking work inside a method that eventually returns a stage. The action-specific clock is
 calculated after that return. A stage already completed when inspected can succeed even with zero remaining
-wait time. There is no deadline check that interrupts setters, after-commit hooks or listeners.
+wait time. There is no deadline check that interrupts setters, after-commit hooks or observers.
 
 Cascades share the root's unit of work and deadline; entering a peer does not restart its machine-level
 budget. Set defaults are installed only on machines with declared async bindings. A synchronous-only root
@@ -1875,7 +1875,7 @@ a fresh ticket starts in `OPEN`, where no edge carries `APPROVE`.
 | Service finishes after wait timeout | Complete that same stage later | No late graph-state commit |
 | Guard stage throws | Fail `canStart` exceptionally | Technical abort; state stays `OPEN`; action is not called |
 
-Also cover hook/listener failures and concurrent-entity policy in the application. The repository's
+Also cover hook failures and concurrent-entity policy in the application. The repository's
 [async runtime tests](../graphmaquina-core/src/test/java/io/github/graphmaquina/runtime/AsyncTest.java) and
 [context lifetime tests](../graphmaquina-core/src/test/java/io/github/graphmaquina/runtime/SingleMachineTest.java)
 provide focused examples of deadline and ownership behavior.
@@ -1903,7 +1903,7 @@ not instantiate service classes or discover dependency-injection beans.
 | `asyncExecutor(Executor)` | Supply the executor used by `async` calls; otherwise each machine owns a virtual-thread executor |
 | `maxCascadeDepth(int)` | Bound nested cascades; default `10`, minimum `1`, root depth is `0` |
 | `maxWatchChain(int)` | Bound successive watch reactions; default `10`, minimum `1` |
-| `listener(TransitionListener)` | Observe outcomes across the set; one listener per set |
+| `observer(MachineObserver)` | Observe every call of the set; observers add up, notified in the order given |
 | `build()` | Construct the registry and facades |
 
 Each setting is checked where it is given: a second `listener(...)` throws `IllegalStateException`, and a
@@ -2099,7 +2099,7 @@ Cross-JAR watches are not supported yet. The owner and peer APIs must be generat
 A peer in another module or dependency JAR is rejected with `SG608`. Track the enhancement in
 [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1).
 
-## Commit, hooks and listeners
+## Commit, hooks and observers
 
 ![Root actions and cascades stage changes in a shared unit of work. Commit checks original states and writes final states; hooks, independent watch reactions, listener notification and return follow on normal completion.](images/commit-lifecycle.svg)
 
@@ -2171,27 +2171,43 @@ an `Ignored`, an abort or a rollback. A failure route uses its own effective hoo
 that failed. Hooks still run per committed hop, so one entity can reach the default more than once in a
 cascade.
 
-### Listeners
+### Observers
 
-A listener receives each completed outcome, including ignored and rejected operations. With the ticket set:
+An observer sees every call of the set: each operation and each `reevaluate`, watch reactions included. A cascade
+is part of the call that runs it. With the ticket set:
 
 ```java
 TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
-        .listener((MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> System.out.println(
-                key.entity().getSimpleName() + ": " + outcome.code() + " -> " + outcome.recordedState()))
+        .observer(new MachineObserver() {
+            @Override
+            public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                System.out.println(call + ": " + outcome.code() + " -> " + outcome.recordedState()
+                        + " in " + elapsed.toMillis() + " ms");
+            }
+
+            @Override
+            public void onFailed(MachineCall call, CallFailure failure, Duration elapsed) {
+                System.out.println(call + ": failed in " + failure.phase() + ", states "
+                        + failure.statesWritten() + ": " + failure.error());
+            }
+        })
         .build();
 ```
 
-Close `machines` through the application's lifecycle. A listener sees watch-reaction outcomes through their
-own calls; do not recursively emit them again from the parent's `reactions()` list. Reaction outcomes can
-arrive before the triggering root's notification. A call that throws before it returns an outcome, such as one
-that ends in a technical abort, a commit failure, a failing hook or an `Error` from a reaction, notifies nothing.
+Each call notifies `onStarted` once, then exactly one of `onCompleted` and `onFailed`, on the thread that runs it,
+before the operation returns or throws. `MachineCall` names the machine, the entity, the requested identifier
+(empty for `reevaluate`) and whether a watch reaction made the call. Its `toString()` never prints the entity, and
+the same instance reaches every event of the call. A reaction starts and ends inside the call that triggered it,
+so events nest like a stack on their thread and a thread-local tracing context works unchanged. `onFailed`
+receives the very throwable the caller gets, with the phase the call was in and how far it got in writing states;
+an `Error` is reported too, then propagates.
 
-Any exception a listener throws, checked ones included, also surfaces as `AfterCommitException`, and its
-message says whether the call wrote state. For an ignored or rejected outcome, no state change occurred, and the
-message reads `the call on ... wrote no state, and the post-commit step 'listener' failed`; for an applied or
-handled-failure outcome, state has already committed. An `Error` from the listener propagates unchanged. A
-listener exception must not be interpreted as proof that an operation never happened.
+An observer watches without taking part. What it throws is logged as a warning through
+`System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
+propagates. It cannot start a transition either: an operation called from an observer throws
+`ReentrantTransitionException`. When a failure must fail the call, write a hook, or a `Definition.afterCommit`
+default for every edge of a machine. Observers run on the thread of every call, so keep them thread-safe and quick.
+Add as many as you need: they are notified in the order they were added.
 
 ## Concurrency, identity and persistence
 
