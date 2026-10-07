@@ -43,6 +43,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
@@ -331,29 +338,70 @@ class ThrownFailureRoutingTest {
 
     /**
      * A failure of another call is a library exception, so no declared type routes it, not even RuntimeException in
-     * the failsOn of a definition built by hand: it becomes the cause of this call's abort.
+     * the failsOn of a definition built by hand: it becomes the cause of this call's abort. Both calls run on
+     * test-owned workers under independent bounded waits, with futures cancelled and workers stopped in finally.
      */
     @Test
-    void aFailureOfAnotherCallIsNeverRouted() {
-        StateMachine<Ticket, TicketState, TicketChange> other = RecoveryFixtures.machine(
-                publishing(throwing(new IllegalStateException("the other call failed")), UnaryOperator.identity()));
-        Ticket elsewhere = new Ticket("T-2");
-        GraphDefinition<Ticket, TicketState, TicketChange> listing = new ListingRuntimeException(publishing(
-                (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
-                    other.async().execute(elsewhere, TicketChange.PUBLISH).join();
-                    return ActionOutcome.ok();
-                },
-                ThrownFailureRoutingTest::ruleOnIllegalState));
-        Ticket ticket = new Ticket("T-1");
-        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
-                () -> RecoveryFixtures.machine(listing).execute(ticket, TicketChange.PUBLISH));
-        TransitionAbortedException foreign = assertInstanceOf(TransitionAbortedException.class, error.getCause());
-        assertSame(ticket, error.call().entity());
-        assertSame(elsewhere, foreign.call().entity());
-        assertNotSame(error.call(), foreign.call());
-        assertEquals(CallPhase.ACTION, error.phase());
-        assertEquals(TicketState.READY, ticket.state);
-        assertEquals(TicketState.READY, elsewhere.state);
+    void aFailureOfAnotherCallIsNeverRouted() throws Exception {
+        ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
+        AtomicReference<CompletableFuture<Outcome<Ticket, TicketState, TicketChange>>> foreignCall =
+                new AtomicReference<>();
+        AtomicReference<Throwable> foreignFailure = new AtomicReference<>();
+        Future<TransitionAbortedException> outerCall = null;
+        try {
+            StateMachine<Ticket, TicketState, TicketChange> other = StateMachines.from(
+                            publishing(throwing(new IllegalStateException("the other call failed")),
+                                    UnaryOperator.identity()))
+                    .state((Ticket ticket) -> ticket.state, (Ticket ticket, TicketState state) -> {
+                        ticket.state = state;
+                        ticket.stateWrites++;
+                    })
+                    .identity((Ticket ticket) -> ticket.id)
+                    .asyncExecutor(workers)
+                    .build();
+            Ticket elsewhere = new Ticket("T-2");
+            GraphDefinition<Ticket, TicketState, TicketChange> listing = new ListingRuntimeException(publishing(
+                    (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                        CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> pending =
+                                other.async().execute(elsewhere, TicketChange.PUBLISH);
+                        foreignCall.set(pending);
+                        try {
+                            pending.get(5, TimeUnit.SECONDS);
+                        } catch (ExecutionException transport) {
+                            Throwable foreign = transport.getCause();
+                            foreignFailure.set(foreign);
+                            throw Sneaky.raise(foreign);
+                        } catch (InterruptedException interrupted) {
+                            Thread.currentThread().interrupt();
+                            throw Sneaky.raise(interrupted);
+                        } catch (TimeoutException timeout) {
+                            throw Sneaky.raise(timeout);
+                        }
+                        return ActionOutcome.ok();
+                    },
+                    ThrownFailureRoutingTest::ruleOnIllegalState));
+            Ticket ticket = new Ticket("T-1");
+            outerCall = workers.submit(() -> assertThrows(TransitionAbortedException.class,
+                    () -> RecoveryFixtures.machine(listing).execute(ticket, TicketChange.PUBLISH)));
+            TransitionAbortedException error = outerCall.get(10, TimeUnit.SECONDS);
+            TransitionAbortedException foreign = assertInstanceOf(TransitionAbortedException.class, error.getCause());
+            assertSame(foreignFailure.get(), foreign);
+            assertSame(ticket, error.call().entity());
+            assertSame(elsewhere, foreign.call().entity());
+            assertNotSame(error.call(), foreign.call());
+            assertEquals(CallPhase.ACTION, error.phase());
+            assertEquals(TicketState.READY, ticket.state);
+            assertEquals(TicketState.READY, elsewhere.state);
+        } finally {
+            CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> foreign = foreignCall.get();
+            if (foreign != null) {
+                foreign.cancel(true);
+            }
+            if (outerCall != null) {
+                outerCall.cancel(true);
+            }
+            workers.shutdownNow();
+        }
     }
 
     /**
