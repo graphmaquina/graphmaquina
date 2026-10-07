@@ -55,7 +55,6 @@ class ReadmeQuickstartTest {
             assertTrue(process.waitFor(3, TimeUnit.MINUTES),
                     () -> "README consumer timed out; transcript: " + transcript);
             String output = Files.readString(transcript);
-            System.out.println(output);
             assertEquals(0, process.exitValue(), output);
             assertTrue(output.lines().anyMatch(line -> line.equals("> Task :test")), output);
             assertTrue(output.contains("All ticket scenarios passed."), output);
