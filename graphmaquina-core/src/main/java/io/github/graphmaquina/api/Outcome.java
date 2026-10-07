@@ -213,11 +213,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * Domain-level failure routed through {@code failureTransition}: the action returned a failed outcome, or failed
-     * with an exception its edge lists in failsOn, which {@code cause} then holds. The entity moves to
-     * {@code movedTo}. Returned by a root call, it committed, with {@code records} and {@code reactions} as in
-     * {@link Applied}; returned by a cascade, it is written only if its root commits, and both lists are empty. The
-     * reason is never blank. When failsOn routed the failure, it carries the exception as {@code cause} and a reason
-     * composed from it, so {@link #explanation()} leaves that reason out.
+     * with a throwable its edge lists in failsOn, which {@code cause} then holds. The entity moves to {@code movedTo}.
+     * Returned by a root call, it committed, with {@code records} and {@code reactions} as in {@link Applied}; returned
+     * by a cascade, it is written only if its root commits, and both lists are empty. The reason is never blank. When
+     * failsOn routed the failure, it carries the throwable as {@code cause} and a reason composed from it, so
+     * {@link #explanation()} leaves that reason out.
      */
     record Failed<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,

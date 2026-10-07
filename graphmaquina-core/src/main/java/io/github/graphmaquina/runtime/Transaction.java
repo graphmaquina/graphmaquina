@@ -505,7 +505,7 @@ final class Transaction {
     }
 
     /**
-     * The reason a failsOn match reports: the exception's simple name and its message. An anonymous class has an empty
+     * The reason a failsOn match reports: the throwable's simple name and its message. An anonymous class has an empty
      * simple name, so its binary name stands in: a reason is never blank.
      */
     private static String describe(Throwable cause) {

@@ -13,13 +13,13 @@ import java.util.Optional;
  * made to the collection while the cascade runs, by an element's action for instance, changes neither which elements
  * run nor their order. Peer views and cascades work only on the thread that called {@code process()} and only until the
  * root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}.
- * What the action throws, or completes its stage with, once unwrapped from CompletionException and
- * ExecutionException, is its own failure: an exception that {@link TransitionSpec#failsOn()} matches takes the
- * failure route, any other Exception aborts the call with it as cause, an Error thrown as itself propagates, and an
- * Error that completes the stage, or arrives wrapped in one of those two classes, aborts too. A failure of this call
- * that the action lets through is never routed: it ends the call as itself, or as the failure that poisoned the
- * transaction. Once a failed cascade poisoned the transaction, an exception that {@code failsOn} lists takes no
- * failure route either: the call ends with the failure that poisoned it.
+ * What the action throws, or completes its stage with, once unwrapped from CompletionException and ExecutionException,
+ * is its own failure: a throwable that {@link TransitionSpec#failsOn()} matches takes the failure route, any other
+ * throwable that is not an Error aborts the call with it as cause, an Error thrown as itself propagates, and an Error
+ * that completes the stage, or arrives wrapped in one of those two classes, aborts too. A failure of this call that the
+ * action lets through is never routed: it ends the call as itself, or as the failure that poisoned the transaction.
+ * Once a failed cascade poisoned the transaction, a throwable that {@code failsOn} lists takes no failure route either:
+ * the call ends with the failure that poisoned it.
  */
 public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 

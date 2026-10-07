@@ -36,8 +36,8 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     TransitionBuilder<E, S, T> asyncGuard(String name, AsyncTransitionGuard<E, S, T> guard);
 
     /**
-     * The identifier of the edge that recovers from a domain failure: the action returns a failure, or throws an
-     * exception {@code failsOn} lists. It is resolved from this edge's origin, and the recovery edge runs without its
+     * The identifier of the edge that recovers from a domain failure: the action returns a failure, or throws a
+     * throwable {@code failsOn} lists. It is resolved from this edge's origin, and the recovery edge runs without its
      * guards and without a failure route of its own.
      */
     TransitionBuilder<E, S, T> onFailure(T transition);

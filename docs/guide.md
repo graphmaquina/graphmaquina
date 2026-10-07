@@ -1146,10 +1146,10 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 | `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `timeout`, `afterCommit` |
 | `Reject` | type | `from: S`, `transition: T`, `reason: String` | None |
 
-`StatePolicy`, `Transition` and `Reject` are repeatable, through the generated `StatePolicies`, `Transitions`
-and `Rejects` containers. `from` must contain at least one state. Guard arrays execute in declaration order.
-`failsOn` takes exception class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn`
-and `timeout` require an action, and `timeout` requires an asynchronous one.
+`StatePolicy`, `Transition` and `Reject` are repeatable, through the generated `StatePolicies`, `Transitions` and
+`Rejects` containers. `from` must contain at least one state. Guard arrays execute in declaration order. `failsOn` takes
+throwable class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn` and `timeout` require an
+action, and `timeout` requires an asynchronous one.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
 `onFailure`, `timeout`, `afterCommit`, `Transition.action` and custom `When.condition` accept zero or one value.
@@ -1311,7 +1311,7 @@ only needs to know what happened and why reads it without narrowing:
 | --- | --- | --- | --- | --- |
 | `Applied` | `APPLIED` | `APPLIED` | empty | Yes, the resolved edge committed |
 | `Rejected` | `REJECTED` | `NO_TRANSITION`, or `GUARD_REJECTED` | the policy's reason, or the guard's | No |
-| `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` routed an exception | Yes, the failure route committed |
+| `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` routed a throwable | Yes, the failure route committed |
 | `Ignored` | `IGNORED` | `NO_WATCH`, or `NO_RULE_MATCHED` | empty | No |
 
 A cascade returns `Applied` or `Failed` to the action that called `cascade(...)`; a rejection inside it aborts the
@@ -2568,7 +2568,7 @@ Useful behavior to cover in your own domain:
 - Each guard rejection, and each identifier a state refuses, with the reason its policy gives.
 - Two operations that reach the same state, so neither can quietly stand in for the other.
 - Every self-loop you declare: it applies, and its hook runs.
-- Exceptions that are mapped through `failsOn`, and exceptions that must abort.
+- Throwables that are mapped through `failsOn`, and those that must abort.
 - Cascade rollback behavior and collected error details.
 - First-match watch order, empty peer collections and aborted reactions.
 - Async timeout behavior and late completions.
