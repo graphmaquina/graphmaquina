@@ -25,9 +25,8 @@ import java.util.Optional;
  * other throwable of the action. A failure of this call that the action lets through is never routed: it ends the
  * call as itself, or as the failure that poisoned the transaction. Once a failed cascade poisoned the transaction, a
  * throwable that a declared type accepts takes no route either: the call ends with the failure that poisoned it.
- * For a synchronous throw, including an asynchronous action throwing before it returns its stage, the poison check
- * precedes any reading of the cause's message. Exceptional stage completions still pass through JDK wrappers that
- * can read that message before classification; a message accessor that throws can therefore prevent poison routing.
+ * For synchronous throws and exceptional completions of completed or pending stages alike, the poison check
+ * precedes any reading of the cause's message.
  */
 public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 

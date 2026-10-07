@@ -18,9 +18,8 @@ import lombok.NonNull;
  * never through a supertype. A throwable the action throws takes {@code transition} too, and the outcome reports
  * {@code kind}, when the most specific type that accepts it, among the types of every rule of the edge and of its
  * failsOn, is one of {@code failsOn}. The order of the declarations plays no part. The recovery edge runs without its
- * guards and without consulting its own rules or onFailure. Exceptional stage completions still pass through JDK
- * wrappers that can read the cause's message before classification; a message accessor that throws can prevent
- * routing, including the poison check.
+ * guards and without consulting its own rules or onFailure. For synchronous throws and exceptional stage
+ * completions alike, the poison check precedes reading the cause's message.
  *
  * <p>A valid kind is a named final class or record that implements FailureKind and is not an interface, an enum, a
  * local or anonymous class, or a Throwable. The types that may not be declared are Throwable, Exception and

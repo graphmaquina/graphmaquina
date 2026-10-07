@@ -2045,10 +2045,9 @@ facade operation from inside an action: nested facade entry points on the action
 reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
 runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
 
-For a synchronous throw, including an asynchronous action throwing before it returns its stage, the poison check
-precedes reading the cause's message. Exceptional completions of completed or pending stages still pass through JDK
-wrappers that can read that message before classification. If its message accessor throws, the engine can fail before
-it reaches the poison check.
+For synchronous throws and exceptional completions of completed or pending stages alike, the poison check precedes
+reading the cause's message. Exceptional stage completions retain their original throwable through the wait, so a
+message accessor that throws cannot prevent the engine from reaching the poison check.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.

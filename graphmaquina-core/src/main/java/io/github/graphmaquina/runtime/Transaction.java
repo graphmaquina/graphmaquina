@@ -267,8 +267,8 @@ final class Transaction {
      * throws, an Error aside, or completes its stage with, checked exceptions included, which Kotlin or
      * {@code @SneakyThrows} code can throw without declaring them, and library exceptions too, becomes an ActionFailure
      * that its caller classifies. An Error is never routed: thrown as itself, it propagates; wrapped in
-     * CompletionException or ExecutionException, it is unwrapped and aborts. Exceptional stage completions still pass
-     * through JDK wrappers that can read the cause's message before ActionFailure reaches classification.
+     * CompletionException or ExecutionException, it is unwrapped and aborts. Exceptional stage completions carry
+     * their original throwable into ActionFailure without reading its message before classification.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
