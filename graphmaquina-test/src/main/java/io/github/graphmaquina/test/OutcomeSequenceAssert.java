@@ -8,7 +8,7 @@ import java.util.List;
 /**
  * The outcomes of one machine and one entity, in the order the recorder observed them, obtained from
  * {@link RecordedTransitionsAssert#forEntity(MachineKey, Object)}. Selection has already happened, so
- * the list is never null here and a missing callback is reported as a size or index expectation rather
+ * the list is never null here and a missing call is reported as a size or index expectation rather
  * than as an out-of-bounds crash.
  *
  * @param <E> entity type of the machine
@@ -30,7 +30,7 @@ public final class OutcomeSequenceAssert<E, S extends Enum<S>, T extends Enum<T>
         return this;
     }
 
-    /** The one callback about this entity; a selection of any other size fails rather than picking the first. */
+    /** The one completed call about this entity; a selection of any other size fails rather than picking the first. */
     public OutcomeAssert<E, S, T> single() {
         Checks.equal(context, "size", 1, actual.size());
         return atIndex(0);

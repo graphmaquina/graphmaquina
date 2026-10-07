@@ -11,17 +11,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
+import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
+import io.github.graphmaquina.api.TransitionKind;
+import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.AbortDetails;
 import io.github.graphmaquina.error.AfterCommitException;
+import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.CascadeException;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.InvalidGraphException;
@@ -32,6 +38,7 @@ import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
 import io.github.graphmaquina.test.AbortAssert;
 import io.github.graphmaquina.test.AfterCommitAssert;
+import io.github.graphmaquina.test.CallFailureAssert;
 import io.github.graphmaquina.test.CascadeAbortAssert;
 import io.github.graphmaquina.test.CommitFailureAssert;
 import io.github.graphmaquina.test.GraphAssertionError;
@@ -64,9 +71,9 @@ class FailureAssertionsTest {
         Entity entity = new Entity("e", State.READY);
         IllegalStateException cause = new IllegalStateException("audit down");
         AfterCommitException error =
-                new AfterCommitException(TestDomain.KEY, entity, State.NEW, State.READY, "audit", cause);
+                afterCommit(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY, "audit", cause);
         TransitionFailureAssert.assertThat(error).isAfterCommit()
-                .hasStepNamed("audit").hasCauseSameAs(cause);
+                .hasHookNamed("audit").hasCauseSameAs(cause);
         assertThrows(GraphAssertionError.class,
                 () -> TransitionFailureAssert.assertThat(error).isAbort());
     }
@@ -112,7 +119,7 @@ class FailureAssertionsTest {
 
     @Test
     void eachNarrowingNamesTheTypeItWanted() {
-        CommitFailedException commit = new CommitFailedException(List.of(), List.of(), "nothing written");
+        CommitFailedException commit = new CommitFailedException(CALL, List.of(), List.of(), "nothing written");
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> TransitionFailureAssert.assertThat(commit).isAbort()),
                 "failure", "type", TransitionAbortedException.class, commit);
@@ -125,7 +132,7 @@ class FailureAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> TransitionFailureAssert.assertThat(commit).isInvalidGraph()),
                 "failure", "type", InvalidGraphException.class, commit);
-        TransitionAbortedException abort = new TransitionAbortedException(details(), "no");
+        TransitionAbortedException abort = new TransitionAbortedException(CALL, CallPhase.ACTION, details(), "no");
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> TransitionFailureAssert.assertThat(abort).isCommitFailure()),
                 "failure", "type", CommitFailedException.class, abort);
@@ -137,9 +144,9 @@ class FailureAssertionsTest {
      */
     @Test
     void everyAbortSubclassIsAnAbortAndOnlyTheAggregateIsACascade() {
-        TransitionAbortedException plain = new TransitionAbortedException(details(), "no");
-        UnhandledFailureException unhandled = new UnhandledFailureException(details(), "change of mind");
-        CascadeException aggregate = new CascadeException(details(), List.of(plain));
+        TransitionAbortedException plain = new TransitionAbortedException(CALL, CallPhase.ACTION, details(), "no");
+        UnhandledFailureException unhandled = new UnhandledFailureException(CALL, details(), "change of mind");
+        CascadeException aggregate = new CascadeException(CALL, details(), List.of(plain));
         TransitionFailureAssert.assertThat(plain).isAbort().hasActionNamed("prepare");
         TransitionFailureAssert.assertThat(unhandled).isAbort().hasActionNamed("prepare");
         TransitionFailureAssert.assertThat(aggregate).isAbort().hasActionNamed("prepare");
@@ -155,8 +162,8 @@ class FailureAssertionsTest {
     void theCauseIsMatchedByTypeSubclassesIncluded() {
         IllegalStateException cause = new IllegalStateException("audit down");
         AfterCommitAssert view = TransitionFailureAssert.assertThat(
-                new AfterCommitException(TestDomain.KEY, new Entity("e", State.READY),
-                        State.NEW, State.READY, "audit", cause)).isAfterCommit();
+                afterCommit(TestDomain.KEY, new Entity("e", State.READY), State.NEW, Id.PREPARE, State.READY,
+                        "audit", cause)).isAfterCommit();
         assertSame(view, view.hasCause(IllegalStateException.class));
         assertSame(view, view.hasCause(RuntimeException.class));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCause(NumberFormatException.class)),
@@ -170,7 +177,7 @@ class FailureAssertionsTest {
         assertEquals(cause, twin);
         assertNotSame(cause, twin);
         AbortAssert view = TransitionFailureAssert.assertThat(
-                new TransitionAbortedException(details(), "no", cause)).isAbort();
+                new TransitionAbortedException(CALL, CallPhase.ACTION, details(), "no", cause)).isAbort();
         assertSame(view, view.hasCauseSameAs(cause));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCauseSameAs(twin)),
                 "abort", "cause", twin, cause);
@@ -179,7 +186,7 @@ class FailureAssertionsTest {
     @Test
     void aFailureWithoutACauseSatisfiesOnlyHasNoCause() {
         AbortAssert without = TransitionFailureAssert.assertThat(
-                new TransitionAbortedException(details(), "no")).isAbort();
+                new TransitionAbortedException(CALL, CallPhase.ACTION, details(), "no")).isAbort();
         assertSame(without, without.hasNoCause());
         assertFailure(assertThrows(GraphAssertionError.class, () -> without.hasCause(RuntimeException.class)),
                 "abort", "cause", RuntimeException.class, null);
@@ -187,7 +194,7 @@ class FailureAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class, () -> without.hasCauseSameAs(cause)),
                 "abort", "cause", cause, null);
         AbortAssert with = TransitionFailureAssert.assertThat(
-                new TransitionAbortedException(details(), "no", cause)).isAbort();
+                new TransitionAbortedException(CALL, CallPhase.ACTION, details(), "no", cause)).isAbort();
         assertFailure(assertThrows(GraphAssertionError.class, with::hasNoCause),
                 "abort", "cause", "no cause", cause);
     }
@@ -200,8 +207,8 @@ class FailureAssertionsTest {
         Other twin = new Other("o");
         assertEquals(entity, twin);
         assertNotSame(entity, twin);
-        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP),
+        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.of(Switch.FLIP),
                         Optional.of(Flag.ON), Optional.of("flip"), List.of(), List.of()), "no")).isAbort();
         assertSame(view, view.at(OTHERS, entity, Flag.OFF, Switch.FLIP, Flag.ON));
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -212,7 +219,7 @@ class FailureAssertionsTest {
                 "abort", "entity", twin, entity);
         assertFailure(assertThrows(GraphAssertionError.class,
                         () -> view.at(OTHERS, entity, Flag.ON, Switch.FLIP, Flag.ON)),
-                "abort", "from", Flag.ON, Flag.OFF);
+                "abort", "from", Optional.of(Flag.ON), Optional.of(Flag.OFF));
         assertFailure(assertThrows(GraphAssertionError.class,
                         () -> view.at(OTHERS, entity, Flag.OFF, Switch.TOGGLE, Flag.ON)),
                 "abort", "transition", Optional.of(Switch.TOGGLE), Optional.of(Switch.FLIP));
@@ -228,8 +235,8 @@ class FailureAssertionsTest {
     @Test
     void anAbortBeforeAnyEdgeWasResolvedReportsNoDestination() {
         Other entity = new Other("o");
-        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.empty(),
+        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.of(Switch.FLIP), Optional.empty(),
                         Optional.empty(), List.of(), List.of()), "no edge")).isAbort();
         assertSame(view, view.atUnresolved(OTHERS, entity, Flag.OFF, Switch.FLIP));
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -249,9 +256,9 @@ class FailureAssertionsTest {
     void anAbortBeforeAnyIdentifierWasReadIsLocatedByMachineEntityAndOrigin() {
         Other entity = new Other("o");
         Other twin = new Other("o");
-        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.empty(), Optional.empty(), Optional.empty(),
-                        List.of(), List.of()), "chain too long")).isAbort();
+        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.empty(), Optional.empty(),
+                        Optional.empty(), List.of(), List.of()), "chain too long")).isAbort();
         assertSame(view, view.atUnread(OTHERS, entity, Flag.OFF));
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> view.atUnread(TestDomain.KEY, new Entity("e", State.NEW), State.NEW)),
@@ -259,20 +266,99 @@ class FailureAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.atUnread(OTHERS, twin, Flag.OFF)),
                 "abort", "entity", twin, entity);
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.atUnread(OTHERS, entity, Flag.ON)),
-                "abort", "from", Flag.ON, Flag.OFF);
+                "abort", "from", Optional.of(Flag.ON), Optional.of(Flag.OFF));
+    }
+
+    @Test
+    void anAbortBeforeTheStateWasReadIsLocatedWithoutAState() {
+        Entity entity = new Entity("e", State.NEW);
+        AbortAssert executed = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL,
+                CallPhase.RESOLVE, new AbortDetails(TestDomain.KEY, entity, Optional.empty(), Optional.of(Id.PREPARE),
+                        Optional.empty(), Optional.empty(), List.of(), List.of()), "reading the entity threw"))
+                .isAbort();
+        assertSame(executed, executed.atUnreadState(TestDomain.KEY, entity, Id.PREPARE));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> executed.atUnreadState(TestDomain.KEY, entity, Id.FINISH)),
+                "abort", "transition", Optional.of(Id.FINISH), Optional.of(Id.PREPARE));
+        assertFailure(assertThrows(GraphAssertionError.class, () -> executed.atUnreadState(TestDomain.KEY, entity)),
+                "abort", "transition", Optional.empty(), Optional.of(Id.PREPARE));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> executed.atUnresolved(TestDomain.KEY, entity, State.NEW, Id.PREPARE)),
+                "abort", "from", Optional.of(State.NEW), Optional.empty());
+        AbortAssert resolved = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW), Optional.of(Id.PREPARE),
+                        Optional.of(State.READY), Optional.empty(), List.of(), List.of()), "no")).isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> resolved.atUnreadState(TestDomain.KEY, entity, Id.PREPARE)),
+                "abort", "from", Optional.empty(), Optional.of(State.NEW));
+        Entity twin = new Entity("e", State.NEW);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> executed.atUnreadState(OTHERS, new Other("o"), Switch.FLIP)),
+                "abort", "key", OTHERS, TestDomain.KEY);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> executed.atUnreadState(TestDomain.KEY, twin, Id.PREPARE)),
+                "abort", "entity", twin, entity);
+        AbortAssert withDestination = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL,
+                CallPhase.RESOLVE, new AbortDetails(TestDomain.KEY, entity, Optional.empty(), Optional.of(Id.PREPARE),
+                        Optional.of(State.READY), Optional.empty(), List.of(), List.of()), "no")).isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> withDestination.atUnreadState(TestDomain.KEY, entity, Id.PREPARE)),
+                "abort", "to", Optional.empty(), Optional.of(State.READY));
+        assertThrows(NullPointerException.class, () -> executed.atUnreadState(null, entity, Id.PREPARE));
+        assertThrows(NullPointerException.class, () -> executed.atUnreadState(TestDomain.KEY, null, Id.PREPARE));
+        assertThrows(NullPointerException.class, () -> executed.atUnreadState(TestDomain.KEY, entity, null));
+    }
+
+    /** A reevaluation that could not read its entity's state reports neither a state nor an identifier. */
+    @Test
+    void aReevaluationAbortBeforeTheStateWasReadIsLocatedWithoutAnIdentifier() {
+        Entity entity = new Entity("e", State.NEW);
+        AbortAssert reevaluated = TransitionFailureAssert.assertThat(new TransitionAbortedException(
+                new MachineCall(TestDomain.KEY, entity, Optional.empty(), false), CallPhase.RESOLVE,
+                new AbortDetails(TestDomain.KEY, entity, Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), List.of(), List.of()), "reading the entity threw")).isAbort();
+        assertSame(reevaluated, reevaluated.atUnreadState(TestDomain.KEY, entity));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reevaluated.atUnreadState(TestDomain.KEY, entity, Id.PREPARE)),
+                "abort", "transition", Optional.of(Id.PREPARE), Optional.empty());
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reevaluated.atUnread(TestDomain.KEY, entity, State.NEW)),
+                "abort", "from", Optional.of(State.NEW), Optional.empty());
+        Entity twin = new Entity("e", State.NEW);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reevaluated.atUnreadState(OTHERS, new Other("o"))),
+                "abort", "key", OTHERS, TestDomain.KEY);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> reevaluated.atUnreadState(TestDomain.KEY, twin)),
+                "abort", "entity", twin, entity);
+        AbortAssert withState = TransitionFailureAssert.assertThat(new TransitionAbortedException(
+                new MachineCall(TestDomain.KEY, entity, Optional.empty(), false), CallPhase.RESOLVE,
+                new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW), Optional.empty(), Optional.empty(),
+                        Optional.empty(), List.of(), List.of()), "no")).isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> withState.atUnreadState(TestDomain.KEY, entity)),
+                "abort", "from", Optional.empty(), Optional.of(State.NEW));
+        AbortAssert withDestination = TransitionFailureAssert.assertThat(new TransitionAbortedException(
+                new MachineCall(TestDomain.KEY, entity, Optional.empty(), false), CallPhase.RESOLVE,
+                new AbortDetails(TestDomain.KEY, entity, Optional.empty(), Optional.empty(),
+                        Optional.of(State.READY), Optional.empty(), List.of(), List.of()), "no")).isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> withDestination.atUnreadState(TestDomain.KEY, entity)),
+                "abort", "to", Optional.empty(), Optional.of(State.READY));
+        assertThrows(NullPointerException.class, () -> reevaluated.atUnreadState(null, entity));
+        assertThrows(NullPointerException.class, () -> reevaluated.atUnreadState(TestDomain.KEY, null));
     }
 
     @Test
     void anAbortThatReadAnIdentifierIsNotOneThatReadNone() {
         Other entity = new Other("o");
-        AbortAssert resolved = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.of(Flag.ON),
+        AbortAssert resolved = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.of(Switch.FLIP), Optional.of(Flag.ON),
                         Optional.empty(), List.of(), List.of()), "no")).isAbort();
         assertFailure(assertThrows(GraphAssertionError.class, () -> resolved.atUnread(OTHERS, entity, Flag.OFF)),
                 "abort", "transition", Optional.empty(), Optional.of(Switch.FLIP));
-        AbortAssert unresolved = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.empty(),
-                        Optional.empty(), List.of(), List.of()), "no edge")).isAbort();
+        AbortAssert unresolved = TransitionFailureAssert.assertThat(
+                new TransitionAbortedException(CALL, CallPhase.ACTION,
+                        new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.of(Switch.FLIP),
+                                Optional.empty(), Optional.empty(), List.of(), List.of()), "no edge")).isAbort();
         assertFailure(assertThrows(GraphAssertionError.class, () -> unresolved.atUnread(OTHERS, entity, Flag.OFF)),
                 "abort", "transition", Optional.empty(), Optional.of(Switch.FLIP));
     }
@@ -280,9 +366,9 @@ class FailureAssertionsTest {
     @Test
     void aNullRequiredArgumentOfAtUnreadIsAnArgumentError() {
         Other entity = new Other("o");
-        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.empty(), Optional.empty(), Optional.empty(),
-                        List.of(), List.of()), "chain too long")).isAbort();
+        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.empty(), Optional.empty(),
+                        Optional.empty(), List.of(), List.of()), "chain too long")).isAbort();
         assertThrows(NullPointerException.class, () -> view.atUnread(null, entity, Flag.OFF));
         assertThrows(NullPointerException.class, () -> view.atUnread(OTHERS, null, Flag.OFF));
         assertThrows(NullPointerException.class, () -> view.atUnread(OTHERS, entity, null));
@@ -316,29 +402,30 @@ class FailureAssertionsTest {
         MachineKey<Other, Flag, Switch> sameValue = MachineKey.of(Other.class, Flag.class, Switch.class);
         assertEquals(OTHERS, sameValue);
         assertNotSame(OTHERS, sameValue);
-        TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.of(Flag.ON),
+        TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.of(Switch.FLIP), Optional.of(Flag.ON),
                         Optional.empty(), List.of(), List.of()),
                 "no")).isAbort().at(sameValue, entity, Flag.OFF, Switch.FLIP, Flag.ON);
         TransitionFailureAssert.assertThat(
-                new AfterCommitException(OTHERS, entity, Flag.OFF, Flag.ON, "audit",
+                afterCommit(OTHERS, entity, Flag.OFF, Switch.FLIP, Flag.ON, "audit",
                         new IllegalStateException("audit down"))).isAfterCommit()
-                .at(sameValue, entity, Flag.OFF, Flag.ON);
+                .at(sameValue, entity, Flag.OFF, Switch.FLIP, Flag.ON);
     }
 
     @Test
     void anAbortNamesTheActionThatWasRunningOrNoneAtAll() {
         AbortAssert named = TransitionFailureAssert.assertThat(
-                new TransitionAbortedException(details(), "no")).isAbort();
+                new TransitionAbortedException(CALL, CallPhase.ACTION, details(), "no")).isAbort();
         assertSame(named, named.hasActionNamed("prepare"));
         assertFailure(assertThrows(GraphAssertionError.class, () -> named.hasActionNamed("audit")),
                 "abort", "action", Optional.of("audit"), Optional.of("prepare"));
         assertFailure(assertThrows(GraphAssertionError.class, named::hasNoAction),
                 "abort", "action", Optional.empty(), Optional.of("prepare"));
-        AbortAssert anonymous = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), State.NEW,
-                        Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.empty(),
-                        List.of(), List.of()), "no")).isAbort();
+        AbortAssert anonymous = TransitionFailureAssert.assertThat(
+                new TransitionAbortedException(CALL, CallPhase.ACTION,
+                        new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(State.NEW),
+                                Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.empty(),
+                                List.of(), List.of()), "no")).isAbort();
         assertSame(anonymous, anonymous.hasNoAction());
         assertFailure(assertThrows(GraphAssertionError.class, () -> anonymous.hasActionNamed("prepare")),
                 "abort", "action", Optional.of("prepare"), Optional.empty());
@@ -346,8 +433,8 @@ class FailureAssertionsTest {
 
     @Test
     void theCascadePathIsComparedAsTheLiteralListTheEngineWrote() {
-        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), State.NEW,
+        AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(State.NEW),
                         Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.empty(),
                         List.of("Parcel/ParcelStatus#p1", "Label/LabelStatus#l1"), List.of()), "no")).isAbort();
         assertSame(view, view.hasCascadePathExactly(List.of("Parcel/ParcelStatus#p1", "Label/LabelStatus#l1")));
@@ -366,10 +453,11 @@ class FailureAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         ActionRecord ran = new ActionRecord(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY,
                 "prepare", 0, ActionStatus.THREW);
-        JournalAssert journal = TransitionFailureAssert.assertThat(new TransitionAbortedException(
-                new AbortDetails(TestDomain.KEY, entity, State.NEW, Optional.of(Id.PREPARE),
-                        Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran)),
-                "no")).isAbort().journal();
+        JournalAssert journal = TransitionFailureAssert.assertThat(
+                new TransitionAbortedException(CALL, CallPhase.ACTION,
+                        new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW), Optional.of(Id.PREPARE),
+                                Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran)),
+                        "no")).isAbort().journal();
         journal.hasSize(1).hasActionsExactly("prepare").hasStatusesExactly(ActionStatus.THREW);
     }
 
@@ -382,18 +470,105 @@ class FailureAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         ActionRecord ran = new ActionRecord(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY,
                 "prepare", 0, ActionStatus.THREW);
-        AbortDetails withJournal = new AbortDetails(TestDomain.KEY, entity, State.NEW, Optional.of(Id.PREPARE),
-                Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran));
-        AbortAssert abort = TransitionFailureAssert.assertThat(new TransitionAbortedException(withJournal, "no"))
-                .isAbort();
+        AbortDetails withJournal = new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW),
+                Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran));
+        AbortAssert abort = TransitionFailureAssert.assertThat(
+                new TransitionAbortedException(CALL, CallPhase.ACTION, withJournal, "no")).isAbort();
         assertFailure(assertThrows(GraphAssertionError.class, () -> abort.journal().hasSize(2)),
                 "abort.journal", "size", 2, 1);
         CascadeAbortAssert cascade = TransitionFailureAssert.assertThat(
-                new CascadeException(withJournal, List.of(elementAbort(new Other("a"))))).isCascadeAbort();
+                new CascadeException(CALL, withJournal, List.of(elementAbort(new Other("a"))))).isCascadeAbort();
         assertFailure(assertThrows(GraphAssertionError.class, () -> cascade.journal().hasSize(2)),
                 "cascade abort.journal", "size", 2, 1);
         assertFailure(assertThrows(GraphAssertionError.class, () -> cascade.error(0).journal().hasSize(2)),
                 "cascade abort[0].journal", "size", 2, 0);
+    }
+
+    // --- what every failure of a call shares -------------------------------------------------------
+
+    @Test
+    void anyCallFailureIsReadByItsPhaseItsStatesWrittenItsCallAndItsJournal() {
+        Entity entity = new Entity("e", State.NEW);
+        ActionRecord ran = new ActionRecord(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY, "prepare", 0,
+                ActionStatus.OK);
+        CommitFailedException commit = new CommitFailedException(CALL, List.of(ran), List.of(entity),
+                "the state moved");
+        CallFailureAssert view = TransitionFailureAssert.assertThat(commit).isCallFailure();
+        assertSame(view, view.hasPhase(CallPhase.COMMIT).hasStatesWritten(StatesWritten.NONE).hasCallSameAs(CALL));
+        view.journal().hasActionsExactly("prepare").hasStatusesExactly(ActionStatus.OK);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasPhase(CallPhase.HOOK)),
+                "call failure", "phase", CallPhase.HOOK, CallPhase.COMMIT);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasStatesWritten(StatesWritten.PARTIAL)),
+                "call failure", "states written", StatesWritten.PARTIAL, StatesWritten.NONE);
+        MachineCall other = new MachineCall(TestDomain.KEY, entity, Optional.of(Id.PREPARE), false);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCallSameAs(other)),
+                "call failure", "call", other, CALL);
+        assertThrows(NullPointerException.class, () -> view.hasPhase(null));
+        assertThrows(NullPointerException.class, () -> view.hasStatesWritten(null));
+        assertThrows(NullPointerException.class, () -> view.hasCallSameAs(null));
+    }
+
+    @Test
+    void everyNarrowedViewOfACallFailureSharesThoseExpectations() {
+        TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.GUARD, details(), "no"))
+                .isAbort().hasPhase(CallPhase.GUARD).hasStatesWritten(StatesWritten.NONE).hasCallSameAs(CALL);
+        TransitionFailureAssert.assertThat(new CascadeException(CALL, details(), List.of(elementAbort(new Other("a")))))
+                .isCascadeAbort().hasPhase(CallPhase.ACTION).hasStatesWritten(StatesWritten.NONE);
+        CommitFailedException commitFailed = new CommitFailedException(CALL, List.of(), List.of(), new Other("f"),
+                List.of(), new IllegalStateException("a setter threw"));
+        TransitionFailureAssert.assertThat(commitFailed)
+                .isCommitFailure().hasPhase(CallPhase.COMMIT).hasStatesWritten(StatesWritten.PARTIAL);
+        TransitionFailureAssert.assertThat(afterCommit(TestDomain.KEY, new Entity("e", State.READY), State.NEW,
+                        Id.PREPARE, State.READY, "audit", new IllegalStateException("audit down")))
+                .isAfterCommit().hasPhase(CallPhase.HOOK).hasStatesWritten(StatesWritten.ALL).hasCallSameAs(CALL);
+    }
+
+    @Test
+    void everyNarrowedViewOfACallFailureReportsAMismatchUnderItsOwnContext() {
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                        details(), "no")).isAbort().hasPhase(CallPhase.GUARD)),
+                "abort", "phase", CallPhase.GUARD, CallPhase.ACTION);
+        MachineCall other = new MachineCall(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(Id.PREPARE),
+                false);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(new CascadeException(CALL, details(),
+                        List.of(elementAbort(new Other("a"))))).isCascadeAbort().hasCallSameAs(other)),
+                "cascade abort", "call", other, CALL);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(new CommitFailedException(CALL, List.of(), List.of(),
+                        new Other("f"), List.of(), new IllegalStateException("a setter threw")))
+                        .isCommitFailure().hasCallSameAs(other)),
+                "commit failure", "call", other, CALL);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(afterCommit(TestDomain.KEY, new Entity("e", State.READY),
+                        State.NEW, Id.PREPARE, State.READY, "audit", new IllegalStateException("audit down")))
+                        .isAfterCommit().hasStatesWritten(StatesWritten.NONE)),
+                "after-commit failure", "states written", StatesWritten.NONE, StatesWritten.ALL);
+        CallFailureAssert callView = TransitionFailureAssert.assertThat(
+                new CommitFailedException(CALL, List.of(), List.of(), "nothing written")).isCallFailure();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> callView.journal().hasSize(1)),
+                "call failure.journal", "size", 1, 0);
+        CommitFailureAssert commitView = TransitionFailureAssert.assertThat(
+                new CommitFailedException(CALL, List.of(), List.of(), "nothing written")).isCommitFailure();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> commitView.journal().hasSize(1)),
+                "commit failure.journal", "size", 1, 0);
+        AfterCommitAssert afterView = TransitionFailureAssert.assertThat(
+                afterCommit(TestDomain.KEY, new Entity("e", State.READY), State.NEW, Id.PREPARE, State.READY,
+                        "audit", new IllegalStateException("audit down"))).isAfterCommit();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> afterView.journal().hasSize(1)),
+                "after-commit failure.journal", "size", 1, 0);
+    }
+
+    @Test
+    void aThrowableThatIsNotACallFailureIsNotReadAsOne() {
+        IllegalStateException plain = new IllegalStateException("not a call");
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(plain).isCallFailure()),
+                "failure", "type", CallFailedException.class, plain);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(null).isCallFailure()),
+                "failure", "type", CallFailedException.class, null);
     }
 
     // --- the collected cascade ----------------------------------------------------------------------
@@ -402,7 +577,7 @@ class FailureAssertionsTest {
     void theCollectedErrorsAreReadOneAtATimeInOrder() {
         Other first = new Other("a");
         Other second = new Other("b");
-        CascadeException aggregate = new CascadeException(details(),
+        CascadeException aggregate = new CascadeException(CALL, details(),
                 List.of(elementAbort(first), elementAbort(second)));
         CascadeAbortAssert view = TransitionFailureAssert.assertThat(aggregate).isCascadeAbort();
         assertSame(view, view.hasErrorCount(2));
@@ -418,7 +593,7 @@ class FailureAssertionsTest {
     @Test
     void anIndexBeyondTheCollectedErrorsFailsAsAnAssertion() {
         CascadeAbortAssert view = TransitionFailureAssert.assertThat(
-                new CascadeException(details(), List.of(elementAbort(new Other("a"))))).isCascadeAbort();
+                new CascadeException(CALL, details(), List.of(elementAbort(new Other("a"))))).isCascadeAbort();
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.error(1)),
                 "cascade abort", "index 1 present", true, false);
         assertThrows(IllegalArgumentException.class, () -> view.error(-1));
@@ -429,8 +604,8 @@ class FailureAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         ActionRecord ran = new ActionRecord(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY,
                 "prepare", 0, ActionStatus.THREW);
-        CascadeException aggregate = new CascadeException(
-                new AbortDetails(TestDomain.KEY, entity, State.NEW, Optional.of(Id.PREPARE),
+        CascadeException aggregate = new CascadeException(CALL,
+                new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW), Optional.of(Id.PREPARE),
                         Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran)),
                 List.of(elementAbort(new Other("a"))));
         TransitionFailureAssert.assertThat(aggregate).isCascadeAbort().journal()
@@ -440,20 +615,32 @@ class FailureAssertionsTest {
     // --- the commit --------------------------------------------------------------------------------
 
     @Test
-    void theTwoCommitListsAreComparedByIdentityAndOrder() {
+    void theCommitListsAndTheFailedEntityAreComparedByIdentityAndOrder() {
         Other written = new Other("a");
         Other twin = new Other("a");
+        Other failed = new Other("f");
         Other never = new Other("b");
         assertEquals(written, twin);
         assertNotSame(written, twin);
-        CommitFailureAssert view = TransitionFailureAssert.assertThat(
-                new CommitFailedException(List.of(written), List.of(never), "a setter threw")).isCommitFailure();
+        CommitFailureAssert view = TransitionFailureAssert.assertThat(new CommitFailedException(CALL, List.of(),
+                List.of(written), failed, List.of(never), new IllegalStateException("a setter threw")))
+                .isCommitFailure();
         assertSame(view, view.hasAppliedExactly(written));
+        assertSame(view, view.hasFailedEntity(failed));
         assertSame(view, view.hasPendingExactly(never));
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasAppliedExactly(twin)),
                 "commit failure[0]", "applied", twin, written);
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasPendingExactly(twin)),
                 "commit failure[0]", "pending", twin, never);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasFailedEntity(never)),
+                "commit failure", "failed entity", Optional.of(never), Optional.of(failed));
+        assertFailure(assertThrows(GraphAssertionError.class, view::hasNoFailedEntity),
+                "commit failure", "failed entity", Optional.empty(), Optional.of(failed));
+        CommitFailureAssert none = TransitionFailureAssert.assertThat(
+                new CommitFailedException(CALL, List.of(), List.of(never), "the state moved")).isCommitFailure();
+        assertSame(none, none.hasNoFailedEntity());
+        assertFailure(assertThrows(GraphAssertionError.class, () -> none.hasFailedEntity(failed)),
+                "commit failure", "failed entity", Optional.of(failed), Optional.empty());
     }
 
     @Test
@@ -461,7 +648,8 @@ class FailureAssertionsTest {
         Other first = new Other("a");
         Other second = new Other("b");
         CommitFailureAssert view = TransitionFailureAssert.assertThat(
-                new CommitFailedException(List.of(first, second), List.of(), "a setter threw")).isCommitFailure();
+                new CommitFailedException(CALL, List.of(), List.of(first, second), new Other("f"), List.of(),
+                        new IllegalStateException("a setter threw"))).isCommitFailure();
         assertSame(view, view.hasPendingExactly());
         assertFailure(assertThrows(GraphAssertionError.class, view::hasAppliedExactly),
                 "commit failure", "applied size", 0, 2);
@@ -473,28 +661,36 @@ class FailureAssertionsTest {
                 "commit failure", "pending size", 1, 0);
     }
 
-    // --- the post-commit step ----------------------------------------------------------------------
+    // --- the after-commit hook ---------------------------------------------------------------------
 
     @Test
-    void theAfterCommitStepNamesTheHookAndTheHopItWasRunningFor() {
+    void theAfterCommitFailureNamesTheHookAndTheHopItWasRunningFor() {
         Other entity = new Other("o");
         Other twin = new Other("o");
         IllegalStateException cause = new IllegalStateException("audit down");
         AfterCommitAssert view = TransitionFailureAssert.assertThat(
-                new AfterCommitException(OTHERS, entity, Flag.OFF, Flag.ON, "audit", cause)).isAfterCommit();
-        assertSame(view, view.hasStepNamed("audit").at(OTHERS, entity, Flag.OFF, Flag.ON));
-        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasStepNamed("listener")),
-                "after-commit failure", "step", "listener", "audit");
+                afterCommit(OTHERS, entity, Flag.OFF, Switch.FLIP, Flag.ON, "audit", cause)).isAfterCommit();
+        assertSame(view, view.hasHookNamed("audit").at(OTHERS, entity, Flag.OFF, Switch.FLIP, Flag.ON));
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasHookNamed("persist")),
+                "after-commit failure", "hook", "persist", "audit");
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> view.at(TestDomain.KEY, new Entity("e", State.NEW), State.NEW, State.READY)),
+                () -> view.at(TestDomain.KEY, new Entity("e", State.NEW), State.NEW, Id.PREPARE, State.READY)),
                 "after-commit failure", "key", TestDomain.KEY, OTHERS);
-        assertFailure(assertThrows(GraphAssertionError.class, () -> view.at(OTHERS, twin, Flag.OFF, Flag.ON)),
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> view.at(OTHERS, twin, Flag.OFF, Switch.FLIP, Flag.ON)),
                 "after-commit failure", "entity", twin, entity);
-        assertFailure(assertThrows(GraphAssertionError.class, () -> view.at(OTHERS, entity, Flag.ON, Flag.ON)),
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> view.at(OTHERS, entity, Flag.ON, Switch.FLIP, Flag.ON)),
                 "after-commit failure", "from", Flag.ON, Flag.OFF);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> view.at(OTHERS, entity, Flag.OFF, Flag.OFF)),
+                () -> view.at(OTHERS, entity, Flag.OFF, Switch.TOGGLE, Flag.ON)),
+                "after-commit failure", "transition", Switch.TOGGLE, Switch.FLIP);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> view.at(OTHERS, entity, Flag.OFF, Switch.FLIP, Flag.OFF)),
                 "after-commit failure", "to", Flag.OFF, Flag.ON);
+        view.records().hasSize(1);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.records().hasSize(2)),
+                "after-commit failure.records", "size", 2, 1);
     }
 
     // --- the DSL -----------------------------------------------------------------------------------
@@ -632,7 +828,7 @@ class FailureAssertionsTest {
     void aNullRequiredArgumentOfANarrowedViewIsAnArgumentError() {
         Entity entity = new Entity("e", State.NEW);
         AbortAssert abort = TransitionFailureAssert.assertThat(
-                new TransitionAbortedException(details(), "no")).isAbort();
+                new TransitionAbortedException(CALL, CallPhase.ACTION, details(), "no")).isAbort();
         assertThrows(NullPointerException.class,
                 () -> abort.at(null, entity, State.NEW, Id.PREPARE, State.READY));
         assertThrows(NullPointerException.class,
@@ -646,12 +842,13 @@ class FailureAssertionsTest {
         assertThrows(NullPointerException.class, () -> abort.hasActionNamed(null));
         assertThrows(NullPointerException.class, () -> abort.hasCascadePathExactly(null));
         AfterCommitAssert after = TransitionFailureAssert.assertThat(
-                new AfterCommitException(TestDomain.KEY, entity, State.NEW, State.READY, "audit",
+                afterCommit(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY, "audit",
                         new IllegalStateException("boom"))).isAfterCommit();
-        assertThrows(NullPointerException.class, () -> after.hasStepNamed(null));
-        assertThrows(NullPointerException.class, () -> after.at(null, entity, State.NEW, State.READY));
+        assertThrows(NullPointerException.class, () -> after.hasHookNamed(null));
+        assertThrows(NullPointerException.class, () -> after.at(null, entity, State.NEW, Id.PREPARE, State.READY));
         CommitFailureAssert commit = TransitionFailureAssert.assertThat(
-                new CommitFailedException(List.of(), List.of(), "nothing")).isCommitFailure();
+                new CommitFailedException(CALL, List.of(), List.of(), "nothing")).isCommitFailure();
+        assertThrows(NullPointerException.class, () -> commit.hasFailedEntity(null));
         assertThrows(NullPointerException.class, () -> commit.hasAppliedExactly((Object[]) null));
         assertThrows(NullPointerException.class, () -> commit.hasPendingExactly((Object[]) null));
     }
@@ -659,7 +856,7 @@ class FailureAssertionsTest {
     // --- against the real engine -------------------------------------------------------------------
 
     @Test
-    void aPendingEntityMayHaveBeenMutatedBeforeItsSetterThrew() {
+    void theFailedEntityMayHaveBeenMutatedBeforeItsSetterThrew() {
         Entity entity = new Entity("e", State.NEW);
         IllegalStateException setterFailure = new IllegalStateException("setter wrote then failed");
         GraphDefinition<Entity, State, Id> graph = StateGraph.define(TestDomain.KEY).initial(State.NEW)
@@ -678,7 +875,7 @@ class FailureAssertionsTest {
             Throwable failure = TransitionFailureAssert.captureFailure(
                     () -> registry.of(TestDomain.KEY).execute(entity, Id.PREPARE));
             TransitionFailureAssert.assertThat(failure).isCommitFailure()
-                    .hasAppliedExactly().hasPendingExactly(entity).hasCauseSameAs(setterFailure);
+                    .hasAppliedExactly().hasFailedEntity(entity).hasPendingExactly().hasCauseSameAs(setterFailure);
             assertEquals(State.READY, entity.state());
         }
     }
@@ -703,7 +900,8 @@ class FailureAssertionsTest {
             Throwable failure = TransitionFailureAssert.captureFailure(
                     () -> registry.of(PARCELS).execute(parcel, Delivery.SEND));
             CommitFailureAssert view = TransitionFailureAssert.assertThat(failure).isCommitFailure();
-            assertSame(view, view.hasAppliedExactly(parcel).hasPendingExactly(label).hasCauseSameAs(boom));
+            assertSame(view,
+                    view.hasAppliedExactly(parcel).hasFailedEntity(label).hasPendingExactly().hasCauseSameAs(boom));
             assertEquals(ParcelStatus.SENT, parcel.status());
             assertEquals(LabelStatus.BLANK, label.status());
             assertThrows(GraphAssertionError.class, view::hasAppliedExactly);
@@ -757,8 +955,8 @@ class FailureAssertionsTest {
             Throwable failure = TransitionFailureAssert.captureFailure(
                     () -> registry.of(PARCELS).execute(parcel, Delivery.SEND));
             TransitionFailureAssert.assertThat(failure).isAfterCommit()
-                    .at(PARCELS, parcel, ParcelStatus.HELD, ParcelStatus.SENT)
-                    .hasStepNamed("audit").hasCauseSameAs(boom);
+                    .at(PARCELS, parcel, ParcelStatus.HELD, Delivery.SEND, ParcelStatus.SENT)
+                    .hasHookNamed("audit").hasCauseSameAs(boom);
             assertEquals(ParcelStatus.SENT, parcel.status());
             assertThrows(GraphAssertionError.class,
                     () -> TransitionFailureAssert.assertThat(failure).isAbort());
@@ -956,16 +1154,27 @@ class FailureAssertionsTest {
                 .build();
     }
 
+    private static final MachineCall CALL =
+            new MachineCall(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(Id.PREPARE), false);
+
+    /** The failure of a hook on the committed hop {@code from -transition-> to}, the only hop of its call. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> AfterCommitException afterCommit(
+            MachineKey<E, S, T> key, E entity, S from, T transition, S to, String hook, Throwable cause) {
+        TransitionRecord<E, S, T> hop = new TransitionRecord<>(key, entity, from, transition, to, TransitionKind.MOVE,
+                Optional.empty(), 0);
+        return new AfterCommitException(CALL, List.of(), List.of(hop), hop, hook, cause);
+    }
+
     private static AbortDetails details() {
-        return new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), State.NEW,
+        return new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(State.NEW),
                 Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.of("prepare"),
                 List.of(), List.of());
     }
 
     private static TransitionAbortedException elementAbort(Other entity) {
-        return new TransitionAbortedException(new AbortDetails(OTHERS, entity, Flag.OFF,
-                Optional.of(Switch.FLIP), Optional.of(Flag.ON), Optional.empty(), List.of(), List.of()),
-                "rejected inside a cascade");
+        return new TransitionAbortedException(CALL, CallPhase.ACTION, new AbortDetails(OTHERS, entity,
+                Optional.of(Flag.OFF), Optional.of(Switch.FLIP), Optional.of(Flag.ON), Optional.empty(), List.of(),
+                List.of()), "rejected inside a cascade");
     }
 
     private static void assertFailure(

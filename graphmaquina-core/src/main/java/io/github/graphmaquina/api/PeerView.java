@@ -5,7 +5,9 @@ import lombok.NonNull;
 
 /**
  * Read-only view over a machine's states. The view a context hands out reads the transaction's pending state first,
- * then the entity; the view a watch condition receives reads the entity only.
+ * then the entity; the view a watch condition receives reads the entity only. An exception the entity's identity
+ * function or state getter throws reaches the caller of {@code stateOf} as it is; a null state throws
+ * {@code UninitializedStateException}, and an identity function that returns null a {@code NullPointerException}.
  */
 public interface PeerView<P, Q extends Enum<Q>, U extends Enum<U>> {
 

@@ -9,12 +9,12 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Chainable assertion over the callbacks a {@link TransitionRecorder} observed, obtained from
- * {@link TransitionRecorder#assertRecorded()}. One registry notifies every machine it holds, so the list
+ * Chainable assertion over the completed calls a {@link TransitionRecorder} recorded, obtained from
+ * {@link TransitionRecorder#assertRecorded()}. One registry's observers see every machine it holds, so the list
  * is untyped as a whole and {@link #forEntity(MachineKey, Object)} is what narrows it: it selects by
  * machine key and by entity IDENTITY, never by entity equality. Order and multiplicity are part of the
- * contract, and the list was copied out of the recorder when the view was built, so callbacks that
- * arrive afterwards are not seen by this view.
+ * contract, and the list was copied out of the recorder when the view was built, so calls that
+ * complete afterwards are not seen by this view.
  */
 public final class RecordedTransitionsAssert {
 
@@ -31,7 +31,7 @@ public final class RecordedTransitionsAssert {
         return this;
     }
 
-    /** The machine of every callback in order, which is how a test pins which machines were notified. */
+    /** The machine of every completed call in order, which is how a test pins which machines were notified. */
     public RecordedTransitionsAssert hasKeysExactly(MachineKey<?, ?, ?>... expected) {
         List<MachineKey<?, ?, ?>> wanted = List.of(expected);
         Checks.equal(CONTEXT, "size", wanted.size(), actual.size());
@@ -42,7 +42,7 @@ public final class RecordedTransitionsAssert {
     }
 
     /**
-     * The status of every callback in order, one {@link OutcomeStatus} per callback, which pins a
+     * The status of every completed call in order, one {@link OutcomeStatus} per call, which pins a
      * sequence of applied, rejected, failed and ignored results without naming the variant classes.
      */
     public RecordedTransitionsAssert hasStatusesExactly(OutcomeStatus... expected) {
@@ -55,7 +55,7 @@ public final class RecordedTransitionsAssert {
         return this;
     }
 
-    /** Selects by key and by entity identity; an entity with no callbacks yields an empty view, not a failure. */
+    /** Selects by key and by entity identity; an entity with no calls yields an empty view, not a failure. */
     public <E, S extends Enum<S>, T extends Enum<T>> OutcomeSequenceAssert<E, S, T> forEntity(
             MachineKey<E, S, T> key, E entity) {
         Objects.requireNonNull(key, "key");

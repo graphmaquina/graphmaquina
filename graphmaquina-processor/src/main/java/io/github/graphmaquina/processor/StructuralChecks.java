@@ -113,8 +113,8 @@ final class StructuralChecks {
         if (type.getNestingKind() == NestingKind.TOP_LEVEL) {
             return true;
         }
-        anchor.report(diagnostics, "SG502", type.getSimpleName() + " must be a top-level interface: the generated companion"
-                + " lives next to it in the package");
+        anchor.report(diagnostics, "SG502", type.getSimpleName()
+                + " must be a top-level interface: the generated companion lives next to it in the package");
         return false;
     }
 
@@ -148,8 +148,9 @@ final class StructuralChecks {
                         + " has, or leave the redeclaration out", facade);
                 continue;
             }
-            diagnostics.error("SG504", facade.getSimpleName() + " inherits the abstract method " + method.getSimpleName()
-                    + " from " + from + ", which the generated companion would not implement: declare every operation on "
+            diagnostics.error("SG504", facade.getSimpleName() + " inherits the abstract method "
+                    + method.getSimpleName() + " from " + from
+                    + ", which the generated companion would not implement: declare every operation on "
                     + facade.getSimpleName() + " itself", facade);
         }
     }
@@ -161,7 +162,8 @@ final class StructuralChecks {
      * cannot stand for, such as a subtype of the result {@code Machine} declares, since the companion would then
      * not implement it at all.
      */
-    void checkNotAnOperation(ExecutableElement method, ExecutableElement builtIn, TypeElement facade, boolean declared) {
+    void checkNotAnOperation(ExecutableElement method, ExecutableElement builtIn, TypeElement facade,
+                             boolean declared) {
         String owner = ((TypeElement) builtIn.getEnclosingElement()).getSimpleName() + "." + builtIn.getSimpleName();
         if (declared) {
             diagnostics.error("SG504", method.getSimpleName() + " overrides " + owner
@@ -206,10 +208,10 @@ final class StructuralChecks {
                 && signatures.same(method.getReturnType(), outcome)) {
             return true;
         }
-        diagnostics.error("SG504", "an operation is declared as Outcome<" + types.entityName() + ", " + types.statesName()
-                + ", " + types.transitionsName() + "> " + method.getSimpleName() + "(" + types.entityName() + ") or "
-                + method.getSimpleName() + "(" + types.entityName() + ", I), without varargs or method type"
-                + " parameters on input operations", method);
+        diagnostics.error("SG504", "an operation is declared as Outcome<" + types.entityName() + ", "
+                + types.statesName() + ", " + types.transitionsName() + "> " + method.getSimpleName() + "("
+                + types.entityName() + ") or " + method.getSimpleName() + "(" + types.entityName()
+                + ", I), without varargs or method type parameters on input operations", method);
         return false;
     }
 
@@ -221,26 +223,31 @@ final class StructuralChecks {
     }
 
     /**
-     * SG302 for every exception failsOn reserves, reported at the value that names it: the catch-alls, an
+     * SG302 for every throwable type failsOn reserves, reported at the value that names it: the catch-alls, an
      * {@code Error} and a {@code CancellationException}, which the runtime never treats as a domain failure, the
-     * library's own exceptions, and exactly {@code CompletionException} and {@code ExecutionException}, which
-     * the runtime unwraps before it matches, so only the type of their cause can ever match.
+     * library's own exceptions, and exactly {@code CompletionException} and {@code ExecutionException}, which the
+     * runtime unwraps before it matches, so only the type of their cause can ever match.
      */
-    void checkFailsOn(List<TypeMirror> failsOn, List<AnnotationValue> values, Element element, AnnotationMirror mirror) {
+    void checkFailsOn(List<TypeMirror> failsOn, List<AnnotationValue> values, Element element,
+                      AnnotationMirror mirror) {
         for (int i = 0; i < failsOn.size(); i++) {
             if (isForbiddenFailsOn(failsOn.get(i))) {
-                diagnostics.error("SG302", "failsOn does not allow " + failsOn.get(i) + "; only exceptions foreign to the"
-                        + " library, and never Throwable, Exception, RuntimeException, an Error or a"
-                        + " CancellationException, which are never domain failures, nor CompletionException or"
-                        + " ExecutionException, which are unwrapped before matching: declare the type of their cause",
+                diagnostics.error("SG302", "failsOn does not allow " + failsOn.get(i)
+                        + "; only throwable types foreign to the library, and never Throwable, Exception,"
+                        + " RuntimeException, an Error or a CancellationException, which are never domain failures,"
+                        + " nor CompletionException or ExecutionException, which are unwrapped before matching:"
+                        + " declare the type of their cause",
                         element, mirror, values.get(i));
             }
         }
     }
 
-    /** SG507 when an edge that runs no action still declares what only an action can use. {@code remedy} ends the message. */
-    void checkActionRequired(boolean action, Optional<String> onFailure, List<TypeMirror> failsOn, Optional<Duration> timeout,
-            String remedy, DiagnosticAnchor anchor) {
+    /**
+     * SG507 when an edge that runs no action still declares what only an action can use. {@code remedy} ends the
+     * message.
+     */
+    void checkActionRequired(boolean action, Optional<String> onFailure, List<TypeMirror> failsOn,
+            Optional<Duration> timeout, String remedy, DiagnosticAnchor anchor) {
         if (!action && (onFailure.isPresent() || !failsOn.isEmpty() || timeout.isPresent())) {
             anchor.report(diagnostics, "SG507", "onFailure, failsOn and timeout need an action" + remedy);
         }
@@ -285,8 +292,9 @@ final class StructuralChecks {
         String companion = companion(model.facadeName());
         for (ExecutableElement method : clashing) {
             if (method.getEnclosingElement().equals(facade)) {
-                diagnostics.error("SG504", graph + " is the static " + graph + " " + companion + " declares, which takes "
-                        + takes + ": give the " + (method.isDefault() ? "method" : "operation") + " another name", method);
+                diagnostics.error("SG504", graph + " is the static " + graph + " " + companion
+                        + " declares, which takes " + takes + ": give the "
+                        + (method.isDefault() ? "method" : "operation") + " another name", method);
                 return;
             }
         }
@@ -324,7 +332,8 @@ final class StructuralChecks {
      */
     private boolean isForbiddenFailsOn(TypeMirror type) {
         return signatures.erasureIs(type, "java.lang.Throwable") || signatures.erasureIs(type, "java.lang.Exception")
-                || signatures.erasureIs(type, "java.lang.RuntimeException") || signatures.subtype(type, "java.lang.Error")
+                || signatures.erasureIs(type, "java.lang.RuntimeException")
+                || signatures.subtype(type, "java.lang.Error")
                 || signatures.subtype(type, "io.github.graphmaquina.error.StateMachineException")
                 || signatures.subtype(type, "java.util.concurrent.CancellationException")
                 || signatures.erasureIs(type, "java.util.concurrent.CompletionException")

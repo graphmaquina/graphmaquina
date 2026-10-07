@@ -158,7 +158,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
 
     private TransitionDraft<E, S, T> afterCommit(HookRef<E, S, T> hook) {
         if (afterCommit.isPresent()) {
-            throw new IllegalStateException(where() + " already declares afterCommit(" + afterCommit.get().name() + ")");
+            throw new IllegalStateException(
+                    where() + " already declares afterCommit(" + afterCommit.get().name() + ")");
         }
         afterCommit = Optional.of(hook);
         return this;
@@ -208,7 +209,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
             valid = false;
         } else if (syncAction.isPresent() || asyncAction.isPresent()) {
             Object instance = syncAction.isPresent() ? syncAction.get() : asyncAction.orElseThrow();
-            Optional<String> name = Names.resolve(explicitActionName, instance, "the action", where, fromIndex, idIndex, problems);
+            Optional<String> name = Names.resolve(explicitActionName, instance, "the action", where, fromIndex, idIndex,
+                    problems);
             if (name.isEmpty()) {
                 valid = false;
             } else if (syncAction.isPresent()) {
@@ -263,10 +265,10 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         for (Class<? extends Throwable> type : failsOn) {
             if (isForbiddenFailsOn(type)) {
                 problems.add("SG302", fromIndex, idIndex, where + ": failsOn does not allow " + type.getSimpleName()
-                        + "; only exceptions foreign to the library, and never Throwable, Exception, RuntimeException,"
-                        + " an Error or a CancellationException, which are never domain failures, nor"
-                        + " CompletionException or ExecutionException, which are unwrapped before matching:"
-                        + " declare the type of their cause");
+                        + "; only throwable types foreign to the library, and never Throwable, Exception,"
+                        + " RuntimeException, an Error or a CancellationException, which are never domain"
+                        + " failures, nor CompletionException or ExecutionException, which are unwrapped before"
+                        + " matching: declare the type of their cause");
                 valid = false;
             }
         }
@@ -278,9 +280,9 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     }
 
     /**
-     * Types the engine never matches against failsOn: an Error or a cancellation is always a technical failure, the
-     * library's own exceptions are rethrown as is, and the exact wrapper classes are unwrapped before matching. The
-     * broad roots are refused because they would capture technical failures too.
+     * Types a failsOn may not list: the engine never matches an Error, a cancellation or a library exception, which
+     * are never domain failures, and unwraps the exact wrapper classes before matching. The broad roots are refused
+     * because they would capture technical failures too.
      */
     private static boolean isForbiddenFailsOn(Class<? extends Throwable> type) {
         return type == Throwable.class || type == Exception.class || type == RuntimeException.class

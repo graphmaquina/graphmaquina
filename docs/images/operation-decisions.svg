@@ -8,7 +8,7 @@
 <rect x="0" y="0" width="1440" height="1100" rx="24" fill="url(#grid)" />
 <text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / OPERATION FLOW</text>
 <text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">One identifier. One edge. One answer.</text>
-<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Simplified root operation; hooks, watches and listener follow a successful commit.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Simplified root operation; hooks and watches follow a successful commit.</text>
 
 <rect x="52" y="219" width="302" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="52" y="237" width="4" height="108" rx="2" fill="#7aafff" />
@@ -92,7 +92,7 @@
 
 <rect x="52" y="911" width="1336" height="89" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <text x="78" y="947" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ff8998" text-anchor="start">TECHNICAL EXCEPTION</text>
-<text x="78" y="981" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A timeout aborts before commit. A hook or listener failure may happen after commit. Neither becomes an Outcome.</text>
+<text x="78" y="981" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A timeout aborts before commit. A hook failure may happen after commit. Neither becomes an Outcome.</text>
 <path d="M 52 1036 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
 <text x="52" y="1071" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">No second edge is ever tried: another edge reaching the same state is a different transition, and it is not a substitute.</text>
 </svg>

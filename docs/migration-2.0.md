@@ -45,6 +45,9 @@ entity and state enum with different transition catalogues: two engines would ot
 | `edge(from, to)` and `/cells` snapshots | `findTransition(from, id)` and `/transitions` in a v2 snapshot. |
 | A return to the origin, or a terminal with an ACTION self-loop, in the DSL | A terminal forbids every outgoing edge. A non-terminal self-loop is legal and requires `allowsCycle`. |
 | `Outcome.current()` | `Outcome.recordedState()`: the same value, the state the call recorded, not a read of the entity. |
+| `TransitionListener` and `listener(...)` on a builder | `MachineObserver` and `observer(...)`, any number of them. A throwable an observer throws, unless it is an `Error`, never fails the call: it is logged. An `Error` still propagates. What must fail the call belongs in a hook, or in `Definition.afterCommit` for every edge of a machine. |
+| `AfterCommitException.step()`, `key()`, `entity()`, `from()`, `to()` | `hook()`, and `hop()`: a `TransitionRecord` that also names the identifier. `records()` lists every hop the call committed. |
+| `CommitFailedException.pending()` that included the entity whose setter threw | `failedEntity()` names it; `pending()` lists only the entities never tried. |
 
 Preserved, apart from the fixes listed under
 [Behaviour changes in this release](#behaviour-changes-in-this-release): guard order, timeouts and deadlines,
@@ -444,7 +447,7 @@ Every generic of the library gains the third parameter: `GraphAssert<E, S, T>`, 
 | `IgnoredOutcomeAssert` carries only the shared expectations. | `hasReason(IgnoreReason)` says whether the state declared no watch or no rule held. |
 | `TransitionRecordAssert.isConvergent()` / `isNotConvergent()`. | Retired with `TransitionRecord.convergent`. A hop is identified by `hasTransition(id)` in addition to its endpoints, and `containsExactly` compares the identifier too. |
 | `JournalAssert.hasEntry(key, entity, from, to, action, depth, status)`. | `hasEntry(key, entity, from, transition, to, action, depth, status)`. |
-| `AbortAssert.at(key, entity, from, to)`. | `at(key, entity, from, transition, to)` for an abort that resolved its edge, `atUnresolved(key, entity, from, transition)` for one refused before resolving any, which reports no destination, and `atUnread(key, entity, from)` for one raised before any identifier was read, such as a chain of watch reactions that exceeds its limit, which reports neither. `AfterCommitAssert.at` is unchanged: the exception still names the committed hop by its endpoints. |
+| `AbortAssert.at(key, entity, from, to)`. | `at(key, entity, from, transition, to)` for an abort that resolved its edge, `atUnresolved(key, entity, from, transition)` for one refused before resolving any, which reports no destination, and `atUnread(key, entity, from)` for one raised before any identifier was read, such as a chain of watch reactions that exceeds its limit, which reports neither. `AfterCommitAssert.at` gains the identifier the same way: `at(key, entity, from, transition, to)` compares the committed hop the failing hook ran for. |
 | `WatchRuleExpectation<S>(condition, target)`. | `WatchRuleExpectation<T>(condition, transition)`: a rule names the identifier it executes. |
 | `ActionCall<E, S>(entity, from, to, depth[, input])` and `GuardCall<E, S>(entity, from, to[, input])`. | `ActionCall<E, S, T>(entity, from, transition, to, depth[, input])` and `GuardCall<E, S, T>(entity, from, transition, to[, input])`. The recorded per-invocation input of #5 is unchanged, and `CallInputAssert` is untouched. |
 | `GraphGoldens.assertMatches(definition, resource, Detail, options)`. | `Detail` is gone, so the overloads are `(definition, resource)` and `(definition, resource, options)`. The rendering draws the declared edges only. |
@@ -460,35 +463,52 @@ observe. Most items refuse up front what used to fail later, in generated code o
 
 ### Runtime
 
-- **Builders are single-use.** Once a build that uses it succeeds, standalone or within a registry, every
-  method of a `StateMachines.Builder` throws `IllegalStateException`, and so does every method of
-  `MachineRegistry.Builder` and of a generated set's `Builder` once its own `build()` succeeds. A build that
-  fails consumes none of them, so it can be fixed and retried. A generated set's `Builder` checks each setting
-  where it is given and refuses a second `listener(...)`. In the DSL, an edge's stage refuses every call once
-  `endTransition()` closed it, and every stage refuses further declarations once `build()` has run.
-- **Watch functions may not start transitions.** A watch's owner lookup, peer lookup or condition that calls
-  `execute` or `reevaluate` gets `ReentrantTransitionException`, reported as `Reaction.Aborted` in a reaction.
-  It used to start a root of its own, which `maxWatchChain` did not count.
-- **Checked exceptions are handled like unchecked ones.** One that a guard, action, hook, listener, state setter
-  or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code can, now goes through
-  `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch reaction, is
-  reported as `Reaction.Aborted` wrapped in `UndeclaredThrowableException`. It used to escape unchanged.
-- **A failed cascade always poisons.** An `Error`, or an exception from a callback the engine does not wrap,
-  that leaves a cascade poisons the unit of work as an engine failure does, even when the action catches it, and
-  a `failsOn` match after it no longer takes the failure route. `cascadeAll` refuses a null element before any
-  element runs, and an unknown machine even over an empty collection; an unknown facade in a cascade poisons
-  like an unknown key.
+- **Builders are single-use.** Once a build that uses it succeeds, standalone or within a registry, every method of a
+  `StateMachines.Builder` throws `IllegalStateException`, and so does every method of `MachineRegistry.Builder` and of a
+  generated set's `Builder` once its own `build()` succeeds. A build that fails consumes none of them, so it can be
+  fixed and retried. A generated set's `Builder` checks each setting where it is given. In the DSL, an edge's stage
+  refuses every call once `endTransition()` closed it, and every stage refuses further declarations once `build()` has
+  run.
+- **Watch functions may not start transitions on their own thread.** A watch's owner lookup, peer lookup or condition
+  that calls `execute` or `reevaluate` gets `ReentrantTransitionException`, reported as `Reaction.Aborted` in a
+  reaction. It used to start a root of its own, which `maxWatchChain` did not count.
+- **Checked exceptions are handled like unchecked ones.** So is any other throwable that is not an `Error`. One that a
+  guard, action, hook, state setter or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code
+  can, now goes through `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch
+  reaction, aborts the reevaluation that `Reaction.Aborted` reports; one an owner lookup throws arrives wrapped in
+  `UndeclaredThrowableException`. It used to escape unchanged.
+- **A failed cascade always poisons.** An `Error`, or a throwable from a callback the engine does not wrap, that leaves
+  a cascade poisons the unit of work as an engine failure does, even when the action catches it, and a `failsOn` match
+  after it no longer takes the failure route. `cascadeAll` refuses a null element before any element runs, and an
+  unknown machine even over an empty collection; an unknown facade in a cascade poisons like an unknown key. What
+  poisons without being a failure of the call, an unknown machine or facade, an ambiguous identity, a null peer state,
+  reaches the action as an abort that carries it, and that abort ends the call unless the action replaces it with an
+  exception of its own.
 - **`cascadeAll` reads its collection once.** It copies the collection before any element runs, so elements
   added or removed while the cascade runs change neither which elements run nor their order. It used to fail with
   a `ConcurrentModificationException` of its own iteration or stop early, which could let the root commit a
   partial batch. An exception or an `Error` the collection throws while it is copied propagates as it is and
   poisons nothing.
-- **Library exceptions pass through.** A `StateMachineException` that a guard or action throws wrapped in
-  `CompletionException` or `ExecutionException` is rethrown as is, never matched against `failsOn`, as it
-  already was bare or through a stage.
-- **A listener failure says whether state was written.** After a `Rejected` or `Ignored` outcome, its
-  `AfterCommitException` reads `the call on ... wrote no state, and the post-commit step 'listener' failed`. The
-  new public constructor `AfterCommitException(key, entity, from, to, step, written, cause)` carries that.
+- **A library exception from a guard or an action is a cause.** A `StateMachineException` that a guard or an
+  action throws or completes its stage with, bare or wrapped in a `CompletionException` or an `ExecutionException`,
+  aborts the call with it as cause, a failure of another call included. It used to reach the caller as it was, so
+  another call's abort, or an `AfterCommitException` of another call whose states were written, could pass for this
+  call's. A failure of the call itself, from a cascade, still ends the call with the failure that poisoned it, and a
+  `PoisonedUnitOfWorkException` the action lets through ends it with the original failure.
+- **Failures before the state is read are aborts.** The root entity's identity function that throws or returns null, its
+  state getter that throws, a null root state, and a watch's peers reader or condition that throws while a `reevaluate`
+  resolves end the call in a `TransitionAbortedException` of phase `RESOLVE` that carries the failure; they used to
+  escape as themselves. The same failures of a cascaded peer are aborts of phase `ACTION`. A state getter that throws
+  during the pre-commit check is a `CommitFailedException` with nothing written. `AbortDetails.from()` and
+  `TransitionAbortedException.from()` are `Optional`.
+- **Observers replace the listener.** A `MachineObserver`, added with `observer(...)` to a registry or a generated set
+  builder as many times as needed, sees every call start and end, failures and `Error`s included. A throwable it throws,
+  unless it is an `Error`, is logged and never changes the call; an `Error` propagates. `TransitionListener`,
+  `listener(...)` and `TransitionRecorder.compose(...)` are gone, and an `AfterCommitException` now always means that a
+  hook failed.
+- **Call failures share `CallFailedException`.** `TransitionAbortedException`, `CommitFailedException` and
+  `AfterCommitException` extend it and report, as values, the call that failed, its phase, how far it got in
+  writing states and the actions that ran. Their constructors take the `MachineCall`.
 - **Unbounded timeouts.** An `asyncTimeout` or edge timeout of `Duration.ofNanos(Long.MAX_VALUE)` or more means
   no limit, and the other limit stays in charge. Such budgets used to overflow, into `ArithmeticException` or a
   deadline silently switched off, and an `asyncTimeout` above that left its thread refusing every later
@@ -672,6 +692,19 @@ observe. Most items refuse up front what used to fail later, in generated code o
 
 ### Testing library
 
+- **`TransitionRecorder` is a `MachineObserver`.** Install it with `observer(recorder)`.
+  `compose(...)` is gone: a registry takes any number of observers.
+- **`CommitFailureAssert.hasFailedEntity(entity)` and `hasNoFailedEntity()`** are new: they read the entity whose
+  setter threw, by reference. `hasPendingExactly(...)` now expects only the entities whose setter was never
+  called, since `pending()` no longer lists the one that threw.
+- **`AfterCommitAssert` reads the hook and its hop.** `hasHookNamed(name)` replaces `hasStepNamed(name)`,
+  `at(key, entity, from, transition, to)` compares the committed hop the failing hook ran for, its identifier
+  included, and `records()` reads every hop the call committed.
+- **`CallFailureAssert`**, reached through `isCallFailure()`, and every narrowed view of a call failure expect a call
+  failure's `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` is available on all of them.
+- **`AbortAssert.atUnreadState(key, entity[, transition])`** is new: it locates an abort raised before the entity's
+  state was read. `at`, `atUnresolved` and `atUnread` now compare `from` as an `Optional`, so a mismatch reports
+  `Optional[...]` on both sides, or `Optional.empty` for an abort that read no state.
 - **`AbortAssert.atUnread(key, entity, from)`** is new: it locates an abort raised before any identifier was
   read, such as a chain of watch reactions that exceeds its limit.
 - **Closed controlled fixtures.** A closed `ControlledAsyncAction` refuses an invocation with

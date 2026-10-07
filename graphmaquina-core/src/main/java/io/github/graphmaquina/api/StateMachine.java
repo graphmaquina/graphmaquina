@@ -26,13 +26,19 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
     GraphDefinition<E, S, T> definition();
 
     /**
-     * Returns the domain-level result as a value; a technical failure throws. Two domain-level results throw as well:
-     * a domain failure on an edge without onFailure throws {@code UnhandledFailureException}, and a rejection inside
-     * a cascade aborts the whole call. Blocks on an asynchronous edge.
+     * Returns the domain-level result as a value; a technical failure throws, always a {@code CallFailedException}
+     * of this call or an Error. Two domain-level results throw as well: a domain failure on an edge without onFailure
+     * throws {@code UnhandledFailureException}, and a rejection inside a cascade aborts the whole call. A null
+     * argument, an identifier of another catalogue and a call made where no call may start are refused before the call
+     * starts and throw as themselves. Blocks on an asynchronous edge.
      */
     Outcome<E, S, T> execute(E entity, T transition);
 
-    /** Evaluates the watch of the current state. Ignored if there is no watch or no rule holds. */
+    /**
+     * Evaluates the watch of the current state. Ignored if there is no watch or no rule holds. A failure throws,
+     * always a {@code CallFailedException} of this call or an Error; a null argument and a call made where no call
+     * may start are refused before the call starts and throw as themselves.
+     */
     Outcome<E, S, T> reevaluate(E entity);
 
     /** Structural inspection: the identifiers declared from {@code state}. Evaluates no guard. */

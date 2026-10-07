@@ -8,9 +8,10 @@ import java.util.List;
 /**
  * Chainable assertion over a {@link CascadeException}, the aggregate a COLLECT cascade raises after trying
  * every element. The elements that failed are kept in the order they were tried and are read one at a time
- * through {@link #error(int)}; the journal is the parent transaction's, not any single element's.
+ * through {@link #error(int)}; the journal, which {@link #journal()} reads, is the parent call's: every
+ * action that ran, the collected elements' included, not any single element's.
  */
-public final class CascadeAbortAssert extends BaseFailureAssert<CascadeAbortAssert> {
+public final class CascadeAbortAssert extends BaseCallFailureAssert<CascadeAbortAssert> {
 
     private final CascadeException cascade;
 
@@ -39,10 +40,5 @@ public final class CascadeAbortAssert extends BaseFailureAssert<CascadeAbortAsse
             Checks.fail(context, "index " + index + " present", true, false);
         }
         return new AbortAssert(context + "[" + index + "]", errors.get(index));
-    }
-
-    /** The parent transaction's journal: every action that ran, the collected elements' included. */
-    public JournalAssert journal() {
-        return new JournalAssert(context + ".journal", cascade.journal());
     }
 }

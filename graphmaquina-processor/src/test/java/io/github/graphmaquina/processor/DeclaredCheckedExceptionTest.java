@@ -9,17 +9,17 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * A bound method or a property accessor may declare a checked exception, which no functional interface the
- * companion implements declares. The companion throws it on unchanged, so the engine receives the very exception the
- * member threw and routes it as it routes one thrown without being declared, which the core's
- * {@code CheckedExceptionTest} pins for actions, guards, hooks, watch conditions, owner lookups and state writers.
- * Here, run through the generated companions: an action whose {@code failsOn} lists it takes its failure route,
- * synchronous or not, and a synchronous one aborts when its {@code failsOn} does not list it; a guard aborts,
- * synchronous or not; a hook ends in an {@code AfterCommitException}; a watch condition, a peers reader and an owner
- * reader end in an aborted reaction that carries it in an {@code UndeclaredThrowableException}; a state writer ends
- * in a {@code CommitFailedException}; a state or identity reader reaches the caller as it was thrown. Each scenario
- * tells the very exception the member threw from any other. A member that declares only unchecked exceptions is
- * called as before.
+ * A bound method or a property accessor may declare a checked exception, which no functional interface the companion
+ * implements declares. The companion throws it on unchanged, so the engine receives the very exception the member threw
+ * and routes it as it routes one thrown without being declared, which the core's {@code CheckedExceptionTest} pins for
+ * actions, guards, hooks, watch conditions, owner lookups and state writers. Here, run through the generated
+ * companions: an action whose {@code failsOn} lists it takes its failure route, synchronous or not, and a synchronous
+ * one aborts when its {@code failsOn} does not list it; a guard aborts, synchronous or not; a hook ends in an
+ * {@code AfterCommitException}; a watch condition and a peers reader end in an aborted reaction whose abort, the
+ * reevaluation's, carries it as its cause, and an owner reader in one that carries it in an
+ * {@code UndeclaredThrowableException}; a state writer ends in a {@code CommitFailedException}; a state or identity
+ * reader ends the call in an abort in RESOLVE that carries it. Each scenario tells the very exception the member threw
+ * from any other. A member that declares only unchecked exceptions is called as before.
  */
 class DeclaredCheckedExceptionTest {
 
@@ -119,8 +119,8 @@ class DeclaredCheckedExceptionTest {
     /**
      * Compiles {@code sources} with {@code fx.Scenario}, whose {@code run()} has {@code body}, and requires the
      * compilation to succeed. {@code reaction(...)} describes the one reaction of a commit, and whether it carries
-     * {@code failure} wrapped in an {@code UndeclaredThrowableException}; {@code aborted(...)} whether an abort carries
-     * {@code failure}.
+     * {@code failure}, as the cause of the reevaluation's abort or, from an owner lookup, wrapped in an
+     * {@code UndeclaredThrowableException}; {@code aborted(...)} whether an abort carries {@code failure}.
      */
     private static Compilation.Result compile(Map<String, String> sources, String body) {
         sources.put("fx.Scenario", """
@@ -141,8 +141,9 @@ class DeclaredCheckedExceptionTest {
                     static String reaction(Outcome<?, ?, ?> outcome, Throwable failure) {
                         if (outcome instanceof Outcome.Applied<?, ?, ?> applied && applied.reactions().size() == 1
                                 && applied.reactions().get(0) instanceof Reaction.Aborted aborted) {
-                            return aborted.cause() instanceof UndeclaredThrowableException wrapped
-                                    && wrapped.getUndeclaredThrowable() == failure ? "aborted by it" : "aborted by " + aborted.cause();
+                            Throwable carried = aborted.cause() instanceof UndeclaredThrowableException wrapped
+                                    ? wrapped.getUndeclaredThrowable() : aborted.cause().getCause();
+                            return carried == failure ? "aborted by it" : "aborted by " + aborted.cause();
                         }
                         return String.valueOf(outcome);
                     }
@@ -253,7 +254,7 @@ class DeclaredCheckedExceptionTest {
                         try {
                             ends.add("returned " + (call == 0 ? library.docs().submit(doc) : library.docs().publish(doc)));
                         } catch (AfterCommitException failed) {
-                            ends.add(failed.step() + (failed.getCause() == actions.failure ? " threw it, "
+                            ends.add(failed.hook() + (failed.getCause() == actions.failure ? " threw it, "
                                     : " threw " + failed.getCause() + ", ") + doc.status());
                         }
                     }
@@ -345,7 +346,7 @@ class DeclaredCheckedExceptionTest {
 
     /** The state reader, the state writer and the identity reader of the entity, each made to throw in turn. */
     @Test
-    void aStateOrIdentityAccessorThatDeclaresACheckedExceptionReachesTheEngineAsItWasThrown() throws Exception {
+    void aStateOrIdentityAccessorThatDeclaresACheckedExceptionAbortsTheCallCarryingIt() throws Exception {
         Map<String, String> sources = TypedFixtures.minimal();
         sources.put("fx.Doc", """
                 package fx;
@@ -371,7 +372,8 @@ class DeclaredCheckedExceptionTest {
                 """);
         sources.put("fx.Library", LIBRARY);
 
-        assertEquals(List.of("read: threw it", "write: commit failed by it", "identity: threw it"), run(sources, """
+        List<String> expected = List.of("read: aborted by it", "write: commit failed by it", "identity: aborted by it");
+        assertEquals(expected, run(sources, """
                 List<String> ends = new ArrayList<>();
                 for (String failing : List.of("read", "write", "identity")) {
                     try (Library library = LibraryRuntime.builder(new DocActions()).build()) {
@@ -381,6 +383,8 @@ class DeclaredCheckedExceptionTest {
                             ends.add(failing + ": returned " + library.docs().publish(doc));
                         } catch (CommitFailedException failed) {
                             ends.add(failing + ": commit failed " + (failed.getCause() == doc.failure ? "by it" : "by " + failed.getCause()));
+                        } catch (TransitionAbortedException aborted) {
+                            ends.add(failing + ": " + aborted(aborted, doc.failure));
                         } catch (Exception thrown) {
                             ends.add(failing + ": " + (thrown == doc.failure ? "threw it" : "threw " + thrown));
                         }

@@ -5,14 +5,21 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Context handed to a {@link TransitionAction} or an {@link AsyncTransitionAction}: the edge, the depth, peer views
- * and cascades. A cascade runs the peer's step in this transaction and returns Applied or Failed; once its arguments
- * are accepted, whatever else it ends in propagates and poisons the transaction, so the root cannot commit even if
- * the action catches it. {@code cascadeAll} copies its collection before any element runs and never reads it again:
- * a change made to the collection while the cascade runs, by an element's action for instance, changes neither which
- * elements run nor their order. Peer views and cascades work only on the thread that called {@code process()} and only
- * until the root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards
- * {@code StaleContextException}.
+ * Context handed to a {@link TransitionAction} or an {@link AsyncTransitionAction}: the edge, the depth, peer views and
+ * cascades. A cascade runs the peer's step in this transaction and returns Applied or Failed; once its arguments are
+ * accepted, whatever else it ends in poisons the transaction, so the root cannot commit even if the action catches it:
+ * the action receives a failure of the call as it is, anything else as an abort of the call that carries it, and an
+ * Error as itself. {@code cascadeAll} copies its collection before any element runs and never reads it again: a change
+ * made to the collection while the cascade runs, by an element's action for instance, changes neither which elements
+ * run nor their order. Peer views and cascades work only on the thread that called {@code process()} and only until the
+ * root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}.
+ * What the action throws, or completes its stage with, once unwrapped from CompletionException and ExecutionException,
+ * is its own failure: a throwable that {@link TransitionSpec#failsOn()} matches takes the failure route, any other
+ * throwable that is not an Error aborts the call with it as cause, an Error thrown as itself propagates, and an Error
+ * that completes the stage, or arrives wrapped in one of those two classes, aborts too. A failure of this call that the
+ * action lets through is never routed: it ends the call as itself, or as the failure that poisoned the transaction.
+ * Once a failed cascade poisoned the transaction, a throwable that {@code failsOn} lists takes no failure route either:
+ * the call ends with the failure that poisoned it.
  */
 public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 
@@ -36,11 +43,14 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
                                                                                 Collection<? extends P> peers,
                                                                                 U transition, CascadePolicy policy);
 
-    /** The peer machine identified by its facade type; the generics of {@code M} fix {@code P}, {@code Q} and {@code U}. */
+    /**
+     * The peer machine identified by its facade type; the generics of {@code M} fix {@code P}, {@code Q} and
+     * {@code U}.
+     */
     <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(Class<M> peer);
 
-    <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(Class<M> peer, P entity,
-                                                                                                   U transition);
+    <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(
+            Class<M> peer, P entity, U transition);
 
     <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
             Class<M> peer, Collection<? extends P> peers, U transition, CascadePolicy policy);

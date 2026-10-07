@@ -33,11 +33,18 @@ final class UnitOfWork {
     private Map<EntityRef, Enum<?>> pendingStates;
     private List<PendingUndo> undo;
     private final List<ActionRecord> journal = new ArrayList<>();
-    private final Deque<InFlight> inFlight = new ArrayDeque<>();
+    // Sized for a root and two nested cascades: a default-sized deque costs every call 56 more bytes.
+    private final Deque<InFlight> inFlight = new ArrayDeque<>(3);
     private final Map<EntityRef, EntityRef> known = new HashMap<>();
     private final int maxDepth;
     private final long deadlineNanos;
     private Optional<StateMachineException> poison = Optional.empty();
+
+    /**
+     * Whether the poison is an abort that wraps what is not a failure of this call, such as a peer's null state, an
+     * unknown machine or an Error. COLLECT never collects such an abort: it stops at once.
+     */
+    private boolean poisonWrapsAForeignFailure;
 
     UnitOfWork(int maxDepth, long deadlineNanos) {
         this.maxDepth = maxDepth;
@@ -48,7 +55,10 @@ final class UnitOfWork {
 
     long deadlineNanos() { return deadlineNanos; }
 
-    /** Registers the identity and returns the canonical reference. A second object with the same identity is an error. */
+    /**
+     * Registers the identity and returns the canonical reference. A second object with the same identity is an
+     * error.
+     */
     EntityRef register(EntityRef ref) {
         EntityRef existing = known.putIfAbsent(ref, ref);
         if (existing == null) {
@@ -151,15 +161,16 @@ final class UnitOfWork {
 
     void journalStatus(int index, ActionStatus status) {
         ActionRecord old = journal.get(index);
-        journal.set(index, new ActionRecord(old.key(), old.entity(), old.from(), old.transition(), old.to(), old.action(),
-                old.depth(), status));
+        journal.set(index, new ActionRecord(old.key(), old.entity(), old.from(), old.transition(), old.to(),
+                old.action(), old.depth(), status));
     }
 
     List<ActionRecord> journal() { return List.copyOf(journal); }
 
     /**
-     * A nested abort condemns every action in flight: the poison keeps the parent from finishing as if nothing happened.
-     * Called when building the details of an abort, so that the journal traveling with the exception is the final one.
+     * A nested abort condemns every action in flight: the poison keeps the parent from finishing as if nothing
+     * happened. Called when building the details of an abort, so that the journal traveling with the exception is
+     * the final one.
      */
     void markRunningAsThrew() {
         for (int i = 0; i < journal.size(); i++) {
@@ -200,8 +211,21 @@ final class UnitOfWork {
         }
     }
 
+    /** Poisons with an abort that wraps what is not a failure of this call, if nothing poisoned yet. */
+    void poisonWrapping(StateMachineException abort) {
+        if (poison.isEmpty()) {
+            poison = Optional.of(abort);
+            poisonWrapsAForeignFailure = true;
+        }
+    }
+
+    boolean poisonWrapsAForeignFailure() { return poisonWrapsAForeignFailure; }
+
     /** Only cascadeAll with COLLECT can clear it, after reverting the failed element. */
-    void clearPoison() { poison = Optional.empty(); }
+    void clearPoison() {
+        poison = Optional.empty();
+        poisonWrapsAForeignFailure = false;
+    }
 
     /** The log grouped into one change per entity, read straight off the log without copying its entries. */
     CommitSummary commitSummary() { return CommitSummary.from(log); }

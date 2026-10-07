@@ -107,7 +107,9 @@ class PeerByTypeTest {
         try (MachineRegistry registry = registry(false)) {
             Order order = new Order("o1", OrderStatus.NEW);
             new Item("i1", ItemStatus.PENDING, Optional.of(order));
-            assertThrows(UnknownFacadeException.class, () -> registry.of(ORDERS).execute(order, OrderTransition.CANCEL));
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(ORDERS).execute(order, OrderTransition.CANCEL));
+            assertInstanceOf(UnknownFacadeException.class, error.getCause());
         }
     }
 

@@ -40,7 +40,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 - [Build and manage machine sets](#build-and-manage-machine-sets)
 - [Read peers and cascade transitions](#read-peers-and-cascade-transitions)
 - [Watch other machines](#watch-other-machines)
-- [Commit, hooks and listeners](#commit-hooks-and-listeners)
+- [Commit, hooks and observers](#commit-hooks-and-observers)
 - [Concurrency, identity and persistence](#concurrency-identity-and-persistence)
 - [Inspect graphs and export diagrams](#inspect-graphs-and-export-diagrams)
 - [Test your machines](#test-your-machines)
@@ -51,7 +51,8 @@ files. Later examples are extensions or fragments of the repository's shop examp
 - [Known limitations](#known-limitations)
 - [Build, verify and release this repository](#build-verify-and-release-this-repository)
 - [Migrating from 1.x](migration-2.0.md)
-- [Component benchmarks](../benchmarks/README.md) — graph-only harness and the V/E cost evidence; the 1.x figures are historical
+- [Component benchmarks](../benchmarks/README.md) — graph-only harness and the V/E cost evidence; the 1.x figures are
+  historical
 - [Further reference](#further-reference)
 - [License](#license)
 
@@ -71,7 +72,8 @@ files. Later examples are extensions or fragments of the repository's shop examp
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
-a durable job queue, HTTP endpoints or distributed transactions. See [persistence and concurrency](#concurrency-identity-and-persistence)
+a durable job queue, HTTP endpoints or distributed transactions. See
+[persistence and concurrency](#concurrency-identity-and-persistence)
 for the responsibilities that remain with your application.
 
 The build and runtime have separate jobs:
@@ -94,7 +96,7 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 | What can I safely use in a callback? | [Context and thread boundary](images/async-context-boundary.svg) | [Context ownership](#contexts-and-completion-callbacks) |
 | Does a completed future mean the operation succeeded? | [Future result branches](images/async-future-results.svg) | [Result handling](#read-the-future-and-domain-result) |
 | Do both machines commit together? | [Cascade versus watch](images/cascade-vs-watch.svg) | [Machine coordination](#read-peers-and-cascade-transitions) |
-| When do hooks and reactions run? | [Commit lifecycle](images/commit-lifecycle.svg) | [Commit and hooks](#commit-hooks-and-listeners) |
+| When do hooks and reactions run? | [Commit lifecycle](images/commit-lifecycle.svg) | [Commit and hooks](#commit-hooks-and-observers) |
 
 ## Requirements and artifacts
 
@@ -1146,10 +1148,10 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 | `Transition` | type, method | `id: T`, `from: S[]`, `to: S` | `action`, `guards`, `onFailure: T`, `failsOn`, `timeout`, `afterCommit` |
 | `Reject` | type | `from: S`, `transition: T`, `reason: String` | None |
 
-`StatePolicy`, `Transition` and `Reject` are repeatable, through the generated `StatePolicies`, `Transitions`
-and `Rejects` containers. `from` must contain at least one state. Guard arrays execute in declaration order.
-`failsOn` takes exception class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn`
-and `timeout` require an action, and `timeout` requires an asynchronous one.
+`StatePolicy`, `Transition` and `Reject` are repeatable, through the generated `StatePolicies`, `Transitions` and
+`Rejects` containers. `from` must contain at least one state. Guard arrays execute in declaration order. `failsOn` takes
+throwable class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn` and `timeout` require an
+action, and `timeout` requires an asynchronous one.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
 `onFailure`, `timeout`, `afterCommit`, `Transition.action` and custom `When.condition` accept zero or one value.
@@ -1226,7 +1228,7 @@ erased generic arguments. Input operations do not support method type parameters
 
 The same input reaches the transition's guards, action and handled failure action. Cascades, watch reactions
 and reevaluation have no input of their own and receive an empty optional. A shared guard must handle that
-absence. Hooks, listeners and transition records retain their existing contracts.
+absence. Hooks, observers and transition records retain their existing contracts.
 
 ### Domain failures
 
@@ -1283,17 +1285,19 @@ declared `throws IOException` with `failsOn = IOException.class` takes the failu
 declaring it, as Kotlin or `@SneakyThrows` code can. A guard, a hook, a watch condition, a state or identity
 accessor, or a watch's peers or owner reader may declare a checked exception too: the generated companion
 compiles, and the exception is handled as the same exception thrown undeclared would be. `failsOn` applies to
-action failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a
-guard or action throws or completes its stage with, bare or wrapped in one of those two classes, is rethrown as
-it is and never matched against `failsOn`. An `Error` is never routed either: thrown as itself it propagates
-unchanged, and one that completes a stage, or that one of those two classes carries, aborts.
+action failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a guard
+or action throws or completes its stage with, bare or wrapped in one of those two classes, is never matched against
+`failsOn`, whatever the edge lists: it aborts the call and becomes its cause, so a failure of another call never
+passes for a failure of this one. A failure of the call itself, which a failed cascade throws into the action, is the
+exception: it ends the call with the failure that poisoned it. An `Error` is never routed either: thrown as itself it
+propagates unchanged, and one that completes a stage, or that one of those two classes carries, aborts.
 
-`failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine
-exception, or a `CancellationException` or one of its subtypes, which are never domain failures; nor
-`CompletionException` or `ExecutionException` themselves, which are unwrapped before matching whenever they
-carry a cause, so declare the type of their cause. All of these are `SG302`. Declare specific foreign exception
-types. Timeout, interruption and cancellation are not a substitute for a returned domain failure. `@Timeout` is
-valid only for asynchronous actions.
+`failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine exception, or
+a `CancellationException` or one of its subtypes, which are never domain failures; nor `CompletionException` or
+`ExecutionException` themselves, which are unwrapped before matching whenever they carry a cause, so declare the type of
+their cause. All of these are `SG302`. Declare specific foreign throwable types, usually exceptions. Timeout,
+interruption and cancellation are not a substitute for a returned domain failure. `@Timeout` is valid only for
+asynchronous actions.
 
 The full action implementation is in
 [OrderActions.java](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/order/OrderActions.java).
@@ -1309,7 +1313,7 @@ only needs to know what happened and why reads it without narrowing:
 | --- | --- | --- | --- | --- |
 | `Applied` | `APPLIED` | `APPLIED` | empty | Yes, the resolved edge committed |
 | `Rejected` | `REJECTED` | `NO_TRANSITION`, or `GUARD_REJECTED` | the policy's reason, or the guard's | No |
-| `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` routed an exception | Yes, the failure route committed |
+| `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` routed a throwable | Yes, the failure route committed |
 | `Ignored` | `IGNORED` | `NO_WATCH`, or `NO_RULE_MATCHED` | empty | No |
 
 A cascade returns `Applied` or `Failed` to the action that called `cascade(...)`; a rejection inside it aborts the
@@ -1401,9 +1405,11 @@ static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
 }
 ```
 
-Technical failures throw instead of becoming a fifth outcome. Inspect the exception type and phase before
-retrying: an after-commit failure of a hook occurs after state was already written, and one of the listener
-says in its message whether the call wrote state.
+Technical failures throw instead of becoming a fifth outcome. An abort (`TransitionAbortedException`), a commit
+failure (`CommitFailedException`) and a failing hook (`AfterCommitException`) share the supertype
+`CallFailedException`. It says as values which call failed (`call()`), where it was (`phase()`), how far it got
+in writing states (`statesWritten()`) and which actions ran (`journal()`). A hook fails after state was already
+written. [Handle a failed call](#handle-a-failed-call) shows how to read them.
 
 ### Records, journals and reactions
 
@@ -1413,13 +1419,50 @@ says in its message whether the call wrote state.
 - `records()` and `reactions()` answer on every outcome. A root `Applied` or `Failed` returns the
   transaction's records and the reactions of its commit; `Rejected`, `Ignored` and a nested `cascade` result
   return empty lists, the last because it is provisional and has no independent root commit or reaction list.
-- An abort journal uses `ActionRecord` and `ActionStatus` (`RUNNING`, `OK`, `FAILED`, `THREW`) to report actions
-  that actually ran. A journal is execution evidence, not an undo log for external side effects.
-- A watch produces `Reaction.Done`, carrying its own outcome, or `Reaction.Aborted`, carrying its exception.
-  Inspect reactions even when the root operation succeeded. `Reaction.Aborted` can also report a hook/listener
-  failure after the reaction itself committed; it is not proof that the reaction left state unchanged. A
-  checked exception arrives wrapped in `UndeclaredThrowableException`. An `Error` is not caught: it propagates
-  to the caller whose commit triggered the reaction.
+- A failed call's journal uses `ActionRecord` and `ActionStatus` (`OK`, `FAILED`, `THREW`; never `RUNNING` once the
+  call failed) to report actions that actually ran. A journal is execution evidence, not an undo log for external
+  side effects.
+- A watch produces `Reaction.Done`, carrying its own outcome, or `Reaction.Aborted`, carrying its exception. Inspect
+  reactions even when the root operation succeeded. `Reaction.Aborted` can also report a hook failure after the reaction
+  itself committed; it is not proof that the reaction left state unchanged. A reevaluation that failed carries its
+  `CallFailedException`, whose `statesWritten()` says whether the reaction wrote anything. An owner lookup fails before
+  any reevaluation, so the reaction carries what it threw: a `RuntimeException` as it is, and a checked exception or any
+  other throwable that is neither a `RuntimeException` nor an `Error`, wrapped in `UndeclaredThrowableException`. An
+  `Error` is not caught: it propagates to the caller whose commit triggered the reaction.
+
+### Handle a failed call
+
+A call that does not return an outcome throws an `Error` or one of three `CallFailedException`s, always one of that
+very call. A request refused before the call starts is not a call failure: a null argument throws
+`NullPointerException`, an identifier of another catalogue `IllegalArgumentException`, and a call made where
+no call may start `ReentrantTransitionException`. Read what happened from its values, not from its message:
+
+| Type | `phase()` | `statesWritten()` |
+| --- | --- | --- |
+| `TransitionAbortedException` and its subclasses | `RESOLVE`, `GUARD` or `ACTION` | `NONE` |
+| `CommitFailedException` | `COMMIT` | `NONE`, or `PARTIAL` when a setter threw |
+| `AfterCommitException` | `HOOK` | `ALL` |
+
+`call()` is the call that failed, the same `MachineCall` an observer received, and `journal()` lists the actions that
+ran. Any other exception involved is the cause, a failure of another call included. With
+`import io.github.graphmaquina.error.CallFailedException;`, this method can be added to the quickstart's `App`:
+
+```java
+static String describe(CallFailedException failure) {
+    String written = switch (failure.statesWritten()) {
+        case NONE -> "no state was written";
+        case PARTIAL -> "some states were written";
+        case ALL -> "every state was written";
+    };
+    String actions = failure.journal().isEmpty() ? "no action ran" : failure.journal().size() + " action(s) ran";
+    return failure.call() + " failed in " + failure.phase() + ": " + written + ", " + actions;
+}
+```
+
+`statesWritten()` describes the setters only: a JPA or other transaction around the call commits or rolls back later,
+on its own. Neither the phase nor `statesWritten()` decides a retry by itself. `NONE` with an action in the journal
+that called a payment service means the payment may have happened although no state moved. Retry only what your
+actions make idempotent, and reconcile the rest.
 
 ## Asynchronous work and timeouts
 
@@ -1669,13 +1712,13 @@ There are two layers of result. A future that completes normally does not imply 
 
 ![The operation future branches into normal completion carrying Applied, Failed, Rejected or Ignored, and exceptional completion carrying a technical or post-commit failure. Watch reactions must also be inspected.](images/async-future-results.svg)
 
-With the `tickets` and `ticket` from the example, this fragment observes completion without joining:
+With the `tickets` and `ticket` from the example, this fragment reacts to completion without joining:
 
 ```java
 CompletableFuture<Outcome<Ticket, TicketState, TicketTransition>> pending =
         tickets.async(() -> tickets.approve(ticket));
 
-CompletableFuture<Void> observed = pending.thenAccept((Outcome<Ticket, TicketState, TicketTransition> outcome) -> {
+CompletableFuture<Void> handled = pending.thenAccept((Outcome<Ticket, TicketState, TicketTransition> outcome) -> {
     switch (outcome.status()) {
         case APPLIED -> System.out.println("Committed: " + outcome.requestedTransition().orElseThrow()
                 + " -> " + outcome.recordedState());
@@ -1686,19 +1729,22 @@ CompletableFuture<Void> observed = pending.thenAccept((Outcome<Ticket, TicketSta
     }
 });
 
-observed.whenComplete((Void unused, Throwable error) -> {
+handled.whenComplete((Void unused, Throwable error) -> {
     if (error != null) {
-        System.err.println("Operation or observer failed: " + error);
+        System.err.println("Operation or callback failed: " + error);
     }
 });
 ```
 
 Keep or return the relevant future to the caller. `join()` wraps an exceptional completion in
 `CompletionException`; `get()` uses `ExecutionException` and can be interrupted. If the outer future itself
-is cancelled, either method can throw `CancellationException` directly. Inspect the underlying
-cause before deciding whether to retry. `AfterCommitException` may mean the requested state was already
-written; an exceptional future is not proof that nothing happened. A callback you attach can also fail
-independently of the machine operation.
+is cancelled, either method can throw `CancellationException` directly. When the call ran and failed, the cause is
+that call's `CallFailedException`, or an `Error`. Read the `CallFailedException`'s `statesWritten()` and `journal()`,
+as [Handle a failed call](#handle-a-failed-call) shows, before deciding whether to retry; an exceptional future is not
+proof that nothing happened. A request refused before it started ran nothing: one an executor refused
+(`RejectedExecutionException`), one for an identifier of another catalogue (`IllegalArgumentException`), and one made
+where no call may start (`ReentrantTransitionException`, possible with an executor that runs tasks inline). A callback
+you attach can also fail independently of the machine operation.
 
 Avoid a blanket `exceptionally(error -> ActionOutcome.failed(...))` inside an action unless every covered
 exception truly means a business decline. It would also turn unexpected service/programming errors into a
@@ -1742,7 +1788,7 @@ with a stage returned at second four.
 These settings are wait budgets, not a hard end-to-end execution timeout. They do not preempt synchronous
 code, including blocking work inside a method that eventually returns a stage. The action-specific clock is
 calculated after that return. A stage already completed when inspected can succeed even with zero remaining
-wait time. There is no deadline check that interrupts setters, after-commit hooks or listeners.
+wait time. There is no deadline check that interrupts setters, after-commit hooks or observers.
 
 Cascades share the root's unit of work and deadline; entering a peer does not restart its machine-level
 budget. Set defaults are installed only on machines with declared async bindings. A synchronous-only root
@@ -1854,7 +1900,8 @@ its size allows. Start roots off `ForkJoinPool` workers, or give asynchronous wo
 
 Multiple virtual threads do not serialize access to a shared entity. Two concurrent operations on the same
 ticket need an application-level concurrency policy. The commit precheck detects some state conflicts; it
-is not a lock or a compare-and-set transaction with your database. See [concurrency](#concurrency-identity-and-persistence).
+is not a lock or a compare-and-set transaction with your database. See
+[concurrency](#concurrency-identity-and-persistence).
 
 ### Test async behavior
 
@@ -1875,7 +1922,7 @@ a fresh ticket starts in `OPEN`, where no edge carries `APPROVE`.
 | Service finishes after wait timeout | Complete that same stage later | No late graph-state commit |
 | Guard stage throws | Fail `canStart` exceptionally | Technical abort; state stays `OPEN`; action is not called |
 
-Also cover hook/listener failures and concurrent-entity policy in the application. The repository's
+Also cover hook failures and concurrent-entity policy in the application. The repository's
 [async runtime tests](../graphmaquina-core/src/test/java/io/github/graphmaquina/runtime/AsyncTest.java) and
 [context lifetime tests](../graphmaquina-core/src/test/java/io/github/graphmaquina/runtime/SingleMachineTest.java)
 provide focused examples of deadline and ownership behavior.
@@ -1903,12 +1950,12 @@ not instantiate service classes or discover dependency-injection beans.
 | `asyncExecutor(Executor)` | Supply the executor used by `async` calls; otherwise each machine owns a virtual-thread executor |
 | `maxCascadeDepth(int)` | Bound nested cascades; default `10`, minimum `1`, root depth is `0` |
 | `maxWatchChain(int)` | Bound successive watch reactions; default `10`, minimum `1` |
-| `listener(TransitionListener)` | Observe outcomes across the set; one listener per set |
+| `observer(MachineObserver)` | Observe every call of the set; observers add up, notified in the order given |
 | `build()` | Construct the registry and facades |
 
-Each setting is checked where it is given: a second `listener(...)` throws `IllegalStateException`, and a
-`maxCascadeDepth` or `maxWatchChain` below `1` throws `IllegalArgumentException`. The builder is single-use:
-once `build()` succeeds, every method throws `IllegalStateException`.
+Each setting is checked where it is given: a `maxCascadeDepth` or `maxWatchChain` below `1` throws
+`IllegalArgumentException`. The builder is single-use: once `build()` succeeds, every method throws
+`IllegalStateException`.
 
 Close the set with try-with-resources or your application's shutdown lifecycle. `close()` closes executors
 owned by the set and waits for submitted operations to finish. An executor you supply remains your
@@ -1973,22 +2020,26 @@ from its pending state like any other.
 | Policy | Behavior |
 | --- | --- |
 | `FAIL_FAST` | Stop when a cascade fails. |
-| `COLLECT` | Try peers under savepoints, aggregate transition-abort errors, then abort the whole root if any were collected. Other engine failures can abort immediately. |
+| `COLLECT` | Try peers under savepoints, aggregate the transition aborts of the call, then abort the whole root if any were collected. Any other failure stops it at once, and so does an element whose step a nested cascade poisoned with a failure that is no failure of the call. |
 
-`COLLECT` is not partial commit. A nested transition that no edge carries, or that a guard rejected, is an
-abort rather than an ordinary root-level `Rejected` result. A handled domain failure can select the child's
-declared failure route. Any failure that leaves a cascade poisons the unit of work, whether it is an engine
-failure, an exception from a callback the engine does not wrap, such as an identity function, or an `Error`;
-catching it in your action does not make the transaction safe to commit. When the action then returns, or
-throws an exception its `failsOn` lists, the root throws that failure instead, commits nothing and runs no
-failure route; an `Error` or a callback exception arrives wrapped in a `TransitionAbortedException`. A cascade
-that names an unknown machine poisons too, by key or by facade type, even over an empty collection. A refused
-argument poisons nothing: a null peer, a null element, which `cascadeAll` refuses before any element runs, or
-an identifier from another machine's catalogue. `cascadeAll` copies its collection once, before any element runs,
-and never reads it again, so elements added or removed while the cascade runs change neither which elements run
-nor their order; an exception or an `Error` the collection throws while it is copied propagates as it is and
-poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another facade operation
-from inside an action: nested facade entry points violate the runtime's reentrancy rules.
+`COLLECT` is not partial commit. A nested transition that no edge carries, or that a guard rejected, is an abort rather
+than an ordinary root-level `Rejected` result. A handled domain failure can select the child's declared failure route.
+Any failure that leaves a cascade poisons the unit of work. A failure of the call itself, such as an abort in the peer's
+step, a cycle or the depth limit, reaches your action as it is. Anything else reaches it as a
+`TransitionAbortedException` that names the cascade and carries the failure as its cause: an engine exception that
+describes no call, such as an unknown machine or an ambiguous identity, or a throwable other than an `Error` from a
+callback the engine does not wrap, such as an identity function. An `Error` poisons through such an abort too, but
+reaches your action as itself. Catching it in your action does not make the transaction safe to commit. When the action
+then returns, throws a throwable its `failsOn` lists, or lets a failure of the call through, the root throws the failure
+that poisoned it, commits nothing and runs no failure route. A cascade that names an unknown machine poisons too, by key
+or by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
+`cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its
+collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
+change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
+propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
+facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
+reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
+runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.
@@ -2073,15 +2124,19 @@ pairs that are actually watched; duplicate or unused `@GraphPeers` entries are e
 
 ### Triggering and observing watches
 
-After a root commit, the runtime finds watched owners from peers whose final state differs from their
-original state. Intermediate hops that return a peer to its original state do not trigger dispatch. It reevaluates an owner only if it
-is currently in the watched state and deduplicates owners within that dispatch. Each reaction is a new root
-transaction. A reaction failure does not roll back the peer commit that triggered it.
+After a root commit, the runtime finds watched owners from peers whose final state differs from their original state.
+Intermediate hops that return a peer to its original state do not trigger dispatch. It reevaluates an owner only if it
+is currently in the watched state and deduplicates owners within that dispatch. Each reaction is a new root transaction.
+A reaction failure does not roll back the peer commit that triggered it.
 
-The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the
-engine evaluates the watch, before that root starts, and may not start a transition themselves: `execute` or
-`reevaluate` called from one of them throws `ReentrantTransitionException`, which a reaction reports as
-`Reaction.Aborted` and a direct `reevaluate` throws to its caller.
+The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the engine
+evaluates the watch, before that root starts, and may not start a transition on their own thread: `execute` or
+`reevaluate` called from one of them throws `ReentrantTransitionException`; a call submitted through `async(...)` runs
+as a separate call on the executor's thread, unless that executor runs tasks inline, in which case the returned future
+fails with that exception as its cause. Inside a reevaluation, a refusal that one of these functions lets through ends
+the reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as
+`Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so
+its reaction carries the refusal itself.
 
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
@@ -2091,17 +2146,22 @@ Outcome<Order, OrderStatus, OrderTransition> outcome = shop.orders().reevaluate(
 ```
 
 No watch produces `Outcome.Ignored` with `IgnoreReason.NO_WATCH`, and a watch whose rules all fail produces
-`IgnoreReason.NO_RULE_MATCHED`. These are the only two ways an `Ignored` is produced. A matching rule can
-still be rejected by the named edge's guards. Rules are not polled on a timer, and creating or paying an owner does not automatically mean all
-of its existing peers changed state.
+`IgnoreReason.NO_RULE_MATCHED`. These are the only two ways an `Ignored` is produced. A matching rule can still be
+rejected by the named edge's guards. Rules are not polled on a timer, and creating or paying an owner does not
+automatically mean all of its existing peers changed state.
 
 Cross-JAR watches are not supported yet. The owner and peer APIs must be generated in the same compilation.
 A peer in another module or dependency JAR is rejected with `SG608`. Track the enhancement in
 [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1).
 
-## Commit, hooks and listeners
+## Commit, hooks and observers
 
-![Root actions and cascades stage changes in a shared unit of work. Commit checks original states and writes final states; hooks, independent watch reactions, listener notification and return follow on normal completion.](images/commit-lifecycle.svg)
+![Root actions and cascades stage changes in a shared unit of work. Commit checks original states and writes
+final states; hooks and independent watch reactions follow, then the observers learn how the call
+ended.](images/commit-lifecycle.svg)
+
+Observers are told that the call starts before step 1. A call that completes tells them in step 8; one that throws tells
+them before the exception leaves the call.
 
 The runtime's normal root execution follows this sequence:
 
@@ -2112,7 +2172,7 @@ The runtime's normal root execution follows this sequence:
 5. Invalidate transition contexts and release the root reentrancy marker.
 6. Run hooks for the committed hops, in log order.
 7. Dispatch watch reactions for moved peers.
-8. Notify the listener with this call's outcome and return it.
+8. Notify the observers that the call completed, and return its outcome.
 
 A rejected or ignored root does not commit state changes. A handled failure does commit its failure route.
 External side effects performed by actions, and mutations to other entity fields, are not automatically undone
@@ -2123,11 +2183,12 @@ when the unit of work aborts.
 Use a `@GraphHook` when code must run after GraphMaquina has written state. The quickstart prints every
 committed hop from such a hook. The shop notifies its carrier after the shipping edge commits.
 
-Hooks run synchronously on the operation's thread. Any exception a hook throws, checked ones included, becomes
-`AfterCommitException`: the state is already committed. An `Error` propagates unchanged instead. Either stops
-the remaining normal post-commit sequence, so do not assume later hooks, watch dispatch or listener
-notification ran. Make externally visible notifications idempotent and choose durable delivery separately if
-your application needs it.
+Hooks run synchronously on the operation's thread. Any throwable a hook throws that is not an `Error`, checked ones
+included, becomes `AfterCommitException`: the state is already committed. Its `hook()` names the hook, `hop()` the
+committed hop it ran for, and `records()` every hop the call committed. An `Error` propagates unchanged instead. Either
+stops the remaining normal post-commit sequence, so do not assume later hooks or watch dispatch ran; the observers are
+told the call failed. Make externally visible notifications idempotent and choose durable delivery separately if your
+application needs it.
 
 A hook sees the entity's committed final state. When a cascade stages multiple hops for one entity, the setter
 writes its final destination once, while hooks still follow committed hop order.
@@ -2171,42 +2232,63 @@ an `Ignored`, an abort or a rollback. A failure route uses its own effective hoo
 that failed. Hooks still run per committed hop, so one entity can reach the default more than once in a
 cascade.
 
-### Listeners
+### Observers
 
-A listener receives each completed outcome, including ignored and rejected operations. With the ticket set:
+An observer sees every call of the set: each operation and each `reevaluate`, watch reactions included. A cascade
+is part of the call that runs it. With the ticket set:
 
 ```java
 TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
-        .listener((MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> System.out.println(
-                key.entity().getSimpleName() + ": " + outcome.code() + " -> " + outcome.recordedState()))
+        .observer(new MachineObserver() {
+            @Override
+            public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                System.out.println(call + ": " + outcome.code() + " -> " + outcome.recordedState()
+                        + " in " + elapsed.toMillis() + " ms");
+            }
+
+            @Override
+            public void onFailed(MachineCall call, CallFailure failure, Duration elapsed) {
+                System.out.println(call + ": failed in " + failure.phase() + ", states "
+                        + failure.statesWritten() + ": " + failure.error());
+            }
+        })
         .build();
 ```
 
-Close `machines` through the application's lifecycle. A listener sees watch-reaction outcomes through their
-own calls; do not recursively emit them again from the parent's `reactions()` list. Reaction outcomes can
-arrive before the triggering root's notification. A call that throws before it returns an outcome, such as one
-that ends in a technical abort, a commit failure, a failing hook or an `Error` from a reaction, notifies nothing.
+Each call notifies `onStarted` once, then exactly one of `onCompleted` and `onFailed`, on the thread that runs it,
+before the operation returns or throws. `MachineCall` names the machine, the entity, the requested identifier (empty for
+`reevaluate`) and whether a watch reaction made the call. Its `toString()` never prints the entity, and the same
+instance reaches every event of the call. A reaction starts and ends inside the call that triggered it, so events nest
+like a stack on their thread. `onFailed` receives the very throwable the caller gets, with the phase the call was in and
+how far it got in writing states; an `Error` is reported too, then propagates.
 
-Any exception a listener throws, checked ones included, also surfaces as `AfterCommitException`, and its
-message says whether the call wrote state. For an ignored or rejected outcome, no state change occurred, and the
-message reads `the call on ... wrote no state, and the post-commit step 'listener' failed`; for an applied or
-handled-failure outcome, state has already committed. An `Error` from the listener propagates unchanged. A
-listener exception must not be interpreted as proof that an operation never happened.
+An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
+`System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
+propagates. It cannot start a transition on its own thread either: an operation called from an observer throws
+`ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread as
+a call of its own, unless that executor runs tasks inline, in which case the returned future fails with that exception
+as its cause. When a failure must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a
+machine. Observers run on the thread of every call, so keep them thread-safe and quick. Add as many as you need: they
+are notified in the order they were added.
 
 ## Concurrency, identity and persistence
 
 ### Initialize and protect state
 
-The entity owns its state. Initialize it in the constructor or field declaration, and persist it with your
-normal entity mapping. Null state is an `UninitializedStateException`; the runtime does not silently replace
-it with the graph's initial state.
+The entity owns its state. Initialize it in the constructor or field declaration, and persist it with your normal entity
+mapping. A null root state ends the call in a `TransitionAbortedException` of phase `RESOLVE` whose cause is an
+`UninitializedStateException`, and a cascaded peer's in one of phase `ACTION`; the runtime does not silently replace it
+with the graph's initial state.
 
 During a transition, only the runtime should call the state setter. It checks state again before commit to
 catch action code or outside code that changed it unexpectedly. This check is not a lock: your application
 must serialize conflicting operations, or provide an appropriate database locking/versioning strategy.
 
 The runtime does not roll back a setter that already ran if a subsequent setter throws.
-`CommitFailedException` reports applied and pending entities. Keep state setters simple and total for valid
+`CommitFailedException` reports the entities whose setter returned (`applied()`), the one whose setter threw
+(`failedEntity()`), which may or may not have been written, and those never tried (`pending()`); its
+`statesWritten()` is `PARTIAL`, or `NONE` when the commit stopped before its first setter: the pre-commit check
+refused it, or reading the states or grouping the log by entity threw. Keep state setters simple and total for valid
 states; avoid remote calls, persistence flushes and unrelated business logic inside them.
 
 ### Stable identity
@@ -2419,20 +2501,19 @@ class TicketsTest {
 }
 ```
 
-`isFailed()` narrows the outcome and fails with the kind it actually got. `hasTarget` is where `SUBMIT` was
-heading, `hasFailureTransition` is the identifier of the edge that recovered, `movedTo` is where that edge
-landed, and `hasEntityState` reads the entity itself. Run `./gradlew test` in your application.
-The repository's [ReadmeQuickstartTest](../graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java)
-extracts these literal Gradle blocks and Ticket Java files, generates and compiles the main sources, runs
-`App`, and verifies this named JUnit test and its result counts in an external Gradle consumer using locally
-staged artifacts. This verifies the local Gradle workflow; it does not execute this JUnit sample through
-Maven or against released artifacts. This test consumes generated main code; it does not declare test graphs
-and needs no `testAnnotationProcessor`. In Maven, add JUnit and a compatible test runner through your application's usual
-test configuration, together with the test-scoped `graphmaquina-test` dependency shown under
+`isFailed()` narrows the outcome and fails with the kind it actually got. `hasTarget` is where `SUBMIT` was heading,
+`hasFailureTransition` is the identifier of the edge that recovered, `movedTo` is where that edge landed, and
+`hasEntityState` reads the entity itself. Run `./gradlew test` in your application. The repository's
+[ReadmeQuickstartTest](../graphmaquina-test/src/test/java/consumer/ReadmeQuickstartTest.java) extracts these literal
+Gradle blocks and Ticket Java files, generates and compiles the main sources, runs `App`, and verifies this named JUnit
+test and its result counts in an external Gradle consumer using locally staged artifacts. This verifies the local Gradle
+workflow; it does not execute this JUnit sample through Maven or against released artifacts. This test consumes
+generated main code; it does not declare test graphs and needs no `testAnnotationProcessor`. In Maven, add JUnit and a
+compatible test runner through your application's usual test configuration, together with the test-scoped
+`graphmaquina-test` dependency shown under
 [typed assertions, probes and graph snapshots](#typed-assertions-probes-and-graph-snapshots); the
-[install command](#configure-gradle) writes into the `~/.m2` repository Maven already reads, so it needs no
-repository entry.
-Preserve the graph generation lifecycle for any test graphs.
+[install command](#configure-gradle) writes into the `~/.m2` repository Maven already reads, so it needs no repository
+entry. Preserve the graph generation lifecycle for any test graphs.
 
 ### Typed assertions, probes and graph snapshots
 
@@ -2477,7 +2558,7 @@ assertThat(orders.definition())
 ```
 
 Beyond assertions it carries scripted probes for guards, actions, hooks and the state setter, fixtures that
-let a test decide when an asynchronous callback answers, a listener recorder, entity-state snapshots, and
+let a test decide when an asynchronous callback answers, a recorder of completed calls, entity-state snapshots, and
 golden comparison for both the rendered diagram and the complete structure of a graph. The
 [testing guide](testing.md) covers installation, what each entry point checks, what each check does not
 prove, and the golden update procedure for Gradle and Maven. Every sample in it is copied from a test that
@@ -2489,11 +2570,11 @@ Useful behavior to cover in your own domain:
 - Each guard rejection, and each identifier a state refuses, with the reason its policy gives.
 - Two operations that reach the same state, so neither can quietly stand in for the other.
 - Every self-loop you declare: it applies, and its hook runs.
-- Exceptions that are mapped through `failsOn`, and exceptions that must abort.
+- Throwables that are mapped through `failsOn`, and those that must abort.
 - Cascade rollback behavior and collected error details.
 - First-match watch order, empty peer collections and aborted reactions.
 - Async timeout behavior and late completions.
-- Hooks and listeners that fail after state has committed.
+- Hooks that fail after state has committed.
 - Declared graph contracts through typed assertions or structural snapshots.
 
 Visual export tests may separately pin `.dot` goldens when changes to diagram output require review.
@@ -2682,7 +2763,7 @@ code runs.
 | `SG204` | Unauthorised cycle: list an intentional cycle's state in `allowsCycle`. One witness is reported per cyclic strongly connected component, deterministically, rather than one message per elementary cycle. |
 | `SG205` | Unused cycle allowance: the named state belongs to no cycle. |
 | `SG301` | Invalid failure route: `onFailure` names this edge's own key, or no edge with that identifier leaves the same origin. |
-| `SG302` | Forbidden `failsOn` type: `Throwable`, `Exception`, `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, or exactly `CompletionException` or `ExecutionException`, which the runtime unwraps before matching whenever they carry a cause. Use a specific foreign exception, or the type of the wrapped cause. |
+| `SG302` | Forbidden `failsOn` type: `Throwable`, `Exception`, `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, or exactly `CompletionException` or `ExecutionException`, which the runtime unwraps before matching whenever they carry a cause. Use a specific foreign throwable type, usually an exception, or the type of the wrapped cause. |
 | `SG401` | A watch rule names an identifier with no edge from the watched state. |
 | `SG402` | A terminal state declares a watch. |
 | `SG403` | More than one watch on the same state. |
@@ -2719,21 +2800,21 @@ code runs.
 
 | Exception | What to investigate |
 | --- | --- |
-| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. |
-| `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `transition()` and `to()` are `Optional`: an abort before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither. |
+| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`. |
+| `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `from()`, `transition()` and `to()` are `Optional`. An abort raised before the entity's state was read, because its identity or its state could not be read, reports no state and no destination. One raised before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither identifier nor destination. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
 | `UnhandledFailureException` | An action failed without an `onFailure` route. |
 | `CascadeException` | Collected nested transition errors; inspect `errors()` and the journal. |
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
-| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. |
-| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks and the listener may start transitions. |
-| `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. |
-| `StaleContextException` | A context or context-derived view was used after invalidation. |
+| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, it arrives as the cause of that call's abort. |
+| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
+| `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. The caller receives that failure, never this exception. |
+| `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
-| `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. |
-| `CommitFailedException` | Pre-commit state check failed or a setter threw; inspect applied/pending entities before retrying. |
-| `AfterCommitException` | A hook or the listener threw. After a hook, state is already written; a listener failure's message says whether the call wrote state. |
+| `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Thrown by a guard or an action, it arrives as the cause of that call's abort. |
+| `CommitFailedException` | Phase `COMMIT`: the commit stopped before its first setter, because the pre-commit check failed or reading the states or grouping the log by entity threw (`NONE` written), or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
+| `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()` and `records()` say what. |
 | `InvalidGraphException` | Programmatic DSL definition failed validation; inspect its problem list. |
 
 A refused request is not an exception. `Rejected` with `RejectionKind.NO_TRANSITION` is the ordinary answer

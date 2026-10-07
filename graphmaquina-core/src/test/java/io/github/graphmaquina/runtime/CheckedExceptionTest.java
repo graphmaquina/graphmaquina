@@ -14,14 +14,18 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
-import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.MachineCall;
+import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
@@ -37,6 +41,7 @@ import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
+import io.github.graphmaquina.fixtures.LibraryLog;
 import io.github.graphmaquina.fixtures.Sneaky;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -59,6 +64,8 @@ import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -66,7 +73,7 @@ import org.junit.jupiter.api.Test;
  * {@code @SneakyThrows} compile to. Each one takes the route an unchecked exception from the same callback takes.
  * An {@code Error} is never routed: thrown by a callback it propagates unchanged, while one that completes a stage
  * is the cause of a technical abort. An engine exception from an action or a guard is never routed either: bare or
- * wrapped however deeply, thrown or completing a stage, it reaches the caller as it was thrown. An action that
+ * wrapped however deeply, thrown or completing a stage, it aborts the call and becomes its cause. An action that
  * throws a chain of wrappers looping back on itself still ends in a technical abort.
  */
 class CheckedExceptionTest {
@@ -249,26 +256,34 @@ class CheckedExceptionTest {
         Doc doc = new Doc("1", DRAFT);
         AfterCommitException error = assertThrows(AfterCommitException.class, () -> machine.execute(doc, SUBMIT));
         assertSame(mail, error.getCause());
-        assertEquals("Notify", error.step());
+        assertEquals("Notify", error.hook());
         assertEquals(REVIEW, doc.status());
     }
 
+    /** The checked exception is contained like any other: logged as a warning that carries it, the call unchanged. */
     @Test
-    void aListenerThatThrowsACheckedExceptionIsAnAfterCommitException() {
-        IOException audit = new IOException("audit log down");
-        try (MachineRegistry registry = MachineRegistry.builder()
+    void anObserverThatThrowsACheckedExceptionChangesNothing() {
+        IOException metrics = new IOException("metrics down");
+        try (LibraryLog log = LibraryLog.capture();
+             MachineRegistry registry = MachineRegistry.builder()
                 .add(StateMachines.from(docs(UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()))
                         .state(Doc::status, Doc::setStatus).identity(Doc::id))
-                .listener((MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> {
-                    throw Sneaky.raise(audit);
+                .observer(new MachineObserver() {
+                    @Override
+                    public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                        throw Sneaky.raise(metrics);
+                    }
                 })
                 .build()) {
             Doc doc = new Doc("1", DRAFT);
-            AfterCommitException error = assertThrows(AfterCommitException.class,
-                    () -> registry.of(DOCS).execute(doc, SUBMIT));
-            assertSame(audit, error.getCause());
-            assertEquals("listener", error.step());
+            assertEquals(OutcomeStatus.APPLIED, registry.of(DOCS).execute(doc, SUBMIT).status());
             assertEquals(REVIEW, doc.status());
+            List<LogRecord> logged = log.records();
+            assertEquals(1, logged.size());
+            assertEquals(Level.WARNING, logged.get(0).getLevel());
+            assertTrue(logged.get(0).getMessage().endsWith(" threw in onCompleted for Doc/DocStatus SUBMIT"),
+                    logged.get(0).getMessage());
+            assertSame(metrics, logged.get(0).getThrown());
         }
     }
 
@@ -285,7 +300,8 @@ class CheckedExceptionTest {
         CommitFailedException error = assertThrows(CommitFailedException.class, () -> machine.execute(doc, SUBMIT));
         assertSame(flush, error.getCause());
         assertEquals(List.of(), error.applied());
-        assertEquals(List.of(doc), error.pending());
+        assertEquals(Optional.of(doc), error.failedEntity());
+        assertEquals(List.of(), error.pending());
         assertEquals(DRAFT, doc.status());
     }
 
@@ -312,9 +328,10 @@ class CheckedExceptionTest {
     }
 
     /**
-     * A watch condition and an owner lookup run outside any transaction, so no TransitionAbortedException wraps what
-     * they throw. A checked exception still ends as an aborted reaction, wrapped in UndeclaredThrowableException
-     * because {@code Reaction.Aborted} carries a RuntimeException.
+     * A watch condition runs while its reevaluation resolves, so a checked exception it throws aborts that reevaluation
+     * in RESOLVE, and the aborted reaction carries the abort. An owner lookup runs before any reevaluation, in the
+     * commit's dispatch, so its checked exception still arrives wrapped in UndeclaredThrowableException, because
+     * {@code Reaction.Aborted} carries a RuntimeException.
      */
     @Test
     void aWatchConditionOrOwnerLookupThatThrowsACheckedExceptionIsAnAbortedReaction() {
@@ -334,16 +351,24 @@ class CheckedExceptionTest {
                 },
                 (Doc doc, Collection<? extends Doc> peers, PeerView<Doc, DocStatus, DocTransition> view) -> true,
                 archive)) {
-            for (MachineRegistry registry : List.of(condition, owner)) {
-                watched.setStatus(DRAFT);
-                Outcome.Applied<?, ?, ?> applied = assertInstanceOf(Outcome.Applied.class,
-                        registry.of(DOCS).execute(watched, SUBMIT));
-                Reaction.Aborted aborted = assertInstanceOf(Reaction.Aborted.class, applied.reactions().get(0));
-                UndeclaredThrowableException cause = assertInstanceOf(UndeclaredThrowableException.class, aborted.cause());
-                assertSame(lookup, cause.getUndeclaredThrowable());
-                assertEquals(REVIEW, watched.status());
-                assertEquals(PUBLISHED, observer.status());
-            }
+            watched.setStatus(DRAFT);
+            Outcome.Applied<?, ?, ?> byCondition = assertInstanceOf(Outcome.Applied.class,
+                    condition.of(DOCS).execute(watched, SUBMIT));
+            Reaction.Aborted conditionReaction =
+                    assertInstanceOf(Reaction.Aborted.class, byCondition.reactions().get(0));
+            TransitionAbortedException abort =
+                    assertInstanceOf(TransitionAbortedException.class, conditionReaction.cause());
+            assertEquals(CallPhase.RESOLVE, abort.phase());
+            assertSame(lookup, abort.getCause());
+            watched.setStatus(DRAFT);
+            Outcome.Applied<?, ?, ?> byOwner = assertInstanceOf(Outcome.Applied.class,
+                    owner.of(DOCS).execute(watched, SUBMIT));
+            Reaction.Aborted ownerReaction = assertInstanceOf(Reaction.Aborted.class, byOwner.reactions().get(0));
+            UndeclaredThrowableException wrapped =
+                    assertInstanceOf(UndeclaredThrowableException.class, ownerReaction.cause());
+            assertSame(lookup, wrapped.getUndeclaredThrowable());
+            assertEquals(REVIEW, watched.status());
+            assertEquals(PUBLISHED, observer.status());
         }
     }
 
@@ -391,17 +416,20 @@ class CheckedExceptionTest {
         assertEquals(REVIEW, doc.status());
     }
 
-    /** Pins the policy at listener depth: the same as for a hook, the listener being the last post-commit step. */
+    /** Pins the policy at observer depth: the same as for a hook, an observer's end event coming last. */
     @Test
-    void anErrorFromTheListenerPropagatesUnchangedAfterTheCommit() throws Exception {
+    void anErrorFromAnObserverPropagatesUnchangedAfterTheCommit() throws Exception {
         AssertionError broken = new AssertionError("audit invariant broken");
         Doc doc = new Doc("1", DRAFT);
         try (MachineRegistry registry = MachineRegistry.builder()
                 .add(StateMachines.from(docs(UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()))
                         .state(Doc::status, Doc::setStatus).identity(Doc::id))
-                .listener((MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> {
-                    if (outcome.entity() == doc) {
-                        throw broken;
+                .observer(new MachineObserver() {
+                    @Override
+                    public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                        if (outcome.entity() == doc) {
+                            throw broken;
+                        }
                     }
                 })
                 .build()) {
@@ -441,13 +469,12 @@ class CheckedExceptionTest {
     }
 
     /**
-     * An engine exception keeps its identity on every path that brings it back from an action or a guard: thrown
-     * bare or in a CompletionException or an ExecutionException, by a synchronous or an asynchronous action or guard
-     * or by a recovery action, or completing a stage, it reaches the caller as it was thrown, never as the cause of
-     * an abort.
+     * An engine exception that is not a failure of the call is a cause like any other, on every path that brings it
+     * back from an action or a guard: thrown bare or in a CompletionException or an ExecutionException, by a
+     * synchronous or an asynchronous action or guard or by a recovery action, or completing a stage.
      */
     @Test
-    void anEngineExceptionReachesTheCallerAsItWasThrownOnEveryPath() {
+    void anEngineExceptionFromACallbackAbortsTheCallOnEveryPath() {
         StateMachineException engine = new StateMachineException("the ledger refused the entry");
         Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths = new LinkedHashMap<>();
         paths.put("sync action, bare", docs(
@@ -522,18 +549,17 @@ class CheckedExceptionTest {
                         + " caused by " + (thrown.getCause() == engine ? "the engine exception" : thrown.getCause());
             }
             ends.add(path.getKey() + ": " + end + ", " + doc.status());
-            expected.add(path.getKey() + ": the engine exception itself, DRAFT");
+            expected.add(path.getKey() + ": TransitionAbortedException caused by the engine exception, DRAFT");
         }
         assertEquals(expected, ends);
     }
 
     /**
-     * The same holds for an engine exception that comes from another root. An action that joins another machine's
-     * failing asynchronous call receives that root's abort in a CompletionException, and the caller of the action's
-     * own call gets that abort unchanged: its details describe the other root and its entity, not this call.
+     * An engine exception from another call is never this call's failure. An action that joins another machine's
+     * failing asynchronous call aborts its own call, whose details describe it, with the other call's abort as cause.
      */
     @Test
-    void anEngineExceptionFromAnotherRootKeepsTheDetailsOfThatRoot() {
+    void anEngineExceptionFromAnotherCallBecomesTheCauseOfThisCallsAbort() {
         IllegalStateException ledger = new IllegalStateException("ledger down");
         StateMachine<Doc, DocStatus, DocTransition> other = standalone(docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
@@ -550,19 +576,21 @@ class CheckedExceptionTest {
         Doc doc = new Doc("1", DRAFT);
         TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                 () -> machine.execute(doc, SUBMIT));
-        assertSame(elsewhere, error.details().entity());
-        assertSame(ledger, error.getCause());
+        assertSame(doc, error.details().entity());
+        assertSame(doc, error.call().entity());
+        TransitionAbortedException otherFailure = assertInstanceOf(TransitionAbortedException.class, error.getCause());
+        assertSame(elsewhere, otherFailure.details().entity());
+        assertSame(ledger, otherFailure.getCause());
         assertEquals(DRAFT, doc.status());
         assertEquals(DRAFT, elsewhere.status());
     }
 
     /**
-     * An engine exception keeps its identity however deeply it is wrapped. Inside 10,000 nested CompletionExceptions,
-     * far more than the 16 hops the unwrap was once bounded to, it still reaches the caller as it was thrown: thrown by
-     * a synchronous or an asynchronous action or guard or by a recovery action, or completing a stage.
+     * An engine exception is found as the cause however deeply it is wrapped: inside 10,000 nested
+     * CompletionExceptions, far more than the 16 hops the unwrap was once bounded to, on every path.
      */
     @Test
-    void anEngineExceptionReachesTheCallerAsItWasThrownHoweverDeeplyItIsWrapped() {
+    void anEngineExceptionIsTheCauseHoweverDeeplyItIsWrapped() {
         StateMachineException engine = new StateMachineException("the ledger refused the entry");
         CompletionException deep = nested(10_000, engine);
         Map<String, GraphDefinition<Doc, DocStatus, DocTransition>> paths = new LinkedHashMap<>();
@@ -619,7 +647,7 @@ class CheckedExceptionTest {
                         + " caused by " + (thrown.getCause() == engine ? "the engine exception" : thrown.getCause());
             }
             ends.add(path.getKey() + ": " + end + ", " + doc.status());
-            expected.add(path.getKey() + ": the engine exception itself, DRAFT");
+            expected.add(path.getKey() + ": TransitionAbortedException caused by the engine exception, DRAFT");
         }
         assertEquals(expected, ends);
     }

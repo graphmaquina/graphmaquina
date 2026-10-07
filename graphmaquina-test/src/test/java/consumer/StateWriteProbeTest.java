@@ -248,7 +248,7 @@ class StateWriteProbeTest {
     // --- against the real engine -----------------------------------------------------------------------
 
     @Test
-    void aSetterThatFailsPartwayLeavesTheRootAppliedAndItsPeersPending() {
+    void aSetterThatFailsPartwayLeavesTheRootAppliedNamesTheFailedPeerAndLeavesTheOtherPending() {
         Order order = new Order("order");
         Item first = new Item("first");
         Item second = new Item("second");
@@ -262,7 +262,8 @@ class StateWriteProbeTest {
         });
         TransitionFailureAssert.assertThat(failure).isCommitFailure()
                 .hasAppliedExactly(order)
-                .hasPendingExactly(first, second)
+                .hasFailedEntity(first)
+                .hasPendingExactly(second)
                 .hasCauseSameAs(boom);
         assertEquals(State.READY, order.state());
         assertEquals(State.NEW, first.state());

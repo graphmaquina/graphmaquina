@@ -68,7 +68,7 @@ itself and needs no declaration. Inside this repository no publication is needed
 
 The machines under test are built exactly as the application builds them: a real registry, real entities,
 and test doubles only where the domain reaches outside the process. A `TransitionRecorder` is a
-`TransitionListener`, so it is installed the way any listener is. From
+`MachineObserver`, so it is installed the way any observer is. From
 [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
 
 ```java
@@ -76,7 +76,7 @@ final FakeGateway gateway = new FakeGateway();
 final FakeCarrier carrier = new FakeCarrier();
 final TransitionRecorder recorder = TransitionRecorder.create();
 final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
-        .listener(recorder)
+        .observer(recorder)
         .build();
 final Orders orders = shop.orders();
 final Items items = shop.items();
@@ -122,10 +122,10 @@ constant of another machine's catalogue does not compile inside it.
 | Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED` |
 | Transition records | `.records()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
-| Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal |
+| Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal; phase, states written and the failing call |
 | Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, and the reason |
 | Live entity | `assertThat(entity, Order::status)` | the state the getter reads at that moment |
-| Listener callbacks | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome statuses, and the outcome sequence of one entity |
+| Completed calls | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome statuses, and the outcome sequence of one entity |
 | Tracked entities | `StateSnapshot` | which of the tracked entities moved since the capture, and that none did |
 | Completion stage | `AsyncAssertions.await`, `AsyncAssertions.awaitFailure` | the outcome, or the throwable, the stage ended with inside the test's budget |
 | Guard, action, hook | `GuardProbe`, `ActionProbe`, `HookProbe`, `CallTrace` | scripted answers per call, the calls each probe recorded, and the order callbacks were entered in |
@@ -236,7 +236,8 @@ exception to its failure route.
 
 `movedTo` reads the state the outcome recorded; `hasEntityState` reads the entity through a getter at the
 moment the expectation runs. A reaction is reached from the outcome that carries it, selected by machine and
-by entity identity. From [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
+by entity identity. From
+[OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
 
 ```java
 assertThat(orders.pay(order)).isApplied().movedTo(OrderStatus.PAID)
@@ -280,17 +281,21 @@ An aborted transition throws rather than returning an outcome, so the subject is
 
 ```java
 assertThat(captureFailure(() -> orders.cancel(order))).isCascadeAbort()
-        .hasErrorCount(1)
+        .hasErrorCount(1).hasPhase(CallPhase.ACTION).hasStatesWritten(StatesWritten.NONE)
         .journal().hasActionsExactly("cancel").hasStatusesExactly(ActionStatus.THREW);
 assertThat(order, Order::status).isIn(OrderStatus.NEW);
 assertThat(packed, Item::status).isIn(ItemStatus.PACKED);
 assertThat(pending, Item::status).isIn(ItemStatus.PENDING);
 ```
 
-### The listener recorder
+`isCallFailure()` reads any failure of a call through what every kind shares, and the four call-failure views offer
+the same expectations: `hasPhase(...)`, `hasStatesWritten(...)`, `hasCallSameAs(...)`, which compares by reference
+with the `MachineCall` an observer received, and `journal()`.
 
-The recorder keeps the callbacks the engine published, in the order it published them, and nothing else. It
-never walks `reactions()`, so a reaction is counted once — as its own callback — even though the root
+### The call recorder
+
+The recorder keeps the outcome of every call that completed, in the order the calls completed, and nothing else. It
+never walks `reactions()`, so a reaction is counted once — as its own call — even though the root
 outcome carries it too. From
 [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
 
@@ -303,9 +308,9 @@ recorder.assertRecorded()
         .hasStatusesExactly(APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, APPLIED, APPLIED);
 ```
 
-A registry accepts one listener. When the test needs its own as well, `TransitionRecorder.compose(...)`
-shares the slot. An entity keeps moving after its callback, so if the assertion must see the entity as it
-was, record a projection with `TransitionRecorder.projecting(...)` instead of the live outcome.
+A registry accepts any number of observers, so a test adds its own beside the recorder. An entity keeps
+moving after its call completes, so if the assertion must see the entity as it was, record a projection with
+`TransitionRecorder.projecting(...)` instead of the live outcome.
 
 ### Tracked entity state
 
@@ -627,7 +632,7 @@ A test that needs no properties at all can pass options explicitly —
 | `isRejected().hasNoTransition()`: nothing was keyed by `(from, id)` | that the entity cannot move at all. Another identifier may well have an edge from the same state. |
 | `calls().assertCount(n)`: a callback was entered n times | that the machine wrote a state. Only `StateWriteProbe.writes()` sees the setter. |
 | `journal()`: which actions the aborted attempt entered, and how each ended | that the entities were put back. `StateSnapshot.assertUnchanged()` is the expectation that asserts the rollback. |
-| the recorder: every outcome the engine published to the listener | anything about a call that threw before the listener, such as one whose step aborts, whose commit fails, whose hook throws, or whose reaction raises an `Error`. Such a call throws instead of notifying, so no callback is made for it; capture the throwable instead. |
+| the recorder: the outcome of every call that completed | anything about a call that threw, such as one whose step aborts, whose commit fails, whose hook throws, or whose reaction raises an `Error`. The recorder keeps completed calls only; capture the throwable instead. |
 | `AsyncAssertions.await(stage, budget)`: the engine's transition finished | that work the action started in the background ended. Neither wait ever cancels a stage it was handed. |
 | that budget: how long the test is willing to wait | the engine's deadline. That is `asyncTimeout(...)` on the machine and `hasTimeout(...)` on the edge, and an expired engine deadline leaves the user's stage alive. |
 
@@ -650,7 +655,9 @@ A test that needs no properties at all can pass options explicitly —
   and keeps raising `NullPointerException` or `IllegalArgumentException`.
 - **`ActionStatus.THREW` does not mean your action threw.** The engine also marks actions still in flight as
   `THREW` while it unwinds an abort. The status is the runtime's, and the API does not reinterpret it.
-- **A reaction's callback arrives before the root's.** The recorder's sequence reflects that order.
+- **A reaction completes before the call that triggered it.** A watch reaction is a call nested in the one whose
+  commit triggered it: an observer sees the root start, then the reaction start and end, then the root end. The
+  recorder keeps calls as they complete, so the reaction's outcome comes before the root's.
 - **`hasAsyncAction()` is about the action alone.** An edge whose guard is async but whose action is not still
   satisfies `hasSyncAction()`.
 - **A self-loop is asserted like any other edge.** `transition(REVIEW, RETOUCH).hasTarget(REVIEW)` describes

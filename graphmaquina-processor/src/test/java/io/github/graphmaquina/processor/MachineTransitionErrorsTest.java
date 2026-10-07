@@ -122,8 +122,8 @@ class MachineTransitionErrorsTest {
 
         assertEquals(4, result.countError("SG302"), result.describe());
         assertTrue(result.errors().contains("[SG302] failsOn does not allow java.util.concurrent.CancellationException;"
-                + " only exceptions foreign to the library, and never Throwable, Exception, RuntimeException, an Error"
-                + " or a CancellationException, which are never domain failures, nor CompletionException or"
+                + " only throwable types foreign to the library, and never Throwable, Exception, RuntimeException,"
+                + " an Error or a CancellationException, which are never domain failures, nor CompletionException or"
                 + " ExecutionException, which are unwrapped before matching: declare the type of their cause"),
                 result.describe());
         assertTrue(result.errors().stream().anyMatch((String error) -> error.startsWith("[SG302] failsOn does not allow fx.Halted;")),

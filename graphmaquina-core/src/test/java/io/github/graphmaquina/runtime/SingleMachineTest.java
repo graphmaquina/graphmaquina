@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
@@ -27,6 +28,7 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionGuard;
@@ -344,7 +346,10 @@ class SingleMachineTest {
                 "an action called the setter, or a concurrent transition on the same entity wrote it first"));
     }
 
-    /** A setter that throws stops phase 2 where it stood: what was written is applied, the rest stays pending. */
+    /**
+     * A setter that throws stops phase 2 where it stood: what was written is applied, the entity whose setter threw
+     * is named, and nothing is left pending here.
+     */
     @Test
     void aSetterThatThrowsReportsExactlyWhatWasAppliedAndWhatWasNot() {
         Doc peer = new Doc("2", REVIEW);
@@ -352,8 +357,11 @@ class SingleMachineTest {
         submit.onCall = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ctx.cascade(DOCS, peer, PUBLISH);
         Doc doc = new Doc("1", DRAFT);
         CommitFailedException error = assertThrows(CommitFailedException.class, () -> recording.execute(doc, SUBMIT));
+        assertEquals(CallPhase.COMMIT, error.phase());
+        assertEquals(StatesWritten.PARTIAL, error.statesWritten());
         assertEquals(List.of(doc), error.applied());
-        assertEquals(List.of(peer), error.pending());
+        assertEquals(Optional.of(peer), error.failedEntity());
+        assertEquals(List.of(), error.pending());
         assertInstanceOf(IllegalStateException.class, error.getCause());
         assertEquals(List.of("1:REVIEW", "2:PUBLISHED"), writes);
         assertEquals(REVIEW, doc.status());
@@ -401,7 +409,9 @@ class SingleMachineTest {
     void reentrancyIsDetected() {
         submit.onCall = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> machine.execute(ctx.entity(), DISCARD);
         Doc doc = new Doc("1", DRAFT);
-        assertThrows(ReentrantTransitionException.class, () -> machine.execute(doc, SUBMIT));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
+        assertInstanceOf(ReentrantTransitionException.class, error.getCause());
         assertEquals(DRAFT, doc.status());
         Outcome<Doc, DocStatus, DocTransition> later = machine.execute(new Doc("2", REVIEW), SEND_BACK);
         assertInstanceOf(Outcome.Applied.class, later);
@@ -410,7 +420,11 @@ class SingleMachineTest {
     @Test
     void nullStateIsUninitialized() {
         Doc doc = new Doc("1", null);
-        assertThrows(UninitializedStateException.class, () -> machine.execute(doc, SUBMIT));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
+        assertInstanceOf(UninitializedStateException.class, error.getCause());
+        assertEquals(CallPhase.RESOLVE, error.phase());
+        assertEquals(Optional.empty(), error.from());
     }
 
     @Test

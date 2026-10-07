@@ -50,26 +50,35 @@ class PublishedArtifactSmokeTest {
     private static final String CONSUMER_SOURCE = """
             import static io.github.graphmaquina.test.GraphAssertions.assertThat;
             import io.github.graphmaquina.api.ActionOutcome;
+            import io.github.graphmaquina.api.CallFailure;
             import io.github.graphmaquina.api.GraphDefinition;
             import io.github.graphmaquina.api.GuardResult;
+            import io.github.graphmaquina.api.MachineCall;
             import io.github.graphmaquina.api.MachineKey;
+            import io.github.graphmaquina.api.MachineObserver;
             import io.github.graphmaquina.api.Outcome;
             import io.github.graphmaquina.api.OutcomeCode;
             import io.github.graphmaquina.api.OutcomeStatus;
             import io.github.graphmaquina.api.StateMachine;
+            import io.github.graphmaquina.api.StatesWritten;
             import io.github.graphmaquina.dsl.StateGraph;
+            import io.github.graphmaquina.error.AfterCommitException;
+            import io.github.graphmaquina.error.CallFailedException;
+            import io.github.graphmaquina.runtime.MachineRegistry;
             import io.github.graphmaquina.runtime.StateMachines;
             import io.github.graphmaquina.test.GraphSnapshots;
-            import io.github.graphmaquina.test.probe.ActionProbe;
-            import io.github.graphmaquina.test.probe.GuardProbe;
-            import io.github.graphmaquina.test.probe.CallTrace;
             import io.github.graphmaquina.test.StateSnapshot;
+            import io.github.graphmaquina.test.probe.ActionProbe;
+            import io.github.graphmaquina.test.probe.CallTrace;
+            import io.github.graphmaquina.test.probe.GuardProbe;
             import io.github.graphmaquina.test.snapshot.GoldenOptions;
             import io.github.graphmaquina.test.snapshot.GraphDiff;
             import io.github.graphmaquina.test.snapshot.GraphSnapshot;
             import java.net.URL;
             import java.net.URLClassLoader;
             import java.nio.file.Path;
+            import java.time.Duration;
+            import java.util.ArrayList;
             import java.util.List;
             import java.util.Optional;
 
@@ -170,6 +179,82 @@ class PublishedArtifactSmokeTest {
                     if (guard.calls().single().transition() != Id.FINISH
                             || action.calls().single().transition() != Id.FINISH) {
                         throw new AssertionError("the recorded identifier was lost");
+                    }
+                    List<String> events = new ArrayList<>();
+                    List<MachineCall> calls = new ArrayList<>();
+                    List<Outcome<?, ?, ?>> completed = new ArrayList<>();
+                    MachineObserver observer = new MachineObserver() {
+                        @Override
+                        public void onStarted(MachineCall call) {
+                            events.add("started " + call);
+                            calls.add(call);
+                        }
+
+                        @Override
+                        public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                            events.add("completed " + outcome.status());
+                            calls.add(call);
+                            completed.add(outcome);
+                        }
+
+                        @Override
+                        public void onFailed(MachineCall call, CallFailure failure, Duration elapsed) {
+                            events.add("failed " + failure.phase() + " " + failure.statesWritten());
+                            calls.add(call);
+                        }
+                    };
+                    try (MachineRegistry registry = MachineRegistry.builder()
+                            .add(StateMachines.from(definition)
+                                    .state((Entity value) -> value.state,
+                                            (Entity value, State state) -> value.state = state)
+                                    .identity((Entity value) -> value))
+                            .observer(observer)
+                            .build()) {
+                        Outcome<Entity, State, Id> done = registry.of(KEY).execute(new Entity(), Id.FINISH);
+                        if (completed.size() != 1 || completed.get(0) != done || calls.size() != 2
+                                || calls.get(0) != calls.get(1)) {
+                            throw new AssertionError(
+                                    "the published observer must see the call that completed: " + events);
+                        }
+                    }
+                    GraphDefinition<Entity, State, Id> hooked = StateGraph.define(KEY).initial(State.NEW)
+                            .terminal(State.DONE)
+                            .statePolicy(State.NEW, "finish first")
+                            .transition(Id.FINISH, State.NEW, State.DONE)
+                            .afterCommit("audit", (Entity value) -> {
+                                throw new IllegalStateException("audit down");
+                            })
+                            .endTransition().build();
+                    try (MachineRegistry registry = MachineRegistry.builder()
+                            .add(StateMachines.from(hooked)
+                                    .state((Entity value) -> value.state,
+                                            (Entity value, State state) -> value.state = state)
+                                    .identity((Entity value) -> value))
+                            .observer(observer)
+                            .build()) {
+                        try {
+                            registry.of(KEY).execute(new Entity(), Id.FINISH);
+                            throw new AssertionError("the failing hook must fail the call");
+                        } catch (CallFailedException failure) {
+                            // No default: this switch compiles only while CallPhase holds exactly these six phases.
+                            String where = switch (failure.phase()) {
+                                case RESOLVE, GUARD, ACTION -> "before the commit";
+                                case COMMIT -> "during the commit";
+                                case HOOK -> "after the commit";
+                                case REACTIONS -> "in a reaction";
+                            };
+                            if (!where.equals("after the commit") || failure.statesWritten() != StatesWritten.ALL
+                                    || !(failure instanceof AfterCommitException after) || !after.hook().equals("audit")
+                                    || after.hop().transition() != Id.FINISH || after.records().size() != 1
+                                    || failure.call() != calls.get(2)) {
+                                throw new AssertionError("the published call failure must classify itself: " + failure);
+                            }
+                        }
+                    }
+                    if (!events.equals(List.of("started Entity/State FINISH", "completed APPLIED",
+                            "started Entity/State FINISH", "failed HOOK ALL"))
+                            || calls.get(2) != calls.get(3) || calls.get(0) == calls.get(2)) {
+                        throw new AssertionError("the published observer must see each call start and end: " + events);
                     }
                     System.out.println("PUBLIC_API_OK");
                 }

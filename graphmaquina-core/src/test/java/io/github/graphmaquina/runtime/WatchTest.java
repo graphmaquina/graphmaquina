@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineKey;
@@ -151,12 +152,21 @@ class WatchTest {
                 .build();
     }
 
-    /** A reaction as {@code Done <outcome's status>} or {@code Aborted <cause's simple name>}. */
+    /**
+     * A reaction as {@code Done <outcome's status>} or {@code Aborted <cause's simple name>}, followed by
+     * {@code caused by <simple name>} when that cause carries one.
+     */
     private static String describe(Reaction reaction) {
         return switch (reaction) {
             case Reaction.Done done -> "Done " + done.outcome().status().name();
-            case Reaction.Aborted aborted -> "Aborted " + aborted.cause().getClass().getSimpleName();
+            case Reaction.Aborted aborted -> "Aborted " + withCause(aborted.cause());
         };
+    }
+
+    /** The simple name of {@code thrown}, followed by {@code caused by <simple name>} when it has a cause. */
+    private static String withCause(Throwable thrown) {
+        return thrown.getClass().getSimpleName()
+                + (thrown.getCause() == null ? "" : " caused by " + thrown.getCause().getClass().getSimpleName());
     }
 
     private static List<MachineKey<?, ?, ?>> keysOf(List<TransitionRecord<?, ?, ?>> records) {
@@ -206,15 +216,18 @@ class WatchTest {
                     "identity:peer", "state:peer", "second", "identity:peer", "state:peer"), calls);
             calls.clear();
             nullIdentity[0] = true;
-            NullPointerException identityError = assertThrows(NullPointerException.class,
+            TransitionAbortedException identityError = assertThrows(TransitionAbortedException.class,
                     () -> docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
-            assertEquals("identity of " + DOCS + " returned null", identityError.getMessage());
+            NullPointerException nullIdentityCause =
+                    assertInstanceOf(NullPointerException.class, identityError.getCause());
+            assertEquals("identity of " + DOCS + " returned null", nullIdentityCause.getMessage());
             assertEquals(List.of("state:owner", "peers", "first", "identity:peer"), calls);
             calls.clear();
             nullIdentity[0] = false;
             peer.setStatus(null);
-            assertThrows(UninitializedStateException.class,
+            TransitionAbortedException uninitialized = assertThrows(TransitionAbortedException.class,
                     () -> docs.of(DOCS).reevaluate(new Doc("owner", PUBLISHED)));
+            assertInstanceOf(UninitializedStateException.class, uninitialized.getCause());
             assertEquals(List.of("state:owner", "peers", "first", "identity:peer", "state:peer"), calls);
         }
     }
@@ -375,7 +388,9 @@ class WatchTest {
         };
         Order order = new Order("o1", OrderStatus.PAID);
         Item item = new Item("i1", ItemStatus.PACKING, Optional.of(order));
-        assertThrows(ReentrantTransitionException.class, () -> items.execute(item, ItemTransition.PACK));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> items.execute(item, ItemTransition.PACK));
+        assertInstanceOf(ReentrantTransitionException.class, error.getCause());
         assertEquals(ItemStatus.PACKING, item.status());
         assertEquals(OrderStatus.PAID, order.status());
     }
@@ -384,7 +399,9 @@ class WatchTest {
      * A watch's functions cannot start a transition on the thread that runs them, as a guard cannot. A peersOf, an
      * ownerOf or a condition that calls execute is refused with ReentrantTransitionException: the reaction ends
      * aborted, and the doc it tried to move and the observer stay where they were. A reevaluation called directly
-     * refuses peersOf and the condition the same way.
+     * refuses peersOf and the condition the same way. A failure inside a reevaluation, direct or a reaction, aborts it
+     * in RESOLVE with the ReentrantTransitionException as cause; an owner lookup runs before any reevaluation, so its
+     * reaction carries the refusal itself.
      */
     @Test
     void aWatchFunctionThatStartsATransitionIsRefusedLikeAGuard() {
@@ -428,7 +445,7 @@ class WatchTest {
                             end += " with reactions " + applied.reactions().stream().map(WatchTest::describe).toList();
                         }
                     } catch (StateMachineException thrown) {
-                        end = thrown.getClass().getSimpleName();
+                        end = withCause(thrown);
                     }
                     ends.add(function + (direct ? " in a direct reevaluation: " : " in a reaction: ") + end
                             + ", bystander " + bystander.status() + ", observer " + observer.status());
@@ -436,14 +453,15 @@ class WatchTest {
             }
         }
         assertEquals(List.of(
-                "peersOf in a reaction: APPLIED with reactions [Aborted ReentrantTransitionException],"
+                "peersOf in a reaction: APPLIED with reactions [Aborted TransitionAbortedException caused by"
+                        + " ReentrantTransitionException], bystander DRAFT, observer PUBLISHED",
+                "peersOf in a direct reevaluation: TransitionAbortedException caused by ReentrantTransitionException,"
                         + " bystander DRAFT, observer PUBLISHED",
-                "peersOf in a direct reevaluation: ReentrantTransitionException, bystander DRAFT, observer PUBLISHED",
                 "ownerOf in a reaction: APPLIED with reactions [Aborted ReentrantTransitionException],"
                         + " bystander DRAFT, observer PUBLISHED",
-                "condition in a reaction: APPLIED with reactions [Aborted ReentrantTransitionException],"
-                        + " bystander DRAFT, observer PUBLISHED",
-                "condition in a direct reevaluation: ReentrantTransitionException,"
+                "condition in a reaction: APPLIED with reactions [Aborted TransitionAbortedException caused by"
+                        + " ReentrantTransitionException], bystander DRAFT, observer PUBLISHED",
+                "condition in a direct reevaluation: TransitionAbortedException caused by ReentrantTransitionException,"
                         + " bystander DRAFT, observer PUBLISHED"),
                 ends);
     }
@@ -462,7 +480,10 @@ class WatchTest {
                     return true;
                 })) {
             registry.set(docs);
-            assertThrows(ReentrantTransitionException.class, () -> docs.of(DOCS).reevaluate(observer));
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> docs.of(DOCS).reevaluate(observer));
+            assertInstanceOf(ReentrantTransitionException.class, error.getCause());
+            assertEquals(CallPhase.RESOLVE, error.phase());
             assertEquals(PUBLISHED, observer.status());
         }
     }
@@ -593,7 +614,7 @@ class WatchTest {
             failingHook = "review:peer";
             AfterCommitException error = assertThrows(AfterCommitException.class,
                     () -> docs.of(DOCS).execute(peer, SUBMIT));
-            assertEquals("onReview", error.step());
+            assertEquals("onReview", error.hook());
             assertEquals(List.of("review:peer"), hooks);
             assertEquals(List.of("peer:REVIEW"), writes);
             assertEquals(REVIEW, peer.status());

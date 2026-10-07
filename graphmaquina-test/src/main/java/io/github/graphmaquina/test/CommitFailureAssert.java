@@ -3,15 +3,17 @@ package io.github.graphmaquina.test;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 
 /**
- * Chainable assertion over a {@link CommitFailedException}: phase 2 could not complete the commit.
- * {@code applied} records entities whose setter calls completed; {@code pending} records the remaining planned
- * commit work, including the failing setter when one threw. That setter may have mutated its entity before
- * throwing, so inspect entity state or a {@link StateSnapshot} separately. Both lists are compared entity by
- * entity, by reference and in order, so a rollback expectation is never satisfied by the exception type alone.
+ * Chainable assertion over a {@link CommitFailedException}: phase 2 could not complete the commit. {@code applied}
+ * records the entities whose setter returned, {@code failedEntity} the one whose setter threw, which may have mutated
+ * its entity before throwing, so inspect entity state or a {@link StateSnapshot} separately, and {@code pending} the
+ * ones never tried. The lists are compared entity by entity, by reference and in order, so a rollback expectation is
+ * never satisfied by the exception type alone.
  */
-public final class CommitFailureAssert extends BaseFailureAssert<CommitFailureAssert> {
+public final class CommitFailureAssert extends BaseCallFailureAssert<CommitFailureAssert> {
 
     private final CommitFailedException failure;
 
@@ -31,6 +33,22 @@ public final class CommitFailureAssert extends BaseFailureAssert<CommitFailureAs
 
     public CommitFailureAssert hasPendingExactly(Object... expected) {
         return hasExactly("pending", expected, failure.pending());
+    }
+
+    /** The entity whose setter threw, matched by reference. */
+    public CommitFailureAssert hasFailedEntity(Object expected) {
+        Objects.requireNonNull(expected, "expected");
+        Optional<Object> actual = failure.failedEntity();
+        if (actual.isEmpty() || actual.get() != expected) {
+            Checks.fail(context, "failed entity", Optional.of(expected), actual);
+        }
+        return this;
+    }
+
+    /** No setter threw: phase 2 stopped before its first write. */
+    public CommitFailureAssert hasNoFailedEntity() {
+        Checks.equal(context, "failed entity", Optional.empty(), failure.failedEntity());
+        return this;
     }
 
     private CommitFailureAssert hasExactly(String property, Object[] expected, List<Object> entities) {

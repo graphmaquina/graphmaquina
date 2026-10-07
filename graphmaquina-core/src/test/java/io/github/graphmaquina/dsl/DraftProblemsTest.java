@@ -169,10 +169,11 @@ class DraftProblemsTest {
                 .transition(SUBMIT, DRAFT, REVIEW).action(new Publish()).failsOn(CancellationException.class)
                 .endTransition()));
         assertEquals(List.of("SG302"), cancellation.codes());
-        assertEquals("DRAFT -SUBMIT-> REVIEW: failsOn does not allow CancellationException; only exceptions foreign to"
-                + " the library, and never Throwable, Exception, RuntimeException, an Error or a CancellationException,"
-                + " which are never domain failures, nor CompletionException or ExecutionException, which are unwrapped"
-                + " before matching: declare the type of their cause", cancellation.problems().get(0).message());
+        assertEquals("DRAFT -SUBMIT-> REVIEW: failsOn does not allow CancellationException; only throwable types"
+                + " foreign to the library, and never Throwable, Exception, RuntimeException, an Error or a"
+                + " CancellationException, which are never domain failures, nor CompletionException or"
+                + " ExecutionException, which are unwrapped before matching: declare the type of their cause",
+                cancellation.problems().get(0).message());
         for (Class<? extends Throwable> type : List.of(Cancelled.class, CompletionException.class,
                 ExecutionException.class)) {
             assertEquals(List.of("SG302"), failing(tail(head()

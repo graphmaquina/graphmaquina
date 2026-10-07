@@ -18,8 +18,10 @@ import java.util.Optional;
  * resolved, which has no destination to report because the identifier matched none from that state; and
  * {@link #atUnread(MachineKey, Object, Enum)} describes one raised before any identifier was read, such as
  * a chain of watch reactions that exceeds its limit, which reports neither.
+ * {@link #atUnreadState(MachineKey, Object, Enum)} and {@link #atUnreadState(MachineKey, Object)} describe one raised
+ * before the entity's state was read, which reports no state either.
  */
-public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
+public final class AbortAssert extends BaseCallFailureAssert<AbortAssert> {
 
     private final TransitionAbortedException abort;
 
@@ -43,7 +45,7 @@ public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
         Objects.requireNonNull(to, "to");
         Checks.equal(context, "key", key, abort.key());
         Checks.same(context, "entity", entity, abort.entity());
-        Checks.equal(context, "from", from, abort.from());
+        Checks.equal(context, "from", Optional.<Enum<?>>of(from), abort.from());
         Checks.equal(context, "transition", Optional.<Enum<?>>of(transition), abort.transition());
         Checks.equal(context, "to", Optional.<Enum<?>>of(to), abort.to());
         return this;
@@ -61,7 +63,7 @@ public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
         Objects.requireNonNull(transition, "transition");
         Checks.equal(context, "key", key, abort.key());
         Checks.same(context, "entity", entity, abort.entity());
-        Checks.equal(context, "from", from, abort.from());
+        Checks.equal(context, "from", Optional.<Enum<?>>of(from), abort.from());
         Checks.equal(context, "transition", Optional.<Enum<?>>of(transition), abort.transition());
         Checks.equal(context, "to", Optional.empty(), abort.to());
         return this;
@@ -79,7 +81,37 @@ public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
         Objects.requireNonNull(from, "from");
         Checks.equal(context, "key", key, abort.key());
         Checks.same(context, "entity", entity, abort.entity());
-        Checks.equal(context, "from", from, abort.from());
+        Checks.equal(context, "from", Optional.<Enum<?>>of(from), abort.from());
+        Checks.equal(context, "transition", Optional.empty(), abort.transition());
+        Checks.equal(context, "to", Optional.empty(), abort.to());
+        return this;
+    }
+
+    /**
+     * The abort raised before the entity's state was read, by an {@code execute} asked for {@code transition}, or by
+     * the edge {@code transition} a reevaluation selected: the entity's identity or its state could not be read, so it
+     * reports neither a state nor a destination.
+     */
+    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnreadState(MachineKey<E, S, T> key, E entity,
+            T transition) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(transition, "transition");
+        Checks.equal(context, "key", key, abort.key());
+        Checks.same(context, "entity", entity, abort.entity());
+        Checks.equal(context, "from", Optional.empty(), abort.from());
+        Checks.equal(context, "transition", Optional.<Enum<?>>of(transition), abort.transition());
+        Checks.equal(context, "to", Optional.empty(), abort.to());
+        return this;
+    }
+
+    /** The same for a reevaluation, which asks for no identifier: it reports none either. */
+    public <E, S extends Enum<S>, T extends Enum<T>> AbortAssert atUnreadState(MachineKey<E, S, T> key, E entity) {
+        Objects.requireNonNull(key, "key");
+        Objects.requireNonNull(entity, "entity");
+        Checks.equal(context, "key", key, abort.key());
+        Checks.same(context, "entity", entity, abort.entity());
+        Checks.equal(context, "from", Optional.empty(), abort.from());
         Checks.equal(context, "transition", Optional.empty(), abort.transition());
         Checks.equal(context, "to", Optional.empty(), abort.to());
         return this;
@@ -103,10 +135,5 @@ public final class AbortAssert extends BaseFailureAssert<AbortAssert> {
         List<String> wanted = List.copyOf(expected);
         Checks.equal(context, "cascade path", wanted, abort.cascadePath());
         return this;
-    }
-
-    /** The actions that ran before the abort, which survive it even though nothing was committed. */
-    public JournalAssert journal() {
-        return new JournalAssert(context + ".journal", abort.journal());
     }
 }

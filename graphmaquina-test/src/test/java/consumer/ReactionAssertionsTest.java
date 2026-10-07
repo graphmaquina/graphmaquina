@@ -10,12 +10,14 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.IgnoreReason;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
-import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.Reaction;
+import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
+import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.AfterCommitException;
@@ -400,8 +402,11 @@ class ReactionAssertionsTest {
     @Test
     void anAfterCommitFailureIsReportedAsTheCauseItIs() {
         Entity entity = new Entity("e", State.READY);
-        AfterCommitException cause = new AfterCommitException(TestDomain.KEY, entity, State.NEW,
-                State.READY, "audit", new IllegalStateException("the hook threw"));
+        TransitionRecord<Entity, State, Id> hop = new TransitionRecord<>(TestDomain.KEY, entity, State.NEW, Id.PREPARE,
+                State.READY, TransitionKind.MOVE, Optional.empty(), 0);
+        AfterCommitException cause = new AfterCommitException(
+                new MachineCall(TestDomain.KEY, entity, Optional.of(Id.PREPARE), false), List.of(), List.of(hop), hop,
+                "audit", new IllegalStateException("the hook threw"));
         AbortedReactionAssert<Entity, State, Id> view =
                 single(new Reaction.Aborted(TestDomain.KEY, entity, cause), entity).isAborted();
         view.hasCause(AfterCommitException.class).hasCauseSameAs(cause);

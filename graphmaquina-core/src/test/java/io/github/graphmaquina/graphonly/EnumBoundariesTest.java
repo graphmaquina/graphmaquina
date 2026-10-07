@@ -8,7 +8,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
@@ -17,6 +19,7 @@ import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -97,7 +100,12 @@ class EnumBoundariesTest {
         GraphDefinition<Entity, State, Id> graph = graph(effects);
         try (MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph).identity(e -> e)
                 .state(e -> { effects[0]++; return e.state; }, (e, state) -> { effects[0]++; e.state = state; }))
-                .listener((key, outcome) -> effects[0]++).build()) {
+                .observer(new MachineObserver() {
+                    @Override
+                    public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                        effects[0]++;
+                    }
+                }).build()) {
             StateMachine raw = registry.of(KEY);
             Entity entity = new Entity();
             if (async) {
@@ -176,7 +184,12 @@ class EnumBoundariesTest {
                     return e;
                 }).state(e -> { if (e == peer) { peerReads[0]++; } return e.state; },
                         (e, state) -> { effects[0]++; e.state = state; }))
-                .listener((key, outcome) -> effects[0]++).build()) {
+                .observer(new MachineObserver() {
+                    @Override
+                    public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                        effects[0]++;
+                    }
+                }).build()) {
             Entity entity = new Entity();
             TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(KEY).execute(entity, Id.GO));

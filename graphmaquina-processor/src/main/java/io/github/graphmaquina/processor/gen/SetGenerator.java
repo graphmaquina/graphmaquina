@@ -27,17 +27,16 @@ import javax.lang.model.type.TypeMirror;
  * it serves, or after the class a parameter of {@code builder(...)} takes. {@link #emit} answers, beside the source,
  * what the processor checks against that scope before writing it.</p>
  *
- * <p>Its {@code Builder} mirrors {@code MachineRegistry.Builder} and {@code StateMachines.Builder}: it creates
- * them when it is created and hands every setting to them as soon as it is given, so a setting they refuse is
- * refused where it is given, a second listener is refused instead of replacing the first, and the builder is
- * single-use. The state and the identity of each machine are read and written by lambdas that call the very
- * accessors the property selected, never by a method reference, which would also consider a static overload of
- * the same name.</p>
+ * <p>Its {@code Builder} mirrors {@code MachineRegistry.Builder} and {@code StateMachines.Builder}: it creates them
+ * when it is created and hands every setting to them as soon as it is given, so a setting they refuse is refused where
+ * it is given, observers add up in the order they are given, and the builder is single-use. The state and the identity
+ * of each machine are read and written by lambdas that call the very accessors the property selected, never by a method
+ * reference, which would also consider a static overload of the same name.</p>
  */
 public final class SetGenerator {
 
     private static final String MACHINE = "io.github.graphmaquina.api.Machine";
-    private static final String TRANSITION_LISTENER = "io.github.graphmaquina.api.TransitionListener";
+    private static final String MACHINE_OBSERVER = "io.github.graphmaquina.api.MachineObserver";
     private static final String MACHINE_REGISTRY = "io.github.graphmaquina.runtime.MachineRegistry";
     private static final String STATE_MACHINES = "io.github.graphmaquina.runtime.StateMachines";
     private static final String DURATION = "java.time.Duration";
@@ -58,7 +57,13 @@ public final class SetGenerator {
      * they play, which also is their usual name.
      */
     private static final List<String> SETTER_PARAMETERS = List.of("machine", "timeout", "executor", "depth", "chain",
-            "listener", "built");
+            "observer", "built");
+
+    /**
+     * The longest forwarder doc text emitted as a one-line comment; a longer one takes the multi-line form. The bound
+     * stays below what one emitted line can hold within 120 columns at the Builder's indentation.
+     */
+    private static final int DOC_LINE_WIDTH = 100;
 
     private SetGenerator() { }
 
@@ -85,7 +90,10 @@ public final class SetGenerator {
         return SymbolNames.qualified(model.packageName(), SymbolNames.runtimeName(model.setName()));
     }
 
-    /** What {@link TypeSource} writes in the companion of {@code model}: the types that pin a state writer's argument. */
+    /**
+     * What {@link TypeSource} writes in the companion of {@code model}: the types that pin a state writer's
+     * argument.
+     */
     private static Written rendered(SetModel model, BoundInvocation invocations) {
         Written written = new Written(Map.of(), Map.of(), Map.of(), Map.of());
         for (MachineAccessor accessor : model.machines()) {
@@ -113,14 +121,16 @@ public final class SetGenerator {
             out.line("import " + type + ";");
         }
         out.blank();
-        out.line("/** Generated set of {@link " + set + "}: builds the registry once and hands out the facades. Do not edit. */");
+        out.line("/** Generated set of {@link " + set
+                + "}: builds the registry once and hands out the facades. Do not edit. */");
         out.line("@" + names.of(GENERATED));
         out.line("@" + names.of(SUPPRESS_WARNINGS) + "({\"deprecation\", \"removal\"})");
         out.open("public final class " + companion + " implements " + set);
         out.blank();
         out.line("private final " + names.of(MACHINE_REGISTRY) + " " + registry + ";");
         for (MachineAccessor accessor : model.machines()) {
-            out.line("private final " + facadeName(accessor, names) + " " + variables.fields().get(accessor.method()) + ";");
+            out.line("private final " + facadeName(accessor, names) + " " + variables.fields().get(accessor.method())
+                    + ";");
         }
         out.blank();
         out.open("private " + companion + "(" + names.of(MACHINE_REGISTRY) + " " + registry + ")");
@@ -135,7 +145,8 @@ public final class SetGenerator {
         for (Map.Entry<String, String> parameter : variables.parameters().entrySet()) {
             parameters.add(names.of(parameter.getKey()) + " " + parameter.getValue());
         }
-        out.line("/** Every class with instance members the machines use" + (model.hasAsync() ? ", after the timeout shared by the asynchronous machines" : "") + ". */");
+        out.line("/** Every class with instance members the machines use"
+                + (model.hasAsync() ? ", after the timeout shared by the asynchronous machines" : "") + ". */");
         out.open("public static Builder builder(" + String.join(", ", parameters) + ")");
         out.line("return new Builder(" + String.join(", ", variables.parameters().values()) + ");");
         out.close();
@@ -164,9 +175,11 @@ public final class SetGenerator {
         String used = variables.used();
         Map<String, String> setters = variables.setters();
         out.line("/**");
-        out.line(" * Mirrors MachineRegistry.Builder and StateMachines.Builder, which it creates with itself and hands");
-        out.line(" * every setting to as soon as it is given: what they refuse is refused where it is given, a second");
-        out.line(" * listener included. Single-use and not thread-safe: once build() succeeded, nothing is accepted.");
+        out.line(" * Mirrors MachineRegistry.Builder and StateMachines.Builder, which it creates with itself and "
+                + "hands");
+        out.line(" * every setting to as soon as it is given: what they refuse is refused where it is given, and");
+        out.line(" * observers add up in the order they are given. Single-use and not thread-safe: once build()");
+        out.line(" * succeeded, nothing is accepted.");
         out.line(" */");
         out.open("public static final class Builder");
         out.blank();
@@ -207,8 +220,8 @@ public final class SetGenerator {
             String machine = setters.get("machine");
             String timeout = setters.get("timeout");
             out.line("/** Overrides the shared timeout for one asynchronous machine. */");
-            out.open("public Builder asyncTimeout(" + names.of(CLASS) + "<? extends " + names.of(MACHINE) + "<?, ?, ?>> "
-                    + machine + ", " + names.of(DURATION) + " " + timeout + ")");
+            out.open("public Builder asyncTimeout(" + names.of(CLASS) + "<? extends " + names.of(MACHINE)
+                    + "<?, ?, ?>> " + machine + ", " + names.of(DURATION) + " " + timeout + ")");
             out.line("checkUnused();");
             out.line(objects + ".requireNonNull(" + machine + ", \"machine\");");
             out.line(objects + ".requireNonNull(" + timeout + ", \"timeout\");");
@@ -235,10 +248,15 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
-        forward(out, "maxCascadeDepth", "int " + setters.get("depth"), registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
-        forward(out, "maxWatchChain", "int " + setters.get("chain"), registry + ".maxWatchChain(" + setters.get("chain") + ");");
-        forward(out, "listener", names.of(TRANSITION_LISTENER) + " " + setters.get("listener"),
-                registry + ".listener(" + setters.get("listener") + ");");
+        forward(out, "Bounds how deep a cascade may go, the root being at depth 0; the default is 10, and a value"
+                + " below 1 is refused.", "maxCascadeDepth", "int " + setters.get("depth"),
+                registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
+        forward(out, "Bounds how many watch reactions may follow one another; the default is 10, and a value below 1"
+                + " is refused.", "maxWatchChain", "int " + setters.get("chain"),
+                registry + ".maxWatchChain(" + setters.get("chain") + ");");
+        forward(out, "Adds an observer of every call of the set; observers add up and are notified in the order they"
+                + " are given.", "observer", names.of(MACHINE_OBSERVER) + " " + setters.get("observer"),
+                registry + ".observer(" + setters.get("observer") + ");");
         String built = setters.get("built");
         String companion = names.of(qualifiedName(model));
         out.open("public " + names.of(model.type().getQualifiedName().toString()) + " build()");
@@ -252,14 +270,34 @@ public final class SetGenerator {
         out.open("private void checkUnused()");
         out.open("if (" + used + ")");
         out.line("throw new " + names.of(ILLEGAL_STATE) + "("
-                + MachineGenerator.quote("this " + SymbolNames.runtimeName(model.setName()) + ".Builder was already used") + ");");
+                + MachineGenerator.quote("this " + SymbolNames.runtimeName(model.setName())
+                        + ".Builder was already used") + ");");
         out.close();
         out.close();
         out.close();
     }
 
-    /** One setting the {@code Builder} hands to the registry's builder as soon as it is given. */
-    private static void forward(SourceWriter out, String method, String parameter, String statement) {
+    /**
+     * One setting the {@code Builder} hands to the registry's builder as soon as it is given, documented by
+     * {@code doc}: on one line when the text is at most {@code DOC_LINE_WIDTH} characters, else in the multi-line
+     * form, so that no emitted comment line passes 120 columns.
+     */
+    private static void forward(SourceWriter out, String doc, String method, String parameter, String statement) {
+        if (doc.length() <= DOC_LINE_WIDTH) {
+            out.line("/** " + doc + " */");
+        } else {
+            out.line("/**");
+            StringBuilder line = new StringBuilder();
+            for (String word : doc.split(" ")) {
+                if (line.length() > 0 && line.length() + 1 + word.length() > DOC_LINE_WIDTH) {
+                    out.line(" * " + line);
+                    line.setLength(0);
+                }
+                line.append(line.length() == 0 ? "" : " ").append(word);
+            }
+            out.line(" * " + line);
+            out.line(" */");
+        }
         out.open("public Builder " + method + "(" + parameter + ")");
         out.line("checkUnused();");
         out.line(statement);
@@ -273,7 +311,8 @@ public final class SetGenerator {
      * selected; the writer's argument is pinned, as {@link BoundInvocation} decides, to the parameter type that
      * keeps that writer selected.
      */
-    private static String accessors(MachineModel machine, Names names, BoundInvocation invocations, Variables variables) {
+    private static String accessors(MachineModel machine, Names names, BoundInvocation invocations,
+                                    Variables variables) {
         String e = names.of(machine.types().entityElement().getQualifiedName().toString());
         String s = names.of(machine.types().statesElement().getQualifiedName().toString());
         String entity = variables.entity();
@@ -281,8 +320,8 @@ public final class SetGenerator {
         Binding writer = writer(machine);
         return reader(machine, machine.stateGetter(), names, invocations, variables) + ", "
                 + MachineGenerator.lambda(e + " " + entity + ", " + s + " " + state,
-                        invocations.emit(writer, entity, List.of(state)), invocations.caught(writer).map(names::of), false,
-                        variables.rethrow(), variables.failure());
+                        invocations.emit(writer, entity, List.of(state)), invocations.caught(writer).map(names::of),
+                        false, variables.rethrow(), variables.failure());
     }
 
     /** A lambda that reads {@code property} from the entity of {@code machine} by calling its selected accessor. */
@@ -303,7 +342,8 @@ public final class SetGenerator {
         Set<String> caught = new LinkedHashSet<>();
         for (MachineAccessor accessor : model.machines()) {
             MachineModel machine = accessor.machine();
-            for (Binding binding : List.of(machine.stateGetter().accessor(), writer(machine), machine.idGetter().accessor())) {
+            for (Binding binding : List.of(machine.stateGetter().accessor(), writer(machine),
+                    machine.idGetter().accessor())) {
                 invocations.caught(binding).ifPresent(caught::add);
             }
         }
@@ -365,11 +405,14 @@ public final class SetGenerator {
         for (String role : SETTER_PARAMETERS) {
             setters.put(role, MachineGenerator.unique(role, new LinkedHashSet<>(taken)));
         }
-        return new Variables(fields, registry, builders, registryBuilder, used, parameters, timeout, entity, state, setters,
-                rethrow, failure);
+        return new Variables(fields, registry, builders, registryBuilder, used, parameters, timeout, entity, state,
+                setters, rethrow, failure);
     }
 
-    /** How the set companion writes its types, from what it claims and what its scope holds already, its own Builder included. */
+    /**
+     * How the set companion writes its types, from what it claims and what its scope holds already, its own Builder
+     * included.
+     */
     private static Names names(SetModel model, BoundInvocation invocations) {
         return new Names(model.packageName(), types(model, invocations), Names.Scope.of(invocations.elements(),
                 Names.packageOf(model.type()), model.type(), Map.of("Builder", qualifiedName(model) + ".Builder")));
@@ -404,7 +447,7 @@ public final class SetGenerator {
                 Names.claim(types, fixed);
             }
         }
-        for (String fixed : List.of(TRANSITION_LISTENER, MACHINE_REGISTRY, STATE_MACHINES, OBJECTS, EXECUTOR, GENERATED,
+        for (String fixed : List.of(MACHINE_OBSERVER, MACHINE_REGISTRY, STATE_MACHINES, OBJECTS, EXECUTOR, GENERATED,
                 SUPPRESS_WARNINGS, OVERRIDE, ILLEGAL_STATE)) {
             Names.claim(types, fixed);
         }

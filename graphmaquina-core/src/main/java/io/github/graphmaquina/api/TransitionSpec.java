@@ -20,22 +20,25 @@ import lombok.NonNull;
  * @param action the action to run, absent for a plain move
  * @param guards guards evaluated in declaration order
  * @param onFailure identifier of the recovery edge, resolved from {@code from}
- * @param failsOn exception types that turn an action's exception into a domain failure, routed like a failed outcome;
- *     the exception is unwrapped from CompletionException and ExecutionException first, and an Error or a
- *     CancellationException never matches, nor does a StateMachineException, which the engine rethrows as is,
- *     whichever root it comes from; a TransitionAbortedException from another root keeps details that describe
- *     that root
+ * @param failsOn throwable types that turn an action's throwable into a domain failure, routed like a failed outcome;
+ *     the throwable is unwrapped from CompletionException and ExecutionException first, and the engine never matches an
+ *     Error, a CancellationException or a StateMachineException, whatever this list holds; the DSL also refuses those
+ *     three and their subtypes, the supertypes Throwable, Exception and RuntimeException, and the wrappers
+ *     CompletionException and ExecutionException (SG302). A StateMachineException from another call aborts the call
+ *     with it as cause, and a failure of the call itself ends it as itself, or as the failure that poisoned the
+ *     transaction
  * @param timeout longest wait for the asynchronous action's stage, counted from when the action returns it; it only
  *     shortens the root's deadline, and {@code Duration.ofNanos(Long.MAX_VALUE)} or more sets no limit of its own
  * @param afterCommit hook run once this edge is committed
  */
-public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(@NonNull S from, @NonNull T transition, @NonNull S to,
-                                                                       @NonNull Optional<ActionRef<E, S, T>> action,
-                                                                       @NonNull List<GuardRef<E, S, T>> guards,
-                                                                       @NonNull Optional<T> onFailure,
-                                                                       @NonNull List<Class<? extends Throwable>> failsOn,
-                                                                       @NonNull Optional<Duration> timeout,
-                                                                       @NonNull Optional<HookRef<E, S, T>> afterCommit) {
+public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
+        @NonNull S from, @NonNull T transition, @NonNull S to,
+        @NonNull Optional<ActionRef<E, S, T>> action,
+        @NonNull List<GuardRef<E, S, T>> guards,
+        @NonNull Optional<T> onFailure,
+        @NonNull List<Class<? extends Throwable>> failsOn,
+        @NonNull Optional<Duration> timeout,
+        @NonNull Optional<HookRef<E, S, T>> afterCommit) {
 
     public TransitionSpec {
         guards = List.copyOf(guards);

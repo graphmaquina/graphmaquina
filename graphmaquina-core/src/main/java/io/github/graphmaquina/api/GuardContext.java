@@ -5,7 +5,10 @@ import java.util.Optional;
 /**
  * A guard decides, it does not mutate: no cascade and no depth. Its peer views work only on the thread that called
  * {@code test()} and only until the root transaction ends: elsewhere they throw {@code WrongThreadException},
- * afterwards {@code StaleContextException}.
+ * afterwards {@code StaleContextException}. What the guard throws, or completes its stage with, is never routed by
+ * {@code failsOn}: once unwrapped from CompletionException and ExecutionException, it aborts the call with it as
+ * cause, a failure of this call that it lets through excepted, which ends the call as itself, or as the failure that
+ * poisoned the transaction. An Error thrown as itself propagates.
  */
 public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 

@@ -5,7 +5,14 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.api.ActionRecord;
+import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.api.TransitionKind;
+import io.github.graphmaquina.api.TransitionRecord;
 import java.time.DayOfWeek;
 import java.time.Month;
 import java.util.List;
@@ -17,10 +24,13 @@ class ExceptionsTest {
 
     private static final MachineKey<String, DayOfWeek, Month> KEY =
             MachineKey.of(String.class, DayOfWeek.class, Month.class);
+    private static final MachineCall CALL = new MachineCall(KEY, "e", Optional.of(Month.JANUARY), false);
+    private static final ActionRecord RAN =
+            new ActionRecord(KEY, "e", DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, "A", 0, ActionStatus.OK);
 
     private static AbortDetails details() {
-        return new AbortDetails(KEY, "e", DayOfWeek.MONDAY, Optional.of(Month.JANUARY), Optional.of(DayOfWeek.TUESDAY),
-                Optional.of("A"), List.of("String/DayOfWeek#e"), List.of());
+        return new AbortDetails(KEY, "e", Optional.of(DayOfWeek.MONDAY), Optional.of(Month.JANUARY),
+                Optional.of(DayOfWeek.TUESDAY), Optional.of("A"), List.of("String/DayOfWeek#e"), List.of(RAN));
     }
 
     @Test
@@ -34,11 +44,16 @@ class ExceptionsTest {
     }
 
     @Test
-    void abortedCarriesDetailsAndCause() {
+    void abortedCarriesItsCallItsPhaseDetailsAndCause() {
         IllegalStateException cause = new IllegalStateException("boom");
-        TransitionAbortedException error = new TransitionAbortedException(details(), "the action threw", cause);
+        TransitionAbortedException error =
+                new TransitionAbortedException(CALL, CallPhase.ACTION, details(), "the action threw", cause);
+        assertSame(CALL, error.call());
+        assertEquals(CallPhase.ACTION, error.phase());
+        assertEquals(StatesWritten.NONE, error.statesWritten());
+        assertEquals(List.of(RAN), error.journal());
         assertSame(cause, error.getCause());
-        assertEquals(DayOfWeek.MONDAY, error.from());
+        assertEquals(Optional.of(DayOfWeek.MONDAY), error.from());
         assertEquals(Optional.of(Month.JANUARY), error.transition());
         assertEquals(Optional.of(DayOfWeek.TUESDAY), error.to());
         assertEquals(Optional.of("A"), error.action());
@@ -46,35 +61,63 @@ class ExceptionsTest {
         assertTrue(error.getMessage().contains("[route String/DayOfWeek#e]"));
     }
 
+    @Test
+    void anAbortHappensBeforeTheCommit() {
+        for (CallPhase phase : List.of(CallPhase.COMMIT, CallPhase.HOOK, CallPhase.REACTIONS)) {
+            IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                    () -> new TransitionAbortedException(CALL, phase, details(), "no"));
+            assertEquals("an abort happens before the commit, not in " + phase, refused.getMessage());
+        }
+        assertThrows(NullPointerException.class,
+                () -> new TransitionAbortedException(null, CallPhase.ACTION, details(), "no"));
+        assertThrows(NullPointerException.class, () -> new TransitionAbortedException(CALL, null, details(), "no"));
+    }
+
     /** Before an edge is resolved there is no destination to report, and none is invented. */
     @Test
     void detailsBeforeResolutionCarryNeitherIdentityNorDestination() {
-        AbortDetails unresolved = new AbortDetails(KEY, "e", DayOfWeek.MONDAY, Optional.empty(), Optional.empty(),
-                Optional.empty(), List.of(), List.of());
+        AbortDetails unresolved = new AbortDetails(KEY, "e", Optional.of(DayOfWeek.MONDAY), Optional.empty(),
+                Optional.empty(), Optional.empty(), List.of(), List.of());
         assertEquals("MONDAY", unresolved.describeEdge());
-        TransitionAbortedException error = new TransitionAbortedException(unresolved, "no watch left");
+        TransitionAbortedException error =
+                new TransitionAbortedException(CALL, CallPhase.RESOLVE, unresolved, "no watch left");
         assertEquals(Optional.empty(), error.to());
         assertTrue(error.getMessage().contains("String/DayOfWeek MONDAY: no watch left"));
 
-        AbortDetails requested = new AbortDetails(KEY, "e", DayOfWeek.MONDAY, Optional.of(Month.JANUARY),
+        AbortDetails requested = new AbortDetails(KEY, "e", Optional.of(DayOfWeek.MONDAY), Optional.of(Month.JANUARY),
                 Optional.empty(), Optional.empty(), List.of(), List.of());
         assertEquals("MONDAY -JANUARY-> ?", requested.describeEdge());
     }
 
+    /** Before the state was read there is no state to report either. */
     @Test
-    void subtypesKeepPayload() {
-        UnhandledFailureException unhandled = new UnhandledFailureException(details(), "declined");
+    void detailsBeforeTheStateReadReportAQuestionMarkForIt() {
+        AbortDetails unread = new AbortDetails(KEY, "e", Optional.empty(), Optional.of(Month.JANUARY), Optional.empty(),
+                Optional.empty(), List.of(), List.of());
+        assertEquals("? -JANUARY-> ?", unread.describeEdge());
+        AbortDetails reevaluation = new AbortDetails(KEY, "e", Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.empty(), List.of(), List.of());
+        assertEquals("?", reevaluation.describeEdge());
+    }
+
+    @Test
+    void subtypesKeepPayloadAndTheirPhase() {
+        UnhandledFailureException unhandled = new UnhandledFailureException(CALL, details(), "declined");
         assertEquals("declined", unhandled.reason());
+        assertEquals(CallPhase.ACTION, unhandled.phase());
         CascadeCycleException cycle =
-                new CascadeCycleException(details(), List.of("a", "b", "a"), Month.MAY, Month.JULY);
+                new CascadeCycleException(CALL, details(), List.of("a", "b", "a"), Month.MAY, Month.JULY);
         assertTrue(cycle.getMessage().contains("a → b → a"));
         assertEquals(Month.MAY, cycle.inFlightTransition());
         assertEquals(Month.JULY, cycle.requestedTransition());
-        PoisonedUnitOfWorkException poisoned = new PoisonedUnitOfWorkException(details(), unhandled);
+        assertEquals(CallPhase.ACTION, cycle.phase());
+        PoisonedUnitOfWorkException poisoned = new PoisonedUnitOfWorkException(CALL, details(), unhandled);
         assertSame(unhandled, poisoned.original());
         assertSame(unhandled, poisoned.getCause());
-        CascadeException collected = new CascadeException(details(), List.of(unhandled));
+        CascadeException collected = new CascadeException(CALL, details(), List.of(unhandled));
         assertEquals(1, collected.errors().size());
+        assertEquals(CallPhase.ACTION, new CascadeDepthExceededException(CALL, details(), 3).phase());
+        assertEquals(CallPhase.RESOLVE, new WatchChainExceededException(CALL, details(), 3).phase());
     }
 
     @Test
@@ -93,23 +136,39 @@ class ExceptionsTest {
     }
 
     @Test
-    void commitFailedSeparatesAppliedAndPending() {
-        CommitFailedException error = new CommitFailedException(List.of("a"), List.of("b", "c"),
-                new IllegalStateException("setter"));
-        assertEquals(List.of("a"), error.applied());
-        assertEquals(List.of("b", "c"), error.pending());
+    void commitFailedSeparatesAppliedFailedAndPending() {
+        IllegalStateException setter = new IllegalStateException("setter");
+        CommitFailedException partial =
+                new CommitFailedException(CALL, List.of(RAN), List.of("a"), "b", List.of("c"), setter);
+        assertEquals(List.of("a"), partial.applied());
+        assertEquals(Optional.of("b"), partial.failedEntity());
+        assertEquals(List.of("c"), partial.pending());
+        assertEquals(CallPhase.COMMIT, partial.phase());
+        assertEquals(StatesWritten.PARTIAL, partial.statesWritten());
+        assertEquals(List.of(RAN), partial.journal());
+        assertEquals("phase 2 failed: a setter threw " + setter + "; applied 1, failed 1, pending 1",
+                partial.getMessage());
+        CommitFailedException none = new CommitFailedException(CALL, List.of(), List.of("a", "b"), "the state moved");
+        assertEquals(StatesWritten.NONE, none.statesWritten());
+        assertEquals(Optional.empty(), none.failedEntity());
+        assertEquals("phase 2 failed: the state moved; applied 0, pending 2", none.getMessage());
         assertThrows(NullPointerException.class, () -> new StateMachineException(null));
     }
 
     @Test
-    void afterCommitCarriesStepAndCause() {
+    void afterCommitCarriesTheHookTheHopAndTheRecords() {
         IllegalStateException cause = new IllegalStateException("ledger down");
-        AfterCommitException error =
-                new AfterCommitException(KEY, "e", DayOfWeek.MONDAY, DayOfWeek.TUESDAY, "bookHold", cause);
+        TransitionRecord<String, DayOfWeek, Month> hop = new TransitionRecord<>(KEY, "e", DayOfWeek.MONDAY,
+                Month.JANUARY, DayOfWeek.TUESDAY, TransitionKind.ACTION, Optional.of("A"), 0);
+        AfterCommitException error = new AfterCommitException(CALL, List.of(RAN), List.of(hop), hop, "bookHold", cause);
         assertSame(cause, error.getCause());
-        assertEquals("bookHold", error.step());
-        assertEquals(DayOfWeek.TUESDAY, error.to());
-        assertTrue(error.getMessage().contains("MONDAY → TUESDAY"));
-        assertTrue(error.getMessage().contains("bookHold"));
+        assertEquals("bookHold", error.hook());
+        assertSame(hop, error.hop());
+        assertEquals(List.of(hop), error.records());
+        assertEquals(CallPhase.HOOK, error.phase());
+        assertEquals(StatesWritten.ALL, error.statesWritten());
+        assertEquals(List.of(RAN), error.journal());
+        assertEquals("the states of String/DayOfWeek JANUARY are already written, but the hook 'bookHold' failed",
+                error.getMessage());
     }
 }

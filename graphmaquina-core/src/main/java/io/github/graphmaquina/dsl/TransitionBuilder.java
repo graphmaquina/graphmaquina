@@ -36,14 +36,14 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     TransitionBuilder<E, S, T> asyncGuard(String name, AsyncTransitionGuard<E, S, T> guard);
 
     /**
-     * The identifier of the edge that recovers from a domain failure: the action returns a failure, or throws an
-     * exception {@code failsOn} lists. It is resolved from this edge's origin, and the recovery edge runs without its
+     * The identifier of the edge that recovers from a domain failure: the action returns a failure, or throws a
+     * throwable {@code failsOn} lists. It is resolved from this edge's origin, and the recovery edge runs without its
      * guards and without a failure route of its own.
      */
     TransitionBuilder<E, S, T> onFailure(T transition);
 
     /**
-     * One per call, chainable. SG302 accepts only exceptions foreign to the library. It refuses {@code Throwable},
+     * One per call, chainable. SG302 accepts only throwable types foreign to the library. It refuses {@code Throwable},
      * {@code Exception} and {@code RuntimeException} as too broad, an {@code Error} or a
      * {@code CancellationException} as never a domain failure, and {@code CompletionException} or
      * {@code ExecutionException} themselves because they are unwrapped before matching: declare the type of their
@@ -59,7 +59,10 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      */
     TransitionBuilder<E, S, T> afterCommit(String name, Consumer<? super E> hook);
 
-    /** Post-commit hook with the committed edge's metadata and graph-derived terminality. Counts as the edge's single hook. */
+    /**
+     * Post-commit hook with the committed edge's metadata and graph-derived terminality. Counts as the edge's single
+     * hook.
+     */
     TransitionBuilder<E, S, T> afterCommitWith(String name, BiConsumer<? super E, ? super CommitContext<S, T>> hook);
 
     /** Closes the edge and returns to the graph. */

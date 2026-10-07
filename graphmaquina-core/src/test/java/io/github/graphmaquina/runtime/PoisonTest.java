@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
@@ -265,7 +266,7 @@ class PoisonTest {
 
     /** An unknown facade is the same wiring error as an unknown key: inside a cascade, both poison. */
     @Test
-    void anUnknownFacadeInACascadePoisonsLikeAnUnknownKey() {
+    void anUnknownFacadeInACascadePoisonsLikeAnUnknownKeyAndReachesTheActionAsAnAbort() {
         StateMachine<Doc, DocStatus, DocTransition> machine = machine(false);
         Doc peer = new Doc("2", REVIEW);
         List<Consumer<TransitionContext<Doc, DocStatus, DocTransition>>> cascades = List.of(
@@ -276,8 +277,11 @@ class PoisonTest {
             AtomicReference<Throwable> caught = new AtomicReference<>();
             swallowing(caught, cascade);
             Doc doc = new Doc("1", DRAFT);
-            UnknownFacadeException error = assertThrows(UnknownFacadeException.class, () -> machine.execute(doc, SUBMIT));
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> machine.execute(doc, SUBMIT));
             assertSame(caught.get(), error);
+            assertInstanceOf(UnknownFacadeException.class, error.getCause());
+            assertEquals(CallPhase.ACTION, error.phase());
             assertEquals(DRAFT, doc.status());
             assertEquals(REVIEW, peer.status());
         }
@@ -317,13 +321,15 @@ class PoisonTest {
             try {
                 end = machine.execute(doc, SUBMIT).status().name();
             } catch (StateMachineException error) {
-                end = error.getClass().getSimpleName() + (error == caught.get()
+                end = error.getClass().getSimpleName() + " caused by " + error.getCause().getClass().getSimpleName()
+                        + (error == caught.get()
                         ? ", the refusal the action caught" : ", the action caught " + caught.get());
             }
             ends.add(cascade.getKey() + ": " + end + ", " + doc.status() + ", " + item.status());
             String refusal = cascade.getKey().contains("facade")
                     ? UnknownFacadeException.class.getSimpleName() : UnknownPeerMachineException.class.getSimpleName();
-            expected.add(cascade.getKey() + ": " + refusal + ", the refusal the action caught, DRAFT, PACKING");
+            expected.add(cascade.getKey() + ": TransitionAbortedException caused by " + refusal
+                    + ", the refusal the action caught, DRAFT, PACKING");
         }
         assertEquals(expected, ends);
     }
@@ -490,7 +496,7 @@ class PoisonTest {
      * poisoning as soon as the catalogue of the machine the cascade names is known. A key carries that catalogue, so
      * the identifier is refused before the machine is looked up, even for an unknown key, and the root commits. A
      * facade type that names no machine has no catalogue to check the identifier against, so the unknown facade is
-     * refused first, and it poisons.
+     * refused first, and it poisons: the action and the caller receive the abort that carries it.
      */
     @Test
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -517,15 +523,18 @@ class PoisonTest {
             try {
                 end = machine.execute(doc, SUBMIT).status().name();
             } catch (StateMachineException error) {
-                end = error.getClass().getSimpleName();
+                end = error.getClass().getSimpleName() + " caused by "
+                        + error.getCause().getClass().getSimpleName();
             }
             ends.add(cascade.getKey() + ": " + end + ", caught " + caught.get().getClass().getSimpleName() + ", "
                     + doc.status());
         }
         assertEquals(List.of("cascade by key: APPLIED, caught IllegalArgumentException, REVIEW",
                 "cascadeAll by key: APPLIED, caught IllegalArgumentException, REVIEW",
-                "cascade by facade: UnknownFacadeException, caught UnknownFacadeException, DRAFT",
-                "cascadeAll by facade: UnknownFacadeException, caught UnknownFacadeException, DRAFT"), ends);
+                "cascade by facade: TransitionAbortedException caused by UnknownFacadeException, caught"
+                        + " TransitionAbortedException, DRAFT",
+                "cascadeAll by facade: TransitionAbortedException caused by UnknownFacadeException, caught"
+                        + " TransitionAbortedException, DRAFT"), ends);
     }
 
     /**
