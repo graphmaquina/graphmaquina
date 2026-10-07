@@ -21,8 +21,9 @@ public sealed interface Reaction permits Reaction.Done, Reaction.Aborted {
     /**
      * A re-evaluation that threw, naming the owner it re-evaluated, or an owner lookup that threw, naming the peer
      * that moved. {@code cause} is RuntimeException, not StateMachineException, so that api does not depend on error.
-     * A checked exception, which a watch condition or an owner lookup can throw without declaring it, arrives wrapped
-     * in {@link java.lang.reflect.UndeclaredThrowableException}.
+     * A re-evaluation's cause is its {@code CallFailedException}, which says how far the reaction got in writing
+     * states; a checked exception an owner lookup throws without declaring it arrives wrapped in
+     * {@link java.lang.reflect.UndeclaredThrowableException}.
      */
     record Aborted(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity,
                    @NonNull RuntimeException cause) implements Reaction {

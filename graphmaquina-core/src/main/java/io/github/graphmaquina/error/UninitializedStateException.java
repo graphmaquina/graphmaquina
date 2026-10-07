@@ -5,7 +5,10 @@ import java.util.Objects;
 import lombok.Getter;
 import lombok.NonNull;
 
-/** The state getter returned null when the machine read the entity's state. */
+/**
+ * The state getter returned null when the machine read the entity's state. Inside a call it is the cause of an abort
+ * in RESOLVE.
+ */
 @Getter
 public final class UninitializedStateException extends StateMachineException {
 

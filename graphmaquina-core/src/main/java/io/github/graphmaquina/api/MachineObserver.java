@@ -39,8 +39,9 @@ public interface MachineObserver {
     default void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) { }
 
     /**
-     * The call threw {@code failure.error()}, the very throwable its caller receives, an Error included, with the
-     * phase the call was in and how far it got in writing states.
+     * The call threw {@code failure.error()}, the very throwable its caller receives: a {@code CallFailedException} of
+     * this call, whose phase and states written {@code failure} repeats, or an Error, with the phase the call was in
+     * and how far it got in writing states.
      *
      * @param elapsed from just before {@link #onStarted} was notified until just before this event
      */

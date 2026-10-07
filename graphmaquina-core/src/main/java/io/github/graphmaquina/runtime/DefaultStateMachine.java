@@ -20,6 +20,7 @@ import io.github.graphmaquina.api.WatchRule;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.AbortDetails;
 import io.github.graphmaquina.error.AfterCommitException;
+import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.WatchChainExceededException;
 import java.time.Duration;
@@ -123,23 +124,32 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      */
     Outcome<E, S, T> reevaluate(E entity, int chain) {
         Reentrancy.check(key(), entity);
-        Optional<Observed> observed = observe(entity, null, chain > 0);
+        boolean reaction = chain > 0;
+        Optional<Observed> observed = observe(entity, null, reaction);
         S state;
         Optional<WatchSpec<E, S, T, ?, ?, ?>> watch;
         Optional<T> selected = Optional.empty();
         try {
             Reentrancy.enter(key(), entity);
             try {
-                state = readState(entity);
+                try {
+                    state = readState(entity);
+                } catch (Exception e) {
+                    throw unresolved(entity, observed, reaction, Optional.empty(), "reading the entity threw ", e);
+                }
                 if (chain > registry.maxWatchChain()) {
-                    AbortDetails details = new AbortDetails(key(), entity, state, Optional.empty(), Optional.empty(),
-                            Optional.empty(), List.of(), List.of());
-                    throw new WatchChainExceededException(callOf(entity, observed, chain > 0), details,
+                    AbortDetails details = new AbortDetails(key(), entity, Optional.of(state), Optional.empty(),
+                            Optional.empty(), Optional.empty(), List.of(), List.of());
+                    throw new WatchChainExceededException(callOf(entity, observed, reaction), details,
                             registry.maxWatchChain());
                 }
                 watch = definition.watch(state);
                 if (watch.isPresent()) {
-                    selected = firstMatch(watch.get(), entity);
+                    try {
+                        selected = firstMatch(watch.get(), entity);
+                    } catch (Exception e) {
+                        throw unresolved(entity, observed, reaction, Optional.of(state), "the watch threw ", e);
+                    }
                 }
             } finally {
                 Reentrancy.exit();
@@ -155,8 +165,21 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             return completed(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
         T resolved = selected.orElseThrow();
-        return runRoot(entity, null, chain > 0, observed,
-                (Transaction tx) -> tx.transition(this, entity, resolved, 0), chain);
+        return runRoot(entity, null, reaction, observed, (Transaction tx) -> tx.transition(this, entity, resolved, 0),
+                chain);
+    }
+
+    /**
+     * A reevaluation that could not read its entity's state or evaluate its watch: an abort in RESOLVE that carries
+     * the failure, unwrapped from CompletionException and ExecutionException.
+     */
+    private TransitionAbortedException unresolved(E entity, Optional<Observed> observed, boolean reaction,
+                                                  Optional<Enum<?>> from, String what, Exception error) {
+        Throwable cause = Unwrap.unwrap(error);
+        AbortDetails details = new AbortDetails(key(), entity, from, Optional.empty(), Optional.empty(),
+                Optional.empty(), List.of(), List.of());
+        return new TransitionAbortedException(callOf(entity, observed, reaction), CallPhase.RESOLVE, details,
+                what + cause, cause);
     }
 
     /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */
@@ -245,10 +268,10 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                                 records, reactions);
             };
         } catch (Throwable thrown) {
-            if (observed.isPresent()) {
-                observed.get().failed(tx.failureOf(thrown));
+            if (thrown instanceof Error fatal) {
+                throw failed(observed, tx, fatal);
             }
-            throw thrown;
+            throw failed(observed, tx, tx.classify(thrown));
         }
         return completed(observed, outcome);
     }
@@ -274,6 +297,14 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             observed.get().completed(outcome);
         }
         return outcome;
+    }
+
+    /** Tells the observers, if any, that the call ended in {@code thrown}, as its transaction classifies it. */
+    private static <X extends Throwable> X failed(Optional<Observed> observed, Transaction tx, X thrown) {
+        if (observed.isPresent()) {
+            observed.get().failed(tx.failureOf(thrown));
+        }
+        return thrown;
     }
 
     private static void failed(Optional<Observed> observed, CallPhase phase, StatesWritten written, Throwable thrown) {

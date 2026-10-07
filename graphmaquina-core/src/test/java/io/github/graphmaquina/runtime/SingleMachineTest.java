@@ -420,7 +420,11 @@ class SingleMachineTest {
     @Test
     void nullStateIsUninitialized() {
         Doc doc = new Doc("1", null);
-        assertThrows(UninitializedStateException.class, () -> machine.execute(doc, SUBMIT));
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
+        assertInstanceOf(UninitializedStateException.class, error.getCause());
+        assertEquals(CallPhase.RESOLVE, error.phase());
+        assertEquals(Optional.empty(), error.from());
     }
 
     @Test

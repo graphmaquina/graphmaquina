@@ -8,10 +8,12 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A call that failed, as the call itself classifies it. {@link #call()} is the call and {@link #phase()} where it
- * was. {@link #statesWritten()} says how far it got in writing states through the setters; it says nothing about a
- * database transaction around the call. {@link #journal()} lists which actions ran, which matters more than the
- * phase when deciding whether a retry is safe: an action that ran may have had external effects that nothing undoes.
+ * A call that failed, as the call itself classifies it. Every exception a call throws is an Error, which propagates
+ * unchanged, or one of these, of that very call: any other exception involved is its cause. {@link #call()} is the
+ * call and {@link #phase()} where it was. {@link #statesWritten()} says how far it got in writing states through the
+ * setters; it says nothing about a database transaction around the call. {@link #journal()} lists which actions ran,
+ * which matters more than the phase when deciding whether a retry is safe: an action that ran may have had external
+ * effects that nothing undoes.
  * Only {@link TransitionAbortedException}, before the commit, {@link CommitFailedException}, during it, and
  * {@link AfterCommitException}, after it, extend it.
  */

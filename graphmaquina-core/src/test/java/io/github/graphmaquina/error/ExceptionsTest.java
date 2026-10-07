@@ -29,8 +29,8 @@ class ExceptionsTest {
             new ActionRecord(KEY, "e", DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, "A", 0, ActionStatus.OK);
 
     private static AbortDetails details() {
-        return new AbortDetails(KEY, "e", DayOfWeek.MONDAY, Optional.of(Month.JANUARY), Optional.of(DayOfWeek.TUESDAY),
-                Optional.of("A"), List.of("String/DayOfWeek#e"), List.of(RAN));
+        return new AbortDetails(KEY, "e", Optional.of(DayOfWeek.MONDAY), Optional.of(Month.JANUARY),
+                Optional.of(DayOfWeek.TUESDAY), Optional.of("A"), List.of("String/DayOfWeek#e"), List.of(RAN));
     }
 
     @Test
@@ -53,7 +53,7 @@ class ExceptionsTest {
         assertEquals(StatesWritten.NONE, error.statesWritten());
         assertEquals(List.of(RAN), error.journal());
         assertSame(cause, error.getCause());
-        assertEquals(DayOfWeek.MONDAY, error.from());
+        assertEquals(Optional.of(DayOfWeek.MONDAY), error.from());
         assertEquals(Optional.of(Month.JANUARY), error.transition());
         assertEquals(Optional.of(DayOfWeek.TUESDAY), error.to());
         assertEquals(Optional.of("A"), error.action());
@@ -76,17 +76,28 @@ class ExceptionsTest {
     /** Before an edge is resolved there is no destination to report, and none is invented. */
     @Test
     void detailsBeforeResolutionCarryNeitherIdentityNorDestination() {
-        AbortDetails unresolved = new AbortDetails(KEY, "e", DayOfWeek.MONDAY, Optional.empty(), Optional.empty(),
-                Optional.empty(), List.of(), List.of());
+        AbortDetails unresolved = new AbortDetails(KEY, "e", Optional.of(DayOfWeek.MONDAY), Optional.empty(),
+                Optional.empty(), Optional.empty(), List.of(), List.of());
         assertEquals("MONDAY", unresolved.describeEdge());
         TransitionAbortedException error =
                 new TransitionAbortedException(CALL, CallPhase.RESOLVE, unresolved, "no watch left");
         assertEquals(Optional.empty(), error.to());
         assertTrue(error.getMessage().contains("String/DayOfWeek MONDAY: no watch left"));
 
-        AbortDetails requested = new AbortDetails(KEY, "e", DayOfWeek.MONDAY, Optional.of(Month.JANUARY),
+        AbortDetails requested = new AbortDetails(KEY, "e", Optional.of(DayOfWeek.MONDAY), Optional.of(Month.JANUARY),
                 Optional.empty(), Optional.empty(), List.of(), List.of());
         assertEquals("MONDAY -JANUARY-> ?", requested.describeEdge());
+    }
+
+    /** Before the state was read there is no state to report either. */
+    @Test
+    void detailsBeforeTheStateReadReportAQuestionMarkForIt() {
+        AbortDetails unread = new AbortDetails(KEY, "e", Optional.empty(), Optional.of(Month.JANUARY), Optional.empty(),
+                Optional.empty(), List.of(), List.of());
+        assertEquals("? -JANUARY-> ?", unread.describeEdge());
+        AbortDetails reevaluation = new AbortDetails(KEY, "e", Optional.empty(), Optional.empty(), Optional.empty(),
+                Optional.empty(), List.of(), List.of());
+        assertEquals("?", reevaluation.describeEdge());
     }
 
     @Test

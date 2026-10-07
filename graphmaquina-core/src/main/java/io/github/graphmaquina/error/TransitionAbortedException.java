@@ -58,7 +58,8 @@ public class TransitionAbortedException extends CallFailedException {
 
     public Object entity() { return details.entity(); }
 
-    public Enum<?> from() { return details.from(); }
+    /** The state the entity was in; absent when the abort happened before it was read. */
+    public Optional<Enum<?>> from() { return details.from(); }
 
     /** The requested identifier, absent when the abort happened before one was read. */
     public Optional<Enum<?>> transition() { return details.transition(); }

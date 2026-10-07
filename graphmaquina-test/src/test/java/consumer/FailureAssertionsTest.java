@@ -205,7 +205,7 @@ class FailureAssertionsTest {
         assertEquals(entity, twin);
         assertNotSame(entity, twin);
         AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP),
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.of(Switch.FLIP),
                         Optional.of(Flag.ON), Optional.of("flip"), List.of(), List.of()), "no")).isAbort();
         assertSame(view, view.at(OTHERS, entity, Flag.OFF, Switch.FLIP, Flag.ON));
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -216,7 +216,7 @@ class FailureAssertionsTest {
                 "abort", "entity", twin, entity);
         assertFailure(assertThrows(GraphAssertionError.class,
                         () -> view.at(OTHERS, entity, Flag.ON, Switch.FLIP, Flag.ON)),
-                "abort", "from", Flag.ON, Flag.OFF);
+                "abort", "from", Optional.of(Flag.ON), Optional.of(Flag.OFF));
         assertFailure(assertThrows(GraphAssertionError.class,
                         () -> view.at(OTHERS, entity, Flag.OFF, Switch.TOGGLE, Flag.ON)),
                 "abort", "transition", Optional.of(Switch.TOGGLE), Optional.of(Switch.FLIP));
@@ -233,7 +233,7 @@ class FailureAssertionsTest {
     void anAbortBeforeAnyEdgeWasResolvedReportsNoDestination() {
         Other entity = new Other("o");
         AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.empty(),
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.of(Switch.FLIP), Optional.empty(),
                         Optional.empty(), List.of(), List.of()), "no edge")).isAbort();
         assertSame(view, view.atUnresolved(OTHERS, entity, Flag.OFF, Switch.FLIP));
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -254,8 +254,8 @@ class FailureAssertionsTest {
         Other entity = new Other("o");
         Other twin = new Other("o");
         AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.empty(), Optional.empty(), Optional.empty(),
-                        List.of(), List.of()), "chain too long")).isAbort();
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.empty(), Optional.empty(),
+                        Optional.empty(), List.of(), List.of()), "chain too long")).isAbort();
         assertSame(view, view.atUnread(OTHERS, entity, Flag.OFF));
         assertFailure(assertThrows(GraphAssertionError.class,
                 () -> view.atUnread(TestDomain.KEY, new Entity("e", State.NEW), State.NEW)),
@@ -263,21 +263,65 @@ class FailureAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.atUnread(OTHERS, twin, Flag.OFF)),
                 "abort", "entity", twin, entity);
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.atUnread(OTHERS, entity, Flag.ON)),
-                "abort", "from", Flag.ON, Flag.OFF);
+                "abort", "from", Optional.of(Flag.ON), Optional.of(Flag.OFF));
+    }
+
+    @Test
+    void anAbortBeforeTheStateWasReadIsLocatedWithoutAState() {
+        Entity entity = new Entity("e", State.NEW);
+        AbortAssert executed = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL,
+                CallPhase.RESOLVE, new AbortDetails(TestDomain.KEY, entity, Optional.empty(), Optional.of(Id.PREPARE),
+                        Optional.empty(), Optional.empty(), List.of(), List.of()), "reading the entity threw"))
+                .isAbort();
+        assertSame(executed, executed.atUnreadState(TestDomain.KEY, entity, Id.PREPARE));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> executed.atUnreadState(TestDomain.KEY, entity, Id.FINISH)),
+                "abort", "transition", Optional.of(Id.FINISH), Optional.of(Id.PREPARE));
+        assertFailure(assertThrows(GraphAssertionError.class, () -> executed.atUnreadState(TestDomain.KEY, entity)),
+                "abort", "transition", Optional.empty(), Optional.of(Id.PREPARE));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> executed.atUnresolved(TestDomain.KEY, entity, State.NEW, Id.PREPARE)),
+                "abort", "from", Optional.of(State.NEW), Optional.empty());
+        AbortAssert resolved = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW), Optional.of(Id.PREPARE),
+                        Optional.of(State.READY), Optional.empty(), List.of(), List.of()), "no")).isAbort();
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> resolved.atUnreadState(TestDomain.KEY, entity, Id.PREPARE)),
+                "abort", "from", Optional.empty(), Optional.of(State.NEW));
+        assertThrows(NullPointerException.class, () -> executed.atUnreadState(null, entity, Id.PREPARE));
+        assertThrows(NullPointerException.class, () -> executed.atUnreadState(TestDomain.KEY, null));
+        assertThrows(NullPointerException.class, () -> executed.atUnreadState(TestDomain.KEY, entity, null));
+    }
+
+    /** A reevaluation that could not read its entity's state reports neither a state nor an identifier. */
+    @Test
+    void aReevaluationAbortBeforeTheStateWasReadIsLocatedWithoutAnIdentifier() {
+        Entity entity = new Entity("e", State.NEW);
+        AbortAssert reevaluated = TransitionFailureAssert.assertThat(new TransitionAbortedException(
+                new MachineCall(TestDomain.KEY, entity, Optional.empty(), false), CallPhase.RESOLVE,
+                new AbortDetails(TestDomain.KEY, entity, Optional.empty(), Optional.empty(), Optional.empty(),
+                        Optional.empty(), List.of(), List.of()), "reading the entity threw")).isAbort();
+        assertSame(reevaluated, reevaluated.atUnreadState(TestDomain.KEY, entity));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reevaluated.atUnreadState(TestDomain.KEY, entity, Id.PREPARE)),
+                "abort", "transition", Optional.of(Id.PREPARE), Optional.empty());
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> reevaluated.atUnread(TestDomain.KEY, entity, State.NEW)),
+                "abort", "from", Optional.of(State.NEW), Optional.empty());
     }
 
     @Test
     void anAbortThatReadAnIdentifierIsNotOneThatReadNone() {
         Other entity = new Other("o");
         AbortAssert resolved = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.of(Flag.ON),
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.of(Switch.FLIP), Optional.of(Flag.ON),
                         Optional.empty(), List.of(), List.of()), "no")).isAbort();
         assertFailure(assertThrows(GraphAssertionError.class, () -> resolved.atUnread(OTHERS, entity, Flag.OFF)),
                 "abort", "transition", Optional.empty(), Optional.of(Switch.FLIP));
         AbortAssert unresolved = TransitionFailureAssert.assertThat(
                 new TransitionAbortedException(CALL, CallPhase.ACTION,
-                        new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.empty(),
-                                Optional.empty(), List.of(), List.of()), "no edge")).isAbort();
+                        new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.of(Switch.FLIP),
+                                Optional.empty(), Optional.empty(), List.of(), List.of()), "no edge")).isAbort();
         assertFailure(assertThrows(GraphAssertionError.class, () -> unresolved.atUnread(OTHERS, entity, Flag.OFF)),
                 "abort", "transition", Optional.empty(), Optional.of(Switch.FLIP));
     }
@@ -286,8 +330,8 @@ class FailureAssertionsTest {
     void aNullRequiredArgumentOfAtUnreadIsAnArgumentError() {
         Other entity = new Other("o");
         AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.empty(), Optional.empty(), Optional.empty(),
-                        List.of(), List.of()), "chain too long")).isAbort();
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.empty(), Optional.empty(),
+                        Optional.empty(), List.of(), List.of()), "chain too long")).isAbort();
         assertThrows(NullPointerException.class, () -> view.atUnread(null, entity, Flag.OFF));
         assertThrows(NullPointerException.class, () -> view.atUnread(OTHERS, null, Flag.OFF));
         assertThrows(NullPointerException.class, () -> view.atUnread(OTHERS, entity, null));
@@ -322,7 +366,7 @@ class FailureAssertionsTest {
         assertEquals(OTHERS, sameValue);
         assertNotSame(OTHERS, sameValue);
         TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.of(Flag.ON),
+                new AbortDetails(OTHERS, entity, Optional.of(Flag.OFF), Optional.of(Switch.FLIP), Optional.of(Flag.ON),
                         Optional.empty(), List.of(), List.of()),
                 "no")).isAbort().at(sameValue, entity, Flag.OFF, Switch.FLIP, Flag.ON);
         TransitionFailureAssert.assertThat(
@@ -342,7 +386,7 @@ class FailureAssertionsTest {
                 "abort", "action", Optional.empty(), Optional.of("prepare"));
         AbortAssert anonymous = TransitionFailureAssert.assertThat(
                 new TransitionAbortedException(CALL, CallPhase.ACTION,
-                        new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), State.NEW,
+                        new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(State.NEW),
                                 Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.empty(),
                                 List.of(), List.of()), "no")).isAbort();
         assertSame(anonymous, anonymous.hasNoAction());
@@ -353,7 +397,7 @@ class FailureAssertionsTest {
     @Test
     void theCascadePathIsComparedAsTheLiteralListTheEngineWrote() {
         AbortAssert view = TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
-                new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), State.NEW,
+                new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(State.NEW),
                         Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.empty(),
                         List.of("Parcel/ParcelStatus#p1", "Label/LabelStatus#l1"), List.of()), "no")).isAbort();
         assertSame(view, view.hasCascadePathExactly(List.of("Parcel/ParcelStatus#p1", "Label/LabelStatus#l1")));
@@ -374,7 +418,7 @@ class FailureAssertionsTest {
                 "prepare", 0, ActionStatus.THREW);
         JournalAssert journal = TransitionFailureAssert.assertThat(
                 new TransitionAbortedException(CALL, CallPhase.ACTION,
-                        new AbortDetails(TestDomain.KEY, entity, State.NEW, Optional.of(Id.PREPARE),
+                        new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW), Optional.of(Id.PREPARE),
                                 Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran)),
                         "no")).isAbort().journal();
         journal.hasSize(1).hasActionsExactly("prepare").hasStatusesExactly(ActionStatus.THREW);
@@ -389,8 +433,8 @@ class FailureAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         ActionRecord ran = new ActionRecord(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY,
                 "prepare", 0, ActionStatus.THREW);
-        AbortDetails withJournal = new AbortDetails(TestDomain.KEY, entity, State.NEW, Optional.of(Id.PREPARE),
-                Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran));
+        AbortDetails withJournal = new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW),
+                Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran));
         AbortAssert abort = TransitionFailureAssert.assertThat(
                 new TransitionAbortedException(CALL, CallPhase.ACTION, withJournal, "no")).isAbort();
         assertFailure(assertThrows(GraphAssertionError.class, () -> abort.journal().hasSize(2)),
@@ -437,7 +481,7 @@ class FailureAssertionsTest {
         ActionRecord ran = new ActionRecord(TestDomain.KEY, entity, State.NEW, Id.PREPARE, State.READY,
                 "prepare", 0, ActionStatus.THREW);
         CascadeException aggregate = new CascadeException(CALL,
-                new AbortDetails(TestDomain.KEY, entity, State.NEW, Optional.of(Id.PREPARE),
+                new AbortDetails(TestDomain.KEY, entity, Optional.of(State.NEW), Optional.of(Id.PREPARE),
                         Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran)),
                 List.of(elementAbort(new Other("a"))));
         TransitionFailureAssert.assertThat(aggregate).isCascadeAbort().journal()
@@ -998,15 +1042,15 @@ class FailureAssertionsTest {
     }
 
     private static AbortDetails details() {
-        return new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), State.NEW,
+        return new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(State.NEW),
                 Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.of("prepare"),
                 List.of(), List.of());
     }
 
     private static TransitionAbortedException elementAbort(Other entity) {
-        return new TransitionAbortedException(CALL, CallPhase.ACTION, new AbortDetails(OTHERS, entity, Flag.OFF,
-                Optional.of(Switch.FLIP), Optional.of(Flag.ON), Optional.empty(), List.of(), List.of()),
-                "rejected inside a cascade");
+        return new TransitionAbortedException(CALL, CallPhase.ACTION, new AbortDetails(OTHERS, entity,
+                Optional.of(Flag.OFF), Optional.of(Switch.FLIP), Optional.of(Flag.ON), Optional.empty(), List.of(),
+                List.of()), "rejected inside a cascade");
     }
 
     private static void assertFailure(

@@ -9,8 +9,8 @@ import java.util.Objects;
  * {@link ReactionAssert#isAborted()}. The re-evaluation, or the lookup of the owner to re-evaluate, threw an
  * exception and the engine reported it here instead of propagating it, so there is no outcome to read and
  * the cause is the whole contract. The cause is only ever compared by type or by reference — no expectation
- * here reads its message — and a checked exception is compared as the
- * {@link java.lang.reflect.UndeclaredThrowableException} that wraps it.
+ * here reads its message — and a reevaluation's failure is its {@code CallFailedException}, and a checked exception
+ * an owner lookup threw is compared as the {@link java.lang.reflect.UndeclaredThrowableException} that wraps it.
  *
  * @param <E> entity type of the machine the reaction was selected for
  * @param <S> state enum of the machine the reaction was selected for

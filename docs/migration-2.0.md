@@ -474,8 +474,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   It used to start a root of its own, which `maxWatchChain` did not count.
 - **Checked exceptions are handled like unchecked ones.** One that a guard, action, hook, state setter
   or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code can, now goes through
-  `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch reaction, is
-  reported as `Reaction.Aborted` wrapped in `UndeclaredThrowableException`. It used to escape unchanged.
+  `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch reaction, aborts the
+  reevaluation that `Reaction.Aborted` reports; one an owner lookup throws arrives wrapped in
+  `UndeclaredThrowableException`. It used to escape unchanged.
 - **A failed cascade always poisons.** An `Error`, or an exception from a callback the engine does not wrap,
   that leaves a cascade poisons the unit of work as an engine failure does, even when the action catches it, and
   a `failsOn` match after it no longer takes the failure route. `cascadeAll` refuses a null element before any
@@ -493,6 +494,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
   of another call whose states were written, could pass for this call's. A failure of the call itself, from a cascade,
   still ends the call with the failure that poisoned it, and a `PoisonedUnitOfWorkException` the action lets through
   ends it with the original failure.
+- **Failures before the state is read are aborts.** An identity function or a state getter that throws, a null
+  state, and a watch's peers reader or condition that throws while a `reevaluate` resolves end the call in a
+  `TransitionAbortedException` of phase `RESOLVE` that carries the failure; they used to escape as themselves. A
+  state getter that throws during the pre-commit check is a `CommitFailedException` with nothing written.
+  `AbortDetails.from()` and `TransitionAbortedException.from()` are `Optional`.
 - **Observers replace the listener.** A `MachineObserver`, added with `observer(...)` to a registry or a generated
   set builder as many times as needed, sees every call start and end, failures and `Error`s included. What it
   throws is logged and never changes the call. `TransitionListener`, `listener(...)` and
@@ -691,6 +697,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **`AfterCommitAssert` reads the hook and its hop.** `hasHookNamed(name)` replaces `hasStepNamed(name)`,
   `at(key, entity, from, transition, to)` compares the committed hop the failing hook ran for, its identifier
   included, and `records()` reads every hop the call committed.
+- **`AbortAssert.atUnreadState(key, entity[, transition])`** is new: it locates an abort raised before the entity's
+  state was read. `at`, `atUnresolved` and `atUnread` now compare `from` as an `Optional`, so a mismatch reports
+  `Optional[...]` on both sides, or `Optional.empty` for an abort that read no state.
 - **`AbortAssert.atUnread(key, entity, from)`** is new: it locates an abort raised before any identifier was
   read, such as a chain of watch reactions that exceeds its limit.
 - **Closed controlled fixtures.** A closed `ControlledAsyncAction` refuses an invocation with

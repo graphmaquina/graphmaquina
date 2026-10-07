@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.MachineCall;
@@ -327,9 +328,10 @@ class CheckedExceptionTest {
     }
 
     /**
-     * A watch condition and an owner lookup run outside any transaction, so no TransitionAbortedException wraps what
-     * they throw. A checked exception still ends as an aborted reaction, wrapped in UndeclaredThrowableException
-     * because {@code Reaction.Aborted} carries a RuntimeException.
+     * A watch condition runs while its reevaluation resolves, so a checked exception it throws aborts that reevaluation
+     * in RESOLVE, and the aborted reaction carries the abort. An owner lookup runs before any reevaluation, in the
+     * commit's dispatch, so its checked exception still arrives wrapped in UndeclaredThrowableException, because
+     * {@code Reaction.Aborted} carries a RuntimeException.
      */
     @Test
     void aWatchConditionOrOwnerLookupThatThrowsACheckedExceptionIsAnAbortedReaction() {
@@ -349,16 +351,24 @@ class CheckedExceptionTest {
                 },
                 (Doc doc, Collection<? extends Doc> peers, PeerView<Doc, DocStatus, DocTransition> view) -> true,
                 archive)) {
-            for (MachineRegistry registry : List.of(condition, owner)) {
-                watched.setStatus(DRAFT);
-                Outcome.Applied<?, ?, ?> applied = assertInstanceOf(Outcome.Applied.class,
-                        registry.of(DOCS).execute(watched, SUBMIT));
-                Reaction.Aborted aborted = assertInstanceOf(Reaction.Aborted.class, applied.reactions().get(0));
-                UndeclaredThrowableException cause = assertInstanceOf(UndeclaredThrowableException.class, aborted.cause());
-                assertSame(lookup, cause.getUndeclaredThrowable());
-                assertEquals(REVIEW, watched.status());
-                assertEquals(PUBLISHED, observer.status());
-            }
+            watched.setStatus(DRAFT);
+            Outcome.Applied<?, ?, ?> byCondition = assertInstanceOf(Outcome.Applied.class,
+                    condition.of(DOCS).execute(watched, SUBMIT));
+            Reaction.Aborted conditionReaction =
+                    assertInstanceOf(Reaction.Aborted.class, byCondition.reactions().get(0));
+            TransitionAbortedException abort =
+                    assertInstanceOf(TransitionAbortedException.class, conditionReaction.cause());
+            assertEquals(CallPhase.RESOLVE, abort.phase());
+            assertSame(lookup, abort.getCause());
+            watched.setStatus(DRAFT);
+            Outcome.Applied<?, ?, ?> byOwner = assertInstanceOf(Outcome.Applied.class,
+                    owner.of(DOCS).execute(watched, SUBMIT));
+            Reaction.Aborted ownerReaction = assertInstanceOf(Reaction.Aborted.class, byOwner.reactions().get(0));
+            UndeclaredThrowableException wrapped =
+                    assertInstanceOf(UndeclaredThrowableException.class, ownerReaction.cause());
+            assertSame(lookup, wrapped.getUndeclaredThrowable());
+            assertEquals(REVIEW, watched.status());
+            assertEquals(PUBLISHED, observer.status());
         }
     }
 

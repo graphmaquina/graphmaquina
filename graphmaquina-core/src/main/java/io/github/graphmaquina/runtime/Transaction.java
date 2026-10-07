@@ -52,6 +52,10 @@ final class Transaction {
     private Optional<MachineCall> call;
     private CallPhase phase = CallPhase.RESOLVE;
     private boolean writing;
+    /** The state the root's own step read, null until it was read. */
+    private Enum<?> rootFrom;
+    /** The edge the root's own step selected, null until it selected one. */
+    private TransitionSpec<?, ?, ?> rootSpec;
 
     Transaction(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
                 Enum<?> requested, boolean reaction, Optional<MachineCall> call) {
@@ -133,14 +137,29 @@ final class Transaction {
     <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine, E entity,
                                                                           T id, int depth, Object input) {
         machine.requireTransition(id);
-        EntityRef ref = uow.register(machine.refOf(entity));
-        S from = currentState(machine, ref, entity);
+        EntityRef ref;
+        S from;
+        try {
+            ref = uow.register(machine.refOf(entity));
+            from = currentState(machine, ref, entity);
+        } catch (Exception e) {
+            if (depth > 0) {
+                throw e;
+            }
+            throw unread(machine, entity, id, e);
+        }
+        if (depth == 0) {
+            rootFrom = from;
+        }
         Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
         if (selected.isEmpty()) {
             return rejected(machine, ref, from, id, Optional.empty(), depth,
                     machine.definition().policy(from).reasonFor(id), RejectionKind.NO_TRANSITION, Optional.empty());
         }
         TransitionSpec<E, S, T> transition = selected.orElseThrow();
+        if (depth == 0) {
+            rootSpec = transition;
+        }
         uow.push(ref, transition);
         try {
             if (depth == 0 && !transition.guards().isEmpty()) {
@@ -491,6 +510,36 @@ final class Transaction {
         return poisonIfNested(depth, error);
     }
 
+    /** The root entity's identity or state could not be read: the call aborts in RESOLVE before it read any state. */
+    private TransitionAbortedException unread(DefaultStateMachine<?, ?, ?> machine, Object entity, Enum<?> id,
+                                              Exception error) {
+        Throwable cause = Unwrap.unwrap(error);
+        AbortDetails details = new AbortDetails(machine.key(), entity, Optional.empty(), Optional.of(id),
+                Optional.empty(), Optional.empty(), uow.path(), uow.journal());
+        return new TransitionAbortedException(call(), CallPhase.RESOLVE, details, "reading the entity threw " + cause,
+                cause);
+    }
+
+    /**
+     * The exception the call throws for {@code error}: a failure of this call as it is; anything else, which only
+     * engine code that calls into the application can let through before the commit, an identity's hashCode while
+     * the log is rolled back for instance, an abort of the call in its current phase with it as cause. The commit,
+     * the hooks and the reactions classify every failure of their own where it happens, so a phase after ACTION never
+     * reaches the abort.
+     */
+    CallFailedException classify(Throwable error) {
+        if (error instanceof CallFailedException failure && owns(failure)) {
+            return failure;
+        }
+        uow.markRunningAsThrew();
+        Optional<Enum<?>> transition = rootSpec == null ? Optional.ofNullable(requested)
+                : Optional.of(rootSpec.transition());
+        Optional<Enum<?>> to = rootSpec == null ? Optional.empty() : Optional.of(rootSpec.to());
+        AbortDetails details = new AbortDetails(callKey, callEntity, Optional.ofNullable(rootFrom), transition, to,
+                Optional.empty(), uow.path(), uow.journal());
+        return new TransitionAbortedException(call(), phase, details, "the engine could not go on: " + error, error);
+    }
+
     /** At depth greater than zero, the failure poisons the UoW: the parent cannot go on as if nothing happened. */
     private <X extends StateMachineException> X poisonIfNested(int depth, X error) {
         if (depth > 0) {
@@ -502,14 +551,15 @@ final class Transaction {
     private AbortDetails details(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Optional<Enum<?>> id,
                                  Optional<Enum<?>> to, Optional<String> action) {
         uow.markRunningAsThrew();
-        return new AbortDetails(machine.key(), ref.instance(), from, id, to, action, uow.path(), uow.journal());
+        return new AbortDetails(machine.key(), ref.instance(), Optional.of(from), id, to, action, uow.path(),
+                uow.journal());
     }
 
     private AbortDetails details(ContextHandle caller) {
         uow.markRunningAsThrew();
-        return new AbortDetails(caller.machineKey(), caller.entityInstance(), caller.fromState(),
-                Optional.of(caller.requestedTransition()), Optional.of(caller.toState()), Optional.empty(),
-                uow.path(), uow.journal());
+        return new AbortDetails(caller.machineKey(), caller.entityInstance(),
+                Optional.of(caller.fromState()), Optional.of(caller.requestedTransition()),
+                Optional.of(caller.toState()), Optional.empty(), uow.path(), uow.journal());
     }
 
     // Peers and cascading.

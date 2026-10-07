@@ -1422,7 +1422,9 @@ written.
 - A watch produces `Reaction.Done`, carrying its own outcome, or `Reaction.Aborted`, carrying its exception.
   Inspect reactions even when the root operation succeeded. `Reaction.Aborted` can also report a hook
   failure after the reaction itself committed; it is not proof that the reaction left state unchanged. A
-  checked exception arrives wrapped in `UndeclaredThrowableException`. An `Error` is not caught: it propagates
+  reevaluation that failed carries its `CallFailedException`, whose `statesWritten()` says whether the reaction
+  wrote anything. An owner lookup fails before any reevaluation, so the reaction carries what it threw, a checked
+  exception wrapped in `UndeclaredThrowableException`. An `Error` is not caught: it propagates
   to the caller whose commit triggered the reaction.
 
 ## Asynchronous work and timeouts
@@ -2087,8 +2089,10 @@ transaction. A reaction failure does not roll back the peer commit that triggere
 
 The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the
 engine evaluates the watch, before that root starts, and may not start a transition themselves: `execute` or
-`reevaluate` called from one of them throws `ReentrantTransitionException`, which a reaction reports as
-`Reaction.Aborted` and a direct `reevaluate` throws to its caller.
+`reevaluate` called from one of them throws `ReentrantTransitionException`. Inside a reevaluation that ends it in a
+`TransitionAbortedException` of phase `RESOLVE` that carries the refusal: a reaction reports the abort as
+`Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation,
+so its reaction carries the refusal itself.
 
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
@@ -2227,8 +2231,9 @@ Add as many as you need: they are notified in the order they were added.
 ### Initialize and protect state
 
 The entity owns its state. Initialize it in the constructor or field declaration, and persist it with your
-normal entity mapping. Null state is an `UninitializedStateException`; the runtime does not silently replace
-it with the graph's initial state.
+normal entity mapping. A null state ends the call in a `TransitionAbortedException`
+of phase `RESOLVE` whose cause is an `UninitializedStateException`; the runtime does not silently replace it with
+the graph's initial state.
 
 During a transition, only the runtime should call the state setter. It checks state again before commit to
 catch action code or outside code that changed it unexpectedly. This check is not a lock: your application
@@ -2750,15 +2755,15 @@ code runs.
 
 | Exception | What to investigate |
 | --- | --- |
-| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. |
-| `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `transition()` and `to()` are `Optional`: an abort before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
+| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`. |
+| `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `from()`, `transition()` and `to()` are `Optional`. An abort raised before the entity's state was read, because its identity or its state could not be read, reports no state and no destination. One raised before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither identifier nor destination. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
 | `UnhandledFailureException` | An action failed without an `onFailure` route. |
 | `CascadeException` | Collected nested transition errors; inspect `errors()` and the journal. |
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
 | `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, it arrives as the cause of that call's abort. |
-| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions, observers may not. Thrown by a guard or an action, it arrives as the cause of that call's abort. |
+| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions, observers may not. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
 | `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. The caller receives that failure, never this exception. |
 | `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |

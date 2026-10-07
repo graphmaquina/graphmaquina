@@ -33,7 +33,8 @@ final class UnitOfWork {
     private Map<EntityRef, Enum<?>> pendingStates;
     private List<PendingUndo> undo;
     private final List<ActionRecord> journal = new ArrayList<>();
-    private final Deque<InFlight> inFlight = new ArrayDeque<>();
+    // Sized for a root and two nested cascades: a default-sized deque costs every call 56 more bytes.
+    private final Deque<InFlight> inFlight = new ArrayDeque<>(3);
     private final Map<EntityRef, EntityRef> known = new HashMap<>();
     private final int maxDepth;
     private final long deadlineNanos;
