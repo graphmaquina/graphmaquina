@@ -1,9 +1,12 @@
 package io.github.graphmaquina.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.internal.FailureTypes;
 import java.io.IOException;
 import java.time.DayOfWeek;
 import java.time.Month;
@@ -18,7 +21,8 @@ import org.junit.jupiter.api.Test;
 /**
  * Contracts of what every outcome answers without being narrowed: its code and status, the explanation, which only a
  * rejection and a failure the action returned give, the records and reactions only a commit carries, and the narrowing
- * accessors; plus the bijections that keep both enums in step with the variants and their kinds.
+ * accessors; plus the bijections that keep both enums in step with the variants and their kinds, and the failure kind
+ * a failed outcome carries as part of its value.
  */
 class OutcomeAccessorsTest {
 
@@ -26,6 +30,15 @@ class OutcomeAccessorsTest {
 
     private static final MachineKey<String, DayOfWeek, Month> KEY =
             MachineKey.of(String.class, DayOfWeek.class, Month.class);
+
+    /** A failure kind for the failed outcomes built here. */
+    record Declined() implements FailureKind { }
+
+    /** A second failure kind, to tell two kinds apart. */
+    record Postponed() implements FailureKind { }
+
+    /** An interface that extends the marker, which is no failure kind. */
+    interface Broad extends FailureKind { }
 
     @Test
     void everyVariantReportsItsCode() {
@@ -186,6 +199,52 @@ class OutcomeAccessorsTest {
         assertEquals(Optional.of("gate"), rejected(RejectionKind.GUARD).asRejected().flatMap(Outcome.Rejected::guard));
     }
 
+    /**
+     * The failure kind is the last component of a failed outcome: read back as given, part of its equality, and empty
+     * through the constructor that takes the ten others.
+     */
+    @Test
+    void aFailedOutcomeCarriesItsFailureKindAsPartOfItsValue() {
+        Outcome.Failed<String, DayOfWeek, Month> declined = failedWith(Optional.of(Declined.class));
+        assertEquals(Optional.of(Declined.class), declined.failureKind());
+        assertEquals(declined, failedWith(Optional.of(Declined.class)));
+        assertNotEquals(declined, failedWith(Optional.of(Postponed.class)));
+        assertNotEquals(declined, failedWith(Optional.empty()));
+        Outcome.Failed<String, DayOfWeek, Month> withoutKind = new Outcome.Failed<>(ENTITY, DayOfWeek.MONDAY,
+                Month.JANUARY, DayOfWeek.TUESDAY, Month.MARCH, DayOfWeek.SUNDAY, "declined", Optional.empty(),
+                List.of(), List.of());
+        assertEquals(Optional.empty(), withoutKind.failureKind());
+        assertEquals(failedWith(Optional.empty()), withoutKind);
+    }
+
+    /** The kind says which domain failure it was; the code, the status and the explanation do not change with it. */
+    @Test
+    void aFailureKindChangesNeitherTheClassificationNorTheExplanation() {
+        Outcome.Failed<String, DayOfWeek, Month> declined = failedWith(Optional.of(Declined.class));
+        assertEquals(OutcomeCode.FAILURE_ROUTED, declined.code());
+        assertEquals(OutcomeStatus.FAILED, declined.status());
+        assertEquals(Optional.of("declined"), declined.explanation());
+    }
+
+    /** A kind that is no failure kind is refused as ActionOutcome refuses it, and a null optional as any null part. */
+    @Test
+    void aFailedOutcomeRefusesAnInvalidOrNullFailureKind() {
+        IllegalArgumentException invalid = assertThrows(IllegalArgumentException.class,
+                () -> failedWith(Optional.of(Broad.class)));
+        assertEquals(FailureTypes.invalidKindMessage(Broad.class), invalid.getMessage());
+        NullPointerException missing = assertThrows(NullPointerException.class, () -> failedWith(null));
+        assertEquals("failureKind is marked non-null but is null", missing.getMessage());
+        IllegalArgumentException blankBeforeInvalid = assertThrows(IllegalArgumentException.class,
+                () -> new Outcome.Failed<>(ENTITY, DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY,
+                        Month.MARCH, DayOfWeek.SUNDAY, "", Optional.empty(), List.of(), List.of(),
+                        Optional.of(Broad.class)));
+        assertEquals("reason must not be blank", blankBeforeInvalid.getMessage());
+        NullPointerException nullBeforeBlank = assertThrows(NullPointerException.class,
+                () -> new Outcome.Failed<>(ENTITY, DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY,
+                        Month.MARCH, DayOfWeek.SUNDAY, "", Optional.empty(), List.of(), List.of(), null));
+        assertEquals("failureKind is marked non-null but is null", nullBeforeBlank.getMessage());
+    }
+
     // --- fixtures ----------------------------------------------------------------------------------
 
     private static Outcome<String, DayOfWeek, Month> applied() {
@@ -202,6 +261,11 @@ class OutcomeAccessorsTest {
     private static Outcome<String, DayOfWeek, Month> failed(Optional<Throwable> cause) {
         return new Outcome.Failed<>(ENTITY, DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, Month.MARCH,
                 DayOfWeek.SUNDAY, "declined", cause, List.of(), List.of());
+    }
+
+    private static Outcome.Failed<String, DayOfWeek, Month> failedWith(Optional<Class<? extends FailureKind>> kind) {
+        return new Outcome.Failed<>(ENTITY, DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, Month.MARCH,
+                DayOfWeek.SUNDAY, "declined", Optional.empty(), List.of(), List.of(), kind);
     }
 
     private static Outcome<String, DayOfWeek, Month> ignored(IgnoreReason reason) {

@@ -7,6 +7,7 @@ import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
+import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.Machine;
@@ -213,8 +214,8 @@ final class Transaction {
                 if (uow.isPoisoned()) {
                     throw uow.poison().orElseThrow();
                 }
-                return failureRoute(machine, ref, entity, transition, depth, savepoint, describe(cause),
-                        Optional.of(cause), input);
+                return failureRoute(machine, ref, entity, transition, depth, savepoint, transition.onFailure(),
+                        Optional.empty(), describe(cause), Optional.of(cause), input);
             }
             throw abort(machine, ref, transition.from(), Optional.of(transition.transition()),
                     Optional.of(transition.to()), Optional.of(action.name()), depth,
@@ -229,8 +230,9 @@ final class Transaction {
         }
         if (outcome instanceof ActionOutcome.Failed failed) {
             uow.journalStatus(journalIndex, ActionStatus.FAILED);
-            return failureRoute(machine, ref, entity, transition, depth, savepoint, failed.reason(), Optional.empty(),
-                    input);
+            return failureRoute(machine, ref, entity, transition, depth, savepoint,
+                    RecoverySelector.returned(transition, failed.failureKind()), failed.failureKind(), failed.reason(),
+                    Optional.empty(), input);
         }
         uow.journalStatus(journalIndex, ActionStatus.OK);
         return new StepResult.Applied<>(transition.from(), transition.transition(), transition.to());
@@ -406,16 +408,18 @@ final class Transaction {
     }
 
     /**
-     * Roll back to the savepoint, then resolve the recovery edge from the original origin by its identifier and
-     * run it without guards and without a failure route of its own.
+     * Roll back to the savepoint, then resolve {@code recovery}, the identifier the failure selected, from the
+     * original origin and run that edge without guards and without a failure route of its own. An empty
+     * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> failing, int depth,
-            int savepoint, String reason, Optional<Throwable> cause, Object input) {
+            int savepoint, Optional<T> recovery, Optional<Class<? extends FailureKind>> failureKind, String reason,
+            Optional<Throwable> cause, Object input) {
         uow.rollbackTo(savepoint);
         S from = failing.from();
         Optional<String> actionName = failing.action().map(ActionRef::name);
-        if (failing.onFailure().isEmpty()) {
+        if (recovery.isEmpty()) {
             AbortDetails details = details(machine, ref, from, Optional.of(failing.transition()),
                     Optional.of(failing.to()), actionName);
             UnhandledFailureException unhandled = cause.isPresent()
@@ -423,7 +427,7 @@ final class Transaction {
                     : new UnhandledFailureException(call(), details, reason);
             throw poisonIfNested(depth, unhandled);
         }
-        T recoveryId = failing.onFailure().orElseThrow();
+        T recoveryId = recovery.orElseThrow();
         TransitionSpec<E, S, T> route = machine.definition().findTransition(from, recoveryId).orElseThrow();
         // The failed action has ended. Keep one frame for the entity, now identifying the recovery edge.
         uow.pop();
@@ -467,7 +471,8 @@ final class Transaction {
             }
             uow.journalStatus(journalIndex, ActionStatus.OK);
         }
-        return new StepResult.Failed<>(from, failing.transition(), failing.to(), recoveryId, route.to(), reason, cause);
+        return new StepResult.Failed<>(from, failing.transition(), failing.to(), recoveryId, route.to(), reason, cause,
+                failureKind);
     }
 
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> rejected(
@@ -702,7 +707,7 @@ final class Transaction {
                     rejected.transition(), rejected.reason(), rejected.kind(), rejected.guard());
             case StepResult.Failed<Q, U> failed -> new Outcome.Failed<>(peer, failed.from(), failed.transition(),
                     failed.to(), failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
-                    List.of(), List.of());
+                    List.of(), List.of(), failed.failureKind());
         };
     }
 

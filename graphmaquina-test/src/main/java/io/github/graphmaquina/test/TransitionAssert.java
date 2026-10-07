@@ -97,7 +97,10 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
         return this;
     }
 
-    /** The identifier of the recovery edge, which is resolved from this edge's own origin. */
+    /**
+     * The identifier of the fallback recovery edge, {@code onFailure}, which is resolved from this edge's own origin.
+     * The recovery edges that the edge's recovery rules name are not compared here.
+     */
     public TransitionAssert<E, S, T> hasFailureTransition(T expected) {
         Objects.requireNonNull(expected, "expected");
         Optional<T> wanted = Optional.of(expected);

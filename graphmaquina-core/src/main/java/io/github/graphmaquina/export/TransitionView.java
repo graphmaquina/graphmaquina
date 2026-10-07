@@ -16,7 +16,8 @@ import lombok.NonNull;
  * @param action the action's name, when it has one
  * @param guards the guards' names, in declaration order
  * @param async the edge's action or some guard is asynchronous
- * @param failureTransition the identifier this edge recovers through, when it declares one
+ * @param failureTransition the fallback recovery identifier, onFailure, when the edge declares one; recovery rule
+ *     identifiers are not represented here
  * @param watch the watch rules of {@code from} that execute this identifier, rendered
  */
 public record TransitionView(@NonNull String from, @NonNull String transition, @NonNull String to,

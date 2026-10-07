@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.RejectionKind;
 import java.util.Optional;
@@ -26,7 +27,12 @@ sealed interface StepResult<S extends Enum<S>, T extends Enum<T>>
     record Rejected<S extends Enum<S>, T extends Enum<T>>(S from, T transition, String reason, RejectionKind kind,
                                                           Optional<String> guard) implements StepResult<S, T> { }
 
-    /** Domain-level failure that took the recovery edge to {@code movedTo}. */
+    /**
+     * Domain-level failure that took the recovery edge {@code failureTransition} to {@code movedTo}, with the failure
+     * kind the outcome reports.
+     */
     record Failed<S extends Enum<S>, T extends Enum<T>>(S from, T transition, S to, T failureTransition, S movedTo,
-                                                        String reason, Optional<Throwable> cause) implements StepResult<S, T> { }
+                                                        String reason, Optional<Throwable> cause,
+                                                        Optional<Class<? extends FailureKind>> failureKind)
+            implements StepResult<S, T> { }
 }

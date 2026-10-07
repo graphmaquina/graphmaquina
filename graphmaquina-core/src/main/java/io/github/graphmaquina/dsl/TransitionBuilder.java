@@ -39,9 +39,10 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     TransitionBuilder<E, S, T> asyncGuard(String name, AsyncTransitionGuard<E, S, T> guard);
 
     /**
-     * The identifier of the edge that recovers from a domain failure: the action returns a failure, or throws a
-     * throwable {@code failsOn} lists. It is resolved from this edge's origin, and the recovery edge runs without its
-     * guards and without a failure route of its own.
+     * The identifier of the edge that recovers from a domain failure no recovery rule takes: the action returns a
+     * failure whose failure kind no {@code recover} of this edge declares, or a failure without a kind, or throws a
+     * throwable {@code failsOn} lists. A returned failure keeps its failure kind in the outcome. It is resolved from
+     * this edge's origin, and the recovery edge runs without its guards and without a failure route of its own.
      */
     TransitionBuilder<E, S, T> onFailure(T transition);
 
@@ -55,13 +56,16 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      */
     TransitionBuilder<E, S, T> failsOn(Class<? extends Throwable> type);
 
-    /** A recovery rule that declares no throwable type: the same as {@code recover(kind, transition, List.of())}. */
+    /**
+     * A recovery rule that lists no throwable type: the same as {@code recover(kind, transition, List.of())}, so only
+     * a failure the action returns with {@code kind} selects it.
+     */
     default TransitionBuilder<E, S, T> recover(Class<? extends FailureKind> kind, T transition) {
         return recover(kind, transition, List.of());
     }
 
     /**
-     * A recovery rule that declares one throwable type: the same as
+     * A recovery rule that lists one throwable type: the same as
      * {@code recover(kind, transition, List.of(failsOn))}. A null {@code failsOn} throws {@link NullPointerException}
      * at the call.
      */
@@ -71,24 +75,27 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     }
 
     /**
-     * Declares a recovery rule of this edge: the failure kind {@code kind}, the identifier {@code transition} of its
-     * recovery edge, and the throwable types {@code failsOn} declared with it, none or several. Each call declares one
-     * rule, and an edge declares any number of them; two rules may name the same identifier. The list is copied when
-     * the rule is declared, in its order.
+     * Declares one recovery rule; chainable, one rule per call. A failure the action returns with {@code kind}, as
+     * {@code ActionOutcome.failed(kind, reason)} returns it, takes the edge {@code transition} instead of
+     * {@code onFailure}, and the outcome reports {@code kind} as its failure kind. Kinds are compared by identity,
+     * never through a supertype, and the order of the rules plays no part. A returned failure of a kind no rule
+     * declares takes {@code onFailure} and keeps its kind; without {@code onFailure}, the call throws
+     * {@code UnhandledFailureException}. {@code transition} is resolved from this edge's origin, and the recovery edge
+     * runs without its guards and without consulting its own rules or {@code onFailure}. Two rules may name the same
+     * recovery, and a rule may name the one {@code onFailure} names.
      *
-     * <p>A null argument or a null element throws {@link NullPointerException}, an identifier of another catalogue
-     * {@link IllegalArgumentException}, and a call once the edge is closed or the graph built
-     * {@link IllegalStateException}, all at the call. The rest is reported when the graph is built, at this edge:
-     * <ul>
-     *   <li>SG301: {@code transition} names this edge itself, or no edge with that identifier leaves this edge's
-     *   origin.</li>
-     *   <li>SG302: a throwable type that {@code failsOn(Class)} refuses as well.</li>
-     *   <li>SG303: {@code kind} is not a failure kind, which is a named final class or record that implements
-     *   {@link FailureKind} and is not an interface, an enum, a local or anonymous class, or a {@code Throwable}.</li>
-     *   <li>SG304: two rules declare the same kind, or one throwable type is declared twice in a rule, in two rules,
-     *   or in a rule and in {@code failsOn(Class)}.</li>
-     *   <li>SG507: the edge runs no action.</li>
-     * </ul>
+     * <p>The engine routes no thrown exception through a rule: an exception that only the types of a rule's
+     * {@code failsOn} accept aborts the call, like any other exception that no type of this edge's own
+     * {@code failsOn} accepts.
+     *
+     * <p>{@code failsOn} is copied when the rule is declared. A null argument or element, an identifier of another
+     * catalogue and a closed stage are refused at once, as the rest of this stage refuses them. These refusals throw
+     * {@link NullPointerException}, {@link IllegalArgumentException} and {@link IllegalStateException}, respectively.
+     * A stage is closed after its edge is closed or the graph is built. {@code build()}
+     * reports the rest: SG301 when {@code transition} is this edge's own key or no edge with that identifier leaves
+     * its origin, SG302 for a type {@code failsOn} may not list, SG303 for a class that is not a failure kind, SG304
+     * for a kind two rules declare or a throwable type declared twice within a rule, by two rules, or by a rule and
+     * {@code failsOn}, and SG507 for a rule on an edge without an action.
      */
     TransitionBuilder<E, S, T> recover(Class<? extends FailureKind> kind, T transition,
                                        List<Class<? extends Throwable>> failsOn);

@@ -12,6 +12,13 @@ import lombok.NonNull;
  * IllegalArgumentException, a kind that is not a valid {@link FailureKind}, a type that may not be declared, and a
  * type declared twice in the rule.
  *
+ * <p>A failure the edge's action returns with {@code kind}, as {@link ActionOutcome#failed(Class, String)} builds it,
+ * takes the recovery edge {@code transition}, resolved from the origin of the edge that failed, instead of the edge's
+ * onFailure, and the outcome reports the kind in {@link Outcome.Failed#failureKind()}. Kinds are compared by identity,
+ * never through a supertype, and the order of the edge's rules plays no part. The recovery edge runs without its
+ * guards and without consulting its own rules or onFailure. The runtime routes no thrown exception through a rule: an
+ * exception that only the types of {@code failsOn} accept aborts the call.
+ *
  * <p>A valid kind is a named final class or record that implements FailureKind and is not an interface, an enum, a
  * local or anonymous class, or a Throwable. The types that may not be declared are Throwable, Exception and
  * RuntimeException themselves; an Error, a CancellationException or a StateMachineException, with their subtypes;

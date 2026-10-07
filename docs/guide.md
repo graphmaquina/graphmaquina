@@ -1232,9 +1232,12 @@ absence. Hooks, observers and transition records retain their existing contracts
 
 ### Domain failures
 
-An action returns `ActionOutcome.ok()` or `ActionOutcome.failed("reason")`. A failed action is a handled
-business result only when the edge names an `onFailure` identifier. Without one, the runtime throws
-`UnhandledFailureException` and does not commit the planned state changes.
+An action returns `ActionOutcome.ok()`, `ActionOutcome.failed("reason")`, or `ActionOutcome.failed(kind, "reason")`
+with a failure kind, a final class or record that implements `FailureKind`. A failed action is a handled business
+result when a recovery rule of the edge declares its failure kind, which selects that rule's recovery identifier, or
+else when the edge names an `onFailure` identifier, which takes every other returned failure and keeps its kind in
+`Outcome.Failed.failureKind()`. Without either, the runtime throws `UnhandledFailureException` and does not commit the
+planned state changes.
 
 A failure route is an ordinary edge, declared from the origin of the edge that may fail. In the quickstart:
 
@@ -2724,8 +2727,10 @@ public final class ProgrammaticTickets {
 ```
 
 Add `import io.github.graphmaquina.api.GuardResult;` for the guard above. Every stage names an identifier:
-`transition(id, from, to)` opens one edge and `endTransition()` closes it, `onFailure(id)` names the
-recovering edge, and `statePolicy` / `reject` word the answers a node gives. A state has exactly the edges
+`transition(id, from, to)` opens one edge and `endTransition()` closes it. `recover(kind, id)` names the recovery
+for a returned failure of that kind; `onFailure(id)` names the fallback for every other returned failure and for a
+throwable the edge lists in `failsOn`. Recovery identifiers resolve from the failing edge's origin.
+`statePolicy` / `reject` word the answers a node gives. A state has exactly the edges
 you declare. An edge left open, or one that declares more than one action, `onFailure` or `timeout`, fails
 `build()` with `SG507`. An edge's stage refuses every further call with `IllegalStateException` once
 `endTransition()` closed it, and once `build()` has run, even a `build()` that failed, every stage refuses
@@ -2804,7 +2809,7 @@ code runs.
 | --- | --- |
 | `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`. |
 | `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `from()`, `transition()` and `to()` are `Optional`. An abort raised before the entity's state was read, because its identity or its state could not be read, reports no state and no destination. One raised before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither identifier nor destination. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
-| `UnhandledFailureException` | An action failed without an `onFailure` route. |
+| `UnhandledFailureException` | An action failed, no recovery rule took the failure, and its edge has no `onFailure` route. |
 | `CascadeException` | Collected nested transition errors; inspect `errors()` and the journal. |
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |

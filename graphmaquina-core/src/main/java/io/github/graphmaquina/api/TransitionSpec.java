@@ -24,9 +24,10 @@ import lombok.NonNull;
  * @param to destination state
  * @param action the action to run, absent for a plain move
  * @param guards guards evaluated in declaration order
- * @param onFailure identifier of the recovery edge, resolved from {@code from}
- * @param failsOn throwable types that turn an action's throwable into a domain failure, routed like a failed outcome;
- *     the throwable is unwrapped from CompletionException and ExecutionException first, and the engine never matches an
+ * @param onFailure identifier of the fallback recovery edge, resolved from {@code from}: it takes a failure the action
+ *     returns with a failure kind no recovery rule declares, or without one, and a throwable failsOn lists
+ * @param failsOn throwable types that turn an action's throwable into a domain failure, which takes onFailure; the
+ *     throwable is unwrapped from CompletionException and ExecutionException first, and the engine never matches an
  *     Error, a CancellationException or a StateMachineException, whatever this list holds; the DSL also refuses those
  *     three and their subtypes, the supertypes Throwable, Exception and RuntimeException, and the wrappers
  *     CompletionException and ExecutionException (SG302). A StateMachineException from another call aborts the call
@@ -36,7 +37,9 @@ import lombok.NonNull;
  *     shortens the root's deadline, and {@code Duration.ofNanos(Long.MAX_VALUE)} or more sets no limit of its own
  * @param afterCommit hook run once this edge is committed
  * @param recoveryRules recovery rules declared on this edge, in declaration order: each names a failure kind, the
- *     identifier of a recovery edge and the throwable types it declares
+ *     identifier of a recovery edge and the throwable types it declares. A failure the action returns with a rule's
+ *     kind takes that rule's recovery edge, resolved from {@code from}; the runtime routes no thrown exception through
+ *     a rule
  */
 public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         @NonNull S from, @NonNull T transition, @NonNull S to,
@@ -90,7 +93,8 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
      * @param to destination state
      * @param action the action to run, absent for a plain move
      * @param guards guards evaluated in declaration order
-     * @param onFailure identifier of the recovery edge, resolved from {@code from}
+     * @param onFailure identifier of the fallback recovery edge, resolved from {@code from}; with no recovery rules,
+     *     it takes every returned failure and a throwable admitted by failsOn
      * @param failsOn throwable types that turn an action's throwable into a domain failure
      * @param timeout longest wait for the asynchronous action's stage
      * @param afterCommit hook run once this edge is committed
