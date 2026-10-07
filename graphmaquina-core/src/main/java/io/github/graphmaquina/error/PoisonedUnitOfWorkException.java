@@ -27,10 +27,13 @@ import lombok.Getter;
  * unknown facade is refused first, and poisons.
  *
  * <p>A poisoned transaction never commits. When the action that caught the failure returns, returns a failure, throws a
- * throwable its failsOn lists, or lets a failure of the call through, this exception included, the engine throws the
- * failure that poisoned the transaction, the one {@code original()} reports, and never this exception: an abort of the
- * call, the abort that carries an Error or any other throwable, or COLLECT's aggregate. No failure route is taken, so
- * no recovery action runs.
+ * throwable that a type its edge declares accepts, in its failsOn or in one of its recovery rules, or lets a failure of
+ * the call through, this exception included, the engine throws the failure that poisoned the transaction, the one
+ * {@code original()} reports, and never this exception: an abort of the call, the abort that carries an Error or any
+ * other throwable, or COLLECT's aggregate. No failure route is taken, so no recovery action runs. For a synchronous
+ * throw, including an asynchronous action throwing before returning its stage, this check precedes reading the
+ * cause's message. Exceptional stage completions still pass through JDK wrappers that can read that message first;
+ * a message accessor that throws can prevent the engine from reaching this check.
  */
 @Getter
 public final class PoisonedUnitOfWorkException extends TransitionAbortedException {

@@ -14,12 +14,20 @@ import java.util.Optional;
  * run nor their order. Peer views and cascades work only on the thread that called {@code process()} and only until the
  * root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}.
  * What the action throws, or completes its stage with, once unwrapped from CompletionException and ExecutionException,
- * is its own failure: a throwable that {@link TransitionSpec#failsOn()} matches takes the failure route, any other
- * throwable that is not an Error aborts the call with it as cause, an Error thrown as itself propagates, and an Error
- * that completes the stage, or arrives wrapped in one of those two classes, aborts too. A failure of this call that the
- * action lets through is never routed: it ends the call as itself, or as the failure that poisoned the transaction.
- * Once a failed cascade poisoned the transaction, a throwable that {@code failsOn} lists takes no failure route either:
- * the call ends with the failure that poisoned it.
+ * is its own failure. A throwable that a type its edge declares accepts, in {@link TransitionSpec#failsOn()} or in one
+ * of its {@link TransitionSpec#recoveryRules()}, takes the route of the most specific such type: that rule's recovery,
+ * with the rule's failure kind, or onFailure for a failsOn type. A CancellationException, a StateMachineException and
+ * an Error never match, whatever the edge declares. Any other throwable that is not an Error aborts the call with it
+ * as cause, an Error thrown as itself propagates, and an Error that completes the stage, or arrives wrapped in one of
+ * those two classes, aborts too. A declared type also accepts the JDK exceptions this context throws, such as a
+ * NullPointerException for a null argument, an IllegalArgumentException for an identifier of another catalogue, a
+ * ClassCastException from {@link #input(Class)} or a WrongThreadException off its thread: they are matched like any
+ * other throwable of the action. A failure of this call that the action lets through is never routed: it ends the
+ * call as itself, or as the failure that poisoned the transaction. Once a failed cascade poisoned the transaction, a
+ * throwable that a declared type accepts takes no route either: the call ends with the failure that poisoned it.
+ * For a synchronous throw, including an asynchronous action throwing before it returns its stage, the poison check
+ * precedes any reading of the cause's message. Exceptional stage completions still pass through JDK wrappers that
+ * can read that message before classification; a message accessor that throws can therefore prevent poison routing.
  */
 public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 

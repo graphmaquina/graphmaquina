@@ -41,18 +41,27 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     /**
      * The identifier of the edge that recovers from a domain failure no recovery rule takes: the action returns a
      * failure whose failure kind no {@code recover} of this edge declares, or a failure without a kind, or throws a
-     * throwable {@code failsOn} lists. A returned failure keeps its failure kind in the outcome. It is resolved from
-     * this edge's origin, and the recovery edge runs without its guards and without a failure route of its own.
+     * throwable whose most specific declared type is one of {@code failsOn}. A returned failure keeps its failure kind
+     * in the outcome; a throwable routed here reports none. It is resolved from this edge's origin, and the recovery
+     * edge runs without its guards and without a failure route of its own.
      */
     TransitionBuilder<E, S, T> onFailure(T transition);
 
     /**
-     * One per call, chainable. SG302 accepts only throwable types foreign to the library. It refuses {@code Throwable},
-     * {@code Exception} and {@code RuntimeException} as too broad, an {@code Error} or a
+     * One per call, chainable: a throwable type whose instances take {@code onFailure}, without a failure kind, unless
+     * a more specific type that a {@code recover} rule of this edge declares accepts them too. The action's throwable
+     * is unwrapped from CompletionException and ExecutionException first, and the most specific declared type wins,
+     * in a rule or here, whatever the order of the declarations; when it is one of these types and the edge has no
+     * {@code onFailure}, the call throws {@code UnhandledFailureException}. An Error, a CancellationException and a
+     * StateMachineException never match. A declared type also accepts the JDK exceptions the engine throws from the
+     * action's context, such as a NullPointerException for a null argument, an IllegalArgumentException for an
+     * identifier of another catalogue, a ClassCastException from {@code input(Class)} or a WrongThreadException off
+     * the action's thread: they are matched like the action's own. A type listed here twice is harmless; one that a
+     * rule also declares is SG304. SG302 accepts only throwable types foreign to the library. It refuses
+     * {@code Throwable}, {@code Exception} and {@code RuntimeException} as too broad, an {@code Error} or a
      * {@code CancellationException} as never a domain failure, and {@code CompletionException} or
      * {@code ExecutionException} themselves because they are unwrapped before matching: declare the type of their
-     * cause instead. A type that a {@code recover} rule of this edge declares too is SG304, while the same type
-     * listed here more than once is accepted.
+     * cause instead.
      */
     TransitionBuilder<E, S, T> failsOn(Class<? extends Throwable> type);
 
@@ -78,20 +87,31 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * Declares one recovery rule; chainable, one rule per call. A failure the action returns with {@code kind}, as
      * {@code ActionOutcome.failed(kind, reason)} returns it, takes the edge {@code transition} instead of
      * {@code onFailure}, and the outcome reports {@code kind} as its failure kind. Kinds are compared by identity,
-     * never through a supertype, and the order of the rules plays no part. A returned failure of a kind no rule
-     * declares takes {@code onFailure} and keeps its kind; without {@code onFailure}, the call throws
-     * {@code UnhandledFailureException}. {@code transition} is resolved from this edge's origin, and the recovery edge
-     * runs without its guards and without consulting its own rules or {@code onFailure}. Two rules may name the same
-     * recovery, and a rule may name the one {@code onFailure} names.
+     * never through a supertype. A returned failure of a kind no rule declares takes {@code onFailure} and keeps its
+     * kind; without {@code onFailure}, the call throws {@code UnhandledFailureException}.
      *
-     * <p>The engine routes no thrown exception through a rule: an exception that only the types of a rule's
-     * {@code failsOn} accept aborts the call, like any other exception that no type of this edge's own
-     * {@code failsOn} accepts.
+     * <p>A throwable the action throws, or completes its stage with, once unwrapped from CompletionException and
+     * ExecutionException, takes the route of the most specific type that accepts it among every type this edge
+     * declares, in its rules and in its own {@code failsOn}: a type of this rule's {@code failsOn} routes it to
+     * {@code transition} with {@code kind}, and a type of the edge's own {@code failsOn} to {@code onFailure} without
+     * a kind. The order of the declarations never matters. A throwable no declared type accepts aborts the call, and
+     * so do a CancellationException and a StateMachineException, which never match. An Error thrown as itself
+     * propagates; an Error completing the stage or arriving wrapped aborts. A failure of the call
+     * itself ends it as itself, and once a failed cascade poisoned the transaction, an accepted throwable ends the call
+     * with the failure that poisoned it. A declared type also accepts the JDK exceptions the engine throws from the
+     * action's context, such as a NullPointerException for a null argument, an IllegalArgumentException for an
+     * identifier of another catalogue, a ClassCastException from {@code input(Class)} or a WrongThreadException off
+     * the action's thread: they are matched like the action's own. For a synchronous throw, including an asynchronous
+     * action throwing before returning its stage, the poison check precedes reading the cause's message. Exceptional
+     * stage completions still pass through JDK wrappers that can read that message first; a message accessor that
+     * throws can prevent classification and poison routing.
+     *
+     * <p>{@code transition} is resolved from this edge's origin, and the recovery edge runs without its guards and
+     * without consulting its own rules or {@code onFailure}. Two rules may name the same recovery, and a rule may name
+     * the one {@code onFailure} names: the outcome's failure kind then tells them apart.
      *
      * <p>{@code failsOn} is copied when the rule is declared. A null argument or element, an identifier of another
-     * catalogue and a closed stage are refused at once, as the rest of this stage refuses them. These refusals throw
-     * {@link NullPointerException}, {@link IllegalArgumentException} and {@link IllegalStateException}, respectively.
-     * A stage is closed after its edge is closed or the graph is built. {@code build()}
+     * catalogue and a closed stage are refused at once, as the rest of this stage refuses them. {@code build()}
      * reports the rest: SG301 when {@code transition} is this edge's own key or no edge with that identifier leaves
      * its origin, SG302 for a type {@code failsOn} may not list, SG303 for a class that is not a failure kind, SG304
      * for a kind two rules declare or a throwable type declared twice within a rule, by two rules, or by a rule and

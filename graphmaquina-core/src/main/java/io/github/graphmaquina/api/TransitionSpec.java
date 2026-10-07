@@ -25,11 +25,13 @@ import lombok.NonNull;
  * @param action the action to run, absent for a plain move
  * @param guards guards evaluated in declaration order
  * @param onFailure identifier of the fallback recovery edge, resolved from {@code from}: it takes a failure the action
- *     returns with a failure kind no recovery rule declares, or without one, and a throwable failsOn lists
- * @param failsOn throwable types that turn an action's throwable into a domain failure, which takes onFailure; the
- *     throwable is unwrapped from CompletionException and ExecutionException first, and the engine never matches an
- *     Error, a CancellationException or a StateMachineException, whatever this list holds; the DSL also refuses those
- *     three and their subtypes, the supertypes Throwable, Exception and RuntimeException, and the wrappers
+ *     returns with a failure kind no recovery rule declares, or without one, and a throwable whose most specific
+ *     declared type is one of failsOn
+ * @param failsOn throwable types that turn an action's throwable into a domain failure, which takes onFailure unless a
+ *     more specific type that a recovery rule declares accepts the throwable; the throwable is unwrapped from
+ *     CompletionException and ExecutionException first, and the engine never matches an Error, a
+ *     CancellationException or a StateMachineException, whatever this list or a rule holds; the DSL also refuses
+ *     those three and their subtypes, the supertypes Throwable, Exception and RuntimeException, and the wrappers
  *     CompletionException and ExecutionException (SG302). A StateMachineException from another call aborts the call
  *     with it as cause, and a failure of the call itself ends it as itself, or as the failure that poisoned the
  *     transaction
@@ -38,8 +40,9 @@ import lombok.NonNull;
  * @param afterCommit hook run once this edge is committed
  * @param recoveryRules recovery rules declared on this edge, in declaration order: each names a failure kind, the
  *     identifier of a recovery edge and the throwable types it declares. A failure the action returns with a rule's
- *     kind takes that rule's recovery edge, resolved from {@code from}; the runtime routes no thrown exception through
- *     a rule
+ *     kind takes that rule's recovery edge, resolved from {@code from}, and so does a throwable when the most specific
+ *     type that accepts it, among the types of every rule and of failsOn, is one of the rule's; declaration order plays
+ *     no part
  */
 public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         @NonNull S from, @NonNull T transition, @NonNull S to,

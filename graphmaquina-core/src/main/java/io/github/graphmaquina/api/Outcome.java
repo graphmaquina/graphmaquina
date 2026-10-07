@@ -51,9 +51,9 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * The reason given for this result: the reason of the state policy or of the guard for a rejection, and the reason
      * the action returned for a failure. The graph's author writes them all, except the fixed text the library
      * generates for a terminal state that declares no policy. Empty for an applied outcome, for an ignored one, whose
-     * why is its {@link IgnoreReason}, and for a failure that carries a cause because failsOn routed it from an
-     * exception: that reason is composed from the exception and may carry internal details, so it stays in the
-     * failure's {@code reason} and {@code cause}.
+     * why is its {@link IgnoreReason}, and for a failure that carries a cause because a declared throwable type, of
+     * failsOn or of a recovery rule, routed it from an exception: that reason is composed from the exception and may
+     * carry internal details, so it stays in the failure's {@code reason} and {@code cause}.
      */
     Optional<String> explanation();
 
@@ -214,16 +214,18 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * Domain-level failure routed through {@code failureTransition}: the action returned a failed outcome, or failed
-     * with a throwable its edge lists in failsOn, which {@code cause} then holds. A returned failure takes the recovery
-     * of the edge's recovery rule that declares its failure kind, compared by identity, and the edge's onFailure
-     * otherwise; a throwable takes onFailure. {@code failureKind} is the kind the action returned with its failure,
-     * whichever of the two routes took it, and is empty for a failure returned without one and for a throwable. The
-     * entity moves to {@code movedTo}. Returned by a root call, it committed, with {@code records} and
-     * {@code reactions} as in {@link Applied}; returned by a cascade, it is written only if its root commits, and both
-     * lists are empty. The constructor refuses a blank reason, and a present failure kind that
+     * with a throwable that a type its edge declares accepts, which {@code cause} then holds. A returned failure takes
+     * the recovery of the edge's recovery rule that declares its failure kind, compared by identity, and the edge's
+     * onFailure otherwise. A throwable takes the route of the most specific declared type that accepts it, among the
+     * types of the edge's recovery rules and of its failsOn: that rule's recovery, or onFailure for a failsOn type.
+     * {@code failureKind} is the kind the action returned with its failure, whichever route took it, or the kind of
+     * the rule whose type routed the throwable; it is empty for a failure returned without one and for a throwable a
+     * failsOn type routed. The entity moves to {@code movedTo}. Returned by a root call, it committed, with
+     * {@code records} and {@code reactions} as in {@link Applied}; returned by a cascade, it is written only if its
+     * root commits, and both lists are empty. The constructor refuses a blank reason, and a present failure kind that
      * {@link ActionOutcome#failed(Class, String)} would refuse; the constructor without {@code failureKind} reports
-     * none. When failsOn routed the failure, it carries the throwable as {@code cause} and a reason composed from it,
-     * so {@link #explanation()} leaves that reason out.
+     * none. When a throwable was routed, it carries it as {@code cause} and a reason composed from it, so
+     * {@link #explanation()} leaves that reason out.
      */
     record Failed<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,

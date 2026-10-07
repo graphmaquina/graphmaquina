@@ -32,7 +32,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionStage;
 
 /**
@@ -208,14 +207,16 @@ final class Transaction {
             if (cause instanceof CallFailedException own && owns(own)) {
                 throw poisonOr(own);
             }
-            if (matchesFailsOn(transition, cause)) {
-                // A poisoned unit of work never commits, and the failure route commits: the poison is thrown before
-                // any recovery action can run, as it is when the action returns.
+            if (RecoverySelector.admits(transition, cause)) {
+                // A poisoned unit of work never commits, and every route commits: the poison is thrown before a route
+                // is chosen and before the reason reads the throwable's message, so no recovery action can run, as
+                // when the action returns.
                 if (uow.isPoisoned()) {
                     throw uow.poison().orElseThrow();
                 }
-                return failureRoute(machine, ref, entity, transition, depth, savepoint, transition.onFailure(),
-                        Optional.empty(), describe(cause), Optional.of(cause), input);
+                RecoverySelector.Route<T> selected = RecoverySelector.thrown(transition, cause);
+                return failureRoute(machine, ref, entity, transition, depth, savepoint, selected.recovery(),
+                        selected.failureKind(), describe(cause), Optional.of(cause), input);
             }
             throw abort(machine, ref, transition.from(), Optional.of(transition.transition()),
                     Optional.of(transition.to()), Optional.of(action.name()), depth,
@@ -266,7 +267,8 @@ final class Transaction {
      * throws, an Error aside, or completes its stage with, checked exceptions included, which Kotlin or
      * {@code @SneakyThrows} code can throw without declaring them, and library exceptions too, becomes an ActionFailure
      * that its caller classifies. An Error is never routed: thrown as itself, it propagates; wrapped in
-     * CompletionException or ExecutionException, it is unwrapped and aborts.
+     * CompletionException or ExecutionException, it is unwrapped and aborts. Exceptional stage completions still pass
+     * through JDK wrappers that can read the cause's message before ActionFailure reaches classification.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -495,23 +497,9 @@ final class Transaction {
         return machine.readState(entity);
     }
 
-    private static <E, S extends Enum<S>, T extends Enum<T>> boolean matchesFailsOn(TransitionSpec<E, S, T> transition,
-                                                                                     Throwable cause) {
-        if (cause instanceof Error || cause instanceof CancellationException
-                || cause instanceof StateMachineException) {
-            return false;
-        }
-        for (Class<? extends Throwable> type : transition.failsOn()) {
-            if (type.isInstance(cause)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /**
-     * The reason a failsOn match reports: the throwable's simple name and its message. An anonymous class has an empty
-     * simple name, so its binary name stands in: a reason is never blank.
+     * The reason a routed throwable reports, whichever declared type admitted it: the throwable's simple name and its
+     * message. An anonymous class has an empty simple name, so its binary name stands in: a reason is never blank.
      */
     private static String describe(Throwable cause) {
         String message = cause.getMessage();

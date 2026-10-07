@@ -15,8 +15,9 @@ import java.util.Optional;
  * Chainable, typed assertion over one declared edge of a graph, obtained from
  * {@link GraphAssert#transition(Enum, Enum)}. Every expectation reads a declared field of the
  * {@link TransitionSpec}; none of them runs the edge's action, guards or hook, so a graph whose callbacks
- * would fail if invoked can still be inspected in full. Timeout, {@code failsOn} classes and the
- * after-commit hook are checked directly, independently of any graphical exporter.
+ * would fail if invoked can still be inspected through these expectations. Timeout, the edge's own {@code failsOn}
+ * classes and the after-commit hook are checked directly, independently of any graphical exporter. Recovery rules
+ * can be read from {@link TransitionSpec#recoveryRules()}; this assertion provides no direct expectation for them.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
@@ -116,7 +117,10 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
         return this;
     }
 
-    /** Compares the declared classes in order, without widening to subclasses. */
+    /**
+     * Compares the classes the edge's own {@code failsOn} declares, in order and without widening to subclasses. The
+     * classes a recovery rule lists are not among them.
+     */
     @SafeVarargs
     public final TransitionAssert<E, S, T> failsOnExactly(Class<? extends Throwable>... expected) {
         List<Class<? extends Throwable>> declared = new ArrayList<>();

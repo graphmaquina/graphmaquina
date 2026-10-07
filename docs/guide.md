@@ -1316,7 +1316,7 @@ only needs to know what happened and why reads it without narrowing:
 | --- | --- | --- | --- | --- |
 | `Applied` | `APPLIED` | `APPLIED` | empty | Yes, the resolved edge committed |
 | `Rejected` | `REJECTED` | `NO_TRANSITION`, or `GUARD_REJECTED` | the policy's reason, or the guard's | No |
-| `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` routed a throwable | Yes, the failure route committed |
+| `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` or a recovery rule routed a throwable | Yes, the failure route committed |
 | `Ignored` | `IGNORED` | `NO_WATCH`, or `NO_RULE_MATCHED` | empty | No |
 
 A cascade returns `Applied` or `Failed` to the action that called `cascade(...)`; a rejection inside it aborts the
@@ -1334,9 +1334,9 @@ Read the classification with its limits in mind:
 - `FAILED` does not mean that nothing happened: the failure route committed and the entity is at `movedTo`.
 - `explanation()` holds the reasons the graph declares: a policy's reason, a guard's, or the reason an action
   returned with `ActionOutcome.failed(...)`. The only text the library writes there is the fixed reason of a
-  terminal state that declares no policy, such as `terminal state DONE accepts no transitions`. When `failsOn`
-  routes an exception, the failure's reason is composed from that exception and may carry internal details; it
-  stays in `Failed.reason()` and `Failed.cause()`.
+  terminal state that declares no policy, such as `terminal state DONE accepts no transitions`. When `failsOn` or a
+  recovery rule routes an exception, the failure's reason is composed from that exception and may carry internal
+  details; it stays in `Failed.reason()` and `Failed.cause()`.
 - A commit here is GraphMaquina writing states through the setters. A JPA or other transaction around the call
   commits later and can still fail.
 - The constant names of `OutcomeStatus` and `OutcomeCode` are stable identifiers, safe to persist or send.
@@ -2033,8 +2033,9 @@ step, a cycle or the depth limit, reaches your action as it is. Anything else re
 describes no call, such as an unknown machine or an ambiguous identity, or a throwable other than an `Error` from a
 callback the engine does not wrap, such as an identity function. An `Error` poisons through such an abort too, but
 reaches your action as itself. Catching it in your action does not make the transaction safe to commit. When the action
-then returns, throws a throwable its `failsOn` lists, or lets a failure of the call through, the root throws the failure
-that poisoned it, commits nothing and runs no failure route. A cascade that names an unknown machine poisons too, by key
+then returns, throws a throwable that its `failsOn` or one of its recovery rules accepts, or lets a failure of the call
+through, the root throws the failure that poisoned it, commits nothing and runs no failure route. A cascade that names
+an unknown machine poisons too, by key
 or by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
 `cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its
 collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
@@ -2043,6 +2044,11 @@ propagates as it is and poisons nothing, even when the machine is unknown. Use `
 facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
 reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
 runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
+
+For a synchronous throw, including an asynchronous action throwing before it returns its stage, the poison check
+precedes reading the cause's message. Exceptional completions of completed or pending stages still pass through JDK
+wrappers that can read that message before classification. If its message accessor throws, the engine can fail before
+it reaches the poison check.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.

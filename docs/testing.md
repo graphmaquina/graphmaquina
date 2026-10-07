@@ -229,8 +229,8 @@ assertThat(orders.definition())
 ```
 
 `hasGuardsExactly` keeps order and multiplicity, because the engine evaluates guards in declaration order
-and stops at the first rejection. `failsOnExactly()` with no argument asserts that the edge maps no
-exception to its failure route.
+and stops at the first rejection. `failsOnExactly()` with no argument asserts that the edge's own `failsOn`
+maps no exception to its fallback `onFailure` route; the exceptions a recovery rule maps are not part of it.
 
 ### Outcomes, reactions and observed state
 
@@ -436,9 +436,10 @@ callback. The test resumes when the engine has entered it, and the engine resume
 very invocation, so an asynchronous transition is asserted without a single sleep. `awaitInvocation` and
 `AsyncAssertions.await` each take a budget that belongs to the test. The fixture is `AutoCloseable`; closing
 is idempotent, cancels the stages it created itself and rejects any invocation that arrives afterwards: the
-action with a `GraphAssertionError`, an `Error` that no `failsOn` route can take for a failure of the action,
-and the guard with an `IllegalStateException`, which aborts the transition. `awaitInvocation` on a closed
-fixture fails at once, and a wait already blocked when the fixture closes is woken and fails the same way.
+action with a `GraphAssertionError`, an `Error` that neither a recovery rule nor a `failsOn` route can take for
+a failure of the action, and the guard with an `IllegalStateException`, which aborts the transition.
+`awaitInvocation` on a closed fixture fails at once, and a wait already blocked when the fixture closes is
+woken and fails the same way.
 Concurrent invocations are independent: each arrives with its own handle and is answered on its own. From
 [ControlledAsyncTest](../graphmaquina-test/src/test/java/consumer/ControlledAsyncTest.java), where
 `GENEROUS` is that test's own two-second budget:

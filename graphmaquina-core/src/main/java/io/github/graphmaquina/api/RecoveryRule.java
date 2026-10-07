@@ -15,9 +15,12 @@ import lombok.NonNull;
  * <p>A failure the edge's action returns with {@code kind}, as {@link ActionOutcome#failed(Class, String)} builds it,
  * takes the recovery edge {@code transition}, resolved from the origin of the edge that failed, instead of the edge's
  * onFailure, and the outcome reports the kind in {@link Outcome.Failed#failureKind()}. Kinds are compared by identity,
- * never through a supertype, and the order of the edge's rules plays no part. The recovery edge runs without its
- * guards and without consulting its own rules or onFailure. The runtime routes no thrown exception through a rule: an
- * exception that only the types of {@code failsOn} accept aborts the call.
+ * never through a supertype. A throwable the action throws takes {@code transition} too, and the outcome reports
+ * {@code kind}, when the most specific type that accepts it, among the types of every rule of the edge and of its
+ * failsOn, is one of {@code failsOn}. The order of the declarations plays no part. The recovery edge runs without its
+ * guards and without consulting its own rules or onFailure. Exceptional stage completions still pass through JDK
+ * wrappers that can read the cause's message before classification; a message accessor that throws can prevent
+ * routing, including the poison check.
  *
  * <p>A valid kind is a named final class or record that implements FailureKind and is not an interface, an enum, a
  * local or anonymous class, or a Throwable. The types that may not be declared are Throwable, Exception and
