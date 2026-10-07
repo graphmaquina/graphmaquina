@@ -13,7 +13,8 @@ import lombok.NonNull;
  * recovery rules need an action; no failure kind is declared by two recovery rules; no throwable type is declared by
  * two rules, or by a rule and also in failsOn, though failsOn may list one of its own types twice; and a timeout
  * needs an asynchronous action and must be positive. The constructor without {@code recoveryRules} declares none.
- * That onFailure names an edge leaving {@code from} is checked by the DSL when it builds the graph.
+ * That onFailure and every recovery rule name another edge leaving {@code from} is checked by the DSL when it builds
+ * the graph.
  *
  * @param <E> entity type
  * @param <S> state enum
