@@ -49,7 +49,10 @@ public final class MachineCall {
         return entity;
     }
 
-    /** The identifier {@code execute} was asked for; empty for a {@code reevaluate}, whatever edge its watch selects. */
+    /**
+     * The identifier {@code execute} was asked for; empty for a {@code reevaluate}, whatever edge
+     * its watch selects.
+     */
     public Optional<Enum<?>> transition() {
         return transition;
     }
@@ -59,7 +62,10 @@ public final class MachineCall {
         return reaction;
     }
 
-    /** {@code Doc/DocStatus SUBMIT}, {@code Doc/DocStatus reevaluate} or {@code Doc/DocStatus reevaluate (watch reaction)}. */
+    /**
+     * {@code Doc/DocStatus SUBMIT}, {@code Doc/DocStatus reevaluate} or
+     * {@code Doc/DocStatus reevaluate (watch reaction)}.
+     */
     @Override
     public String toString() {
         return key + " " + transition.map(Enum::name).orElse("reevaluate") + (reaction ? " (watch reaction)" : "");

@@ -21,7 +21,8 @@ public record CallFailure(@NonNull CallPhase phase, @NonNull StatesWritten state
             case HOOK, REACTIONS -> statesWritten == StatesWritten.ALL;
         };
         if (!possible) {
-            throw new IllegalArgumentException("a call that failed in " + phase + " cannot have written " + statesWritten);
+            throw new IllegalArgumentException(
+                    "a call that failed in " + phase + " cannot have written " + statesWritten);
         }
     }
 }

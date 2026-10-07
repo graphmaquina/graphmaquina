@@ -9,7 +9,10 @@ public enum StatesWritten {
     /** No setter was called. */
     NONE,
 
-    /** At least one setter was called and the writing did not finish: the setter that failed may or may not have written. */
+    /**
+     * At least one setter was called and the writing did not finish: the setter that failed may or
+     * may not have written.
+     */
     PARTIAL,
 
     /** Every setter the call planned returned. */
