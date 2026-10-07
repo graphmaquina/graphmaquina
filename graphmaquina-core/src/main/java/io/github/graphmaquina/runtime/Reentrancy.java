@@ -33,7 +33,11 @@ final class Reentrancy {
         ACTIVE.set(Boolean.TRUE);
     }
 
+    /**
+     * Releases the marker. The thread keeps its entry, set to false: a removed entry is created again by the next
+     * read, which every call makes.
+     */
     static void exit() {
-        ACTIVE.remove();
+        ACTIVE.set(Boolean.FALSE);
     }
 }
