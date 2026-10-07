@@ -33,7 +33,10 @@ import java.util.concurrent.CompletionStage;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 
-/** Engine of a root transaction. All the state of the transition lives here and in the UnitOfWork, the phase of its call included. */
+/**
+ * Engine of a root transaction. All the state of the transition lives here and in the UnitOfWork, the phase of its
+ * call included.
+ */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class Transaction {
 
@@ -56,7 +59,10 @@ final class Transaction {
     /** Phase 2 is about to call a setter: from here a failure in COMMIT may leave the states partially written. */
     void writing() { writing = true; }
 
-    /** How far the call got in writing states: none before the commit, all after it, and during it what the setters did. */
+    /**
+     * How far the call got in writing states: none before the commit, all after it, and during it what the setters
+     * did.
+     */
     StatesWritten statesWritten() {
         return switch (phase) {
             case RESOLVE, GUARD, ACTION -> StatesWritten.NONE;

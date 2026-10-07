@@ -197,13 +197,6 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     /**
-     * Root transaction: new UoW with its deadline, reentrancy marker, step, phase 2, context invalidation.
-     * Everything is prepared before the marker is set, so that from {@code Reentrancy.enter} on, the only way out
-     * runs through the {@code finally} that releases it, whatever the step throws.
-     * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
-     * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
-     */
-    /**
      * Root transaction: new UoW with its deadline, reentrancy marker, step, phase 2, context invalidation, then the
      * hooks and the watch reactions of what it committed. Everything is prepared before the marker is set, so that
      * from {@code Reentrancy.enter} on, the only way out runs through the {@code finally} that releases it, whatever
@@ -248,13 +241,17 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             }
             outcome = notify(switch (step) {
                 case StepResult.Applied<S, T> applied ->
-                        new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(), records, reactions);
-                case StepResult.Ignored<S, T> ignored -> new Outcome.Ignored<>(entity, ignored.from(), ignored.reason());
-                case StepResult.Rejected<S, T> rejected -> new Outcome.Rejected<>(entity, rejected.from(),
-                        rejected.transition(), rejected.reason(), rejected.kind(), rejected.guard());
-                case StepResult.Failed<S, T> failed -> new Outcome.Failed<>(entity, failed.from(), failed.transition(),
-                        failed.to(), failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
-                        records, reactions);
+                        new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(),
+                                records, reactions);
+                case StepResult.Ignored<S, T> ignored ->
+                        new Outcome.Ignored<>(entity, ignored.from(), ignored.reason());
+                case StepResult.Rejected<S, T> rejected ->
+                        new Outcome.Rejected<>(entity, rejected.from(), rejected.transition(), rejected.reason(),
+                                rejected.kind(), rejected.guard());
+                case StepResult.Failed<S, T> failed ->
+                        new Outcome.Failed<>(entity, failed.from(), failed.transition(), failed.to(),
+                                failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
+                                records, reactions);
             });
         } catch (Throwable thrown) {
             failed(observed, tx.phase(), tx.statesWritten(), thrown);

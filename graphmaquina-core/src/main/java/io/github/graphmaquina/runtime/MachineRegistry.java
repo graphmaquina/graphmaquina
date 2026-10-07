@@ -31,10 +31,10 @@ import lombok.RequiredArgsConstructor;
  * asynchronous waits are bounded by the asyncTimeout of the machine whose call started the root, not by its own.
  * When that root machine declares no asyncTimeout, those waits are unbounded, whatever the peer's own asyncTimeout;
  * only an edge that declares a timeout of its own still bounds its action's wait.
- * Nothing serializes two roots on one entity. Its observers see every call of its machines, as
+ * Nothing serializes two roots on one entity. The pre-check of phase 2 refuses a state that changed while a root
+ * ran, but it catches only the interleavings that leave a different state behind, so concurrent calls on one entity
+ * are the application's to serialize. Its observers see every call of its machines, as
  * {@link io.github.graphmaquina.api.MachineObserver} describes; a standalone machine's registry has none.
- * The pre-check of phase 2 refuses a state that changed while a root ran, but it catches only the interleavings that
- * leave a different state behind, so concurrent calls on one entity are the application's to serialize.
  * {@link #close()} closes the default executors of the registry's machines. A standalone machine runs in a registry
  * of its own too, but that registry is internal and unreachable, so nothing can close it, and the machine's default
  * executor is never closed.
@@ -64,7 +64,8 @@ public final class MachineRegistry implements AutoCloseable {
      * builder is consumed, so a build that fails leaves every builder as it was, ready to be fixed and built again.
      */
     private static MachineRegistry assemble(List<? extends StateMachines.Builder<?, ?, ?>> builders, int maxCascadeDepth,
-                                            int maxWatchChain, Optional<TransitionListener> listener, Observers observers) {
+                                            int maxWatchChain, Optional<TransitionListener> listener,
+                                            Observers observers) {
         Set<MachineKey<?, ?, ?>> keys = new HashSet<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             keys.add(builder.key());
@@ -301,7 +302,8 @@ public final class MachineRegistry implements AutoCloseable {
                     throw new IllegalStateException("the machine " + builder.key() + " must declare identity(...) within a registry");
                 }
             }
-            MachineRegistry registry = assemble(builders, maxCascadeDepth, maxWatchChain, listener, new Observers(observers));
+            Observers registered = observers.isEmpty() ? Observers.NONE : new Observers(observers);
+            MachineRegistry registry = assemble(builders, maxCascadeDepth, maxWatchChain, listener, registered);
             used = true;
             return registry;
         }

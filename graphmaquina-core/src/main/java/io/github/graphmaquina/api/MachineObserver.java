@@ -17,7 +17,8 @@ import java.time.Duration;
  *   told. It is logged as a warning through {@code System.getLogger("io.github.graphmaquina")}, naming the observer,
  *   the callback and the call, never the entity.</li>
  *   <li>An observer whose {@code onStarted} threw still receives its end event.</li>
- *   <li>An Error propagates unchanged, as everywhere in the library.</li>
+ *   <li>An Error it throws propagates unchanged, as everywhere in the library, and voids these guarantees for that
+ *   call.</li>
  *   <li>Its callbacks run with the thread marked as running a call, so an {@code execute} or {@code reevaluate} it
  *   makes throws {@code ReentrantTransitionException}, contained like any other exception. To act on a commit, use a
  *   hook or a watch.</li>

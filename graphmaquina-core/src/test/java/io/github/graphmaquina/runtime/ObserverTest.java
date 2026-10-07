@@ -58,8 +58,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.BiConsumer;
-import java.util.logging.LogRecord;
 import java.util.function.UnaryOperator;
+import java.util.logging.LogRecord;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -212,7 +212,8 @@ class ObserverTest {
         }
         assertEquals(2, recorder.events.size());
         assertEquals("started Doc/DocStatus SUBMIT", recorder.events.get(0));
-        assertTrue(recorder.events.get(1).startsWith("failed Doc/DocStatus SUBMIT ACTION NONE "), recorder.events.get(1));
+        assertTrue(recorder.events.get(1).startsWith("failed Doc/DocStatus SUBMIT ACTION NONE "),
+                recorder.events.get(1));
     }
 
     @Test
@@ -446,7 +447,8 @@ class ObserverTest {
     @Test
     void observersAreNotifiedInTheOrderTheyWereAdded() {
         List<String> seen = new ArrayList<>();
-        try (MachineRegistry registry = registry(plain(), Doc::setStatus, named("first", seen), named("second", seen))) {
+        try (MachineRegistry registry = registry(plain(), Doc::setStatus, named("first", seen),
+                named("second", seen))) {
             registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT);
         }
         assertEquals(List.of("first started", "second started", "first completed", "second completed"), seen);
