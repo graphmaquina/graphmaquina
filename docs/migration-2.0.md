@@ -45,6 +45,7 @@ entity and state enum with different transition catalogues: two engines would ot
 | `edge(from, to)` and `/cells` snapshots | `findTransition(from, id)` and `/transitions` in a v2 snapshot. |
 | A return to the origin, or a terminal with an ACTION self-loop, in the DSL | A terminal forbids every outgoing edge. A non-terminal self-loop is legal and requires `allowsCycle`. |
 | `Outcome.current()` | `Outcome.recordedState()`: the same value, the state the call recorded, not a read of the entity. |
+| `TransitionListener` and `listener(...)` on a builder | `MachineObserver` and `observer(...)`, any number of them. An observer cannot fail a call: what must fail it belongs in a hook, or in `Definition.afterCommit` for every edge of a machine. |
 
 Preserved, apart from the fixes listed under
 [Behaviour changes in this release](#behaviour-changes-in-this-release): guard order, timeouts and deadlines,
@@ -464,12 +465,12 @@ observe. Most items refuse up front what used to fail later, in generated code o
   method of a `StateMachines.Builder` throws `IllegalStateException`, and so does every method of
   `MachineRegistry.Builder` and of a generated set's `Builder` once its own `build()` succeeds. A build that
   fails consumes none of them, so it can be fixed and retried. A generated set's `Builder` checks each setting
-  where it is given and refuses a second `listener(...)`. In the DSL, an edge's stage refuses every call once
+  where it is given. In the DSL, an edge's stage refuses every call once
   `endTransition()` closed it, and every stage refuses further declarations once `build()` has run.
 - **Watch functions may not start transitions.** A watch's owner lookup, peer lookup or condition that calls
   `execute` or `reevaluate` gets `ReentrantTransitionException`, reported as `Reaction.Aborted` in a reaction.
   It used to start a root of its own, which `maxWatchChain` did not count.
-- **Checked exceptions are handled like unchecked ones.** One that a guard, action, hook, listener, state setter
+- **Checked exceptions are handled like unchecked ones.** One that a guard, action, hook, state setter
   or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code can, now goes through
   `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch reaction, is
   reported as `Reaction.Aborted` wrapped in `UndeclaredThrowableException`. It used to escape unchanged.
@@ -486,9 +487,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **Library exceptions pass through.** A `StateMachineException` that a guard or action throws wrapped in
   `CompletionException` or `ExecutionException` is rethrown as is, never matched against `failsOn`, as it
   already was bare or through a stage.
-- **A listener failure says whether state was written.** After a `Rejected` or `Ignored` outcome, its
-  `AfterCommitException` reads `the call on ... wrote no state, and the post-commit step 'listener' failed`. The
-  new public constructor `AfterCommitException(key, entity, from, to, step, written, cause)` carries that.
+- **Observers replace the listener.** A `MachineObserver`, added with `observer(...)` to a registry or a generated
+  set builder as many times as needed, sees every call start and end, failures and `Error`s included. What it
+  throws is logged and never changes the call. `TransitionListener`, `listener(...)` and
+  `TransitionRecorder.compose(...)` are gone, and an `AfterCommitException` now always means that a hook failed.
 - **Unbounded timeouts.** An `asyncTimeout` or edge timeout of `Duration.ofNanos(Long.MAX_VALUE)` or more means
   no limit, and the other limit stays in charge. Such budgets used to overflow, into `ArithmeticException` or a
   deadline silently switched off, and an `asyncTimeout` above that left its thread refusing every later
@@ -672,6 +674,8 @@ observe. Most items refuse up front what used to fail later, in generated code o
 
 ### Testing library
 
+- **`TransitionRecorder` is a `MachineObserver`.** Install it with `observer(recorder)`.
+  `compose(...)` is gone: a registry takes any number of observers.
 - **`AbortAssert.atUnread(key, entity, from)`** is new: it locates an abort raised before any identifier was
   read, such as a chain of watch reactions that exceeds its limit.
 - **Closed controlled fixtures.** A closed `ControlledAsyncAction` refuses an invocation with

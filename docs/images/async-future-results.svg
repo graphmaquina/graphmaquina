@@ -30,7 +30,7 @@
 <text x="794" y="465" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="700" fill="#ff8998" text-anchor="start">EXCEPTIONAL COMPLETION</text>
 <text x="794" y="510" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#f2f6fc" text-anchor="start">Guard/action error or wait timeout</text>
 <text x="794" y="553" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#f2f6fc" text-anchor="start">Commit precheck or setter failure</text>
-<text x="794" y="596" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#f2f6fc" text-anchor="start">Hook/listener failure after the operation</text>
+<text x="794" y="596" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#f2f6fc" text-anchor="start">Hook failure after the operation</text>
 <text x="794" y="639" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#f2f6fc" text-anchor="start">Executor refused the submitted task</text>
 <text x="78" y="748" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Inspect reactions too: a peer commit can succeed while its owner watch reports Reaction.Aborted.</text>
 <path d="M 52 796 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>

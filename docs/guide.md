@@ -1401,9 +1401,8 @@ static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
 }
 ```
 
-Technical failures throw instead of becoming a fifth outcome. Inspect the exception type and phase before
-retrying: an after-commit failure of a hook occurs after state was already written, and one of the listener
-says in its message whether the call wrote state.
+Technical failures throw instead of becoming a fifth outcome. Inspect the exception type before retrying: an
+after-commit failure of a hook occurs after state was already written.
 
 ### Records, journals and reactions
 
@@ -1416,7 +1415,7 @@ says in its message whether the call wrote state.
 - An abort journal uses `ActionRecord` and `ActionStatus` (`RUNNING`, `OK`, `FAILED`, `THREW`) to report actions
   that actually ran. A journal is execution evidence, not an undo log for external side effects.
 - A watch produces `Reaction.Done`, carrying its own outcome, or `Reaction.Aborted`, carrying its exception.
-  Inspect reactions even when the root operation succeeded. `Reaction.Aborted` can also report a hook/listener
+  Inspect reactions even when the root operation succeeded. `Reaction.Aborted` can also report a hook
   failure after the reaction itself committed; it is not proof that the reaction left state unchanged. A
   checked exception arrives wrapped in `UndeclaredThrowableException`. An `Error` is not caught: it propagates
   to the caller whose commit triggered the reaction.
@@ -1906,8 +1905,8 @@ not instantiate service classes or discover dependency-injection beans.
 | `observer(MachineObserver)` | Observe every call of the set; observers add up, notified in the order given |
 | `build()` | Construct the registry and facades |
 
-Each setting is checked where it is given: a second `listener(...)` throws `IllegalStateException`, and a
-`maxCascadeDepth` or `maxWatchChain` below `1` throws `IllegalArgumentException`. The builder is single-use:
+Each setting is checked where it is given: a `maxCascadeDepth` or `maxWatchChain` below `1` throws
+`IllegalArgumentException`. The builder is single-use:
 once `build()` succeeds, every method throws `IllegalStateException`.
 
 Close the set with try-with-resources or your application's shutdown lifecycle. `close()` closes executors
@@ -2101,7 +2100,11 @@ A peer in another module or dependency JAR is rejected with `SG608`. Track the e
 
 ## Commit, hooks and observers
 
-![Root actions and cascades stage changes in a shared unit of work. Commit checks original states and writes final states; hooks, independent watch reactions, listener notification and return follow on normal completion.](images/commit-lifecycle.svg)
+![Root actions and cascades stage changes in a shared unit of work. Commit checks original states and writes
+final states; hooks and independent watch reactions follow, then the observers learn how the call ended.](images/commit-lifecycle.svg)
+
+Observers are told that the call starts before step 1, and how it ended after the last step, whether it returned
+or threw.
 
 The runtime's normal root execution follows this sequence:
 
@@ -2112,7 +2115,7 @@ The runtime's normal root execution follows this sequence:
 5. Invalidate transition contexts and release the root reentrancy marker.
 6. Run hooks for the committed hops, in log order.
 7. Dispatch watch reactions for moved peers.
-8. Notify the listener with this call's outcome and return it.
+8. Notify the observers that the call completed, and return its outcome.
 
 A rejected or ignored root does not commit state changes. A handled failure does commit its failure route.
 External side effects performed by actions, and mutations to other entity fields, are not automatically undone
@@ -2125,9 +2128,9 @@ committed hop from such a hook. The shop notifies its carrier after the shipping
 
 Hooks run synchronously on the operation's thread. Any exception a hook throws, checked ones included, becomes
 `AfterCommitException`: the state is already committed. An `Error` propagates unchanged instead. Either stops
-the remaining normal post-commit sequence, so do not assume later hooks, watch dispatch or listener
-notification ran. Make externally visible notifications idempotent and choose durable delivery separately if
-your application needs it.
+the remaining normal post-commit sequence, so do not assume later hooks or watch dispatch ran; the
+observers are told the call failed. Make externally visible notifications idempotent and choose durable
+delivery separately if your application needs it.
 
 A hook sees the entity's committed final state. When a cascade stages multiple hops for one entity, the setter
 writes its final destination once, while hooks still follow committed hop order.
@@ -2493,7 +2496,7 @@ assertThat(orders.definition())
 ```
 
 Beyond assertions it carries scripted probes for guards, actions, hooks and the state setter, fixtures that
-let a test decide when an asynchronous callback answers, a listener recorder, entity-state snapshots, and
+let a test decide when an asynchronous callback answers, a recorder of completed calls, entity-state snapshots, and
 golden comparison for both the rendered diagram and the complete structure of a graph. The
 [testing guide](testing.md) covers installation, what each entry point checks, what each check does not
 prove, and the golden update procedure for Gradle and Maven. Every sample in it is copied from a test that
@@ -2509,7 +2512,7 @@ Useful behavior to cover in your own domain:
 - Cascade rollback behavior and collected error details.
 - First-match watch order, empty peer collections and aborted reactions.
 - Async timeout behavior and late completions.
-- Hooks and listeners that fail after state has committed.
+- Hooks that fail after state has committed.
 - Declared graph contracts through typed assertions or structural snapshots.
 
 Visual export tests may separately pin `.dot` goldens when changes to diagram output require review.
@@ -2743,13 +2746,13 @@ code runs.
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
 | `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. |
-| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks and the listener may start transitions. |
+| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions, observers may not. |
 | `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. |
 | `StaleContextException` | A context or context-derived view was used after invalidation. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
 | `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. |
 | `CommitFailedException` | Pre-commit state check failed or a setter threw; inspect applied/pending entities before retrying. |
-| `AfterCommitException` | A hook or the listener threw. After a hook, state is already written; a listener failure's message says whether the call wrote state. |
+| `AfterCommitException` | A hook threw. State is already written. |
 | `InvalidGraphException` | Programmatic DSL definition failed validation; inspect its problem list. |
 
 A refused request is not an exception. `Rejected` with `RejectionKind.NO_TRANSITION` is the ordinary answer
