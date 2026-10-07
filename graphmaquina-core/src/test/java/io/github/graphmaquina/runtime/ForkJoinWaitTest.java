@@ -87,7 +87,7 @@ class ForkJoinWaitTest {
         }
     }
 
-    /** How a call ended, as the outcome's type or the exception's type and its cause's, and how long it took. */
+    /** How a call ended, as the outcome's status or the exception's type and its cause's, and how long it took. */
     private record End(String how, long millis) {
 
         /** How it ended, with the time it took appended only when that time reaches {@code max} ms. */
@@ -118,7 +118,7 @@ class ForkJoinWaitTest {
         long start = System.nanoTime();
         String how;
         try {
-            how = call.get().getClass().getSimpleName();
+            how = call.get().status().name();
         } catch (RuntimeException e) {
             how = e.getClass().getSimpleName()
                     + (e.getCause() == null ? "" : " caused by " + e.getCause().getClass().getSimpleName());
@@ -205,7 +205,7 @@ class ForkJoinWaitTest {
             first = endOf(pool.run(() -> end(() -> machine.execute(a, SUBMIT))), 3_000);
         }
         String then = second.get().get(10, TimeUnit.SECONDS).how();
-        assertEquals("a: Applied, b: Applied, a REVIEW, b PUBLISHED",
+        assertEquals("a: APPLIED, b: APPLIED, a REVIEW, b PUBLISHED",
                 "a: " + first + ", b: " + then + ", a " + a.status() + ", b " + b.status());
     }
 
@@ -267,7 +267,7 @@ class ForkJoinWaitTest {
         }
         String fromTask = task.get().get(10, TimeUnit.SECONDS);
         String refusal = List.of("StaleContextException", "WrongThreadException").contains(fromTask) ? "refused" : fromTask;
-        assertEquals("a: Applied, task refused, a REVIEW, peer REVIEW",
+        assertEquals("a: APPLIED, task refused, a REVIEW, peer REVIEW",
                 "a: " + end + ", task " + refusal + ", a " + a.status() + ", peer " + peer.status());
     }
 
@@ -287,7 +287,7 @@ class ForkJoinWaitTest {
                             CompletableFuture.supplyAsync(ActionOutcome::ok, pool), Optional.empty());
             end = endOf(CompletableFuture.supplyAsync(() -> end(() -> machine.execute(a, SUBMIT)), pool), 3_000);
         }
-        assertEquals("Applied, a REVIEW", end + ", a " + a.status());
+        assertEquals("APPLIED, a REVIEW", end + ", a " + a.status());
     }
 
     /**

@@ -115,7 +115,7 @@ class CheckedExceptionTest {
 
     /**
      * Runs the calls one after the other on a fresh thread, as a pooled thread would, so that a marker a regression
-     * leaks stays there. Each call ends as its outcome's type, or as the very throwable it threw.
+     * leaks stays there. Each call ends as its outcome's status, or as the very throwable it threw.
      */
     private static List<Object> onOneThread(List<Supplier<Outcome<Doc, DocStatus, DocTransition>>> calls) throws Exception {
         try (ExecutorService thread = Executors.newSingleThreadExecutor()) {
@@ -123,7 +123,7 @@ class CheckedExceptionTest {
                 List<Object> ends = new ArrayList<>();
                 for (Supplier<Outcome<Doc, DocStatus, DocTransition>> call : calls) {
                     try {
-                        ends.add(call.get().getClass().getSimpleName());
+                        ends.add(call.get().status().name());
                     } catch (Throwable thrown) {
                         ends.add(thrown);
                     }
@@ -387,7 +387,7 @@ class CheckedExceptionTest {
         List<Object> ends = onOneThread(List.<Supplier<Outcome<Doc, DocStatus, DocTransition>>>of(
                 () -> machine.execute(doc, SUBMIT), () -> machine.execute(new Doc("2", DRAFT), SUBMIT)));
         assertSame(broken, ends.get(0));
-        assertEquals("Applied", ends.get(1));
+        assertEquals("APPLIED", ends.get(1));
         assertEquals(REVIEW, doc.status());
     }
 
@@ -409,7 +409,7 @@ class CheckedExceptionTest {
             List<Object> ends = onOneThread(List.<Supplier<Outcome<Doc, DocStatus, DocTransition>>>of(
                     () -> docs.execute(doc, SUBMIT), () -> docs.execute(new Doc("2", DRAFT), SUBMIT)));
             assertSame(broken, ends.get(0));
-            assertEquals("Applied", ends.get(1));
+            assertEquals("APPLIED", ends.get(1));
             assertEquals(REVIEW, doc.status());
         }
     }
@@ -434,7 +434,7 @@ class CheckedExceptionTest {
             List<Object> ends = onOneThread(List.<Supplier<Outcome<Doc, DocStatus, DocTransition>>>of(
                     () -> docs.execute(watched, SUBMIT), () -> docs.execute(new Doc("other", DRAFT), SUBMIT)));
             assertSame(broken, ends.get(0));
-            assertEquals("Applied", ends.get(1));
+            assertEquals("APPLIED", ends.get(1));
             assertEquals(REVIEW, watched.status());
             assertEquals(PUBLISHED, observer.status());
         }
@@ -516,7 +516,7 @@ class CheckedExceptionTest {
             Doc doc = new Doc("1", DRAFT);
             String end;
             try {
-                end = standalone(path.getValue()).execute(doc, SUBMIT).getClass().getSimpleName();
+                end = standalone(path.getValue()).execute(doc, SUBMIT).status().name();
             } catch (StateMachineException thrown) {
                 end = thrown == engine ? "the engine exception itself" : thrown.getClass().getSimpleName()
                         + " caused by " + (thrown.getCause() == engine ? "the engine exception" : thrown.getCause());
@@ -613,7 +613,7 @@ class CheckedExceptionTest {
             Doc doc = new Doc("1", DRAFT);
             String end;
             try {
-                end = standalone(path.getValue()).execute(doc, SUBMIT).getClass().getSimpleName();
+                end = standalone(path.getValue()).execute(doc, SUBMIT).status().name();
             } catch (StateMachineException thrown) {
                 end = thrown == engine ? "the engine exception itself" : thrown.getClass().getSimpleName()
                         + " caused by " + (thrown.getCause() == engine ? "the engine exception" : thrown.getCause());
