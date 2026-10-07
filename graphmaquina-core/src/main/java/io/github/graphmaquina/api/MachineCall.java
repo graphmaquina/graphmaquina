@@ -17,6 +17,9 @@ public final class MachineCall {
     private final boolean reaction;
 
     /**
+     * Describes one call. It refuses a null argument, an identifier from another catalogue than {@code key}'s, and a
+     * reaction that requests an identifier.
+     *
      * @param key the machine the call runs on
      * @param entity the entity it was called with
      * @param transition the identifier {@code execute} was asked for; empty for a {@code reevaluate}
