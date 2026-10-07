@@ -364,4 +364,42 @@ class RawThrowableTest {
             assertOneEnd(recorder, error);
         }
     }
+
+    @Test
+    void anAsyncActionThatThrowsBeforeReturningAStageIsAnActionAbortWithAThrewJournal() {
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .asyncAction("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw sneaky(RAW);
+                        }));
+        ObserverTest.Recorder recorder = new ObserverTest.Recorder();
+        try (MachineRegistry registry = registry(graph, Doc::setStatus, recorder)) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT));
+            assertEquals(CallPhase.ACTION, error.phase());
+            assertSame(RAW, error.getCause());
+            assertTrue(error.getMessage().contains(": the action Submit threw " + RAW), error.getMessage());
+            assertEquals(List.of("Submit THREW"), error.journal().stream()
+                    .map((ActionRecord record) -> record.action() + " " + record.status()).toList());
+            assertOneEnd(recorder, error);
+        }
+    }
+
+    @Test
+    void anAsyncGuardThatThrowsBeforeReturningAStageIsAGuardAbortCarryingIt() {
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .asyncGuard("CanSubmit", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw sneaky(RAW);
+                        }));
+        ObserverTest.Recorder recorder = new ObserverTest.Recorder();
+        try (MachineRegistry registry = registry(graph, Doc::setStatus, recorder)) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT));
+            assertEquals(CallPhase.GUARD, error.phase());
+            assertSame(RAW, error.getCause());
+            assertTrue(error.getMessage().contains(": the guard CanSubmit threw " + RAW), error.getMessage());
+            assertOneEnd(recorder, error);
+        }
+    }
 }
