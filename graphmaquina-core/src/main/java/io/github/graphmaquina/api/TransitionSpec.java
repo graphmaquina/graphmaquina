@@ -81,6 +81,19 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         }
     }
 
+    /**
+     * Constructs an edge with no recovery rules.
+     *
+     * @param from origin state
+     * @param transition identifier that selects this edge from {@code from}
+     * @param to destination state
+     * @param action the action to run, absent for a plain move
+     * @param guards guards evaluated in declaration order
+     * @param onFailure identifier of the recovery edge, resolved from {@code from}
+     * @param failsOn throwable types that turn an action's throwable into a domain failure
+     * @param timeout longest wait for the asynchronous action's stage
+     * @param afterCommit hook run once this edge is committed
+     */
     public TransitionSpec(S from, T transition, S to, Optional<ActionRef<E, S, T>> action,
                           List<GuardRef<E, S, T>> guards, Optional<T> onFailure,
                           List<Class<? extends Throwable>> failsOn, Optional<Duration> timeout,

@@ -26,6 +26,15 @@ import lombok.NonNull;
 public record RecoveryRule<T extends Enum<T>>(@NonNull Class<? extends FailureKind> kind, @NonNull T transition,
                                               @NonNull List<Class<? extends Throwable>> failsOn) {
 
+    /**
+     * Copies the declared types, then checks that the kind and every type declaration are valid and unique.
+     *
+     * @param kind failure kind of this rule
+     * @param transition identifier of the recovery edge this rule names
+     * @param failsOn throwable types declared by this rule, in declaration order; may be empty
+     * @throws NullPointerException if an argument or a declared type is null
+     * @throws IllegalArgumentException if the kind is invalid, a type is forbidden, or a type is repeated
+     */
     public RecoveryRule {
         failsOn = List.copyOf(failsOn);
         FailureTypes.requireValidKind(kind);

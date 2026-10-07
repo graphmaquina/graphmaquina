@@ -199,5 +199,22 @@ class TransitionSpecTest {
         assertTrue(list.getMessage().startsWith("recoveryRules"), list.getMessage());
         List<RecoveryRule<Month>> withNull = Arrays.asList(rule(Unavailable.class, Month.MARCH, List.of()), null);
         assertThrows(NullPointerException.class, () -> withRules(Optional.of(SYNC), List.of(), withNull));
+        assertThrows(NullPointerException.class, () -> withRules(Optional.empty(), List.of(), withNull));
+    }
+
+    @Test
+    void actionAndTimeoutValidationPrecedeDuplicateRuleValidation() {
+        List<RecoveryRule<Month>> duplicateKinds = List.of(rule(Unavailable.class, Month.MARCH, List.of()),
+                rule(Unavailable.class, Month.APRIL, List.of()));
+        IllegalArgumentException withoutAction = assertThrows(IllegalArgumentException.class,
+                () -> withRules(Optional.empty(), List.of(), duplicateKinds));
+        assertEquals("MONDAY -JANUARY-> TUESDAY: recovery rules are only allowed with an action",
+                withoutAction.getMessage());
+        IllegalArgumentException invalidTimeout = assertThrows(IllegalArgumentException.class,
+                () -> new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, Optional.of(SYNC),
+                        List.of(), Optional.empty(), List.of(), Optional.of(Duration.ofSeconds(1)), Optional.empty(),
+                        duplicateKinds));
+        assertEquals("MONDAY -JANUARY-> TUESDAY: timeout is only allowed on an asynchronous action",
+                invalidTimeout.getMessage());
     }
 }

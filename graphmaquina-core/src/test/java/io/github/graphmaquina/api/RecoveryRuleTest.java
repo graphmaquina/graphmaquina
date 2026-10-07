@@ -2,7 +2,6 @@ package io.github.graphmaquina.api;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.internal.FailureTypes;
@@ -109,14 +108,16 @@ class RecoveryRuleTest {
     void aNullArgumentOrTypeIsRefused() {
         NullPointerException kind = assertThrows(NullPointerException.class,
                 () -> new RecoveryRule<Month>(null, Month.MARCH, List.of()));
-        assertTrue(kind.getMessage().startsWith("kind"), kind.getMessage());
+        assertEquals("kind is marked non-null but is null", kind.getMessage());
         NullPointerException transition = assertThrows(NullPointerException.class,
                 () -> new RecoveryRule<Month>(Unavailable.class, null, List.of()));
-        assertTrue(transition.getMessage().startsWith("transition"), transition.getMessage());
+        assertEquals("transition is marked non-null but is null", transition.getMessage());
         NullPointerException failsOn = assertThrows(NullPointerException.class,
                 () -> new RecoveryRule<Month>(Unavailable.class, Month.MARCH, null));
-        assertTrue(failsOn.getMessage().startsWith("failsOn"), failsOn.getMessage());
+        assertEquals("failsOn is marked non-null but is null", failsOn.getMessage());
         List<Class<? extends Throwable>> withNull = Arrays.asList(IOException.class, null);
         assertThrows(NullPointerException.class, () -> new RecoveryRule<>(Unavailable.class, Month.MARCH, withNull));
+        assertThrows(NullPointerException.class,
+                () -> new RecoveryRule<Month>(OpenKind.class, Month.MARCH, withNull));
     }
 }
