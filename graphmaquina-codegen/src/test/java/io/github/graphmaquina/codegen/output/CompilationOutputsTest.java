@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeSet;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -71,6 +72,21 @@ class CompilationOutputsTest {
 
     @TempDir
     Path workDirectory;
+
+    /**
+     * Deletes the symbolic links a test left in its roots. Several lead from one root into another, and JUnit warns
+     * about a link that leads out of the directory it is deleting, depending on which root it deletes first.
+     */
+    @AfterEach
+    void deleteSymbolicLinks() throws IOException {
+        for (Path root : List.of(project, sourcesOutput, processorSourcesOutput, classesOutput, workDirectory)) {
+            try (Stream<Path> paths = Files.walk(root)) {
+                for (Path link : paths.filter(Files::isSymbolicLink).toList()) {
+                    Files.delete(link);
+                }
+            }
+        }
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {INVENTORY, PENDING_INVENTORY})

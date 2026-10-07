@@ -660,6 +660,8 @@ class MavenPluginIntegrationTest {
         assertTrue(result.output().contains("running the StateGraph generator: " + selected + " -cp"),
                 "the generator did not run under " + selected);
         assertTrue(fixture.exists("target/graphmaquina/main/annotation-manifest.json"));
+        // The link leads out of the temporary directory, which JUnit warns about when it deletes that directory.
+        Files.delete(linked);
     }
 
     /**

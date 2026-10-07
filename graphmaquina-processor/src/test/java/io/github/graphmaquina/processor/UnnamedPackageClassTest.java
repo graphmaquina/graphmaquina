@@ -650,7 +650,10 @@ class UnnamedPackageClassTest {
         }
     }
 
-    /** The class output of {@code source}, the one source of the type {@code name}, compiled by plain javac. */
+    /**
+     * The class output of {@code source}, the one source of the type {@code name}, compiled by plain javac: no
+     * annotation processor runs, although the test's class path holds one.
+     */
     private static Path compiledAlone(String name, String source) {
         try {
             Path root = Files.createTempDirectory("graphmaquina-processor-");
@@ -658,8 +661,8 @@ class UnnamedPackageClassTest {
             Files.createDirectories(file.getParent());
             Files.writeString(file, source, StandardCharsets.UTF_8);
             Path classes = Files.createDirectories(root.resolve("classes"));
-            int status = ToolProvider.getSystemJavaCompiler().run(null, null, null, "-d", classes.toString(),
-                    file.toString());
+            int status = ToolProvider.getSystemJavaCompiler().run(null, null, null, "-proc:none", "-d",
+                    classes.toString(), file.toString());
             assertEquals(0, status, "could not compile " + name);
             return classes;
         } catch (IOException failure) {
