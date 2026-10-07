@@ -503,7 +503,7 @@ class ObserverTest {
                 recorder.elapsed.get(0) + " must cover the action's " + inside[0] + " ns");
     }
 
-    /** Review Focus 5: one observer, two calls at once on two threads; each thread sees its own start and end. */
+    /** One observer, two calls at once on two threads; each thread sees its own start and end. */
     @Test
     void concurrentCallsAreObservedEachOnItsOwnThread() throws Exception {
         CountDownLatch bothInside = new CountDownLatch(2);

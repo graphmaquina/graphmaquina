@@ -248,7 +248,7 @@ class StateWriteProbeTest {
     // --- against the real engine -----------------------------------------------------------------------
 
     @Test
-    void aSetterThatFailsPartwayLeavesTheRootAppliedAndItsPeersPending() {
+    void aSetterThatFailsPartwayLeavesTheRootAppliedNamesTheFailedPeerAndLeavesTheOtherPending() {
         Order order = new Order("order");
         Item first = new Item("first");
         Item second = new Item("second");

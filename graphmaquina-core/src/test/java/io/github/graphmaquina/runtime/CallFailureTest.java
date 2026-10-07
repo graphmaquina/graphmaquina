@@ -19,7 +19,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
-import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
@@ -351,6 +350,40 @@ class CallFailureTest {
         assertEquals(List.of("Submit THREW"), actionsOf(error.journal()));
     }
 
+    /** An action of a cascaded peer that throws fails the call in ACTION; the details describe the peer's step. */
+    @Test
+    void anActionOfACascadedPeerFailsTheCallInAction() {
+        IllegalStateException boom = new IllegalStateException("peer action down");
+        Doc peer = new Doc("peer", REVIEW);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        ctx.cascade(DOCS, peer, PUBLISH);
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED)
+                    .action("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        throw boom;
+                    })
+                    .endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+        Doc doc = new Doc("root", DRAFT);
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> standalone(graph, Doc::setStatus).execute(doc, SUBMIT));
+        assertEquals(CallPhase.ACTION, error.phase());
+        assertEquals(StatesWritten.NONE, error.statesWritten());
+        assertSame(boom, error.getCause());
+        assertEquals(DOCS, error.details().key());
+        assertSame(peer, error.details().entity());
+        assertSame(doc, error.call().entity());
+        assertEquals(DRAFT, doc.status());
+        assertEquals(REVIEW, peer.status());
+    }
+
     /** The action ran and the pre-check then refused the commit: nothing was written, but the journal remembers it. */
     @Test
     void aPreCheckConflictWritesNothingAndKeepsTheActionsThatRan() {
@@ -465,7 +498,7 @@ class CallFailureTest {
         }
     }
 
-    /** Review Focus 4: the call was a reevaluation, whichever edge its watch selected and ran. */
+    /** The call was a reevaluation, whichever edge its watch selected and ran. */
     @Test
     void aReevaluationThatFailsInItsSelectedEdgeIsStillAReevaluation() {
         IllegalStateException boom = new IllegalStateException("archive refused");

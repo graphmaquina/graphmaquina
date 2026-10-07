@@ -40,7 +40,7 @@ public final class CommitFailureAssert extends BaseFailureAssert<CommitFailureAs
         Objects.requireNonNull(expected, "expected");
         Optional<Object> actual = failure.failedEntity();
         if (actual.isEmpty() || actual.get() != expected) {
-            Checks.fail(context, "failed entity", expected, actual.orElse(null));
+            Checks.fail(context, "failed entity", Optional.of(expected), actual);
         }
         return this;
     }

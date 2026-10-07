@@ -276,8 +276,8 @@ class FailureAssertionsTest {
                 "abort", "transition", Optional.empty(), Optional.of(Switch.FLIP));
         AbortAssert unresolved = TransitionFailureAssert.assertThat(
                 new TransitionAbortedException(CALL, CallPhase.ACTION,
-                new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.empty(),
-                        Optional.empty(), List.of(), List.of()), "no edge")).isAbort();
+                        new AbortDetails(OTHERS, entity, Flag.OFF, Optional.of(Switch.FLIP), Optional.empty(),
+                                Optional.empty(), List.of(), List.of()), "no edge")).isAbort();
         assertFailure(assertThrows(GraphAssertionError.class, () -> unresolved.atUnread(OTHERS, entity, Flag.OFF)),
                 "abort", "transition", Optional.empty(), Optional.of(Switch.FLIP));
     }
@@ -342,9 +342,9 @@ class FailureAssertionsTest {
                 "abort", "action", Optional.empty(), Optional.of("prepare"));
         AbortAssert anonymous = TransitionFailureAssert.assertThat(
                 new TransitionAbortedException(CALL, CallPhase.ACTION,
-                new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), State.NEW,
-                        Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.empty(),
-                        List.of(), List.of()), "no")).isAbort();
+                        new AbortDetails(TestDomain.KEY, new Entity("e", State.NEW), State.NEW,
+                                Optional.of(Id.PREPARE), Optional.of(State.READY), Optional.empty(),
+                                List.of(), List.of()), "no")).isAbort();
         assertSame(anonymous, anonymous.hasNoAction());
         assertFailure(assertThrows(GraphAssertionError.class, () -> anonymous.hasActionNamed("prepare")),
                 "abort", "action", Optional.of("prepare"), Optional.empty());
@@ -374,9 +374,9 @@ class FailureAssertionsTest {
                 "prepare", 0, ActionStatus.THREW);
         JournalAssert journal = TransitionFailureAssert.assertThat(
                 new TransitionAbortedException(CALL, CallPhase.ACTION,
-                new AbortDetails(TestDomain.KEY, entity, State.NEW, Optional.of(Id.PREPARE),
-                        Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran)),
-                "no")).isAbort().journal();
+                        new AbortDetails(TestDomain.KEY, entity, State.NEW, Optional.of(Id.PREPARE),
+                                Optional.of(State.READY), Optional.of("prepare"), List.of(), List.of(ran)),
+                        "no")).isAbort().journal();
         journal.hasSize(1).hasActionsExactly("prepare").hasStatusesExactly(ActionStatus.THREW);
     }
 
@@ -465,14 +465,14 @@ class FailureAssertionsTest {
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasPendingExactly(twin)),
                 "commit failure[0]", "pending", twin, never);
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasFailedEntity(never)),
-                "commit failure", "failed entity", never, failed);
+                "commit failure", "failed entity", Optional.of(never), Optional.of(failed));
         assertFailure(assertThrows(GraphAssertionError.class, view::hasNoFailedEntity),
                 "commit failure", "failed entity", Optional.empty(), Optional.of(failed));
         CommitFailureAssert none = TransitionFailureAssert.assertThat(
                 new CommitFailedException(CALL, List.of(), List.of(never), "the state moved")).isCommitFailure();
         assertSame(none, none.hasNoFailedEntity());
         assertFailure(assertThrows(GraphAssertionError.class, () -> none.hasFailedEntity(failed)),
-                "commit failure", "failed entity", failed, null);
+                "commit failure", "failed entity", Optional.of(failed), Optional.empty());
     }
 
     @Test
@@ -521,6 +521,8 @@ class FailureAssertionsTest {
                 () -> view.at(OTHERS, entity, Flag.OFF, Switch.FLIP, Flag.OFF)),
                 "after-commit failure", "to", Flag.OFF, Flag.ON);
         view.records().hasSize(1);
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.records().hasSize(2)),
+                "after-commit failure.records", "size", 2, 1);
     }
 
     // --- the DSL -----------------------------------------------------------------------------------

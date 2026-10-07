@@ -11,7 +11,7 @@ import java.util.Objects;
 /**
  * Chainable assertion over a throwable the engine raised, and the entry point to the views that know what
  * each phase carries. Four narrowing methods keep the transition phases apart: an abort discarded the unit
- * of work and nothing moved, a commit failure got partway through writing, and an after-commit failure
+ * of work and nothing moved, a commit failure wrote none or part of the states, and an after-commit failure
  * came from a hook with nothing rolled back. A fifth, {@link #isInvalidGraph()},
  * narrows to the one failure that is not a transition at all. A subject of the wrong kind — or no subject
  * at all — fails there, so a narrowed view always has one.

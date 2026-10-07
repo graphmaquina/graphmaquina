@@ -105,6 +105,9 @@ class HooksTest {
         assertEquals(SUBMIT, error.hop().transition());
         assertEquals(CallPhase.HOOK, error.phase());
         assertEquals(StatesWritten.ALL, error.statesWritten());
+        assertEquals(1, error.records().size());
+        assertEquals(error.hop(), error.records().get(0));
+        assertEquals(List.of(), error.journal());
         assertEquals(REVIEW, doc.status());
     }
 
