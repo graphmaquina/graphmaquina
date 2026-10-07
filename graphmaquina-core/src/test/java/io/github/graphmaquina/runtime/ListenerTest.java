@@ -62,7 +62,7 @@ class ListenerTest {
     }
 
     @Test
-    void everyOutcomeKindReachesTheListenerOncePerCall() {
+    void appliedRejectedAndIgnoredOutcomesReachTheListenerOncePerCall() {
         try (MachineRegistry registry = registry(listener)) {
             StateMachine<Order, OrderStatus, OrderTransition> orders = registry.of(ORDERS);
             Order order = new Order("o1", OrderStatus.NEW);
