@@ -53,7 +53,8 @@ public final class MachineRegistry implements AutoCloseable {
     }
 
     /** A registry of one, assembled as a registry builder would, with the default limits and no observer. */
-    static <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> standalone(StateMachines.Builder<E, S, T> builder) {
+    static <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> standalone(
+            StateMachines.Builder<E, S, T> builder) {
         return assemble(List.of(builder), 10, 10, Observers.NONE).machineFor(builder.key());
     }
 
@@ -61,8 +62,8 @@ public final class MachineRegistry implements AutoCloseable {
      * The one way machines join a registry, standalone ones included. Every check runs before the first machine
      * builder is consumed, so a build that fails leaves every builder as it was, ready to be fixed and built again.
      */
-    private static MachineRegistry assemble(List<? extends StateMachines.Builder<?, ?, ?>> builders, int maxCascadeDepth,
-                                            int maxWatchChain, Observers observers) {
+    private static MachineRegistry assemble(List<? extends StateMachines.Builder<?, ?, ?>> builders,
+                                            int maxCascadeDepth, int maxWatchChain, Observers observers) {
         Set<MachineKey<?, ?, ?>> keys = new HashSet<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             keys.add(builder.key());
@@ -75,7 +76,8 @@ public final class MachineRegistry implements AutoCloseable {
             // so a typed caller cannot reach this collision.
             Optional<? extends Class<?>> facade = builder.facade();
             if (facade.isPresent() && !facadeTypes.add(facade.get())) {
-                throw new IllegalStateException("the facade type " + facade.get().getSimpleName() + " is registered twice");
+                throw new IllegalStateException(
+                        "the facade type " + facade.get().getSimpleName() + " is registered twice");
             }
         }
         MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, observers);
@@ -132,7 +134,8 @@ public final class MachineRegistry implements AutoCloseable {
 
     <E, S extends Enum<S>, T extends Enum<T>> DefaultStateMachine<E, S, T> machineFor(MachineKey<E, S, T> key) {
         DefaultStateMachine<?, ?, ?> machine = anyMachineFor(key);
-        @SuppressWarnings("unchecked") // the map is filled in assemble() with each machine's typed key: the key fixes E, S and T
+        // the map is filled in assemble() with each machine's typed key: the key fixes E, S and T
+        @SuppressWarnings("unchecked")
         DefaultStateMachine<E, S, T> typed = (DefaultStateMachine<E, S, T>) machine;
         return typed;
     }
@@ -151,7 +154,8 @@ public final class MachineRegistry implements AutoCloseable {
         if (key == null) {
             throw new UnknownFacadeException(facade, facades.keySet());
         }
-        @SuppressWarnings("unchecked") // put in assemble() from a Builder whose as(...) takes Class<? extends Machine<P, Q, U>>
+        // put in assemble() from a Builder whose as(...) takes Class<? extends Machine<P, Q, U>>
+        @SuppressWarnings("unchecked")
         MachineKey<P, Q, U> typed = (MachineKey<P, Q, U>) key;
         return typed;
     }
@@ -171,7 +175,8 @@ public final class MachineRegistry implements AutoCloseable {
                 continue;
             }
             MachineKey<?, ?, ?> peer = watch.get().peer();
-            watchers.computeIfAbsent(peer, (MachineKey<?, ?, ?> key) -> new ArrayList<>()).add(Watcher.of(machine, watch.get()));
+            watchers.computeIfAbsent(peer, (MachineKey<?, ?, ?> key) -> new ArrayList<>())
+                    .add(Watcher.of(machine, watch.get()));
         }
     }
 
@@ -198,7 +203,8 @@ public final class MachineRegistry implements AutoCloseable {
                 } catch (RuntimeException e) {
                     reactions.add(new Reaction.Aborted(moved.key(), moved.instance(), e));
                 } catch (Exception e) {
-                    reactions.add(new Reaction.Aborted(moved.key(), moved.instance(), new UndeclaredThrowableException(e)));
+                    reactions.add(new Reaction.Aborted(moved.key(), moved.instance(),
+                            new UndeclaredThrowableException(e)));
                 }
             }
         }
@@ -279,7 +285,8 @@ public final class MachineRegistry implements AutoCloseable {
             requireUnused();
             for (StateMachines.Builder<?, ?, ?> builder : builders) {
                 if (!builder.hasIdentity()) {
-                    throw new IllegalStateException("the machine " + builder.key() + " must declare identity(...) within a registry");
+                    throw new IllegalStateException(
+                            "the machine " + builder.key() + " must declare identity(...) within a registry");
                 }
             }
             Observers registered = observers.isEmpty() ? Observers.NONE : new Observers(observers);

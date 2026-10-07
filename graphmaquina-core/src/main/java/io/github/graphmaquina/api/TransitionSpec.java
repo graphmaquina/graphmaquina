@@ -29,13 +29,14 @@ import lombok.NonNull;
  *     shortens the root's deadline, and {@code Duration.ofNanos(Long.MAX_VALUE)} or more sets no limit of its own
  * @param afterCommit hook run once this edge is committed
  */
-public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(@NonNull S from, @NonNull T transition, @NonNull S to,
-                                                                       @NonNull Optional<ActionRef<E, S, T>> action,
-                                                                       @NonNull List<GuardRef<E, S, T>> guards,
-                                                                       @NonNull Optional<T> onFailure,
-                                                                       @NonNull List<Class<? extends Throwable>> failsOn,
-                                                                       @NonNull Optional<Duration> timeout,
-                                                                       @NonNull Optional<HookRef<E, S, T>> afterCommit) {
+public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
+        @NonNull S from, @NonNull T transition, @NonNull S to,
+        @NonNull Optional<ActionRef<E, S, T>> action,
+        @NonNull List<GuardRef<E, S, T>> guards,
+        @NonNull Optional<T> onFailure,
+        @NonNull List<Class<? extends Throwable>> failsOn,
+        @NonNull Optional<Duration> timeout,
+        @NonNull Optional<HookRef<E, S, T>> afterCommit) {
 
     public TransitionSpec {
         guards = List.copyOf(guards);

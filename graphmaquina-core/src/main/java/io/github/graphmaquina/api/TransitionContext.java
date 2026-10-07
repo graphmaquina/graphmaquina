@@ -41,11 +41,14 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
                                                                                 Collection<? extends P> peers,
                                                                                 U transition, CascadePolicy policy);
 
-    /** The peer machine identified by its facade type; the generics of {@code M} fix {@code P}, {@code Q} and {@code U}. */
+    /**
+     * The peer machine identified by its facade type; the generics of {@code M} fix {@code P}, {@code Q} and
+     * {@code U}.
+     */
     <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(Class<M> peer);
 
-    <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(Class<M> peer, P entity,
-                                                                                                   U transition);
+    <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> Outcome<P, Q, U> cascade(
+            Class<M> peer, P entity, U transition);
 
     <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
             Class<M> peer, Collection<? extends P> peers, U transition, CascadePolicy policy);

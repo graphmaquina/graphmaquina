@@ -128,14 +128,14 @@ final class Transaction {
     }
 
     /** For reevaluate, which has no per-call input to carry; a cascade passes {@code null} to the full overload. */
-    <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine, E entity,
-                                                                          T id, int depth) {
+    <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine,
+                                                                          E entity, T id, int depth) {
         return transition(machine, entity, id, depth, null);
     }
 
     /** One step: resolve (current state, identifier) exactly once, guards, annotate, execute, failure route. */
-    <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine, E entity,
-                                                                          T id, int depth, Object input) {
+    <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine,
+                                                                          E entity, T id, int depth, Object input) {
         machine.requireTransition(id);
         EntityRef ref;
         S from;
@@ -190,12 +190,13 @@ final class Transaction {
     }
 
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> runAction(
-            DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> transition, int depth,
-            int savepoint, Object input) {
+            DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> transition,
+            int depth, int savepoint, Object input) {
         ActionRef<E, S, T> action = transition.action().orElseThrow();
         int journalIndex = uow.appendJournal(new ActionRecord(machine.key(), entity, transition.from(),
                 transition.transition(), transition.to(), action.name(), depth, ActionStatus.RUNNING));
-        DefaultTransitionContext<E, S, T> ctx = new DefaultTransitionContext<>(this, machine, entity, transition, depth, input);
+        DefaultTransitionContext<E, S, T> ctx =
+                new DefaultTransitionContext<>(this, machine, entity, transition, depth, input);
         contexts.add(ctx);
         ActionOutcome outcome;
         try {
@@ -228,7 +229,8 @@ final class Transaction {
         }
         if (outcome instanceof ActionOutcome.Failed failed) {
             uow.journalStatus(journalIndex, ActionStatus.FAILED);
-            return failureRoute(machine, ref, entity, transition, depth, savepoint, failed.reason(), Optional.empty(), input);
+            return failureRoute(machine, ref, entity, transition, depth, savepoint, failed.reason(), Optional.empty(),
+                    input);
         }
         uow.journalStatus(journalIndex, ActionStatus.OK);
         return new StepResult.Applied<>(transition.from(), transition.transition(), transition.to());
@@ -363,13 +365,15 @@ final class Transaction {
                     Optional.of(interrupted.getCause()));
         } catch (Await.Rejected rejected) {
             throw abort(machine, ref, from, id, to, action, depth,
-                    "waiting for " + what + " was refused by the thread's ForkJoinPool", Optional.of(rejected.getCause()));
+                    "waiting for " + what + " was refused by the thread's ForkJoinPool",
+                    Optional.of(rejected.getCause()));
         }
     }
 
     /**
      * The edge's own budget in nanoseconds, Long.MAX_VALUE when it sets no limit. It is converted before the action
-     * runs, although its clock only starts once the action returns its stage; the conversion saturates and never throws.
+     * runs, although its clock only starts once the action returns its stage; the conversion saturates and never
+     * throws.
      */
     private static long edgeBudgetNanos(TransitionSpec<?, ?, ?> transition) {
         return transition.timeout().isEmpty() ? Long.MAX_VALUE : Await.budgetNanos(transition.timeout().get());
@@ -421,7 +425,8 @@ final class Transaction {
             ActionRef<E, S, T> action = route.action().orElseThrow();
             int journalIndex = uow.appendJournal(new ActionRecord(machine.key(), entity, from, recoveryId, route.to(),
                     action.name(), depth, ActionStatus.RUNNING));
-            DefaultTransitionContext<E, S, T> ctx = new DefaultTransitionContext<>(this, machine, entity, route, depth, input);
+            DefaultTransitionContext<E, S, T> ctx =
+                    new DefaultTransitionContext<>(this, machine, entity, route, depth, input);
             contexts.add(ctx);
             ActionOutcome outcome;
             try {
@@ -468,8 +473,8 @@ final class Transaction {
                 "rejected inside a cascade by " + who + ": " + reason, Optional.empty());
     }
 
-    private <E, S extends Enum<S>, T extends Enum<T>> S currentState(DefaultStateMachine<E, S, T> machine, EntityRef ref,
-                                                                      E entity) {
+    private <E, S extends Enum<S>, T extends Enum<T>> S currentState(DefaultStateMachine<E, S, T> machine,
+                                                                      EntityRef ref, E entity) {
         Optional<Enum<?>> pending = uow.pendingState(ref);
         if (pending.isPresent()) {
             return machine.key().states().cast(pending.get());
@@ -501,8 +506,8 @@ final class Transaction {
     }
 
     private TransitionAbortedException abort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
-                                             Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action, int depth,
-                                             String message, Optional<Throwable> cause) {
+                                             Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action,
+                                             int depth, String message, Optional<Throwable> cause) {
         AbortDetails details = details(machine, ref, from, id, to, action);
         TransitionAbortedException error = cause.isPresent()
                 ? new TransitionAbortedException(call(), phase, details, message, cause.get())
@@ -551,8 +556,8 @@ final class Transaction {
         return error;
     }
 
-    private AbortDetails details(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Optional<Enum<?>> id,
-                                 Optional<Enum<?>> to, Optional<String> action) {
+    private AbortDetails details(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
+                                 Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action) {
         uow.markRunningAsThrew();
         return new AbortDetails(machine.key(), ref.instance(), Optional.of(from), id, to, action, uow.path(),
                 uow.journal());
@@ -591,8 +596,8 @@ final class Transaction {
      * Resolves the facade a cascade names inside the poisoning scope: an unknown facade poisons, as an unknown key
      * does once the cascade looks its machine up, and the action receives the abort that carries it.
      */
-    <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> cascadeKeyFor(ContextHandle caller,
-                                                                              Class<? extends Machine<P, Q, U>> facade) {
+    <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> cascadeKeyFor(
+            ContextHandle caller, Class<? extends Machine<P, Q, U>> facade) {
         checkPoison(caller);
         try {
             return keyFor(facade);
@@ -652,8 +657,8 @@ final class Transaction {
      * Order of checks: identity, re-entry, depth, and only then the step. There is no convergent no-op: a request
      * that resolves no edge is rejected, and a request on an entity already in flight is a cycle.
      */
-    private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascadeOne(ContextHandle caller,
-                                                                                  MachineKey<P, Q, U> key, P peer, U id) {
+    private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascadeOne(
+            ContextHandle caller, MachineKey<P, Q, U> key, P peer, U id) {
         DefaultStateMachine<P, Q, U> machine = registry.machineFor(key);
         machine.requireTransition(id);
         EntityRef ref = uow.register(machine.refOf(peer));
@@ -679,12 +684,13 @@ final class Transaction {
     private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> outcomeOf(P peer, StepResult<Q, U> step) {
         return switch (step) {
             case StepResult.Applied<Q, U> applied ->
-                    new Outcome.Applied<>(peer, applied.from(), applied.transition(), applied.to(), List.of(), List.of());
+                    new Outcome.Applied<>(peer, applied.from(), applied.transition(), applied.to(), List.of(),
+                            List.of());
             // Unreachable: a nested step executes an edge and never reevaluates. Kept only for switch exhaustiveness.
             case StepResult.Ignored<Q, U> ignored -> new Outcome.Ignored<>(peer, ignored.from(), ignored.reason());
             // Unreachable: at depth > 0, rejected(...) always aborts. Kept only for switch exhaustiveness.
-            case StepResult.Rejected<Q, U> rejected -> new Outcome.Rejected<>(peer, rejected.from(), rejected.transition(),
-                    rejected.reason(), rejected.kind(), rejected.guard());
+            case StepResult.Rejected<Q, U> rejected -> new Outcome.Rejected<>(peer, rejected.from(),
+                    rejected.transition(), rejected.reason(), rejected.kind(), rejected.guard());
             case StepResult.Failed<Q, U> failed -> new Outcome.Failed<>(peer, failed.from(), failed.transition(),
                     failed.to(), failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
                     List.of(), List.of());

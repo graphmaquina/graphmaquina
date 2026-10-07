@@ -82,7 +82,9 @@ public class TransitionAbortedException extends CallFailedException {
     private static String describe(AbortDetails details, String message) {
         Objects.requireNonNull(details, "details");
         Objects.requireNonNull(message, "message");
-        String path = details.cascadePath().isEmpty() ? "" : " [route " + String.join(" → ", details.cascadePath()) + "]";
+        String path = details.cascadePath().isEmpty()
+                ? ""
+                : " [route " + String.join(" → ", details.cascadePath()) + "]";
         return "transition aborted in " + details.key() + " " + details.describeEdge() + ": " + message + path;
     }
 }

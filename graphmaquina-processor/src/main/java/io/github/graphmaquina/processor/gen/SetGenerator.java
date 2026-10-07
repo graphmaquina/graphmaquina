@@ -85,7 +85,10 @@ public final class SetGenerator {
         return SymbolNames.qualified(model.packageName(), SymbolNames.runtimeName(model.setName()));
     }
 
-    /** What {@link TypeSource} writes in the companion of {@code model}: the types that pin a state writer's argument. */
+    /**
+     * What {@link TypeSource} writes in the companion of {@code model}: the types that pin a state writer's
+     * argument.
+     */
     private static Written rendered(SetModel model, BoundInvocation invocations) {
         Written written = new Written(Map.of(), Map.of(), Map.of(), Map.of());
         for (MachineAccessor accessor : model.machines()) {
@@ -113,14 +116,16 @@ public final class SetGenerator {
             out.line("import " + type + ";");
         }
         out.blank();
-        out.line("/** Generated set of {@link " + set + "}: builds the registry once and hands out the facades. Do not edit. */");
+        out.line("/** Generated set of {@link " + set
+                + "}: builds the registry once and hands out the facades. Do not edit. */");
         out.line("@" + names.of(GENERATED));
         out.line("@" + names.of(SUPPRESS_WARNINGS) + "({\"deprecation\", \"removal\"})");
         out.open("public final class " + companion + " implements " + set);
         out.blank();
         out.line("private final " + names.of(MACHINE_REGISTRY) + " " + registry + ";");
         for (MachineAccessor accessor : model.machines()) {
-            out.line("private final " + facadeName(accessor, names) + " " + variables.fields().get(accessor.method()) + ";");
+            out.line("private final " + facadeName(accessor, names) + " " + variables.fields().get(accessor.method())
+                    + ";");
         }
         out.blank();
         out.open("private " + companion + "(" + names.of(MACHINE_REGISTRY) + " " + registry + ")");
@@ -135,7 +140,8 @@ public final class SetGenerator {
         for (Map.Entry<String, String> parameter : variables.parameters().entrySet()) {
             parameters.add(names.of(parameter.getKey()) + " " + parameter.getValue());
         }
-        out.line("/** Every class with instance members the machines use" + (model.hasAsync() ? ", after the timeout shared by the asynchronous machines" : "") + ". */");
+        out.line("/** Every class with instance members the machines use"
+                + (model.hasAsync() ? ", after the timeout shared by the asynchronous machines" : "") + ". */");
         out.open("public static Builder builder(" + String.join(", ", parameters) + ")");
         out.line("return new Builder(" + String.join(", ", variables.parameters().values()) + ");");
         out.close();
@@ -164,7 +170,8 @@ public final class SetGenerator {
         String used = variables.used();
         Map<String, String> setters = variables.setters();
         out.line("/**");
-        out.line(" * Mirrors MachineRegistry.Builder and StateMachines.Builder, which it creates with itself and hands");
+        out.line(" * Mirrors MachineRegistry.Builder and StateMachines.Builder, which it creates with itself and "
+                + "hands");
         out.line(" * every setting to as soon as it is given: what they refuse is refused where it is given, and");
         out.line(" * observers add up in the order they are given. Single-use and not thread-safe: once build()");
         out.line(" * succeeded, nothing is accepted.");
@@ -208,8 +215,8 @@ public final class SetGenerator {
             String machine = setters.get("machine");
             String timeout = setters.get("timeout");
             out.line("/** Overrides the shared timeout for one asynchronous machine. */");
-            out.open("public Builder asyncTimeout(" + names.of(CLASS) + "<? extends " + names.of(MACHINE) + "<?, ?, ?>> "
-                    + machine + ", " + names.of(DURATION) + " " + timeout + ")");
+            out.open("public Builder asyncTimeout(" + names.of(CLASS) + "<? extends " + names.of(MACHINE)
+                    + "<?, ?, ?>> " + machine + ", " + names.of(DURATION) + " " + timeout + ")");
             out.line("checkUnused();");
             out.line(objects + ".requireNonNull(" + machine + ", \"machine\");");
             out.line(objects + ".requireNonNull(" + timeout + ", \"timeout\");");
@@ -236,8 +243,10 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
-        forward(out, "maxCascadeDepth", "int " + setters.get("depth"), registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
-        forward(out, "maxWatchChain", "int " + setters.get("chain"), registry + ".maxWatchChain(" + setters.get("chain") + ");");
+        forward(out, "maxCascadeDepth", "int " + setters.get("depth"),
+                registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
+        forward(out, "maxWatchChain", "int " + setters.get("chain"),
+                registry + ".maxWatchChain(" + setters.get("chain") + ");");
         forward(out, "observer", names.of(MACHINE_OBSERVER) + " " + setters.get("observer"),
                 registry + ".observer(" + setters.get("observer") + ");");
         String built = setters.get("built");
@@ -253,7 +262,8 @@ public final class SetGenerator {
         out.open("private void checkUnused()");
         out.open("if (" + used + ")");
         out.line("throw new " + names.of(ILLEGAL_STATE) + "("
-                + MachineGenerator.quote("this " + SymbolNames.runtimeName(model.setName()) + ".Builder was already used") + ");");
+                + MachineGenerator.quote("this " + SymbolNames.runtimeName(model.setName())
+                        + ".Builder was already used") + ");");
         out.close();
         out.close();
         out.close();
@@ -274,7 +284,8 @@ public final class SetGenerator {
      * selected; the writer's argument is pinned, as {@link BoundInvocation} decides, to the parameter type that
      * keeps that writer selected.
      */
-    private static String accessors(MachineModel machine, Names names, BoundInvocation invocations, Variables variables) {
+    private static String accessors(MachineModel machine, Names names, BoundInvocation invocations,
+                                    Variables variables) {
         String e = names.of(machine.types().entityElement().getQualifiedName().toString());
         String s = names.of(machine.types().statesElement().getQualifiedName().toString());
         String entity = variables.entity();
@@ -282,8 +293,8 @@ public final class SetGenerator {
         Binding writer = writer(machine);
         return reader(machine, machine.stateGetter(), names, invocations, variables) + ", "
                 + MachineGenerator.lambda(e + " " + entity + ", " + s + " " + state,
-                        invocations.emit(writer, entity, List.of(state)), invocations.caught(writer).map(names::of), false,
-                        variables.rethrow(), variables.failure());
+                        invocations.emit(writer, entity, List.of(state)), invocations.caught(writer).map(names::of),
+                        false, variables.rethrow(), variables.failure());
     }
 
     /** A lambda that reads {@code property} from the entity of {@code machine} by calling its selected accessor. */
@@ -304,7 +315,8 @@ public final class SetGenerator {
         Set<String> caught = new LinkedHashSet<>();
         for (MachineAccessor accessor : model.machines()) {
             MachineModel machine = accessor.machine();
-            for (Binding binding : List.of(machine.stateGetter().accessor(), writer(machine), machine.idGetter().accessor())) {
+            for (Binding binding : List.of(machine.stateGetter().accessor(), writer(machine),
+                    machine.idGetter().accessor())) {
                 invocations.caught(binding).ifPresent(caught::add);
             }
         }
@@ -366,11 +378,14 @@ public final class SetGenerator {
         for (String role : SETTER_PARAMETERS) {
             setters.put(role, MachineGenerator.unique(role, new LinkedHashSet<>(taken)));
         }
-        return new Variables(fields, registry, builders, registryBuilder, used, parameters, timeout, entity, state, setters,
-                rethrow, failure);
+        return new Variables(fields, registry, builders, registryBuilder, used, parameters, timeout, entity, state,
+                setters, rethrow, failure);
     }
 
-    /** How the set companion writes its types, from what it claims and what its scope holds already, its own Builder included. */
+    /**
+     * How the set companion writes its types, from what it claims and what its scope holds already, its own Builder
+     * included.
+     */
     private static Names names(SetModel model, BoundInvocation invocations) {
         return new Names(model.packageName(), types(model, invocations), Names.Scope.of(invocations.elements(),
                 Names.packageOf(model.type()), model.type(), Map.of("Builder", qualifiedName(model) + ".Builder")));

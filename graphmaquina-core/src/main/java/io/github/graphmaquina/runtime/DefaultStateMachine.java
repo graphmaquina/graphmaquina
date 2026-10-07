@@ -61,7 +61,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     DefaultStateMachine(GraphDefinition<E, S, T> definition, Function<? super E, ? extends S> getter,
                         BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
-                        Optional<Duration> asyncTimeout, Executor executor, boolean ownsExecutor, MachineRegistry registry) {
+                        Optional<Duration> asyncTimeout, Executor executor, boolean ownsExecutor,
+                        MachineRegistry registry) {
         this.definition = definition;
         this.getter = getter;
         this.setter = setter;
@@ -104,7 +105,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     void requireTransition(T transition) {
         if (!key().transitions().isInstance(transition)) {
-            throw new IllegalArgumentException("transition must belong to " + key().transitions().getName() + ": " + transition);
+            throw new IllegalArgumentException(
+                    "transition must belong to " + key().transitions().getName() + ": " + transition);
         }
     }
 
@@ -183,7 +185,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */
-    private <P, Q extends Enum<Q>, U extends Enum<U>> Optional<T> firstMatch(WatchSpec<E, S, T, P, Q, U> watch, E entity) {
+    private <P, Q extends Enum<Q>, U extends Enum<U>> Optional<T> firstMatch(WatchSpec<E, S, T, P, Q, U> watch,
+                                                                             E entity) {
         Collection<? extends P> peers = watch.peersOf().apply(entity);
         PeerView<P, Q, U> view = DefaultPeerView.committed(registry.machineFor(watch.peer()));
         for (WatchRule<E, S, T, P, Q, U> rule : watch.rules()) {

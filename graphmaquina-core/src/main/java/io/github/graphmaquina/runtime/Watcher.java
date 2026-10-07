@@ -8,8 +8,8 @@ import java.util.Optional;
 record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>(
         DefaultStateMachine<E, S, T> machine, WatchSpec<E, S, T, P, Q, U> spec) {
 
-    static <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>> Watcher<E, S, T, P, Q, U> of(
-            DefaultStateMachine<E, S, T> machine, WatchSpec<E, S, T, P, Q, U> spec) {
+    static <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>
+            Watcher<E, S, T, P, Q, U> of(DefaultStateMachine<E, S, T> machine, WatchSpec<E, S, T, P, Q, U> spec) {
         return new Watcher<>(machine, spec);
     }
 

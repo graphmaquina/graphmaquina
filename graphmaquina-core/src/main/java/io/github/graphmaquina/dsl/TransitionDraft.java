@@ -158,7 +158,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
 
     private TransitionDraft<E, S, T> afterCommit(HookRef<E, S, T> hook) {
         if (afterCommit.isPresent()) {
-            throw new IllegalStateException(where() + " already declares afterCommit(" + afterCommit.get().name() + ")");
+            throw new IllegalStateException(
+                    where() + " already declares afterCommit(" + afterCommit.get().name() + ")");
         }
         afterCommit = Optional.of(hook);
         return this;
@@ -208,7 +209,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
             valid = false;
         } else if (syncAction.isPresent() || asyncAction.isPresent()) {
             Object instance = syncAction.isPresent() ? syncAction.get() : asyncAction.orElseThrow();
-            Optional<String> name = Names.resolve(explicitActionName, instance, "the action", where, fromIndex, idIndex, problems);
+            Optional<String> name = Names.resolve(explicitActionName, instance, "the action", where, fromIndex, idIndex,
+                    problems);
             if (name.isEmpty()) {
                 valid = false;
             } else if (syncAction.isPresent()) {

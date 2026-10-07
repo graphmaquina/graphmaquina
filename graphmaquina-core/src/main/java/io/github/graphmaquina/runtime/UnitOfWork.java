@@ -55,7 +55,10 @@ final class UnitOfWork {
 
     long deadlineNanos() { return deadlineNanos; }
 
-    /** Registers the identity and returns the canonical reference. A second object with the same identity is an error. */
+    /**
+     * Registers the identity and returns the canonical reference. A second object with the same identity is an
+     * error.
+     */
     EntityRef register(EntityRef ref) {
         EntityRef existing = known.putIfAbsent(ref, ref);
         if (existing == null) {
@@ -158,15 +161,16 @@ final class UnitOfWork {
 
     void journalStatus(int index, ActionStatus status) {
         ActionRecord old = journal.get(index);
-        journal.set(index, new ActionRecord(old.key(), old.entity(), old.from(), old.transition(), old.to(), old.action(),
-                old.depth(), status));
+        journal.set(index, new ActionRecord(old.key(), old.entity(), old.from(), old.transition(), old.to(),
+                old.action(), old.depth(), status));
     }
 
     List<ActionRecord> journal() { return List.copyOf(journal); }
 
     /**
-     * A nested abort condemns every action in flight: the poison keeps the parent from finishing as if nothing happened.
-     * Called when building the details of an abort, so that the journal traveling with the exception is the final one.
+     * A nested abort condemns every action in flight: the poison keeps the parent from finishing as if nothing
+     * happened. Called when building the details of an abort, so that the journal traveling with the exception is
+     * the final one.
      */
     void markRunningAsThrew() {
         for (int i = 0; i < journal.size(); i++) {
