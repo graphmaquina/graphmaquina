@@ -484,7 +484,8 @@ final class Transaction {
 
     private static <E, S extends Enum<S>, T extends Enum<T>> boolean matchesFailsOn(TransitionSpec<E, S, T> transition,
                                                                                      Throwable cause) {
-        if (cause instanceof Error || cause instanceof CancellationException) {
+        if (cause instanceof Error || cause instanceof CancellationException
+                || cause instanceof StateMachineException) {
             return false;
         }
         for (Class<? extends Throwable> type : transition.failsOn()) {

@@ -26,16 +26,21 @@ import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.StatePolicy;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionContext;
+import io.github.graphmaquina.api.TransitionSpec;
+import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.PoisonedUnitOfWorkException;
+import io.github.graphmaquina.error.ReentrantTransitionException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.UnknownPeerMachineException;
@@ -45,12 +50,14 @@ import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.Item;
 import io.github.graphmaquina.fixtures.ItemStatus;
 import io.github.graphmaquina.fixtures.ItemTransition;
+import io.github.graphmaquina.graph.DirectedGraph;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
@@ -472,5 +479,98 @@ class PropagationTest {
                 () -> standalone(graph).execute(new Doc("1", DRAFT), SUBMIT));
         assertSame(caught.get(), error);
         assertInstanceOf(IllegalStateException.class, error.getCause());
+    }
+
+    /**
+     * The engine, not only the DSL, keeps a library exception out of failsOn: an edge built by hand that lists
+     * RuntimeException still aborts the call with the ReentrantTransitionException as cause.
+     */
+    @Test
+    void aLibraryExceptionNeverTakesAFailureRouteEvenWhenAHandBuiltEdgeListsItsSupertype() {
+        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> machine = new AtomicReference<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> dsl = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            machine.get().execute(new Doc("other", DRAFT), SUBMIT);
+                            return ActionOutcome.ok();
+                        })
+                        .onFailure(DISCARD));
+        machine.set(standalone(new ListingRuntimeException<>(dsl)));
+        Doc doc = new Doc("1", DRAFT);
+        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                () -> machine.get().execute(doc, SUBMIT));
+        assertEquals(CallPhase.ACTION, error.phase());
+        assertInstanceOf(ReentrantTransitionException.class, error.getCause());
+        assertEquals(List.of(ActionStatus.THREW), error.journal().stream().map(ActionRecord::status).toList());
+        assertEquals(DRAFT, doc.status());
+    }
+
+    /** A definition whose edges are the delegate's, except that every action's failsOn is RuntimeException. */
+    private static final class ListingRuntimeException<E, S extends Enum<S>, T extends Enum<T>>
+            implements GraphDefinition<E, S, T> {
+
+        private final GraphDefinition<E, S, T> delegate;
+
+        private ListingRuntimeException(GraphDefinition<E, S, T> delegate) {
+            this.delegate = delegate;
+        }
+
+        private TransitionSpec<E, S, T> rebuilt(TransitionSpec<E, S, T> spec) {
+            if (spec.action().isEmpty()) {
+                return spec;
+            }
+            return new TransitionSpec<>(spec.from(), spec.transition(), spec.to(), spec.action(), spec.guards(),
+                    spec.onFailure(), List.of(RuntimeException.class), spec.timeout(), spec.afterCommit());
+        }
+
+        @Override
+        public MachineKey<E, S, T> key() {
+            return delegate.key();
+        }
+
+        @Override
+        public S initial() {
+            return delegate.initial();
+        }
+
+        @Override
+        public Set<S> terminals() {
+            return delegate.terminals();
+        }
+
+        @Override
+        public DirectedGraph<S, T> graph() {
+            return delegate.graph();
+        }
+
+        @Override
+        public List<TransitionSpec<E, S, T>> transitions() {
+            return delegate.transitions().stream().map(this::rebuilt).toList();
+        }
+
+        @Override
+        public List<TransitionSpec<E, S, T>> outgoingFrom(S state) {
+            return delegate.outgoingFrom(state).stream().map(this::rebuilt).toList();
+        }
+
+        @Override
+        public Optional<TransitionSpec<E, S, T>> findTransition(S from, T transition) {
+            return delegate.findTransition(from, transition).map(this::rebuilt);
+        }
+
+        @Override
+        public StatePolicy<S, T> policy(S state) {
+            return delegate.policy(state);
+        }
+
+        @Override
+        public Optional<WatchSpec<E, S, T, ?, ?, ?>> watch(S state) {
+            return delegate.watch(state);
+        }
+
+        @Override
+        public boolean hasAsync() {
+            return delegate.hasAsync();
+        }
     }
 }
