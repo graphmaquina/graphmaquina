@@ -78,7 +78,10 @@ class FailureTypesTest {
     /** None of them is a named class, however final: a local record, a local class, an anonymous class, a lambda. */
     @Test
     void localAnonymousAndLambdaClassesAreNotKinds() {
+        /** A local record does not have the required named declaration. */
         record LocalRecord() implements FailureKind { }
+
+        /** A local class does not have the required named declaration. */
         final class LocalClass implements FailureKind { }
         FailureKind anonymous = new FailureKind() { };
         Runnable lambda = (Runnable & FailureKind) () -> { };
@@ -103,6 +106,8 @@ class FailureTypesTest {
                 + " FailureKind and is not an interface, an enum, a local or anonymous class, or a Throwable",
                 FailureTypes.INVALID_KIND_SUFFIX);
         assertEquals(open.getMessage(), FailureTypes.invalidKindMessage(OpenKind.class));
+        assertThrows(NullPointerException.class, () -> FailureTypes.isValidKind(null));
+        assertThrows(NullPointerException.class, () -> FailureTypes.invalidKindMessage(null));
     }
 
     /** Only a raw Class gets a class that does not implement FailureKind this far: it is refused all the same. */
@@ -126,6 +131,7 @@ class FailureTypesTest {
         for (Class<?> type : forbidden) {
             assertTrue(FailureTypes.isForbiddenThrowable(type), type.getName());
         }
+        assertThrows(NullPointerException.class, () -> FailureTypes.isForbiddenThrowable(null));
     }
 
     /** IllegalStateException stays allowed although CancellationException extends it. */
