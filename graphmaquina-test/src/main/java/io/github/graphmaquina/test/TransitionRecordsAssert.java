@@ -10,14 +10,13 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Chainable assertion over the transition records a committed outcome carries, obtained from
- * {@link AppliedOutcomeAssert#records()} or {@link FailedOutcomeAssert#records()}. One transaction may touch
- * several machines, so the list is untyped as a whole and {@link #forEntity(MachineKey, Object)} is what
- * narrows it: it selects by machine key and by entity IDENTITY, never by entity equality, so two entities
- * that carry the same business id stay distinct subjects. Order and multiplicity are part of the contract,
- * and the list is copied when the view is built, so later edits to the caller's collection are not seen.
- * A null element, which only a subject built by hand can hold, is selected by no entity and is reported by
- * position when {@link #containsExactly(java.util.List)} compares it.
+ * Chainable assertion over the transition records a committed outcome carries, obtained from {@link
+ * BaseOutcomeAssert#records()} on any outcome view. One transaction may touch several machines, so the list is untyped
+ * as a whole and {@link #forEntity(MachineKey, Object)} is what narrows it: it selects by machine key and by entity
+ * IDENTITY, never by entity equality, so two entities that carry the same business id stay distinct subjects. Order and
+ * multiplicity are part of the contract, and the list is copied when the view is built, so later edits to the caller's
+ * collection are not seen. A null element, which only a subject built by hand can hold, is selected by no entity and is
+ * reported by position when {@link #containsExactly(java.util.List)} compares it.
  *
  * <p>{@link #containsExactly(java.util.List)} compares the identifier of every hop as well as its endpoints,
  * so two edges that connect the same pair of states under different identifiers never satisfy each other.

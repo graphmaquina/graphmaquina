@@ -62,7 +62,7 @@ class HugeTimeoutTest {
     private static final AsyncTransitionAction<Doc, DocStatus, DocTransition> DONE =
             (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> CompletableFuture.completedFuture(ActionOutcome.ok());
 
-    /** How one call ended, as the outcome's type or the exception's type and its cause's, and how long it took. */
+    /** How one call ended, as the outcome's status or the exception's type and its cause's, and how long it took. */
     private record End(String how, long millis) {
 
         /** How it ended, with the time it took appended only when that time falls outside {@code [min, max)} ms. */
@@ -112,7 +112,7 @@ class HugeTimeoutTest {
             long start = System.nanoTime();
             String how;
             try {
-                how = call.get().getClass().getSimpleName();
+                how = call.get().status().name();
             } catch (RuntimeException e) {
                 how = e.getClass().getSimpleName()
                         + (e.getCause() == null ? "" : " caused by " + e.getCause().getClass().getSimpleName());
@@ -139,7 +139,7 @@ class HugeTimeoutTest {
                         + end(thread, () -> forever.execute(doc, PUBLISH)).within(150, 3_000) + ", "
                         + end(thread, () -> other.execute(new Doc("2", DRAFT), SUBMIT)).how());
             }
-            expected.add(huge + ": Applied, Applied, Applied");
+            expected.add(huge + ": APPLIED, APPLIED, APPLIED");
         }
         assertEquals(expected, ends);
     }
@@ -157,7 +157,7 @@ class HugeTimeoutTest {
                 ends.add(huge + ": " + end(thread, () -> machine.execute(doc, PUBLISH)).within(150, 3_000) + ", "
                         + doc.status());
             }
-            expected.add(huge + ": Applied, PUBLISHED");
+            expected.add(huge + ": APPLIED, PUBLISHED");
         }
         assertEquals(expected, ends);
     }

@@ -41,8 +41,8 @@ class ListenerTest {
 
     final List<String> seen = new ArrayList<>();
     final TransitionListener listener = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) ->
-            seen.add(key.entity().getSimpleName() + ":" + outcome.getClass().getSimpleName() + ":" + outcome.from()
-                    + ">" + outcome.current());
+            seen.add(key.entity().getSimpleName() + ":" + outcome.status().name() + ":" + outcome.from()
+                    + ">" + outcome.recordedState());
 
     private MachineRegistry registry(TransitionListener listener) {
         return MachineRegistry.builder()
@@ -62,14 +62,15 @@ class ListenerTest {
     }
 
     @Test
-    void everyOutcomeKindReachesTheListenerOncePerCall() {
+    void appliedRejectedAndIgnoredOutcomesReachTheListenerOncePerCall() {
         try (MachineRegistry registry = registry(listener)) {
             StateMachine<Order, OrderStatus, OrderTransition> orders = registry.of(ORDERS);
             Order order = new Order("o1", OrderStatus.NEW);
             orders.execute(order, OrderTransition.CHARGE);        // Applied
             orders.execute(order, OrderTransition.CHARGE);        // Rejected: no CHARGE leaves PAID
             orders.reevaluate(order);                             // Ignored: no item is packed
-            assertEquals(List.of("Order:Applied:NEW>PAID", "Order:Rejected:PAID>PAID", "Order:Ignored:PAID>PAID"), seen);
+            assertEquals(List.of("Order:APPLIED:NEW>PAID", "Order:REJECTED:PAID>PAID", "Order:IGNORED:PAID>PAID"),
+                    seen);
         }
     }
 
@@ -83,7 +84,7 @@ class ListenerTest {
             Outcome.Applied<Item, ItemStatus, ItemTransition> applied =
                     (Outcome.Applied<Item, ItemStatus, ItemTransition>) outcome;
             assertInstanceOf(Reaction.Done.class, applied.reactions().get(0));
-            assertEquals(List.of("Order:Applied:PAID>SHIPPED", "Item:Applied:PACKING>PACKED"), seen);
+            assertEquals(List.of("Order:APPLIED:PAID>SHIPPED", "Item:APPLIED:PACKING>PACKED"), seen);
         }
     }
 

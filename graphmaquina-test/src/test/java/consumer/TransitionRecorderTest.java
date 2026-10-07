@@ -12,6 +12,7 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionListener;
@@ -66,7 +67,7 @@ class TransitionRecorderTest {
     @Test
     void theProjectionReceivesTheKeyOfTheCallbackItIsRecording() {
         TransitionRecorder recorder = TransitionRecorder.projecting(
-                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> key + "=" + outcome.current());
+                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> key + "=" + outcome.recordedState());
         Entity entity = new Entity("e", State.NEW);
         Twin twin = new Twin("t", State.NEW);
         recorder.onOutcome(TestDomain.KEY, applied(entity));
@@ -190,28 +191,26 @@ class TransitionRecorderTest {
     }
 
     @Test
-    void outcomeKindsArePinnedInOrderAndBySize() {
+    void statusesArePinnedInOrderAndBySize() {
         TransitionRecorder recorder = TransitionRecorder.create();
         Entity entity = new Entity("e", State.NEW);
         recorder.onOutcome(TestDomain.KEY, applied(entity));
         recorder.onOutcome(TestDomain.KEY, ignored(entity));
         RecordedTransitionsAssert view = recorder.assertRecorded();
-        assertSame(view, view.hasOutcomeKindsExactly(Outcome.Applied.class, Outcome.Ignored.class));
+        assertSame(view, view.hasStatusesExactly(OutcomeStatus.APPLIED, OutcomeStatus.IGNORED));
         assertFailure(assertThrows(GraphAssertionError.class,
-                        () -> view.hasOutcomeKindsExactly(Outcome.Applied.class, Outcome.Applied.class)),
-                "recorded transitions[1]", "kind", Outcome.Applied.class, Outcome.Ignored.class);
+                        () -> view.hasStatusesExactly(OutcomeStatus.APPLIED, OutcomeStatus.APPLIED)),
+                "recorded transitions[1]", "status", OutcomeStatus.APPLIED, OutcomeStatus.IGNORED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                        () -> view.hasOutcomeKindsExactly(Outcome.class, Outcome.class)),
-                "recorded transitions[0]", "kind", Outcome.class, Outcome.Applied.class);
-        assertFailure(assertThrows(GraphAssertionError.class,
-                        () -> view.hasOutcomeKindsExactly(Outcome.Applied.class)),
+                        () -> view.hasStatusesExactly(OutcomeStatus.APPLIED)),
                 "recorded transitions", "size", 1, 2);
+        assertThrows(NullPointerException.class, () -> view.hasStatusesExactly(OutcomeStatus.APPLIED, null));
     }
 
     @Test
     void anEmptyRecorderSatisfiesTheEmptyExpectations() {
         RecordedTransitionsAssert view = TransitionRecorder.create().assertRecorded();
-        view.hasSize(0).hasKeysExactly().hasOutcomeKindsExactly();
+        view.hasSize(0).hasKeysExactly().hasStatusesExactly();
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasSize(1)),
                 "recorded transitions", "size", 1, 0);
     }
@@ -295,7 +294,7 @@ class TransitionRecorderTest {
                 recorder.assertRecorded().forEntity(TestDomain.KEY, entity);
         String context = "recorded transitions for " + TestDomain.KEY;
         assertFailure(assertThrows(GraphAssertionError.class, () -> view.atIndex(1).isApplied()),
-                context + "[1]", "kind", "Applied", "Ignored");
+                context + "[1]", "status", OutcomeStatus.APPLIED, OutcomeStatus.IGNORED);
         assertFailure(
                 assertThrows(GraphAssertionError.class,
                         () -> view.atIndex(0).hasRecordedState(State.NEW)),
@@ -448,7 +447,7 @@ class TransitionRecorderTest {
         }
         RecordedTransitionsAssert recorded = recorder.assertRecorded();
         recorded.hasSize(2).hasKeysExactly(SHIPMENTS, PARCELS)
-                .hasOutcomeKindsExactly(Outcome.Applied.class, Outcome.Applied.class);
+                .hasStatusesExactly(OutcomeStatus.APPLIED, OutcomeStatus.APPLIED);
         recorded.forEntity(SHIPMENTS, shipment).single().isApplied()
                 .movedTo(ShipmentStatus.SENT).hasEntitySameAs(shipment);
         recorded.forEntity(PARCELS, parcel).single().isApplied().movedTo(ParcelStatus.LOADED);
@@ -458,7 +457,7 @@ class TransitionRecorderTest {
     @Test
     void aProjectionSurvivesTheTransitionsThatFollowIt() {
         TransitionRecorder recorder = TransitionRecorder.projecting(
-                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> outcome.current());
+                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> outcome.recordedState());
         Shipment shipment = new Shipment("s1", ShipmentStatus.OPEN);
         Parcel parcel = new Parcel("p1", ParcelStatus.LOADING, Optional.of(shipment));
         try (MachineRegistry registry = registry(recorder)) {

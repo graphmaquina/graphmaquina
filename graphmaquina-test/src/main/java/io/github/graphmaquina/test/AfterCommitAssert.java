@@ -38,7 +38,7 @@ public final class AfterCommitAssert extends BaseFailureAssert<AfterCommitAssert
 
     /**
      * The endpoints of the hop the step was running for: those of the committed edge for a hook, the origin
-     * and the state the outcome records as current for the listener. The entity is matched by reference.
+     * and the state the outcome records for the listener. The entity is matched by reference.
      */
     public <E, S extends Enum<S>, T extends Enum<T>> AfterCommitAssert at(MachineKey<E, S, T> key, E entity,
             S from, S to) {

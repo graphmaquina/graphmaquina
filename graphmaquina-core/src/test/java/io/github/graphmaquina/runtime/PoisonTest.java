@@ -180,7 +180,7 @@ class PoisonTest {
                     ctx.cascadeAll(DOCS, peers, PUBLISH, policy));
             String end;
             try {
-                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                end = machine.execute(doc, SUBMIT).status().name();
             } catch (TransitionAbortedException error) {
                 end = error.getCause() == broken ? "aborted by the Error" : "aborted by " + error.getCause();
             }
@@ -215,7 +215,7 @@ class PoisonTest {
                     ctx.cascadeAll(DOCS, peers, PUBLISH, policy));
             String end;
             try {
-                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                end = machine.execute(doc, SUBMIT).status().name();
             } catch (TransitionAbortedException error) {
                 end = error.getClass().getSimpleName();
             }
@@ -251,7 +251,7 @@ class PoisonTest {
             discard.calls.clear();
             String end;
             try {
-                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                end = machine.execute(doc, SUBMIT).status().name();
             } catch (TransitionAbortedException error) {
                 end = error.getMessage().contains("rejected inside a cascade by guard InStock: out of stock")
                         ? "the poison" : error.getMessage();
@@ -315,7 +315,7 @@ class PoisonTest {
             Doc doc = new Doc("1", DRAFT);
             String end;
             try {
-                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                end = machine.execute(doc, SUBMIT).status().name();
             } catch (StateMachineException error) {
                 end = error.getClass().getSimpleName() + (error == caught.get()
                         ? ", the refusal the action caught" : ", the action caught " + caught.get());
@@ -365,13 +365,13 @@ class PoisonTest {
             Doc doc = new Doc("1", DRAFT);
             String end;
             try {
-                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                end = machine.execute(doc, SUBMIT).status().name();
             } catch (TransitionAbortedException error) {
                 end = error.getClass().getSimpleName() + " (" + error.getMessage() + ")";
             }
             ends.add(cascade.getKey() + ": " + end + ", caught " + caught.get() + ", publish ran " + publish.calls.size()
                     + ", " + doc.status() + ", " + peer.status());
-            expected.add(cascade.getKey() + ": Applied, caught java.lang.IllegalArgumentException: transition must"
+            expected.add(cascade.getKey() + ": APPLIED, caught java.lang.IllegalArgumentException: transition must"
                     + " belong to io.github.graphmaquina.fixtures.DocTransition: PACK, publish ran 0, REVIEW, REVIEW");
         }
         assertEquals(expected, ends);
@@ -390,13 +390,13 @@ class PoisonTest {
             publish.calls.clear();
             Doc doc = new Doc("1", DRAFT);
             Outcome<Doc, DocStatus, DocTransition> outcome = machine.execute(doc, SUBMIT);
-            ends.add(policy + ": root " + outcome.getClass().getSimpleName() + ", caught " + caught.get()
+            ends.add(policy + ": root " + outcome.status().name() + ", caught " + caught.get()
                     + ", publish ran " + publish.calls.size() + ", doc " + doc.status() + ", peer " + peer.status());
         }
         assertEquals(List.of(
-                "FAIL_FAST: root Applied, caught java.lang.NullPointerException: peers contains a null element,"
+                "FAIL_FAST: root APPLIED, caught java.lang.NullPointerException: peers contains a null element,"
                         + " publish ran 0, doc REVIEW, peer REVIEW",
-                "COLLECT: root Applied, caught java.lang.NullPointerException: peers contains a null element,"
+                "COLLECT: root APPLIED, caught java.lang.NullPointerException: peers contains a null element,"
                         + " publish ran 0, doc REVIEW, peer REVIEW"), ends);
     }
 
@@ -436,14 +436,14 @@ class PoisonTest {
                 Doc doc = new Doc("1", DRAFT);
                 String end;
                 try {
-                    end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                    end = machine.execute(doc, SUBMIT).status().name();
                 } catch (StateMachineException error) {
                     end = error.getClass().getSimpleName();
                 }
                 String label = failure.getClass().getSimpleName() + ", " + cascade.getKey();
                 ends.add(label + ": " + end + ", caught " + caught.get() + ", publish ran " + publish.calls.size()
                         + ", " + doc.status());
-                expected.add(label + ": Applied, caught " + failure + ", publish ran 0, REVIEW");
+                expected.add(label + ": APPLIED, caught " + failure + ", publish ran 0, REVIEW");
             }
         }
         assertEquals(expected, ends);
@@ -474,12 +474,12 @@ class PoisonTest {
             Doc doc = new Doc("1", DRAFT);
             String end;
             try {
-                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                end = machine.execute(doc, SUBMIT).status().name();
             } catch (StateMachineException error) {
                 end = error.getClass().getSimpleName();
             }
             ends.add(cascade.getKey() + ": " + end + ", caught " + caught.get() + ", " + doc.status());
-            expected.add(cascade.getKey() + ": Applied, caught java.lang.NullPointerException: peers contains a null"
+            expected.add(cascade.getKey() + ": APPLIED, caught java.lang.NullPointerException: peers contains a null"
                     + " element, REVIEW");
         }
         assertEquals(expected, ends);
@@ -515,15 +515,15 @@ class PoisonTest {
             Doc doc = new Doc("1", DRAFT);
             String end;
             try {
-                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                end = machine.execute(doc, SUBMIT).status().name();
             } catch (StateMachineException error) {
                 end = error.getClass().getSimpleName();
             }
             ends.add(cascade.getKey() + ": " + end + ", caught " + caught.get().getClass().getSimpleName() + ", "
                     + doc.status());
         }
-        assertEquals(List.of("cascade by key: Applied, caught IllegalArgumentException, REVIEW",
-                "cascadeAll by key: Applied, caught IllegalArgumentException, REVIEW",
+        assertEquals(List.of("cascade by key: APPLIED, caught IllegalArgumentException, REVIEW",
+                "cascadeAll by key: APPLIED, caught IllegalArgumentException, REVIEW",
                 "cascade by facade: UnknownFacadeException, caught UnknownFacadeException, DRAFT",
                 "cascadeAll by facade: UnknownFacadeException, caught UnknownFacadeException, DRAFT"), ends);
     }
@@ -557,13 +557,13 @@ class PoisonTest {
             Doc doc = new Doc("1", DRAFT);
             String end;
             try {
-                end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                end = machine.execute(doc, SUBMIT).status().name();
             } catch (StateMachineException error) {
                 end = error.getClass().getSimpleName() + " (" + error.getMessage() + ")";
             }
             ends.add(cascade.getKey() + ": " + end + ", caught " + caught.get() + ", publish ran "
                     + publish.calls.size() + ", " + doc.status() + ", " + peer.status());
-            expected.add(cascade.getKey() + ": Applied, caught java.lang.IllegalArgumentException: transition must"
+            expected.add(cascade.getKey() + ": APPLIED, caught java.lang.IllegalArgumentException: transition must"
                     + " belong to io.github.graphmaquina.fixtures.DocTransition: PACK, publish ran 0, REVIEW, REVIEW");
         }
         assertEquals(expected, ends);
@@ -608,7 +608,7 @@ class PoisonTest {
                             : ctx.cascadeAll(DOCS, peers, PUBLISH, policy).size()));
                     String end;
                     try {
-                        end = machine.execute(doc, SUBMIT).getClass().getSimpleName();
+                        end = machine.execute(doc, SUBMIT).status().name();
                     } catch (StateMachineException error) {
                         end = error.getClass().getSimpleName();
                     }
@@ -617,7 +617,7 @@ class PoisonTest {
                             + (caught.get() == null ? "nothing" : caught.get().getClass().getSimpleName())
                             + ", outcomes " + outcomes.get() + ", " + doc.status() + ", " + first.status() + ", "
                             + second.status() + ", late " + late.status());
-                    expected.add(label + ": root Applied, caught nothing, outcomes 2, REVIEW, PUBLISHED, PUBLISHED,"
+                    expected.add(label + ": root APPLIED, caught nothing, outcomes 2, REVIEW, PUBLISHED, PUBLISHED,"
                             + " late REVIEW");
                 }
             }

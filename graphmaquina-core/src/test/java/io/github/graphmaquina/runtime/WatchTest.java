@@ -151,10 +151,10 @@ class WatchTest {
                 .build();
     }
 
-    /** A reaction as {@code Done <outcome>} or {@code Aborted <cause>}, by simple names. */
+    /** A reaction as {@code Done <outcome's status>} or {@code Aborted <cause's simple name>}. */
     private static String describe(Reaction reaction) {
         return switch (reaction) {
-            case Reaction.Done done -> "Done " + done.outcome().getClass().getSimpleName();
+            case Reaction.Done done -> "Done " + done.outcome().status().name();
             case Reaction.Aborted aborted -> "Aborted " + aborted.cause().getClass().getSimpleName();
         };
     }
@@ -423,7 +423,7 @@ class WatchTest {
                     try {
                         Outcome<Doc, DocStatus, DocTransition> outcome = direct
                                 ? docs.of(DOCS).reevaluate(observer) : docs.of(DOCS).execute(peer, SUBMIT);
-                        end = outcome.getClass().getSimpleName();
+                        end = outcome.status().name();
                         if (outcome instanceof Outcome.Applied<Doc, DocStatus, DocTransition> applied && !direct) {
                             end += " with reactions " + applied.reactions().stream().map(WatchTest::describe).toList();
                         }
@@ -436,12 +436,12 @@ class WatchTest {
             }
         }
         assertEquals(List.of(
-                "peersOf in a reaction: Applied with reactions [Aborted ReentrantTransitionException],"
+                "peersOf in a reaction: APPLIED with reactions [Aborted ReentrantTransitionException],"
                         + " bystander DRAFT, observer PUBLISHED",
                 "peersOf in a direct reevaluation: ReentrantTransitionException, bystander DRAFT, observer PUBLISHED",
-                "ownerOf in a reaction: Applied with reactions [Aborted ReentrantTransitionException],"
+                "ownerOf in a reaction: APPLIED with reactions [Aborted ReentrantTransitionException],"
                         + " bystander DRAFT, observer PUBLISHED",
-                "condition in a reaction: Applied with reactions [Aborted ReentrantTransitionException],"
+                "condition in a reaction: APPLIED with reactions [Aborted ReentrantTransitionException],"
                         + " bystander DRAFT, observer PUBLISHED",
                 "condition in a direct reevaluation: ReentrantTransitionException,"
                         + " bystander DRAFT, observer PUBLISHED"),

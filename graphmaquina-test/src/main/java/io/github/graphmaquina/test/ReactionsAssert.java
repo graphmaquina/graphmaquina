@@ -14,18 +14,16 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Chainable assertion over the watch reactions a committed outcome carries, obtained from
- * {@link AppliedOutcomeAssert#reactions()} or {@link FailedOutcomeAssert#reactions()}. A reaction belongs to
- * the machine that re-evaluated or, when the owner to re-evaluate could not be looked up, to the machine of
- * the peer that moved, so the list is untyped as a whole and {@link #forEntity(MachineKey, Object)} is what
- * narrows it: it selects by machine key and by entity IDENTITY, never by entity equality. An exception
- * thrown by a reaction does not propagate to the commit that triggered it but is reported as an aborted
- * reaction, which is why {@link #hasNoAborted()} exists at all, and an {@link Error} is not caught, so it
- * never reaches this list; and because a reaction's own outcome carries reactions of its own, the direct and
- * the recursive check answer different questions. Order and multiplicity are part of the contract, and the
- * list is copied when the view is built, so later edits to the caller's collection are not seen. A null
- * element, which only a subject built by hand can hold, is neither an aborted reaction nor a source of
- * nested ones, and no entity selects it.
+ * Chainable assertion over the watch reactions a committed outcome carries, obtained from {@link
+ * BaseOutcomeAssert#reactions()} on any outcome view. A reaction belongs to the machine that re-evaluated or, when the
+ * owner to re-evaluate could not be looked up, to the machine of the peer that moved, so the list is untyped as a whole
+ * and {@link #forEntity(MachineKey, Object)} is what narrows it: it selects by machine key and by entity IDENTITY,
+ * never by entity equality. An exception thrown by a reaction does not propagate to the commit that triggered it but is
+ * reported as an aborted reaction, which is why {@link #hasNoAborted()} exists at all, and an {@link Error} is not
+ * caught, so it never reaches this list; and because a reaction's own outcome carries reactions of its own, the direct
+ * and the recursive check answer different questions. Order and multiplicity are part of the contract, and the list is
+ * copied when the view is built, so later edits to the caller's collection are not seen. A null element, which only a
+ * subject built by hand can hold, is neither an aborted reaction nor a source of nested ones, and no entity selects it.
  */
 public final class ReactionsAssert {
 
@@ -119,12 +117,7 @@ public final class ReactionsAssert {
 
     /** Only a committed outcome carries reactions of its own; an ignored or rejected one has none. */
     private static List<Reaction> nested(Reaction.Done done) {
-        return switch (done.outcome()) {
-            case Outcome.Applied<?, ?, ?> applied -> applied.reactions();
-            case Outcome.Failed<?, ?, ?> failed -> failed.reactions();
-            case Outcome.Ignored<?, ?, ?> ignored -> List.of();
-            case Outcome.Rejected<?, ?, ?> rejected -> List.of();
-        };
+        return done.outcome().reactions();
     }
 
     /** One level of the breadth-first walk of {@link #hasNoAbortedRecursively()}: a list and the path naming it. */

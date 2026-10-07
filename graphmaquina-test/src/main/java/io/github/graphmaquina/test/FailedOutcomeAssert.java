@@ -80,14 +80,4 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
         Checks.equal(context, "cause", none, failed.cause());
         return this;
     }
-
-    /** The hops this transaction committed, the recovery edge included, since a failed outcome still commits. */
-    public TransitionRecordsAssert records() {
-        return new TransitionRecordsAssert(context + ".records", failed.records());
-    }
-
-    /** The watch re-evaluations this commit triggered; the recovery edge is a commit, so it triggers them too. */
-    public ReactionsAssert reactions() {
-        return new ReactionsAssert(context + ".reactions", failed.reactions());
-    }
 }

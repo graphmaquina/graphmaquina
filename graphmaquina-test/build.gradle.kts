@@ -33,7 +33,8 @@ publishing {
 // can see them: the smoke tests therefore run separately, after their artifacts are published to the
 // local repository, with the repository and the release passed in as system properties.
 tasks.test {
-    exclude("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class", "**/GraphOnlySurfaceTest.class")
+    exclude("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class", "**/GraphOnlySurfaceTest.class",
+        "**/GuideOutcomeFragmentsTest.class")
 }
 
 val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
@@ -41,7 +42,8 @@ val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     description = "Compiles and runs a consumer against the published jars and POM alone"
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
-    include("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class", "**/GraphOnlySurfaceTest.class")
+    include("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class", "**/GraphOnlySurfaceTest.class",
+        "**/GuideOutcomeFragmentsTest.class")
     dependsOn(tasks.named("testClasses"))
     dependsOn(tasks.named("publishMavenPublicationToAdapterTestsRepository"))
     dependsOn(":graphmaquina-core:publishMavenPublicationToAdapterTestsRepository")

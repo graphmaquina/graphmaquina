@@ -333,7 +333,7 @@ class AsyncTest {
                 String end = thread.submit(() -> {
                     String how;
                     try {
-                        how = docs.execute(doc, SUBMIT).getClass().getSimpleName();
+                        how = docs.execute(doc, SUBMIT).status().name();
                     } catch (TransitionAbortedException e) {
                         how = "aborted by " + e.getCause().getClass().getSimpleName()
                                 + (e.getMessage().contains("interrupted while waiting for the action Interrupting")
@@ -347,7 +347,7 @@ class AsyncTest {
         assertEquals(List.of(
                 "pending: aborted by InterruptedException, interrupted true, DRAFT",
                 "pending with a spent budget: aborted by InterruptedException, interrupted true, DRAFT",
-                "complete: Applied, interrupted true, REVIEW"), ends);
+                "complete: APPLIED, interrupted true, REVIEW"), ends);
     }
 
     @Test

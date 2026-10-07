@@ -115,9 +115,9 @@ constant of another machine's catalogue does not compile inside it.
 | One node's policy | `assertThat(definition).policy(state)` | the default reason and the reason declared for one identifier |
 | A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
 | Reachability | `assertThat(definition).topology()` | nodes, successors, reachable set, an explicit walk, the shortest path, absence of a path, cycles |
-| Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity |
-| Applied outcome | `assertThat(outcome).isApplied()` | `movedTo`, plus `records()` and `reactions()` |
-| Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, reason, cause, plus `records()` and `reactions()` |
+| Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()` and `reactions()` |
+| Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
+| Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, reason, cause |
 | Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, and `isRejectedByGuardNamed` for `GUARD` |
 | Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED` |
 | Transition records | `.records()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
@@ -125,7 +125,7 @@ constant of another machine's catalogue does not compile inside it.
 | Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal |
 | Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, and the reason |
 | Live entity | `assertThat(entity, Order::status)` | the state the getter reads at that moment |
-| Listener callbacks | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome kinds, and the outcome sequence of one entity |
+| Listener callbacks | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome statuses, and the outcome sequence of one entity |
 | Tracked entities | `StateSnapshot` | which of the tracked entities moved since the capture, and that none did |
 | Completion stage | `AsyncAssertions.await`, `AsyncAssertions.awaitFailure` | the outcome, or the throwable, the stage ended with inside the test's budget |
 | Guard, action, hook | `GuardProbe`, `ActionProbe`, `HookProbe`, `CallTrace` | scripted answers per call, the calls each probe recorded, and the order callbacks were entered in |
@@ -300,9 +300,7 @@ recorder.assertRecorded()
         .hasKeysExactly(OrdersRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
                 ItemsRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
                 ItemsRuntime.KEY)
-        .hasOutcomeKindsExactly(Outcome.Applied.class, Outcome.Ignored.class, Outcome.Applied.class,
-                Outcome.Ignored.class, Outcome.Applied.class, Outcome.Ignored.class,
-                Outcome.Applied.class, Outcome.Applied.class, Outcome.Applied.class);
+        .hasStatusesExactly(APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, APPLIED, APPLIED);
 ```
 
 A registry accepts one listener. When the test needs its own as well, `TransitionRecorder.compose(...)`
@@ -623,6 +621,7 @@ A test that needs no properties at all can pass options explicitly —
 | --- | --- |
 | `topology().hasPath(...)`: the graph permits this walk | that any run took it. Only an outcome or a transition record shows a hop that happened. |
 | `isApplied()`: the root transition committed | that everything it triggered did. A watch reaction inside an applied outcome may have aborted; `reactions().hasNoAbortedRecursively()` is the expectation that rules that out. |
+| `hasStatus(APPLIED)` or `hasCode(...)`: what the root call reported | that its reactions committed, or where the entity is now. Read `reactions()` and `hasEntityState(...)` for those. |
 | `movedTo(...)` and `hasRecordedState(...)`: the state the outcome recorded | where the entity is now. `hasEntityState(getter, ...)` reads the live entity, and the entity can move again right after. |
 | `hasTransitionsExactly(from, ids…)`: which identifiers the state declares | that any of them would succeed for a given entity. It is structural; guards are not evaluated. |
 | `isRejected().hasNoTransition()`: nothing was keyed by `(from, id)` | that the entity cannot move at all. Another identifier may well have an edge from the same state. |

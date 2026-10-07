@@ -59,7 +59,7 @@ class GraphOnlyCascadeTest {
             Outcome<Ticket,State,Id> result = registry.of(KEY).execute(ticket, APPROVE);
             assertInstanceOf(Outcome.Failed.class, result);
             assertEquals(List.of("recover", "FAIL"), ticket.calls);
-            assertEquals(DONE, result.current());
+            assertEquals(DONE, result.recordedState());
         }
     }
 

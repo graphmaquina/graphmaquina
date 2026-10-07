@@ -9,6 +9,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.OutcomeCode;
+import io.github.graphmaquina.api.OutcomeStatus;
+import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
@@ -20,7 +23,9 @@ import io.github.graphmaquina.test.FailedOutcomeAssert;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.IgnoredOutcomeAssert;
 import io.github.graphmaquina.test.OutcomeAssert;
+import io.github.graphmaquina.test.ReactionsAssert;
 import io.github.graphmaquina.test.RejectedOutcomeAssert;
+import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
@@ -81,11 +86,14 @@ class OutcomeAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         Outcome<Entity, State, Id> outcome = applied(entity);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "kind", "Failed", "Applied");
+                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "status", OutcomeStatus.FAILED,
+                OutcomeStatus.APPLIED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "kind", "Rejected", "Applied");
+                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "status", OutcomeStatus.REJECTED,
+                OutcomeStatus.APPLIED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "kind", "Ignored", "Applied");
+                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "status", OutcomeStatus.IGNORED,
+                OutcomeStatus.APPLIED);
     }
 
     @Test
@@ -93,11 +101,14 @@ class OutcomeAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         Outcome<Entity, State, Id> outcome = failed(entity, Optional.empty());
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "kind", "Applied", "Failed");
+                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "status", OutcomeStatus.APPLIED,
+                OutcomeStatus.FAILED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "kind", "Rejected", "Failed");
+                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "status", OutcomeStatus.REJECTED,
+                OutcomeStatus.FAILED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "kind", "Ignored", "Failed");
+                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "status", OutcomeStatus.IGNORED,
+                OutcomeStatus.FAILED);
     }
 
     @Test
@@ -105,11 +116,14 @@ class OutcomeAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         Outcome<Entity, State, Id> outcome = rejected(entity, Optional.empty());
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "kind", "Applied", "Rejected");
+                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "status", OutcomeStatus.APPLIED,
+                OutcomeStatus.REJECTED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "kind", "Failed", "Rejected");
+                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "status", OutcomeStatus.FAILED,
+                OutcomeStatus.REJECTED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "kind", "Ignored", "Rejected");
+                () -> OutcomeAssert.assertThat(outcome).isIgnored()), "outcome", "status", OutcomeStatus.IGNORED,
+                OutcomeStatus.REJECTED);
     }
 
     @Test
@@ -117,11 +131,14 @@ class OutcomeAssertionsTest {
         Entity entity = new Entity("e", State.NEW);
         Outcome<Entity, State, Id> outcome = ignored(entity);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "kind", "Applied", "Ignored");
+                () -> OutcomeAssert.assertThat(outcome).isApplied()), "outcome", "status", OutcomeStatus.APPLIED,
+                OutcomeStatus.IGNORED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "kind", "Failed", "Ignored");
+                () -> OutcomeAssert.assertThat(outcome).isFailed()), "outcome", "status", OutcomeStatus.FAILED,
+                OutcomeStatus.IGNORED);
         assertFailure(assertThrows(GraphAssertionError.class,
-                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "kind", "Rejected", "Ignored");
+                () -> OutcomeAssert.assertThat(outcome).isRejected()), "outcome", "status", OutcomeStatus.REJECTED,
+                OutcomeStatus.IGNORED);
     }
 
     // --- shared expectations -----------------------------------------------------------------------
@@ -225,6 +242,9 @@ class OutcomeAssertionsTest {
                 () -> OutcomeAssert.assertThat(none).requestedTransition(null));
         assertThrows(NullPointerException.class, () -> OutcomeAssert.assertThat(none).hasRecordedState(null));
         assertThrows(NullPointerException.class, () -> OutcomeAssert.assertThat(none).hasEntitySameAs(null));
+        assertThrows(NullPointerException.class, () -> OutcomeAssert.assertThat(none).hasStatus(null));
+        assertThrows(NullPointerException.class, () -> OutcomeAssert.assertThat(none).hasCode(null));
+        assertThrows(NullPointerException.class, () -> OutcomeAssert.assertThat(none).hasExplanation(null));
     }
 
     @Test
@@ -242,6 +262,89 @@ class OutcomeAssertionsTest {
         assertEquals("entity", error.property());
         assertSame(sameValue, error.expected());
         assertSame(entity, error.actual());
+    }
+
+    // --- classification and explanation ------------------------------------------------------------
+
+    @Test
+    void statusAndCodeAreReadFromEveryVariant() {
+        Entity entity = new Entity("e", State.NEW);
+        OutcomeAssert.assertThat(applied(entity)).hasStatus(OutcomeStatus.APPLIED).hasCode(OutcomeCode.APPLIED);
+        OutcomeAssert.assertThat(failed(entity, Optional.empty())).hasStatus(OutcomeStatus.FAILED)
+                .hasCode(OutcomeCode.FAILURE_ROUTED);
+        OutcomeAssert.assertThat(rejected(entity, Optional.empty())).hasStatus(OutcomeStatus.REJECTED)
+                .hasCode(OutcomeCode.NO_TRANSITION);
+        OutcomeAssert.assertThat(rejected(entity, Optional.of("first"))).hasCode(OutcomeCode.GUARD_REJECTED);
+        OutcomeAssert.assertThat(ignored(entity)).hasStatus(OutcomeStatus.IGNORED)
+                .hasCode(OutcomeCode.NO_RULE_MATCHED);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(applied(entity)).hasStatus(OutcomeStatus.REJECTED)),
+                "outcome", "status", OutcomeStatus.REJECTED, OutcomeStatus.APPLIED);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(rejected(entity, Optional.empty())).hasCode(OutcomeCode.GUARD_REJECTED)),
+                "outcome", "code", OutcomeCode.GUARD_REJECTED, OutcomeCode.NO_TRANSITION);
+    }
+
+    @Test
+    void aNarrowedViewKeepsTheSharedClassification() {
+        Entity entity = new Entity("e", State.NEW);
+        RejectedOutcomeAssert<Entity, State, Id> view =
+                OutcomeAssert.assertThat(rejected(entity, Optional.of("first"))).isRejected();
+        assertSame(view, view.hasCode(OutcomeCode.GUARD_REJECTED).hasStatus(OutcomeStatus.REJECTED)
+                .hasExplanation("not ready"));
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCode(OutcomeCode.NO_TRANSITION)),
+                "rejected outcome", "code", OutcomeCode.NO_TRANSITION, OutcomeCode.GUARD_REJECTED);
+    }
+
+    @Test
+    void theExplanationIsComparedByValue() {
+        Entity entity = new Entity("e", State.NEW);
+        OutcomeAssert.assertThat(rejected(entity, Optional.empty())).hasExplanation("not ready");
+        OutcomeAssert.assertThat(failed(entity, Optional.empty())).hasExplanation("boom");
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(rejected(entity, Optional.empty())).hasExplanation("later")),
+                "outcome", "explanation", Optional.of("later"), Optional.of("not ready"));
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(applied(entity)).hasExplanation("done")),
+                "outcome", "explanation", Optional.of("done"), Optional.empty());
+    }
+
+    @Test
+    void anOutcomeWithoutAuthorTextHasNoExplanation() {
+        Entity entity = new Entity("e", State.NEW);
+        OutcomeAssert.assertThat(applied(entity)).hasNoExplanation();
+        OutcomeAssert.assertThat(ignored(entity)).hasNoExplanation();
+        OutcomeAssert.assertThat(failed(entity, Optional.of(new IOException("down")))).hasNoExplanation();
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(failed(entity, Optional.empty())).hasNoExplanation()),
+                "outcome", "explanation", Optional.empty(), Optional.of("boom"));
+    }
+
+    /** Any outcome opens its records and reactions; one that committed nothing opens empty lists. */
+    @Test
+    void recordsAndReactionsOpenFromAnyOutcome() {
+        Entity entity = new Entity("e", State.NEW);
+        OutcomeAssert.assertThat(rejected(entity, Optional.empty())).records().isEmpty();
+        OutcomeAssert.assertThat(ignored(entity)).reactions().isEmpty();
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(rejected(entity, Optional.empty())).records().hasSize(1)),
+                "outcome.records", "size", 1, 0);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(ignored(entity)).reactions().hasSize(1)),
+                "outcome.reactions", "size", 1, 0);
+    }
+
+    /** An outcome read through a reaction keeps the reaction's place in the failures of the shared expectations. */
+    @Test
+    void anOutcomeReadThroughAReactionKeepsItsPlaceInTheNewExpectations() {
+        Entity entity = new Entity("e", State.NEW);
+        Reaction done = new Reaction.Done(TestDomain.KEY, entity, rejected(entity, Optional.of("first")));
+        OutcomeAssert<Entity, State, Id> view = ReactionsAssert.assertThat(List.of(done))
+                .forEntity(TestDomain.KEY, entity).single().isDone().outcome();
+        view.hasStatus(OutcomeStatus.REJECTED).hasCode(OutcomeCode.GUARD_REJECTED).hasExplanation("not ready");
+        assertFailure(assertThrows(GraphAssertionError.class, () -> view.hasCode(OutcomeCode.NO_TRANSITION)),
+                "reactions for " + TestDomain.KEY + "[0].outcome", "code", OutcomeCode.NO_TRANSITION,
+                OutcomeCode.GUARD_REJECTED);
     }
 
     // --- applied -----------------------------------------------------------------------------------
@@ -419,6 +522,54 @@ class OutcomeAssertionsTest {
     // --- null subjects: one case per expectation whose subject can be absent -----------------------
 
     @Test
+    void nullSubjectFailsHasStatus() {
+        Outcome<Entity, State, Id> none = null;
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(none).hasStatus(OutcomeStatus.APPLIED)),
+                "outcome", "status", OutcomeStatus.APPLIED, null);
+    }
+
+    @Test
+    void nullSubjectFailsHasCode() {
+        Outcome<Entity, State, Id> none = null;
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(none).hasCode(OutcomeCode.APPLIED)),
+                "outcome", "code", OutcomeCode.APPLIED, null);
+    }
+
+    @Test
+    void nullSubjectFailsHasExplanation() {
+        Outcome<Entity, State, Id> none = null;
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(none).hasExplanation("why")),
+                "outcome", "explanation", Optional.of("why"), null);
+    }
+
+    @Test
+    void nullSubjectFailsHasNoExplanation() {
+        Outcome<Entity, State, Id> none = null;
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(none).hasNoExplanation()),
+                "outcome", "explanation", Optional.empty(), null);
+    }
+
+    @Test
+    void nullSubjectFailsRecords() {
+        Outcome<Entity, State, Id> none = null;
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(none).records().hasSize(0)),
+                "outcome.records", "size", 0, null);
+    }
+
+    @Test
+    void nullSubjectFailsReactions() {
+        Outcome<Entity, State, Id> none = null;
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> OutcomeAssert.assertThat(none).reactions().hasSize(0)),
+                "outcome.reactions", "size", 0, null);
+    }
+
+    @Test
     void nullSubjectFailsFrom() {
         Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class,
@@ -464,28 +615,28 @@ class OutcomeAssertionsTest {
     void nullSubjectFailsIsApplied() {
         Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class, () -> OutcomeAssert.assertThat(none).isApplied()),
-                "outcome", "kind", "Applied", null);
+                "outcome", "status", OutcomeStatus.APPLIED, null);
     }
 
     @Test
     void nullSubjectFailsIsFailed() {
         Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class, () -> OutcomeAssert.assertThat(none).isFailed()),
-                "outcome", "kind", "Failed", null);
+                "outcome", "status", OutcomeStatus.FAILED, null);
     }
 
     @Test
     void nullSubjectFailsIsRejected() {
         Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class, () -> OutcomeAssert.assertThat(none).isRejected()),
-                "outcome", "kind", "Rejected", null);
+                "outcome", "status", OutcomeStatus.REJECTED, null);
     }
 
     @Test
     void nullSubjectFailsIsIgnored() {
         Outcome<Entity, State, Id> none = null;
         assertFailure(assertThrows(GraphAssertionError.class, () -> OutcomeAssert.assertThat(none).isIgnored()),
-                "outcome", "kind", "Ignored", null);
+                "outcome", "status", OutcomeStatus.IGNORED, null);
     }
 
     @Test

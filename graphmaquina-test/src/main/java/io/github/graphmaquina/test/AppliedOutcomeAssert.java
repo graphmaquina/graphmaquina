@@ -34,17 +34,4 @@ public final class AppliedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
         Checks.equal(context, "moved to", expected, applied.to());
         return this;
     }
-
-    /** The hops this transaction committed, which may belong to several machines when it cascaded. */
-    public TransitionRecordsAssert records() {
-        return new TransitionRecordsAssert(context + ".records", applied.records());
-    }
-
-    /**
-     * The watch re-evaluations this commit triggered; one that threw an exception is reported here as an
-     * aborted reaction instead of propagating, while an {@link Error} is not caught.
-     */
-    public ReactionsAssert reactions() {
-        return new ReactionsAssert(context + ".reactions", applied.reactions());
-    }
 }

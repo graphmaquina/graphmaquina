@@ -813,7 +813,10 @@ and closes their default executors together.
 package com.example.tickets;
 
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeCode;
+import io.github.graphmaquina.api.OutcomeStatus;
 import java.util.List;
+import java.util.Optional;
 
 public final class App {
     private App() { }
@@ -824,33 +827,37 @@ public final class App {
             Tickets tickets = machines.tickets();
 
             Ticket accepted = new Ticket("T-1", "Document the workflow", true);
-            require(tickets.submit(accepted) instanceof Outcome.Applied<?, ?, ?>, "submit should apply");
-            require(tickets.approve(accepted) instanceof Outcome.Applied<?, ?, ?>, "approve should apply");
+            require(tickets.submit(accepted).status() == OutcomeStatus.APPLIED, "submit should apply");
+            require(tickets.approve(accepted).status() == OutcomeStatus.APPLIED, "approve should apply");
             require(accepted.getState() == TicketState.DONE, "an approved ticket should be DONE");
 
             Ticket untitled = new Ticket("T-2", "", true);
-            require(tickets.submit(untitled) instanceof Outcome.Rejected<?, ?, ?>, "blank title should reject");
+            require(tickets.submit(untitled).code() == OutcomeCode.GUARD_REJECTED, "blank title should reject");
             require(untitled.getState() == TicketState.OPEN, "a rejected ticket should remain OPEN");
 
             Ticket refused = new Ticket("T-3", "Await the board", false);
-            require(tickets.submit(refused) instanceof Outcome.Failed<?, ?, ?>, "a decline should be handled");
+            Outcome<Ticket, TicketState, TicketTransition> declined = tickets.submit(refused);
+            require(declined.code() == OutcomeCode.FAILURE_ROUTED
+                    && declined.explanation().equals(Optional.of("the review board declined the ticket")),
+                    "a decline should be handled");
             require(refused.getState() == TicketState.FAILED, "the failure route should commit FAILED");
 
             Ticket fresh = new Ticket("T-4", "Not submitted yet", true);
-            require(tickets.approve(fresh) instanceof Outcome.Rejected<?, ?, ?> rejected
-                    && rejected.reason().equals("approval requires review"),
+            Outcome<Ticket, TicketState, TicketTransition> refusal = tickets.approve(fresh);
+            require(refusal.code() == OutcomeCode.NO_TRANSITION
+                    && refusal.explanation().equals(Optional.of("approval requires review")),
                     "APPROVE leaves no edge from OPEN");
 
             Ticket revised = new Ticket("T-5", "Revise the wording", true);
             tickets.submit(revised);
-            require(tickets.retouch(revised) instanceof Outcome.Applied<?, ?, ?>, "a self-loop should apply");
+            require(tickets.retouch(revised).status() == OutcomeStatus.APPLIED, "a self-loop should apply");
             require(revised.getState() == TicketState.REVIEW, "a self-loop ends where it started");
-            require(tickets.reject(revised) instanceof Outcome.Applied<?, ?, ?>, "reject should apply");
+            require(tickets.reject(revised).status() == OutcomeStatus.APPLIED, "reject should apply");
             require(revised.getState() == TicketState.OPEN, "reject returns the ticket to OPEN");
 
             Ticket automatic = new Ticket("T-6", "Trivial typo fix", true);
             tickets.submit(automatic);
-            require(tickets.autoApprove(automatic) instanceof Outcome.Applied<?, ?, ?>, "autoApprove should apply");
+            require(tickets.autoApprove(automatic).status() == OutcomeStatus.APPLIED, "autoApprove should apply");
             require(actions.decisions().equals(List.of(
                     "approve T-1", "retouch T-5", "autoApprove T-6")),
                     "each operation runs its own action: " + actions.decisions());
@@ -948,7 +955,7 @@ observable result.
 | Situation | What the engine does | Outcome |
 | --- | --- | --- |
 | No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION` |
-| An explicit self-loop `A --T--> A` is requested | The edge runs like any other: guards, action, commit, hook. | `Applied`, with `current() == A` |
+| An explicit self-loop `A --T--> A` is requested | The edge runs like any other: guards, action, commit, hook. | `Applied`, with `recordedState() == A` |
 | `reevaluate(entity)` finds no watch, or no rule that holds | Nothing runs. | `Ignored`, with `IgnoreReason.NO_WATCH` or `NO_RULE_MATCHED` |
 
 A self-loop is an ordinary edge that ends where it started. It needs `allowsCycle` on that state, it may be
@@ -1295,33 +1302,101 @@ The full action implementation is in
 
 ![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception.](images/operation-decisions.svg)
 
-`Outcome<E, S, T>` is a sealed interface. Use its variants to distinguish business results:
+`Outcome<E, S, T>` is a sealed interface with four variants. Every outcome classifies itself, so a caller that
+only needs to know what happened and why reads it without narrowing:
 
-| Variant | State changes? | Useful fields |
-| --- | --- | --- |
-| `Applied` | Yes, the resolved edge committed | `transition`, `from`, `to`, `records`, `reactions` |
-| `Rejected` | No | `transition`, `reason`, `RejectionKind kind`, optional rejecting `guard`; no destination |
-| `Failed` | Yes, the handled failure route committed | `transition`, requested `to`, `failureTransition`, `movedTo`, `reason`, optional `cause`, `records`, `reactions` |
-| `Ignored` | No | `from` and an `IgnoreReason`; reevaluation only, and no requested identifier |
+| Variant | `status()` | `code()` | `explanation()` | State written? |
+| --- | --- | --- | --- | --- |
+| `Applied` | `APPLIED` | `APPLIED` | empty | Yes, the resolved edge committed |
+| `Rejected` | `REJECTED` | `NO_TRANSITION`, or `GUARD_REJECTED` | the policy's reason, or the guard's | No |
+| `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` routed an exception | Yes, the failure route committed |
+| `Ignored` | `IGNORED` | `NO_WATCH`, or `NO_RULE_MATCHED` | empty | No |
 
-Every outcome has `entity()`, `from()`, `current()` and `requestedTransition()`. `current()` is `to` for
-`Applied`, `movedTo` for `Failed` and `from` for the other two. `requestedTransition()` is empty only for
-`Ignored`, which selected no edge at all. Outcomes describe that call's result; later watch reactions or
-subsequent operations can move an entity again. Read the entity when you need its live state.
+A cascade returns `Applied` or `Failed` to the action that called `cascade(...)`; a rejection inside it aborts the
+root instead. Both are provisional there: their hops are written only if the root commits.
+
+Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransition()`, `records()` and
+`reactions()`. `recordedState()` is `to` for `Applied`, `movedTo` for `Failed` and `from` for the other two.
+`requestedTransition()` is empty only for `Ignored`, which selected no edge at all. [Records, journals and
+reactions](#records-journals-and-reactions) describes what `records()` and `reactions()` return.
+
+Read the classification with its limits in mind:
+
+- `recordedState()` is what the call recorded, not a read of the entity. An after-commit hook, a watch reaction
+  or a later call can move the entity again; read the entity when you need its live state.
+- `FAILED` does not mean that nothing happened: the failure route committed and the entity is at `movedTo`.
+- `explanation()` holds the reasons the graph declares: a policy's reason, a guard's, or the reason an action
+  returned with `ActionOutcome.failed(...)`. The only text the library writes there is the fixed reason of a
+  terminal state that declares no policy, such as `terminal state DONE accepts no transitions`. When `failsOn`
+  routes an exception, the failure's reason is composed from that exception and may carry internal details; it
+  stays in `Failed.reason()` and `Failed.cause()`.
+- A commit here is GraphMaquina writing states through the setters. A JPA or other transaction around the call
+  commits later and can still fail.
+- The constant names of `OutcomeStatus` and `OutcomeCode` are stable identifiers, safe to persist or send.
 
 This method can be added to the quickstart's `App`:
 
 ```java
 static String describe(Outcome<Ticket, TicketState, TicketTransition> outcome) {
+    return outcome.code() + " at " + outcome.recordedState()
+            + outcome.explanation().map((String text) -> ": " + text).orElse("");
+}
+```
+
+### Map an outcome to a response
+
+A web layer copies the classification into a type it owns, so its contract does not change when the library
+does. The HTTP mapping below is one application's policy, not the library's; another application may just as well
+answer `409` for every rejection and every handled failure:
+
+```java
+record TransitionResponse(String id, OutcomeStatus status, OutcomeCode code, TicketState from,
+                          TicketState state, TicketTransition transition, String explanation) {
+
+    static TransitionResponse of(String id, Outcome<Ticket, TicketState, TicketTransition> outcome) {
+        return new TransitionResponse(id, outcome.status(), outcome.code(), outcome.from(),
+                outcome.recordedState(), outcome.requestedTransition().orElse(null),
+                outcome.explanation().orElse(null));
+    }
+}
+
+static int httpStatus(OutcomeCode code) {
+    return switch (code) {
+        case APPLIED, FAILURE_ROUTED, NO_WATCH, NO_RULE_MATCHED -> 200;
+        case NO_TRANSITION -> 409;
+        case GUARD_REJECTED -> 422;
+    };
+}
+```
+
+The `switch` has no `default`: it is exhaustive, so a code added by a future release fails the build instead of
+falling through. Do not serialize the `Outcome` itself: it holds the entity, a `Throwable` and reactions with
+their own entities.
+
+### Read what only one variant carries
+
+The sealed variants remain available when a caller needs what only one of them carries: the rejecting guard,
+the recovery identifier, the requested destination of a failure or its cause. `asApplied()`, `asRejected()`,
+`asFailed()` and `asIgnored()` return the outcome as that variant, with the outcome's type arguments, or empty:
+
+```java
+Optional<String> guard = outcome.asRejected().flatMap(Outcome.Rejected::guard);
+Optional<TicketTransition> recovery = outcome.asFailed().map(Outcome.Failed::failureTransition);
+```
+
+A `switch` over the variants reads all of them at once:
+
+```java
+static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
     return switch (outcome) {
         case Outcome.Applied<Ticket, TicketState, TicketTransition> applied ->
                 applied.transition() + " moved to " + applied.to();
         case Outcome.Rejected<Ticket, TicketState, TicketTransition> rejected ->
-                "Refused " + rejected.transition() + " (" + rejected.kind() + "): " + rejected.reason();
+                "Refused " + rejected.transition() + " by " + rejected.guard().orElse("the state's policy");
         case Outcome.Failed<Ticket, TicketState, TicketTransition> failed ->
                 failed.failureTransition() + " moved to " + failed.movedTo() + ": " + failed.reason();
         case Outcome.Ignored<Ticket, TicketState, TicketTransition> ignored ->
-                "Unchanged at " + ignored.current() + " (" + ignored.reason() + ")";
+                "Unchanged at " + ignored.recordedState() + " (" + ignored.reason() + ")";
     };
 }
 ```
@@ -1335,8 +1410,9 @@ says in its message whether the call wrote state.
 - `TransitionRecord` describes a planned-and-committed hop: machine key, entity, source, transition
   identifier, destination, kind, action label and cascade depth. Two actions that share a name and endpoints
   stay distinguishable because the identifier is part of the record.
-- Root `Applied` and `Failed` outcomes include the transaction's records. A nested `cascade` result is
-  provisional and has no independent root commit or reaction list.
+- `records()` and `reactions()` answer on every outcome. A root `Applied` or `Failed` returns the
+  transaction's records and the reactions of its commit; `Rejected`, `Ignored` and a nested `cascade` result
+  return empty lists, the last because it is provisional and has no independent root commit or reaction list.
 - An abort journal uses `ActionRecord` and `ActionStatus` (`RUNNING`, `OK`, `FAILED`, `THREW`) to report actions
   that actually ran. A journal is execution evidence, not an undo log for external side effects.
 - A watch produces `Reaction.Done`, carrying its own outcome, or `Reaction.Aborted`, carrying its exception.
@@ -1513,6 +1589,7 @@ public interface AsyncTicketMachines extends Machines {
 package com.example.tickets;
 
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeStatus;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
@@ -1541,7 +1618,7 @@ public final class AsyncApp {
 
             Outcome<Ticket, TicketState, TicketTransition> submitted =
                     tickets.async(() -> tickets.submit(ticket)).join();
-            if (!(submitted instanceof Outcome.Applied<?, ?, ?>)) {
+            if (submitted.status() != OutcomeStatus.APPLIED) {
                 throw new IllegalStateException("submit was not applied: " + submitted);
             }
 
@@ -1553,7 +1630,7 @@ public final class AsyncApp {
             approval.complete(true);
 
             Outcome<Ticket, TicketState, TicketTransition> approved = pending.join();
-            if (!(approved instanceof Outcome.Applied<?, ?, ?>)
+            if (approved.status() != OutcomeStatus.APPLIED
                     || ticket.getState() != TicketState.DONE) {
                 throw new IllegalStateException("approval was not applied: " + approved);
             }
@@ -1598,20 +1675,18 @@ With the `tickets` and `ticket` from the example, this fragment observes complet
 CompletableFuture<Outcome<Ticket, TicketState, TicketTransition>> pending =
         tickets.async(() -> tickets.approve(ticket));
 
-CompletableFuture<Void> observed = pending.thenAccept(outcome -> {
-    switch (outcome) {
-        case Outcome.Applied<Ticket, TicketState, TicketTransition> applied ->
-                System.out.println("Committed: " + applied.transition() + " -> " + applied.to());
-        case Outcome.Failed<Ticket, TicketState, TicketTransition> failed ->
-                System.out.println("Handled decline: " + failed.reason());
-        case Outcome.Rejected<Ticket, TicketState, TicketTransition> rejected ->
-                System.out.println("Not allowed: " + rejected.reason());
-        case Outcome.Ignored<Ticket, TicketState, TicketTransition> ignored ->
-                System.out.println("Unchanged: " + ignored.current());
+CompletableFuture<Void> observed = pending.thenAccept((Outcome<Ticket, TicketState, TicketTransition> outcome) -> {
+    switch (outcome.status()) {
+        case APPLIED -> System.out.println("Committed: " + outcome.requestedTransition().orElseThrow()
+                + " -> " + outcome.recordedState());
+        case FAILED -> System.out.println("Handled decline at " + outcome.recordedState()
+                + outcome.explanation().map((String text) -> ": " + text).orElse(""));
+        case REJECTED -> System.out.println("Not allowed: " + outcome.explanation().orElseThrow());
+        case IGNORED -> System.out.println("Unchanged: " + outcome.recordedState());
     }
 });
 
-observed.whenComplete((unused, error) -> {
+observed.whenComplete((Void unused, Throwable error) -> {
     if (error != null) {
         System.err.println("Operation or observer failed: " + error);
     }
@@ -1752,7 +1827,7 @@ try (ExecutorService operations = Executors.newVirtualThreadPerTaskExecutor();
              .build()) {
     Outcome<Ticket, TicketState, TicketTransition> submitted = machines.tickets()
             .async(() -> machines.tickets().submit(ticket)).join();
-    System.out.println(submitted.current());
+    System.out.println(submitted.recordedState());
 }
 ```
 
@@ -2102,9 +2177,8 @@ A listener receives each completed outcome, including ignored and rejected opera
 
 ```java
 TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())
-        .listener((key, outcome) -> System.out.println(
-                key.entity().getSimpleName() + ": " + outcome.getClass().getSimpleName()
-                        + " -> " + outcome.current()))
+        .listener((MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> System.out.println(
+                key.entity().getSimpleName() + ": " + outcome.code() + " -> " + outcome.recordedState()))
         .build();
 ```
 

@@ -1,6 +1,7 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.test.internal.Checks;
 
 /**
@@ -41,19 +42,23 @@ public final class OutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     public AppliedOutcomeAssert<E, S, T> isApplied() {
-        return new AppliedOutcomeAssert<>(narrowed("applied"), (Outcome.Applied<E, S, T>) narrow("Applied"));
+        Outcome.Applied<E, S, T> applied = narrow(OutcomeStatus.APPLIED).asApplied().orElseThrow();
+        return new AppliedOutcomeAssert<>(narrowed("applied"), applied);
     }
 
     public FailedOutcomeAssert<E, S, T> isFailed() {
-        return new FailedOutcomeAssert<>(narrowed("failed"), (Outcome.Failed<E, S, T>) narrow("Failed"));
+        Outcome.Failed<E, S, T> failed = narrow(OutcomeStatus.FAILED).asFailed().orElseThrow();
+        return new FailedOutcomeAssert<>(narrowed("failed"), failed);
     }
 
     public RejectedOutcomeAssert<E, S, T> isRejected() {
-        return new RejectedOutcomeAssert<>(narrowed("rejected"), (Outcome.Rejected<E, S, T>) narrow("Rejected"));
+        Outcome.Rejected<E, S, T> rejected = narrow(OutcomeStatus.REJECTED).asRejected().orElseThrow();
+        return new RejectedOutcomeAssert<>(narrowed("rejected"), rejected);
     }
 
     public IgnoredOutcomeAssert<E, S, T> isIgnored() {
-        return new IgnoredOutcomeAssert<>(narrowed("ignored"), (Outcome.Ignored<E, S, T>) narrow("Ignored"));
+        Outcome.Ignored<E, S, T> ignored = narrow(OutcomeStatus.IGNORED).asIgnored().orElseThrow();
+        return new IgnoredOutcomeAssert<>(narrowed("ignored"), ignored);
     }
 
     /** A subject handed in directly is named by its variant alone; one from another view keeps that view's name. */
@@ -61,9 +66,10 @@ public final class OutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
         return ROOT.equals(context) ? variant + " outcome" : context + " (" + variant + ")";
     }
 
-    private Outcome<E, S, T> narrow(String kind) {
-        Outcome<E, S, T> outcome = Checks.subject(context, "kind", kind, actual);
-        Checks.equal(context, "kind", kind, outcome.getClass().getSimpleName());
+    /** The subject, once it is known to report {@code status}; the narrowing that follows cannot come back empty. */
+    private Outcome<E, S, T> narrow(OutcomeStatus status) {
+        Outcome<E, S, T> outcome = Checks.subject(context, "status", status, actual);
+        Checks.equal(context, "status", status, outcome.status());
         return outcome;
     }
 }

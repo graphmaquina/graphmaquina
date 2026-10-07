@@ -84,7 +84,7 @@ class SetGenerationTest {
         Object builder = companion.getMethod("builder", Duration.class, docActions).invoke(null, Duration.ofSeconds(5), actions);
         List<String> seen = new ArrayList<>();
         TransitionListener listener = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) ->
-                seen.add(key.entity().getSimpleName() + ":" + outcome.getClass().getSimpleName());
+                seen.add(key.entity().getSimpleName() + ":" + outcome.status().name());
         builder.getClass().getMethod("listener", TransitionListener.class).invoke(builder, listener);
         Object library = builder.getClass().getMethod("build").invoke(builder);
         assertInstanceOf(Machines.class, library);
@@ -105,7 +105,7 @@ class SetGenerationTest {
             @SuppressWarnings("unchecked")
             List<String> calls = (List<String>) docActions.getField("calls").get(actions);
             assertEquals(List.of("publish", "notify:d1"), calls);
-            assertEquals(List.of("Doc:Applied", "Doc:Applied", "Page:Applied"), seen);
+            assertEquals(List.of("Doc:APPLIED", "Doc:APPLIED", "Page:APPLIED"), seen);
         } finally {
             ((Machines) library).close();
         }

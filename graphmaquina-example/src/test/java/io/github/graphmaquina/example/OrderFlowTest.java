@@ -1,12 +1,13 @@
 package io.github.graphmaquina.example;
 
+import static io.github.graphmaquina.api.OutcomeStatus.APPLIED;
+import static io.github.graphmaquina.api.OutcomeStatus.IGNORED;
 import static io.github.graphmaquina.test.GraphAssertions.assertThat;
 import static io.github.graphmaquina.test.GraphAssertions.captureFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionStatus;
-import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.example.item.Item;
 import io.github.graphmaquina.example.item.ItemActions;
 import io.github.graphmaquina.example.item.ItemStatus;
@@ -32,7 +33,8 @@ class OrderFlowTest {
     final FakeGateway gateway = new FakeGateway();
     final FakeCarrier carrier = new FakeCarrier();
     final TransitionRecorder recorder = TransitionRecorder.create();
-    final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
+    final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier),
+                    new ItemActions())
             .listener(recorder)
             .build();
     final Orders orders = shop.orders();
@@ -72,9 +74,7 @@ class OrderFlowTest {
                 .hasKeysExactly(OrdersRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
                         ItemsRuntime.KEY, OrdersRuntime.KEY, ItemsRuntime.KEY, OrdersRuntime.KEY,
                         ItemsRuntime.KEY)
-                .hasOutcomeKindsExactly(Outcome.Applied.class, Outcome.Ignored.class, Outcome.Applied.class,
-                        Outcome.Ignored.class, Outcome.Applied.class, Outcome.Ignored.class,
-                        Outcome.Applied.class, Outcome.Applied.class, Outcome.Applied.class);
+                .hasStatusesExactly(APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, IGNORED, APPLIED, APPLIED, APPLIED);
     }
 
     @Test

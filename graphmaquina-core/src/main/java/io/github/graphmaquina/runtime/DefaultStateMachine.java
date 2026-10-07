@@ -7,6 +7,7 @@ import io.github.graphmaquina.api.HookRef;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
@@ -229,8 +230,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         try {
             listener.get().onOutcome(key(), outcome);
         } catch (Exception e) {
-            boolean written = outcome instanceof Outcome.Applied<E, S, T> || outcome instanceof Outcome.Failed<E, S, T>;
-            throw new AfterCommitException(key(), outcome.entity(), outcome.from(), outcome.current(), "listener",
+            boolean written = outcome.status() == OutcomeStatus.APPLIED || outcome.status() == OutcomeStatus.FAILED;
+            throw new AfterCommitException(key(), outcome.entity(), outcome.from(), outcome.recordedState(), "listener",
                     written, e);
         }
         return outcome;
