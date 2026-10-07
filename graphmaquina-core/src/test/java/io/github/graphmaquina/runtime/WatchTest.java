@@ -151,7 +151,7 @@ class WatchTest {
                 .build();
     }
 
-    /** A reaction as {@code Done <outcome>} or {@code Aborted <cause>}, by simple names. */
+    /** A reaction as {@code Done <outcome's status>} or {@code Aborted <cause's simple name>}. */
     private static String describe(Reaction reaction) {
         return switch (reaction) {
             case Reaction.Done done -> "Done " + done.outcome().status().name();

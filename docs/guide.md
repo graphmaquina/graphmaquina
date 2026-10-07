@@ -1317,9 +1317,8 @@ provisional: their hops are written only if the root commits.
 
 Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransition()`, `records()` and
 `reactions()`. `recordedState()` is `to` for `Applied`, `movedTo` for `Failed` and `from` for the other two.
-`requestedTransition()` is empty only for `Ignored`, which selected no edge at all.
-[Records, journals and reactions](#records-journals-and-reactions) describes what `records()` and `reactions()`
-return.
+`requestedTransition()` is empty only for `Ignored`, which selected no edge at all. [Records, journals and
+reactions](#records-journals-and-reactions) describes what `records()` and `reactions()` return.
 
 Read the classification with its limits in mind:
 
