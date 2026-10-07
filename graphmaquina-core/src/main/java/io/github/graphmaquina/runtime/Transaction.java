@@ -261,10 +261,10 @@ final class Transaction {
 
     /**
      * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. Whatever the action
-     * throws, or completes its stage with, checked exceptions included, which Kotlin or {@code @SneakyThrows} code can
-     * throw without declaring them, and library exceptions too, becomes an ActionFailure that its caller classifies. An
-     * Error is never routed: thrown as itself, it propagates; wrapped in CompletionException or ExecutionException, it
-     * is unwrapped and aborts.
+     * throws, an Error aside, or completes its stage with, checked exceptions included, which Kotlin or
+     * {@code @SneakyThrows} code can throw without declaring them, and library exceptions too, becomes an ActionFailure
+     * that its caller classifies. An Error is never routed: thrown as itself, it propagates; wrapped in
+     * CompletionException or ExecutionException, it is unwrapped and aborts.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -273,7 +273,9 @@ final class Transaction {
             case ActionRef.Sync<E, S, T> sync -> {
                 try {
                     yield sync.action().process(ctx);
-                } catch (Exception e) {
+                } catch (Error fatal) {
+                    throw fatal;
+                } catch (Throwable e) {
                     throw new ActionFailure(e);
                 }
             }
@@ -282,7 +284,9 @@ final class Transaction {
                 CompletionStage<ActionOutcome> stage;
                 try {
                     stage = async.action().process(ctx);
-                } catch (Exception e) {
+                } catch (Error fatal) {
+                    throw fatal;
+                } catch (Throwable e) {
                     throw new ActionFailure(e);
                 }
                 if (stage == null) {
@@ -318,7 +322,9 @@ final class Transaction {
             case GuardRef.Sync<E, S, T> sync -> {
                 try {
                     yield sync.guard().test(ctx);
-                } catch (Exception e) {
+                } catch (Error fatal) {
+                    throw fatal;
+                } catch (Throwable e) {
                     throw guardFailure(machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
                 }
             }
@@ -326,7 +332,9 @@ final class Transaction {
                 CompletionStage<GuardResult> stage;
                 try {
                     stage = async.guard().test(ctx);
-                } catch (Exception e) {
+                } catch (Error fatal) {
+                    throw fatal;
+                } catch (Throwable e) {
                     throw guardFailure(machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
                 }
                 if (stage == null) {
