@@ -524,6 +524,43 @@ class FailureAssertionsTest {
     }
 
     @Test
+    void everyNarrowedViewOfACallFailureReportsAMismatchUnderItsOwnContext() {
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(new TransitionAbortedException(CALL, CallPhase.ACTION,
+                        details(), "no")).isAbort().hasPhase(CallPhase.GUARD)),
+                "abort", "phase", CallPhase.GUARD, CallPhase.ACTION);
+        MachineCall other = new MachineCall(TestDomain.KEY, new Entity("e", State.NEW), Optional.of(Id.PREPARE),
+                false);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(new CascadeException(CALL, details(),
+                        List.of(elementAbort(new Other("a"))))).isCascadeAbort().hasCallSameAs(other)),
+                "cascade abort", "call", other, CALL);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(new CommitFailedException(CALL, List.of(), List.of(),
+                        new Other("f"), List.of(), new IllegalStateException("a setter threw")))
+                        .isCommitFailure().hasCallSameAs(other)),
+                "commit failure", "call", other, CALL);
+        assertFailure(assertThrows(GraphAssertionError.class,
+                () -> TransitionFailureAssert.assertThat(afterCommit(TestDomain.KEY, new Entity("e", State.READY),
+                        State.NEW, Id.PREPARE, State.READY, "audit", new IllegalStateException("audit down")))
+                        .isAfterCommit().hasStatesWritten(StatesWritten.NONE)),
+                "after-commit failure", "states written", StatesWritten.NONE, StatesWritten.ALL);
+        CallFailureAssert callView = TransitionFailureAssert.assertThat(
+                new CommitFailedException(CALL, List.of(), List.of(), "nothing written")).isCallFailure();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> callView.journal().hasSize(1)),
+                "call failure.journal", "size", 1, 0);
+        CommitFailureAssert commitView = TransitionFailureAssert.assertThat(
+                new CommitFailedException(CALL, List.of(), List.of(), "nothing written")).isCommitFailure();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> commitView.journal().hasSize(1)),
+                "commit failure.journal", "size", 1, 0);
+        AfterCommitAssert afterView = TransitionFailureAssert.assertThat(
+                afterCommit(TestDomain.KEY, new Entity("e", State.READY), State.NEW, Id.PREPARE, State.READY,
+                        "audit", new IllegalStateException("audit down"))).isAfterCommit();
+        assertFailure(assertThrows(GraphAssertionError.class, () -> afterView.journal().hasSize(1)),
+                "after-commit failure.journal", "size", 1, 0);
+    }
+
+    @Test
     void aThrowableThatIsNotACallFailureIsNotReadAsOne() {
         IllegalStateException plain = new IllegalStateException("not a call");
         assertFailure(assertThrows(GraphAssertionError.class,

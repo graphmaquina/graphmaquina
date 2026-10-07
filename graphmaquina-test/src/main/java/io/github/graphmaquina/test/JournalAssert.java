@@ -10,9 +10,10 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Chainable assertion over an abort journal: the actions that actually ran, in the order they ran, each with
- * the status the engine left on it. The journal is not the list of committed records — an aborted transaction
- * commits nothing and still journals everything it started — so the two views answer different questions.
+ * Chainable assertion over the journal of a failed call: the actions that actually ran, in the order they ran,
+ * each with the status the engine left on it. The journal is not the list of committed records: an abort
+ * commits nothing and still journals everything it started, and a call that failed during or after its commit
+ * journals the actions whose effects happened whatever was written. So the two views answer different questions.
  * {@link ActionStatus#THREW} is reported as the engine wrote it and is never translated: the engine also marks
  * an action THREW when it was still in flight while an abort unwound, not only when the action itself threw.
  * The list is copied when the view is built, so later edits to the caller's collection are not seen. A null

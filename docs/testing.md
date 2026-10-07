@@ -282,11 +282,14 @@ An aborted transition throws rather than returning an outcome, so the subject is
 assertThat(captureFailure(() -> orders.cancel(order))).isCascadeAbort()
         .hasErrorCount(1).hasPhase(CallPhase.ACTION).hasStatesWritten(StatesWritten.NONE)
         .journal().hasActionsExactly("cancel").hasStatusesExactly(ActionStatus.THREW);
+assertThat(order, Order::status).isIn(OrderStatus.NEW);
+assertThat(packed, Item::status).isIn(ItemStatus.PACKED);
+assertThat(pending, Item::status).isIn(ItemStatus.PENDING);
 ```
 
-`isCallFailure()` reads any failure of a call through what every kind shares, and the narrowed views offer the same
-expectations: `hasPhase(...)`, `hasStatesWritten(...)`, `hasCallSameAs(...)`, which compares by reference with the
-`MachineCall` an observer received, and `journal()`.
+`isCallFailure()` reads any failure of a call through what every kind shares, and the four call-failure views offer
+the same expectations: `hasPhase(...)`, `hasStatesWritten(...)`, `hasCallSameAs(...)`, which compares by reference
+with the `MachineCall` an observer received, and `journal()`.
 
 ### The call recorder
 

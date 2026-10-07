@@ -14,8 +14,8 @@ import java.util.Objects;
  * of failure carries. Four narrowing methods keep the phases of a call apart: an abort discarded the unit of work and
  * nothing moved, a commit failure wrote none or part of the states, and an after-commit failure came from a hook with
  * nothing rolled back. {@link #isCallFailure()} reads any of them through what they share instead, and
- * {@link #isInvalidGraph()} narrows to the one failure that is not a call at all. A subject of the wrong kind — or no
- * subject at all — fails there, so a narrowed view always has one.
+ * {@link #isInvalidGraph()} narrows to a graph the DSL refused to build, which is not a call failure. A subject of
+ * the wrong kind — or no subject at all — fails there, so a narrowed view always has one.
  */
 public final class TransitionFailureAssert extends BaseFailureAssert<TransitionFailureAssert> {
 

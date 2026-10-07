@@ -456,9 +456,6 @@ Every generic of the library gains the third parameter: `GraphAssert<E, S, T>`, 
 `GraphSnapshot.capture`, `GraphSnapshot.parse`, `GraphSnapshot.serialize`, `GraphDiff` and the golden store keep
 their signatures and their file formats; inside a snapshot only the paths changed.
 
-- **`CallFailureAssert`**, reached through `isCallFailure()`, and every narrowed failure view expect a call failure's
-  `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` is available on all of them.
-
 ## Behaviour changes in this release
 
 Besides the contract above, this release changes behaviour that code written against an earlier one can
@@ -701,6 +698,8 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **`AfterCommitAssert` reads the hook and its hop.** `hasHookNamed(name)` replaces `hasStepNamed(name)`,
   `at(key, entity, from, transition, to)` compares the committed hop the failing hook ran for, its identifier
   included, and `records()` reads every hop the call committed.
+- **`CallFailureAssert`**, reached through `isCallFailure()`, and every narrowed view of a call failure expect a call
+  failure's `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` is available on all of them.
 - **`AbortAssert.atUnreadState(key, entity[, transition])`** is new: it locates an abort raised before the entity's
   state was read. `at`, `atUnresolved` and `atUnread` now compare `from` as an `Optional`, so a mismatch reports
   `Optional[...]` on both sides, or `Optional.empty` for an abort that read no state.
