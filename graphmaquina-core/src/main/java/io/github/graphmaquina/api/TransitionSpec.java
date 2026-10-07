@@ -22,8 +22,9 @@ import lombok.NonNull;
  * @param onFailure identifier of the recovery edge, resolved from {@code from}
  * @param failsOn exception types that turn an action's exception into a domain failure, routed like a failed outcome;
  *     the exception is unwrapped from CompletionException and ExecutionException first, and an Error or a
- *     CancellationException never matches, nor does a StateMachineException: one from another call aborts the call
- *     with it as cause, and a failure of the call itself ends it with the failure that poisoned it
+ *     CancellationException never matches, nor does a StateMachineException, because the DSL refuses every type that
+ *     could match one: one from another call aborts the call with it as cause, and a failure of the call itself
+ *     ends it as itself, or as the failure that poisoned the transaction
  * @param timeout longest wait for the asynchronous action's stage, counted from when the action returns it; it only
  *     shortens the root's deadline, and {@code Duration.ofNanos(Long.MAX_VALUE)} or more sets no limit of its own
  * @param afterCommit hook run once this edge is committed

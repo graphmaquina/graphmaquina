@@ -11,7 +11,7 @@ import java.util.Optional;
 /**
  * Phase 2 of a call failed, so its phase is COMMIT. Before its first write, phase 2 checks that every entity is still
  * in the state the call started from. One that is not was written while the call ran, by an action that called the
- * setter or by a concurrent writer of the same entity, typically another transition, and nothing is written:
+ * setter or by a concurrent writer of the same entity, and nothing is written:
  * {@link #statesWritten()} is NONE and every entity is {@link #pending()}, as when reading the states or grouping the
  * entities before the first setter throws, which this exception then carries as its cause. Afterwards, a setter that
  * throws an exception, checked ones included, stops phase 2 where it stood: {@link #statesWritten()} is PARTIAL,

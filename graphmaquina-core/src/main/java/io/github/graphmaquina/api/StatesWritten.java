@@ -6,7 +6,7 @@ package io.github.graphmaquina.api;
  */
 public enum StatesWritten {
 
-    /** No setter was called. */
+    /** None of the commit's setters was called. */
     NONE,
 
     /**

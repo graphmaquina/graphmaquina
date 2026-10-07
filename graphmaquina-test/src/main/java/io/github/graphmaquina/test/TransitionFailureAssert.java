@@ -61,14 +61,17 @@ public final class TransitionFailureAssert extends BaseFailureAssert<TransitionF
         return new AbortAssert("abort", narrow(TransitionAbortedException.class));
     }
 
+    /** The aggregate a COLLECT cascade raises, narrowed to the {@link CascadeException} it is. */
     public CascadeAbortAssert isCascadeAbort() {
         return new CascadeAbortAssert("cascade abort", narrow(CascadeException.class));
     }
 
+    /** A commit that stopped in phase COMMIT, narrowed to the {@link CommitFailedException} it is. */
     public CommitFailureAssert isCommitFailure() {
         return new CommitFailureAssert("commit failure", narrow(CommitFailedException.class));
     }
 
+    /** A hook that threw after the states were written, narrowed to the {@link AfterCommitException} it is. */
     public AfterCommitAssert isAfterCommit() {
         return new AfterCommitAssert("after-commit failure", narrow(AfterCommitException.class));
     }

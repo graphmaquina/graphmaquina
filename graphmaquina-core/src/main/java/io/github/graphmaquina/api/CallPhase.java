@@ -23,7 +23,10 @@ public enum CallPhase {
      */
     ACTION,
 
-    /** The check that every entity the call moves is still in the state it was read in, then the setters. */
+    /**
+     * Grouping the call's log by entity, the check that every entity the call moves is still in the state it was
+     * read in, then the setters.
+     */
     COMMIT,
 
     /** The after-commit hooks. The states are written. */

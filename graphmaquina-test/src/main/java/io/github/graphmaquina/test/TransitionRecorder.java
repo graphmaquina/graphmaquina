@@ -42,8 +42,9 @@ public final class TransitionRecorder implements MachineObserver {
     }
 
     /**
-     * The projection runs on the thread of the call that completed and must return a value; a null projection is
-     * rejected.
+     * The projection runs on the thread of the call that completed and must return a value. A null projector is
+     * refused here; a projection that returns null makes the recorder throw, which the registry logs and does not
+     * pass on, and that call is not recorded.
      */
     public static TransitionRecorder projecting(BiFunction<MachineKey<?, ?, ?>, Outcome<?, ?, ?>, ?> projector) {
         Objects.requireNonNull(projector, "projector");

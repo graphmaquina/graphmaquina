@@ -5,7 +5,8 @@ import java.util.Optional;
 import lombok.NonNull;
 
 /**
- * Domain-level result of a request. Technical failures are not modeled here: they throw. {@link #status()} and
+ * Domain-level result of a request. Technical failures are not modeled here: they throw, as a
+ * {@code CallFailedException} of the call or an Error. {@link #status()} and
  * {@link #code()} classify an outcome as a value and {@link #explanation()} carries the reason given for it, so
  * reading what happened needs no narrowing. {@code asApplied()}, {@code asRejected()}, {@code asFailed()} and
  * {@code asIgnored()} return the outcome as that variant, with the outcome's type arguments, or empty for the other

@@ -2279,7 +2279,8 @@ must serialize conflicting operations, or provide an appropriate database lockin
 The runtime does not roll back a setter that already ran if a subsequent setter throws.
 `CommitFailedException` reports the entities whose setter returned (`applied()`), the one whose setter threw
 (`failedEntity()`), which may or may not have been written, and those never tried (`pending()`); its
-`statesWritten()` is `PARTIAL`, or `NONE` when the pre-commit check refused the commit. Keep state setters simple
+`statesWritten()` is `PARTIAL`, or `NONE` when the commit stopped before its first setter: the pre-commit check
+refused it, or reading or grouping the states threw. Keep state setters simple
 and total for valid states; avoid remote calls, persistence flushes and unrelated business logic inside them.
 
 ### Stable identity
@@ -2805,7 +2806,7 @@ code runs.
 | `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
 | `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Thrown by a guard or an action, it arrives as the cause of that call's abort. |
-| `CommitFailedException` | Phase `COMMIT`: the pre-commit check failed (`NONE` written) or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
+| `CommitFailedException` | Phase `COMMIT`: the commit stopped before its first setter, because the pre-commit check failed or reading the states threw (`NONE` written), or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
 | `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()` and `records()` say what. |
 | `InvalidGraphException` | Programmatic DSL definition failed validation; inspect its problem list. |
 

@@ -13,6 +13,11 @@ import java.util.Optional;
  * made to the collection while the cascade runs, by an element's action for instance, changes neither which elements
  * run nor their order. Peer views and cascades work only on the thread that called {@code process()} and only until the
  * root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}.
+ * What the action throws, or completes its stage with, is its own failure: an exception of a type the edge's
+ * {@code failsOn} lists takes the failure route, any other Exception aborts the call with it as cause, and an Error
+ * thrown as itself propagates. A failure of this call that the action lets through is never routed: it ends the call
+ * as itself, or as the failure that poisoned the transaction. So does any exception, once a failed cascade poisoned
+ * it.
  */
 public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 

@@ -23,12 +23,14 @@ public abstract class BaseCallFailureAssert<SELF extends BaseCallFailureAssert<S
         this.failure = failure;
     }
 
+    /** The phase the failure reports, which is where the call was when it failed. */
     public SELF hasPhase(CallPhase expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.equal(context, "phase", expected, failure.phase());
         return self();
     }
 
+    /** How far the failure reports the call got in writing states through the setters. */
     public SELF hasStatesWritten(StatesWritten expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.equal(context, "states written", expected, failure.statesWritten());
