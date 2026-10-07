@@ -647,7 +647,7 @@ final class Transaction {
     /**
      * Poisons the transaction with a failure that left a cascade, and returns the failure of this call as it is, or
      * else the new abort. A failure of this call is itself the poison. Anything else, an engine exception that
-     * describes no call, an exception from a callback the engine does not wrap such as an identity function, a library
+     * describes no call, a throwable from a callback the engine does not wrap such as an identity function, a library
      * exception of another call or an Error, poisons through an abort of the caller's step that names the cascade and
      * carries it as cause; COLLECT never collects that abort. A transaction keeps its first poison.
      */

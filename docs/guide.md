@@ -1290,12 +1290,12 @@ passes for a failure of this one. A failure of the call itself, which a failed c
 exception: it ends the call with the failure that poisoned it. An `Error` is never routed either: thrown as itself it
 propagates unchanged, and one that completes a stage, or that one of those two classes carries, aborts.
 
-`failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine
-exception, or a `CancellationException` or one of its subtypes, which are never domain failures; nor
-`CompletionException` or `ExecutionException` themselves, which are unwrapped before matching whenever they
-carry a cause, so declare the type of their cause. All of these are `SG302`. Declare specific foreign exception
-types. Timeout, interruption and cancellation are not a substitute for a returned domain failure. `@Timeout` is
-valid only for asynchronous actions.
+`failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine exception, or
+a `CancellationException` or one of its subtypes, which are never domain failures; nor `CompletionException` or
+`ExecutionException` themselves, which are unwrapped before matching whenever they carry a cause, so declare the type of
+their cause. All of these are `SG302`. Declare specific foreign throwable types, usually exceptions. Timeout,
+interruption and cancellation are not a substitute for a returned domain failure. `@Timeout` is valid only for
+asynchronous actions.
 
 The full action implementation is in
 [OrderActions.java](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/order/OrderActions.java).
@@ -2024,7 +2024,7 @@ than an ordinary root-level `Rejected` result. A handled domain failure can sele
 Any failure that leaves a cascade poisons the unit of work. A failure of the call itself, such as an abort in the peer's
 step, a cycle or the depth limit, reaches your action as it is. Anything else reaches it as a
 `TransitionAbortedException` that names the cascade and carries the failure as its cause: an engine exception that
-describes no call, such as an unknown machine or an ambiguous identity, or an exception from a callback the engine does
+describes no call, such as an unknown machine or an ambiguous identity, or a throwable from a callback the engine does
 not wrap, such as an identity function. An `Error` poisons through such an abort too, but reaches your action as itself.
 Catching it in your action does not make the transaction safe to commit. When the action then returns, throws an
 throwable its `failsOn` lists, or lets a failure of the call through, the root throws the failure that poisoned it,
@@ -2130,7 +2130,7 @@ The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and
 evaluates the watch, before that root starts, and may not start a transition on their own thread: `execute` or
 `reevaluate` called from one of them throws `ReentrantTransitionException`; a call submitted through `async(...)` runs
 as a separate call on the executor's thread, unless that executor runs tasks inline, in which case the returned future
-fails with that exception. Inside a reevaluation, a refusal on its own thread ends the reevaluation in a
+fails with that exception as its cause. Inside a reevaluation, a refusal it lets through ends the reevaluation in a
 `TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as `Reaction.Aborted` and
 a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so its reaction carries the
 refusal itself.
@@ -2263,10 +2263,10 @@ An observer watches without taking part. A throwable that is not an `Error` is l
 `System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
 propagates. It cannot start a transition on its own thread either: an operation called from an observer throws
 `ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread as
-a call of its own, unless that executor runs tasks inline, in which case the returned future fails with that exception.
-When a failure must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a machine.
-Observers run on the thread of every call, so keep them thread-safe and quick. Add as many as you need: they are
-notified in the order they were added.
+a call of its own, unless that executor runs tasks inline, in which case the returned future fails with that exception
+as its cause. When a failure must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a
+machine. Observers run on the thread of every call, so keep them thread-safe and quick. Add as many as you need: they
+are notified in the order they were added.
 
 ## Concurrency, identity and persistence
 
@@ -2761,7 +2761,7 @@ code runs.
 | `SG204` | Unauthorised cycle: list an intentional cycle's state in `allowsCycle`. One witness is reported per cyclic strongly connected component, deterministically, rather than one message per elementary cycle. |
 | `SG205` | Unused cycle allowance: the named state belongs to no cycle. |
 | `SG301` | Invalid failure route: `onFailure` names this edge's own key, or no edge with that identifier leaves the same origin. |
-| `SG302` | Forbidden `failsOn` type: `Throwable`, `Exception`, `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, or exactly `CompletionException` or `ExecutionException`, which the runtime unwraps before matching whenever they carry a cause. Use a specific foreign exception, or the type of the wrapped cause. |
+| `SG302` | Forbidden `failsOn` type: `Throwable`, `Exception`, `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, or exactly `CompletionException` or `ExecutionException`, which the runtime unwraps before matching whenever they carry a cause. Use a specific foreign throwable type, usually an exception, or the type of the wrapped cause. |
 | `SG401` | A watch rule names an identifier with no edge from the watched state. |
 | `SG402` | A terminal state declares a watch. |
 | `SG403` | More than one watch on the same state. |

@@ -265,10 +265,10 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         for (Class<? extends Throwable> type : failsOn) {
             if (isForbiddenFailsOn(type)) {
                 problems.add("SG302", fromIndex, idIndex, where + ": failsOn does not allow " + type.getSimpleName()
-                        + "; only exceptions foreign to the library, and never Throwable, Exception, RuntimeException,"
-                        + " an Error or a CancellationException, which are never domain failures, nor"
-                        + " CompletionException or ExecutionException, which are unwrapped before matching:"
-                        + " declare the type of their cause");
+                        + "; only throwable types foreign to the library, and never Throwable, Exception,"
+                        + " RuntimeException, an Error or a CancellationException, which are never domain"
+                        + " failures, nor CompletionException or ExecutionException, which are unwrapped before"
+                        + " matching: declare the type of their cause");
                 valid = false;
             }
         }

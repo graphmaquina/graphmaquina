@@ -477,7 +477,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   can, now goes through `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch
   reaction, aborts the reevaluation that `Reaction.Aborted` reports; one an owner lookup throws arrives wrapped in
   `UndeclaredThrowableException`. It used to escape unchanged.
-- **A failed cascade always poisons.** An `Error`, or an exception from a callback the engine does not wrap, that leaves
+- **A failed cascade always poisons.** An `Error`, or a throwable from a callback the engine does not wrap, that leaves
   a cascade poisons the unit of work as an engine failure does, even when the action catches it, and a `failsOn` match
   after it no longer takes the failure route. `cascadeAll` refuses a null element before any element runs, and an
   unknown machine even over an empty collection; an unknown facade in a cascade poisons like an unknown key. What

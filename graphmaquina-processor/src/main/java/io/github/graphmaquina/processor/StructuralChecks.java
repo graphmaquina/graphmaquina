@@ -221,18 +221,19 @@ final class StructuralChecks {
     }
 
     /**
-     * SG302 for every exception failsOn reserves, reported at the value that names it: the catch-alls, an
+     * SG302 for every throwable type failsOn reserves, reported at the value that names it: the catch-alls, an
      * {@code Error} and a {@code CancellationException}, which the runtime never treats as a domain failure, the
-     * library's own exceptions, and exactly {@code CompletionException} and {@code ExecutionException}, which
-     * the runtime unwraps before it matches, so only the type of their cause can ever match.
+     * library's own exceptions, and exactly {@code CompletionException} and {@code ExecutionException}, which the
+     * runtime unwraps before it matches, so only the type of their cause can ever match.
      */
     void checkFailsOn(List<TypeMirror> failsOn, List<AnnotationValue> values, Element element, AnnotationMirror mirror) {
         for (int i = 0; i < failsOn.size(); i++) {
             if (isForbiddenFailsOn(failsOn.get(i))) {
-                diagnostics.error("SG302", "failsOn does not allow " + failsOn.get(i) + "; only exceptions foreign to the"
-                        + " library, and never Throwable, Exception, RuntimeException, an Error or a"
-                        + " CancellationException, which are never domain failures, nor CompletionException or"
-                        + " ExecutionException, which are unwrapped before matching: declare the type of their cause",
+                diagnostics.error("SG302", "failsOn does not allow " + failsOn.get(i)
+                        + "; only throwable types foreign to the library, and never Throwable, Exception,"
+                        + " RuntimeException, an Error or a CancellationException, which are never domain failures,"
+                        + " nor CompletionException or ExecutionException, which are unwrapped before matching:"
+                        + " declare the type of their cause",
                         element, mirror, values.get(i));
             }
         }

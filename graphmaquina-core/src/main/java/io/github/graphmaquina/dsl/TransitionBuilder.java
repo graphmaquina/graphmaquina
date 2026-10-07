@@ -43,7 +43,7 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     TransitionBuilder<E, S, T> onFailure(T transition);
 
     /**
-     * One per call, chainable. SG302 accepts only exceptions foreign to the library. It refuses {@code Throwable},
+     * One per call, chainable. SG302 accepts only throwable types foreign to the library. It refuses {@code Throwable},
      * {@code Exception} and {@code RuntimeException} as too broad, an {@code Error} or a
      * {@code CancellationException} as never a domain failure, and {@code CompletionException} or
      * {@code ExecutionException} themselves because they are unwrapped before matching: declare the type of their
