@@ -14,7 +14,7 @@ import java.util.Optional;
  * run nor their order. Peer views and cascades work only on the thread that called {@code process()} and only until the
  * root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}.
  * What the action throws, or completes its stage with, once unwrapped from CompletionException and
- * ExecutionException, is its own failure: an exception of a type {@link TransitionSpec#failsOn()} lists takes the
+ * ExecutionException, is its own failure: an exception that {@link TransitionSpec#failsOn()} matches takes the
  * failure route, any other Exception aborts the call with it as cause, an Error thrown as itself propagates, and an
  * Error that completes the stage, or arrives wrapped in one of those two classes, aborts too. A failure of this call
  * that the action lets through is never routed: it ends the call as itself, or as the failure that poisoned the

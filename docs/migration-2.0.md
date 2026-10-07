@@ -489,11 +489,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
   partial batch. An exception or an `Error` the collection throws while it is copied propagates as it is and
   poisons nothing.
 - **A library exception from a guard or an action is a cause.** A `StateMachineException` that a guard or an
-  action throws or completes its stage with, bare or wrapped, aborts the call with it as cause, a failure of
-  another call included. It used to reach the caller as it was, so another call's abort, or an `AfterCommitException`
-  of another call whose states were written, could pass for this call's. A failure of the call itself, from a cascade,
-  still ends the call with the failure that poisoned it, and a `PoisonedUnitOfWorkException` the action lets through
-  ends it with the original failure.
+  action throws or completes its stage with, bare or wrapped in a `CompletionException` or an `ExecutionException`,
+  aborts the call with it as cause, a failure of another call included. It used to reach the caller as it was, so
+  another call's abort, or an `AfterCommitException` of another call whose states were written, could pass for this
+  call's. A failure of the call itself, from a cascade, still ends the call with the failure that poisoned it, and a
+  `PoisonedUnitOfWorkException` the action lets through ends it with the original failure.
 - **Failures before the state is read are aborts.** The root entity's identity function that throws or returns null,
   its state getter that throws, a null root state, and a watch's peers reader or condition that throws while a
   `reevaluate` resolves end the call in a `TransitionAbortedException` of phase `RESOLVE` that carries the failure;

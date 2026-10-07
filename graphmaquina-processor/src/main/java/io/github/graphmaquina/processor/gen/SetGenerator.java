@@ -37,6 +37,8 @@ import javax.lang.model.type.TypeMirror;
 public final class SetGenerator {
 
     private static final String MACHINE = "io.github.graphmaquina.api.Machine";
+    /** The longest comment text that fits one emitted line of a method of the {@code Builder}, within 120 columns. */
+    private static final int DOC_LINE_WIDTH = 100;
     private static final String MACHINE_OBSERVER = "io.github.graphmaquina.api.MachineObserver";
     private static final String MACHINE_REGISTRY = "io.github.graphmaquina.runtime.MachineRegistry";
     private static final String STATE_MACHINES = "io.github.graphmaquina.runtime.StateMachines";
@@ -273,11 +275,25 @@ public final class SetGenerator {
     }
 
     /**
-     * One setting the {@code Builder} hands to the registry's builder as soon as it is given, documented by the
-     * one-line {@code doc}.
+     * One setting the {@code Builder} hands to the registry's builder as soon as it is given, documented by
+     * {@code doc}: on one line when it fits the emitted line's 120 columns, else in the multi-line form.
      */
     private static void forward(SourceWriter out, String doc, String method, String parameter, String statement) {
-        out.line("/** " + doc + " */");
+        if (doc.length() <= DOC_LINE_WIDTH) {
+            out.line("/** " + doc + " */");
+        } else {
+            out.line("/**");
+            StringBuilder line = new StringBuilder();
+            for (String word : doc.split(" ")) {
+                if (line.length() > 0 && line.length() + 1 + word.length() > DOC_LINE_WIDTH) {
+                    out.line(" * " + line);
+                    line.setLength(0);
+                }
+                line.append(line.length() == 0 ? "" : " ").append(word);
+            }
+            out.line(" * " + line);
+            out.line(" */");
+        }
         out.open("public Builder " + method + "(" + parameter + ")");
         out.line("checkUnused();");
         out.line(statement);
