@@ -10,12 +10,10 @@ import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
-import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatesWritten;
-import io.github.graphmaquina.api.TransitionListener;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
@@ -149,24 +147,13 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             throw thrown;
         }
         if (watch.isEmpty()) {
-            return ignored(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_WATCH));
+            return completed(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_WATCH));
         }
         if (selected.isEmpty()) {
-            return ignored(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
+            return completed(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
         T resolved = selected.orElseThrow();
         return runRoot(entity, observed, (Transaction tx) -> tx.transition(this, entity, resolved, 0), chain);
-    }
-
-    /** A reevaluation that selected nothing: the listener is told inside the call, so an observer sees its failure. */
-    private Outcome<E, S, T> ignored(Optional<Observed> observed, Outcome<E, S, T> outcome) {
-        try {
-            notify(outcome);
-        } catch (Throwable thrown) {
-            failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, thrown);
-            throw thrown;
-        }
-        return completed(observed, outcome);
     }
 
     /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */
@@ -239,7 +226,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 tx.enter(CallPhase.REACTIONS);
                 reactions = registry.dispatchWatches(summary, chain);
             }
-            outcome = notify(switch (step) {
+            outcome = switch (step) {
                 case StepResult.Applied<S, T> applied ->
                         new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(),
                                 records, reactions);
@@ -252,7 +239,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                         new Outcome.Failed<>(entity, failed.from(), failed.transition(), failed.to(),
                                 failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
                                 records, reactions);
-            });
+            };
         } catch (Throwable thrown) {
             failed(observed, tx.phase(), tx.statesWritten(), thrown);
             throw thrown;
@@ -280,27 +267,6 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         if (observed.isPresent()) {
             observed.get().failed(new CallFailure(phase, written, thrown));
         }
-    }
-
-    /**
-     * The registry listener sees the outcome of every call that gets this far. A call that throws first notifies
-     * nothing, such as one whose step aborts, whose commit fails, whose hook throws or whose reaction raises an Error.
-     * Any Exception the listener throws, checked ones included, becomes an AfterCommitException that says whether the
-     * call wrote states: only Applied and Failed outcomes did. An Error propagates unchanged.
-     */
-    private Outcome<E, S, T> notify(Outcome<E, S, T> outcome) {
-        Optional<TransitionListener> listener = registry.listener();
-        if (listener.isEmpty()) {
-            return outcome;
-        }
-        try {
-            listener.get().onOutcome(key(), outcome);
-        } catch (Exception e) {
-            boolean written = outcome.status() == OutcomeStatus.APPLIED || outcome.status() == OutcomeStatus.FAILED;
-            throw new AfterCommitException(key(), outcome.entity(), outcome.from(), outcome.recordedState(), "listener",
-                    written, e);
-        }
-        return outcome;
     }
 
     /**

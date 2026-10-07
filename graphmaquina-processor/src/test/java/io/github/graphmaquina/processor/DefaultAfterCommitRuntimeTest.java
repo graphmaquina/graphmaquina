@@ -48,7 +48,13 @@ class DefaultAfterCommitRuntimeTest {
                     Recorder recorder = new Recorder();
                     DocActions actions = new DocActions();
                     try (Library library = LibraryRuntime.builder(recorder, actions)
-                            .listener((key, outcome) -> recorder.events.add("listener"))
+                            .observer(new io.github.graphmaquina.api.MachineObserver() {
+                                @Override
+                                public void onCompleted(io.github.graphmaquina.api.MachineCall call,
+                                        Outcome<?, ?, ?> outcome, java.time.Duration elapsed) {
+                                    recorder.events.add("observer");
+                                }
+                            })
                             .build()) {
                         Doc doc = new Doc();
                         %s
@@ -61,13 +67,13 @@ class DefaultAfterCommitRuntimeTest {
         return result.load("fx.Scenario").getMethod("run").invoke(null);
     }
 
-    @Test void hookSeesCommittedStateOnCallingThreadBeforeListener() throws Exception {
+    @Test void hookSeesCommittedStateOnCallingThreadBeforeTheObservers() throws Exception {
         assertEquals(Boolean.TRUE, execute(sources(), """
             Thread caller = Thread.currentThread();
             Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().submit(doc);
             return outcome instanceof Outcome.Applied<?, ?, ?>
                 && doc.status() == DocStatus.REVIEW && recorder.thread == caller
-                && recorder.events.equals(List.of("persist:REVIEW", "listener"));
+                && recorder.events.equals(List.of("persist:REVIEW", "observer"));
             """));
     }
 
@@ -77,7 +83,7 @@ class DefaultAfterCommitRuntimeTest {
             recorder.events.clear();
             library.docs().publish(doc);
             return doc.status() == DocStatus.PUBLISHED && actions.notified == 1
-                && recorder.events.equals(List.of("listener"));
+                && recorder.events.equals(List.of("observer"));
             """));
     }
 
@@ -90,7 +96,7 @@ class DefaultAfterCommitRuntimeTest {
             recorder.events.clear();
             library.docs().publish(doc);
             return doc.status() == DocStatus.PUBLISHED && actions.notified == 0
-                && recorder.events.equals(List.of("persist:PUBLISHED", "listener"));
+                && recorder.events.equals(List.of("persist:PUBLISHED", "observer"));
             """));
     }
 
@@ -104,7 +110,7 @@ class DefaultAfterCommitRuntimeTest {
             }).join();
             return outcome instanceof Outcome.Applied<?, ?, ?>
                 && recorder.thread == worker.get() && recorder.thread != caller
-                && recorder.events.equals(List.of("persist:REVIEW", "listener"));
+                && recorder.events.equals(List.of("persist:REVIEW", "observer"));
             """));
     }
 
@@ -192,7 +198,7 @@ class DefaultAfterCommitRuntimeTest {
             Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().retouch(doc);
             return outcome instanceof Outcome.Applied<?, ?, ?>
                 && doc.status() == DocStatus.REVIEW
-                && recorder.events.equals(List.of("persist:REVIEW", "listener"));
+                && recorder.events.equals(List.of("persist:REVIEW", "observer"));
             """));
     }
 
@@ -202,7 +208,7 @@ class DefaultAfterCommitRuntimeTest {
             Outcome<Doc, DocStatus, DocTransition> ignored = library.docs().reevaluate(doc);
             return rejected instanceof Outcome.Rejected<?, ?, ?>
                 && ignored instanceof Outcome.Ignored<?, ?, ?>
-                && recorder.events.equals(List.of("listener", "listener"));
+                && recorder.events.equals(List.of("observer", "observer"));
             """));
     }
 
@@ -214,11 +220,11 @@ class DefaultAfterCommitRuntimeTest {
             Outcome<Doc, DocStatus, DocTransition> outcome = library.docs().publish(doc);
             return outcome instanceof Outcome.Failed<?, ?, ?> && doc.status() == DocStatus.DRAFT
                 && actions.notified == 0
-                && recorder.events.equals(List.of("persist:DRAFT", "listener"));
+                && recorder.events.equals(List.of("persist:DRAFT", "observer"));
             """));
     }
 
-    @Test void throwingDefaultKeepsStateAndStopsListener() throws Exception {
+    @Test void throwingDefaultKeepsStateAndEndsTheCallInFailure() throws Exception {
         assertEquals(Boolean.TRUE, execute(sources(), """
             recorder.fail = true;
             try {

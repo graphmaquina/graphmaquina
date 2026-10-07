@@ -112,7 +112,6 @@ class BuilderReuseTest {
         calls.put("add", () -> builder.add(items()));
         calls.put("maxCascadeDepth", () -> builder.maxCascadeDepth(3));
         calls.put("maxWatchChain", () -> builder.maxWatchChain(3));
-        calls.put("listener", () -> builder.listener((MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> { }));
         calls.put("observer", () -> builder.observer(new MachineObserver() { }));
         calls.put("build", builder::build);
         assertEquals(List.of(), accepted(calls, "this MachineRegistry.Builder was already used"));

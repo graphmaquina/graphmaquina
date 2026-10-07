@@ -17,13 +17,11 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
-import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
-import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.ReentrantTransitionException;
 import io.github.graphmaquina.error.UnhandledFailureException;
@@ -41,9 +39,9 @@ import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /**
- * Diagnostics whose text has to be true where it is produced: the message of a listener failure after each kind of
- * outcome, the reentrancy message for a call from a guard, the pre-check message when a concurrent transition moved
- * the state, and the failure reason of an anonymous exception without a message.
+ * Diagnostics whose text has to be true where it is produced: the reentrancy message
+ * for a call from a guard, the pre-check message when a concurrent transition moved the state, and the failure
+ * reason of an anonymous exception without a message.
  */
 class DiagnosticsTest {
 
@@ -64,41 +62,6 @@ class DiagnosticsTest {
         return StateMachines.from(graph).state(Doc::status, Doc::setStatus).build();
     }
 
-    /**
-     * A listener that fails after a call that wrote nothing must not claim that states were written, and one that
-     * fails after a call that wrote states must say so: Rejected and Ignored wrote nothing, Applied and Failed did.
-     */
-    @Test
-    void aListenerFailureAfterACallThatWroteNothingSaysSo() {
-        IllegalStateException audit = new IllegalStateException("audit down");
-        try (MachineRegistry registry = MachineRegistry.builder()
-                .add(StateMachines.from(docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
-                                .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
-                                        ActionOutcome.failed("no content"))
-                                .onFailure(DISCARD)))
-                        .state(Doc::status, Doc::setStatus).identity(Doc::id))
-                .listener((MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> {
-                    throw audit;
-                })
-                .build()) {
-            StateMachine<Doc, DocStatus, DocTransition> docs = registry.of(DOCS);
-            Doc doc = new Doc("1", REVIEW);
-            AfterCommitException rejected = assertThrows(AfterCommitException.class, () -> docs.execute(doc, SUBMIT));
-            assertEquals("the call on Doc/DocStatus REVIEW → REVIEW wrote no state, and the post-commit step 'listener'"
-                    + " failed", rejected.getMessage());
-            AfterCommitException ignored = assertThrows(AfterCommitException.class, () -> docs.reevaluate(doc));
-            assertEquals(rejected.getMessage(), ignored.getMessage());
-            AfterCommitException applied = assertThrows(AfterCommitException.class, () -> docs.execute(doc, PUBLISH));
-            assertEquals("the states of Doc/DocStatus REVIEW → PUBLISHED are already written, but the post-commit step"
-                    + " 'listener' failed", applied.getMessage());
-            assertEquals(PUBLISHED, doc.status());
-            Doc draft = new Doc("2", DRAFT);
-            AfterCommitException failed = assertThrows(AfterCommitException.class, () -> docs.execute(draft, SUBMIT));
-            assertEquals("the states of Doc/DocStatus DRAFT → ARCHIVED are already written, but the post-commit step"
-                    + " 'listener' failed", failed.getMessage());
-            assertEquals(ARCHIVED, draft.status());
-        }
-    }
 
     /**
      * A guard has no cascade to turn to: the message names the callbacks that cannot start a transition, those of a

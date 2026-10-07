@@ -6,7 +6,6 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
-import io.github.graphmaquina.api.TransitionListener;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.UnknownFacadeException;
 import io.github.graphmaquina.error.UnknownPeerMachineException;
@@ -47,16 +46,15 @@ public final class MachineRegistry implements AutoCloseable {
     private final Map<Class<?>, MachineKey<?, ?, ?>> facades = new LinkedHashMap<>();
     private final int maxCascadeDepth;
     private final int maxWatchChain;
-    private final Optional<TransitionListener> listener;
     private final Observers observers;
 
     public static Builder builder() {
         return new Builder();
     }
 
-    /** A registry of one, assembled as a registry builder would assemble it, with the default limits and no listener. */
+    /** A registry of one, assembled as a registry builder would, with default limits and no observer. */
     static <E, S extends Enum<S>, T extends Enum<T>> StateMachine<E, S, T> standalone(StateMachines.Builder<E, S, T> builder) {
-        return assemble(List.of(builder), 10, 10, Optional.empty(), Observers.NONE).machineFor(builder.key());
+        return assemble(List.of(builder), 10, 10, Observers.NONE).machineFor(builder.key());
     }
 
     /**
@@ -64,8 +62,7 @@ public final class MachineRegistry implements AutoCloseable {
      * builder is consumed, so a build that fails leaves every builder as it was, ready to be fixed and built again.
      */
     private static MachineRegistry assemble(List<? extends StateMachines.Builder<?, ?, ?>> builders, int maxCascadeDepth,
-                                            int maxWatchChain, Optional<TransitionListener> listener,
-                                            Observers observers) {
+                                            int maxWatchChain, Observers observers) {
         Set<MachineKey<?, ?, ?>> keys = new HashSet<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             keys.add(builder.key());
@@ -81,7 +78,7 @@ public final class MachineRegistry implements AutoCloseable {
                 throw new IllegalStateException("the facade type " + facade.get().getSimpleName() + " is registered twice");
             }
         }
-        MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, listener, observers);
+        MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, observers);
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             DefaultStateMachine<?, ?, ?> machine = builder.build(registry);
             registry.machines.put(machine.key(), machine);
@@ -130,8 +127,6 @@ public final class MachineRegistry implements AutoCloseable {
     int maxCascadeDepth() { return maxCascadeDepth; }
 
     int maxWatchChain() { return maxWatchChain; }
-
-    Optional<TransitionListener> listener() { return listener; }
 
     Observers observers() { return observers; }
 
@@ -223,7 +218,6 @@ public final class MachineRegistry implements AutoCloseable {
         private final List<StateMachines.Builder<?, ?, ?>> builders = new ArrayList<>();
         private int maxCascadeDepth = 10;
         private int maxWatchChain = 10;
-        private Optional<TransitionListener> listener = Optional.empty();
         private final List<MachineObserver> observers = new ArrayList<>();
         private boolean used;
 
@@ -267,20 +261,6 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
-         * One listener per registry, notified of the outcome of each execute and reevaluate, except a call that
-         * throws before reaching it: see {@link TransitionListener}.
-         */
-        public Builder listener(TransitionListener listener) {
-            requireUnused();
-            Objects.requireNonNull(listener, "listener");
-            if (this.listener.isPresent()) {
-                throw new IllegalStateException("this MachineRegistry.Builder already has a listener");
-            }
-            this.listener = Optional.of(listener);
-            return this;
-        }
-
-        /**
          * Adds an observer of every call of the registry's machines. Observers add up and are notified in the order
          * they were added; see {@link MachineObserver} for what an observer is told and what it cannot do.
          */
@@ -303,7 +283,7 @@ public final class MachineRegistry implements AutoCloseable {
                 }
             }
             Observers registered = observers.isEmpty() ? Observers.NONE : new Observers(observers);
-            MachineRegistry registry = assemble(builders, maxCascadeDepth, maxWatchChain, listener, registered);
+            MachineRegistry registry = assemble(builders, maxCascadeDepth, maxWatchChain, registered);
             used = true;
             return registry;
         }

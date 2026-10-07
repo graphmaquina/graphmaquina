@@ -14,14 +14,15 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
-import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.MachineCall;
+import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
-import io.github.graphmaquina.api.TransitionListener;
+import java.time.Duration;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.fixtures.GatewayException;
@@ -183,17 +184,21 @@ class OutcomeClassificationTest {
         }
     }
 
-    /** A listener receives Outcome<?, ?, ?> and classifies it by value, narrowing included, without a cast. */
-    @Test void aListenerClassifiesWhatItReceivesWithoutACast() {
+    /** An observer receives Outcome<?, ?, ?> and classifies it by value, narrowing included, without a cast. */
+    @Test void anObserverClassifiesWhatItReceivesWithoutACast() {
         List<String> seen = new ArrayList<>();
-        TransitionListener listener = (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) ->
+        MachineObserver observer = new MachineObserver() {
+            @Override
+            public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
                 seen.add(outcome.code() + ":" + outcome.status() + ":" + outcome.explanation().orElse("-") + ":"
                         + outcome.asRejected().flatMap(Outcome.Rejected::guard).orElse("-"));
+            }
+        };
         try (MachineRegistry registry = MachineRegistry.builder()
                 .add(StateMachines.from(guarded().build())
                         .state((Ticket ticket) -> ticket.state, (Ticket ticket, State state) -> ticket.state = state)
                         .identity((Ticket ticket) -> ticket.id))
-                .listener(listener)
+                .observer(observer)
                 .build()) {
             Ticket ticket = new Ticket(1, OPEN);
             registry.of(KEY).execute(ticket, APPROVE);

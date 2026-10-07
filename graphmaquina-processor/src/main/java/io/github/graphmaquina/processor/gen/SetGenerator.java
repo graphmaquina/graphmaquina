@@ -29,7 +29,7 @@ import javax.lang.model.type.TypeMirror;
  *
  * <p>Its {@code Builder} mirrors {@code MachineRegistry.Builder} and {@code StateMachines.Builder}: it creates
  * them when it is created and hands every setting to them as soon as it is given, so a setting they refuse is
- * refused where it is given, a second listener is refused instead of replacing the first, and the builder is
+ * refused where it is given, observers add up in the order they are given, and the builder is
  * single-use. The state and the identity of each machine are read and written by lambdas that call the very
  * accessors the property selected, never by a method reference, which would also consider a static overload of
  * the same name.</p>
@@ -37,7 +37,7 @@ import javax.lang.model.type.TypeMirror;
 public final class SetGenerator {
 
     private static final String MACHINE = "io.github.graphmaquina.api.Machine";
-    private static final String TRANSITION_LISTENER = "io.github.graphmaquina.api.TransitionListener";
+    private static final String MACHINE_OBSERVER = "io.github.graphmaquina.api.MachineObserver";
     private static final String MACHINE_REGISTRY = "io.github.graphmaquina.runtime.MachineRegistry";
     private static final String STATE_MACHINES = "io.github.graphmaquina.runtime.StateMachines";
     private static final String DURATION = "java.time.Duration";
@@ -58,7 +58,7 @@ public final class SetGenerator {
      * they play, which also is their usual name.
      */
     private static final List<String> SETTER_PARAMETERS = List.of("machine", "timeout", "executor", "depth", "chain",
-            "listener", "built");
+            "observer", "built");
 
     private SetGenerator() { }
 
@@ -165,8 +165,9 @@ public final class SetGenerator {
         Map<String, String> setters = variables.setters();
         out.line("/**");
         out.line(" * Mirrors MachineRegistry.Builder and StateMachines.Builder, which it creates with itself and hands");
-        out.line(" * every setting to as soon as it is given: what they refuse is refused where it is given, a second");
-        out.line(" * listener included. Single-use and not thread-safe: once build() succeeded, nothing is accepted.");
+        out.line(" * every setting to as soon as it is given: what they refuse is refused where it is given, and");
+        out.line(" * observers add up in the order they are given. Single-use and not thread-safe: once build()");
+        out.line(" * succeeded, nothing is accepted.");
         out.line(" */");
         out.open("public static final class Builder");
         out.blank();
@@ -237,8 +238,8 @@ public final class SetGenerator {
         out.blank();
         forward(out, "maxCascadeDepth", "int " + setters.get("depth"), registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
         forward(out, "maxWatchChain", "int " + setters.get("chain"), registry + ".maxWatchChain(" + setters.get("chain") + ");");
-        forward(out, "listener", names.of(TRANSITION_LISTENER) + " " + setters.get("listener"),
-                registry + ".listener(" + setters.get("listener") + ");");
+        forward(out, "observer", names.of(MACHINE_OBSERVER) + " " + setters.get("observer"),
+                registry + ".observer(" + setters.get("observer") + ");");
         String built = setters.get("built");
         String companion = names.of(qualifiedName(model));
         out.open("public " + names.of(model.type().getQualifiedName().toString()) + " build()");
@@ -404,7 +405,7 @@ public final class SetGenerator {
                 Names.claim(types, fixed);
             }
         }
-        for (String fixed : List.of(TRANSITION_LISTENER, MACHINE_REGISTRY, STATE_MACHINES, OBJECTS, EXECUTOR, GENERATED,
+        for (String fixed : List.of(MACHINE_OBSERVER, MACHINE_REGISTRY, STATE_MACHINES, OBJECTS, EXECUTOR, GENERATED,
                 SUPPRESS_WARNINGS, OVERRIDE, ILLEGAL_STATE)) {
             Names.claim(types, fixed);
         }

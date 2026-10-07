@@ -14,14 +14,18 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
@@ -37,6 +41,7 @@ import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
+import io.github.graphmaquina.fixtures.LibraryLog;
 import io.github.graphmaquina.fixtures.Sneaky;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -45,6 +50,8 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.time.Duration;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -253,22 +260,30 @@ class CheckedExceptionTest {
         assertEquals(REVIEW, doc.status());
     }
 
+    /** The checked exception is contained like any other: logged as a warning that carries it, the call unchanged. */
     @Test
-    void aListenerThatThrowsACheckedExceptionIsAnAfterCommitException() {
-        IOException audit = new IOException("audit log down");
-        try (MachineRegistry registry = MachineRegistry.builder()
+    void anObserverThatThrowsACheckedExceptionChangesNothing() {
+        IOException metrics = new IOException("metrics down");
+        try (LibraryLog log = LibraryLog.capture();
+             MachineRegistry registry = MachineRegistry.builder()
                 .add(StateMachines.from(docs(UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()))
                         .state(Doc::status, Doc::setStatus).identity(Doc::id))
-                .listener((MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> {
-                    throw Sneaky.raise(audit);
+                .observer(new MachineObserver() {
+                    @Override
+                    public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                        throw Sneaky.raise(metrics);
+                    }
                 })
                 .build()) {
             Doc doc = new Doc("1", DRAFT);
-            AfterCommitException error = assertThrows(AfterCommitException.class,
-                    () -> registry.of(DOCS).execute(doc, SUBMIT));
-            assertSame(audit, error.getCause());
-            assertEquals("listener", error.step());
+            assertEquals(OutcomeStatus.APPLIED, registry.of(DOCS).execute(doc, SUBMIT).status());
             assertEquals(REVIEW, doc.status());
+            List<LogRecord> logged = log.records();
+            assertEquals(1, logged.size());
+            assertEquals(Level.WARNING, logged.get(0).getLevel());
+            assertTrue(logged.get(0).getMessage().endsWith(" threw in onCompleted for Doc/DocStatus SUBMIT"),
+                    logged.get(0).getMessage());
+            assertSame(metrics, logged.get(0).getThrown());
         }
     }
 
@@ -391,17 +406,20 @@ class CheckedExceptionTest {
         assertEquals(REVIEW, doc.status());
     }
 
-    /** Pins the policy at listener depth: the same as for a hook, the listener being the last post-commit step. */
+    /** Pins the policy at observer depth: the same as for a hook, an observer's end event coming last. */
     @Test
-    void anErrorFromTheListenerPropagatesUnchangedAfterTheCommit() throws Exception {
+    void anErrorFromAnObserverPropagatesUnchangedAfterTheCommit() throws Exception {
         AssertionError broken = new AssertionError("audit invariant broken");
         Doc doc = new Doc("1", DRAFT);
         try (MachineRegistry registry = MachineRegistry.builder()
                 .add(StateMachines.from(docs(UnaryOperator.<TransitionBuilder<Doc, DocStatus, DocTransition>>identity()))
                         .state(Doc::status, Doc::setStatus).identity(Doc::id))
-                .listener((MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> {
-                    if (outcome.entity() == doc) {
-                        throw broken;
+                .observer(new MachineObserver() {
+                    @Override
+                    public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                        if (outcome.entity() == doc) {
+                            throw broken;
+                        }
                     }
                 })
                 .build()) {

@@ -35,7 +35,7 @@ class OrderFlowTest {
     final TransitionRecorder recorder = TransitionRecorder.create();
     final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier),
                     new ItemActions())
-            .listener(recorder)
+            .observer(recorder)
             .build();
     final Orders orders = shop.orders();
     final Items items = shop.items();

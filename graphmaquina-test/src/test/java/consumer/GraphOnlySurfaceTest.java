@@ -56,7 +56,8 @@ class GraphOnlySurfaceTest {
 
     /**
      * The qualified names of the retired contract: the total edge model, the row builder and the cell and graph
-     * outlines of the matrix DSL, and the whole string annotation vocabulary, its repeatable containers included.
+     * outlines of the matrix DSL, and the whole string annotation vocabulary, its repeatable containers included,
+     * and the transition listener that registry observers replaced.
      * Kept in one list because the consumer below is written from it and the jar walk looks for each of them as
      * a file, so a name added here is covered by both checks.
      */
@@ -77,7 +78,8 @@ class GraphOnlySurfaceTest {
             "io.github.graphmaquina.annotation.Watches",
             "io.github.graphmaquina.annotation.Rows",
             "io.github.graphmaquina.annotation.Cells",
-            "io.github.graphmaquina.annotation.Forbids");
+            "io.github.graphmaquina.annotation.Forbids",
+            "io.github.graphmaquina.api.TransitionListener");
 
     /**
      * The simple names of the retired annotations the generator once nested inside a machine's own vocabulary,

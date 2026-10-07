@@ -20,8 +20,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Compiles the Java fragments of the guide's "Handle transition outcomes" section, plus its async observer and
- * listener examples, against the published core jar. The fragments are cut out of {@code docs/guide.md} verbatim
+ * Compiles the Java fragments of the guide's "Handle transition outcomes" section, plus its async completion and
+ * observer examples, against the published core jar. The fragments are cut out of {@code docs/guide.md} verbatim
  * and wrapped only by stand-in types and methods, so a renamed accessor in the guide breaks this test the way it
  * would break a reader. A heading or block that cannot be found fails the test instead of compiling nothing. The
  * guide, the repository and the release come from the {@code readmePath}, {@code artifactRepository} and
@@ -30,17 +30,19 @@ import org.junit.jupiter.api.io.TempDir;
 class GuideOutcomeFragmentsTest {
 
     private static final String SECTION_HEADING = "## Handle transition outcomes";
-    private static final String OBSERVER_PREFIX =
+    private static final String FUTURE_PREFIX =
             "CompletableFuture<Outcome<Ticket, TicketState, TicketTransition>> pending =";
-    private static final String LISTENER_PREFIX =
+    private static final String OBSERVER_PREFIX =
             "TicketMachines machines = TicketMachinesRuntime.builder(new TicketActions())";
 
     private static final String HEADER = """
-            import io.github.graphmaquina.api.MachineKey;
+            import io.github.graphmaquina.api.CallFailure;
+            import io.github.graphmaquina.api.MachineCall;
+            import io.github.graphmaquina.api.MachineObserver;
             import io.github.graphmaquina.api.Outcome;
             import io.github.graphmaquina.api.OutcomeCode;
             import io.github.graphmaquina.api.OutcomeStatus;
-            import io.github.graphmaquina.api.TransitionListener;
+            import java.time.Duration;
             import java.util.Optional;
             import java.util.concurrent.CompletableFuture;
 
@@ -56,7 +58,7 @@ class GuideOutcomeFragmentsTest {
                 static final class TicketMachinesRuntime {
                     static Builder builder(TicketActions actions) { return new Builder(); }
                     static final class Builder {
-                        Builder listener(TransitionListener listener) { return this; }
+                        Builder observer(MachineObserver observer) { return this; }
                         TicketMachines build() { return new TicketMachines() { }; }
                     }
                 }
@@ -88,12 +90,12 @@ class GuideOutcomeFragmentsTest {
         source.append(blockAfter(guide, 3)).append("    }\n\n");
         source.append("    // --- block 4 (detail switch)\n");
         source.append(blockAfter(guide, 4)).append('\n');
-        source.append("    // --- the async observer block, wrapped in a method\n").append(STUBS);
-        source.append("    static void observe(StubTickets tickets, Ticket ticket) {\n");
-        source.append(blockStarting(guide, OBSERVER_PREFIX)).append("    }\n\n");
-        source.append("    // --- the listener example, wrapped in a method\n");
-        source.append("    static void listen() {\n");
-        source.append(blockStarting(guide, LISTENER_PREFIX)).append("    }\n}\n");
+        source.append("    // --- the async completion callback block, wrapped in a method\n").append(STUBS);
+        source.append("    static void handle(StubTickets tickets, Ticket ticket) {\n");
+        source.append(blockStarting(guide, FUTURE_PREFIX)).append("    }\n\n");
+        source.append("    // --- the observer example, wrapped in a method\n");
+        source.append("    static void observeTheSet() {\n");
+        source.append(blockStarting(guide, OBSERVER_PREFIX)).append("    }\n}\n");
 
         List<String> diagnostics = compile(workDir, source.toString(), coreJar);
         assertTrue(diagnostics.isEmpty(), "the guide's outcome fragments must compile against the published core:\n"

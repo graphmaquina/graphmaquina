@@ -12,7 +12,7 @@ import lombok.NonNull;
  * function the engine calls while it evaluates the watch; or a registry observer's callback. A thread runs one
  * transition at a time, whatever the machine or the entity of the second call, and a watch selects an edge without
  * running one. Only an action can move other entities inside the transaction, through its context's cascade.
- * After-commit hooks and the listener run once the transaction has released the thread, so they can start transitions;
+ * After-commit hooks run once the transaction has released the thread, so they can start transitions;
  * a watch reaction runs the edge its rule selected as a root of its own, once the watch's functions are done.
  */
 @Getter
