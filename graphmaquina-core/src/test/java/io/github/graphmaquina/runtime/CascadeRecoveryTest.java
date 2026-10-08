@@ -651,8 +651,8 @@ class CascadeRecoveryTest {
 
     /**
      * Under COLLECT, a peer that cascades into an unregistered machine poisons through a wrapper of a failure that
-     * is not a failure of the call, so COLLECT stops: the second peer never runs and the root receives the very abort
-     * the first peer caught.
+     * is not a failure of the call; it catches that abort and returns null, so its step ends in that very abort.
+     * COLLECT stops: the second peer never runs and the root receives the very abort the first peer caught.
      */
     @Test
     void collectStopsWhenThePeerPoisonsThroughAnUnregisteredMachine() {
