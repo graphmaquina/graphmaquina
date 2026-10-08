@@ -3,7 +3,6 @@ package io.github.graphmaquina.maven;
 import com.google.gson.Gson;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -27,6 +26,7 @@ import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.nio.file.attribute.FileTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -52,6 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -2432,7 +2433,6 @@ class MavenPluginIntegrationTest {
 
     /** An interrupted fixture runner must stop and reap the exact child JVM it launched. */
     @Test
-    @Timeout(value = 120, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void interruptedPublicationProgramDoesNotLeaveItsChildRunning() throws Exception {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
         Map<String, String> sources = MavenFixture.recoverySources();
@@ -2459,65 +2459,67 @@ class MavenPluginIntegrationTest {
         MavenResult build = fixture.run("package");
         assertEquals(0, build.exitCode(), build.output());
 
-        Path directory = fixture.projectDirectory();
-        Path pidFile = directory.resolve("publications.pid");
-        AtomicReference<Throwable> observed = new AtomicReference<>();
-        AtomicReference<Boolean> interruptStatus = new AtomicReference<>();
-        AtomicReference<Process> launched = new AtomicReference<>();
-        CountDownLatch launchObserved = new CountDownLatch(1);
-        Thread runner = new Thread(() -> {
-            try {
-                fixture.runMain("fxr.WaitingPublications", (Process child) -> {
-                    launched.set(child);
-                    launchObserved.countDown();
-                });
-            } catch (Throwable failure) {
-                observed.set(failure);
-                interruptStatus.set(Thread.currentThread().isInterrupted());
-            }
-        }, "maven-publications-interruption");
-        runner.setDaemon(true);
-        long childPid = -1;
-        try (WatchService watch = FileSystems.getDefault().newWatchService()) {
-            directory.register(watch, StandardWatchEventKinds.ENTRY_CREATE);
-            runner.start();
-            while (!Files.isRegularFile(pidFile)) {
-                WatchKey event = watch.poll(30, TimeUnit.SECONDS);
-                assertNotNull(event, "the fixture child did not publish its PID");
-                event.pollEvents();
-                assertTrue(event.reset(), "the watched fixture directory became unavailable");
-            }
-            childPid = Long.parseLong(Files.readString(pidFile));
-            assertTrue(launchObserved.await(30, TimeUnit.SECONDS), "the runner did not report its launched child");
-            Process owned = launched.get();
-            assertNotNull(owned, "the fixture did not report the Process it launched");
-            assertEquals(childPid, owned.pid(), "the PID file must come from the owned child");
-            runner.interrupt();
-            runner.join(10_000);
-            assertFalse(runner.isAlive(), "the interrupted Maven fixture runner did not finish cleanup");
-            Throwable failure = observed.get();
-            assertTrue(failure instanceof IllegalStateException, "the runner returned " + failure);
-            assertTrue(failure.getCause() instanceof InterruptedException,
-                    "the original interruption was lost: " + failure);
-            assertEquals(Boolean.TRUE, interruptStatus.get(), "the runner did not restore interrupt status");
-            assertFalse(owned.isAlive(), "the interrupted runner left its child JVM alive: " + owned.pid());
-            try (Stream<Path> entries = Files.list(directory)) {
-                assertFalse(entries.anyMatch((Path path) -> path.getFileName().toString()
-                        .startsWith("publications-")), "the runner left its transcript behind");
-            }
-        } finally {
-            runner.interrupt();
-            Process owned = launched.get();
-            if (owned != null && owned.isAlive()) {
-                owned.destroyForcibly();
+        assertTimeoutPreemptively(Duration.ofSeconds(90), () -> {
+            Path directory = fixture.projectDirectory();
+            Path pidFile = directory.resolve("publications.pid");
+            AtomicReference<Throwable> observed = new AtomicReference<>();
+            AtomicReference<Boolean> interruptStatus = new AtomicReference<>();
+            AtomicReference<Process> launched = new AtomicReference<>();
+            CountDownLatch launchObserved = new CountDownLatch(1);
+            Thread runner = new Thread(() -> {
                 try {
-                    owned.waitFor(10, TimeUnit.SECONDS);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
+                    fixture.runMain("fxr.WaitingPublications", (Process child) -> {
+                        launched.set(child);
+                        launchObserved.countDown();
+                    });
+                } catch (Throwable failure) {
+                    observed.set(failure);
+                    interruptStatus.set(Thread.currentThread().isInterrupted());
                 }
+            }, "maven-publications-interruption");
+            runner.setDaemon(true);
+            long childPid = -1;
+            try (WatchService watch = FileSystems.getDefault().newWatchService()) {
+                directory.register(watch, StandardWatchEventKinds.ENTRY_CREATE);
+                runner.start();
+                while (!Files.isRegularFile(pidFile)) {
+                    WatchKey event = watch.poll(30, TimeUnit.SECONDS);
+                    assertNotNull(event, "the fixture child did not publish its PID");
+                    event.pollEvents();
+                    assertTrue(event.reset(), "the watched fixture directory became unavailable");
+                }
+                childPid = Long.parseLong(Files.readString(pidFile));
+                assertTrue(launchObserved.await(30, TimeUnit.SECONDS), "the runner did not report its launched child");
+                Process owned = launched.get();
+                assertNotNull(owned, "the fixture did not report the Process it launched");
+                assertEquals(childPid, owned.pid(), "the PID file must come from the owned child");
+                runner.interrupt();
+                runner.join(10_000);
+                assertFalse(runner.isAlive(), "the interrupted Maven fixture runner did not finish cleanup");
+                Throwable failure = observed.get();
+                assertTrue(failure instanceof IllegalStateException, "the runner returned " + failure);
+                assertTrue(failure.getCause() instanceof InterruptedException,
+                        "the original interruption was lost: " + failure);
+                assertEquals(Boolean.TRUE, interruptStatus.get(), "the runner did not restore interrupt status");
+                assertFalse(owned.isAlive(), "the interrupted runner left its child JVM alive: " + owned.pid());
+                try (Stream<Path> entries = Files.list(directory)) {
+                    assertFalse(entries.anyMatch((Path path) -> path.getFileName().toString()
+                            .startsWith("publications-")), "the runner left its transcript behind");
+                }
+            } finally {
+                runner.interrupt();
+                Process owned = launched.get();
+                if (owned != null && owned.isAlive()) {
+                    owned.destroyForcibly();
+                    try {
+                        owned.waitFor(10, TimeUnit.SECONDS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                runner.join(10_000);
             }
-            runner.join(10_000);
-        }
+        });
     }
 
     /**
