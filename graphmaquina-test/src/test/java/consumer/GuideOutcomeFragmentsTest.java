@@ -241,7 +241,7 @@ class GuideOutcomeFragmentsTest {
             }
             fence = MarkdownFence.opening(line).orElse(null);
             if (fence != null) {
-                if (inside && fence.java()) {
+                if (inside && fence.language("java")) {
                     count++;
                 }
             } else if (!inside) {
@@ -278,7 +278,7 @@ class GuideOutcomeFragmentsTest {
             }
             fence = MarkdownFence.opening(line).orElse(null);
             if (fence != null) {
-                if (inside && fence.java()) {
+                if (inside && fence.language("java")) {
                     count++;
                     taking = count == n;
                 }
@@ -302,13 +302,13 @@ class GuideOutcomeFragmentsTest {
         for (String line : guide) {
             if (fence == null) {
                 fence = MarkdownFence.opening(line).orElse(null);
-                first = fence != null && fence.java();
+                first = fence != null && fence.language("java");
             } else if (fence.closes(line)) {
                 if (taking) {
                     break;
                 }
                 fence = null;
-            } else if (fence.java()) {
+            } else if (fence.language("java")) {
                 if (first) {
                     first = false;
                     taking = line.startsWith(prefix);

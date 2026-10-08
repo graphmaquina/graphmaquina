@@ -37,9 +37,9 @@ final class MarkdownFence {
         return Optional.of(new MarkdownFence(marker, run, info));
     }
 
-    /** Whether the first word of the info string is exactly {@code java}. */
-    boolean java() {
-        return info.split("[ \t]+", 2)[0].equals("java");
+    /** Whether the first word of the info string is exactly the given language name. */
+    boolean language(String name) {
+        return info.split("[ \t]+", 2)[0].equals(name);
     }
 
     /** Whether the line closes this fence. */

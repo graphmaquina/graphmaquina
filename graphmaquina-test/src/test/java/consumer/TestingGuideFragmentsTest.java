@@ -298,7 +298,7 @@ class TestingGuideFragmentsTest {
             }
             fence = MarkdownFence.opening(line).orElse(null);
             if (fence != null) {
-                if (inside && fence.java()) {
+                if (inside && fence.language("java")) {
                     count++;
                 }
             } else if (!inside) {
@@ -334,7 +334,7 @@ class TestingGuideFragmentsTest {
             }
             fence = MarkdownFence.opening(line).orElse(null);
             if (fence != null) {
-                if (inside && fence.java()) {
+                if (inside && fence.language("java")) {
                     count++;
                     taking = count == n;
                 }

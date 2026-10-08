@@ -25,20 +25,22 @@ class MarkdownFenceTest {
     }
 
     @Test
-    void javaIsTheFirstWordOfTheInfoString() {
-        assertTrue(open("```java").java(), "```java");
-        assertTrue(open("```java title=x").java(), "```java title=x");
-        assertTrue(open("~~~java").java(), "~~~java");
-        assertTrue(open("```  java").java(), "```  java");
-        assertFalse(open("```javascript").java(), "```javascript");
-        assertFalse(open("```").java(), "```");
-        assertFalse(open("```text java").java(), "```text java");
+    void theLanguageIsTheFirstWordOfTheInfoString() {
+        assertTrue(open("```java").language("java"), "```java");
+        assertTrue(open("```java title=x").language("java"), "```java title=x");
+        assertTrue(open("~~~java").language("java"), "~~~java");
+        assertTrue(open("```  java").language("java"), "```  java");
+        assertFalse(open("```javascript").language("java"), "```javascript");
+        assertFalse(open("```").language("java"), "```");
+        assertFalse(open("```text java").language("java"), "```text java");
+        assertTrue(open("```kotlin").language("kotlin"), "```kotlin");
+        assertFalse(open("```kotlin").language("java"), "```kotlin as java");
     }
 
     @Test
     void aBacktickInABacktickInfoStringIsNotAFence() {
         assertTrue(MarkdownFence.opening("```java `x`").isEmpty(), "```java `x`");
-        assertTrue(open("~~~java `x`").java(), "~~~java `x`");
+        assertTrue(open("~~~java `x`").language("java"), "~~~java `x`");
     }
 
     @Test
