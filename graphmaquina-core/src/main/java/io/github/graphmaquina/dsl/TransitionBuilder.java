@@ -107,7 +107,10 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * declared type accepts, from an action that does not run as a recovery action, the engine checks the poison before
      * it reads the throwable's message, for synchronous throws and exceptional completions of completed or pending
      * stages alike; the JDK may already have read that message, for example when {@code supplyAsync} wrapped the
-     * throwable in a CompletionException.
+     * throwable in a CompletionException. A throwable from the action when it runs as a recovery action is never
+     * routed, even one a declared type accepts: an Error thrown as itself propagates, the engine throws a failure of
+     * this call as itself, or the failure that poisoned the transaction when one did, and on any other throwable the
+     * step aborts.
      *
      * <p>{@code transition} is resolved from this edge's origin, and the recovery edge runs without its guards and
      * without consulting its own rules or {@code onFailure}. Two rules may name the same recovery, and a rule may name

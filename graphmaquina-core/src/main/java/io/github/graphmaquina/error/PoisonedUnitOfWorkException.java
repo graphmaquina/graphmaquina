@@ -34,14 +34,14 @@ import lombok.Getter;
  * action runs. For synchronous throws and exceptional completions of completed or pending stages alike, the engine
  * makes this check before it reads the message of a throwable that a declared type accepts and that an action other
  * than a recovery action throws or completes with; the JDK may already have read that message, for example when
- * {@code supplyAsync} wrapped the throwable in a CompletionException. A throwable that the edge's action, other than a
- * recovery action, throws or completes with, that no declared type accepts, and that is neither an Error thrown as
- * itself nor a failure of this call, aborts the call with a message composed from that throwable's string, which may
+ * {@code supplyAsync} wrapped the throwable in a CompletionException. When the edge's action, other than a recovery
+ * action, throws or completes with a throwable that no declared type accepts and that is neither an Error thrown as
+ * itself nor a failure of this call, the step aborts with a message composed from that throwable's string, which may
  * read its message, whether or not the transaction is poisoned. A throwable that a recovery action throws or completes
- * with is never routed: an Error thrown as itself propagates, a failure of this call ends the call as itself or as the
- * failure that poisoned the transaction, and any other throwable, whatever the recovery edge declares and whether or
- * not the transaction is poisoned, aborts the call with a message composed from the recovery action's name and the
- * original failure's reason, never from that throwable's string.
+ * with is never routed, whatever the recovery edge declares: an Error thrown as itself propagates, the engine throws a
+ * failure of this call as itself, or the failure that poisoned the transaction when one did, and on any other throwable
+ * the step aborts with a message composed from the recovery action's name and the original failure's reason, never from
+ * that throwable's string, whether or not the transaction is poisoned.
  */
 @Getter
 public final class PoisonedUnitOfWorkException extends TransitionAbortedException {
