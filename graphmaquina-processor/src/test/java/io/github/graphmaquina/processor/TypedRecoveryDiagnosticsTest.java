@@ -560,27 +560,50 @@ class TypedRecoveryDiagnosticsTest {
     }
 
     /**
-     * javac refuses the unknown constant and the unknown kind itself; the processor adds no SG error for the rules
-     * it cannot read.
+     * javac stops before annotation processing when a constant cannot be resolved: it reports its own error alone and
+     * the processor never runs, so no companion is generated.
      */
     @Test
-    void anUnknownTransitionConstantIsJavacsErrorAloneAndTheProcessorAddsNone() {
+    void anUnresolvedTransitionConstantStopsJavacBeforeAnnotationProcessing() {
         Compilation.Result result = Compilation.compileTyped(RecoveryFixtures.sources("""
                 @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
                     action = TicketActionsRefs.Publish.class,
-                    recoveries = {
-                        @TicketsGraph.Recovery(kind = MissingKind.class, transition = SCHEDULE_RETRY),
-                        @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class, transition = UNKNOWN)})
+                    recoveries = @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class,
+                        transition = UNKNOWN))
                 Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
                 """));
         assertFalse(result.success());
+        assertEquals(1, result.errors().size(), result.describe());
         assertEquals(1, result.diagnostics().stream().filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
                 diagnostic.getKind() == Diagnostic.Kind.ERROR
                         && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
                         && diagnostic.getMessage(null).contains("UNKNOWN")).count(), result.describe());
-        assertEquals(2, result.errors().size(), result.describe());
-        assertEquals(List.of(), result.errors().stream()
-                .filter((String message) -> message.startsWith("[SG")).toList(), result.describe());
+        assertFalse(result.hasGenerated("fx.TicketsRuntime"), result.describe());
+    }
+
+    /** An unresolved kind class reaches the processor, which skips that rule and still checks its sibling. */
+    @Test
+    void anUnreadableKindIsSkippedWhileASiblingRuleIsStillChecked() {
+        Map<String, String> sources = RecoveryFixtures.sources("""
+                @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
+                    action = TicketActionsRefs.Publish.class,
+                    recoveries = {
+                        @TicketsGraph.Recovery(kind = MissingKind.class, transition = SCHEDULE_RETRY),
+                        @TicketsGraph.Recovery(kind = PublicationFailures.Rejected.class,
+                            transition = RECORD_REJECTION, failsOn = RuntimeException.class)})
+                Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
+                """);
+        Compilation.Result result = Compilation.compileTyped(sources);
+        assertFalse(result.success());
+        assertEquals(1, result.diagnostics().stream().filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
+                diagnostic.getKind() == Diagnostic.Kind.ERROR
+                        && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
+                        && diagnostic.getMessage(null).contains("MissingKind")).count(), result.describe());
+        assertEquals(List.of("[SG302] recover(fx.PublicationFailures$Rejected, RECORD_REJECTION) does not allow"
+                + " java.lang.RuntimeException" + FORBIDDEN),
+                result.errors().stream().filter((String message) -> message.startsWith("[SG")).toList(),
+                result.describe());
+        assertLocation(result, "SG302", 0, sources.get("fx.Tickets"), "RuntimeException.class", 0);
     }
 
     /** An unreadable sibling leaves SG302 on the full forbidden literal of a rule, in either array order. */
