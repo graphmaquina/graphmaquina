@@ -7,8 +7,9 @@ import java.util.Optional;
  * {@code test()} and only until the root transaction ends: elsewhere they throw {@code WrongThreadException},
  * afterwards {@code StaleContextException}. What the guard throws, or completes its stage with, is never routed,
  * whatever {@code failsOn} or a recovery rule of its edge declares: once unwrapped from CompletionException and
- * ExecutionException, it aborts the call with it as cause, a failure of this call that it lets through excepted, which
- * ends the call as itself, or as the failure that poisoned the transaction. An Error thrown as itself propagates.
+ * ExecutionException, it aborts the call with it as cause, a failure of this call that it lets through excepted, for
+ * which the engine throws it as itself, or the failure that poisoned the transaction when one did. An Error thrown as
+ * itself propagates.
  */
 public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 

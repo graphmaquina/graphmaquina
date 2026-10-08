@@ -1298,8 +1298,9 @@ action failures; a guard exception is a technical abort. A library exception, a 
 or action throws or completes its stage with, bare or wrapped in one of those two classes, is never matched against
 `failsOn`, whatever the edge lists: it aborts the call and becomes its cause, so a failure of another call never
 passes for a failure of this one. A failure of the call itself, which a failed cascade throws into the action, is the
-exception: it ends the call with the failure that poisoned it. An `Error` is never routed either: thrown as itself it
-propagates unchanged, and one that completes a stage, or that one of those two classes carries, aborts.
+exception: the engine throws it as itself, or the failure that poisoned the transaction when one did. An `Error` is
+never routed either: thrown as itself it propagates unchanged, and one that completes a stage, or that one of those two
+classes carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine exception, or
 a `CancellationException` or one of its subtypes, which are never domain failures; nor `CompletionException` or
@@ -1470,10 +1471,10 @@ The engine keeps the boundary between domain failures and technical ones:
   `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, and exactly
   `CompletionException` or `ExecutionException`. An `Error` the action throws propagates as itself; one that
   completes the stage, or arrives wrapped, aborts the call with it as cause.
-- A failure of the call itself, which a failed cascade throws into the action, is never routed: it ends the call as
-  itself, or as the failure that poisoned the transaction. Once a failed cascade poisoned the unit of work, an
-  exception that a declared type accepts takes no route either: the call ends with the failure that poisoned it,
-  before any route is chosen.
+- A failure of the call itself, which a failed cascade throws into the action, is never routed: the engine throws it as
+  itself, or the failure that poisoned the transaction when one did. Once a failed cascade poisoned the unit of work, an
+  exception that a declared type accepts, from an action that does not run as a recovery action, takes no route either:
+  the engine throws the failure that poisoned it, before any route is chosen.
 - A cancelled stage, and the timeout, interruption or refusal of the engine's own wait, abort the call and never
   reach a rule. A timeout that the adapter's own client throws, such as a `SocketTimeoutException`, is an exception
   like any other and can be declared.

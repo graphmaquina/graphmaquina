@@ -97,20 +97,20 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * {@code failsOn} to {@code onFailure} without a kind. For the types the DSL admits, the order of the declarations
      * never matters. A throwable no declared type accepts aborts the call, a CancellationException and a
      * StateMachineException that is not a failure of this call included, which never match. The two cases that do not
-     * abort are an Error thrown as itself, which propagates, and a failure of the call itself, which ends it as itself
-     * or as the failure that poisoned the transaction. An Error that completes the stage or arrives wrapped aborts.
-     * Once a failed cascade poisoned the transaction, an accepted throwable of an action that does not run as a
-     * recovery action ends the call with the failure that poisoned it. A declared type also accepts the JDK exceptions
-     * the engine throws from the action's context, such as a NullPointerException for a null argument, an
-     * IllegalArgumentException for an identifier of another catalogue, a ClassCastException from {@code input(Class)}
-     * or a WrongThreadException off the action's thread: they are matched like the action's own. For a throwable a
-     * declared type accepts, from an action that does not run as a recovery action, the engine checks the poison before
-     * it reads the throwable's message, for synchronous throws and exceptional completions of completed or pending
-     * stages alike; the JDK may already have read that message, for example when {@code supplyAsync} wrapped the
-     * throwable in a CompletionException. A throwable from the action when it runs as a recovery action is never
-     * routed, even one a declared type accepts: an Error thrown as itself propagates, the engine throws a failure of
-     * this call as itself, or the failure that poisoned the transaction when one did, and on any other throwable the
-     * step aborts.
+     * abort are an Error thrown as itself, which propagates, and a failure of the call itself, for which the engine
+     * throws it as itself, or the failure that poisoned the transaction when one did. An Error that completes the stage
+     * or arrives wrapped aborts. Once a failed cascade poisoned the transaction, for an accepted throwable of an action
+     * that does not run as a recovery action, the engine throws the failure that poisoned it. A declared type also
+     * accepts the JDK exceptions the engine throws from the action's context, such as a NullPointerException for a null
+     * argument, an IllegalArgumentException for an identifier of another catalogue, a ClassCastException from
+     * {@code input(Class)} or a WrongThreadException off the action's thread: they are matched like the action's own.
+     * For a throwable a declared type accepts, from an action that does not run as a recovery action, the engine checks
+     * the poison before it reads the throwable's message, for synchronous throws and exceptional completions of
+     * completed or pending stages alike; the JDK may already have read that message, for example when
+     * {@code supplyAsync} wrapped the throwable in a CompletionException. A throwable from the action when it runs as a
+     * recovery action is never routed, even one a declared type accepts: an Error thrown as itself propagates, the
+     * engine throws a failure of this call as itself, or the failure that poisoned the transaction when one did, and on
+     * any other throwable the step aborts.
      *
      * <p>{@code transition} is resolved from this edge's origin, and the recovery edge runs without its guards and
      * without consulting its own rules or {@code onFailure}. Two rules may name the same recovery, and a rule may name
