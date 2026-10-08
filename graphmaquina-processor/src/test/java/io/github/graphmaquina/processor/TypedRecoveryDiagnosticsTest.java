@@ -232,9 +232,8 @@ class TypedRecoveryDiagnosticsTest {
 
     /**
      * A throwable type selects a single route, so one edge declares it once: twice in one rule, in two rules, or in a
-     * rule and in the edge's own failsOn is refused at the second occurrence.
-     * Occurrences follow source order, with deterministic rule-then-fallback
-     * order only when source is unavailable.
+     * rule and in the edge's own failsOn is refused at the second occurrence. Occurrences follow source order, with
+     * deterministic rule-then-fallback order only when source is unavailable.
      */
     @Test
     void sg304ForAThrowableTypeOneEdgeDeclaresTwice() {

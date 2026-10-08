@@ -251,8 +251,7 @@ class AnnotationSourcesTest {
             for (AnnotationMirror rule : annotations.annotations(edge, "recoveries")) {
                 AnnotationValue kind = annotations.value(rule, "kind");
                 recoveries.add(new RecoveryModel((TypeMirror) kind.getValue(), "RETRY",
-                        annotations.types(rule, "failsOn"),
-                        rule, kind, annotations.array(rule, "failsOn")));
+                        annotations.types(rule, "failsOn"), rule, kind, annotations.array(rule, "failsOn")));
             }
             new StructuralChecks(new Signatures(environment.getElementUtils(), environment.getTypeUtils()), diagnostics)
                     .checkRecoveries(recoveries, annotations.types(edge, "failsOn"),

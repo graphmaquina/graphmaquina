@@ -558,19 +558,19 @@ class PublishedArtifactSmokeTest {
                         CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> completion = null;
                         CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> failing = null;
                         PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> pending = null;
-                        PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> failingPending \
-            = null;
+                        PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> \
+            failingPending = null;
                         try {
                             Ticket returned = new Ticket();
                             completion = asyncMachine.async().execute(returned, TicketChange.PUBLISH);
                             pending = controlled.awaitInvocation(BUDGET);
                             ActionCall<Ticket, TicketState, TicketChange> held = pending.call();
                             if (held.entity() != returned || held.transition() != TicketChange.PUBLISH) {
-                                throw new AssertionError("the controlled action must record the call it holds: " + \
-            held);
+                                throw new AssertionError(\
+            "the controlled action must record the call it holds: " + held);
                             }
-                            pending.complete(ActionOutcome.failed(PublicationFailures.Rejected.class, "content \
-            rejected"));
+                            pending.complete(\
+            ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"));
                             AsyncAssertions.await(completion, BUDGET)
                                     .isFailed()
                                     .hasFailureKind(PublicationFailures.Rejected.class)
