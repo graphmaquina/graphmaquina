@@ -17,22 +17,23 @@ import java.util.Optional;
  * is its own failure. A throwable that a type its edge declares accepts, in {@link TransitionSpec#failsOn()} or in one
  * of its {@link TransitionSpec#recoveryRules()}, takes the route of the most specific such type: that rule's recovery,
  * with the rule's failure kind, or onFailure for a failsOn type. A CancellationException, a StateMachineException and
- * an Error never match, whatever the edge declares. Any other throwable that is not an Error aborts the call with it
- * as cause, an Error thrown as itself propagates, and an Error that completes the stage, or arrives wrapped in one of
+ * an Error never match, whatever the edge declares. Any other throwable that is not an Error aborts the call with it as
+ * cause, an Error thrown as itself propagates, and an Error that completes the stage, or arrives wrapped in one of
  * those two classes, aborts too. A declared type also accepts the JDK exceptions this context throws, such as a
  * NullPointerException for a null argument, an IllegalArgumentException for an identifier of another catalogue, a
  * ClassCastException from {@link #input(Class)} or a WrongThreadException off its thread: they are matched like any
- * other throwable of the action. A failure of this call that the action lets through is never routed: it ends the
- * call as itself, or as the failure that poisoned the transaction. Once a failed cascade poisoned the transaction, a
- * throwable that a declared type accepts takes no route either: the call ends with the failure that poisoned it.
- * For a throwable that a declared type accepts, the engine checks the poison before it reads the throwable's message,
- * for synchronous throws and exceptional completions of completed or pending stages alike; the JDK may already have
- * read that message, for example when {@code supplyAsync} wrapped the throwable in a CompletionException. The abort of
- * a throwable that the edge's own action throws or completes with, and that no declared type accepts, a
- * CancellationException or a StateMachineException that is not a failure of this call, or an Error that completes a
- * stage or arrives wrapped, is composed from that throwable's string, which may read its message, whether or not the
- * transaction is poisoned; the abort of a throwable from a recovery action is composed from the recovery action's name
- * and the original failure's reason instead.
+ * other throwable of the action. A failure of this call that the action lets through is never routed: it ends the call
+ * as itself, or as the failure that poisoned the transaction. Once a failed cascade poisoned the transaction, a
+ * throwable that a declared type accepts takes no route either: the call ends with the failure that poisoned it. For a
+ * throwable that a declared type accepts, the engine checks the poison before it reads the throwable's message, for
+ * synchronous throws and exceptional completions of completed or pending stages alike; the JDK may already have read
+ * that message, for example when {@code supplyAsync} wrapped the throwable in a CompletionException. The abort of a
+ * throwable that the edge's action, other than a recovery action, throws or completes with is composed from that
+ * throwable's string, which may read its message, whether or not the transaction is poisoned: a throwable that no
+ * declared type accepts, a CancellationException or a StateMachineException that is not a failure of this call, or an
+ * Error that completes a stage or arrives wrapped. A throwable that a recovery action throws or completes with, other
+ * than an Error thrown as itself or a failure of this call, aborts the call with a message composed from the recovery
+ * action's name and the original failure's reason, never from that throwable's string.
  */
 public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 

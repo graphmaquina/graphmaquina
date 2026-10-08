@@ -2289,15 +2289,16 @@ facade operation from inside an action: nested facade entry points on the action
 reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
 runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
 
-For a throwable that a declared type accepts, the engine checks the poison before it reads the throwable's message,
-for synchronous throws and exceptional completions of completed or pending stages alike. Exceptional stage completions
-retain their original throwable through the wait, so the engine's own reading of the message never comes first. The
-JDK may already have read that message, for example when `supplyAsync` wrapped the throwable in a
-`CompletionException`. The abort of a throwable that the edge's own action throws or completes with, and that no
-declared type accepts, a `CancellationException` or a `StateMachineException` that is not a failure of this call, or
-an `Error` that completes a stage or arrives wrapped, is composed from that throwable's string, which may read its
-message, whether or not the transaction is poisoned; the abort of a throwable from a recovery action is composed from
-the recovery action's name and the original failure's reason instead.
+For a throwable that a declared type accepts, the engine checks the poison before it reads the throwable's message, for
+synchronous throws and exceptional completions of completed or pending stages alike. Exceptional stage completions
+retain their original throwable through the wait, so the engine's own reading of the message never comes first. The JDK
+may already have read that message, for example when `supplyAsync` wrapped the throwable in a `CompletionException`. The
+abort of a throwable that the edge's action, other than a recovery action, throws or completes with is composed from
+that throwable's string, which may read its message, whether or not the transaction is poisoned: a throwable that no
+declared type accepts, a `CancellationException` or a `StateMachineException` that is not a failure of this call, or an
+`Error` that completes a stage or arrives wrapped. A throwable that a recovery action throws or completes with, other
+than an `Error` thrown as itself or a failure of this call, aborts the call with a message composed from the recovery
+action's name and the original failure's reason, never from that throwable's string.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.

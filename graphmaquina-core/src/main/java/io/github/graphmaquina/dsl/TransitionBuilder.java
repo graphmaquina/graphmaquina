@@ -96,16 +96,16 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * {@code transition} with {@code kind}, and a type of the edge's own {@code failsOn} to {@code onFailure} without a
      * kind. For the types the DSL admits, the order of the declarations never matters. A throwable no declared type
      * accepts aborts the call, a CancellationException and a StateMachineException that is not a failure of this call
-     * included, which never match. The two exceptions are an Error thrown as itself, which propagates, and a failure of
-     * the call itself, which ends it as itself or as the failure that poisoned the transaction. An Error that completes
-     * the stage or arrives wrapped aborts. Once a failed cascade poisoned the transaction, an accepted throwable ends
-     * the call with the failure that poisoned it. A declared type also accepts the JDK exceptions the engine throws
-     * from the action's context, such as a NullPointerException for a null argument, an IllegalArgumentException for an
-     * identifier of another catalogue, a ClassCastException from {@code input(Class)} or a WrongThreadException off the
-     * action's thread: they are matched like the action's own. For a throwable a declared type accepts, the engine
-     * checks the poison before it reads the throwable's message, for synchronous throws and exceptional completions of
-     * completed or pending stages alike; the JDK may already have read that message, for example when
-     * {@code supplyAsync} wrapped the throwable in a CompletionException.
+     * included, which never match. The two cases that do not abort are an Error thrown as itself, which propagates, and
+     * a failure of the call itself, which ends it as itself or as the failure that poisoned the transaction. An Error
+     * that completes the stage or arrives wrapped aborts. Once a failed cascade poisoned the transaction, an accepted
+     * throwable ends the call with the failure that poisoned it. A declared type also accepts the JDK exceptions the
+     * engine throws from the action's context, such as a NullPointerException for a null argument, an
+     * IllegalArgumentException for an identifier of another catalogue, a ClassCastException from {@code input(Class)}
+     * or a WrongThreadException off the action's thread: they are matched like the action's own. For a throwable a
+     * declared type accepts, the engine checks the poison before it reads the throwable's message, for synchronous
+     * throws and exceptional completions of completed or pending stages alike; the JDK may already have read that
+     * message, for example when {@code supplyAsync} wrapped the throwable in a CompletionException.
      *
      * <p>{@code transition} is resolved from this edge's origin, and the recovery edge runs without its guards and
      * without consulting its own rules or {@code onFailure}. Two rules may name the same recovery, and a rule may name
