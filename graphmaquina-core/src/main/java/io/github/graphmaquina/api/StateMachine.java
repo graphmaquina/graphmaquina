@@ -27,10 +27,10 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * Returns the domain-level result as a value; a technical failure throws, always a {@code CallFailedException}
-     * of this call or an Error. Two domain-level results throw as well: a domain failure on an edge without onFailure
-     * throws {@code UnhandledFailureException}, and a rejection inside a cascade aborts the whole call. A null
-     * argument, an identifier of another catalogue and a call made where no call may start are refused before the call
-     * starts and throw as themselves. Blocks on an asynchronous edge.
+     * of this call or an Error. Two domain-level results throw as well: a domain failure that no recovery rule of its
+     * edge takes, on an edge without onFailure, throws {@code UnhandledFailureException}, and a rejection inside a
+     * cascade aborts the whole call. A null argument, an identifier of another catalogue and a call made where no call
+     * may start are refused before the call starts and throw as themselves. Blocks on an asynchronous edge.
      */
     Outcome<E, S, T> execute(E entity, T transition);
 

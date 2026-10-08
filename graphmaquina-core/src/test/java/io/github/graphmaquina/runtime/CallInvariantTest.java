@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
@@ -60,6 +61,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
@@ -586,32 +588,39 @@ class CallInvariantTest {
 
     /**
      * A stage that throws when the engine registers its completion is user code the engine calls: the call ends in an
-     * abort of phase ACTION that carries what it threw, and the action is journaled THREW.
+     * abort of phase ACTION that carries what it threw, and the action is journaled THREW. The handle registration
+     * runs under an independent watchdog; finally cleanup completes the stage if registration ever stops throwing.
      */
     @Test
     void aStageThatThrowsWhenItIsAwaitedAbortsTheCallInAction() {
         IllegalStateException refused = new IllegalStateException("no callbacks");
         CompletableFuture<ActionOutcome> stage = new CompletableFuture<>() {
             @Override
-            public CompletableFuture<ActionOutcome> whenComplete(
-                    BiConsumer<? super ActionOutcome, ? super Throwable> action) {
+            public <U> CompletableFuture<U> handle(
+                    BiFunction<? super ActionOutcome, Throwable, ? extends U> action) {
                 throw refused;
             }
         };
-        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(
-                        (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
-                                .asyncAction("Submit",
-                                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> stage)))
-                .state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(30)).build();
-        Doc doc = new Doc("1", DRAFT);
-        TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
-                () -> machine.execute(doc, SUBMIT));
-        assertEquals(CallPhase.ACTION, error.phase());
-        assertEquals(StatesWritten.NONE, error.statesWritten());
-        assertSame(refused, error.getCause());
-        assertEquals(List.of(ActionStatus.THREW),
-                error.journal().stream().map((ActionRecord record) -> record.status()).toList());
-        assertEquals(DRAFT, doc.status());
+        try {
+            assertTimeoutPreemptively(Duration.ofSeconds(10), () -> {
+                StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(
+                                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                                        .asyncAction("Submit",
+                                                (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> stage)))
+                        .state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(30)).build();
+                Doc doc = new Doc("1", DRAFT);
+                TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                        () -> machine.execute(doc, SUBMIT));
+                assertEquals(CallPhase.ACTION, error.phase());
+                assertEquals(StatesWritten.NONE, error.statesWritten());
+                assertSame(refused, error.getCause());
+                assertEquals(List.of(ActionStatus.THREW),
+                        error.journal().stream().map((ActionRecord record) -> record.status()).toList());
+                assertEquals(DRAFT, doc.status());
+            });
+        } finally {
+            stage.complete(ActionOutcome.ok());
+        }
     }
 
     /**

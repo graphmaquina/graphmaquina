@@ -2,6 +2,7 @@ package consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -9,13 +10,20 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
@@ -29,6 +37,7 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -46,7 +55,10 @@ import org.xml.sax.SAXException;
  */
 class PublishedArtifactSmokeTest {
 
-    /** The full chain a consumer is promised, written as a consumer writes it and run from the jars. */
+    /**
+     * The chain a consumer is promised, written as a consumer writes it and run from the jars; typed recovery has a
+     * consumer of its own.
+     */
     private static final String CONSUMER_SOURCE = """
             import static io.github.graphmaquina.test.GraphAssertions.assertThat;
             import io.github.graphmaquina.api.ActionOutcome;
@@ -261,6 +273,354 @@ class PublishedArtifactSmokeTest {
             }
             """;
 
+    /**
+     * Typed recovery as a consumer writes it with the DSL, run from the jars: two failure kinds with their recover
+     * rules, a failsOn type and the fallback, read back through the definition, the outcomes, an action probe, the
+     * snapshot and the DOT, and selected again by a controlled asynchronous action behind a public asynchronous
+     * call. The consumer has a package of its own, which the DOT leaves out of the kind it draws.
+     */
+    private static final String RECOVERY_CONSUMER_SOURCE = """
+            package published.recovery;
+
+            import io.github.graphmaquina.api.ActionOutcome;
+            import io.github.graphmaquina.api.FailureKind;
+            import io.github.graphmaquina.api.GraphDefinition;
+            import io.github.graphmaquina.api.MachineKey;
+            import io.github.graphmaquina.api.Outcome;
+            import io.github.graphmaquina.api.OutcomeCode;
+            import io.github.graphmaquina.api.OutcomeStatus;
+            import io.github.graphmaquina.api.RecoveryRule;
+            import io.github.graphmaquina.api.StateMachine;
+            import io.github.graphmaquina.dsl.StateGraph;
+            import io.github.graphmaquina.dsl.TransitionBuilder;
+            import io.github.graphmaquina.export.GraphView;
+            import io.github.graphmaquina.export.GraphvizExporter;
+            import io.github.graphmaquina.runtime.StateMachines;
+            import io.github.graphmaquina.test.AsyncAssertions;
+            import io.github.graphmaquina.test.GraphAssertionError;
+            import io.github.graphmaquina.test.GraphAssertions;
+            import io.github.graphmaquina.test.probe.ActionCall;
+            import io.github.graphmaquina.test.probe.ActionProbe;
+            import io.github.graphmaquina.test.probe.CallTrace;
+            import io.github.graphmaquina.test.probe.ControlledAsyncAction;
+            import io.github.graphmaquina.test.probe.PendingInvocation;
+            import io.github.graphmaquina.test.snapshot.GraphSnapshot;
+            import java.time.Duration;
+            import java.util.List;
+            import java.util.Map;
+            import java.util.concurrent.CompletableFuture;
+            import java.util.function.UnaryOperator;
+
+            /** Typed recovery as a consumer of the published jars writes it, run from those jars alone. */
+            public final class RecoveryConsumer {
+
+                /** The states of the publication machine. */
+                enum TicketState { READY, PUBLISHED, RETRY_PENDING, REJECTED_BY_PROVIDER, INTEGRATION_FAILED, CLOSED }
+
+                /** The identifiers of the publication machine. */
+                enum TicketChange { PUBLISH, SCHEDULE_RETRY, RECORD_REJECTION, MARK_INTEGRATION_FAILED, RETRY, CLOSE }
+
+                /** The failure kinds a publication adapter reports. */
+                public static final class PublicationFailures {
+                    private PublicationFailures() { }
+
+                    /** The provider could not take the publication now. */
+                    public record Unavailable() implements FailureKind { }
+
+                    /** The provider refused the content. */
+                    public record Rejected() implements FailureKind { }
+                }
+
+                /** Thrown when the provider is temporarily unavailable. */
+                public static final class ServiceUnavailableException extends RuntimeException {
+                    public ServiceUnavailableException(String message) {
+                        super(message);
+                    }
+                }
+
+                /** Thrown when the provider rejects the request. */
+                public static final class ProviderRejectedException extends RuntimeException {
+                    public ProviderRejectedException(String message) {
+                        super(message);
+                    }
+                }
+
+                /** Thrown when the provider's response cannot be read. */
+                public static final class InvalidResponseException extends RuntimeException {
+                    public InvalidResponseException(String message) {
+                        super(message);
+                    }
+                }
+
+                /** The entity, whose state the machine reads and writes. */
+                static final class Ticket {
+                    TicketState state = TicketState.READY;
+                }
+
+                private static final MachineKey<Ticket, TicketState, TicketChange> KEY =
+                        MachineKey.of(Ticket.class, TicketState.class, TicketChange.class);
+
+                /** How long the consumer waits for an asynchronous call: the consumer's own wait, not the engine's. */
+                private static final Duration BUDGET = Duration.ofSeconds(30);
+
+                private RecoveryConsumer() { }
+
+                /** The publication graph: {@code action} gives PUBLISH its action, and the rules follow. */
+                private static GraphDefinition<Ticket, TicketState, TicketChange> graph(
+                        UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> action) {
+                    TransitionBuilder<Ticket, TicketState, TicketChange> publish = action.apply(StateGraph.define(KEY)
+                            .initial(TicketState.READY).terminal(TicketState.PUBLISHED).terminal(TicketState.CLOSED)
+                            .allowsCycle(TicketState.READY)
+                            .statePolicy(TicketState.READY, "publish the ticket")
+                            .statePolicy(TicketState.RETRY_PENDING, "retry the publication explicitly")
+                            .statePolicy(TicketState.REJECTED_BY_PROVIDER, "close the rejected ticket")
+                            .statePolicy(TicketState.INTEGRATION_FAILED, "close after manual review")
+                            .transition(TicketChange.PUBLISH, TicketState.READY, TicketState.PUBLISHED));
+                    return publish
+                            .recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
+                                    ServiceUnavailableException.class)
+                            .recover(PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
+                                    ProviderRejectedException.class)
+                            .failsOn(InvalidResponseException.class)
+                            .onFailure(TicketChange.MARK_INTEGRATION_FAILED)
+                            .endTransition()
+                            .transition(TicketChange.SCHEDULE_RETRY, TicketState.READY, TicketState.RETRY_PENDING)
+                            .endTransition()
+                            .transition(TicketChange.RECORD_REJECTION, TicketState.READY,
+                                    TicketState.REJECTED_BY_PROVIDER)
+                            .endTransition()
+                            .transition(TicketChange.MARK_INTEGRATION_FAILED, TicketState.READY,
+                                    TicketState.INTEGRATION_FAILED)
+                            .endTransition()
+                            .transition(TicketChange.RETRY, TicketState.RETRY_PENDING, TicketState.READY)
+                            .endTransition()
+                            .transition(TicketChange.CLOSE, TicketState.REJECTED_BY_PROVIDER, TicketState.CLOSED)
+                            .endTransition()
+                            .transition(TicketChange.CLOSE, TicketState.INTEGRATION_FAILED, TicketState.CLOSED)
+                            .endTransition()
+                            .build();
+                }
+
+                /** A standalone machine over {@code definition}; its engine waits far longer than the consumer does. */
+                private static StateMachine<Ticket, TicketState, TicketChange> machine(
+                        GraphDefinition<Ticket, TicketState, TicketChange> definition) {
+                    return StateMachines.from(definition)
+                            .state((Ticket ticket) -> ticket.state,
+                                    (Ticket ticket, TicketState state) -> ticket.state = state)
+                            .asyncTimeout(Duration.ofMinutes(1))
+                            .build();
+                }
+
+                private static void expect(Map<String, String> fields, String path, String value) {
+                    if (!value.equals(fields.get(path))) {
+                        throw new AssertionError(path + ": expected " + value + " but was " + fields.get(path));
+                    }
+                }
+
+                public static void main(String[] args) {
+                    CallTrace trace = CallTrace.create();
+                    ProviderRejectedException rejected = new ProviderRejectedException("content rejected");
+                    InvalidResponseException invalid = new InvalidResponseException("unreadable response");
+                    ActionProbe<Ticket, TicketState, TicketChange> probe =
+                            ActionProbe.<Ticket, TicketState, TicketChange>create("publish", trace)
+                                    .thenReturn(ActionOutcome.failed(PublicationFailures.Unavailable.class,
+                                            "provider down"))
+                                    .thenThrow(rejected)
+                                    .thenReturn(ActionOutcome.failed("invalid response"))
+                                    .thenThrow(invalid);
+                    GraphDefinition<Ticket, TicketState, TicketChange> definition =
+                            graph((TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
+                                    publish.action("publish", probe));
+
+                    // The declared rules, read back from the definition in declaration order.
+                    List<Class<? extends Throwable>> unavailableTypes = List.of(ServiceUnavailableException.class);
+                    List<Class<? extends Throwable>> rejectedTypes = List.of(ProviderRejectedException.class);
+                    List<RecoveryRule<TicketChange>> rules = List.of(
+                            new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
+                                    unavailableTypes),
+                            new RecoveryRule<>(PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
+                                    rejectedTypes));
+                    GraphAssertions.assertThat(definition)
+                            .transition(TicketState.READY, TicketChange.PUBLISH)
+                            .isAction()
+                            .hasActionNamed("publish")
+                            .recoversExactly(rules)
+                            .failsOnExactly(InvalidResponseException.class)
+                            .hasFailureTransition(TicketChange.MARK_INTEGRATION_FAILED);
+
+                    // A returned kind selects its rule.
+                    StateMachine<Ticket, TicketState, TicketChange> machine = machine(definition);
+                    Outcome<Ticket, TicketState, TicketChange> routedByKind =
+                            machine.execute(new Ticket(), TicketChange.PUBLISH);
+                    GraphAssertions.assertThat(routedByKind)
+                            .isFailed()
+                            .hasStatus(OutcomeStatus.FAILED)
+                            .hasCode(OutcomeCode.FAILURE_ROUTED)
+                            .hasFailureKind(PublicationFailures.Unavailable.class)
+                            .hasFailureTransition(TicketChange.SCHEDULE_RETRY)
+                            .movedTo(TicketState.RETRY_PENDING)
+                            .hasReason("provider down")
+                            .hasNoCause()
+                            .hasEntityState((Ticket ticket) -> ticket.state, TicketState.RETRY_PENDING);
+                    Class<? extends FailureKind> kind =
+                            routedByKind.asFailed().orElseThrow().failureKind().orElseThrow();
+                    if (kind != PublicationFailures.Unavailable.class) {
+                        throw new AssertionError("the published outcome must carry its failure kind: " + routedByKind);
+                    }
+                    boolean refused = false;
+                    try {
+                        GraphAssertions.assertThat(routedByKind).isFailed()
+                                .hasFailureKind(PublicationFailures.Rejected.class);
+                    } catch (GraphAssertionError expected) {
+                        refused = true;
+                    }
+                    if (!refused) {
+                        throw new AssertionError("hasFailureKind must refuse another failure kind");
+                    }
+
+                    // A thrown type selects the rule that declares it, and the cause keeps its identity.
+                    GraphAssertions.assertThat(machine.execute(new Ticket(), TicketChange.PUBLISH))
+                            .isFailed()
+                            .hasFailureKind(PublicationFailures.Rejected.class)
+                            .hasFailureTransition(TicketChange.RECORD_REJECTION)
+                            .movedTo(TicketState.REJECTED_BY_PROVIDER)
+                            .hasCauseSameAs(rejected)
+                            .hasNoExplanation();
+
+                    // A plain returned failure and a failsOn type take the fallback, without a kind.
+                    GraphAssertions.assertThat(machine.execute(new Ticket(), TicketChange.PUBLISH))
+                            .isFailed()
+                            .hasNoFailureKind()
+                            .hasFailureTransition(TicketChange.MARK_INTEGRATION_FAILED)
+                            .movedTo(TicketState.INTEGRATION_FAILED)
+                            .hasNoCause()
+                            .hasExplanation("invalid response");
+                    GraphAssertions.assertThat(machine.execute(new Ticket(), TicketChange.PUBLISH))
+                            .isFailed()
+                            .hasNoFailureKind()
+                            .hasFailureTransition(TicketChange.MARK_INTEGRATION_FAILED)
+                            .movedTo(TicketState.INTEGRATION_FAILED)
+                            .hasCauseSameAs(invalid);
+                    probe.calls().assertCount(4);
+                    ActionOutcome returnedKind =
+                            ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected");
+                    GraphAssertions.assertThat(returnedKind)
+                            .isFailed()
+                            .hasReason("content rejected")
+                            .hasFailureKind(PublicationFailures.Rejected.class);
+                    GraphAssertions.assertThat(ActionOutcome.failed("invalid response")).isFailed().hasNoFailureKind();
+
+                    // The snapshot carries the rules by index, and an edge without rules adds no subtree.
+                    GraphSnapshot snapshot = GraphSnapshot.capture(definition);
+                    Map<String, String> fields = snapshot.fields();
+                    String recoveries = "/transitions/READY/PUBLISH/recoveries/";
+                    expect(fields, recoveries + "count", "2");
+                    expect(fields, recoveries + "0/kind", PublicationFailures.Unavailable.class.getName());
+                    expect(fields, recoveries + "0/transition", "SCHEDULE_RETRY");
+                    expect(fields, recoveries + "0/failsOn/count", "1");
+                    expect(fields, recoveries + "0/failsOn/0", ServiceUnavailableException.class.getName());
+                    expect(fields, recoveries + "1/kind", PublicationFailures.Rejected.class.getName());
+                    expect(fields, recoveries + "1/transition", "RECORD_REJECTION");
+                    expect(fields, recoveries + "1/failsOn/count", "1");
+                    expect(fields, recoveries + "1/failsOn/0", ProviderRejectedException.class.getName());
+                    int recoveryPaths = 0;
+                    for (String path : fields.keySet()) {
+                        if (path.startsWith(recoveries)) {
+                            recoveryPaths++;
+                        } else if (path.contains("/recoveries/")) {
+                            throw new AssertionError("an edge without rules must add no recoveries subtree: " + path);
+                        }
+                    }
+                    if (recoveryPaths != 9 || !GraphSnapshot.parse(snapshot.serialize()).fields().equals(fields)) {
+                        throw new AssertionError("the snapshot must hold and read back the two rules: " + fields);
+                    }
+
+                    // The DOT draws one fragment per rule, in declaration order, before the fallback.
+                    String dot = GraphvizExporter.render(GraphView.of(definition));
+                    String label = "PUBLISH publish"
+                            + " [recover RecoveryConsumer$PublicationFailures$Unavailable -> SCHEDULE_RETRY]"
+                            + " [recover RecoveryConsumer$PublicationFailures$Rejected -> RECORD_REJECTION]"
+                            + " [onFailure MARK_INTEGRATION_FAILED]";
+                    int fragments = 0;
+                    for (int at = dot.indexOf("[recover "); at >= 0; at = dot.indexOf("[recover ", at + 1)) {
+                        fragments++;
+                    }
+                    if (!dot.contains(label) || fragments != 2) {
+                        throw new AssertionError("the published DOT must draw each rule once, on its edge: " + dot);
+                    }
+
+                    // An asynchronous action selects the same routes, through a public asynchronous call.
+                    try (ControlledAsyncAction<Ticket, TicketState, TicketChange> controlled =
+                            ControlledAsyncAction.create()) {
+                        StateMachine<Ticket, TicketState, TicketChange> asyncMachine =
+                                machine(graph((TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
+                                        publish.asyncAction("publish", controlled)));
+                        CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> completion = null;
+                        CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> failing = null;
+                        PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> pending = null;
+                        PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> \
+            failingPending = null;
+                        try {
+                            Ticket returned = new Ticket();
+                            completion = asyncMachine.async().execute(returned, TicketChange.PUBLISH);
+                            pending = controlled.awaitInvocation(BUDGET);
+                            ActionCall<Ticket, TicketState, TicketChange> held = pending.call();
+                            if (held.entity() != returned || held.transition() != TicketChange.PUBLISH) {
+                                throw new AssertionError(\
+            "the controlled action must record the call it holds: " + held);
+                            }
+                            pending.complete(\
+            ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"));
+                            AsyncAssertions.await(completion, BUDGET)
+                                    .isFailed()
+                                    .hasFailureKind(PublicationFailures.Rejected.class)
+                                    .hasFailureTransition(TicketChange.RECORD_REJECTION)
+                                    .movedTo(TicketState.REJECTED_BY_PROVIDER)
+                                    .hasNoCause();
+                            ServiceUnavailableException down = new ServiceUnavailableException("provider down");
+                            failing = asyncMachine.async().execute(new Ticket(), TicketChange.PUBLISH);
+                            failingPending = controlled.awaitInvocation(BUDGET);
+                            failingPending.fail(down);
+                            AsyncAssertions.await(failing, BUDGET)
+                                    .isFailed()
+                                    .hasFailureKind(PublicationFailures.Unavailable.class)
+                                    .hasFailureTransition(TicketChange.SCHEDULE_RETRY)
+                                    .movedTo(TicketState.RETRY_PENDING)
+                                    .hasCauseSameAs(down);
+                        } finally {
+                            if (pending != null) pending.cancelStage();
+                            if (failingPending != null) failingPending.cancelStage();
+                            if (completion != null) completion.cancel(true);
+                            if (failing != null) failing.cancel(true);
+                        }
+                    }
+                    System.out.println("TYPED_RECOVERY_OK");
+                }
+            }
+            """;
+
+    /** A standalone consumer that reports its PID before holding the runner in a process wait. */
+    private static final String INTERRUPTED_CONSUMER_SOURCE = """
+            package published.recovery;
+
+            import java.nio.file.Files;
+            import java.nio.file.Path;
+            import java.util.concurrent.CountDownLatch;
+
+            /** Reports its PID to the parent test, then waits until that test terminates this JVM. */
+            public final class WaitingConsumer {
+                private WaitingConsumer() { }
+
+                public static void main(String[] args) throws Exception {
+                    Path directory = Path.of(args[0]);
+                    Path written = Files.writeString(directory.resolve("consumer.pid.tmp"),
+                            Long.toString(ProcessHandle.current().pid()));
+                    Files.move(written, directory.resolve("consumer.pid"));
+                    new CountDownLatch(1).await();
+                }
+            }
+            """;
+
     private static final List<String> SUFFIXES = List.of(".jar", ".pom", "-sources.jar", "-javadoc.jar");
 
     @Test
@@ -315,6 +675,77 @@ class PublishedArtifactSmokeTest {
         runConsumer(workDir, jars);
     }
 
+    /**
+     * Typed recovery as the jars promise it, compiled and run against the core and test jars alone. The consumer
+     * renders DOT, so it runs against the complete core jar only.
+     */
+    @Test
+    void aRecoveryConsumerCompilesAndRunsAgainstThePublishedJarsAlone(@TempDir Path workDir)
+            throws IOException, InterruptedException {
+        String jars = artifact("graphmaquina-core", ".jar") + File.pathSeparator
+                + artifact("graphmaquina-test", ".jar");
+        runConsumer(workDir, jars, "published.recovery.RecoveryConsumer", RECOVERY_CONSUMER_SOURCE,
+                "TYPED_RECOVERY_OK");
+    }
+
+    /** An interrupted parent must not leave the published consumer JVM alive. */
+    @Test
+    @Timeout(value = 90, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void interruptedConsumerWaitDestroysItsChild(@TempDir Path workDir) throws Exception {
+        String jars = artifact("graphmaquina-core", ".jar") + File.pathSeparator
+                + artifact("graphmaquina-test", ".jar");
+        Path pidFile = workDir.resolve("consumer.pid");
+        AtomicReference<Throwable> observed = new AtomicReference<>();
+        AtomicReference<Process> launched = new AtomicReference<>();
+        CountDownLatch launchObserved = new CountDownLatch(1);
+        Thread runner = new Thread(() -> {
+            try {
+                runConsumer(workDir, jars, "published.recovery.WaitingConsumer",
+                        INTERRUPTED_CONSUMER_SOURCE, "NEVER_PRINTED", (Process child) -> {
+                            launched.set(child);
+                            launchObserved.countDown();
+                        });
+            } catch (Throwable failure) {
+                observed.set(failure);
+            }
+        }, "published-consumer-interruption");
+        runner.setDaemon(true);
+        long childPid = -1;
+        try (WatchService watch = FileSystems.getDefault().newWatchService()) {
+            workDir.register(watch, StandardWatchEventKinds.ENTRY_CREATE);
+            runner.start();
+            while (!Files.isRegularFile(pidFile)) {
+                WatchKey event = watch.poll(30, TimeUnit.SECONDS);
+                assertNotNull(event, "the child did not publish its PID");
+                event.pollEvents();
+                assertTrue(event.reset(), "the watched consumer directory became unavailable");
+            }
+            childPid = Long.parseLong(Files.readString(pidFile, UTF_8));
+            assertTrue(launchObserved.await(30, TimeUnit.SECONDS), "the runner did not report its launched child");
+            Process owned = launched.get();
+            assertNotNull(owned, "the fixture did not report the Process it launched");
+            assertEquals(childPid, owned.pid(), "the PID file must come from the owned child");
+            runner.interrupt();
+            runner.join(10_000);
+            assertFalse(runner.isAlive(), "the interrupted runner did not finish its bounded cleanup");
+            assertTrue(observed.get() instanceof InterruptedException,
+                    "the interrupted wait must propagate its original exception: " + observed.get());
+            assertFalse(owned.isAlive(), "the interrupted runner left its consumer JVM alive: " + owned.pid());
+        } finally {
+            runner.interrupt();
+            Process owned = launched.get();
+            if (owned != null && owned.isAlive()) {
+                owned.destroyForcibly();
+                try {
+                    owned.waitFor(10, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            runner.join(10_000);
+        }
+    }
+
     @Test
     void semanticAssertionsRunWithoutAnyGraphicExporter(@TempDir Path workDir)
             throws IOException, InterruptedException {
@@ -338,33 +769,94 @@ class PublishedArtifactSmokeTest {
     }
 
     private static void runConsumer(Path workDir, String jars) throws IOException, InterruptedException {
+        runConsumer(workDir, jars, "PublishedConsumer", CONSUMER_SOURCE, "PUBLIC_API_OK");
+    }
+
+    /**
+     * Compiles {@code source}, whose public class is {@code mainClass}, against {@code jars} alone, then runs that
+     * class in a separate JVM whose classpath holds the compiled consumer and those jars and nothing else, with
+     * {@code workDir} as its only argument, and expects it to exit normally after printing {@code marker}. The
+     * runner waits at most two minutes; on interruption, timeout or another failure, it attempts to forcibly stop a
+     * live child and waits up to ten seconds to reap it, suppressing cleanup errors onto the original failure.
+     */
+    private static void runConsumer(Path workDir, String jars, String mainClass, String source, String marker)
+            throws IOException, InterruptedException {
+        runConsumer(workDir, jars, mainClass, source, marker, (Process ignored) -> { });
+    }
+
+    /** The same runner, with a test-only callback that observes the exact child {@link Process} after launch. */
+    private static void runConsumer(Path workDir, String jars, String mainClass, String source, String marker,
+            Consumer<Process> onStart) throws IOException, InterruptedException {
         Path classes = Files.createDirectories(workDir.resolve("classes"));
-        List<String> diagnostics = compile(workDir, jars, classes);
+        List<String> diagnostics = compile(workDir, jars, classes, mainClass, source);
         assertEquals(List.of(), diagnostics, "the consumer source must compile against the published jars");
 
         Path transcript = workDir.resolve("consumer-output.txt");
         Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
-                "-classpath", classes + File.pathSeparator + jars, "PublishedConsumer", workDir.toString())
+                "-classpath", classes + File.pathSeparator + jars, mainClass, workDir.toString())
                 .redirectErrorStream(true)
                 .redirectOutput(transcript.toFile())
                 .start();
-        if (!process.waitFor(2, TimeUnit.MINUTES)) {
-            process.destroyForcibly();
-            fail("the consumer process did not terminate");
+        Throwable originalFailure = null;
+        try {
+            onStart.accept(process);
+            if (!process.waitFor(2, TimeUnit.MINUTES)) {
+                fail("the consumer process did not terminate");
+            }
+            String output = Files.readString(transcript, UTF_8);
+            assertEquals(0, process.exitValue(), "the consumer process failed: " + output);
+            String lastLine = output.lines().reduce((String earlier, String later) -> later).orElse("");
+            assertEquals(marker, lastLine, "the consumer did not print its marker on the last line: " + output);
+        } catch (IOException | InterruptedException | RuntimeException | Error failure) {
+            originalFailure = failure;
+            throw failure;
+        } finally {
+            try {
+                if (process.isAlive()) {
+                    process.destroyForcibly();
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                    boolean reaped = false;
+                    boolean cleanupInterrupted = false;
+                    while (!reaped) {
+                        long remaining = deadline - System.nanoTime();
+                        if (remaining <= 0) {
+                            break;
+                        }
+                        try {
+                            reaped = process.waitFor(remaining, TimeUnit.NANOSECONDS);
+                        } catch (InterruptedException interrupted) {
+                            cleanupInterrupted = true;
+                        }
+                    }
+                    if (cleanupInterrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                    if (!reaped) {
+                        throw new AssertionError("the consumer process remained alive after forcible destruction");
+                    }
+                }
+            } catch (RuntimeException | Error cleanupFailure) {
+                if (originalFailure == null) {
+                    throw cleanupFailure;
+                }
+                originalFailure.addSuppressed(cleanupFailure);
+            }
         }
-        String output = Files.readString(transcript, UTF_8);
-        assertEquals(0, process.exitValue(), "the consumer process failed: " + output);
-        assertTrue(output.contains("PUBLIC_API_OK"), "the consumer did not reach its last line: " + output);
     }
 
-    /** Compiles the consumer with the published jars as its entire classpath; returns what javac reported. */
-    private static List<String> compile(Path workDir, String jars, Path classes) throws IOException {
+    /**
+     * Compiles {@code source}, written to a file named after the simple name of {@code mainClass}, with the
+     * published jars as its entire classpath; returns what javac reported.
+     */
+    private static List<String> compile(Path workDir, String jars, Path classes, String mainClass, String source)
+            throws IOException {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         assertNotNull(compiler, "this smoke test needs a JDK compiler, not a JRE");
-        Path source = Files.writeString(workDir.resolve("PublishedConsumer.java"), CONSUMER_SOURCE);
+        String simpleName = mainClass.substring(mainClass.lastIndexOf('.') + 1);
+        Path file = Files.writeString(workDir.resolve(simpleName + ".java"), source);
         DiagnosticCollector<JavaFileObject> collector = new DiagnosticCollector<>();
         try (StandardJavaFileManager manager = compiler.getStandardFileManager(collector, null, UTF_8)) {
-            Iterable<? extends JavaFileObject> units = manager.getJavaFileObjectsFromPaths(List.of(source));
+            Iterable<? extends JavaFileObject> units = manager.getJavaFileObjectsFromPaths(List.of(file));
             List<String> options = List.of("--release", "21", "-proc:none", "-Xlint:all,-serial", "-Werror",
                     "-classpath", jars, "-d", classes.toString());
             boolean succeeded = compiler.getTask(null, manager, collector, options, null, units).call();

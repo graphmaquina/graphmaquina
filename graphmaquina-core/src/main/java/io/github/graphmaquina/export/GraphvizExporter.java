@@ -12,6 +12,12 @@ import lombok.NonNull;
  * State names are escaped labels on internal node IDs. The initial state has an incoming arrow from a point,
  * terminals use double circles, and watches use notes with dashed connections. Only declared edges are
  * drawn; a rejection policy is a tooltip on its node, never an arrow.
+ *
+ * <p>An edge's label is its identifier, then its action, {@code [async]}, {@code [if <guards>]}, one
+ * {@code [recover <kind> -> <transition>]} per recovery rule in declaration order, {@code [onFailure <transition>]}
+ * and {@code [watches <rules>]}, leaving out the parts the edge does not have. A rule's kind is its binary name
+ * without the package, such as {@code PublicationFailures$Unavailable}. The throwable types of failsOn and of the
+ * rules are not drawn, and a rule adds no arrow and no node.
  */
 public final class GraphvizExporter {
 
@@ -79,7 +85,7 @@ public final class GraphvizExporter {
         return String.join("; ", parts);
     }
 
-    /** The identifier always leads; the action, guards and routing follow it. */
+    /** The identifier always leads; the action, guards and routing follow it, every rule before the fallback. */
     private static String label(TransitionView transition) {
         List<String> parts = new ArrayList<>();
         parts.add(transition.transition());
@@ -90,8 +96,16 @@ public final class GraphvizExporter {
         if (!transition.guards().isEmpty()) {
             parts.add("[if " + String.join(", ", transition.guards()) + "]");
         }
+        for (RecoveryView recovery : transition.recoveries()) {
+            parts.add("[recover " + withoutPackage(recovery.kind()) + " -> " + recovery.transition() + "]");
+        }
         transition.failureTransition().ifPresent((String id) -> parts.add("[onFailure " + id + "]"));
         transition.watch().ifPresent((String rule) -> parts.add("[watches " + rule + "]"));
         return String.join(" ", parts);
+    }
+
+    /** A binary name without its package: the text after the last dot, nested names still joined by {@code $}. */
+    private static String withoutPackage(String binaryName) {
+        return binaryName.substring(binaryName.lastIndexOf('.') + 1);
     }
 }

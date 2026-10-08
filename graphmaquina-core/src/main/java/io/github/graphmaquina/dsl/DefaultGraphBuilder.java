@@ -2,6 +2,7 @@ package io.github.graphmaquina.dsl;
 
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.StatePolicy;
 import io.github.graphmaquina.api.TransitionKey;
 import io.github.graphmaquina.api.TransitionSpec;
@@ -244,8 +245,12 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         }
         List<TransitionOutline> edges = new ArrayList<>();
         for (TransitionSpec<E, S, T> spec : ordered) {
+            List<String> recoveries = new ArrayList<>();
+            for (RecoveryRule<T> rule : spec.recoveryRules()) {
+                recoveries.add(rule.transition().name());
+            }
             edges.add(new TransitionOutline(spec.from().name(), spec.transition().name(), spec.to().name(), spec.kind(),
-                    spec.onFailure().map(Enum::name)));
+                    spec.onFailure().map(Enum::name), recoveries));
         }
         List<PolicyOutline> policyOutlines = new ArrayList<>();
         for (S state : states) {

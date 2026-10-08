@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -19,6 +20,8 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -316,6 +319,223 @@ public final class MavenFixture {
     }
 
     /**
+     * The publication domain of typed recovery, in a package of its own: {@code fxr.Tickets} declares PUBLISH with
+     * two {@code recoveries}, a {@code failsOn} type and a fallback, {@code fxr.TicketActions} makes each ticket meet
+     * the failure its id names, and {@code fxr.Publications} publishes one ticket per route and prints one line
+     * {@code ROUTED <id> <recovery> <state> kind=<kind> cause=<cause>} for each.
+     *
+     * @return a mutable copy of the domain, one entry per compilation unit, keyed by qualified name
+     */
+    public static Map<String, String> recoverySources() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("fxr.TicketState", """
+                package fxr;
+
+                /** The states a ticket moves through. */
+                public enum TicketState {
+                    READY, PUBLISHED, RETRY_PENDING, REJECTED_BY_PROVIDER, INTEGRATION_FAILED, CLOSED
+                }
+                """);
+        sources.put("fxr.TicketChange", """
+                package fxr;
+
+                /** The identified transitions of the publication graph. */
+                public enum TicketChange {
+                    PUBLISH, SCHEDULE_RETRY, RECORD_REJECTION, MARK_INTEGRATION_FAILED, RETRY, CLOSE
+                }
+                """);
+        sources.put("fxr.PublicationFailures", """
+                package fxr;
+
+                import io.github.graphmaquina.api.FailureKind;
+
+                /** The failure kinds the publication adapter reports. */
+                public final class PublicationFailures {
+
+                    private PublicationFailures() {
+                    }
+
+                    /** The provider could not take the publication now. */
+                    public record Unavailable() implements FailureKind {
+                    }
+
+                    /** The provider refused the content. */
+                    public record Rejected() implements FailureKind {
+                    }
+                }
+                """);
+        sources.put("fxr.ServiceUnavailableException", """
+                package fxr;
+
+                /** Thrown when the provider is temporarily unavailable. */
+                public final class ServiceUnavailableException extends RuntimeException {
+
+                    public ServiceUnavailableException(String message) {
+                        super(message);
+                    }
+                }
+                """);
+        sources.put("fxr.ProviderRejectedException", """
+                package fxr;
+
+                /** Thrown when the provider rejects the request. */
+                public final class ProviderRejectedException extends RuntimeException {
+
+                    public ProviderRejectedException(String message) {
+                        super(message);
+                    }
+                }
+                """);
+        sources.put("fxr.InvalidResponseException", """
+                package fxr;
+
+                /** Thrown when the provider's response cannot be read. */
+                public final class InvalidResponseException extends RuntimeException {
+
+                    public InvalidResponseException(String message) {
+                        super(message);
+                    }
+                }
+                """);
+        sources.put("fxr.Ticket", """
+                package fxr;
+
+                import io.github.graphmaquina.annotation.GraphProperty;
+
+                /** The entity of the publication graph; its id names the failure its publication meets. */
+                public final class Ticket {
+
+                    private final String id;
+
+                    @GraphProperty
+                    private TicketState status = TicketState.READY;
+
+                    public Ticket(String id) {
+                        this.id = id;
+                    }
+
+                    @GraphProperty
+                    public String getId() {
+                        return id;
+                    }
+
+                    public TicketState getStatus() {
+                        return status;
+                    }
+
+                    public void setStatus(TicketState value) {
+                        status = value;
+                    }
+                }
+                """);
+        sources.put("fxr.TicketActions", """
+                package fxr;
+
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+
+                /** The action host of the publication graph: the id of each ticket picks the failure it meets. */
+                public final class TicketActions {
+
+                    @GraphAction
+                    public ActionOutcome publish(TransitionContext<Ticket, TicketState, TicketChange> context) {
+                        return switch (context.entity().getId()) {
+                            case "unavailable" -> ActionOutcome.failed(PublicationFailures.Unavailable.class,
+                                    "provider unavailable");
+                            case "rejected" -> throw new ProviderRejectedException("content rejected");
+                            case "invalid" -> throw new InvalidResponseException("unreadable response");
+                            default -> ActionOutcome.ok();
+                        };
+                    }
+                }
+                """);
+        sources.put("fxr.Tickets", """
+                package fxr;
+
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+
+                import static fxr.TicketState.CLOSED;
+                import static fxr.TicketState.INTEGRATION_FAILED;
+                import static fxr.TicketState.PUBLISHED;
+                import static fxr.TicketState.READY;
+                import static fxr.TicketState.REJECTED_BY_PROVIDER;
+                import static fxr.TicketState.RETRY_PENDING;
+
+                /** The publication machine: a failure of PUBLISH takes the route its kind or its type selects. */
+                @GenerateGraphApi
+                @TicketsGraph.Definition(initial = READY, terminals = {PUBLISHED, CLOSED}, allowsCycle = READY,
+                    state = TicketRefs.Status.class, id = TicketRefs.Id.class)
+                @TicketsGraph.StatePolicy(state = READY, otherwise = "publish the ticket")
+                @TicketsGraph.StatePolicy(state = RETRY_PENDING, otherwise = "retry the publication explicitly")
+                @TicketsGraph.StatePolicy(state = REJECTED_BY_PROVIDER, otherwise = "close the rejected ticket")
+                @TicketsGraph.StatePolicy(state = INTEGRATION_FAILED, otherwise = "close after manual review")
+                @TicketsGraph.Transition(id = TicketChange.SCHEDULE_RETRY, from = READY, to = RETRY_PENDING)
+                @TicketsGraph.Transition(id = TicketChange.RECORD_REJECTION, from = READY, to = REJECTED_BY_PROVIDER)
+                @TicketsGraph.Transition(id = TicketChange.MARK_INTEGRATION_FAILED, from = READY,
+                    to = INTEGRATION_FAILED)
+                @TicketsGraph.Transition(id = TicketChange.RETRY, from = RETRY_PENDING, to = READY)
+                @TicketsGraph.Transition(id = TicketChange.CLOSE, from = {REJECTED_BY_PROVIDER, INTEGRATION_FAILED},
+                    to = CLOSED)
+                public interface Tickets extends Machine<Ticket, TicketState, TicketChange> {
+
+                    @TicketsGraph.Transition(id = TicketChange.PUBLISH, from = READY, to = PUBLISHED,
+                        action = TicketActionsRefs.Publish.class,
+                        recoveries = {
+                            @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class,
+                                transition = TicketChange.SCHEDULE_RETRY,
+                                failsOn = ServiceUnavailableException.class),
+                            @TicketsGraph.Recovery(kind = PublicationFailures.Rejected.class,
+                                transition = TicketChange.RECORD_REJECTION,
+                                failsOn = ProviderRejectedException.class)},
+                        failsOn = InvalidResponseException.class,
+                        onFailure = TicketChange.MARK_INTEGRATION_FAILED)
+                    Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
+                }
+                """);
+        sources.put("fxr.Publications", """
+                package fxr;
+
+                import io.github.graphmaquina.api.Outcome;
+                import io.github.graphmaquina.runtime.StateMachines;
+                import java.util.List;
+
+                /** Publishes one ticket per declared route and prints where the failure of each one took it. */
+                public final class Publications {
+
+                    private Publications() {
+                    }
+
+                    public static void main(String[] arguments) {
+                        Tickets tickets = new TicketsRuntime(
+                                StateMachines.from(TicketsRuntime.graph(new TicketActions()))
+                                        .state(Ticket::getStatus, Ticket::setStatus)
+                                        .build());
+                        for (String id : List.of("unavailable", "rejected", "invalid")) {
+                            Ticket ticket = new Ticket(id);
+                            Outcome<Ticket, TicketState, TicketChange> outcome = tickets.publish(ticket);
+                            Outcome.Failed<Ticket, TicketState, TicketChange> failed = outcome.asFailed()
+                                    .orElseThrow(() -> new IllegalStateException(id + " was not routed: " + outcome));
+                            if (ticket.getStatus() != failed.movedTo()) {
+                                throw new IllegalStateException(id + " moved to " + failed.movedTo()
+                                        + " but the ticket is " + ticket.getStatus());
+                            }
+                            String kind = failed.failureKind().map(Class::getSimpleName).orElse("none");
+                            String cause = failed.cause()
+                                    .map((Throwable error) -> error.getClass().getSimpleName())
+                                    .orElse("none");
+                            System.out.println("ROUTED " + id + " " + failed.failureTransition() + " "
+                                    + failed.movedTo() + " kind=" + kind + " cause=" + cause);
+                        }
+                    }
+                }
+                """);
+        return sources;
+    }
+
+    /**
      * Writes {@code sources} under {@code src/main/java}, one file per qualified name, replacing whatever the
      * main source root held before, which is what editing a source tree does.
      *
@@ -464,6 +684,116 @@ public final class MavenFixture {
             process.destroy();
             throw new IllegalStateException("interrupted while running " + String.join(" ", command),
                     interrupted);
+        }
+    }
+
+    /**
+     * Runs {@code mainClass} in a JVM of the JDK running these tests, over the classes the main compilation wrote and
+     * the {@code graphmaquina-core} jar the fixture build resolved into its local repository, and nothing else; run a
+     * build that compiles the main sources first. The runner waits at most two minutes. On an abnormal exit, it
+     * attempts to forcibly stop a live child and waits up to ten seconds for confirmed termination before removing
+     * the transcript. If termination cannot be confirmed, it retains the transcript. It retains the original failure
+     * and the caller's interrupt status, attaching cleanup failures as suppressed exceptions.
+     *
+     * @param mainClass the binary name of the class whose {@code main} method runs
+     * @return everything the process printed on both of its streams, in the order it wrote them
+     * @throws IOException if the process cannot be started, its output cannot be read, or its transcript cannot
+     *     be removed after a successful run
+     * @throws IllegalStateException if the fixture build resolved no such jar, if the process exits with a status
+     *     other than {@code 0}, if it exceeds two minutes, if a live child cannot be reaped after forcible
+     *     destruction, or if the thread is interrupted while it runs; the interrupted exception is retained as
+     *     the cause and the thread's interrupt status is restored
+     */
+    public String runMain(String mainClass) throws IOException {
+        return runMain(mainClass, (Process ignored) -> { });
+    }
+
+    /** The same fixture runner, with a package-local test callback for the exact child {@link Process}. */
+    String runMain(String mainClass, Consumer<Process> onStart) throws IOException {
+        String version = graphmaquinaVersion();
+        Path core = Path.of(localRepository(), "io", "github", "graphmaquina", "graphmaquina-core", version,
+                "graphmaquina-core-" + version + ".jar");
+        if (!Files.isRegularFile(core)) {
+            throw new IllegalStateException("the fixture build resolved no " + core
+                    + "; run a build that compiles the main sources first");
+        }
+        List<String> command = List.of(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+                "-classpath", directory.resolve("target/classes") + File.pathSeparator + core, mainClass);
+        Path transcript = Files.createTempFile(directory, "publications-", ".out");
+        Process process = null;
+        boolean terminated = false;
+        Throwable originalFailure = null;
+        try {
+            process = new ProcessBuilder(command)
+                    .directory(directory.toFile())
+                    .redirectErrorStream(true)
+                    .redirectOutput(transcript.toFile())
+                    .start();
+            onStart.accept(process);
+            if (!process.waitFor(2, TimeUnit.MINUTES)) {
+                throw new IllegalStateException(mainClass + " did not terminate within two minutes:\n"
+                        + Files.readString(transcript, StandardCharsets.UTF_8));
+            }
+            terminated = true;
+            String output = Files.readString(transcript, StandardCharsets.UTF_8);
+            int status = process.exitValue();
+            if (status != 0) {
+                throw new IllegalStateException(mainClass + " exited with status " + status + ":\n" + output);
+            }
+            return output;
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            IllegalStateException failure = new IllegalStateException(
+                    "interrupted while running " + String.join(" ", command), interrupted);
+            originalFailure = failure;
+            throw failure;
+        } catch (IOException | RuntimeException | Error failure) {
+            originalFailure = failure;
+            throw failure;
+        } finally {
+            if (process != null && !terminated) {
+                try {
+                    if (process.isAlive()) {
+                        process.destroyForcibly();
+                    }
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                    boolean cleanupInterrupted = false;
+                    while (!terminated) {
+                        long remaining = deadline - System.nanoTime();
+                        if (remaining <= 0) {
+                            break;
+                        }
+                        try {
+                            terminated = process.waitFor(remaining, TimeUnit.NANOSECONDS);
+                        } catch (InterruptedException interrupted) {
+                            cleanupInterrupted = true;
+                        }
+                    }
+                    if (cleanupInterrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                    if (!terminated) {
+                        throw new IllegalStateException(mainClass
+                                + " remained alive after forcible destruction");
+                    }
+                } catch (RuntimeException | Error cleanupFailure) {
+                    if (originalFailure == null) {
+                        originalFailure = cleanupFailure;
+                        throw cleanupFailure;
+                    }
+                    originalFailure.addSuppressed(cleanupFailure);
+                }
+            }
+            if (process == null || terminated) {
+                try {
+                    Files.deleteIfExists(transcript);
+                } catch (IOException | RuntimeException | Error deletion) {
+                    if (originalFailure == null) {
+                        throw deletion;
+                    }
+                    originalFailure.addSuppressed(deletion);
+                }
+            }
         }
     }
 

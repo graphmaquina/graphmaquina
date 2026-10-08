@@ -19,15 +19,23 @@ import java.io.InputStream;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystemException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.nio.file.attribute.FileTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -43,6 +51,8 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -2391,6 +2401,125 @@ class MavenPluginIntegrationTest {
         MavenResult second = fixture.run("package");
         assertEquals(0, second.exitCode(), second.output());
         assertFalse(Files.readString(runtime).contains(".afterCommit("));
+    }
+
+    /**
+     * A facade that declares {@code recoveries}, built by the published plugin from the artifacts of this build: the
+     * generated vocabulary carries {@code Recovery}, the generated companion one {@code recover} call per rule, and
+     * the program compiled with them sees each failure of PUBLISH take the route its kind or its type selects.
+     */
+    @Test
+    void routesTheFailuresOfAFacadeThatDeclaresRecoveries() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.writeSources(MavenFixture.recoverySources());
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.jarContains("fxr/TicketsGraph$Recovery.class"), result.output());
+        String companion = Files.readString(fixture.projectDirectory()
+                .resolve("target/generated-sources/annotations/fxr/TicketsRuntime.java"), StandardCharsets.UTF_8);
+        assertTrue(companion.contains(".recover(fxr.PublicationFailures.Unavailable.class,"
+                + " TicketChange.SCHEDULE_RETRY, fxr.ServiceUnavailableException.class)"), companion);
+        assertTrue(companion.contains(".recover(fxr.PublicationFailures.Rejected.class,"
+                + " TicketChange.RECORD_REJECTION, fxr.ProviderRejectedException.class)"), companion);
+        String output = fixture.runMain("fxr.Publications");
+        assertEquals(List.of(
+                "ROUTED unavailable SCHEDULE_RETRY RETRY_PENDING kind=Unavailable cause=none",
+                "ROUTED rejected RECORD_REJECTION REJECTED_BY_PROVIDER kind=Rejected cause=ProviderRejectedException",
+                "ROUTED invalid MARK_INTEGRATION_FAILED INTEGRATION_FAILED kind=none cause=InvalidResponseException"),
+                output.lines().filter((String line) -> line.startsWith("ROUTED ")).toList(), output);
+    }
+
+    /** An interrupted fixture runner must stop and reap the exact child JVM it launched. */
+    @Test
+    void interruptedPublicationProgramDoesNotLeaveItsChildRunning() throws Exception {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        Map<String, String> sources = MavenFixture.recoverySources();
+        sources.put("fxr.WaitingPublications", """
+                package fxr;
+
+                import java.nio.file.Files;
+                import java.nio.file.Path;
+                import java.util.concurrent.CountDownLatch;
+
+                /** Reports its PID, then waits for the parent fixture runner to stop this JVM. */
+                public final class WaitingPublications {
+                    private WaitingPublications() { }
+
+                    public static void main(String[] arguments) throws Exception {
+                        Path written = Files.writeString(Path.of("publications.pid.tmp"),
+                                Long.toString(ProcessHandle.current().pid()));
+                        Files.move(written, Path.of("publications.pid"));
+                        new CountDownLatch(1).await();
+                    }
+                }
+                """);
+        fixture.writeSources(sources);
+        MavenResult build = fixture.run("package");
+        assertEquals(0, build.exitCode(), build.output());
+
+        assertTimeoutPreemptively(Duration.ofSeconds(90), () -> {
+            Path directory = fixture.projectDirectory();
+            Path pidFile = directory.resolve("publications.pid");
+            AtomicReference<Throwable> observed = new AtomicReference<>();
+            AtomicReference<Boolean> interruptStatus = new AtomicReference<>();
+            AtomicReference<Process> launched = new AtomicReference<>();
+            CountDownLatch launchObserved = new CountDownLatch(1);
+            Thread runner = new Thread(() -> {
+                try {
+                    fixture.runMain("fxr.WaitingPublications", (Process child) -> {
+                        launched.set(child);
+                        launchObserved.countDown();
+                    });
+                } catch (Throwable failure) {
+                    observed.set(failure);
+                    interruptStatus.set(Thread.currentThread().isInterrupted());
+                }
+            }, "maven-publications-interruption");
+            runner.setDaemon(true);
+            long childPid = -1;
+            try (WatchService watch = FileSystems.getDefault().newWatchService()) {
+                directory.register(watch, StandardWatchEventKinds.ENTRY_CREATE);
+                runner.start();
+                while (!Files.isRegularFile(pidFile)) {
+                    WatchKey event = watch.poll(30, TimeUnit.SECONDS);
+                    assertNotNull(event, "the fixture child did not publish its PID");
+                    event.pollEvents();
+                    assertTrue(event.reset(), "the watched fixture directory became unavailable");
+                }
+                childPid = Long.parseLong(Files.readString(pidFile));
+                assertTrue(launchObserved.await(30, TimeUnit.SECONDS), "the runner did not report its launched child");
+                Process owned = launched.get();
+                assertNotNull(owned, "the fixture did not report the Process it launched");
+                assertEquals(childPid, owned.pid(), "the PID file must come from the owned child");
+                runner.interrupt();
+                runner.join(10_000);
+                assertFalse(runner.isAlive(), "the interrupted Maven fixture runner did not finish cleanup");
+                Throwable failure = observed.get();
+                assertTrue(failure instanceof IllegalStateException, "the runner returned " + failure);
+                assertTrue(failure.getCause() instanceof InterruptedException,
+                        "the original interruption was lost: " + failure);
+                assertEquals(Boolean.TRUE, interruptStatus.get(), "the runner did not restore interrupt status");
+                assertFalse(owned.isAlive(), "the interrupted runner left its child JVM alive: " + owned.pid());
+                try (Stream<Path> entries = Files.list(directory)) {
+                    assertFalse(entries.anyMatch((Path path) -> path.getFileName().toString()
+                            .startsWith("publications-")), "the runner left its transcript behind");
+                }
+            } finally {
+                runner.interrupt();
+                Process owned = launched.get();
+                if (owned != null && owned.isAlive()) {
+                    owned.destroyForcibly();
+                    try {
+                        owned.waitFor(10, TimeUnit.SECONDS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+                runner.join(10_000);
+            }
+        });
     }
 
     /**

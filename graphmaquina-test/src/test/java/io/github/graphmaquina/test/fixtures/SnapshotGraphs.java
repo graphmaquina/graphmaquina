@@ -2,9 +2,12 @@ package io.github.graphmaquina.test.fixtures;
 
 import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.AsyncTransitionGuard;
+import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.TransitionAction;
+import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionGuard;
 import io.github.graphmaquina.api.WatchCondition;
 import io.github.graphmaquina.dsl.GraphBuilder;
@@ -24,8 +27,10 @@ import java.util.function.Consumer;
  * variants names exactly the paths that were touched; {@link #cycleGraph(Step)} and
  * {@link #branchGraph(boolean)} do the same for the initial state and for terminality, which cannot change
  * alone and valid; {@link #identityGraph(Gate)} changes nothing but the identifier of an edge;
- * {@link #asyncGuardGraph()} is the one shape whose edge is asynchronous while its action is not; and
- * {@link #minimalGraph()} is small enough for its serialized form to be pinned character by character.
+ * {@link #asyncGuardGraph()} is the one shape whose edge is asynchronous while its action is not;
+ * {@link #minimalGraph()} is small enough for its serialized form to be pinned character by character; and
+ * {@link #publication()} builds the publication machine of the typed-recovery example, whose recovery rules
+ * can be replaced or reordered on their own and whose PUBLISH can also leave two more origins.
  *
  * <p>Every action, guard, hook and watch condition here throws when it runs: capturing a snapshot reads
  * the definition only, and a fixture that was executed fails the test that executed it.
@@ -53,12 +58,54 @@ public final class SnapshotGraphs {
     /** Transition identifiers of the smallest machine; the pair that tells two identities apart. */
     public enum Gate { CLOSE, REOPEN }
 
+    /** States of the publication machine {@link #publication()} builds. */
+    public enum TicketState { READY, PUBLISHED, RETRY_PENDING, REJECTED_BY_PROVIDER, INTEGRATION_FAILED, CLOSED }
+
+    /** Transition identifiers of the publication machine. */
+    public enum TicketChange { PUBLISH, SCHEDULE_RETRY, RECORD_REJECTION, MARK_INTEGRATION_FAILED, RETRY, CLOSE }
+
+    /** The failure kinds of the publication rules; {@code Throttled} lets a rule change its kind alone. */
+    public static final class PublicationFailures {
+
+        private PublicationFailures() { }
+
+        /** The provider could not take the publication now. */
+        public record Unavailable() implements FailureKind { }
+
+        /** The provider refused the content. */
+        public record Rejected() implements FailureKind { }
+
+        /** The provider asked the caller to slow down. */
+        public record Throttled() implements FailureKind { }
+    }
+
+    /** Listed by the rule of {@link PublicationFailures.Unavailable}; never thrown, since nothing here runs. */
+    public static final class ServiceUnavailableException extends RuntimeException { }
+
+    /** Listed by the rule of {@link PublicationFailures.Rejected}; never thrown. */
+    public static final class ProviderRejectedException extends RuntimeException { }
+
+    /** Listed by the failsOn of PUBLISH, which leads to the fallback; never thrown. */
+    public static final class InvalidResponseException extends RuntimeException { }
+
+    /** The example's first rule: an unavailable provider schedules a retry. */
+    public static final RecoveryRule<TicketChange> UNAVAILABLE_RULE = new RecoveryRule<>(
+            PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
+            List.of(ServiceUnavailableException.class));
+
+    /** The example's second rule: a rejection is recorded. */
+    public static final RecoveryRule<TicketChange> REJECTED_RULE = new RecoveryRule<>(
+            PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
+            List.of(ProviderRejectedException.class));
+
     private static final MachineKey<String, State, Id> KEY =
             MachineKey.of(String.class, State.class, Id.class);
     private static final MachineKey<String, Step, Move> STEP_KEY =
             MachineKey.of(String.class, Step.class, Move.class);
     private static final MachineKey<String, Flow, Gate> FLOW_KEY =
             MachineKey.of(String.class, Flow.class, Gate.class);
+    private static final MachineKey<String, TicketState, TicketChange> TICKET_KEY =
+            MachineKey.of(String.class, TicketState.class, TicketChange.class);
 
     private static final AsyncTransitionAction<String, State, Id> ACTION =
             ctx -> { throw new AssertionError("the action ran during a capture"); };
@@ -66,6 +113,10 @@ public final class SnapshotGraphs {
             ctx -> { throw new AssertionError("the synchronous action ran during a capture"); };
     private static final TransitionAction<String, Flow, Gate> FLOW_ACTION =
             ctx -> { throw new AssertionError("the identified action ran during a capture"); };
+    private static final TransitionAction<String, TicketState, TicketChange> PUBLISH_ACTION =
+            (TransitionContext<String, TicketState, TicketChange> ctx) -> {
+                throw new AssertionError("the publication action ran during a capture");
+            };
     private static final TransitionGuard<String, State, Id> FIRST_GUARD =
             ctx -> { throw new AssertionError("the first guard ran during a capture"); };
     private static final TransitionGuard<String, State, Id> SECOND_GUARD =
@@ -149,6 +200,11 @@ public final class SnapshotGraphs {
                 .statePolicy(Flow.OPEN, "stay put")
                 .transition(transition, Flow.OPEN, Flow.CLOSED).action("close", FLOW_ACTION).endTransition()
                 .build();
+    }
+
+    /** The builder of the publication machine, with the example's two rules on PUBLISH unless told otherwise. */
+    public static Publication publication() {
+        return new Publication();
     }
 
     /**
@@ -278,6 +334,77 @@ public final class SnapshotGraphs {
             }
             return watch.when("ready", condition).execute(Id.FINISH)
                     .when("stalled", condition).execute(Id.ABANDON).endWatch();
+        }
+    }
+
+    /**
+     * Builder of the publication machine of the typed-recovery example. PUBLISH leaves READY with an action, the
+     * rules {@link #rules(List)} gives in that order, a failsOn of {@link InvalidResponseException} and the
+     * fallback MARK_INTEGRATION_FAILED; SCHEDULE_RETRY, RECORD_REJECTION and MARK_INTEGRATION_FAILED leave READY,
+     * RETRY returns to READY, and CLOSE ends both failure states.
+     */
+    public static final class Publication {
+
+        private List<RecoveryRule<TicketChange>> rules = List.of(UNAVAILABLE_RULE, REJECTED_RULE);
+        private boolean republished;
+
+        private Publication() { }
+
+        /** The rules of PUBLISH from READY, declared in the order of the list; an empty list declares none. */
+        public Publication rules(List<RecoveryRule<TicketChange>> rules) {
+            this.rules = List.copyOf(rules);
+            return this;
+        }
+
+        /**
+         * PUBLISH also leaves RETRY_PENDING, with one rule of {@link PublicationFailures.Rejected} towards
+         * RECORD_REJECTION that lists no throwable type, and INTEGRATION_FAILED, with no rule; RECORD_REJECTION
+         * then leaves RETRY_PENDING too.
+         */
+        public Publication republished(boolean republished) {
+            this.republished = republished;
+            return this;
+        }
+
+        /** Builds the publication graph with these rules and optional additional PUBLISH origins. */
+        public GraphDefinition<String, TicketState, TicketChange> build() {
+            TransitionBuilder<String, TicketState, TicketChange> publish = StateGraph.define(TICKET_KEY)
+                    .initial(TicketState.READY).terminal(TicketState.PUBLISHED).terminal(TicketState.CLOSED)
+                    .allowsCycle(TicketState.READY)
+                    .statePolicy(TicketState.READY, "publish the ticket")
+                    .statePolicy(TicketState.RETRY_PENDING, "retry the publication explicitly")
+                    .statePolicy(TicketState.REJECTED_BY_PROVIDER, "close the rejected ticket")
+                    .statePolicy(TicketState.INTEGRATION_FAILED, "close after manual review")
+                    .transition(TicketChange.PUBLISH, TicketState.READY, TicketState.PUBLISHED)
+                    .action("publish", PUBLISH_ACTION);
+            for (RecoveryRule<TicketChange> rule : rules) {
+                publish = publish.recover(rule.kind(), rule.transition(), rule.failsOn());
+            }
+            GraphBuilder<String, TicketState, TicketChange> graph = publish
+                    .failsOn(InvalidResponseException.class).onFailure(TicketChange.MARK_INTEGRATION_FAILED)
+                    .endTransition()
+                    .transition(TicketChange.SCHEDULE_RETRY, TicketState.READY, TicketState.RETRY_PENDING)
+                    .endTransition()
+                    .transition(TicketChange.RECORD_REJECTION, TicketState.READY, TicketState.REJECTED_BY_PROVIDER)
+                    .endTransition()
+                    .transition(TicketChange.MARK_INTEGRATION_FAILED, TicketState.READY,
+                            TicketState.INTEGRATION_FAILED).endTransition()
+                    .transition(TicketChange.RETRY, TicketState.RETRY_PENDING, TicketState.READY).endTransition()
+                    .transition(TicketChange.CLOSE, TicketState.REJECTED_BY_PROVIDER, TicketState.CLOSED)
+                    .endTransition()
+                    .transition(TicketChange.CLOSE, TicketState.INTEGRATION_FAILED, TicketState.CLOSED)
+                    .endTransition();
+            if (republished) {
+                graph = graph.transition(TicketChange.PUBLISH, TicketState.RETRY_PENDING, TicketState.PUBLISHED)
+                        .action("publish", PUBLISH_ACTION)
+                        .recover(PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION)
+                        .endTransition()
+                        .transition(TicketChange.RECORD_REJECTION, TicketState.RETRY_PENDING,
+                                TicketState.REJECTED_BY_PROVIDER).endTransition()
+                        .transition(TicketChange.PUBLISH, TicketState.INTEGRATION_FAILED, TicketState.PUBLISHED)
+                        .action("publish", PUBLISH_ACTION).endTransition();
+            }
+            return graph.build();
         }
     }
 }

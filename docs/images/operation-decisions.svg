@@ -1,5 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1100" viewBox="0 0 1440 1100" role="img" aria-labelledby="title desc">
-<title id="title">How an operation selects its edge and its result</title><desc id="desc">An operation names a transition identifier. The engine resolves the single edge keyed by the current state and that identifier. With no such edge the node's policy rejects the request as NO_TRANSITION. Otherwise guards run, and a rejecting guard rejects as GUARD. A move or successful action commits the resolved edge as Applied; a returned business failure resolves the onFailure identifier from the same origin and commits it as Failed. Reevaluation is a separate entry point whose only results are Ignored with NO_WATCH or NO_RULE_MATCHED. Technical errors throw instead of producing an outcome.</desc>
+<title id="title">How an operation selects its edge and its result</title>
+<desc id="desc">An operation names a transition identifier. The engine resolves the single edge keyed by the current
+state and that identifier. With no such edge the node's policy rejects the request as NO_TRANSITION. Otherwise
+guards run, and a rejecting guard rejects as GUARD. A move or successful action commits the resolved edge as
+Applied; a returned business failure resolves, from the same origin,
+the identifier of the recovery rule that declares its failure kind, or else the onFailure identifier,
+and commits it as Failed. Reevaluation is a separate entry point. With no watch it returns Ignored with NO_WATCH;
+with no matching rule it returns Ignored with NO_RULE_MATCHED. With a matching rule it executes the selected edge
+and returns that execution's outcome. Technical errors throw instead of producing an outcome.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
@@ -82,7 +90,7 @@
 
 <rect x="1002" y="720" width="386" height="144" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="1002" y="738" width="4" height="108" rx="2" fill="#ff8998" />
-<text x="1026" y="764" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Commit the onFailure edge</text>
+<text x="1026" y="764" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Commit the recovery edge</text>
 <text x="1026" y="804" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Its id, resolved from the origin</text>
 <text x="1026" y="835" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome.Failed · movedTo()</text>
 

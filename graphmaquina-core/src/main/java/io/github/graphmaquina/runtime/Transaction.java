@@ -7,6 +7,7 @@ import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
+import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.Machine;
@@ -31,7 +32,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionStage;
 
 /**
@@ -207,21 +207,25 @@ final class Transaction {
             if (cause instanceof CallFailedException own && owns(own)) {
                 throw poisonOr(own);
             }
-            if (matchesFailsOn(transition, cause)) {
-                // A poisoned unit of work never commits, and the failure route commits: the poison is thrown before
-                // any recovery action can run, as it is when the action returns.
+            if (RecoverySelector.admits(transition, cause)) {
+                // A poisoned unit of work never commits, and every route commits: the poison is thrown before a route
+                // is chosen and before the reason reads the throwable's message, so no recovery action can run, as
+                // when the action returns.
                 if (uow.isPoisoned()) {
                     throw uow.poison().orElseThrow();
                 }
-                return failureRoute(machine, ref, entity, transition, depth, savepoint, describe(cause),
-                        Optional.of(cause), input);
+                RecoverySelector.Route<T> selected = RecoverySelector.thrown(transition, cause);
+                return failureRoute(machine, ref, entity, transition, depth, savepoint, selected.recovery(),
+                        selected.failureKind(), describe(cause), Optional.of(cause), input);
             }
             throw abort(machine, ref, transition.from(), Optional.of(transition.transition()),
                     Optional.of(transition.to()), Optional.of(action.name()), depth,
                     "the action " + action.name() + " threw " + cause, Optional.of(cause));
         } catch (CallFailedException e) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
-            throw e;
+            // Reaching here: a null stage or outcome, a wait that timed out, was interrupted or was refused, or a
+            // CallFailedException that a hand-written stage's handle throws.
+            throw poisonOr(e);
         }
         if (uow.isPoisoned()) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
@@ -229,24 +233,28 @@ final class Transaction {
         }
         if (outcome instanceof ActionOutcome.Failed failed) {
             uow.journalStatus(journalIndex, ActionStatus.FAILED);
-            return failureRoute(machine, ref, entity, transition, depth, savepoint, failed.reason(), Optional.empty(),
-                    input);
+            return failureRoute(machine, ref, entity, transition, depth, savepoint,
+                    RecoverySelector.returned(transition, failed.failureKind()), failed.failureKind(), failed.reason(),
+                    Optional.empty(), input);
         }
         uow.journalStatus(journalIndex, ActionStatus.OK);
         return new StepResult.Applied<>(transition.from(), transition.transition(), transition.to());
     }
 
     /**
-     * What a failure of this call that a callback let through ends the call with: the failure that poisoned the
-     * transaction when one did, which a failed cascade always does, or the failure itself.
+     * What the engine throws for {@code own}: the failure that poisoned the transaction when the transaction is
+     * poisoned, or {@code own} itself. The engine passes a failure of this call that a guard or an action threw or
+     * completed its stage with, and any CallFailedException that ends an action step without coming from the action's
+     * throws or completions: its own abort for a null outcome or stage or for a wait that timed out, was interrupted
+     * or was refused, or one that a hand-written stage's handle throws, of this call or of another.
      */
     private StateMachineException poisonOr(CallFailedException own) {
         return uow.isPoisoned() ? uow.poison().orElseThrow() : own;
     }
 
     /**
-     * What a guard's exception ends the call with: a failure of this call as {@link #poisonOr} says; anything else, a
-     * library exception of another call included, an abort of the call in its current phase with it as cause.
+     * What the engine throws for a guard's exception: a failure of this call as {@link #poisonOr} says; anything else,
+     * a library exception of another call included, an abort of the call in its current phase with it as cause.
      */
     private StateMachineException guardFailure(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
                                                TransitionSpec<?, ?, ?> transition, int depth, GuardRef<?, ?, ?> guard,
@@ -264,7 +272,9 @@ final class Transaction {
      * throws, an Error aside, or completes its stage with, checked exceptions included, which Kotlin or
      * {@code @SneakyThrows} code can throw without declaring them, and library exceptions too, becomes an ActionFailure
      * that its caller classifies. An Error is never routed: thrown as itself, it propagates; wrapped in
-     * CompletionException or ExecutionException, it is unwrapped and aborts.
+     * CompletionException or ExecutionException, it is unwrapped and aborts. Exceptional stage completions hand the
+     * throwable they completed with to ActionFailure; the engine reads no message before classification, though the JDK
+     * may already have read it, as when {@code supplyAsync} wrapped the throwable in a CompletionException.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -308,8 +318,8 @@ final class Transaction {
     }
 
     /**
-     * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. Whatever
-     * the guard throws or completes its stage with, an Error inside the stage included, ends the call as
+     * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. For whatever
+     * the guard throws or completes its stage with, an Error inside the stage included, the engine throws what
      * {@link #guardFailure} says: a library exception of another call is a cause like any other. An Error thrown as
      * itself propagates.
      */
@@ -406,16 +416,18 @@ final class Transaction {
     }
 
     /**
-     * Roll back to the savepoint, then resolve the recovery edge from the original origin by its identifier and
-     * run it without guards and without a failure route of its own.
+     * Roll back to the savepoint, then resolve {@code recovery}, the identifier the failure selected, from the
+     * original origin and run that edge without guards and without a failure route of its own. An empty
+     * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> failing, int depth,
-            int savepoint, String reason, Optional<Throwable> cause, Object input) {
+            int savepoint, Optional<T> recovery, Optional<Class<? extends FailureKind>> failureKind, String reason,
+            Optional<Throwable> cause, Object input) {
         uow.rollbackTo(savepoint);
         S from = failing.from();
         Optional<String> actionName = failing.action().map(ActionRef::name);
-        if (failing.onFailure().isEmpty()) {
+        if (recovery.isEmpty()) {
             AbortDetails details = details(machine, ref, from, Optional.of(failing.transition()),
                     Optional.of(failing.to()), actionName);
             UnhandledFailureException unhandled = cause.isPresent()
@@ -423,7 +435,7 @@ final class Transaction {
                     : new UnhandledFailureException(call(), details, reason);
             throw poisonIfNested(depth, unhandled);
         }
-        T recoveryId = failing.onFailure().orElseThrow();
+        T recoveryId = recovery.orElseThrow();
         TransitionSpec<E, S, T> route = machine.definition().findTransition(from, recoveryId).orElseThrow();
         // The failed action has ended. Keep one frame for the entity, now identifying the recovery edge.
         uow.pop();
@@ -452,7 +464,8 @@ final class Transaction {
                         Optional.of(recoveryCause));
             } catch (CallFailedException e) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
-                throw e;
+                // Reaching here: what reaches the same catch in runAction.
+                throw poisonOr(e);
             }
             if (uow.isPoisoned()) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
@@ -467,7 +480,8 @@ final class Transaction {
             }
             uow.journalStatus(journalIndex, ActionStatus.OK);
         }
-        return new StepResult.Failed<>(from, failing.transition(), failing.to(), recoveryId, route.to(), reason, cause);
+        return new StepResult.Failed<>(from, failing.transition(), failing.to(), recoveryId, route.to(), reason, cause,
+                failureKind);
     }
 
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> rejected(
@@ -490,23 +504,9 @@ final class Transaction {
         return machine.readState(entity);
     }
 
-    private static <E, S extends Enum<S>, T extends Enum<T>> boolean matchesFailsOn(TransitionSpec<E, S, T> transition,
-                                                                                     Throwable cause) {
-        if (cause instanceof Error || cause instanceof CancellationException
-                || cause instanceof StateMachineException) {
-            return false;
-        }
-        for (Class<? extends Throwable> type : transition.failsOn()) {
-            if (type.isInstance(cause)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /**
-     * The reason a failsOn match reports: the throwable's simple name and its message. An anonymous class has an empty
-     * simple name, so its binary name stands in: a reason is never blank.
+     * The reason a routed throwable reports, whichever declared type admitted it: the throwable's simple name and its
+     * message. An anonymous class has an empty simple name, so its binary name stands in: a reason is never blank.
      */
     private static String describe(Throwable cause) {
         String message = cause.getMessage();
@@ -702,7 +702,7 @@ final class Transaction {
                     rejected.transition(), rejected.reason(), rejected.kind(), rejected.guard());
             case StepResult.Failed<Q, U> failed -> new Outcome.Failed<>(peer, failed.from(), failed.transition(),
                     failed.to(), failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
-                    List.of(), List.of());
+                    List.of(), List.of(), failed.failureKind());
         };
     }
 

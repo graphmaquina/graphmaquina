@@ -567,6 +567,92 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
+     * The published processor runs inside a real Gradle JavaCompile task and marks the later occurrence of a
+     * throwable shared by a recovery rule and the fallback, at the exact source line and caret column in both
+     * annotation member orders.
+     */
+    @Test
+    void publishedProcessorLocatesTheLaterDuplicateRecoveryType() throws IOException {
+        for (boolean fallbackFirst : List.of(false, true)) {
+            Path project = Files.createDirectories(tempDirectory.resolve(
+                    fallbackFirst ? "fallback first" : "rules first"));
+            PluginFixture fixture = PluginFixture.publishedPlugin(project, FIXTURE_REPOSITORY);
+            Map<String, String> sources = PluginFixture.recoverySources();
+            String original = sources.get("fxr.Tickets");
+            String source = fallbackFirst
+                    ? original.replace("recoveries = {", "failsOn = ServiceUnavailableException.class,\n"
+                            + "                        recoveries = {")
+                            .replace("failsOn = InvalidResponseException.class,", "")
+                    : original.replace("failsOn = InvalidResponseException.class,",
+                            "failsOn = ServiceUnavailableException.class,");
+            assertFalse(original.equals(source), "the fallback type must be replaced");
+            sources.put("fxr.Tickets", source);
+            fixture.writeSources(sources);
+
+            String token = "ServiceUnavailableException.class";
+            int occurrence = source.lastIndexOf(token);
+            assertTrue(source.indexOf(token) < occurrence, "the type must occur in the rule and fallback");
+            int preferred = occurrence + token.lastIndexOf('.');
+            int lineNumber = (int) source.substring(0, preferred).chars()
+                    .filter((int character) -> character == '\n').count() + 1;
+            int columnNumber = preferred - source.lastIndexOf('\n', preferred);
+            String sourceLine = source.lines().skip(lineNumber - 1L).findFirst().orElseThrow();
+
+            BuildResult result = fixture.runFailing("compileJava", "--refresh-dependencies", "--stacktrace");
+
+            assertEquals(TaskOutcome.FAILED, result.task(":compileJava").getOutcome(), result::getOutput);
+            String[] lines = result.getOutput().split("\\R");
+            int diagnostic = -1;
+            for (int index = 0; index < lines.length; index++) {
+                if (lines[index].contains("Tickets.java:" + lineNumber + ": error: [SG304]")) {
+                    diagnostic = index;
+                    break;
+                }
+            }
+            assertTrue(diagnostic >= 0, result::getOutput);
+            assertEquals(sourceLine, lines[diagnostic + 1], result::getOutput);
+            assertEquals(" ".repeat(columnNumber - 1) + "^", lines[diagnostic + 2], result::getOutput);
+        }
+    }
+
+    /**
+     * A facade that declares {@code recoveries}, built by the published plugin from the artifacts of this build: the
+     * generated vocabulary carries {@code Recovery}, the generated companion one {@code recover} call per rule, and
+     * the program the build then runs sees each failure of PUBLISH take the route its kind or its type selects.
+     * {@code --refresh-dependencies} is deliberate, for the reason {@link #publishedPluginMarkerResolves()} gives.
+     */
+    @Test
+    void routesTheFailuresOfAFacadeThatDeclaresRecoveries() throws IOException {
+        PluginFixture fixture = PluginFixture.publishedPlugin(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.writeSources(PluginFixture.recoverySources());
+        fixture.appendToBuildScript("""
+                tasks.register<JavaExec>("runPublications") {
+                    classpath = sourceSets.getByName("main").runtimeClasspath
+                    mainClass = "fxr.Publications"
+                }
+                """);
+
+        BuildResult result = fixture.run("jar", "runPublications", "--refresh-dependencies", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":runPublications").getOutcome());
+        assertTrue(fixture.jarContains("fxr/TicketsGraph$Recovery.class"));
+        String companion = Files.readString(Path.of(fixture.request("main").get("processorSourcesOutput")
+                .getAsString()).resolve("fxr/TicketsRuntime.java"), StandardCharsets.UTF_8);
+        assertTrue(companion.contains(".recover(fxr.PublicationFailures.Unavailable.class,"
+                + " TicketChange.SCHEDULE_RETRY, fxr.ServiceUnavailableException.class)"), companion);
+        assertTrue(companion.contains(".recover(fxr.PublicationFailures.Rejected.class,"
+                + " TicketChange.RECORD_REJECTION, fxr.ProviderRejectedException.class)"), companion);
+        assertEquals(List.of(
+                "ROUTED unavailable SCHEDULE_RETRY RETRY_PENDING kind=Unavailable cause=none",
+                "ROUTED rejected RECORD_REJECTION REJECTED_BY_PROVIDER kind=Rejected cause=ProviderRejectedException",
+                "ROUTED invalid MARK_INTEGRATION_FAILED INTEGRATION_FAILED kind=none cause=InvalidResponseException"),
+                result.getOutput().lines().filter((String line) -> line.startsWith("ROUTED ")).toList(),
+                result::getOutput);
+    }
+
+    /**
      * Another task of the build generates sources into the same source set — the role ANTLR-, protobuf- or
      * OpenAPI-style generators play — and registers its output directory with the task that writes it. The
      * generation parses that directory too, so it runs after that task: Gradle refuses a task that reads another

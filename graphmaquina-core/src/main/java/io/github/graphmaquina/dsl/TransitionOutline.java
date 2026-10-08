@@ -1,6 +1,7 @@
 package io.github.graphmaquina.dsl;
 
 import io.github.graphmaquina.api.TransitionKind;
+import java.util.List;
 import java.util.Optional;
 import lombok.NonNull;
 
@@ -13,10 +14,24 @@ import lombok.NonNull;
  * @param transition identifier name
  * @param to destination state name
  * @param kind whether the edge runs an action
- * @param onFailure the identifier this edge recovers through, when it declares one
+ * @param onFailure the identifier its {@code onFailure} names, when it declares one
+ * @param recoveryTransitions the identifiers its recovery rules name, copied in declaration order; an identifier
+ *     appears once per rule that names it
  */
 public record TransitionOutline(@NonNull String from, @NonNull String transition, @NonNull String to,
-                                @NonNull TransitionKind kind, @NonNull Optional<String> onFailure) {
+                                @NonNull TransitionKind kind, @NonNull Optional<String> onFailure,
+                                @NonNull List<String> recoveryTransitions) {
+
+    /** Copies {@code recoveryTransitions}, keeping its order and its repeats. */
+    public TransitionOutline {
+        recoveryTransitions = List.copyOf(recoveryTransitions);
+    }
+
+    /** An edge that declares no recovery rule. */
+    public TransitionOutline(String from, String transition, String to, TransitionKind kind,
+                             Optional<String> onFailure) {
+        this(from, transition, to, kind, onFailure, List.of());
+    }
 
     /**
      * The key that must be unique within the machine, as diagnostics print it: {@code FROM/ID}. Uniqueness is

@@ -9,6 +9,7 @@ import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionGuard;
@@ -18,6 +19,13 @@ import io.github.graphmaquina.error.StaleContextException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.test.GraphAssertionError;
+import io.github.graphmaquina.test.GraphAssertions;
+import io.github.graphmaquina.test.fixtures.PublicationFixture;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.PublicationFailures;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.ServiceUnavailableException;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.Ticket;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.TicketChange;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.TicketState;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
@@ -560,6 +568,44 @@ class ProbeTest {
             return ordinalOf(outcome.reason());
         });
         assertEveryCallWasServedItsOwnPosition(action.calls(), trace, ActionCall::entity, served);
+    }
+
+    // --- typed recovery: a scripted answer reaches the engine as it was given -------------------------
+
+    /**
+     * The probe hands the engine the very outcome and the very exception it was scripted with: the returned failure
+     * keeps its kind and takes the rule of that kind, and the thrown one is the cause, by identity, of the rule that
+     * lists its class.
+     */
+    @Test
+    void aScriptedFailureKeepsItsKindAndAScriptedExceptionItsIdentity() {
+        CallTrace trace = CallTrace.create();
+        ServiceUnavailableException down = new ServiceUnavailableException("provider down");
+        ActionProbe<Ticket, TicketState, TicketChange> publish =
+                ActionProbe.<Ticket, TicketState, TicketChange>create("publish", trace)
+                        .thenReturn(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"))
+                        .thenThrow(down);
+        Ticket rejected = new Ticket("rejected");
+        Ticket unavailable = new Ticket("unavailable");
+        try (MachineRegistry registry = PublicationFixture.registry(PublicationFixture.graph(publish))) {
+            StateMachine<Ticket, TicketState, TicketChange> machine = registry.of(PublicationFixture.KEY);
+            GraphAssertions.assertThat(machine.execute(rejected, TicketChange.PUBLISH))
+                    .isFailed()
+                    .hasFailureKind(PublicationFailures.Rejected.class)
+                    .hasFailureTransition(TicketChange.RECORD_REJECTION)
+                    .movedTo(TicketState.REJECTED_BY_PROVIDER)
+                    .hasReason("content rejected")
+                    .hasNoCause();
+            GraphAssertions.assertThat(machine.execute(unavailable, TicketChange.PUBLISH))
+                    .isFailed()
+                    .hasFailureKind(PublicationFailures.Unavailable.class)
+                    .hasFailureTransition(TicketChange.SCHEDULE_RETRY)
+                    .movedTo(TicketState.RETRY_PENDING)
+                    .hasCauseSameAs(down);
+        }
+        assertEquals(TicketState.REJECTED_BY_PROVIDER, rejected.state());
+        assertEquals(TicketState.RETRY_PENDING, unavailable.state());
+        trace.assertNamesExactly("publish", "publish");
     }
 
     // --- fixtures -------------------------------------------------------------------------------------

@@ -34,7 +34,7 @@ publishing {
 // local repository, with the repository and the release passed in as system properties.
 tasks.test {
     exclude("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class", "**/GraphOnlySurfaceTest.class",
-        "**/GuideOutcomeFragmentsTest.class")
+        "**/GuideOutcomeFragmentsTest.class", "**/TestingGuideFragmentsTest.class")
 }
 
 val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
@@ -43,7 +43,7 @@ val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
     include("**/PublishedArtifactSmokeTest.class", "**/ReadmeQuickstartTest.class", "**/GraphOnlySurfaceTest.class",
-        "**/GuideOutcomeFragmentsTest.class")
+        "**/GuideOutcomeFragmentsTest.class", "**/TestingGuideFragmentsTest.class")
     dependsOn(tasks.named("testClasses"))
     dependsOn(tasks.named("publishMavenPublicationToAdapterTestsRepository"))
     dependsOn(":graphmaquina-core:publishMavenPublicationToAdapterTestsRepository")
@@ -60,6 +60,9 @@ val publishedArtifactTest = tasks.register<Test>("publishedArtifactTest") {
     systemProperty("readmePath", readme.asFile.absolutePath)
     systemProperty("gradleExecutable", gradleExecutable.absolutePath)
     inputs.file(readme).withPropertyName("readmeQuickstart")
+    val testingGuide = rootProject.layout.projectDirectory.file("docs/testing.md")
+    systemProperty("testingGuidePath", testingGuide.asFile.absolutePath)
+    inputs.file(testingGuide).withPropertyName("testingGuide")
     inputs.property("gradleVersion", gradle.gradleVersion)
     val repository = rootProject.layout.buildDirectory.dir("adapter-test-repository")
     val release = project.version.toString()

@@ -12,8 +12,8 @@ import lombok.NonNull;
  * processor from the annotations, so the same validator runs in {@code build()} and in javac, each time only once
  * that producer has found no problem of its own. There is no expected number of pairs and no index by endpoints.
  * The constructor refuses, with {@link IllegalArgumentException}, an empty state list, a repeated state or
- * identifier and any name that is not one of them; everything else, invalid combinations included, is left for the
- * validator to report.
+ * identifier and any name that is not one of them, the identifiers that an edge's recovery rules name included;
+ * everything else, invalid combinations included, is left for the validator to report.
  *
  * @param name the machine's display name
  * @param states state names, in declaration order
@@ -61,6 +61,9 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
             requireTransition(name, catalog, transitionNames, edge.transition(), "transition.id");
             if (edge.onFailure().isPresent()) {
                 requireTransition(name, catalog, transitionNames, edge.onFailure().get(), "transition.onFailure");
+            }
+            for (String recovery : edge.recoveryTransitions()) {
+                requireTransition(name, catalog, transitionNames, recovery, "transition.recovery");
             }
         }
         for (PolicyOutline policy : policies) {

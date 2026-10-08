@@ -32,7 +32,8 @@ import org.junit.jupiter.api.parallel.Resources;
  * Contract of the Graphviz DOT golden. Update writes the source file, read mode resolves the very same resource
  * through the class loader, and a second update over matching content writes nothing. The checked-in
  * {@code golden/simple.dot} pins the rendering of the fixture — every declared edge and no other — and a
- * mismatch reports the lines that moved.
+ * mismatch reports the lines that moved. The checked-in {@code golden/typed-recovery.dot} pins how the recovery
+ * rules of an edge are drawn.
  */
 class GraphGoldensTest {
 
@@ -122,6 +123,17 @@ class GraphGoldensTest {
         assertTrue(rendered.contains("label=\"RECOVER\""), rendered);
         assertTrue(rendered.contains("label=\"FINISH\""), rendered);
         assertFalse(rendered.contains("ABANDON"), rendered);
+    }
+
+    /**
+     * The publication machine of the typed-recovery example: each rule of PUBLISH is one
+     * {@code [recover <kind> -> <id>]} fragment between the action and the fallback, in declaration order, with the
+     * kind's binary name without its package, and no throwable type is drawn. The options are read-only, so a
+     * regeneration run cannot rewrite this golden.
+     */
+    @Test
+    void theCheckedInRecoveryDiagramIsTheRenderingOfThePublicationMachine() {
+        GraphGoldens.assertMatches(SnapshotGraphs.publication().build(), "golden/typed-recovery.dot", READ_ONLY);
     }
 
     @Test

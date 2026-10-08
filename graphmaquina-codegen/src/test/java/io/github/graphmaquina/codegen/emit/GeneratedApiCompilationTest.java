@@ -665,12 +665,12 @@ class GeneratedApiCompilationTest {
     /** The annotations of both machine vocabularies and of the watch vocabulary of the pair they form. */
     @Test
     void namesEveryGeneratedAnnotationAndContainerCanonically() {
-        assertEquals(List.of("fx.DocsGraph.Definition", "fx.DocsGraph.Reject", "fx.DocsGraph.Rejects",
-                "fx.DocsGraph.StatePolicies", "fx.DocsGraph.StatePolicy", "fx.DocsGraph.Transition",
-                "fx.DocsGraph.Transitions", "fx.DocsPages.Watch", "fx.DocsPages.Watches", "fx.DocsPages.When",
-                "fx.PagesGraph.Definition", "fx.PagesGraph.Reject", "fx.PagesGraph.Rejects",
-                "fx.PagesGraph.StatePolicies", "fx.PagesGraph.StatePolicy", "fx.PagesGraph.Transition",
-                "fx.PagesGraph.Transitions"),
+        assertEquals(List.of("fx.DocsGraph.Definition", "fx.DocsGraph.Recovery", "fx.DocsGraph.Reject",
+                "fx.DocsGraph.Rejects", "fx.DocsGraph.StatePolicies", "fx.DocsGraph.StatePolicy",
+                "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsPages.Watch", "fx.DocsPages.Watches",
+                "fx.DocsPages.When", "fx.PagesGraph.Definition", "fx.PagesGraph.Recovery", "fx.PagesGraph.Reject",
+                "fx.PagesGraph.Rejects", "fx.PagesGraph.StatePolicies", "fx.PagesGraph.StatePolicy",
+                "fx.PagesGraph.Transition", "fx.PagesGraph.Transitions"),
                 ApiEmitter.annotationTypes(inspect("peered", withPeer())).stream().sorted().toList());
     }
 
@@ -702,6 +702,7 @@ class GeneratedApiCompilationTest {
             expected.put(vocabulary + ".StatePolicies", "STATE_POLICIES");
             expected.put(vocabulary + ".Transition", "TRANSITION");
             expected.put(vocabulary + ".Transitions", "TRANSITIONS");
+            expected.put(vocabulary + ".Recovery", "RECOVERY");
             expected.put(vocabulary + ".Reject", "REJECT");
             expected.put(vocabulary + ".Rejects", "REJECTS");
         }

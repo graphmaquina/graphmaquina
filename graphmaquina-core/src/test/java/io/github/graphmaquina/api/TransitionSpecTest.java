@@ -6,17 +6,22 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Month;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
 /**
- * The checks {@link TransitionSpec} makes when an edge is built, and the kind, key and asynchrony it derives from its
- * parts.
+ * The checks {@link TransitionSpec} makes when an edge is built, its recovery rules included, and the kind, key and
+ * asynchrony it derives from its parts.
  */
 class TransitionSpecTest {
 
@@ -26,11 +31,29 @@ class TransitionSpecTest {
             new ActionRef.Async<>("B", (TransitionContext<String, DayOfWeek, Month> ctx) ->
                     CompletableFuture.completedFuture(ActionOutcome.ok()));
 
+    /** A failure kind for the recovery rules below. */
+    record Unavailable() implements FailureKind { }
+
+    /** A second failure kind. */
+    record Rejected() implements FailureKind { }
+
     private static TransitionSpec<String, DayOfWeek, Month> spec(Optional<ActionRef<String, DayOfWeek, Month>> action,
                                                                  List<GuardRef<String, DayOfWeek, Month>> guards,
                                                                  Optional<Month> onFailure, Optional<Duration> timeout) {
         return new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, action, guards, onFailure,
                 List.of(), timeout, Optional.empty());
+    }
+
+    private static TransitionSpec<String, DayOfWeek, Month> withRules(
+            Optional<ActionRef<String, DayOfWeek, Month>> action, List<Class<? extends Throwable>> failsOn,
+            List<RecoveryRule<Month>> rules) {
+        return new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, action, List.of(),
+                Optional.empty(), failsOn, Optional.empty(), Optional.empty(), rules);
+    }
+
+    private static RecoveryRule<Month> rule(Class<? extends FailureKind> kind, Month transition,
+                                            List<Class<? extends Throwable>> failsOn) {
+        return new RecoveryRule<>(kind, transition, failsOn);
     }
 
     @Test
@@ -96,5 +119,102 @@ class TransitionSpecTest {
             assertEquals(action, edge.action());
         }
         assertTrue(spec(Optional.empty(), List.of(), Optional.empty(), Optional.empty()).afterCommit().isEmpty());
+    }
+
+    @Test
+    void recoveryRulesRequireAnAction() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> withRules(
+                Optional.empty(), List.of(), List.of(rule(Unavailable.class, Month.MARCH, List.of()))));
+        assertEquals("MONDAY -JANUARY-> TUESDAY: recovery rules are only allowed with an action", error.getMessage());
+    }
+
+    @Test
+    void aFailureKindDeclaredByTwoRulesIsRefused() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> withRules(
+                Optional.of(SYNC), List.of(), List.of(rule(Unavailable.class, Month.MARCH, List.of()),
+                        rule(Unavailable.class, Month.APRIL, List.of(IOException.class)))));
+        assertEquals("MONDAY -JANUARY-> TUESDAY: failure kind " + Unavailable.class.getName()
+                + " is declared by more than one recovery rule", error.getMessage());
+    }
+
+    @Test
+    void aThrowableTypeDeclaredByTwoRulesOrByARuleAndFailsOnIsRefused() {
+        String expected = "MONDAY -JANUARY-> TUESDAY: java.io.IOException is declared more than once across"
+                + " recovery rules and failsOn";
+        IllegalArgumentException twoRules = assertThrows(IllegalArgumentException.class, () -> withRules(
+                Optional.of(SYNC), List.of(), List.of(rule(Unavailable.class, Month.MARCH, List.of(IOException.class)),
+                        rule(Rejected.class, Month.APRIL, List.of(IOException.class)))));
+        assertEquals(expected, twoRules.getMessage());
+        IllegalArgumentException ruleAndFailsOn = assertThrows(IllegalArgumentException.class, () -> withRules(
+                Optional.of(SYNC), List.of(IOException.class),
+                List.of(rule(Unavailable.class, Month.MARCH, List.of(IOException.class)))));
+        assertEquals(expected, ruleAndFailsOn.getMessage());
+    }
+
+    /** Only the same class twice is a repetition: a supertype and its subtype may sit in two rules and in failsOn. */
+    @Test
+    void aSupertypeAndItsSubtypesMayBeDeclaredAcrossRulesAndFailsOn() {
+        List<RecoveryRule<Month>> rules = List.of(rule(Unavailable.class, Month.MARCH, List.of(IOException.class)),
+                rule(Rejected.class, Month.APRIL, List.of(SocketTimeoutException.class)));
+        TransitionSpec<String, DayOfWeek, Month> spec = withRules(Optional.of(SYNC),
+                List.of(FileNotFoundException.class), rules);
+        assertEquals(rules, spec.recoveryRules());
+        assertEquals(List.of(FileNotFoundException.class), spec.failsOn());
+    }
+
+    /** failsOn keeps tolerating its own repetitions, and keeps listing only its own types. */
+    @Test
+    void failsOnMayRepeatItsOwnTypesWithRulesOrWithout() {
+        List<Class<? extends Throwable>> repeated = List.of(IllegalStateException.class, IllegalStateException.class);
+        assertEquals(repeated, withRules(Optional.of(SYNC), repeated, List.of()).failsOn());
+        List<RecoveryRule<Month>> rules = List.of(rule(Unavailable.class, Month.MARCH, List.of(IOException.class)));
+        TransitionSpec<String, DayOfWeek, Month> spec = withRules(Optional.of(SYNC), repeated, rules);
+        assertEquals(repeated, spec.failsOn());
+        assertEquals(rules, spec.recoveryRules());
+    }
+
+    @Test
+    void theRulesAreCopiedAndExposedReadOnly() {
+        RecoveryRule<Month> unavailable = rule(Unavailable.class, Month.MARCH, List.of());
+        RecoveryRule<Month> rejected = rule(Rejected.class, Month.APRIL, List.of());
+        List<RecoveryRule<Month>> source = new ArrayList<>(List.of(unavailable));
+        TransitionSpec<String, DayOfWeek, Month> spec = withRules(Optional.of(SYNC), List.of(), source);
+        source.add(rejected);
+        assertEquals(List.of(unavailable), spec.recoveryRules());
+        assertThrows(UnsupportedOperationException.class, () -> spec.recoveryRules().add(rejected));
+    }
+
+    @Test
+    void theConstructorWithoutRulesDeclaresNone() {
+        TransitionSpec<String, DayOfWeek, Month> plain = spec(Optional.of(SYNC), List.of(), Optional.empty(),
+                Optional.empty());
+        assertEquals(List.of(), plain.recoveryRules());
+        assertEquals(withRules(Optional.of(SYNC), List.of(), List.of()), plain);
+    }
+
+    @Test
+    void aNullRuleListOrRuleIsRefused() {
+        NullPointerException list = assertThrows(NullPointerException.class,
+                () -> withRules(Optional.of(SYNC), List.of(), null));
+        assertTrue(list.getMessage().startsWith("recoveryRules"), list.getMessage());
+        List<RecoveryRule<Month>> withNull = Arrays.asList(rule(Unavailable.class, Month.MARCH, List.of()), null);
+        assertThrows(NullPointerException.class, () -> withRules(Optional.of(SYNC), List.of(), withNull));
+        assertThrows(NullPointerException.class, () -> withRules(Optional.empty(), List.of(), withNull));
+    }
+
+    @Test
+    void actionAndTimeoutValidationPrecedeDuplicateRuleValidation() {
+        List<RecoveryRule<Month>> duplicateKinds = List.of(rule(Unavailable.class, Month.MARCH, List.of()),
+                rule(Unavailable.class, Month.APRIL, List.of()));
+        IllegalArgumentException withoutAction = assertThrows(IllegalArgumentException.class,
+                () -> withRules(Optional.empty(), List.of(), duplicateKinds));
+        assertEquals("MONDAY -JANUARY-> TUESDAY: recovery rules are only allowed with an action",
+                withoutAction.getMessage());
+        IllegalArgumentException invalidTimeout = assertThrows(IllegalArgumentException.class,
+                () -> new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY, DayOfWeek.TUESDAY, Optional.of(SYNC),
+                        List.of(), Optional.empty(), List.of(), Optional.of(Duration.ofSeconds(1)), Optional.empty(),
+                        duplicateKinds));
+        assertEquals("MONDAY -JANUARY-> TUESDAY: timeout is only allowed on an asynchronous action",
+                invalidTimeout.getMessage());
     }
 }

@@ -35,9 +35,9 @@ import java.util.function.Consumer;
  * that nobody took, or that was still being published, is dropped, and a {@link #awaitInvocation(Duration)}
  * on a closed fixture fails at once with a {@link GraphAssertionError}, a wait that was already blocked when
  * the fixture closed included. An invocation that reaches a closed fixture is refused with that same error,
- * which is an {@link Error} so that no {@code failsOn} route of the edge can take the refusal for a failure
- * of the action and commit a recovery. Closing is the fixture's own teardown and is meant to run before the
- * registry is closed.
+ * which is an {@link Error} so that neither a recovery rule nor the {@code failsOn} of the edge can take the
+ * refusal for a failure of the action and commit a recovery. Closing is the fixture's own teardown and is
+ * meant to run before the registry is closed.
  *
  * @param <E> the entity type of the machine the action belongs to
  * @param <S> the state enum of that machine

@@ -351,7 +351,7 @@ The twelve deprecated matrix annotations — `Action`, `Cell`, `Cells`, `Forbid`
 `StateGraph`, `Watch`, `Watches` and `When` — are removed rather than deprecated: a project still using them fails
 to resolve the type instead of compiling against a retired contract. `io.github.graphmaquina.dsl.StateGraph`, the
 DSL entry point, keeps its name. `VocabularyKind` now reads `DEFINITION, STATE_POLICY, STATE_POLICIES, TRANSITION,
-TRANSITIONS, REJECT, REJECTS, WATCH, WATCHES, WHEN`.
+TRANSITIONS, RECOVERY, REJECT, REJECTS, WATCH, WATCHES, WHEN`.
 
 ## Generated vocabulary and build artefacts
 
@@ -474,27 +474,29 @@ observe. Most items refuse up front what used to fail later, in generated code o
   reaction. It used to start a root of its own, which `maxWatchChain` did not count.
 - **Checked exceptions are handled like unchecked ones.** So is any other throwable that is not an `Error`. One that a
   guard, action, hook, state setter or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code
-  can, now goes through `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch
-  reaction, aborts the reevaluation that `Reaction.Aborted` reports; one an owner lookup throws arrives wrapped in
-  `UndeclaredThrowableException`. It used to escape unchanged.
+  can, now goes through a recovery rule or `failsOn`, or aborts, becomes `AfterCommitException` or
+  `CommitFailedException`, or, in a watch reaction, aborts the reevaluation that `Reaction.Aborted` reports; one an
+  owner lookup throws arrives wrapped in `UndeclaredThrowableException`. It used to escape unchanged.
 - **A failed cascade always poisons.** An `Error`, or a throwable from a callback the engine does not wrap, that leaves
-  a cascade poisons the unit of work as an engine failure does, even when the action catches it, and a `failsOn` match
-  after it no longer takes the failure route. `cascadeAll` refuses a null element before any element runs, and an
-  unknown machine even over an empty collection; an unknown facade in a cascade poisons like an unknown key. What
-  poisons without being a failure of the call, an unknown machine or facade, an ambiguous identity, a null peer state,
-  reaches the action as an abort that carries it, and that abort ends the call unless the action replaces it with an
-  exception of its own.
+  a cascade poisons the unit of work as an engine failure does, even when the action catches it, and an exception that a
+  recovery rule or `failsOn` matches after it no longer takes a failure route. `cascadeAll` refuses a null element
+  before any element runs, and an unknown machine even over an empty collection; an unknown facade in a cascade poisons
+  like an unknown key. What poisons without being a failure of the call, an unknown machine or facade, an ambiguous
+  identity, a null peer state, reaches the action as an abort that carries it. The transaction is poisoned; the
+  `PoisonedUnitOfWorkException` Javadoc says what the engine throws when the action ends.
 - **`cascadeAll` reads its collection once.** It copies the collection before any element runs, so elements
   added or removed while the cascade runs change neither which elements run nor their order. It used to fail with
   a `ConcurrentModificationException` of its own iteration or stop early, which could let the root commit a
   partial batch. An exception or an `Error` the collection throws while it is copied propagates as it is and
   poisons nothing.
-- **A library exception from a guard or an action is a cause.** A `StateMachineException` that a guard or an
-  action throws or completes its stage with, bare or wrapped in a `CompletionException` or an `ExecutionException`,
-  aborts the call with it as cause, a failure of another call included. It used to reach the caller as it was, so
-  another call's abort, or an `AfterCommitException` of another call whose states were written, could pass for this
-  call's. A failure of the call itself, from a cascade, still ends the call with the failure that poisoned it, and a
-  `PoisonedUnitOfWorkException` the action lets through ends it with the original failure.
+- **A library exception from a guard or an action is a cause.** A `StateMachineException` that is not a failure of this
+  call, and that a guard or an action throws or completes its stage with, bare or wrapped in a `CompletionException` or
+  an `ExecutionException`, aborts the call with it as cause, a failure of another call included. It used to reach the
+  caller as it was, so another call's abort, or an `AfterCommitException` of another call whose states were written,
+  could pass for this call's. For a failure of the call itself that a guard or an action throws or completes its stage
+  with, the engine throws it as itself or, when the transaction is poisoned, the failure that poisoned the transaction.
+  So when the action lets a `PoisonedUnitOfWorkException` of the call through while the transaction is poisoned, the
+  engine throws the failure that poisoned the transaction.
 - **Failures before the state is read are aborts.** The root entity's identity function that throws or returns null, its
   state getter that throws, a null root state, and a watch's peers reader or condition that throws while a `reevaluate`
   resolves end the call in a `TransitionAbortedException` of phase `RESOLVE` that carries the failure; they used to
@@ -518,8 +520,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   task could fail with `ReentrantTransitionException`, keep the wait past its timeout, or cascade through the
   root's context. A task the stage needs must now run on another worker, so on a pool whose other workers are all
   busy, or blocked where the pool cannot see them, the wait can run to its timeout. A pool that refuses to let its
-  worker block now aborts the transition, with its `RejectedExecutionException` as the cause; that exception used
-  to escape the call.
+  worker block now aborts the transition, where its `RejectedExecutionException` used to escape the call. The abort
+  carries that exception as its cause, unless a failed cascade has already poisoned the transaction: the call then
+  ends in the failure that poisoned it.
 - **Standalone machines.** `StateMachines.Builder.build()` registers the `as(...)` facade and dispatches the
   machine's own watches; a watch on another machine is refused at `build()`.
 - **Blank reasons are refused.** `StatePolicy` refuses a blank reason for an identifier, as it refused a blank
@@ -708,8 +711,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **`AbortAssert.atUnread(key, entity, from)`** is new: it locates an abort raised before any identifier was
   read, such as a chain of watch reactions that exceeds its limit.
 - **Closed controlled fixtures.** A closed `ControlledAsyncAction` refuses an invocation with
-  `GraphAssertionError`, which no `failsOn` route can take for a failure of the action, where it threw
-  `IllegalStateException`; `awaitInvocation` on a closed fixture fails at once, a wait already blocked included.
+  `GraphAssertionError`, which neither a recovery rule nor a `failsOn` route can take for a failure of the action,
+  where it threw `IllegalStateException`; `awaitInvocation` on a closed fixture fails at once, a wait already blocked
+  included.
 - **`GoldenOptions.defaults()` ignores `graphmaquina.goldens.root` in read mode:** `sourceRoot()` is empty there,
   and a value that is not a path no longer fails a read-mode run.
 - **Goldens.** Update mode replaces a source golden that is not valid UTF-8 and writes through a symbolic link

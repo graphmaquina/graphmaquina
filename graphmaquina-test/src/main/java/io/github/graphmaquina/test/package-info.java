@@ -12,8 +12,9 @@
  * included; any other null argument raises {@code NullPointerException}, and invalid fixture configuration
  * raises {@code IllegalArgumentException} or {@code IllegalStateException}. A controlled asynchronous
  * fixture that is invoked after it was closed refuses instead: the action with a
- * {@code GraphAssertionError}, which no {@code failsOn} route of an edge can take for a failure of the
- * action, and the guard with an {@code IllegalStateException}, which aborts the transition.
+ * {@code GraphAssertionError}, which neither a recovery rule nor the {@code failsOn} of an edge can take
+ * for a failure of the action, and the guard with an {@code IllegalStateException}, which aborts the
+ * transition.
  *
  * <p>The guide, with installation, what each entry point checks and what each check does not prove, is
  * {@code docs/testing.md} in the repository.

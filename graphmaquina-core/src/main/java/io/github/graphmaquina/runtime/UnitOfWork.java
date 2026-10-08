@@ -239,12 +239,17 @@ final class UnitOfWork {
         return chains;
     }
 
+    /**
+     * An immutable snapshot of the log in entry order, with newly created records that retain the
+     * original entity references. Later appends and rollbacks do not change an existing snapshot.
+     */
     List<TransitionRecord<?, ?, ?>> records() {
-        List<TransitionRecord<?, ?, ?>> records = new ArrayList<>();
-        for (LogEntry entry : log) {
-            records.add(Typed.record(entry.ref().key(), entry));
+        TransitionRecord<?, ?, ?>[] records = new TransitionRecord<?, ?, ?>[log.size()];
+        for (int index = 0; index < records.length; index++) {
+            LogEntry entry = log.get(index);
+            records[index] = Typed.record(entry.ref().key(), entry);
         }
-        return List.copyOf(records);
+        return List.of(records);
     }
 
     /**

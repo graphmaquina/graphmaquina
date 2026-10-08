@@ -6,8 +6,9 @@ import java.util.Objects;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Applied}, obtained from {@link
- * OutcomeAssert#isApplied()}. An applied outcome committed the edge it was asked for, so its recorded
- * destination is also the destination of that edge.
+ * OutcomeAssert#isApplied()}. An applied outcome ran the edge it was asked for, so its recorded destination
+ * is also the destination of that edge. Returned by a root call, it was committed; returned by a cascade, it
+ * is written only if its root commits.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
@@ -28,7 +29,10 @@ public final class AppliedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
         return this;
     }
 
-    /** The committed destination, which says nothing about where the entity is read to be now. */
+    /**
+     * The destination of the edge, committed when a root call returned this outcome and written only if its root
+     * commits when a cascade did. It says nothing about where the entity is read to be now.
+     */
     public AppliedOutcomeAssert<E, S, T> movedTo(S expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.equal(context, "moved to", expected, applied.to());

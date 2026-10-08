@@ -1,5 +1,6 @@
 package io.github.graphmaquina.api;
 
+import io.github.graphmaquina.internal.FailureTypes;
 import java.util.List;
 import java.util.Optional;
 import lombok.NonNull;
@@ -50,9 +51,9 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * The reason given for this result: the reason of the state policy or of the guard for a rejection, and the reason
      * the action returned for a failure. The graph's author writes them all, except the fixed text the library
      * generates for a terminal state that declares no policy. Empty for an applied outcome, for an ignored one, whose
-     * why is its {@link IgnoreReason}, and for a failure that carries a cause because failsOn routed it from an
-     * exception: that reason is composed from the exception and may carry internal details, so it stays in the
-     * failure's {@code reason} and {@code cause}.
+     * why is its {@link IgnoreReason}, and for a failure that carries a cause because a declared throwable type, of
+     * failsOn or of a recovery rule, routed it from an exception: that reason is composed from the exception and may
+     * carry internal details, so it stays in the failure's {@code reason} and {@code cause}.
      */
     Optional<String> explanation();
 
@@ -213,24 +214,42 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * Domain-level failure routed through {@code failureTransition}: the action returned a failed outcome, or failed
-     * with a throwable its edge lists in failsOn, which {@code cause} then holds. The entity moves to {@code movedTo}.
-     * Returned by a root call, it committed, with {@code records} and {@code reactions} as in {@link Applied}; returned
-     * by a cascade, it is written only if its root commits, and both lists are empty. The reason is never blank. When
-     * failsOn routed the failure, it carries the throwable as {@code cause} and a reason composed from it, so
-     * {@link #explanation()} leaves that reason out.
+     * with a throwable that a type its edge declares accepts, which {@code cause} then holds; no declared type accepts
+     * an Error, a CancellationException or a StateMachineException. A returned failure takes the recovery of the edge's
+     * recovery rule that declares its failure kind, compared by identity, and the edge's onFailure otherwise. A
+     * throwable takes the route of the most specific declared type that accepts it, among the types of the edge's
+     * recovery rules and of its failsOn, for the types the DSL and RecoveryRule admit: that rule's recovery, or
+     * onFailure for a failsOn type. {@code failureKind} is the kind the action returned with its failure, whichever
+     * route took it, or the kind of the rule whose type routed the throwable; it is empty for a failure returned
+     * without one and for a throwable a failsOn type routed. The entity moves to {@code movedTo}. Returned by a root
+     * call, it committed, with {@code records} and {@code reactions} as in {@link Applied}; returned by a cascade, it
+     * is written only if its root commits, and both lists are empty. The constructor refuses a blank reason, and a
+     * present failure kind that {@link ActionOutcome#failed(Class, String)} would refuse; the constructor without
+     * {@code failureKind} reports none. When a throwable was routed, it carries it as {@code cause} and a reason
+     * composed from it, so {@link #explanation()} leaves that reason out.
      */
     record Failed<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,
             @NonNull T failureTransition, @NonNull S movedTo,
             @NonNull String reason, @NonNull Optional<Throwable> cause,
             @NonNull List<TransitionRecord<?, ?, ?>> records,
-            @NonNull List<Reaction> reactions) implements Outcome<E, S, T> {
+            @NonNull List<Reaction> reactions,
+            @NonNull Optional<Class<? extends FailureKind>> failureKind) implements Outcome<E, S, T> {
+        /** Validates the reason and failure kind, and copies the committed records and reactions. */
         public Failed {
             if (reason.isBlank()) {
                 throw new IllegalArgumentException("reason must not be blank");
             }
+            failureKind.ifPresent(FailureTypes::requireValidKind);
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
+        }
+
+        /** Builds a routed failure without a failure kind. */
+        public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
+                      Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions) {
+            this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
+                    Optional.empty());
         }
 
         @Override

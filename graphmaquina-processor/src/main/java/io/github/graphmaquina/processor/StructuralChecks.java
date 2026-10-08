@@ -3,13 +3,17 @@ package io.github.graphmaquina.processor;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.dsl.MachineOutlineValidator;
 import io.github.graphmaquina.error.InvalidGraphException;
+import io.github.graphmaquina.internal.FailureTypes;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.MachineTypes;
+import io.github.graphmaquina.processor.model.RecoveryModel;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
@@ -43,6 +47,12 @@ final class StructuralChecks {
 
     /** The types whose methods a machine's companion implements whatever the facade declares. */
     private static final List<String> BUILT_IN = List.of(MACHINE, "java.lang.Object");
+
+    private static final String FAILURE_KIND = "io.github.graphmaquina.api.FailureKind";
+
+    /** What SG304 says after the binary name of a throwable type one edge declares twice. */
+    private static final String REPEATED_TYPE = " is declared more than once across recover and failsOn; a throwable"
+            + " type selects a single route";
 
     private final Signatures signatures;
     private final Diagnostics diagnostics;
@@ -253,6 +263,87 @@ final class StructuralChecks {
         }
     }
 
+    /**
+     * SG507 when an edge that runs no action still declares recovery rules, which only a failure of an action
+     * selects; reported apart from what {@link #checkActionRequired} reports. {@code remedy} ends the message.
+     */
+    void checkRecoveriesNeedAction(boolean action, List<RecoveryModel> recoveries, String remedy,
+            DiagnosticAnchor anchor) {
+        if (!action && !recoveries.isEmpty()) {
+            anchor.report(diagnostics, "SG507", "recoveries need an action" + remedy);
+        }
+    }
+
+    /**
+     * What the recovery rules of one edge must hold, each problem reported at the value it is about and naming each
+     * kind and type by its binary name.
+     *
+     * <ul>
+     *   <li>{@code SG302} for every throwable type a rule lists that the edge's own failsOn may not list either.</li>
+     *   <li>{@code SG303} at the first occurrence of a kind that is not a failure kind, as {@link #isFailureKind}
+     *       decides. Whether the facade's package can access the kind is javac's to say: the facade writes its class
+     *       literal itself.</li>
+     *   <li>{@code SG304} at the second occurrence of a kind two rules name, and of a throwable type listed twice
+     *       within one rule, by two rules, or by a rule and the edge's failsOn. Occurrences follow source order;
+     *       unwritten defaults follow explicit values in rule-then-fallback order. Without source, that traversal
+     *       orders all occurrences. A type that the fallback repeats counts once, since all its occurrences select
+     *       the same fallback. Types are compared by their erasure, never by name, so a subtype is no repeat of its
+     *       supertype.</li>
+     * </ul>
+     *
+     * <p>{@code failsOn} is the edge's own failsOn, and {@code failsOnValues} holds, at each position, the value
+     * that names the type {@code failsOn} holds there.</p>
+     */
+    void checkRecoveries(List<RecoveryModel> recoveries, List<TypeMirror> failsOn, List<AnnotationValue> failsOnValues,
+            Element element, AnnotationMirror mirror) {
+        if (recoveries.isEmpty()) {
+            return;
+        }
+        List<TypeMirror> kinds = new ArrayList<>();
+        List<TypeMirror> repeatedKinds = new ArrayList<>();
+        List<ThrowableOccurrence> occurrences = new ArrayList<>();
+        for (RecoveryModel recovery : recoveries) {
+            String kind = binaryName(recovery.kind());
+            DiagnosticAnchor kindAnchor = DiagnosticAnchor.of(element, recovery.annotation(), recovery.kindValue());
+            if (!contains(kinds, recovery.kind()) && !isFailureKind(recovery.kind())) {
+                kindAnchor.report(diagnostics, "SG303", kind + FailureTypes.INVALID_KIND_SUFFIX);
+            }
+            repeated(recovery.kind(), kinds, repeatedKinds, kindAnchor,
+                    "failure kind " + kind + " is declared by more than one recover");
+            for (int at = 0; at < recovery.failsOn().size(); at++) {
+                TypeMirror type = recovery.failsOn().get(at);
+                DiagnosticAnchor anchor = DiagnosticAnchor.of(element, recovery.annotation(),
+                        recovery.failsOnValues().get(at));
+                if (isForbiddenFailsOn(type)) {
+                    anchor.report(diagnostics, "SG302", "recover(" + kind + ", " + recovery.transition()
+                            + ") does not allow " + binaryName(type) + "; " + FailureTypes.FORBIDDEN_THROWABLE_RULE);
+                }
+                occurrences.add(new ThrowableOccurrence(type, anchor, diagnostics.sourceStart(anchor)));
+            }
+        }
+        List<TypeMirror> fallback = new ArrayList<>();
+        for (int at = 0; at < failsOn.size(); at++) {
+            TypeMirror type = failsOn.get(at);
+            if (!contains(fallback, type)) {
+                fallback.add(type);
+                DiagnosticAnchor anchor = DiagnosticAnchor.of(element, mirror, failsOnValues.get(at));
+                occurrences.add(new ThrowableOccurrence(type, anchor, diagnostics.sourceStart(anchor)));
+            }
+        }
+        // Explicit values follow source order; unwritten values retain traversal order after them.
+        occurrences.sort(Comparator.comparingLong(
+                (ThrowableOccurrence occurrence) -> occurrence.start().orElse(Long.MAX_VALUE)));
+        List<TypeMirror> types = new ArrayList<>();
+        List<TypeMirror> repeatedTypes = new ArrayList<>();
+        for (ThrowableOccurrence occurrence : occurrences) {
+            repeated(occurrence.type(), types, repeatedTypes, occurrence.anchor(),
+                    binaryName(occurrence.type()) + REPEATED_TYPE);
+        }
+    }
+
+    /** One temporary throwable declaration; sorting these leaves recovery model order unchanged. */
+    private record ThrowableOccurrence(TypeMirror type, DiagnosticAnchor anchor, OptionalLong start) { }
+
     /** SG507 when a timeout is declared on an action that does not run asynchronously. */
     void checkAsyncTimeout(Optional<Duration> timeout, Optional<Binding> action, DiagnosticAnchor anchor) {
         if (timeout.isPresent() && action.isPresent() && !action.get().async()) {
@@ -326,9 +417,9 @@ final class StructuralChecks {
     }
 
     /**
-     * Whether failsOn may not name {@code type}. A cancellation is refused with all its subtypes, the two wrappers
-     * only as themselves: a subtype of either is matched as it is thrown. {@code IllegalStateException}, the
-     * supertype of {@code CancellationException}, stays allowed.
+     * Whether a failsOn, the edge's own or a recovery rule's, may not name {@code type}. A cancellation is refused
+     * with all its subtypes, the two wrappers only as themselves: a subtype of either is matched as it is thrown.
+     * {@code IllegalStateException}, the supertype of {@code CancellationException}, stays allowed.
      */
     private boolean isForbiddenFailsOn(TypeMirror type) {
         return signatures.erasureIs(type, "java.lang.Throwable") || signatures.erasureIs(type, "java.lang.Exception")
@@ -338,5 +429,52 @@ final class StructuralChecks {
                 || signatures.subtype(type, "java.util.concurrent.CancellationException")
                 || signatures.erasureIs(type, "java.util.concurrent.CompletionException")
                 || signatures.erasureIs(type, "java.util.concurrent.ExecutionException");
+    }
+
+    /**
+     * Whether {@code type} is a failure kind: a named class or record, top-level or a member, that is final, so
+     * never abstract, implements {@code FailureKind} and is no {@code Throwable}. An interface, an enum and an
+     * annotation type are none.
+     */
+    private boolean isFailureKind(TypeMirror type) {
+        if (!(type instanceof DeclaredType declared) || !(declared.asElement() instanceof TypeElement element)) {
+            return false;
+        }
+        boolean named = element.getNestingKind() == NestingKind.TOP_LEVEL
+                || element.getNestingKind() == NestingKind.MEMBER;
+        boolean classOrRecord = element.getKind() == ElementKind.CLASS || element.getKind() == ElementKind.RECORD;
+        return named && classOrRecord && element.getModifiers().contains(Modifier.FINAL)
+                && signatures.subtype(type, FAILURE_KIND) && !signatures.subtype(type, "java.lang.Throwable");
+    }
+
+    /**
+     * SG304 at {@code anchor} when {@code seen} holds {@code type} and {@code reported} does not yet, so that only
+     * the second occurrence of a type is reported; {@code type} is seen from then on.
+     */
+    private void repeated(TypeMirror type, List<TypeMirror> seen, List<TypeMirror> reported, DiagnosticAnchor anchor,
+            String message) {
+        if (contains(seen, type) && !contains(reported, type)) {
+            reported.add(type);
+            anchor.report(diagnostics, "SG304", message);
+        }
+        seen.add(type);
+    }
+
+    /** Whether {@code types} holds a type whose erasure is that of {@code type}. */
+    private boolean contains(List<TypeMirror> types, TypeMirror type) {
+        TypeMirror erased = signatures.types().erasure(type);
+        for (TypeMirror held : types) {
+            if (signatures.same(signatures.types().erasure(held), erased)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The binary name of the class {@code type} names, as {@code Class.getName()} spells it. */
+    private String binaryName(TypeMirror type) {
+        return type instanceof DeclaredType declared && declared.asElement() instanceof TypeElement element
+                ? signatures.elements().getBinaryName(element).toString()
+                : type.toString();
     }
 }

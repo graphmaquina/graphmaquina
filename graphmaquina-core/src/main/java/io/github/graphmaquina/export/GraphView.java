@@ -3,6 +3,7 @@ package io.github.graphmaquina.export;
 import io.github.graphmaquina.api.ActionRef;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardRef;
+import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.StatePolicy;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
@@ -41,8 +42,8 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
 
     /**
      * Builds the view of {@code definition}: every state in the graph's node order, every declared edge in the
-     * definition's order, each state's policy, the watches, and the terminals in node order. A rejection is never an
-     * edge.
+     * definition's order with its recovery rules in declaration order, each state's policy, the watches, and the
+     * terminals in node order. A rejection is never an edge.
      */
     public static <E, S extends Enum<S>, T extends Enum<T>> GraphView of(@NonNull GraphDefinition<E, S, T> definition) {
         List<String> states = new ArrayList<>();
@@ -55,9 +56,9 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
             for (GuardRef<E, S, T> guard : spec.guards()) {
                 guards.add(guard.name());
             }
-            transitions.add(new TransitionView(spec.from().name(), spec.transition().name(), spec.to().name(), spec.kind(),
-                    spec.action().map(ActionRef::name), guards, spec.isAsync(), spec.onFailure().map(Enum::name),
-                    watchLabel(definition, spec)));
+            transitions.add(new TransitionView(spec.from().name(), spec.transition().name(), spec.to().name(),
+                    spec.kind(), spec.action().map(ActionRef::name), guards, spec.isAsync(),
+                    spec.onFailure().map(Enum::name), watchLabel(definition, spec), recoveries(spec.recoveryRules())));
         }
         List<PolicyView> policies = new ArrayList<>();
         for (S state : definition.graph().nodes()) {
@@ -88,6 +89,25 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
         }
         return new GraphView(definition.key().toString(), definition.initial().name(), terminals, states, transitions,
                 policies, watches);
+    }
+
+    /**
+     * The rules by names, kinds and throwable types as {@link Class#getName()} gives them, in declaration order. An
+     * edge without rules gets the shared empty list, so its view allocates nothing for them.
+     */
+    private static <T extends Enum<T>> List<RecoveryView> recoveries(List<RecoveryRule<T>> rules) {
+        if (rules.isEmpty()) {
+            return List.of();
+        }
+        List<RecoveryView> views = new ArrayList<>();
+        for (RecoveryRule<T> rule : rules) {
+            List<String> failsOn = new ArrayList<>();
+            for (Class<? extends Throwable> type : rule.failsOn()) {
+                failsOn.add(type.getName());
+            }
+            views.add(new RecoveryView(rule.kind().getName(), rule.transition().name(), failsOn));
+        }
+        return views;
     }
 
     private static <E, S extends Enum<S>, T extends Enum<T>> Optional<String> watchLabel(GraphDefinition<E, S, T> definition,

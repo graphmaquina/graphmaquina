@@ -1,11 +1,9 @@
 package io.github.graphmaquina.runtime;
 
 import java.time.Duration;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -26,12 +24,19 @@ import java.util.concurrent.TimeoutException;
  * engine reports as an abort, as it does Timeout and Interrupted. As with CompletableFuture's get, a stage complete
  * when the wait begins is taken as it is, even on an interrupted thread; otherwise, once the wait ends, an interrupt
  * comes first, then completion, then the deadline. A wait that an interrupt ends leaves the thread interrupted. Once
- * complete, the stage's outcome is read with get, which then returns or throws at once.
+ * complete, the stage's value is returned at once, and an exceptional completion is never read through
+ * CompletableFuture's get or join: get strips a CompletionException that carries a cause, whatever its class, a
+ * subclass included, and join wraps in one any throwable but a CompletionException or a CancellationException. The
+ * engine takes the throwable exactly as the stage completed with it, and unwraps it as it unwraps a throwable an action
+ * throws: only the exact classes CompletionException and ExecutionException, so a subclass of either is classified as
+ * itself. The initial handle callback returns normally after copying the value or throwable and releasing the
+ * latch; unlike whenComplete, it does not ask the stage to construct an exceptional dependent result, which could
+ * read the throwable's message before the engine checks for poison.
  * A deadline of Long.MAX_VALUE means no limit. Any other deadline is only ever subtracted from, so one that wrapped
  * past Long.MAX_VALUE when its budget was added still leaves the exact time remaining. Any exceptional
- * completion surfaces as an ActionFailure, a library exception and an Error included: the engine learns of that
- * Error only through the stage, so it reports it as the cause of an abort, while an Error thrown as itself on the
- * calling thread propagates unchanged.
+ * completion surfaces as an ActionFailure that carries that throwable, a library exception and an Error included: the
+ * engine learns of that Error only through the stage, so it reports it as the cause of an abort, while an Error
+ * thrown as itself on the calling thread propagates unchanged.
  */
 final class Await {
 
@@ -76,13 +81,14 @@ final class Await {
     static <T> T await(CompletionStage<T> stage, long deadlineNanos) {
         CompletableFuture<T> owned = new CompletableFuture<>();
         CountDownLatch completed = new CountDownLatch(1);
-        stage.whenComplete((T value, Throwable error) -> {
+        stage.handle((T value, Throwable error) -> {
             if (error != null) {
                 owned.completeExceptionally(error);
             } else {
                 owned.complete(value);
             }
             completed.countDown();
+            return null;
         });
         try {
             if (!owned.isDone()) {
@@ -91,15 +97,16 @@ final class Await {
                     throw new Timeout(new TimeoutException());
                 }
             }
-            return owned.get();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new Interrupted(e);
-        } catch (CancellationException e) {
-            throw new ActionFailure(e);
-        } catch (ExecutionException e) {
-            throw new ActionFailure(e);
         }
+        if (owned.isCompletedExceptionally()) {
+            // handle hands over the throwable exactly as the stage completed with it, where get or join would strip
+            // or add a CompletionException; a stage that completed normally allocates nothing here.
+            throw new ActionFailure(owned.handle((T value, Throwable error) -> error).join());
+        }
+        return owned.resultNow();
     }
 
     /** The time left before {@code deadlineNanos}, Long.MAX_VALUE when it sets no limit; zero or less once passed. */

@@ -272,7 +272,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 case StepResult.Failed<S, T> failed ->
                         new Outcome.Failed<>(entity, failed.from(), failed.transition(), failed.to(),
                                 failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
-                                records, reactions);
+                                records, reactions, failed.failureKind());
             };
         } catch (Throwable thrown) {
             if (thrown instanceof Error fatal) {

@@ -5,6 +5,7 @@ import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.OperationModel;
+import io.github.graphmaquina.processor.model.RecoveryModel;
 import io.github.graphmaquina.processor.model.RejectionModel;
 import io.github.graphmaquina.processor.model.RuleKind;
 import io.github.graphmaquina.processor.model.RuleModel;
@@ -36,12 +37,19 @@ import javax.lang.model.util.Elements;
  * in the sources they own and cannot suppress what a generated file says about it, and a build that compiles that
  * file with {@code -Xlint:all -Werror} fails on such a warning.</p>
  *
+ * <p>Each recovery rule of an edge becomes one {@code recover} call of that edge, in declaration order, after its
+ * {@code failsOn} calls and before its hook: {@code recover(K.class, id)} for a rule that lists no throwable type,
+ * {@code recover(K.class, id, A.class)} for a rule that lists one, and
+ * {@code recover(K.class, id, List.of(A.class, B.class))} for a rule that lists more, which is the only case in which
+ * the companion claims {@code java.util.List} through {@link Names}.</p>
+ *
  * <p>Types are written along two paths. The types the companion names itself, its {@code java.lang} ones
  * included, are written as {@link Names} decides from what the companion's scope already holds, the member types
  * it inherits from the facade among them: by their simple name where that name resolves to them, qualified
- * otherwise. The types an operation takes as its input, the parameter types that pin a bound overload, and the
- * {@code failsOn} classes are written by {@link TypeSource}, every declared type in them by its qualified name,
- * together with their type annotations. A qualified name starts with a package or, for a type of the unnamed
+ * otherwise. The types an operation takes as its input, the parameter types that pin a bound overload, the
+ * {@code failsOn} classes, and the kind and the throwable classes of each recovery rule are written by
+ * {@link TypeSource}, every declared type in them by its qualified name, together with their type annotations.
+ * A qualified name starts with a package or, for a type of the unnamed
  * package, with the top-level type it is or is nested in, which is the whole name of a top-level one. A type of
  * the companion's scope takes that first segment wherever it heads a name; a field of that scope takes it, or a
  * simple name, only where an expression reads it: as the qualifier of a member the companion calls or reads, or
@@ -74,6 +82,7 @@ public final class MachineGenerator {
     private static final String WATCH_CONDITION = "io.github.graphmaquina.api.WatchCondition";
     private static final String STATE_GRAPH = "io.github.graphmaquina.dsl.StateGraph";
     private static final String DURATION = "java.time.Duration";
+    private static final String LIST = "java.util.List";
     private static final String OBJECTS = "java.util.Objects";
     private static final String OPTIONAL = "java.util.Optional";
     private static final String SET = "java.util.Set";
@@ -115,7 +124,7 @@ public final class MachineGenerator {
 
     /**
      * What {@link TypeSource} writes in the companion of {@code model}: the operations' inputs, the types that pin
-     * an overload, and the {@code failsOn} classes.
+     * an overload, the {@code failsOn} classes, and the kind and the throwable classes of every recovery rule.
      */
     private static Written rendered(MachineModel model, BoundInvocation invocations) {
         List<TypeMirror> sources = new ArrayList<>();
@@ -124,6 +133,10 @@ public final class MachineGenerator {
         }
         for (TransitionModel transition : model.allTransitions()) {
             sources.addAll(transition.failsOn());
+            for (RecoveryModel recovery : transition.recoveries()) {
+                sources.add(recovery.kind());
+                sources.addAll(recovery.failsOn());
+            }
         }
         for (Binding binding : bindings(model)) {
             sources.addAll(invocations.casts(binding));
@@ -346,6 +359,11 @@ public final class MachineGenerator {
         for (TypeMirror type : transition.failsOn()) {
             line.append(".failsOn(").append(TypeSource.render(type)).append(".class)");
         }
+        for (RecoveryModel recovery : transition.recoveries()) {
+            line.append(".recover(").append(TypeSource.render(recovery.kind())).append(".class, ")
+                    .append(constant(names, transitions, recovery.transition()))
+                    .append(recoveryTypes(names, recovery.failsOn())).append(')');
+        }
         transition.afterCommit().ifPresent((Binding hook) -> {
             boolean contextual = hook.arguments().size() == 2;
             line.append(contextual ? ".afterCommitWith(" : ".afterCommit(").append(quote(hook.methodName())).append(", ")
@@ -354,6 +372,23 @@ public final class MachineGenerator {
                     .append(')');
         });
         out.line(line.append(".endTransition()").toString());
+    }
+
+    /**
+     * What follows the identifier in the {@code recover} call of a rule that lists {@code types}: nothing for none,
+     * {@code , A.class} for one, and {@code , List.of(A.class, B.class)} for more, in the order the rule lists them.
+     */
+    private static String recoveryTypes(Names names, List<TypeMirror> types) {
+        if (types.isEmpty()) {
+            return "";
+        }
+        List<String> classes = new ArrayList<>();
+        for (TypeMirror type : types) {
+            classes.add(TypeSource.render(type) + ".class");
+        }
+        return types.size() == 1
+                ? ", " + classes.get(0)
+                : ", " + names.qualifier(LIST) + ".of(" + String.join(", ", classes) + ")";
     }
 
     private static void emitWatch(MachineModel model, Names names, Variables variables, BoundInvocation invocations,
@@ -395,7 +430,8 @@ public final class MachineGenerator {
     /**
      * Every type the companion writes through {@link Names}, each with the package that declares it, in the order it
      * claims them: its own first, then the fixed ones, then the types of the watched peers, then {@code Duration},
-     * {@code Optional} and {@code WatchCondition} where an edge or a watch needs them, then the model's other types,
+     * {@code Optional}, {@code WatchCondition} and {@code List} where an edge, a watch or a recovery rule that lists
+     * two throwable types or more needs them, then the model's other types,
      * then, where a lambda catches what a call throws, {@code Throwable} and the types the lambdas catch.
      */
     private static Map<String, String> types(MachineModel model, BoundInvocation invocations) {
@@ -409,8 +445,12 @@ public final class MachineGenerator {
         boolean anyTimeout = false;
         boolean anyNullableOwner = false;
         boolean anyBuiltIn = false;
+        boolean anyTypeList = false;
         for (TransitionModel transition : model.allTransitions()) {
             anyTimeout |= transition.timeout().isPresent();
+            for (RecoveryModel recovery : transition.recoveries()) {
+                anyTypeList |= recovery.failsOn().size() > 1;
+            }
         }
         for (WatchModel watch : model.watches()) {
             anyNullableOwner |= !watch.ownerIsOptional();
@@ -429,6 +469,9 @@ public final class MachineGenerator {
         }
         if (anyBuiltIn) {
             Names.claim(types, WATCH_CONDITION);
+        }
+        if (anyTypeList) {
+            Names.claim(types, LIST);
         }
         Names.claim(types, model.types().entityElement());
         Names.claim(types, model.types().statesElement());

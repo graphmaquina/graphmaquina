@@ -20,8 +20,9 @@ example module is.
 - [Sharp edges](#sharp-edges)
 - [Maintaining test support](#maintaining-test-support)
 
-Every Java sample below is copied verbatim out of a test that runs in this repository. Each section names
-the file it came from.
+Every Java sample below runs in this repository. Most are copied verbatim out of a test; the samples of
+[failure kinds and recovery rules](#failure-kinds-and-recovery-rules) go the other way, cut out of this page and
+run by a test. Each section names the test file.
 
 ## Install
 
@@ -111,19 +112,19 @@ constant of another machine's catalogue does not compile inside it.
 | Subject | Entry point | What the view can expect |
 | --- | --- | --- |
 | Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch |
-| One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, failure identifier, `failsOn` classes, timeout, after-commit hook |
+| One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, fallback failure identifier, `failsOn` classes, recovery rules in declaration order, timeout, after-commit hook |
 | One node's policy | `assertThat(definition).policy(state)` | the default reason and the reason declared for one identifier |
 | A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
 | Reachability | `assertThat(definition).topology()` | nodes, successors, reachable set, an explicit walk, the shortest path, absence of a path, cycles |
 | Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()` and `reactions()` |
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
-| Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, reason, cause |
+| Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, failure kind, reason, cause |
 | Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, and `isRejectedByGuardNamed` for `GUARD` |
 | Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED` |
 | Transition records | `.records()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
 | Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal; phase, states written and the failing call |
-| Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, and the reason |
+| Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, the reason, and the failure kind of a failed action |
 | Live entity | `assertThat(entity, Order::status)` | the state the getter reads at that moment |
 | Completed calls | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome statuses, and the outcome sequence of one entity |
 | Tracked entities | `StateSnapshot` | which of the tracked entities moved since the capture, and that none did |
@@ -229,8 +230,9 @@ assertThat(orders.definition())
 ```
 
 `hasGuardsExactly` keeps order and multiplicity, because the engine evaluates guards in declaration order
-and stops at the first rejection. `failsOnExactly()` with no argument asserts that the edge maps no
-exception to its failure route.
+and stops at the first rejection. `failsOnExactly()` with no argument asserts that the edge's own `failsOn`
+maps no exception to its fallback `onFailure` route; the exceptions a recovery rule maps are not part of it.
+`recoversExactly(rules)` compares every rule of the edge, its exception classes included, in declaration order.
 
 ### Outcomes, reactions and observed state
 
@@ -436,9 +438,10 @@ callback. The test resumes when the engine has entered it, and the engine resume
 very invocation, so an asynchronous transition is asserted without a single sleep. `awaitInvocation` and
 `AsyncAssertions.await` each take a budget that belongs to the test. The fixture is `AutoCloseable`; closing
 is idempotent, cancels the stages it created itself and rejects any invocation that arrives afterwards: the
-action with a `GraphAssertionError`, an `Error` that no `failsOn` route can take for a failure of the action,
-and the guard with an `IllegalStateException`, which aborts the transition. `awaitInvocation` on a closed
-fixture fails at once, and a wait already blocked when the fixture closes is woken and fails the same way.
+action with a `GraphAssertionError`, an `Error` that neither a recovery rule nor a `failsOn` route can take for
+a failure of the action, and the guard with an `IllegalStateException`, which aborts the transition.
+`awaitInvocation` on a closed fixture fails at once, and a wait already blocked when the fixture closes is
+woken and fails the same way.
 Concurrent invocations are independent: each arrives with its own handle and is answered on its own. From
 [ControlledAsyncTest](../graphmaquina-test/src/test/java/consumer/ControlledAsyncTest.java), where
 `GENEROUS` is that test's own two-second budget:
@@ -489,6 +492,110 @@ The machine that holds an async edge must declare `asyncTimeout(...)`, as any as
 deadline is the engine's; the budgets above are the test's, and the two are unrelated — see
 [what a check does not prove](#what-a-check-does-not-prove).
 
+### Failure kinds and recovery rules
+
+An edge can declare recovery rules besides its `onFailure` fallback: a rule pairs a failure kind with the
+identifier of its recovery edge, and may list the throwable types that select it. The
+[guide](guide.md#recover-by-failure-kind-and-exception-type) describes how the engine chooses. A test asserts the
+route a call took on the call's outcome, and the rules an edge declares on the definition.
+
+These samples use the publication machine of that guide section. `graph(action)` declares it with `action` on
+`PUBLISH`, `asyncGraph(action)` declares it with an asynchronous one, and `machine(graph)` builds a standalone
+machine with a five-second `asyncTimeout`.
+[TestingGuideFragmentsTest](../graphmaquina-test/src/test/java/consumer/TestingGuideFragmentsTest.java) writes out
+those helpers and the publication types, cuts the samples out of this page, compiles them against the published
+jars and runs them.
+
+A probe answers three calls in turn: a returned failure with a kind, a declared exception, and a returned failure
+without a kind, which the fallback takes:
+
+```java
+ServiceUnavailableException down = new ServiceUnavailableException("provider down");
+ActionProbe<Publication, PublicationState, PublicationChange> publish =
+        ActionProbe.<Publication, PublicationState, PublicationChange>create("publish", CallTrace.create())
+                .thenReturn(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"))
+                .thenThrow(down)
+                .thenReturn(ActionOutcome.failed("invalid response"));
+StateMachine<Publication, PublicationState, PublicationChange> machine = machine(graph(publish));
+
+assertThat(machine.execute(new Publication("p1"), PublicationChange.PUBLISH)).isFailed()
+        .hasFailureKind(PublicationFailures.Rejected.class)
+        .hasFailureTransition(PublicationChange.RECORD_REJECTION)
+        .movedTo(PublicationState.REJECTED_BY_PROVIDER)
+        .hasNoCause();
+assertThat(machine.execute(new Publication("p2"), PublicationChange.PUBLISH)).isFailed()
+        .hasFailureKind(PublicationFailures.Unavailable.class)
+        .hasFailureTransition(PublicationChange.SCHEDULE_RETRY)
+        .movedTo(PublicationState.RETRY_PENDING)
+        .hasCauseSameAs(down);
+assertThat(machine.execute(new Publication("p3"), PublicationChange.PUBLISH)).isFailed()
+        .hasNoFailureKind()
+        .hasFailureTransition(PublicationChange.MARK_INTEGRATION_FAILED)
+        .movedTo(PublicationState.INTEGRATION_FAILED)
+        .hasReason("invalid response");
+```
+
+`hasFailureKind` asserts the kind the failure carried, not the route that took it: a kind that no rule declares
+reaches the fallback and keeps its kind. Assert `hasFailureTransition` beside it to pin the route.
+
+The rules belong to the edge's declaration. `recoversExactly` compares them in declaration order, as
+`failsOnExactly` compares the edge's own types; the order selects nothing, but the declaration keeps it.
+`failsOnExactly` reads only the edge's own `failsOn`, never the types of its rules:
+
+```java
+assertThat(machine.definition())
+        .transition(PublicationState.READY, PublicationChange.PUBLISH)
+        .recoversExactly(List.of(
+                new RecoveryRule<>(PublicationFailures.Unavailable.class, PublicationChange.SCHEDULE_RETRY,
+                        List.of(ServiceUnavailableException.class)),
+                new RecoveryRule<>(PublicationFailures.Rejected.class, PublicationChange.RECORD_REJECTION,
+                        List.of(ProviderRejectedException.class))))
+        .failsOnExactly(InvalidResponseException.class)
+        .hasFailureTransition(PublicationChange.MARK_INTEGRATION_FAILED);
+```
+
+An action's result can be asserted on its own, before any machine runs it. On an action result both expectations
+require the `Failed` variant, so `ActionOutcome.ok()` fails them:
+
+```java
+assertThat(ActionOutcome.failed(PublicationFailures.Unavailable.class, "provider down"))
+        .isFailed()
+        .hasFailureKind(PublicationFailures.Unavailable.class)
+        .hasReason("provider down");
+assertThat(ActionOutcome.failed("invalid response")).isFailed().hasNoFailureKind();
+```
+
+The same rules route an asynchronous action. A `ControlledAsyncAction` lets the test answer the stage with a
+failure or complete it with an exception, and `AsyncAssertions` reads the outcome:
+
+```java
+Duration testBudget = Duration.ofSeconds(10);
+ControlledAsyncAction<Publication, PublicationState, PublicationChange> publish = ControlledAsyncAction.create();
+try (publish) {
+    StateMachine<Publication, PublicationState, PublicationChange> machine = machine(asyncGraph(publish));
+    CompletableFuture<Outcome<Publication, PublicationState, PublicationChange>> rejected =
+            machine.async().execute(new Publication("p4"), PublicationChange.PUBLISH);
+    publish.awaitInvocation(testBudget)
+            .complete(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"));
+    AsyncAssertions.await(rejected, testBudget).isFailed()
+            .hasFailureKind(PublicationFailures.Rejected.class)
+            .hasFailureTransition(PublicationChange.RECORD_REJECTION)
+            .movedTo(PublicationState.REJECTED_BY_PROVIDER);
+
+    ProviderRejectedException refused = new ProviderRejectedException("content refused");
+    CompletableFuture<Outcome<Publication, PublicationState, PublicationChange>> thrown =
+            machine.async().execute(new Publication("p5"), PublicationChange.PUBLISH);
+    publish.awaitInvocation(testBudget).fail(refused);
+    AsyncAssertions.await(thrown, testBudget).isFailed()
+            .hasFailureKind(PublicationFailures.Rejected.class)
+            .hasFailureTransition(PublicationChange.RECORD_REJECTION)
+            .hasCauseSameAs(refused);
+}
+```
+
+`testBudget` is how long the test waits, not the engine's deadline. The fixture is the only resource of the
+try-with-resources header because a standalone machine has no registry to close.
+
 ## Goldens and structural snapshots
 
 Machine contracts and visual output have separate tests. Do not use a graphical export to validate machine
@@ -498,8 +605,10 @@ logic.
   `.graph` file: the machine key including the transition enum, the ordered catalogue of identifiers,
   ordered states, initial state, terminals, async mode, node policies, watches and their ordered rules with
   the identifier each one executes, and for every edge its `(from, id)` key, destination, kind, reason-free
-  action and guard names/modes, failure identifier, `failsOn` classes, timeout and after-commit hook. It
-  reads `GraphDefinition` and its `TransitionSpec`s directly and does not call an exporter. Absence has no
+  action and guard names/modes, fallback failure identifier, `failsOn` classes, timeout, after-commit hook and, only
+  when the edge declares some, its recovery rules in declaration order, each with its failure kind, recovery
+  identifier and `failsOn` classes. That order routes nothing, yet reordering the rules changes the snapshot.
+  It reads `GraphDefinition` and its `TransitionSpec`s directly and does not call an exporter. Absence has no
   path at all: an identifier with no edge from a state simply does not appear. Use typed graph assertions
   for focused expectations. Neither approach executes domain logic; test guards, actions, cascades and
   watches through real operations and assert their outcomes, records, reactions and observed entity states.

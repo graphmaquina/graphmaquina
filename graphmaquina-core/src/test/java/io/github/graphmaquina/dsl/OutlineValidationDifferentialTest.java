@@ -19,10 +19,11 @@ import org.junit.jupiter.api.Test;
  * <p>The corpus enumerates the bitmask of the nine edges three states admit, crossed with the three shapes a
  * cycle permission takes, with and without a terminal state, and with no policy, one per state, or one per
  * state that also rejects identifiers. The declared fixtures that follow carry what the enumeration cannot
- * express: duplicate keys, blank reasons, recoveries that are their own key, absent or without an action, a
- * watch on a terminal state, a watch on an identifier that leaves nowhere, and the fixtures of
- * {@link MachineOutlineValidatorTest}, large circulants included, except the four whose names hold a slash: the frozen
- * validator keys an edge by its printed form and answers those differently from the live one.
+ * express: duplicate keys, blank reasons, recoveries that are their own key, absent or without an action, recovery
+ * transitions on two edges that share a key, a watch on a terminal state, a watch on an identifier that leaves
+ * nowhere, and the fixtures of {@link MachineOutlineValidatorTest}, large circulants included, except the five whose
+ * names hold a slash: the frozen validator keys an edge by its printed form and answers those differently from the
+ * live one.
  */
 class OutlineValidationDifferentialTest {
 
@@ -47,7 +48,7 @@ class OutlineValidationDifferentialTest {
 
     @Test
     void theCorpusEnumeratesEveryGraphOfThreeStatesAndTheDeclaredFixtures() {
-        assertEquals(512 * PERMISSIONS.size() * TERMINALS.size() * POLICIES.size() + 13, CORPUS.size());
+        assertEquals(512 * PERMISSIONS.size() * TERMINALS.size() * POLICIES.size() + 21, CORPUS.size());
     }
 
     @Test
@@ -141,12 +142,17 @@ class OutlineValidationDifferentialTest {
         outlines.add(outline("watches", Set.of("C"), Set.of("A", "B"),
                 List.of(move("A", "E1", "B"), move("B", "E3", "A"), move("B", "E5", "C")), PLAIN,
                 List.of(new WatchOutline("C", List.of("E6")), new WatchOutline("B", List.of("E5", "E7")))));
+        outlines.add(outline("recoveries-of-a-duplicate-key", Set.of(), everywhere,
+                List.of(recovering("A", "E1", "B", TransitionKind.ACTION, "E4", "E3"),
+                        recovering("A", "E1", "C", TransitionKind.ACTION, null, "E0", "E3"),
+                        move("B", "E5", "C"), move("C", "E6", "A")),
+                PLAIN, List.of()));
         return outlines;
     }
 
     /**
      * The outlines {@link MachineOutlineValidatorTest} asserts on, so the oracle covers them edge for edge, except the
-     * four whose names hold a slash, which the frozen validator keys by their printed form and answers differently.
+     * five whose names hold a slash, which the frozen validator keys by their printed form and answers differently.
      */
     private static List<MachineOutline> fixturesOfTheValidatorTest() {
         List<MachineOutline> outlines = new ArrayList<>();
@@ -186,6 +192,50 @@ class OutlineValidationDifferentialTest {
                         action("REVIEW", "PUBLISH", "PUBLISHED", null), move("REVIEW", "SEND_BACK", "DRAFT"),
                         move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
+        outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, "SEND_BACK", "SEND_BACK"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
+        outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "PUBLISH"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
+        outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("DRAFT", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "SEND_BACK"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "SEND_BACK"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
+        outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(recovering("DRAFT", "SUBMIT", "REVIEW", TransitionKind.MOVE, null, "DISCARD"),
+                        action("REVIEW", "PUBLISH", "PUBLISHED", null), move("REVIEW", "SEND_BACK", "DRAFT"),
+                        move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
+        outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "ARCHIVE", "ARCHIVE"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
+        outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, "ARCHIVE", "ARCHIVE"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
+        outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, "RETOUCH", "DISCARD",
+                                "ARCHIVE"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
         outlines.add(circulant(500, 8, true));
         outlines.add(circulant(500, 8, false));
         return outlines;
@@ -203,6 +253,11 @@ class OutlineValidationDifferentialTest {
 
     private static TransitionOutline action(String from, String transition, String to, String onFailure) {
         return new TransitionOutline(from, transition, to, TransitionKind.ACTION, Optional.ofNullable(onFailure));
+    }
+
+    private static TransitionOutline recovering(String from, String transition, String to, TransitionKind kind,
+            String onFailure, String... recoveries) {
+        return new TransitionOutline(from, transition, to, kind, Optional.ofNullable(onFailure), List.of(recoveries));
     }
 
     private static List<PolicyOutline> docPolicies(String... states) {

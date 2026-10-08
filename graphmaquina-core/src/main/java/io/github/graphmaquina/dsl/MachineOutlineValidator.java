@@ -7,6 +7,7 @@ import io.github.graphmaquina.graph.StrongComponents;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,7 +15,8 @@ import lombok.NonNull;
 
 /**
  * Structural checks over a {@link MachineOutline}: unique keys, policies and their reasons, terminals,
- * reachability, cycles, failure routes and watches. Shared by the DSL and the annotation processor, so both report
+ * reachability, cycles, failure routes and watches. The failure routes of an edge are the identifiers its recovery
+ * rules name and the one its {@code onFailure} names. Shared by the DSL and the annotation processor, so both report
  * the same codes for these checks.
  */
 public final class MachineOutlineValidator {
@@ -145,29 +147,51 @@ public final class MachineOutlineValidator {
         return graph.successors(only).contains(only);
     }
 
+    /**
+     * Every edge's failure routes: first each distinct identifier its recovery rules name, in declaration order, then
+     * the one its onFailure names. An edge without an action may declare neither (SG507); otherwise each identifier
+     * must name another edge that leaves the same origin (SG301). Recovery rules are checked once per distinct
+     * identifier; onFailure is checked separately even when it names the same identifier.
+     */
     private static void failureRoutes(MachineOutline outline, OutlineIndex index,
             Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
         for (TransitionOutline edge : outline.transitions()) {
-            if (edge.onFailure().isEmpty()) {
-                continue;
+            boolean action = edge.kind() == TransitionKind.ACTION;
+            if (!edge.recoveryTransitions().isEmpty()) {
+                if (!action) {
+                    problems.add("SG507", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
+                            edge.describe() + " declares recover without an action");
+                } else {
+                    for (String recovery : new LinkedHashSet<>(edge.recoveryTransitions())) {
+                        requireRoute(edge, recovery, "recovery " + recovery, index, byKey, problems);
+                    }
+                }
             }
-            String recovery = edge.onFailure().get();
-            String where = edge.describe();
-            if (edge.kind() != TransitionKind.ACTION) {
-                problems.add("SG507", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
-                        where + " declares onFailure without an action");
-                continue;
+            if (edge.onFailure().isPresent()) {
+                String recovery = edge.onFailure().get();
+                if (!action) {
+                    problems.add("SG507", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
+                            edge.describe() + " declares onFailure without an action");
+                } else {
+                    requireRoute(edge, recovery, "onFailure = " + recovery, index, byKey, problems);
+                }
             }
-            if (recovery.equals(edge.transition())) {
-                problems.add("SG301", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
-                        where + " declares onFailure = " + recovery + ", which is its own key");
-                continue;
-            }
-            if (!byKey.containsKey(new EdgeKey(edge.from(), recovery))) {
-                problems.add("SG301", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
-                        where + " declares onFailure = " + recovery + ", but no transition " + recovery
-                                + " leaves " + edge.from());
-            }
+        }
+    }
+
+    /**
+     * SG301 unless {@code recovery} names an edge, other than {@code edge} itself, that leaves the origin of
+     * {@code edge}. {@code declared} is how the message quotes the declaration that names it.
+     */
+    private static void requireRoute(TransitionOutline edge, String recovery, String declared, OutlineIndex index,
+            Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
+        if (recovery.equals(edge.transition())) {
+            problems.add("SG301", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
+                    edge.describe() + " declares " + declared + ", which is its own key");
+        } else if (!byKey.containsKey(new EdgeKey(edge.from(), recovery))) {
+            problems.add("SG301", index.stateIndex(edge.from()), index.transitionIndex(edge.transition()),
+                    edge.describe() + " declares " + declared + ", but no transition " + recovery + " leaves "
+                            + edge.from());
         }
     }
 

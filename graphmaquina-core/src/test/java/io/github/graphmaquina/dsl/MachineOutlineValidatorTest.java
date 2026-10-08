@@ -27,6 +27,11 @@ class MachineOutlineValidatorTest {
         return new TransitionOutline(from, transition, to, TransitionKind.ACTION, Optional.ofNullable(onFailure));
     }
 
+    private static TransitionOutline recovering(String from, String transition, String to, TransitionKind kind,
+            String onFailure, String... recoveries) {
+        return new TransitionOutline(from, transition, to, kind, Optional.ofNullable(onFailure), List.of(recoveries));
+    }
+
     private static List<PolicyOutline> policies(String... states) {
         List<PolicyOutline> policies = new ArrayList<>();
         for (String state : states) {
@@ -144,6 +149,133 @@ class MachineOutlineValidatorTest {
         MachineOutline recovering = new MachineOutline("M", states, catalog, "A", Set.of("END"), Set.of(),
                 List.of(action("A", "GO", "A/X", "X/Y"), move("A/X", "Y", "END")), policies, List.of());
         assertEquals(List.of("SG301"), codes(MachineOutlineValidator.validate(recovering)));
+
+        MachineOutline ruled = new MachineOutline("M", states, catalog, "A", Set.of("END"), Set.of(),
+                List.of(recovering("A", "GO", "A/X", TransitionKind.ACTION, null, "X/Y"), move("A/X", "Y", "END")),
+                policies, List.of());
+        assertEquals(List.of("SG301"), codes(MachineOutlineValidator.validate(ruled)));
+    }
+
+    /** A rule and the onFailure may name the same recovery transition, as long as an edge with it leaves the origin. */
+    @Test
+    void recoveryTransitionsThatLeaveTheOriginAreValid() {
+        MachineOutline outline = new MachineOutline("Doc/DocStatus", STATES, CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, "SEND_BACK", "SEND_BACK"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
+        assertEquals(List.of(), MachineOutlineValidator.validate(outline));
+    }
+
+    @Test
+    void sg301ARecoveryTransitionThatIsTheEdgesOwnKey() {
+        MachineOutline outline = new MachineOutline("Doc/DocStatus", STATES, CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "PUBLISH"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
+        assertEquals(List.of(new InvalidGraphException.Problem("SG301",
+                        "REVIEW -PUBLISH-> PUBLISHED declares recovery PUBLISH, which is its own key")),
+                MachineOutlineValidator.validate(outline));
+    }
+
+    /** Each origin of an identifier is checked on its own: SEND_BACK leaves REVIEW, but not DRAFT. */
+    @Test
+    void sg301ARecoveryTransitionMissingFromOneOfTwoOrigins() {
+        MachineOutline outline = new MachineOutline("Doc/DocStatus", STATES, CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("DRAFT", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "SEND_BACK"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "SEND_BACK"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
+        assertEquals(List.of(new InvalidGraphException.Problem("SG301",
+                        "DRAFT -PUBLISH-> PUBLISHED declares recovery SEND_BACK, but no transition SEND_BACK leaves"
+                                + " DRAFT")),
+                MachineOutlineValidator.validate(outline));
+    }
+
+    /** Like onFailure without an action: reported as SG507, and the identifiers are not checked any further. */
+    @Test
+    void sg507RecoveryTransitionsWithoutAnAction() {
+        MachineOutline outline = new MachineOutline("Doc/DocStatus", STATES, CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(recovering("DRAFT", "SUBMIT", "REVIEW", TransitionKind.MOVE, null, "DISCARD"),
+                        action("REVIEW", "PUBLISH", "PUBLISHED", null), move("REVIEW", "SEND_BACK", "DRAFT"),
+                        move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
+        assertEquals(List.of(new InvalidGraphException.Problem("SG507",
+                        "DRAFT -SUBMIT-> REVIEW declares recover without an action")),
+                MachineOutlineValidator.validate(outline));
+    }
+
+    /** Two rules that name the same recovery transition make one problem, not one per rule. */
+    @Test
+    void twoRulesSharingAMissingRecoveryTransitionAreReportedOnce() {
+        MachineOutline outline = new MachineOutline("Doc/DocStatus", STATES, CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "ARCHIVE", "ARCHIVE"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
+        assertEquals(List.of(new InvalidGraphException.Problem("SG301",
+                        "REVIEW -PUBLISH-> PUBLISHED declares recovery ARCHIVE, but no transition ARCHIVE leaves"
+                                + " REVIEW")),
+                MachineOutlineValidator.validate(outline));
+    }
+
+    /** A rule and the onFailure that miss the same identifier are checked apart: two problems, rule first. */
+    @Test
+    void sg301ARuleAndTheOnFailureThatMissTheSameRecoveryTransition() {
+        MachineOutline outline = new MachineOutline("Doc/DocStatus", STATES, CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, "ARCHIVE", "ARCHIVE"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
+        assertEquals(List.of(
+                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares recovery"
+                                + " ARCHIVE, but no transition ARCHIVE leaves REVIEW"),
+                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares onFailure ="
+                                + " ARCHIVE, but no transition ARCHIVE leaves REVIEW")),
+                MachineOutlineValidator.validate(outline));
+    }
+
+    /** On one edge the rules come first, in declaration order, and the onFailure last. */
+    @Test
+    void theRecoveryTransitionsOfAnEdgeAreReportedBeforeItsOnFailure() {
+        MachineOutline outline = new MachineOutline("Doc/DocStatus", STATES, CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, "RETOUCH", "DISCARD",
+                                "ARCHIVE"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
+        assertEquals(List.of(
+                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares recovery"
+                                + " DISCARD, but no transition DISCARD leaves REVIEW"),
+                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares recovery"
+                                + " ARCHIVE, but no transition ARCHIVE leaves REVIEW"),
+                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares onFailure ="
+                                + " RETOUCH, but no transition RETOUCH leaves REVIEW")),
+                MachineOutlineValidator.validate(outline));
+    }
+
+    /** An edge keeps its own copy of the recovery transitions, in declaration order and with repeats. */
+    @Test
+    void anEdgeKeepsACopyOfItsRecoveryTransitions() {
+        List<String> recoveries = new ArrayList<>(List.of("SEND_BACK", "DISCARD", "SEND_BACK"));
+        TransitionOutline edge = new TransitionOutline("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION,
+                Optional.empty(), recoveries);
+        recoveries.clear();
+        assertEquals(List.of("SEND_BACK", "DISCARD", "SEND_BACK"), edge.recoveryTransitions());
+        assertThrows(UnsupportedOperationException.class, () -> edge.recoveryTransitions().add("ARCHIVE"));
+        assertEquals(List.of(), action("REVIEW", "PUBLISH", "PUBLISHED", "SEND_BACK").recoveryTransitions());
+        NullPointerException error = assertThrows(NullPointerException.class, () -> new TransitionOutline("REVIEW",
+                "PUBLISH", "PUBLISHED", TransitionKind.ACTION, Optional.empty(), null));
+        assertTrue(error.getMessage().startsWith("recoveryTransitions"), error.getMessage());
     }
 
     @Test
@@ -154,6 +286,9 @@ class MachineOutlineValidatorTest {
                 Set.of(), List.of(move("DRAFT", "NOPE", "REVIEW")), List.of(), List.of()));
         assertThrows(IllegalArgumentException.class, () -> new MachineOutline("X", STATES, CATALOG, "DRAFT", Set.of(),
                 Set.of(), List.of(action("REVIEW", "PUBLISH", "PUBLISHED", "NOPE")), List.of(), List.of()));
+        assertThrows(IllegalArgumentException.class, () -> new MachineOutline("X", STATES, CATALOG, "DRAFT", Set.of(),
+                Set.of(), List.of(recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "NOPE")),
+                List.of(), List.of()));
         assertThrows(IllegalArgumentException.class, () -> new MachineOutline("X", STATES, CATALOG, "DRAFT", Set.of(),
                 Set.of(), List.of(), List.of(), List.of(new WatchOutline("DRAFT", List.of("NOPE")))));
     }

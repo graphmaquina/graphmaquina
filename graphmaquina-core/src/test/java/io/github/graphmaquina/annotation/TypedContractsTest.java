@@ -109,8 +109,8 @@ class TypedContractsTest {
         }, SymbolKind.values());
         assertArrayEquals(new VocabularyKind[] {
                 VocabularyKind.DEFINITION, VocabularyKind.STATE_POLICY, VocabularyKind.STATE_POLICIES,
-                VocabularyKind.TRANSITION, VocabularyKind.TRANSITIONS, VocabularyKind.REJECT, VocabularyKind.REJECTS,
-                VocabularyKind.WATCH, VocabularyKind.WATCHES, VocabularyKind.WHEN
+                VocabularyKind.TRANSITION, VocabularyKind.TRANSITIONS, VocabularyKind.RECOVERY, VocabularyKind.REJECT,
+                VocabularyKind.REJECTS, VocabularyKind.WATCH, VocabularyKind.WATCHES, VocabularyKind.WHEN
         }, VocabularyKind.values());
     }
 

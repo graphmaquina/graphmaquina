@@ -18,7 +18,8 @@ import javax.lang.model.type.WildcardType;
 
 /**
  * Renders a type as Java source, including fully qualified references in its type annotations: an operation's input
- * type, a parameter type that pins an overload, or a {@code failsOn} class.
+ * type, a parameter type that pins an overload, a {@code failsOn} class, or the kind or a throwable class of a
+ * recovery rule.
  *
  * <p>Every declared type is written by its qualified name, so {@link #written} answers which identifiers a
  * rendering starts its qualified names with, a package or, for a type of the unnamed package, the top-level type it

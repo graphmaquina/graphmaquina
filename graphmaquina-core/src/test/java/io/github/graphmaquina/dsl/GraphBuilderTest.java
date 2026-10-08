@@ -33,6 +33,7 @@ import io.github.graphmaquina.error.InvalidGraphException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
+import io.github.graphmaquina.fixtures.RecoveryFixtures.PublicationFailures;
 import io.github.graphmaquina.graph.DirectedEdge;
 import java.io.IOException;
 import java.time.Duration;
@@ -176,6 +177,9 @@ class GraphBuilderTest {
                 () -> submit.asyncGuard("pass", ASYNC_PASS),
                 () -> submit.onFailure(RETOUCH),
                 () -> submit.failsOn(IOException.class),
+                () -> submit.recover(PublicationFailures.Unavailable.class, RETOUCH),
+                () -> submit.recover(PublicationFailures.Unavailable.class, RETOUCH, IOException.class),
+                () -> submit.recover(PublicationFailures.Unavailable.class, RETOUCH, List.of(IOException.class)),
                 () -> submit.timeout(Duration.ofSeconds(1)),
                 () -> submit.afterCommit("audit", (Doc doc) -> { }),
                 () -> submit.afterCommitWith("audit",

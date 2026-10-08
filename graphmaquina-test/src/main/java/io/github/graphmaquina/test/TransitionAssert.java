@@ -2,6 +2,7 @@ package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.ActionRef;
 import io.github.graphmaquina.api.HookRef;
+import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.test.internal.Checks;
@@ -15,8 +16,9 @@ import java.util.Optional;
  * Chainable, typed assertion over one declared edge of a graph, obtained from
  * {@link GraphAssert#transition(Enum, Enum)}. Every expectation reads a declared field of the
  * {@link TransitionSpec}; none of them runs the edge's action, guards or hook, so a graph whose callbacks
- * would fail if invoked can still be inspected in full. Timeout, {@code failsOn} classes and the
- * after-commit hook are checked directly, independently of any graphical exporter.
+ * would fail if invoked can still be inspected in full, its recovery rules included. Timeout, the classes of
+ * the edge's own {@code failsOn}, the recovery rules and the after-commit hook are checked directly,
+ * independently of any graphical exporter.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
@@ -97,7 +99,11 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
         return this;
     }
 
-    /** The identifier of the recovery edge, which is resolved from this edge's own origin. */
+    /**
+     * The identifier of the fallback recovery edge, {@code onFailure}, which is resolved from this edge's own origin.
+     * The recovery edges that the edge's recovery rules name are not compared here, but by
+     * {@link #recoversExactly(List)}.
+     */
     public TransitionAssert<E, S, T> hasFailureTransition(T expected) {
         Objects.requireNonNull(expected, "expected");
         Optional<T> wanted = Optional.of(expected);
@@ -113,7 +119,10 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
         return this;
     }
 
-    /** Compares the declared classes in order, without widening to subclasses. */
+    /**
+     * Compares the classes the edge's own {@code failsOn} declares, in order and without widening to subclasses. The
+     * classes a recovery rule lists are not among them: {@link #recoversExactly(List)} compares them.
+     */
     @SafeVarargs
     public final TransitionAssert<E, S, T> failsOnExactly(Class<? extends Throwable>... expected) {
         List<Class<? extends Throwable>> declared = new ArrayList<>();
@@ -123,6 +132,23 @@ public final class TransitionAssert<E, S extends Enum<S>, T extends Enum<T>> {
         List<Class<? extends Throwable>> wanted = List.copyOf(declared);
         TransitionSpec<E, S, T> spec = Checks.subject(context, "failsOn", wanted, actual);
         Checks.equal(context, "failsOn", wanted, spec.failsOn());
+        return this;
+    }
+
+    /**
+     * Compares the edge's recovery rules with {@code expected}, exactly and in declaration order: each rule's
+     * failure kind, recovery identifier and {@code failsOn} classes, all compared by identity and the classes in
+     * their own order. The engine does not select by that order, but the expectation keeps it, as the declaration
+     * does. An edge without rules matches only an empty list.
+     *
+     * @param expected the rules the edge must declare, in declaration order
+     * @return this view
+     */
+    public TransitionAssert<E, S, T> recoversExactly(List<RecoveryRule<T>> expected) {
+        Objects.requireNonNull(expected, "expected");
+        List<RecoveryRule<T>> wanted = List.copyOf(expected);
+        TransitionSpec<E, S, T> spec = Checks.subject(context, "recovery rules", wanted, actual);
+        Checks.equal(context, "recovery rules", wanted, spec.recoveryRules());
         return this;
     }
 

@@ -8,21 +8,25 @@ import io.github.graphmaquina.graph.StrongComponents;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 /**
  * The frozen structural validation of commit {@code 278640e}, kept only so that tests can compare against it.
- * It is a verbatim copy of {@code MachineOutlineValidator} as that commit published it, with four edits and no
+ * It is a verbatim copy of {@code MachineOutlineValidator} as that commit published it, with five edits and no
  * others: the type is package-private and renamed, its private constructor follows the new name, the Lombok
  * {@code @NonNull} on the public entry point is dropped with its import because Lombok is not on the test
- * compile classpath, and this comment replaces the original's own. Nothing below it was touched, nothing here
- * may be copied back into production, and nothing here may be optimised: its whole value is that it still
- * computes the problems the way the base did. The graph code it calls is not frozen: it builds and queries the
- * live {@code Graph} and runs the live {@code StrongComponents.find} and {@code cycleWitness}, so the differential
- * compares validator logic and not graph algorithms; the cycle search and the cycle witness have their own
- * frozen-copy differentials ({@code CycleEnumerationDifferentialTest}, {@code CycleWitnessDifferentialTest}).
+ * compile classpath, this comment replaces the original's own, and {@code failureRoutes} first runs
+ * {@code recoveryRoutes}, which checks the recovery transitions {@link TransitionOutline} gained after that
+ * commit the way this copy checks onFailure, once per distinct identifier. Nothing else was touched, nothing here
+ * may be copied back into production, and nothing here may be optimised: its whole value is that it computes the
+ * problems the way the base did, and for an outline without recovery transitions it answers exactly what the base
+ * answered. The graph code it calls is not frozen: it builds and queries the live {@code Graph} and runs the live
+ * {@code StrongComponents.find} and {@code cycleWitness}, so the differential compares validator logic and not
+ * graph algorithms; the cycle search and the cycle witness have their own frozen-copy differentials
+ * ({@code CycleEnumerationDifferentialTest}, {@code CycleWitnessDifferentialTest}).
  *
  * @see MachineOutlineValidator the live validator this oracle is compared against
  */
@@ -147,6 +151,7 @@ final class BaselineOutlineValidator {
 
     private static void failureRoutes(MachineOutline outline, Map<String, TransitionOutline> byKey, Problems problems) {
         for (TransitionOutline edge : outline.transitions()) {
+            recoveryRoutes(outline, edge, byKey, problems);
             if (edge.onFailure().isEmpty()) {
                 continue;
             }
@@ -165,6 +170,35 @@ final class BaselineOutlineValidator {
             if (!byKey.containsKey(edge.from() + "/" + recovery)) {
                 problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
                         where + " declares onFailure = " + recovery + ", but no transition " + recovery
+                                + " leaves " + edge.from());
+            }
+        }
+    }
+
+    /**
+     * Not part of the frozen copy: the recovery transitions of {@code edge}, checked the way {@code failureRoutes}
+     * checks onFailure, once per distinct identifier.
+     */
+    private static void recoveryRoutes(MachineOutline outline, TransitionOutline edge,
+            Map<String, TransitionOutline> byKey, Problems problems) {
+        if (edge.recoveryTransitions().isEmpty()) {
+            return;
+        }
+        String where = edge.describe();
+        if (edge.kind() != TransitionKind.ACTION) {
+            problems.add("SG507", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+                    where + " declares recover without an action");
+            return;
+        }
+        for (String recovery : new LinkedHashSet<>(edge.recoveryTransitions())) {
+            if (recovery.equals(edge.transition())) {
+                problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+                        where + " declares recovery " + recovery + ", which is its own key");
+                continue;
+            }
+            if (!byKey.containsKey(edge.from() + "/" + recovery)) {
+                problems.add("SG301", outline.indexOf(edge.from()), outline.indexOfTransition(edge.transition()),
+                        where + " declares recovery " + recovery + ", but no transition " + recovery
                                 + " leaves " + edge.from());
             }
         }
