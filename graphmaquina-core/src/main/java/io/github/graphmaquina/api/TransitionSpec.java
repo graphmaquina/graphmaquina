@@ -36,7 +36,7 @@ import lombok.NonNull;
  *     a rule holds; the DSL also refuses those three and their subtypes, the supertypes Throwable, Exception and
  *     RuntimeException, and the wrappers CompletionException and ExecutionException (SG302). A StateMachineException
  *     from another call aborts the call with it as cause, and for a failure of the call itself the engine throws it as
- *     itself, or the failure that poisoned the transaction when one did
+ *     itself or, when the transaction is poisoned, the failure that poisoned the transaction
  * @param timeout longest wait for the asynchronous action's stage, counted from when the action returns it; it only
  *     shortens the root's deadline, and {@code Duration.ofNanos(Long.MAX_VALUE)} or more sets no limit of its own
  * @param afterCommit hook run once this edge is committed

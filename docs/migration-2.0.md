@@ -490,13 +490,14 @@ observe. Most items refuse up front what used to fail later, in generated code o
   a `ConcurrentModificationException` of its own iteration or stop early, which could let the root commit a
   partial batch. An exception or an `Error` the collection throws while it is copied propagates as it is and
   poisons nothing.
-- **A library exception from a guard or an action is a cause.** A `StateMachineException` that a guard or an action
-  throws or completes its stage with, bare or wrapped in a `CompletionException` or an `ExecutionException`, aborts the
-  call with it as cause, a failure of another call included. It used to reach the caller as it was, so another call's
-  abort, or an `AfterCommitException` of another call whose states were written, could pass for this call's. For a
-  failure of the call itself, from a cascade, the engine throws it as itself, or the failure that poisoned the
-  transaction when one did, so for a `PoisonedUnitOfWorkException` the action lets through it throws the original
-  failure.
+- **A library exception from a guard or an action is a cause.** A `StateMachineException` that is not a failure of this
+  call, and that a guard or an action throws or completes its stage with, bare or wrapped in a `CompletionException` or
+  an `ExecutionException`, aborts the call with it as cause, a failure of another call included. It used to reach the
+  caller as it was, so another call's abort, or an `AfterCommitException` of another call whose states were written,
+  could pass for this call's. For a failure of the call itself, from a cascade, the engine throws it as itself or, when
+  the transaction is poisoned, the failure that poisoned the transaction. So when the action lets a
+  `PoisonedUnitOfWorkException` through, the engine throws the failure that poisoned the transaction, not that
+  exception.
 - **Failures before the state is read are aborts.** The root entity's identity function that throws or returns null, its
   state getter that throws, a null root state, and a watch's peers reader or condition that throws while a `reevaluate`
   resolves end the call in a `TransitionAbortedException` of phase `RESOLVE` that carries the failure; they used to

@@ -1298,9 +1298,9 @@ action failures; a guard exception is a technical abort. A library exception, a 
 or action throws or completes its stage with, bare or wrapped in one of those two classes, is never matched against
 `failsOn`, whatever the edge lists: it aborts the call and becomes its cause, so a failure of another call never
 passes for a failure of this one. A failure of the call itself, which a failed cascade throws into the action, is the
-exception: the engine throws it as itself, or the failure that poisoned the transaction when one did. An `Error` is
-never routed either: thrown as itself it propagates unchanged, and one that completes a stage, or that one of those two
-classes carries, aborts.
+exception: the engine throws it as itself or, when the transaction is poisoned, the failure that poisoned the
+transaction. An `Error` is never routed either: thrown as itself it propagates unchanged, and one that completes a
+stage, or that one of those two classes carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine exception, or
 a `CancellationException` or one of its subtypes, which are never domain failures; nor `CompletionException` or
@@ -1472,9 +1472,9 @@ The engine keeps the boundary between domain failures and technical ones:
   `CompletionException` or `ExecutionException`. An `Error` the action throws propagates as itself; one that
   completes the stage, or arrives wrapped, aborts the call with it as cause.
 - A failure of the call itself, which a failed cascade throws into the action, is never routed: the engine throws it as
-  itself, or the failure that poisoned the transaction when one did. Once a failed cascade poisoned the unit of work, an
-  exception that a declared type accepts, from an action that does not run as a recovery action, takes no route either:
-  the engine throws the failure that poisoned it, before any route is chosen.
+  itself or, when the transaction is poisoned, the failure that poisoned the transaction. Once a failed cascade poisoned
+  the unit of work, an exception that a declared type accepts, from an action that does not run as a recovery action,
+  takes no route either: the engine throws the failure that poisoned it, before any route is chosen.
 - A cancelled stage, and the timeout, interruption or refusal of the engine's own wait, abort the call and never
   reach a rule. A timeout that the adapter's own client throws, such as a `SocketTimeoutException`, is an exception
   like any other and can be declared.
@@ -2273,14 +2273,16 @@ from its pending state like any other.
 `COLLECT` is not partial commit. A nested transition that no edge carries, or that a guard rejected, is an abort rather
 than an ordinary root-level `Rejected` result. A handled domain failure can select the child's declared failure route.
 Any failure that leaves a cascade poisons the unit of work. A failure of the call itself, such as an abort in the peer's
-step, a cycle or the depth limit, reaches your action as it is. Anything else reaches it as a
+step, a cycle or the depth limit, reaches your action as it is. The `TransitionAbortedException` Javadoc says where the
+abort of a nested step goes. Anything else reaches it as a
 `TransitionAbortedException` that names the cascade and carries the failure as its cause: an engine exception that
 describes no call, such as an unknown machine or an ambiguous identity, or a throwable other than an `Error` from a
 callback the engine does not wrap, such as an identity function. An `Error` poisons through such an abort too, but
 reaches your action as itself. Catching it in your action does not make the transaction safe to commit. When the action
 then returns or lets a failure of the call through, or, unless it is a recovery action, throws a throwable that its
-`failsOn` or one of its recovery rules accepts, the engine throws the failure that poisoned it and takes no failure
-route. A cascade that names an unknown machine poisons too, by key
+`failsOn` or one of its recovery rules accepts, the engine throws the failure that poisoned the transaction and, unless
+the action is a recovery action, whose failure route was already taken, takes no failure route. A cascade that names an
+unknown machine poisons too, by key
 or by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
 `cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its
 collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
@@ -2296,12 +2298,12 @@ of completed or pending stages alike. Exceptional stage completions retain their
 the engine's own reading of the message never comes first. The JDK may already have read that message, for example when
 `supplyAsync` wrapped the throwable in a `CompletionException`. When the edge's action, other than a recovery action,
 throws or completes with a throwable that no declared type accepts and that is neither an `Error` thrown as itself nor a
-failure of this call, the step aborts with a message composed from that throwable's string, which may read its message,
-whether or not the transaction is poisoned. A throwable that a recovery action throws or completes with is never routed,
-whatever the recovery edge declares: an `Error` thrown as itself propagates, the engine throws a failure of this call as
-itself, or the failure that poisoned the transaction when one did, and on any other throwable the step aborts with a
-message composed from the recovery action's name and the original failure's reason, never from that throwable's string,
-whether or not the transaction is poisoned.
+failure of this call, the engine aborts the call with a message composed from that throwable's string, which may read
+its message, whether or not the transaction is poisoned. A throwable that a recovery action throws or completes with is
+never routed, whatever the recovery edge declares: an `Error` thrown as itself propagates; the engine throws a failure
+of this call as itself or, when the transaction is poisoned, the failure that poisoned the transaction; and on any other
+throwable the engine aborts the call with a message composed from the recovery action's name and the original failure's
+reason, never from that throwable's string, whether or not the transaction is poisoned.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.

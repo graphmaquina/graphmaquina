@@ -240,16 +240,16 @@ final class Transaction {
     }
 
     /**
-     * What a failure of this call that a callback let through ends the call with: the failure that poisoned the
-     * transaction when one did, which a failed cascade always does, or the failure itself.
+     * What the engine throws for a failure of this call that a guard or an action let through: the failure that
+     * poisoned the transaction when the transaction is poisoned, or the failure itself.
      */
     private StateMachineException poisonOr(CallFailedException own) {
         return uow.isPoisoned() ? uow.poison().orElseThrow() : own;
     }
 
     /**
-     * What a guard's exception ends the call with: a failure of this call as {@link #poisonOr} says; anything else, a
-     * library exception of another call included, an abort of the call in its current phase with it as cause.
+     * What the engine throws for a guard's exception: a failure of this call as {@link #poisonOr} says; anything else,
+     * a library exception of another call included, an abort of the call in its current phase with it as cause.
      */
     private StateMachineException guardFailure(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
                                                TransitionSpec<?, ?, ?> transition, int depth, GuardRef<?, ?, ?> guard,
@@ -313,8 +313,8 @@ final class Transaction {
     }
 
     /**
-     * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. Whatever
-     * the guard throws or completes its stage with, an Error inside the stage included, ends the call as
+     * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. For whatever
+     * the guard throws or completes its stage with, an Error inside the stage included, the engine throws what
      * {@link #guardFailure} says: a library exception of another call is a cause like any other. An Error thrown as
      * itself propagates.
      */

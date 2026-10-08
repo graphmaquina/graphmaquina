@@ -17,11 +17,18 @@ import lombok.Getter;
  * <p>When a guard or an action failed, the cause is what it threw, checked exceptions and library exceptions of other
  * calls included, once unwrapped from CompletionException and ExecutionException. A failure of this same call that a
  * guard or an action lets through, such as the abort a failed cascade threw into the action, is never wrapped: the
- * engine throws it as itself, or the failure that poisoned the transaction when one did. An {@code Error} is never
- * routed: thrown as itself by a callback on the calling thread, it propagates unchanged rather than as this exception.
- * It becomes the cause of one only when it did not reach the engine as itself: when it completed the stage of an
- * asynchronous action or guard, when a guard or an action threw it wrapped in CompletionException or
- * ExecutionException, or when an action swallowed it from a cascade and the poison it left aborted the root.
+ * engine throws it as itself or, when the transaction is poisoned, the failure that poisoned the transaction. An
+ * {@code Error} is never routed: thrown as itself by a callback on the calling thread, it propagates unchanged rather
+ * than as this exception. It becomes the cause of one only when it did not reach the engine as itself: when it
+ * completed the stage of an asynchronous action or guard, when a guard or an action threw it wrapped in
+ * CompletionException or ExecutionException, or when an action swallowed it from a cascade and the poison it left
+ * aborted the root.
+ *
+ * <p>Where this library's documentation says that a step aborts, or that it aborts the call, the engine throws this
+ * exception, or a subclass, from that step. At the root step, the call throws it. Outside COLLECT, the abort of a
+ * nested step, one that a cascade runs, poisons the transaction unless it is already poisoned, and reaches the action
+ * that cascaded it, which may catch it; under COLLECT, the cascade collects it instead, unless the poison wraps a
+ * failure that is no failure of the call. What the caller finally receives therefore depends on the enclosing steps.
  */
 public class TransitionAbortedException extends CallFailedException {
 
