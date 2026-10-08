@@ -913,7 +913,7 @@ class ControlledAsyncTest {
     // --- typed recovery: the handle hands the engine the very answer the test gave ---------------------
 
     @Test
-    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    @Timeout(value = 20, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void aFailedAnswerWithAFailureKindTakesTheRuleOfThatKind() {
         ControlledAsyncAction<Ticket, TicketState, TicketChange> publish = ControlledAsyncAction.create();
         MachineRegistry registry = PublicationFixture.registry(PublicationFixture.asyncGraph(publish));
@@ -943,7 +943,7 @@ class ControlledAsyncTest {
     }
 
     @Test
-    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    @Timeout(value = 20, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void aFailedInvocationWithAnExceptionARuleListsKeepsItsKindAndItsIdentity() {
         ServiceUnavailableException down = new ServiceUnavailableException("provider down");
         ControlledAsyncAction<Ticket, TicketState, TicketChange> publish = ControlledAsyncAction.create();
@@ -977,7 +977,7 @@ class ControlledAsyncTest {
      * the failure kind, the recovery and the cause of the answer given to its own invocation.
      */
     @Test
-    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    @Timeout(value = 20, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void twoInvocationsAnsweredInReverseOrderKeepTheirOwnFailureKinds() {
         ProviderRejectedException refused = new ProviderRejectedException("content refused");
         ControlledAsyncAction<Ticket, TicketState, TicketChange> publish = ControlledAsyncAction.create();
