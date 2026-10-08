@@ -223,7 +223,8 @@ final class Transaction {
                     "the action " + action.name() + " threw " + cause, Optional.of(cause));
         } catch (CallFailedException e) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
-            throw e;
+            // Only the engine's own aborts of the step reach here: a null stage or outcome, a wait that ended.
+            throw poisonOr(e);
         }
         if (uow.isPoisoned()) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
@@ -240,8 +241,10 @@ final class Transaction {
     }
 
     /**
-     * What the engine throws for a failure of this call that a guard or an action threw or completed its stage with:
-     * the failure that poisoned the transaction when the transaction is poisoned, or the failure itself.
+     * What the engine throws for a failure of this call that a guard or an action threw or completed its stage with,
+     * or for an abort the engine raised itself in an action step (a null outcome or stage, a wait that timed out, was
+     * interrupted or was refused): the failure that poisoned the transaction when the transaction is poisoned, or the
+     * failure itself.
      */
     private StateMachineException poisonOr(CallFailedException own) {
         return uow.isPoisoned() ? uow.poison().orElseThrow() : own;
@@ -459,7 +462,8 @@ final class Transaction {
                         Optional.of(recoveryCause));
             } catch (CallFailedException e) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
-                throw e;
+                // Only the engine's own aborts of the step reach here, as in runAction.
+                throw poisonOr(e);
             }
             if (uow.isPoisoned()) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);

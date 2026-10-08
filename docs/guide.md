@@ -2283,8 +2283,9 @@ does not make the transaction safe to commit. Once the engine has your action's 
 poisoned the transaction instead of applying it. It does the same for a failure of the call that your action throws or
 completes its stage with, and, unless the action is a recovery action, for a throwable that its `failsOn` or one of its
 recovery rules accepts, which an `Error`, a `CancellationException` or a `StateMachineException` never is; no failure
-route is taken, and a recovery action's route was already taken. Your action can still end the call in another failure,
-such as an abort the engine raises for a null outcome or a wait that timed out, or one that carries a throwable no
+route is taken, and a recovery action's route was already taken. The engine's own aborts of the action step, for a null
+outcome or stage or a wait that timed out, was interrupted or was refused, also end in the failure that poisoned the
+transaction. Your action can still end the call in another failure, an abort that carries a throwable no
 declared type accepts. A cascade that names an unknown machine poisons too, by key or by facade type, even over an empty
 collection. A refused argument poisons nothing: a null peer, a null element, which `cascadeAll` refuses before any
 element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its collection once, before any

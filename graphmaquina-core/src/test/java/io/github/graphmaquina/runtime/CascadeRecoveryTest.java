@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
@@ -439,6 +440,127 @@ class CascadeRecoveryTest {
             }
         }
         assertEquals(expected, ends);
+    }
+
+    /**
+     * Catches the abort of a cascade into a listing whose action throws, hands it to {@code caught}, and returns.
+     * The listing graph that fails is built by {@link #failingListings()}.
+     */
+    private static void cascadeAndCatch(TransitionContext<Ticket, TicketState, TicketChange> ctx, Listing listing,
+                                        AtomicReference<TransitionAbortedException> caught) {
+        try {
+            ctx.cascade(LISTINGS, listing, ListingChange.GO_LIVE);
+        } catch (TransitionAbortedException failure) {
+            caught.set(failure);
+        }
+    }
+
+    /** A listing graph whose GO_LIVE action throws what nothing declares. */
+    private static GraphDefinition<Listing, ListingState, ListingChange> failingListings() {
+        return listings((TransitionContext<Listing, ListingState, ListingChange> ctx) -> {
+            throw new IllegalStateException("listing service down");
+        }, logsOnListing("suspend"));
+    }
+
+    /**
+     * The action of PUBLISH catches the abort of a failed cascade, which poisons the unit of work, and then ends in an
+     * abort of the engine's own: it returns null, it returns a null stage, or its stage never completes within the
+     * edge's timeout. On a poisoned unit of work the call throws the very poison; no route runs, nothing is written,
+     * and the action's journal entry is THREW.
+     */
+    @Test
+    void theEnginesOwnAbortOfAnActionStepEndsAPoisonedUnitOfWorkInThePoison() {
+        Map<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> endings =
+                new LinkedHashMap<>();
+        AtomicReference<TransitionAbortedException> caught = new AtomicReference<>();
+        Listing listing = new Listing("l1");
+        endings.put("a sync action returns null", (TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
+                publish.action("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                    ctx.entity().calls.add("publish");
+                    cascadeAndCatch(ctx, listing, caught);
+                    return null;
+                }));
+        endings.put("an async action returns a null stage",
+                (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.asyncAction("publish",
+                        (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            ctx.entity().calls.add("publish");
+                            cascadeAndCatch(ctx, listing, caught);
+                            return null;
+                        }));
+        endings.put("an async stage times out",
+                (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.asyncAction("publish",
+                        (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            ctx.entity().calls.add("publish");
+                            cascadeAndCatch(ctx, listing, caught);
+                            return new CompletableFuture<ActionOutcome>();
+                        }).timeout(Duration.ofMillis(50)));
+        List<String> ends = new ArrayList<>();
+        List<String> expected = new ArrayList<>();
+        for (Map.Entry<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> ending
+                : endings.entrySet()) {
+            caught.set(null);
+            GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = tickets(
+                    (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
+                            ending.getValue().apply(publish)),
+                    (TransitionBuilder<Ticket, TicketState, TicketChange> retry) ->
+                            retry.action("schedule retry", logsOnTicket("schedule retry")));
+            try (MachineRegistry registry = registry(ticketGraph, failingListings(), 10)) {
+                Ticket ticket = new Ticket("t1");
+                TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                        () -> registry.of(RecoveryFixtures.KEY).execute(ticket, TicketChange.PUBLISH));
+                assertInstanceOf(TransitionAbortedException.class, caught.get(), ending.getKey());
+                assertSame(caught.get(), error, ending.getKey());
+                ends.add(ending.getKey() + ": calls " + ticket.calls + "; " + written(ticket) + "; "
+                        + written(listing) + "; " + journal(error).contains("publish THREW"));
+                expected.add(ending.getKey() + ": calls [publish]; ticket READY after 0 write(s); l1 DRAFT after 0"
+                        + " write(s); true");
+            }
+        }
+        assertEquals(expected, ends);
+    }
+
+    /**
+     * A recovery action cascades into a failing peer, catches the abort and returns null: the call ends in that
+     * abort, the poison, and not in an abort of the recovery action's null outcome.
+     */
+    @Test
+    void aRecoveryActionThatReturnsNullOnAPoisonedUnitOfWorkEndsInThePoison() {
+        Listing listing = new Listing("l1");
+        AtomicReference<TransitionAbortedException> caught = new AtomicReference<>();
+        GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = tickets(unavailable(),
+                (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry
+                        .action("schedule retry", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            ctx.entity().calls.add("schedule retry");
+                            cascadeAndCatch(ctx, listing, caught);
+                            return null;
+                        }));
+        try (MachineRegistry registry = registry(ticketGraph, failingListings(), 10)) {
+            Ticket ticket = new Ticket("t1");
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(RecoveryFixtures.KEY).execute(ticket, TicketChange.PUBLISH));
+            assertInstanceOf(TransitionAbortedException.class, caught.get());
+            assertSame(caught.get(), error);
+            assertEquals(List.of("publish", "schedule retry"), ticket.calls);
+            assertEquals("ticket READY after 0 write(s); l1 DRAFT after 0 write(s)",
+                    written(ticket) + "; " + written(listing));
+            assertEquals(true, journal(error).contains("schedule retry THREW"));
+        }
+    }
+
+    /** Without a poison, a null outcome still ends in the engine's own abort, whose message names it. */
+    @Test
+    void aNullOutcomeOnAnUnpoisonedUnitOfWorkStillEndsInTheEnginesOwnAbort() {
+        GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = tickets(
+                (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish",
+                        (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> null),
+                (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry);
+        try (MachineRegistry registry = registry(ticketGraph, failingListings(), 10)) {
+            Ticket ticket = new Ticket("t1");
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(RecoveryFixtures.KEY).execute(ticket, TicketChange.PUBLISH));
+            assertEquals(true, error.getMessage().contains("the action publish returned null"), error.getMessage());
+            assertEquals(List.of("publish THREW"), journal(error));
+        }
     }
 
     /**
