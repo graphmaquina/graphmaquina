@@ -226,7 +226,7 @@ class GuideOutcomeFragmentsTest {
                 + String.join("\n", diagnostics) + "\n--- generated GuideRecoveryFragments.java ---\n" + source);
     }
 
-    /** Whether the line opens a java block: a plain java fence or one followed by a title. */
+    /** Whether the line opens a java block: exactly {@code ```java}, or {@code ```java} then a space and any text. */
     private static boolean isJavaFence(String line) {
         return line.equals("```java") || line.startsWith("```java ");
     }
@@ -260,6 +260,7 @@ class GuideOutcomeFragmentsTest {
     /** Returns the {@code n}th java block after {@code heading} and before the next level-two heading. */
     private static String blockAfter(List<String> guide, String heading, int n) {
         boolean inside = false;
+        boolean fenced = false;
         boolean taking = false;
         int count = 0;
         StringBuilder block = new StringBuilder();
@@ -271,11 +272,16 @@ class GuideOutcomeFragmentsTest {
                     break;
                 }
                 block.append(line).append('\n');
+            } else if (fenced) {
+                fenced = !line.startsWith("```");
             } else if (line.startsWith("## ")) {
                 break;
-            } else if (isJavaFence(line)) {
-                count++;
-                taking = count == n;
+            } else if (line.startsWith("```")) {
+                fenced = true;
+                if (isJavaFence(line)) {
+                    count++;
+                    taking = count == n;
+                }
             }
         }
         assertFalse(block.isEmpty(), "no non-empty java block number " + n + " after the heading '"

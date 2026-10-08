@@ -283,7 +283,7 @@ class TestingGuideFragmentsTest {
         }
     }
 
-    /** Whether the line opens a java block: a plain java fence or one followed by a title. */
+    /** Whether the line opens a java block: exactly {@code ```java}, or {@code ```java} then a space and any text. */
     private static boolean isJavaFence(String line) {
         return line.equals("```java") || line.startsWith("```java ");
     }
