@@ -1456,7 +1456,8 @@ the rule while every other `IOException` goes to the fallback.
   cause even when the edge has a fallback, except an `Error` thrown as itself, which propagates, and a failure of the
   call itself, which the engine throws as itself or, when the transaction is poisoned, as the failure that poisoned
   the transaction. If the most specific matching type belongs to the edge's own `failsOn` and the edge has no
-  `onFailure`, the call ends in `UnhandledFailureException`.
+  `onFailure`, the call ends in `UnhandledFailureException`, unless a failed cascade poisoned the transaction, in which
+  case the engine throws the failure that poisoned the transaction.
 - The reason is composed from the exception's simple name and its message, or from its binary name for an
   anonymous class. `cause()` is the very exception the action threw, once unwrapped.
 - `explanation()` holds the reason of a returned failure and stays empty when an exception was routed, whichever
