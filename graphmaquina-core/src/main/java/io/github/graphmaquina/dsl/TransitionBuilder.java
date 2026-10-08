@@ -101,8 +101,10 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * with the failure that poisoned it. A declared type also accepts the JDK exceptions the engine throws from the
      * action's context, such as a NullPointerException for a null argument, an IllegalArgumentException for an
      * identifier of another catalogue, a ClassCastException from {@code input(Class)} or a WrongThreadException off
-     * the action's thread: they are matched like the action's own. For synchronous throws and exceptional completions
-     * of completed or pending stages alike, the poison check precedes reading the cause's message.
+     * the action's thread: they are matched like the action's own. For a throwable a declared type accepts, the
+     * engine checks the poison before it reads the throwable's message, for synchronous throws and exceptional
+     * completions of completed or pending stages alike; the JDK may already have read that message, for example when
+     * {@code supplyAsync} wrapped the throwable in a CompletionException.
      *
      * <p>{@code transition} is resolved from this edge's origin, and the recovery edge runs without its guards and
      * without consulting its own rules or {@code onFailure}. Two rules may name the same recovery, and a rule may name

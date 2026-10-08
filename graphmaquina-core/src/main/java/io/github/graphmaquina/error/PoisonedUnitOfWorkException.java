@@ -31,8 +31,11 @@ import lombok.Getter;
  * the call through, this exception included, the engine throws the failure that poisoned the transaction, the one
  * {@code original()} reports, and never this exception: an abort of the call, the abort that carries an Error or any
  * other throwable, or COLLECT's aggregate. No failure route is taken, so no recovery action runs. For synchronous
- * throws and exceptional completions of completed or pending stages alike, this check precedes reading the
- * cause's message.
+ * throws and exceptional completions of completed or pending stages alike, the engine makes this check before it
+ * reads the message of a throwable that a declared type accepts; the JDK may already have read that message, for
+ * example when {@code supplyAsync} wrapped the throwable in a CompletionException. A throwable that no declared type
+ * accepts aborts the call with it as cause, and in a poisoned transaction that abort's message is composed from the
+ * cause.
  */
 @Getter
 public final class PoisonedUnitOfWorkException extends TransitionAbortedException {

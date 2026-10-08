@@ -25,8 +25,10 @@ import java.util.Optional;
  * other throwable of the action. A failure of this call that the action lets through is never routed: it ends the
  * call as itself, or as the failure that poisoned the transaction. Once a failed cascade poisoned the transaction, a
  * throwable that a declared type accepts takes no route either: the call ends with the failure that poisoned it.
- * For synchronous throws and exceptional completions of completed or pending stages alike, the poison check
- * precedes any reading of the cause's message.
+ * For a throwable that a declared type accepts, the engine checks the poison before it reads the throwable's message,
+ * for synchronous throws and exceptional completions of completed or pending stages alike; the JDK may already have
+ * read that message, for example when {@code supplyAsync} wrapped the throwable in a CompletionException. A throwable
+ * that no declared type accepts aborts the call with it as cause, without that ordering.
  */
 public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 

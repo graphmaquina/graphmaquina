@@ -268,7 +268,8 @@ final class Transaction {
      * {@code @SneakyThrows} code can throw without declaring them, and library exceptions too, becomes an ActionFailure
      * that its caller classifies. An Error is never routed: thrown as itself, it propagates; wrapped in
      * CompletionException or ExecutionException, it is unwrapped and aborts. Exceptional stage completions carry
-     * their original throwable into ActionFailure without reading its message before classification.
+     * the throwable they carry into ActionFailure; the engine reads no message before classification, though the JDK
+     * may already have read it, as when {@code supplyAsync} wrapped the throwable in a CompletionException.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,

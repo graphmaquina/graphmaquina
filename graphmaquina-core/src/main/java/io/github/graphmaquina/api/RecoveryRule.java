@@ -17,9 +17,13 @@ import lombok.NonNull;
  * onFailure, and the outcome reports the kind in {@link Outcome.Failed#failureKind()}. Kinds are compared by identity,
  * never through a supertype. A throwable the action throws takes {@code transition} too, and the outcome reports
  * {@code kind}, when the most specific type that accepts it, among the types of every rule of the edge and of its
- * failsOn, is one of {@code failsOn}. The order of the declarations plays no part. The recovery edge runs without its
- * guards and without consulting its own rules or onFailure. For synchronous throws and exceptional stage
- * completions alike, the poison check precedes reading the cause's message.
+ * failsOn, is one of {@code failsOn}; an Error, a CancellationException and a StateMachineException never match, and
+ * a failure of the call itself ends the call as itself. Once a failed cascade poisoned the transaction, an accepted
+ * throwable ends the call with the failure that poisoned it, and no route is taken. The order of the declarations
+ * plays no part. The recovery edge runs without its guards and without consulting its own rules or onFailure. For a
+ * throwable a declared type accepts, the engine checks the poison before it reads the throwable's message, for
+ * synchronous throws and exceptional stage completions alike; the JDK may already have read that message, for example
+ * when {@code supplyAsync} wrapped the throwable in a CompletionException.
  *
  * <p>A valid kind is a named final class or record that implements FailureKind and is not an interface, an enum, a
  * local or anonymous class, or a Throwable. The types that may not be declared are Throwable, Exception and

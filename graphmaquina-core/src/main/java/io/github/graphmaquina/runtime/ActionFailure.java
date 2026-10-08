@@ -5,7 +5,8 @@ package io.github.graphmaquina.runtime;
  * exceptionally, whatever it carried, a library exception included. Never leaves the engine. Unwraps the cause on the
  * way in, so every path classifies the same throwable. It reads nothing of the cause, neither its message nor its
  * string, and it records no stack trace of its own. Exceptional stage completions reach this wrapper with the
- * original throwable and without reading its message.
+ * throwable the stage carried, which the engine does not read; the JDK may already have read its message, for example
+ * when {@code supplyAsync} wrapped it in a CompletionException.
  */
 final class ActionFailure extends RuntimeException {
 
