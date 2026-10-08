@@ -16,9 +16,9 @@ import javax.tools.Diagnostic;
  * The source expressions come from javac's {@code Trees}, which only a plain javac processing environment provides.
  * The fallback covers a processing environment that {@code Trees} refuses (IllegalArgumentException) and a runtime
  * on which the {@code Trees} class itself cannot be loaded (NoClassDefFoundError, as without the jdk.compiler
- * module). In either case, the first being a wrapped environment, no source is available: every diagnostic is
- * reported through {@code Messager} with the element, annotation and value anchors, as for a declaration without
- * source.
+ * module). The first case is any environment that is not javac's own, such as a wrapped one or ECJ. In either case,
+ * no source is available: every diagnostic is reported through {@code Messager} with the element, annotation and
+ * value anchors, as for a declaration without source.
  */
 final class Diagnostics {
 

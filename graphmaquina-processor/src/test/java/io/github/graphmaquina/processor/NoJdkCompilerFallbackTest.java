@@ -82,27 +82,28 @@ class NoJdkCompilerFallbackTest {
     /** Trees is refused, SG302 stays at the exact value, and the valid example still generates its companion. */
     @Test
     void theProcessorWorksWhenComSunSourceCannotBeLoaded() throws Exception {
-        RefusingLoader loader = loader();
-        Map<String, String> forbidden = RecoveryFixtures.sources(FORBIDDEN_RULE);
-        Compilation.Prepared prepared = Compilation.prepare(forbidden);
-        DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
-        assertFalse(run(prepared, loader, diagnostics), diagnostics.getDiagnostics().toString());
-        String literal = "RuntimeException.class";
-        long start = forbidden.get("fx.Tickets").indexOf(literal);
-        List<Diagnostic<? extends JavaFileObject>> sg302 = diagnostics.getDiagnostics().stream()
-                .filter((Diagnostic<? extends JavaFileObject> candidate) ->
-                        candidate.getKind() == Diagnostic.Kind.ERROR
-                                && candidate.getMessage(null).startsWith("[SG302]"))
-                .toList();
-        assertEquals(1, sg302.size(), diagnostics.getDiagnostics().toString());
-        assertEquals(start, sg302.get(0).getStartPosition());
-        assertEquals(start + literal.length(), sg302.get(0).getEndPosition());
+        try (RefusingLoader loader = loader()) {
+            Map<String, String> forbidden = RecoveryFixtures.sources(FORBIDDEN_RULE);
+            Compilation.Prepared prepared = Compilation.prepare(forbidden);
+            DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
+            assertFalse(run(prepared, loader, diagnostics), diagnostics.getDiagnostics().toString());
+            String literal = "RuntimeException.class";
+            long start = forbidden.get("fx.Tickets").indexOf(literal);
+            List<Diagnostic<? extends JavaFileObject>> sg302 = diagnostics.getDiagnostics().stream()
+                    .filter((Diagnostic<? extends JavaFileObject> candidate) ->
+                            candidate.getKind() == Diagnostic.Kind.ERROR
+                                    && candidate.getMessage(null).startsWith("[SG302]"))
+                    .toList();
+            assertEquals(1, sg302.size(), diagnostics.getDiagnostics().toString());
+            assertEquals(start, sg302.get(0).getStartPosition());
+            assertEquals(start + literal.length(), sg302.get(0).getEndPosition());
 
-        Compilation.Prepared valid = Compilation.prepare(RecoveryFixtures.example());
-        DiagnosticCollector<JavaFileObject> validDiagnostics = new DiagnosticCollector<>();
-        assertTrue(run(valid, loader, validDiagnostics), validDiagnostics.getDiagnostics().toString());
-        assertTrue(Files.exists(valid.request().processorSourcesOutput().resolve("fx/TicketsRuntime.java")));
-        assertTrue(loader.refused.contains("com.sun.source.util.Trees"), loader.refused.toString());
+            Compilation.Prepared valid = Compilation.prepare(RecoveryFixtures.example());
+            DiagnosticCollector<JavaFileObject> validDiagnostics = new DiagnosticCollector<>();
+            assertTrue(run(valid, loader, validDiagnostics), validDiagnostics.getDiagnostics().toString());
+            assertTrue(Files.exists(valid.request().processorSourcesOutput().resolve("fx/TicketsRuntime.java")));
+            assertTrue(loader.refused.contains("com.sun.source.util.Trees"), loader.refused.toString());
+        }
     }
 
     private static RefusingLoader loader() throws MalformedURLException {
