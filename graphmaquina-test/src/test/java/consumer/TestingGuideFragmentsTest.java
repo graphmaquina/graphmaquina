@@ -209,8 +209,11 @@ class TestingGuideFragmentsTest {
         List<String> page = Files.readAllLines(Path.of(property("testingGuidePath")), UTF_8);
         String jars = publishedJar("graphmaquina-core") + File.pathSeparator + publishedJar("graphmaquina-test");
 
-        assertEquals(4, javaBlockCount(page), "the testing guide's section '" + SECTION_HEADING + "' no longer has "
-                + "the 4 java blocks this test compiles and runs; cover the new block here or fix the count");
+        int expectedBlocks = 4;
+        int actualBlocks = javaBlockCount(page);
+        assertEquals(expectedBlocks, actualBlocks, "the testing guide's section '" + SECTION_HEADING + "' has "
+                + actualBlocks + " java blocks; this test covers exactly " + expectedBlocks
+                + ": update the test to match the section");
 
         StringBuilder source = new StringBuilder(HEADER);
         source.append("    // --- blocks 1 and 2: the routes a synchronous call took, then the declared rules\n");
@@ -294,7 +297,7 @@ class TestingGuideFragmentsTest {
                 break;
             } else if (line.startsWith("```")) {
                 fenced = true;
-                if (line.equals("```java")) {
+                if (line.startsWith("```java")) {
                     count++;
                 }
             }

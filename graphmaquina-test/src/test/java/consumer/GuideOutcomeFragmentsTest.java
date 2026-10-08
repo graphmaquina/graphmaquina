@@ -226,7 +226,7 @@ class GuideOutcomeFragmentsTest {
                 + String.join("\n", diagnostics) + "\n--- generated GuideRecoveryFragments.java ---\n" + source);
     }
 
-    /** Fails unless the section of {@code heading}, up to the next level-two heading, has {@code expected} blocks. */
+    /** Fails unless the section of {@code heading} has {@code expected} java blocks. */
     private static void assertJavaBlockCount(List<String> guide, String heading, int expected) {
         boolean inside = false;
         boolean fenced = false;
@@ -245,8 +245,8 @@ class GuideOutcomeFragmentsTest {
                 }
             }
         }
-        assertEquals(expected, count, "the guide's section '" + heading + "' no longer has the " + expected
-                + " java blocks this test compiles; cover the new block here or fix the count");
+        assertEquals(expected, count, "the guide's section '" + heading + "' has " + count
+                + " java blocks; this test covers exactly " + expected + ": update the test to match the section");
     }
 
     /** Returns the {@code n}th java block after {@code heading} and before the next level-two heading. */

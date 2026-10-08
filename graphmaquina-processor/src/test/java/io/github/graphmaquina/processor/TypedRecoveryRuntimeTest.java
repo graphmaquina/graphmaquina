@@ -229,9 +229,9 @@ class TypedRecoveryRuntimeTest {
 
     /**
      * The example graph: each rule is one call with its one type, in declaration order and after the edge's own
-     * failsOn, and the companion names no {@code List}. Each case ends as the assertion lists: a
-     * returned kind and a thrown type of one rule reach its transition with its kind, with no cause and with the
-     * exception, the fallback takes what no rule selects, and an exception no declaration names aborts the call.
+     * failsOn, and the companion names no {@code List}. A returned kind and a thrown type of one rule reach its
+     * transition with its kind, with no cause and with the exception, the fallback takes what no rule selects, and
+     * an exception no declaration names aborts the call.
      */
     @Test
     void theExampleGraphRoutesEveryReturnedAndThrownCaseThroughTheCompanion() throws Exception {

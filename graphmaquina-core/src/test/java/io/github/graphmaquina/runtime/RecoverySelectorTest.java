@@ -158,7 +158,10 @@ class RecoverySelectorTest {
         }
     }
 
-    /** Both ways round: the more specific declaration wins wherever it sits. */
+    /**
+     * With the subtype in failsOn and the supertype in a rule, and the other way round, the more specific declaration
+     * wins wherever it sits.
+     */
     @Test
     void theMostSpecificTypeWinsBetweenARuleAndFailsOn() {
         TransitionSpec<Ticket, TicketState, TicketChange> legacySubtype = publish(

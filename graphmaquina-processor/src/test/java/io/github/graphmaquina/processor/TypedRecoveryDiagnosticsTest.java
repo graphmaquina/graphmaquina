@@ -55,8 +55,9 @@ class TypedRecoveryDiagnosticsTest {
     @TempDir
     Path directory;
 
+    /** The example graph, with rules, failsOn and a fallback on one edge, compiles with no diagnostic at all. */
     @Test
-    void theSpecsExampleCompilesWithoutADiagnostic() {
+    void theExampleGraphCompilesWithoutADiagnostic() {
         Compilation.Result result = Compilation.compileTyped(RecoveryFixtures.example());
 
         assertTrue(result.success(), result.describe());

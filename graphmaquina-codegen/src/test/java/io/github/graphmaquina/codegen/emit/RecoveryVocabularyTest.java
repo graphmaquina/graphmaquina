@@ -61,7 +61,8 @@ class RecoveryVocabularyTest {
         sources.put("fx.DocActions", """
             package fx;
             import io.github.graphmaquina.annotation.GraphAction;
-            /** The action of the PUBLISH edge, the edge that declares the recovery rules. */ public class DocActions {
+            /** Holds publish, the action of the PUBLISH edge, which declares the recovery rules. */
+            public class DocActions {
                 @GraphAction
                 public Doc publish(Doc doc) { return doc; }
             }

@@ -202,7 +202,10 @@ class ThrownFailureRoutingTest {
                         SocketTimeoutException.class);
     }
 
-    /** Both ways round: the more specific declaration wins, in a rule or in failsOn. */
+    /**
+     * With the subtype in failsOn and the supertype in a rule, and the other way round, the more specific declaration
+     * wins wherever it sits.
+     */
     @Test
     void theMostSpecificTypeWinsBetweenARuleAndFailsOn() {
         UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> legacySubtype =

@@ -42,10 +42,10 @@ import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /**
- * A failure the action returns takes the recovery rule of its failure kind, or else onFailure, which keeps
- * the kind; with neither, the call throws UnhandledFailureException. The kind decides the route only: the outcome is
- * still FAILED and FAILURE_ROUTED, a cascade hands it to the parent action, and a recovery that names no edge from
- * the origin aborts as an onFailure that names none.
+ * A failure the action returns takes the recovery rule of its failure kind, or else onFailure, which keeps the
+ * kind; with neither, the call throws UnhandledFailureException. The kind decides the route only: the outcome is
+ * still FAILED and FAILURE_ROUTED, a cascade hands it to the parent action, and a recovery that names no edge
+ * from the origin aborts as an onFailure that names none.
  */
 class ReturnedFailureRoutingTest {
 
@@ -80,7 +80,7 @@ class ReturnedFailureRoutingTest {
         return outcome.asFailed().orElseThrow(() -> new AssertionError("expected a failed outcome: " + outcome));
     }
 
-    /** No kind, a fallback. */
+    /** A failure without a kind takes the fallback; the outcome reports no kind and no cause. */
     @Test
     void aFailureWithoutAKindTakesTheFallbackAndReportsNoKind() {
         Ticket ticket = new Ticket("T-1");
@@ -94,7 +94,10 @@ class ReturnedFailureRoutingTest {
         assertEquals(TicketState.INTEGRATION_FAILED, ticket.state);
     }
 
-    /** No kind and no fallback. Rules never take a failure without a kind. */
+    /**
+     * A failure without a kind is never taken by a rule: with no fallback the call throws UnhandledFailureException
+     * in ACTION, with no cause and nothing written.
+     */
     @Test
     void aFailureWithoutAKindAndWithoutAFallbackIsUnhandled() {
         GraphDefinition<Ticket, TicketState, TicketChange> graph = publishing(
@@ -175,9 +178,9 @@ class ReturnedFailureRoutingTest {
     }
 
     /**
-     * A failure kind belongs to no edge and no machine. Two edges of one machine, PUBLISH
-     * from READY and RETRY from RETRY_PENDING, and the PUBLISH of another machine declare the same kind, each with a
-     * recovery of its own, and a failure of that kind takes the recovery of the edge it failed on.
+     * A failure kind belongs to no edge and no machine. Two edges of one machine, PUBLISH from READY and RETRY from
+     * RETRY_PENDING, and the PUBLISH of another machine declare the same kind, each with a recovery of its own, and
+     * a failure of that kind takes the recovery of the edge it failed on.
      */
     @Test
     void oneFailureKindTakesTheRecoveryOfEachEdgeAndMachineThatDeclaresIt() {
@@ -235,7 +238,10 @@ class ReturnedFailureRoutingTest {
         assertEquals(TicketState.INTEGRATION_FAILED, ticket.state);
     }
 
-    /** A kind no rule declares and no fallback; the exception carries no kind. */
+    /**
+     * A kind no rule declares, with no fallback, throws UnhandledFailureException with no cause; the action's journal
+     * entry is FAILED and the ticket stays READY.
+     */
     @Test
     void aKindNoRuleDeclaresWithoutAFallbackIsUnhandled() {
         GraphDefinition<Ticket, TicketState, TicketChange> graph = publishing(
