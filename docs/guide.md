@@ -2278,18 +2278,20 @@ abort of a nested step goes. Anything else reaches your action as a `TransitionA
 and carries the failure as its cause: an engine exception that describes no call, such as an unknown machine or an
 ambiguous identity, or a throwable other than an `Error` from a callback the engine does not wrap, such as an identity
 function. An `Error` poisons through such an abort too, but reaches your action as itself. Catching it in your action
-does not make the transaction safe to commit. When the action then returns or lets a failure of the call through, or,
-unless it is a recovery action, throws a throwable that its `failsOn` or one of its recovery rules accepts, the engine
-throws the failure that poisoned the transaction and, unless the action is a recovery action, whose failure route was
-already taken, takes no failure route. A cascade that names an unknown machine poisons too, by key or by facade type,
-even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which `cascadeAll`
-refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its collection
-once, before any element runs, and never reads it again, so elements added or removed while the cascade runs change
-neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
-propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
-facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
-reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
-runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
+does not make the transaction safe to commit. When the action then returns an outcome, or completes its stage with one,
+throws or completes its stage with a failure of the call, or, unless it is a recovery action, throws a throwable that
+its `failsOn` or one of its recovery rules accepts, the engine throws the failure that poisoned the transaction and,
+unless the action is a recovery action, whose failure route was already taken, takes no failure route; an abort the
+engine raises itself, for a null outcome or stage or for a wait that timed out, was interrupted or was refused, is
+thrown instead. A cascade that names an unknown machine poisons too, by key or by facade type, even over an empty
+collection. A refused argument poisons nothing: a null peer, a null element, which `cascadeAll` refuses before any
+element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its collection once, before any
+element runs, and never reads it again, so elements added or removed while the cascade runs change neither which
+elements run nor their order; an exception or an `Error` the collection throws while it is copied propagates as it is
+and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another facade operation
+from inside an action: nested facade entry points on the action's own thread violate the runtime's reentrancy rules. A
+call submitted through `async(...)` runs separately on the executor's thread, unless that executor runs tasks inline, in
+which case the returned future fails with the `ReentrantTransitionException`.
 
 For a throwable that a declared type accepts and that an action other than a recovery action throws or completes with,
 the engine checks the poison before it reads the throwable's message, for synchronous throws and exceptional completions

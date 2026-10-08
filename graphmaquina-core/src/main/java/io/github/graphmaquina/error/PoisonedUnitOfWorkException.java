@@ -26,23 +26,25 @@ import lombok.Getter;
  * known: before the lookup for a key, which carries it, and once the facade has resolved for a facade type, so an
  * unknown facade is refused first, and poisons.
  *
- * <p>A poisoned transaction never commits. When the action that caught the failure returns, returns a failure or lets a
- * failure of the call through, this exception included, or, unless it is a recovery action, throws a throwable that a
- * type its edge declares accepts, in its failsOn or in one of its recovery rules, the engine throws the failure that
- * poisoned the transaction, the one {@code original()} reports, and never this exception: an abort of the call, the
- * abort that carries an Error or any other throwable, or COLLECT's aggregate. Unless that action is a recovery action,
- * whose failure route was already taken, no failure route is taken, so no recovery action runs. For synchronous throws
- * and exceptional completions of completed or pending stages alike, the engine makes this check before it reads the
- * message of a throwable that a declared type accepts and that an action other than a recovery action throws or
- * completes with; the JDK may already have read that message, for example when {@code supplyAsync} wrapped the
- * throwable in a CompletionException. When the edge's action, other than a recovery action, throws or completes with a
- * throwable that no declared type accepts and that is neither an Error thrown as itself nor a failure of this call, the
- * engine aborts the call with a message composed from that throwable's string, which may read its message, whether or
- * not the transaction is poisoned. A throwable that a recovery action throws or completes with is never routed,
- * whatever the recovery edge declares: an Error thrown as itself propagates; the engine throws a failure of this call
- * as itself or, when the transaction is poisoned, the failure that poisoned the transaction; and on any other throwable
- * the engine aborts the call with a message composed from the recovery action's name and the original failure's reason,
- * never from that throwable's string, whether or not the transaction is poisoned.
+ * <p>A poisoned transaction never commits. When the action that caught the failure returns an outcome, or completes its
+ * stage with one, throws or completes its stage with a failure of the call, this exception included, or, unless it is a
+ * recovery action, throws a throwable that a type its edge declares accepts, in its failsOn or in one of its recovery
+ * rules, the engine throws the failure that poisoned the transaction, the one {@code original()} reports, and never
+ * this exception: an abort of the call, the abort that carries an Error or any other throwable, or COLLECT's aggregate;
+ * an abort the engine raises itself, for a null outcome or stage or for a wait that timed out, was interrupted or was
+ * refused, is thrown instead. Unless that action is a recovery action, whose failure route was already taken, no
+ * failure route is taken, so no recovery action runs. For synchronous throws and exceptional completions of completed
+ * or pending stages alike, the engine makes this check before it reads the message of a throwable that a declared type
+ * accepts and that an action other than a recovery action throws or completes with; the JDK may already have read that
+ * message, for example when {@code supplyAsync} wrapped the throwable in a CompletionException. When the edge's action,
+ * other than a recovery action, throws or completes with a throwable that no declared type accepts and that is neither
+ * an Error thrown as itself nor a failure of this call, the engine aborts the call with a message composed from that
+ * throwable's string, which may read its message, whether or not the transaction is poisoned. A throwable that a
+ * recovery action throws or completes with is never routed, whatever the recovery edge declares: an Error thrown as
+ * itself propagates; the engine throws a failure of this call as itself or, when the transaction is poisoned, the
+ * failure that poisoned the transaction; and on any other throwable the engine aborts the call with a message composed
+ * from the recovery action's name and the original failure's reason, never from that throwable's string, whether or not
+ * the transaction is poisoned.
  */
 @Getter
 public final class PoisonedUnitOfWorkException extends TransitionAbortedException {

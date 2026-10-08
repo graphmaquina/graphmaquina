@@ -240,8 +240,8 @@ final class Transaction {
     }
 
     /**
-     * What the engine throws for a failure of this call that a guard or an action let through: the failure that
-     * poisoned the transaction when the transaction is poisoned, or the failure itself.
+     * What the engine throws for a failure of this call that a guard or an action threw or completed its stage with:
+     * the failure that poisoned the transaction when the transaction is poisoned, or the failure itself.
      */
     private StateMachineException poisonOr(CallFailedException own) {
         return uow.isPoisoned() ? uow.poison().orElseThrow() : own;

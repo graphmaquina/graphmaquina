@@ -17,13 +17,13 @@ import lombok.Getter;
  *
  * <p>When a guard or an action failed, the cause is what it threw, checked exceptions and library exceptions of other
  * calls included, once unwrapped from CompletionException and ExecutionException. A failure of this same call that a
- * guard or an action lets through, such as the abort a failed cascade threw into the action, is never wrapped: the
- * engine throws it as itself or, when the transaction is poisoned, the failure that poisoned the transaction. An
- * {@code Error} is never routed: thrown as itself by a callback on the calling thread, it propagates unchanged rather
- * than as this exception. It becomes the cause of one only when it did not reach the engine as itself: when it
- * completed the stage of an asynchronous action or guard, when a guard or an action threw it wrapped in
- * CompletionException or ExecutionException, or when an action swallowed it from a cascade and the poison it left
- * aborted the root.
+ * guard or an action throws or completes its stage with, such as the abort a failed cascade threw into the action when
+ * the action rethrows it, is never wrapped: the engine throws it as itself or, when the transaction is poisoned, the
+ * failure that poisoned the transaction. An {@code Error} is never routed: thrown as itself by a callback on the
+ * calling thread, it propagates unchanged rather than as this exception. It becomes the cause of one only when it did
+ * not reach the engine as itself: when it completed the stage of an asynchronous action or guard, when a guard or an
+ * action threw it wrapped in CompletionException or ExecutionException, or when an action swallowed it from a cascade
+ * and the poison it left aborted the root.
  *
  * <p>Where this library's documentation says that a step aborts, that something aborts the call, that the call aborts,
  * or that the call ends in this exception or one of its subclasses, the engine throws this exception, or a subclass,
