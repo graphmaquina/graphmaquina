@@ -2290,13 +2290,14 @@ reentrancy rules. A call submitted through `async(...)` runs separately on the e
 runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
 
 For a throwable that a declared type accepts, the engine checks the poison before it reads the throwable's message,
-for synchronous throws and exceptional completions of completed or pending stages alike. Exceptional stage
-completions retain their original throwable through the wait, so the engine's own reading of the message never comes
-first. The JDK may already have read that message, for example when `supplyAsync` wrapped the throwable in a
-`CompletionException`. The abort of a throwable that no declared type accepts, a
-`CancellationException` or a `StateMachineException` that is not a failure of this call, or an `Error` that completes
-a stage or arrives wrapped, is composed from that throwable's string, which may read its message, whether or not the
-transaction is poisoned.
+for synchronous throws and exceptional completions of completed or pending stages alike. Exceptional stage completions
+retain their original throwable through the wait, so the engine's own reading of the message never comes first. The
+JDK may already have read that message, for example when `supplyAsync` wrapped the throwable in a
+`CompletionException`. The abort of a throwable that the edge's own action throws or completes with, and that no
+declared type accepts, a `CancellationException` or a `StateMachineException` that is not a failure of this call, or
+an `Error` that completes a stage or arrives wrapped, is composed from that throwable's string, which may read its
+message, whether or not the transaction is poisoned; the abort of a throwable from a recovery action is composed from
+the recovery action's name and the original failure's reason instead.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.
