@@ -242,11 +242,11 @@ final class Transaction {
     }
 
     /**
-     * What the engine throws for a failure of this call that a guard or an action threw or completed its stage with,
-     * or for what ends an action step in a failure of this call that the engine did not catch from the action (a null
-     * outcome or stage, a wait that timed out, was interrupted or was refused, or a failure that a hand-written stage's
-     * handle throws): the failure that poisoned the transaction when the transaction is poisoned, or the failure
-     * itself.
+     * What the engine throws for {@code own}: the failure that poisoned the transaction when the transaction is
+     * poisoned, or {@code own} itself. The engine passes a failure of this call that a guard or an action threw or
+     * completed its stage with, and any CallFailedException that ends an action step without coming from the action's
+     * throws or completions: its own abort for a null outcome or stage or for a wait that timed out, was interrupted
+     * or was refused, or one that a hand-written stage's handle throws, of this call or of another.
      */
     private StateMachineException poisonOr(CallFailedException own) {
         return uow.isPoisoned() ? uow.poison().orElseThrow() : own;
