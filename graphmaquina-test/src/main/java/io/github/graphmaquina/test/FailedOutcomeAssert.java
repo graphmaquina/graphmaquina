@@ -1,5 +1,6 @@
 package io.github.graphmaquina.test;
 
+import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Objects;
@@ -7,10 +8,12 @@ import java.util.Optional;
 
 /**
  * Chainable, typed assertion over an {@link Outcome.Failed}, obtained from {@link
- * OutcomeAssert#isFailed()}. A failed outcome commits: it carries the destination of the edge that
- * failed, the identifier of the recovery edge and the state it actually landed on, and
- * {@link #movedTo(Enum)} reads that landing. The cause is optional and is only ever compared by type or
- * by reference — no expectation here reads its message.
+ * OutcomeAssert#isFailed()}. A failed outcome carries the destination of the edge that failed, the
+ * identifier of the recovery edge that ran instead, the state that edge landed on, which
+ * {@link #movedTo(Enum)} reads, and the failure kind the failure had, if any. Returned by a root call, it
+ * was committed; returned by a cascade, it is written only if its root commits. The failure kind is compared
+ * by identity, and the cause, which is optional, only ever by type or by reference — no expectation here
+ * reads its message.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
@@ -31,7 +34,10 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
         return this;
     }
 
-    /** The destination of the edge that failed, which is not where the entity was committed. */
+    /**
+     * The destination of the edge that failed, which the entity did not reach through that edge:
+     * {@link #movedTo(Enum)} reads where the recovery edge landed instead.
+     */
     public FailedOutcomeAssert<E, S, T> hasTarget(S expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.equal(context, "target", expected, failed.to());
@@ -45,7 +51,29 @@ public final class FailedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>>
         return this;
     }
 
-    /** The state the recovery edge committed, which is not the destination that was asked for. */
+    /**
+     * The failure kind the failure carries, compared by identity: no class satisfies it but that very one. A failure
+     * without a kind reports a null actual value.
+     *
+     * @param expected the failure kind the failure must carry
+     * @return this view
+     */
+    public FailedOutcomeAssert<E, S, T> hasFailureKind(Class<? extends FailureKind> expected) {
+        Objects.requireNonNull(expected, "expected");
+        Checks.same(context, "failure kind", expected, failed.failureKind().orElse(null));
+        return this;
+    }
+
+    public FailedOutcomeAssert<E, S, T> hasNoFailureKind() {
+        Optional<Class<? extends FailureKind>> none = Optional.empty();
+        Checks.equal(context, "failure kind", none, failed.failureKind());
+        return this;
+    }
+
+    /**
+     * The state the recovery edge landed on: committed when a root call returned this outcome, and written only if
+     * its root commits when a cascade did.
+     */
     public FailedOutcomeAssert<E, S, T> movedTo(S expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.equal(context, "moved to", expected, failed.movedTo());

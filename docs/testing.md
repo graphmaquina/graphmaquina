@@ -111,19 +111,19 @@ constant of another machine's catalogue does not compile inside it.
 | Subject | Entry point | What the view can expect |
 | --- | --- | --- |
 | Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch |
-| One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, failure identifier, `failsOn` classes, timeout, after-commit hook |
+| One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, fallback failure identifier, `failsOn` classes, recovery rules in declaration order, timeout, after-commit hook |
 | One node's policy | `assertThat(definition).policy(state)` | the default reason and the reason declared for one identifier |
 | A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
 | Reachability | `assertThat(definition).topology()` | nodes, successors, reachable set, an explicit walk, the shortest path, absence of a path, cycles |
 | Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()` and `reactions()` |
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
-| Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, reason, cause |
+| Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, failure kind, reason, cause |
 | Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, and `isRejectedByGuardNamed` for `GUARD` |
 | Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED` |
 | Transition records | `.records()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
 | Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal; phase, states written and the failing call |
-| Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, and the reason |
+| Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, the reason, and the failure kind of a failed action |
 | Live entity | `assertThat(entity, Order::status)` | the state the getter reads at that moment |
 | Completed calls | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome statuses, and the outcome sequence of one entity |
 | Tracked entities | `StateSnapshot` | which of the tracked entities moved since the capture, and that none did |
@@ -231,6 +231,7 @@ assertThat(orders.definition())
 `hasGuardsExactly` keeps order and multiplicity, because the engine evaluates guards in declaration order
 and stops at the first rejection. `failsOnExactly()` with no argument asserts that the edge's own `failsOn`
 maps no exception to its fallback `onFailure` route; the exceptions a recovery rule maps are not part of it.
+`recoversExactly(rules)` compares every rule of the edge, its exception classes included, in declaration order.
 
 ### Outcomes, reactions and observed state
 
@@ -499,7 +500,7 @@ logic.
   `.graph` file: the machine key including the transition enum, the ordered catalogue of identifiers,
   ordered states, initial state, terminals, async mode, node policies, watches and their ordered rules with
   the identifier each one executes, and for every edge its `(from, id)` key, destination, kind, reason-free
-  action and guard names/modes, failure identifier, `failsOn` classes, timeout, after-commit hook and, only
+  action and guard names/modes, fallback failure identifier, `failsOn` classes, timeout, after-commit hook and, only
   when the edge declares some, its recovery rules in declaration order, each with its failure kind, recovery
   identifier and `failsOn` classes. That order routes nothing, yet reordering the rules changes the snapshot.
   It reads `GraphDefinition` and its `TransitionSpec`s directly and does not call an exporter. Absence has no

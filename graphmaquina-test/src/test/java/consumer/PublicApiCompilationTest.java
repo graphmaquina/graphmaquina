@@ -47,22 +47,33 @@ class PublicApiCompilationTest {
     private static final String SOURCE = """
             package contract;
 
+            import io.github.graphmaquina.api.ActionOutcome;
+            import io.github.graphmaquina.api.FailureKind;
             import io.github.graphmaquina.api.GraphDefinition;
             import io.github.graphmaquina.api.MachineKey;
             import io.github.graphmaquina.api.Outcome;
             import io.github.graphmaquina.api.Reaction;
+            import io.github.graphmaquina.api.RecoveryRule;
             import io.github.graphmaquina.test.GraphAssertions;
             import java.util.List;
 
+            /** Consumer source exercising the public assertion surface. */
             public final class Use {
 
+                /** The machine states accepted by the assertions. */
                 enum State { NEW, READY }
 
+                /** A foreign state type used in negative compilation cases. */
                 enum OtherState { READY }
 
+                /** The machine transition identifiers. */
                 enum Id { PREPARE }
 
+                /** A foreign transition identifier used in negative compilation cases. */
                 enum OtherId { PREPARE }
+
+                /** A kind accepted by the recovery assertion. */
+                record Declined() implements FailureKind { }
 
                 public static void run() {
                     Outcome.Applied<String, State, Id> result = new Outcome.Applied<>(
@@ -88,6 +99,15 @@ class PublicApiCompilationTest {
                             List.of(new Reaction.Done(key, "entity", child)));
                     GraphAssertions.assertThat(root).isApplied().reactions().forEntity(key, "entity")
                             .single().isDone().outcome().isApplied().movedTo(State.READY);
+                }
+
+                public static void recovery(Outcome<String, State, Id> outcome,
+                        GraphDefinition<String, State, Id> definition) {
+                    ActionOutcome declined = ActionOutcome.failed(Declined.class, "declined");
+                    GraphAssertions.assertThat(declined).hasFailureKind(Declined.class);
+                    GraphAssertions.assertThat(outcome).isFailed().hasFailureKind(Declined.class);
+                    GraphAssertions.assertThat(definition).transition(State.NEW, Id.PREPARE)
+                            .recoversExactly(List.of(new RecoveryRule<>(Declined.class, Id.PREPARE, List.of())));
                 }
             }
             """;
@@ -141,6 +161,23 @@ class PublicApiCompilationTest {
     void aForeignStateIsRejectedOnTheNestedReaction(@TempDir Path workDir) throws IOException {
         assertRejected(workDir, ".outcome().isApplied().movedTo(State.READY)",
                 ".outcome().isApplied().movedTo(OtherState.READY)");
+    }
+
+    @Test
+    void aClassThatIsNotAFailureKindIsRejectedOnTheActionOutcome(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, "assertThat(declined).hasFailureKind(Declined.class)",
+                "assertThat(declined).hasFailureKind(String.class)");
+    }
+
+    @Test
+    void aClassThatIsNotAFailureKindIsRejectedOnTheFailedOutcome(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, "isFailed().hasFailureKind(Declined.class)", "isFailed().hasFailureKind(String.class)");
+    }
+
+    @Test
+    void aForeignIdentifierIsRejectedInAnExpectedRecoveryRule(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, "new RecoveryRule<>(Declined.class, Id.PREPARE, List.of())",
+                "new RecoveryRule<>(Declined.class, OtherId.PREPARE, List.of())");
     }
 
     @Test

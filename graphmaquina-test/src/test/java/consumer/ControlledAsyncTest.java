@@ -23,6 +23,13 @@ import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
 import io.github.graphmaquina.test.AsyncAssertions;
 import io.github.graphmaquina.test.GraphAssertionError;
+import io.github.graphmaquina.test.fixtures.PublicationFixture;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.ProviderRejectedException;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.PublicationFailures;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.ServiceUnavailableException;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.Ticket;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.TicketChange;
+import io.github.graphmaquina.test.fixtures.PublicationFixture.TicketState;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
@@ -44,6 +51,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /**
  * Contract of the controlled asynchronous fixtures. Nothing here sleeps: the test resumes when the engine has
@@ -899,6 +907,131 @@ class ControlledAsyncTest {
             assertFalse(call.isCancelled());
             AsyncAssertions.awaitFailure(result, GENEROUS).isAbort().hasCauseSameAs(boom);
             assertEquals(State.NEW, entity.state());
+        }
+    }
+
+    // --- typed recovery: the handle hands the engine the very answer the test gave ---------------------
+
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    void aFailedAnswerWithAFailureKindTakesTheRuleOfThatKind() {
+        ControlledAsyncAction<Ticket, TicketState, TicketChange> publish = ControlledAsyncAction.create();
+        MachineRegistry registry = PublicationFixture.registry(PublicationFixture.asyncGraph(publish));
+        try (registry; publish) {
+            CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> result = null;
+            try {
+                Ticket ticket = new Ticket("t");
+                result =
+                        registry.of(PublicationFixture.KEY).async().execute(ticket, TicketChange.PUBLISH);
+                PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> call =
+                        publish.awaitInvocation(GENEROUS);
+                assertTrue(call.complete(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected")));
+                AsyncAssertions.await(result, GENEROUS).isFailed()
+                        .hasFailureKind(PublicationFailures.Rejected.class)
+                        .hasFailureTransition(TicketChange.RECORD_REJECTION)
+                        .movedTo(TicketState.REJECTED_BY_PROVIDER)
+                        .hasReason("content rejected")
+                        .hasNoCause();
+                assertEquals(TicketState.REJECTED_BY_PROVIDER, ticket.state());
+            } finally {
+                if (result != null) {
+                    result.cancel(true);
+                }
+                publish.close();
+            }
+        }
+    }
+
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    void aFailedInvocationWithAnExceptionARuleListsKeepsItsKindAndItsIdentity() {
+        ServiceUnavailableException down = new ServiceUnavailableException("provider down");
+        ControlledAsyncAction<Ticket, TicketState, TicketChange> publish = ControlledAsyncAction.create();
+        MachineRegistry registry = PublicationFixture.registry(PublicationFixture.asyncGraph(publish));
+        try (registry; publish) {
+            CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> result = null;
+            try {
+                Ticket ticket = new Ticket("t");
+                result =
+                        registry.of(PublicationFixture.KEY).async().execute(ticket, TicketChange.PUBLISH);
+                PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> call =
+                        publish.awaitInvocation(GENEROUS);
+                assertTrue(call.fail(down));
+                AsyncAssertions.await(result, GENEROUS).isFailed()
+                        .hasFailureKind(PublicationFailures.Unavailable.class)
+                        .hasFailureTransition(TicketChange.SCHEDULE_RETRY)
+                        .movedTo(TicketState.RETRY_PENDING)
+                        .hasCauseSameAs(down);
+                assertEquals(TicketState.RETRY_PENDING, ticket.state());
+            } finally {
+                if (result != null) {
+                    result.cancel(true);
+                }
+                publish.close();
+            }
+        }
+    }
+
+    /**
+     * Each invocation owns its stage, so answering the second one first settles that call alone: each outcome keeps
+     * the failure kind, the recovery and the cause of the answer given to its own invocation.
+     */
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS)
+    void twoInvocationsAnsweredInReverseOrderKeepTheirOwnFailureKinds() {
+        ProviderRejectedException refused = new ProviderRejectedException("content refused");
+        ControlledAsyncAction<Ticket, TicketState, TicketChange> publish = ControlledAsyncAction.create();
+        MachineRegistry registry = PublicationFixture.registry(PublicationFixture.asyncGraph(publish));
+        try (registry; publish) {
+            CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> firstResult = null;
+            CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> secondResult = null;
+            try {
+                Ticket first = new Ticket("first");
+                Ticket second = new Ticket("second");
+                firstResult =
+                        registry.of(PublicationFixture.KEY).async().execute(first, TicketChange.PUBLISH);
+                secondResult =
+                        registry.of(PublicationFixture.KEY).async().execute(second, TicketChange.PUBLISH);
+                PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> one =
+                        publish.awaitInvocation(GENEROUS);
+                PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> other =
+                        publish.awaitInvocation(GENEROUS);
+                PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> firstCall =
+                        one.call().entity() == first ? one : other;
+                PendingInvocation<ActionCall<Ticket, TicketState, TicketChange>, ActionOutcome> secondCall =
+                        firstCall == one ? other : one;
+                assertSame(first, firstCall.call().entity());
+                assertSame(second, secondCall.call().entity());
+
+                assertTrue(secondCall.complete(
+                        ActionOutcome.failed(PublicationFailures.Unavailable.class, "provider busy")));
+                AsyncAssertions.await(secondResult, GENEROUS).isFailed()
+                        .hasEntitySameAs(second)
+                        .hasFailureKind(PublicationFailures.Unavailable.class)
+                        .hasFailureTransition(TicketChange.SCHEDULE_RETRY)
+                        .movedTo(TicketState.RETRY_PENDING)
+                        .hasNoCause();
+                assertFalse(firstResult.isDone());
+                assertEquals(TicketState.READY, first.state());
+
+                assertTrue(firstCall.fail(refused));
+                AsyncAssertions.await(firstResult, GENEROUS).isFailed()
+                        .hasEntitySameAs(first)
+                        .hasFailureKind(PublicationFailures.Rejected.class)
+                        .hasFailureTransition(TicketChange.RECORD_REJECTION)
+                        .movedTo(TicketState.REJECTED_BY_PROVIDER)
+                        .hasCauseSameAs(refused);
+                assertEquals(TicketState.REJECTED_BY_PROVIDER, first.state());
+                assertEquals(TicketState.RETRY_PENDING, second.state());
+            } finally {
+                if (firstResult != null) {
+                    firstResult.cancel(true);
+                }
+                if (secondResult != null) {
+                    secondResult.cancel(true);
+                }
+                publish.close();
+            }
         }
     }
 
