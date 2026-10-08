@@ -599,6 +599,7 @@ class TypedRecoveryDiagnosticsTest {
                 diagnostic.getKind() == Diagnostic.Kind.ERROR
                         && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
                         && diagnostic.getMessage(null).contains("MissingKind")).count(), result.describe());
+        assertEquals(2, result.errors().size(), result.describe());
         assertEquals(List.of("[SG302] recover(fx.PublicationFailures$Rejected, RECORD_REJECTION) does not allow"
                 + " java.lang.RuntimeException" + FORBIDDEN),
                 result.errors().stream().filter((String message) -> message.startsWith("[SG")).toList(),
