@@ -291,7 +291,7 @@ class GuideOutcomeFragmentsTest {
         boolean taking = false;
         for (String line : guide) {
             if (!open) {
-                open = line.startsWith("```java");
+                open = isJavaFence(line);
                 first = open;
             } else if (line.startsWith("```")) {
                 if (taking) {
