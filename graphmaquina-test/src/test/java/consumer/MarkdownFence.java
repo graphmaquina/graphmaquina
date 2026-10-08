@@ -5,9 +5,9 @@ import java.util.Optional;
 /**
  * An opening fence of a CommonMark fenced code block, for lines without indentation, which is how the guides write
  * them. An opening line starts with at least three backticks or at least three tildes; the rest of the line,
- * trimmed, is the info string, and a backtick fence's info string cannot contain a backtick. A fence is closed by a
- * line of the same character, at least as long as the opening run, followed only by spaces or tabs. Anything between
- * the two lines is content, whatever it looks like.
+ * without its leading and trailing spaces and tabs, is the info string, and a backtick fence's info string cannot
+ * contain a backtick. A fence is closed by a line of the same character, at least as long as the opening run,
+ * followed only by spaces or tabs. Anything between the two lines is content, whatever it looks like.
  */
 final class MarkdownFence {
 
@@ -45,7 +45,7 @@ final class MarkdownFence {
     /** Whether the line closes this fence. */
     boolean closes(String line) {
         int run = runLength(line, marker);
-        return run >= length && line.substring(run).chars().allMatch(c -> c == ' ' || c == '\t');
+        return run >= length && line.substring(run).chars().allMatch((int c) -> c == ' ' || c == '\t');
     }
 
     private static int runLength(String line, char marker) {
