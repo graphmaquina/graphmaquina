@@ -283,6 +283,11 @@ class TestingGuideFragmentsTest {
         }
     }
 
+    /** Whether the line opens a java block: a plain java fence or one followed by a title. */
+    private static boolean isJavaFence(String line) {
+        return line.equals("```java") || line.startsWith("```java ");
+    }
+
     /** Counts the java blocks after the section heading and before the next heading of any level. */
     private static int javaBlockCount(List<String> page) {
         boolean inside = false;
@@ -297,7 +302,7 @@ class TestingGuideFragmentsTest {
                 break;
             } else if (line.startsWith("```")) {
                 fenced = true;
-                if (line.startsWith("```java")) {
+                if (isJavaFence(line)) {
                     count++;
                 }
             }
@@ -328,7 +333,7 @@ class TestingGuideFragmentsTest {
                 break;
             } else if (line.startsWith("```")) {
                 fenced = true;
-                if (line.equals("```java")) {
+                if (isJavaFence(line)) {
                     count++;
                     taking = count == n;
                 }

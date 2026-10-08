@@ -226,7 +226,15 @@ class GuideOutcomeFragmentsTest {
                 + String.join("\n", diagnostics) + "\n--- generated GuideRecoveryFragments.java ---\n" + source);
     }
 
-    /** Fails unless the section of {@code heading} has {@code expected} java blocks. */
+    /** Whether the line opens a java block: a plain java fence or one followed by a title. */
+    private static boolean isJavaFence(String line) {
+        return line.equals("```java") || line.startsWith("```java ");
+    }
+
+    /**
+     * Fails unless {@code heading} has {@code expected} java blocks after it and before the next level-two
+     * heading.
+     */
     private static void assertJavaBlockCount(List<String> guide, String heading, int expected) {
         boolean inside = false;
         boolean fenced = false;
@@ -240,7 +248,7 @@ class GuideOutcomeFragmentsTest {
                 break;
             } else if (line.startsWith("```")) {
                 fenced = true;
-                if (line.startsWith("```java")) {
+                if (isJavaFence(line)) {
                     count++;
                 }
             }
@@ -265,7 +273,7 @@ class GuideOutcomeFragmentsTest {
                 block.append(line).append('\n');
             } else if (line.startsWith("## ")) {
                 break;
-            } else if (line.startsWith("```java")) {
+            } else if (isJavaFence(line)) {
                 count++;
                 taking = count == n;
             }
