@@ -2408,12 +2408,15 @@ transitions or evaluate guards, and there is no detail mode: the exporter draws 
 nothing else, because an edge nobody declared does not exist.
 
 The export is deterministic DOT text with LF line endings. Each edge label begins with its identifier,
-followed by the action name, `[async]`, `[if guard, …]`, `[onFailure ID]` and any watch label. Parallel edges
-appear as separate arrows with different labels, and a self-loop is an arrow back to its own node. The
-initial state has an incoming arrow from a point, terminal states have double outlines, and watches appear as
-notes connected by dashed lines. A node's rejection policy is rendered as that node's `tooltip` — never as an
-arrow, because a refusal is an answer the node gives and not a transition. State names and labels are
-escaped, and every declared state remains visible even when no edge touches it.
+followed by the action name, `[async]`, `[if guard, …]`, one `[recover Kind -> ID]` per recovery rule in
+declaration order, `[onFailure ID]` and any watch label. `Kind` is the failure kind's binary name without its
+package, such as `PublicationFailures$Unavailable`. The throwable types of `failsOn` and of the rules are not
+drawn, and a rule adds no arrow. Parallel edges appear as separate arrows with different labels, and a
+self-loop is an arrow back to its own node. The initial state has an incoming arrow from a point, terminal
+states have double outlines, and watches appear as notes connected by dashed lines. A node's rejection policy
+is rendered as that node's `tooltip` — never as an arrow, because a refusal is an answer the node gives and
+not a transition. State names and labels are escaped, and every declared state remains visible even when no
+edge touches it.
 
 The shop's order machine exports as:
 

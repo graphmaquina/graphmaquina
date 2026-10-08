@@ -1,0 +1,18 @@
+digraph "String/TicketState" {
+    rankdir=LR;
+    initial [shape=point, label=""];
+    n0 [label="READY", shape=ellipse, tooltip="otherwise: publish the ticket"];
+    n1 [label="PUBLISHED", shape=doublecircle, tooltip="otherwise: terminal state PUBLISHED accepts no transitions"];
+    n2 [label="RETRY_PENDING", shape=ellipse, tooltip="otherwise: retry the publication explicitly"];
+    n3 [label="REJECTED_BY_PROVIDER", shape=ellipse, tooltip="otherwise: close the rejected ticket"];
+    n4 [label="INTEGRATION_FAILED", shape=ellipse, tooltip="otherwise: close after manual review"];
+    n5 [label="CLOSED", shape=doublecircle, tooltip="otherwise: terminal state CLOSED accepts no transitions"];
+    initial -> n0;
+    n0 -> n1 [label="PUBLISH publish [recover SnapshotGraphs$PublicationFailures$Unavailable -> SCHEDULE_RETRY] [recover SnapshotGraphs$PublicationFailures$Rejected -> RECORD_REJECTION] [onFailure MARK_INTEGRATION_FAILED]"];
+    n0 -> n2 [label="SCHEDULE_RETRY"];
+    n0 -> n3 [label="RECORD_REJECTION"];
+    n0 -> n4 [label="MARK_INTEGRATION_FAILED"];
+    n2 -> n0 [label="RETRY"];
+    n3 -> n5 [label="CLOSE"];
+    n4 -> n5 [label="CLOSE"];
+}

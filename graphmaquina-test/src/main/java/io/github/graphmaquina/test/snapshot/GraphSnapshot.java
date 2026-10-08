@@ -2,6 +2,7 @@ package io.github.graphmaquina.test.snapshot;
 
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardRef;
+import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.StatePolicy;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
@@ -16,14 +17,23 @@ import java.util.TreeMap;
  * The structure of a graph as a flat, versioned map of path to value: the machine identity, whether any edge
  * is asynchronous, the states and their order, the catalogue of transition identifiers, the initial and
  * terminal states, every declared edge under {@code /transitions/<from>/<id>} with its destination, kind,
- * action, guards, recovery identifier, the exception types treated as failures, timeout and hook, the
- * rejection policy of every state, and the watches with their peers and rules. It carries what a diagram
- * leaves out, so two definitions that render identically still differ here, and it carries names, types and
- * declared values such as timeouts and rejection reasons, never lambdas or the identity of a callback, so a
+ * action, guards, fallback recovery identifier, the exception types its failsOn lists, recovery rules, timeout
+ * and hook, the rejection policy of every state, and the watches with their peers and rules. It carries what a
+ * diagram leaves out, so two definitions that render identically still differ here, and it carries names, types
+ * and declared values such as timeouts and rejection reasons, never lambdas or the identity of a callback, so a
  * snapshot is stable across runs.
  *
  * <p>Absence is not recorded: a pair of an origin and an identifier with no edge has no path at all. What the
  * state would answer such a request with lives in its policy instead.
+ *
+ * <p>The recovery rules of an edge live under {@code /transitions/<from>/<id>/recoveries}: their {@code count},
+ * then for the rule at index {@code <i>} its failure kind at {@code <i>/kind}, its recovery identifier at
+ * {@code <i>/transition}, and its throwable types at {@code <i>/failsOn/count} and {@code <i>/failsOn/<j>}. Kinds
+ * and types are binary names, as {@link Class#getName()} gives them. An edge without rules has no
+ * {@code recoveries} path at all, not even a count of zero. The indexes follow the order the rules were declared
+ * in, although that order selects nothing: a returned failure is routed by its kind and a thrown one by the most
+ * specific declared type. Two definitions that only reorder the rules of an edge therefore route every failure
+ * alike and still differ here, at the index paths.
  *
  * <p>The map is immutable and always in canonical order — ascending {@link String#compareTo} of the path —
  * which is also the order {@link #serialize()} writes and the order a parsed snapshot comes back in.
@@ -86,6 +96,7 @@ public final class GraphSnapshot {
             fields.put(path + "/kind", transition.kind().name());
             transition.onFailure().ifPresent(id -> fields.put(path + "/onFailure", id.name()));
             captureCallbacks(fields, transition, path);
+            captureRecoveries(fields, transition.recoveryRules(), path);
         }
         for (S state : states) {
             capturePolicy(fields, definition.policy(state));
@@ -116,6 +127,25 @@ public final class GraphSnapshot {
         }
         transition.timeout().ifPresent(value -> fields.put(path + "/timeout", value.toString()));
         transition.afterCommit().ifPresent(value -> fields.put(path + "/afterCommit", value.name()));
+    }
+
+    /** The recovery rules of an edge, indexed in declaration order; an edge without rules records nothing here. */
+    private static <T extends Enum<T>> void captureRecoveries(
+            Map<String, String> fields, List<RecoveryRule<T>> rules, String path) {
+        if (rules.isEmpty()) {
+            return;
+        }
+        fields.put(path + "/recoveries/count", Integer.toString(rules.size()));
+        for (int index = 0; index < rules.size(); index++) {
+            RecoveryRule<T> rule = rules.get(index);
+            String rulePath = path + "/recoveries/" + index;
+            fields.put(rulePath + "/kind", rule.kind().getName());
+            fields.put(rulePath + "/transition", rule.transition().name());
+            fields.put(rulePath + "/failsOn/count", Integer.toString(rule.failsOn().size()));
+            for (int type = 0; type < rule.failsOn().size(); type++) {
+                fields.put(rulePath + "/failsOn/" + type, rule.failsOn().get(type).getName());
+            }
+        }
     }
 
     private static <S extends Enum<S>, T extends Enum<T>> void capturePolicy(

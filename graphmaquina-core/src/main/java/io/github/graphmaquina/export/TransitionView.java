@@ -16,16 +16,26 @@ import lombok.NonNull;
  * @param action the action's name, when it has one
  * @param guards the guards' names, in declaration order
  * @param async the edge's action or some guard is asynchronous
- * @param failureTransition the fallback recovery identifier, onFailure, when the edge declares one; recovery rule
- *     identifiers are not represented here
+ * @param failureTransition the edge's fallback recovery identifier, its onFailure, when it declares one
  * @param watch the watch rules of {@code from} that execute this identifier, rendered
+ * @param recoveries the edge's recovery rules, in declaration order; empty when it declares none
  */
 public record TransitionView(@NonNull String from, @NonNull String transition, @NonNull String to,
                              @NonNull TransitionKind kind, @NonNull Optional<String> action,
                              @NonNull List<String> guards, boolean async,
-                             @NonNull Optional<String> failureTransition, @NonNull Optional<String> watch) {
+                             @NonNull Optional<String> failureTransition, @NonNull Optional<String> watch,
+                             @NonNull List<RecoveryView> recoveries) {
 
+    /** Copies guard names and recovery rules while keeping their declaration order. */
     public TransitionView {
         guards = List.copyOf(guards);
+        recoveries = List.copyOf(recoveries);
+    }
+
+    /** The view of an edge that declares no recovery rule. */
+    public TransitionView(String from, String transition, String to, TransitionKind kind, Optional<String> action,
+                          List<String> guards, boolean async, Optional<String> failureTransition,
+                          Optional<String> watch) {
+        this(from, transition, to, kind, action, guards, async, failureTransition, watch, List.of());
     }
 }

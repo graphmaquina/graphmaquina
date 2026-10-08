@@ -499,8 +499,10 @@ logic.
   `.graph` file: the machine key including the transition enum, the ordered catalogue of identifiers,
   ordered states, initial state, terminals, async mode, node policies, watches and their ordered rules with
   the identifier each one executes, and for every edge its `(from, id)` key, destination, kind, reason-free
-  action and guard names/modes, failure identifier, `failsOn` classes, timeout and after-commit hook. It
-  reads `GraphDefinition` and its `TransitionSpec`s directly and does not call an exporter. Absence has no
+  action and guard names/modes, failure identifier, `failsOn` classes, timeout, after-commit hook and, only
+  when the edge declares some, its recovery rules in declaration order, each with its failure kind, recovery
+  identifier and `failsOn` classes. That order routes nothing, yet reordering the rules changes the snapshot.
+  It reads `GraphDefinition` and its `TransitionSpec`s directly and does not call an exporter. Absence has no
   path at all: an identifier with no edge from a state simply does not appear. Use typed graph assertions
   for focused expectations. Neither approach executes domain logic; test guards, actions, cascades and
   watches through real operations and assert their outcomes, records, reactions and observed entity states.
