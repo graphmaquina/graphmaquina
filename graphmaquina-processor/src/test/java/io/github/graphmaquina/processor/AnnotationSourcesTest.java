@@ -100,7 +100,7 @@ class AnnotationSourcesTest {
     void malformedValuesLeaveJavacErrorsAndStillBindTheirReadableSiblings() throws IOException {
         String source = """
                 package fx;
-                /** Annotation carrier with intentionally unresolved and mismatched values. */
+                /** Annotation carrier with an unresolved class literal beside a readable class literal. */
                 @Sample.Flags({String.class, Missing.class})
                 public class Sample {
                     /** Class-array annotation for malformed-input coverage. */ public @interface Flags { Class<?>[] value(); }

@@ -260,7 +260,7 @@ class TypedRecoveryDiagnosticsTest {
 
     /**
      * A type the edge's own failsOn lists twice selects one fallback, so it is still accepted beside rules, and a
-     * subtype is no repeat of its supertype: the more specific declaration wins at run time.
+     * subtype is distinct from its supertype, so both rule declarations are accepted.
      */
     @Test
     void aRepeatInsideTheEdgesFailsOnAndASubtypeInAnotherRuleAreAccepted() {
