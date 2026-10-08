@@ -25,8 +25,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * What the processor checks of the recovery rules a {@code Transition} declares in its {@code recoveries}. Each
- * problem is reported once, with its SG code, at the value the author wrote, and names a kind or a type by its binary
+ * What the processor checks of the recovery rules a {@code Transition} declares in its {@code recoveries}, including
+ * admission and source anchors for the edge's own {@code failsOn}. Each problem is reported once, with its SG code,
+ * at the value the author wrote, and names a kind or a type by its binary
  * name: SG302 for a throwable type a failsOn may not name, SG303 for a kind that is not a failure kind, SG304 at the
  * second occurrence of a kind or a type one edge declares twice, and SG507 for rules on an edge that runs no action.
  * Whether a rule's transition leaves every origin of its edge is the graph's own SG301, which the outline validator
@@ -530,6 +531,32 @@ class TypedRecoveryDiagnosticsTest {
             assertLocation(result, "SG302", occurrence, sources.get("fx.Tickets"), "RuntimeException.class", occurrence);
         }
         assertLocation(result, "SG304", 0, sources.get("fx.Tickets"), "RuntimeException.class", 1);
+    }
+
+    /** An unreadable sibling leaves SG302 on the full forbidden edge-level literal, in either array order. */
+    @Test
+    void sg302AnchorsTheForbiddenEdgeTypeBesideAnUnreadableSibling() {
+        for (String literals : List.of("RuntimeException.class, Missing.class", "Missing.class, RuntimeException.class")) {
+            Map<String, String> sources = RecoveryFixtures.sources("""
+                    @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
+                        action = TicketActionsRefs.Publish.class,
+                        failsOn = {%s}, onFailure = MARK_INTEGRATION_FAILED)
+                    Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
+                    """.formatted(literals));
+            Compilation.Result result = Compilation.compileTyped(sources);
+
+            assertFalse(result.success(), result.describe());
+            assertEquals(2, result.errors().size(), result.describe());
+            assertEquals(1, result.diagnostics().stream()
+                    .filter((Diagnostic<? extends JavaFileObject> diagnostic) -> diagnostic.getKind() == Diagnostic.Kind.ERROR
+                            && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
+                            && diagnostic.getMessage(null).contains("class Missing"))
+                    .count(), result.describe());
+            assertEquals(List.of("[SG302] failsOn does not allow java.lang.RuntimeException" + FORBIDDEN),
+                    result.errors().stream().filter((String message) -> message.startsWith("[SG")).toList(),
+                    result.describe());
+            assertLocation(result, "SG302", 0, sources.get("fx.Tickets"), "RuntimeException.class", 0);
+        }
     }
 
     @Test

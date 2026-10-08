@@ -33,8 +33,9 @@ import javax.lang.model.type.TypeMirror;
  * the value that is wrong: a throwable type a failsOn may not name, a kind that is not a failure kind, or a kind or a
  * type the edge declares twice. Rules on an edge that runs no action are reported where its {@code to} is. Whether a
  * rule's transition leaves every origin of the edge is a question about the whole graph, which its outline answers.
- * A rule whose kind or transition javac could not read, and a type of its failsOn javac could not read, are left
- * out, since javac has already refused them.</p>
+ * A rule whose kind or transition javac could not read is left out, since javac has already refused it. Unreadable
+ * class values are omitted from both an edge's own failsOn and each rule's failsOn; retained types and annotation
+ * values stay aligned.</p>
  */
 final class TypedTransitions {
 
@@ -96,12 +97,11 @@ final class TypedTransitions {
                 .flatMap((AnnotationValue value) -> TypedValues.constantName(value, machine.transitionsElement()));
         List<AnnotationValue> failsOnValues = annotations.find(mirror, "failsOn").isEmpty()
                 ? List.of()
-                : annotations.array(mirror, "failsOn");
+                : classValues(annotations.array(mirror, "failsOn"));
         List<TypeMirror> failsOn = classes(failsOnValues);
         structure.checkFailsOn(failsOn, failsOnValues, element, mirror);
         List<RecoveryModel> recoveries = recoveries(mirror, machine);
-        List<AnnotationValue> failsOnClasses = classValues(failsOnValues);
-        structure.checkRecoveries(recoveries, classes(failsOnClasses), failsOnClasses, element, mirror);
+        structure.checkRecoveries(recoveries, failsOn, failsOnValues, element, mirror);
         Optional<Binding> afterCommit = afterCommit(element, mirror, machine)
                 .or(() -> defaultAfterCommit);
 
