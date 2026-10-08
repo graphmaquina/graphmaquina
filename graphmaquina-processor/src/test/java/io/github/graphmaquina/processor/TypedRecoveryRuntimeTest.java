@@ -323,6 +323,54 @@ class TypedRecoveryRuntimeTest {
     }
 
     /**
+     * A rule with two types writes {@code List.of(...)}. A top-level class {@code List} of the facade's package does
+     * not shadow the single-type import of {@code java.util.List}, which the companion keeps; a member type
+     * {@code List} the facade declares does, so the companion qualifies the call and imports nothing. In both the
+     * companion compiles and the rule still routes a thrown exception.
+     */
+    @Test
+    void aRuleWithTwoTypesQualifiesListWhereTheFacadeScopeShadowsIt() throws Exception {
+        String rule = """
+                    @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
+                        action = TicketActionsRefs.Publish.class,
+                        recoveries = @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class,
+                            transition = SCHEDULE_RETRY,
+                            failsOn = {ServiceUnavailableException.class, java.io.UncheckedIOException.class}),
+                        onFailure = MARK_INTEGRATION_FAILED)
+                    Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
+                """;
+        String body = """
+                TicketActions actions = new TicketActions();
+                try (Desk desk = DeskRuntime.builder(actions).build()) {
+                    return throwing(desk.tickets(), actions, new ServiceUnavailableException("provider unavailable"));
+                }
+                """;
+        Map<String, String> packageClass = RecoveryFixtures.sources(rule);
+        packageClass.put("fx.List", """
+                package fx;
+                /** A top-level class of the facade's package that takes the simple name List. */
+                public final class List { }
+                """);
+        Map<String, String> memberType = RecoveryFixtures.sources("""
+                    /** A member type of the facade that takes the simple name List. */
+                    interface List { }
+                """ + rule);
+        Compilation.Result imported = compile(packageClass, body);
+        String importing = imported.generated("fx.TicketsRuntime");
+        assertTrue(importing.contains("import java.util.List;"), importing);
+        assertTrue(importing.contains(" List.of(fx.ServiceUnavailableException.class,"
+                + " java.io.UncheckedIOException.class))"), importing);
+        assertEquals("SCHEDULE_RETRY to RETRY_PENDING, Unavailable, its cause, RETRY_PENDING", run(imported));
+        Compilation.Result qualified = compile(memberType, body);
+        String qualifying = qualified.generated("fx.TicketsRuntime");
+        assertTrue(qualifying.contains(" java.util.List.of(fx.ServiceUnavailableException.class,"
+                + " java.io.UncheckedIOException.class))"), qualifying);
+        assertFalse(qualifying.contains("import java.util.List;"), qualifying);
+        assertFalse(qualifying.contains(" List.of("), qualifying);
+        assertEquals("SCHEDULE_RETRY to RETRY_PENDING, Unavailable, its cause, RETRY_PENDING", run(qualified));
+    }
+
+    /**
      * RateLimitedException extends ServiceUnavailableException, and each has a rule of its own. The companion keeps
      * the order the facade declares the rules in, and in either order the subclass reaches its own rule while the
      * superclass keeps the other.
