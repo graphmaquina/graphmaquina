@@ -559,25 +559,57 @@ class TypedRecoveryDiagnosticsTest {
         }
     }
 
+    /**
+     * javac refuses the unknown constant and the unknown kind itself; the processor adds no SG error for the rules
+     * it cannot read.
+     */
     @Test
-    void javacRefusesUnreadableKindsTransitionsAndTypesWithoutProcessorNoise() {
-        Map<String, String> sources = RecoveryFixtures.sources("""
+    void anUnknownTransitionConstantIsJavacsErrorAloneAndTheProcessorAddsNone() {
+        Compilation.Result result = Compilation.compileTyped(RecoveryFixtures.sources("""
                 @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
                     action = TicketActionsRefs.Publish.class,
                     recoveries = {
                         @TicketsGraph.Recovery(kind = MissingKind.class, transition = SCHEDULE_RETRY),
-                        @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class, transition = UNKNOWN),
-                        @TicketsGraph.Recovery(kind = PublicationFailures.Rejected.class, transition = RECORD_REJECTION,
-                            failsOn = {MissingException.class, RuntimeException.class})})
+                        @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class, transition = UNKNOWN)})
                 Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
-                """);
-        Compilation.Result result = Compilation.compileTyped(sources);
+                """));
         assertFalse(result.success());
+        assertEquals(1, result.diagnostics().stream().filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
+                diagnostic.getKind() == Diagnostic.Kind.ERROR
+                        && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
+                        && diagnostic.getMessage(null).contains("UNKNOWN")).count(), result.describe());
+        assertEquals(2, result.errors().size(), result.describe());
         assertEquals(List.of(), result.errors().stream()
                 .filter((String message) -> message.startsWith("[SG")).toList(), result.describe());
-        assertEquals(3, result.diagnostics().stream().filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
-                diagnostic.getKind() == Diagnostic.Kind.ERROR && diagnostic.getCode().startsWith("compiler.err.cant.resolve")).count(),
-                result.describe());
+    }
+
+    /** An unreadable sibling leaves SG302 on the full forbidden literal of a rule, in either array order. */
+    @Test
+    void sg302AnchorsTheForbiddenRuleTypeBesideAnUnreadableSibling() {
+        for (String literals : List.of("RuntimeException.class, Missing.class",
+                "Missing.class, RuntimeException.class")) {
+            Map<String, String> sources = RecoveryFixtures.sources("""
+                    @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
+                        action = TicketActionsRefs.Publish.class,
+                        recoveries = @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class,
+                            transition = SCHEDULE_RETRY, failsOn = {%s}))
+                    Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
+                    """.formatted(literals));
+            Compilation.Result result = Compilation.compileTyped(sources);
+
+            assertFalse(result.success(), result.describe());
+            assertEquals(1, result.diagnostics().stream()
+                    .filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
+                            diagnostic.getKind() == Diagnostic.Kind.ERROR
+                            && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
+                            && diagnostic.getMessage(null).contains("class Missing"))
+                    .count(), result.describe());
+            assertEquals(List.of("[SG302] recover(fx.PublicationFailures$Unavailable, SCHEDULE_RETRY) does not allow"
+                    + " java.lang.RuntimeException" + FORBIDDEN),
+                    result.errors().stream().filter((String message) -> message.startsWith("[SG")).toList(),
+                    result.describe());
+            assertLocation(result, "SG302", 0, sources.get("fx.Tickets"), "RuntimeException.class", 0);
+        }
     }
 
     /** Pins the full expression span and javac's preferred class-literal position, including repeated text. */
