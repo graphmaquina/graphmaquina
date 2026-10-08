@@ -474,12 +474,13 @@ observe. Most items refuse up front what used to fail later, in generated code o
   reaction. It used to start a root of its own, which `maxWatchChain` did not count.
 - **Checked exceptions are handled like unchecked ones.** So is any other throwable that is not an `Error`. One that a
   guard, action, hook, state setter or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code
-  can, now goes through `failsOn` or aborts, becomes `AfterCommitException` or `CommitFailedException`, or, in a watch
-  reaction, aborts the reevaluation that `Reaction.Aborted` reports; one an owner lookup throws arrives wrapped in
-  `UndeclaredThrowableException`. It used to escape unchanged.
+  can, now goes through a recovery rule or `failsOn`, or aborts, becomes `AfterCommitException` or
+  `CommitFailedException`, or, in a watch reaction, aborts the reevaluation that `Reaction.Aborted` reports; one an
+  owner lookup throws arrives wrapped in `UndeclaredThrowableException`. It used to escape unchanged.
 - **A failed cascade always poisons.** An `Error`, or a throwable from a callback the engine does not wrap, that leaves
-  a cascade poisons the unit of work as an engine failure does, even when the action catches it, and a `failsOn` match
-  after it no longer takes the failure route. `cascadeAll` refuses a null element before any element runs, and an
+  a cascade poisons the unit of work as an engine failure does, even when the action catches it, and an exception
+  that a recovery rule or `failsOn` matches after it no longer takes a failure route. `cascadeAll` refuses a null
+  element before any element runs, and an
   unknown machine even over an empty collection; an unknown facade in a cascade poisons like an unknown key. What
   poisons without being a failure of the call, an unknown machine or facade, an ambiguous identity, a null peer state,
   reaches the action as an abort that carries it, and that abort ends the call unless the action replaces it with an
@@ -708,8 +709,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **`AbortAssert.atUnread(key, entity, from)`** is new: it locates an abort raised before any identifier was
   read, such as a chain of watch reactions that exceeds its limit.
 - **Closed controlled fixtures.** A closed `ControlledAsyncAction` refuses an invocation with
-  `GraphAssertionError`, which no `failsOn` route can take for a failure of the action, where it threw
-  `IllegalStateException`; `awaitInvocation` on a closed fixture fails at once, a wait already blocked included.
+  `GraphAssertionError`, which neither a recovery rule nor a `failsOn` route can take for a failure of the action,
+  where it threw `IllegalStateException`; `awaitInvocation` on a closed fixture fails at once, a wait already blocked
+  included.
 - **`GoldenOptions.defaults()` ignores `graphmaquina.goldens.root` in read mode:** `sourceRoot()` is empty there,
   and a value that is not a path no longer fails a read-mode run.
 - **Goldens.** Update mode replaces a source golden that is not valid UTF-8 and writes through a symbolic link

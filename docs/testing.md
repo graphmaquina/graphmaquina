@@ -20,8 +20,9 @@ example module is.
 - [Sharp edges](#sharp-edges)
 - [Maintaining test support](#maintaining-test-support)
 
-Every Java sample below is copied verbatim out of a test that runs in this repository. Each section names
-the file it came from.
+Every Java sample below runs in this repository. Most are copied verbatim out of a test; the samples of
+[failure kinds and recovery rules](#failure-kinds-and-recovery-rules) go the other way, cut out of this page and
+run by a test. Each section names the test file.
 
 ## Install
 
@@ -490,6 +491,110 @@ cancel it.
 The machine that holds an async edge must declare `asyncTimeout(...)`, as any async machine does. That
 deadline is the engine's; the budgets above are the test's, and the two are unrelated — see
 [what a check does not prove](#what-a-check-does-not-prove).
+
+### Failure kinds and recovery rules
+
+An edge can declare recovery rules besides its `onFailure` fallback: a rule pairs a failure kind with the
+identifier of its recovery edge, and may list the throwable types that select it. The
+[guide](guide.md#recover-by-failure-kind-and-exception-type) describes how the engine chooses. A test asserts the
+route a call took on the call's outcome, and the rules an edge declares on the definition.
+
+These samples use the publication machine of that guide section. `graph(action)` declares it with `action` on
+`PUBLISH`, `asyncGraph(action)` declares it with an asynchronous one, and `machine(graph)` builds a standalone
+machine with a five-second `asyncTimeout`.
+[TestingGuideFragmentsTest](../graphmaquina-test/src/test/java/consumer/TestingGuideFragmentsTest.java) writes out
+those helpers and the publication types, cuts the samples out of this page, compiles them against the published
+jars and runs them.
+
+A probe answers three calls in turn: a returned failure with a kind, a declared exception, and a returned failure
+without a kind, which the fallback takes:
+
+```java
+ServiceUnavailableException down = new ServiceUnavailableException("provider down");
+ActionProbe<Publication, PublicationState, PublicationChange> publish =
+        ActionProbe.<Publication, PublicationState, PublicationChange>create("publish", CallTrace.create())
+                .thenReturn(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"))
+                .thenThrow(down)
+                .thenReturn(ActionOutcome.failed("invalid response"));
+StateMachine<Publication, PublicationState, PublicationChange> machine = machine(graph(publish));
+
+assertThat(machine.execute(new Publication("p1"), PublicationChange.PUBLISH)).isFailed()
+        .hasFailureKind(PublicationFailures.Rejected.class)
+        .hasFailureTransition(PublicationChange.RECORD_REJECTION)
+        .movedTo(PublicationState.REJECTED_BY_PROVIDER)
+        .hasNoCause();
+assertThat(machine.execute(new Publication("p2"), PublicationChange.PUBLISH)).isFailed()
+        .hasFailureKind(PublicationFailures.Unavailable.class)
+        .hasFailureTransition(PublicationChange.SCHEDULE_RETRY)
+        .movedTo(PublicationState.RETRY_PENDING)
+        .hasCauseSameAs(down);
+assertThat(machine.execute(new Publication("p3"), PublicationChange.PUBLISH)).isFailed()
+        .hasNoFailureKind()
+        .hasFailureTransition(PublicationChange.MARK_INTEGRATION_FAILED)
+        .movedTo(PublicationState.INTEGRATION_FAILED)
+        .hasReason("invalid response");
+```
+
+`hasFailureKind` asserts the kind the failure carried, not the route that took it: a kind that no rule declares
+reaches the fallback and keeps its kind. Assert `hasFailureTransition` beside it to pin the route.
+
+The rules belong to the edge's declaration. `recoversExactly` compares them in declaration order, as
+`failsOnExactly` compares the edge's own types; the order selects nothing, but the declaration keeps it.
+`failsOnExactly` reads only the edge's own `failsOn`, never the types of its rules:
+
+```java
+assertThat(machine.definition())
+        .transition(PublicationState.READY, PublicationChange.PUBLISH)
+        .recoversExactly(List.of(
+                new RecoveryRule<>(PublicationFailures.Unavailable.class, PublicationChange.SCHEDULE_RETRY,
+                        List.of(ServiceUnavailableException.class)),
+                new RecoveryRule<>(PublicationFailures.Rejected.class, PublicationChange.RECORD_REJECTION,
+                        List.of(ProviderRejectedException.class))))
+        .failsOnExactly(InvalidResponseException.class)
+        .hasFailureTransition(PublicationChange.MARK_INTEGRATION_FAILED);
+```
+
+An action's result can be asserted on its own, before any machine runs it. On an action result both expectations
+require the `Failed` variant, so `ActionOutcome.ok()` fails them:
+
+```java
+assertThat(ActionOutcome.failed(PublicationFailures.Unavailable.class, "provider down"))
+        .isFailed()
+        .hasFailureKind(PublicationFailures.Unavailable.class)
+        .hasReason("provider down");
+assertThat(ActionOutcome.failed("invalid response")).isFailed().hasNoFailureKind();
+```
+
+The same rules route an asynchronous action. A `ControlledAsyncAction` lets the test answer the stage with a
+failure or complete it with an exception, and `AsyncAssertions` reads the outcome:
+
+```java
+Duration testBudget = Duration.ofSeconds(10);
+ControlledAsyncAction<Publication, PublicationState, PublicationChange> publish = ControlledAsyncAction.create();
+try (publish) {
+    StateMachine<Publication, PublicationState, PublicationChange> machine = machine(asyncGraph(publish));
+    CompletableFuture<Outcome<Publication, PublicationState, PublicationChange>> rejected =
+            machine.async().execute(new Publication("p4"), PublicationChange.PUBLISH);
+    publish.awaitInvocation(testBudget)
+            .complete(ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"));
+    AsyncAssertions.await(rejected, testBudget).isFailed()
+            .hasFailureKind(PublicationFailures.Rejected.class)
+            .hasFailureTransition(PublicationChange.RECORD_REJECTION)
+            .movedTo(PublicationState.REJECTED_BY_PROVIDER);
+
+    ProviderRejectedException refused = new ProviderRejectedException("content refused");
+    CompletableFuture<Outcome<Publication, PublicationState, PublicationChange>> thrown =
+            machine.async().execute(new Publication("p5"), PublicationChange.PUBLISH);
+    publish.awaitInvocation(testBudget).fail(refused);
+    AsyncAssertions.await(thrown, testBudget).isFailed()
+            .hasFailureKind(PublicationFailures.Rejected.class)
+            .hasFailureTransition(PublicationChange.RECORD_REJECTION)
+            .hasCauseSameAs(refused);
+}
+```
+
+`testBudget` is how long the test waits, not the engine's deadline. The fixture is the only resource of the
+try-with-resources header because a standalone machine has no registry to close.
 
 ## Goldens and structural snapshots
 

@@ -1017,9 +1017,9 @@ You declare what it can do, and the policy words the answer for everything else.
   which may be a self-loop.
 - Every cycle must pass through at least one state listed in `allowsCycle`, and an allowance for a state that
   belongs to no cycle is rejected too. A self-loop is a cycle.
-- An `onFailure` identifier must name a different edge that exists from the failing edge's own origin. It may
-  legitimately reach the same destination as the edge it recovers, because identity, not destination, tells
-  them apart.
+- An `onFailure` identifier, and the recovery identifier of every recovery rule, must name a different edge that
+  exists from the failing edge's own origin. Such an edge may legitimately reach the same destination as the edge
+  it recovers, because identity, not destination, tells them apart.
 - Every watch rule must name an identifier with an edge from the watched state. A terminal cannot watch.
 
 Unauthorised cycles are reported as one witness per cyclic strongly connected component rather than one
@@ -1310,6 +1310,243 @@ asynchronous actions.
 
 The full action implementation is in
 [OrderActions.java](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/order/OrderActions.java).
+
+### Recover by failure kind and exception type
+
+`onFailure` gives an edge a fallback recovery for admitted failures that no rule takes. When the failures of one
+edge must end in different states, declare recovery rules. A rule names a failure kind and the identifier of its
+recovery edge, and may list the throwable types that select it. `onFailure` stays the fallback for a failure that
+no rule takes.
+
+A failure kind is a type: a named final class or record that implements `io.github.graphmaquina.api.FailureKind`,
+top-level or a member, and not an interface, an enum, a local or anonymous class, or a `Throwable`. The library
+never creates an instance of it and keeps no catalogue of kinds. It compares the `Class`, so any edge of any
+machine can use the same kind. One record per kind is enough:
+
+```java
+/** The states of a publication. */
+public enum PublicationState { READY, PUBLISHED, RETRY_PENDING, REJECTED_BY_PROVIDER, INTEGRATION_FAILED, CLOSED }
+
+/** The operations and recovery identifiers of a publication. */
+public enum PublicationChange { PUBLISH, SCHEDULE_RETRY, RECORD_REJECTION, MARK_INTEGRATION_FAILED, RETRY, CLOSE }
+
+/** Failure kinds reported by the publication adapter. */
+public final class PublicationFailures {
+    private PublicationFailures() { }
+
+    /** The provider cannot take the publication now. */
+    public record Unavailable() implements FailureKind { }
+
+    /** The provider refused the content. */
+    public record Rejected() implements FailureKind { }
+}
+```
+
+Each public type goes in its own file. `ServiceUnavailableException`, `ProviderRejectedException` and
+`InvalidResponseException` are the adapter's own unchecked exceptions. An action reports a kind by returning
+`ActionOutcome.failed(kind, reason)`, or by throwing an exception that a rule lists. In the DSL, each
+`recover(kind, transition)` call declares one rule. A third argument adds one throwable type to the rule, and a
+`List` adds several; the list is copied when the rule is declared. A rule without types is selected only by a
+returned failure of its kind:
+
+```java
+GraphDefinition<Publication, PublicationState, PublicationChange> graph = StateGraph.define(key)
+        .initial(PublicationState.READY)
+        .terminal(PublicationState.PUBLISHED)
+        .terminal(PublicationState.CLOSED)
+        .allowsCycle(PublicationState.READY)
+        .statePolicy(PublicationState.READY, "publish the article first")
+        .statePolicy(PublicationState.RETRY_PENDING, "retry the publication explicitly")
+        .statePolicy(PublicationState.REJECTED_BY_PROVIDER, "close the rejected publication")
+        .statePolicy(PublicationState.INTEGRATION_FAILED, "close after manual review")
+        .transition(PublicationChange.PUBLISH, PublicationState.READY, PublicationState.PUBLISHED)
+            .action("publish", (TransitionContext<Publication, PublicationState, PublicationChange> ctx) ->
+                    adapter.publish(ctx.entity()))
+            .recover(PublicationFailures.Unavailable.class, PublicationChange.SCHEDULE_RETRY,
+                    ServiceUnavailableException.class)
+            .recover(PublicationFailures.Rejected.class, PublicationChange.RECORD_REJECTION,
+                    ProviderRejectedException.class)
+            .failsOn(InvalidResponseException.class)
+            .onFailure(PublicationChange.MARK_INTEGRATION_FAILED)
+            .endTransition()
+        .transition(PublicationChange.SCHEDULE_RETRY, PublicationState.READY, PublicationState.RETRY_PENDING)
+            .endTransition()
+        .transition(PublicationChange.RECORD_REJECTION, PublicationState.READY,
+                PublicationState.REJECTED_BY_PROVIDER)
+            .endTransition()
+        .transition(PublicationChange.MARK_INTEGRATION_FAILED, PublicationState.READY,
+                PublicationState.INTEGRATION_FAILED)
+            .endTransition()
+        .transition(PublicationChange.RETRY, PublicationState.RETRY_PENDING, PublicationState.READY)
+            .endTransition()
+        .transition(PublicationChange.CLOSE, PublicationState.REJECTED_BY_PROVIDER, PublicationState.CLOSED)
+            .endTransition()
+        .transition(PublicationChange.CLOSE, PublicationState.INTEGRATION_FAILED, PublicationState.CLOSED)
+            .endTransition()
+        .build();
+```
+
+`adapter` stands for the application's client of the provider: its `publish` returns `ActionOutcome.ok()` or a
+failure, or throws one of the three exceptions. With annotations, a `Transition` lists the same rules in
+`recoveries`, one `Recovery` of the machine's vocabulary per rule. This operation belongs on a `Publications`
+facade whose bindings host is `PublicationActions`, and its recovery edges are declared like `DECLINE` in the
+quickstart, by type-level `Transition`s:
+
+```java
+@PublicationsGraph.Transition(id = PublicationChange.PUBLISH, from = PublicationState.READY,
+    to = PublicationState.PUBLISHED,
+    action = PublicationActionsRefs.Publish.class,
+    recoveries = {
+        @PublicationsGraph.Recovery(kind = PublicationFailures.Unavailable.class,
+            transition = PublicationChange.SCHEDULE_RETRY, failsOn = ServiceUnavailableException.class),
+        @PublicationsGraph.Recovery(kind = PublicationFailures.Rejected.class,
+            transition = PublicationChange.RECORD_REJECTION, failsOn = ProviderRejectedException.class)},
+    failsOn = InvalidResponseException.class,
+    onFailure = PublicationChange.MARK_INTEGRATION_FAILED)
+Outcome<Publication, PublicationState, PublicationChange> publish(Publication publication);
+```
+
+A `Recovery` is written only as a value of `recoveries`. Several values are several rules, not several fallbacks,
+so they are not `SG607`. Whichever way it is declared, the edge routes admitted failures according to its rules
+and fallback. In this table, `Unavailable` and `Rejected` are the two members of `PublicationFailures`:
+
+| `PUBLISH`'s action | Recovery edge | `movedTo()` | `failureKind()` | `cause()` |
+| --- | --- | --- | --- | --- |
+| returns `failed(Unavailable.class, …)` | `SCHEDULE_RETRY` | `RETRY_PENDING` | `Unavailable` | empty |
+| throws `ServiceUnavailableException` | `SCHEDULE_RETRY` | `RETRY_PENDING` | `Unavailable` | the exception |
+| returns `failed(Rejected.class, …)` | `RECORD_REJECTION` | `REJECTED_BY_PROVIDER` | `Rejected` | empty |
+| throws `ProviderRejectedException` | `RECORD_REJECTION` | `REJECTED_BY_PROVIDER` | `Rejected` | the exception |
+| returns `failed("invalid response")` | `MARK_INTEGRATION_FAILED` | `INTEGRATION_FAILED` | empty | empty |
+| throws `InvalidResponseException` | `MARK_INTEGRATION_FAILED` | `INTEGRATION_FAILED` | empty | the exception |
+| throws any other exception | none: the call aborts | no outcome; the entity stays `READY` | — | — |
+
+A returned failure is routed by its kind alone:
+
+| The action returns | A rule declares that kind | `onFailure` declared | Result |
+| --- | --- | --- | --- |
+| `failed(reason)` | — | yes | the fallback, with no kind |
+| `failed(reason)` | — | no | `UnhandledFailureException` |
+| `failed(kind, reason)` | yes | either way | that rule's recovery, with its kind |
+| `failed(kind, reason)` | no | yes | the fallback; `failureKind()` still reports the kind |
+| `failed(kind, reason)` | no | no | `UnhandledFailureException`, which does not carry the kind |
+
+The kind changes nothing about admission: returning a failure declares a domain failure, with a kind or without
+one. Kinds have no hierarchy, the reason selects nothing, and a returned failure carries no cause.
+
+An exception is routed by the most specific declared type that accepts it. The types of every rule and the
+types of the edge's own `failsOn` compete together. A type in a rule leads to that rule's recovery, with its kind;
+a type in `failsOn` leads to the fallback, with no kind. Neither the order of the declarations nor the place a type
+is declared changes the winner. On an edge with an action that declares
+
+```java
+.failsOn(SocketTimeoutException.class)
+.onFailure(PublicationChange.MARK_INTEGRATION_FAILED)
+.recover(PublicationFailures.Unavailable.class, PublicationChange.SCHEDULE_RETRY, IOException.class)
+```
+
+a `SocketTimeoutException` goes to `MARK_INTEGRATION_FAILED` with no kind, because its own type is declared and is
+more specific than `IOException`. Any other `IOException` goes to `SCHEDULE_RETRY` with the kind `Unavailable`.
+Swap the two types, `failsOn(IOException.class)` and the rule on `SocketTimeoutException`, and the timeout goes to
+the rule while every other `IOException` goes to the fallback.
+
+- One type declared in two rules, or in a rule and in `failsOn`, is `SG304`, so the winner is always one type. A
+  type repeated inside `failsOn` alone is accepted, since every copy leads to the fallback.
+- An exception that no declared type accepts aborts the call even when the edge has a fallback: `onFailure` never
+  admits an exception by itself. A `failsOn` type on an edge without `onFailure` ends the call in
+  `UnhandledFailureException`.
+- The reason is composed from the exception's simple name and its message, or from its binary name for an
+  anonymous class. `cause()` is the very exception the action threw, once unwrapped.
+- `explanation()` holds the reason of a returned failure and stays empty when an exception was routed, whichever
+  route took it.
+
+The engine keeps the boundary between domain failures and technical ones:
+
+- Only what the action throws, or completes its stage with, is classified. A `CompletionException` or an
+  `ExecutionException` that carries a cause is unwrapped first; a subclass of either is classified as itself.
+- `Error`, `CancellationException` and `StateMachineException`, with their subtypes, are excluded: the runtime
+  never matches them, whatever an edge declares, and it excludes them before it reads any declaration, so a rule
+  on `IllegalStateException` never receives a `CancellationException`. Exclusion is what the runtime never
+  matches; `SG302` is what you may not declare, in a rule as in `failsOn`: `Throwable`, `Exception`,
+  `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, and exactly
+  `CompletionException` or `ExecutionException`. An `Error` the action throws propagates as itself; one that
+  completes the stage, or arrives wrapped, aborts the call with it as cause.
+- A failure of the call itself, which a failed cascade throws into the action, is never routed: it ends the call as
+  itself, or as the failure that poisoned the transaction. Once a failed cascade poisoned the unit of work, an
+  exception that a declared type accepts takes no route either: the call ends with the failure that poisoned it,
+  before any route is chosen.
+- A cancelled stage, and the timeout, interruption or refusal of the engine's own wait, abort the call and never
+  reach a rule. A timeout that the adapter's own client throws, such as a `SocketTimeoutException`, is an exception
+  like any other and can be declared.
+- The engine throws a few JDK exceptions from an action's context: `NullPointerException` for a null argument,
+  `IllegalArgumentException` for a primitive class token in `input(Class)` or an identifier of another catalogue,
+  `ClassCastException` when `input(Class)` reads an input of another type, and `WrongThreadException` when the
+  context is used from another thread than the one running the action. They are not library exceptions: if the
+  action lets one through and a declared type accepts it, a rule or `failsOn` routes it like the adapter's own
+  exceptions. None of them is an `IllegalStateException`. Declare the narrowest types the adapter throws.
+- Checked exceptions are classified like the others, however they arrive: thrown by a synchronous action without
+  being declared, declared by an annotated action method and rethrown unchanged by the generated companion, or
+  completing a stage, inside an exact `CompletionException` too.
+- Synchronous and asynchronous actions use the same selection: a returned failure, an exception thrown before the
+  stage is handed back and an exceptional completion select the same route, kind and cause.
+
+A recovery is an ordinary edge, resolved by its identifier from the origin of the edge that failed, as the
+fallback is. The recovery identifier of every rule, like the fallback's, needs an edge from that origin, from each
+of them when a `Transition` declares several, and may not be the failing edge's own key: `SG301` otherwise. Two
+rules may share a recovery, and a recovery may lead to the state the failing edge was heading for. Before the
+recovery runs, the engine returns to the savepoint taken before the failing edge, which discards that edge's pending
+states and cascades, its destination included; the journal keeps the actions that started. Entered as a recovery,
+the edge, a move or an action:
+
+- runs none of its guards;
+- passes the same input to its action;
+- consults neither its own rules nor its own `onFailure`, so recoveries never chain;
+- may cascade, within the usual limits;
+- waits under its own effective timeout, inside the budget of the root call, and runs its own effective hook after
+  the commit.
+
+Requested by an ordinary call, the same identifier runs its guards and applies its own rules. If the recovery
+fails, because it returns a failure, throws, fails its wait or runs a cascade that fails, the call aborts as that
+failure always aborts: no other rule is tried and the fallback is not used. The journal still lists the actions
+that ran, but not the kind or the cause of the first failure. A definition assembled without the DSL whose rule
+names an identifier with no edge from the origin aborts the call when that rule is selected, as such an
+`onFailure` does.
+
+`Outcome.Failed` reports the kind as `failureKind()`, empty when the failure has none, beside
+`failureTransition()`, the identifier of the recovery edge that ran. `status()` is `FAILED` and `code()` is
+`FAILURE_ROUTED` whichever route was taken, and the `Outcome.Failed` that a cascade returns carries its kind to the
+calling action. A failure that no rule and no fallback takes still ends the call in `UnhandledFailureException`,
+which does not carry the kind:
+
+```java
+Outcome<Publication, PublicationState, PublicationChange> outcome =
+        machine.execute(publication, PublicationChange.PUBLISH);
+Optional<Class<? extends FailureKind>> kind = outcome.asFailed().flatMap(Outcome.Failed::failureKind);
+boolean retryLater = kind.equals(Optional.of(PublicationFailures.Unavailable.class));
+```
+
+`definition().findTransition(from, id)` returns the edge's `TransitionSpec`: `recoveryRules()` lists its rules in
+declaration order, and `failsOn()` still lists only the edge's own types. The order of the rules selects nothing.
+
+The DSL refuses at once a null argument, a null type in the list, an identifier of another catalogue and a call
+on a closed stage. It reports the rest when `build()` runs, naming the edge, without building any invalid rule:
+
+- `SG303` for a class that is not a failure kind;
+- `SG304` for a kind used by two rules of the edge, or a throwable type declared twice across its rules and
+  `failsOn`;
+- `SG302` for a type that `failsOn` refuses too;
+- `SG507` for rules on an edge without an action;
+- `SG301` for a recovery identifier that is the edge's own key or has no edge from one of its origins.
+
+The annotation processor reports the same codes when it compiles the facade, `SG302`, `SG303` and `SG304` on the
+annotation value at fault. Built by hand, a `RecoveryRule` refuses an invalid kind and a forbidden or repeated type,
+and a `TransitionSpec` refuses rules without an action, a kind that two rules use and a type declared twice across
+its rules and `failsOn`, all with `IllegalArgumentException`.
+
+Recovery rules choose a route and nothing more. Nothing retries automatically or waits for a backoff:
+`SCHEDULE_RETRY` only records that a retry is due, and the application decides when to request `RETRY`. Nothing
+compensates either: the savepoint discards the engine's pending states, not the changes the action made to the
+entity, to the application's transaction or to external systems. To assert kinds and rules in a test, see
+[failure kinds and recovery rules](testing.md#failure-kinds-and-recovery-rules) in the testing guide.
 
 ## Handle transition outcomes
 
@@ -1757,8 +1994,9 @@ you attach can also fail independently of the machine operation.
 
 Avoid a blanket `exceptionally(error -> ActionOutcome.failed(...))` inside an action unless every covered
 exception truly means a business decline. It would also turn unexpected service/programming errors into a
-normal failure route. Return `ActionOutcome.failed(reason)` for known business failure and use specific
-`failsOn` types when the graph is intended to handle those action exceptions.
+normal failure route. Return `ActionOutcome.failed(reason)`, or `ActionOutcome.failed(kind, reason)`, for a known
+business failure, and declare specific throwable types, in a recovery rule or in `failsOn`, when the graph is
+intended to handle those action exceptions.
 
 ### Deadline rules
 
@@ -1813,8 +2051,8 @@ returning; its root wait budget does not impose one global deadline on the entir
 
 On an engine wait timeout, the operation throws `TransitionAbortedException`, pending graph-state changes
 are discarded, and transaction-aware context operations become invalid. Through `machine.async`, that
-exception completes the operation future exceptionally. The declared `onFailure` route is not used for this
-timeout. The user's stage and the underlying service request are left running.
+exception completes the operation future exceptionally. Neither a recovery rule nor the declared `onFailure` route
+is used for this timeout. The user's stage and the underlying service request are left running.
 
 ![After an engine wait times out, graph state does not commit. The user stage and external service can finish later, but that completion does not resume the aborted graph transaction.](images/async-late-completion.svg)
 
@@ -2578,8 +2816,8 @@ Beyond assertions it carries scripted probes for guards, actions, hooks and the 
 let a test decide when an asynchronous callback answers, a recorder of completed calls, entity-state snapshots, and
 golden comparison for both the rendered diagram and the complete structure of a graph. The
 [testing guide](testing.md) covers installation, what each entry point checks, what each check does not
-prove, and the golden update procedure for Gradle and Maven. Every sample in it is copied from a test that
-runs in this repository.
+prove, and the golden update procedure for Gradle and Maven. Every sample in it runs in this repository: most
+are copied from a test, and the recovery samples are cut out of the page and run by one.
 
 Useful behavior to cover in your own domain:
 
@@ -2587,7 +2825,9 @@ Useful behavior to cover in your own domain:
 - Each guard rejection, and each identifier a state refuses, with the reason its policy gives.
 - Two operations that reach the same state, so neither can quietly stand in for the other.
 - Every self-loop you declare: it applies, and its hook runs.
-- Throwables that are mapped through `failsOn`, and those that must abort.
+- Every recovery rule, through a returned failure of its kind and through each throwable type it declares, and the
+  most specific type winning where declared types overlap.
+- Throwables that a recovery rule or `failsOn` maps, and those that must abort.
 - Cascade rollback behavior and collected error details.
 - First-match watch order, empty peer collections and aborted reactions.
 - Async timeout behavior and late completions.
@@ -2742,8 +2982,9 @@ public final class ProgrammaticTickets {
 
 Add `import io.github.graphmaquina.api.GuardResult;` for the guard above. Every stage names an identifier:
 `transition(id, from, to)` opens one edge and `endTransition()` closes it. `recover(kind, id)` names the recovery
-for a returned failure of that kind; `onFailure(id)` names the fallback for every other returned failure and for a
-throwable the edge lists in `failsOn`. Recovery identifiers resolve from the failing edge's origin.
+for a returned failure of that kind or a declared throwable; `onFailure(id)` names the fallback for every other
+returned failure and for a throwable the edge lists in `failsOn`. Recovery identifiers resolve from the failing
+edge's origin.
 `statePolicy` / `reject` word the answers a node gives. A state has exactly the edges
 you declare. An edge left open, or one that declares more than one action, `onFailure` or `timeout`, fails
 `build()` with `SG507`. An edge's stage refuses every further call with `IllegalStateException` once
@@ -2904,8 +3145,9 @@ build, while the Maven adapter's integration suite drives actual Maven builds. H
 The example applies the included plugin and uses the sibling generator project.
 
 `./gradlew test` runs the ordinary suites for core, processor, codegen, example, Maven adapter and testing
-support. In `graphmaquina-test`, it excludes `PublishedArtifactSmokeTest`, `ReadmeQuickstartTest` and
-`GraphOnlySurfaceTest`. `./gradlew build` reaches all three through `check` →
+support. In `graphmaquina-test`, it excludes `PublishedArtifactSmokeTest`, `ReadmeQuickstartTest`,
+`GraphOnlySurfaceTest`, `GuideOutcomeFragmentsTest` and `TestingGuideFragmentsTest`. `./gradlew build` reaches all
+five through `check` →
 `:graphmaquina-test:publishedArtifactTest`, which stages core, testing support, generator, processor, Maven
 plugin, Gradle plugin and its marker into the local file repository.
 The published-artifact task also runs independently with the command above. Its external README consumer
