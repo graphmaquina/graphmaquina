@@ -689,14 +689,18 @@ public final class MavenFixture {
     /**
      * Runs {@code mainClass} in a JVM of the JDK running these tests, over the classes the main compilation wrote and
      * the {@code graphmaquina-core} jar the fixture build resolved into its local repository, and nothing else; run a
-     * build that compiles the main sources first.
+     * build that compiles the main sources first. The runner waits at most two minutes and, after any abnormal
+     * exit, forcibly destroys a live child and waits up to ten seconds for it to terminate. It retains the original
+     * failure and the caller's interrupt status, attaching cleanup failures as suppressed exceptions.
      *
      * @param mainClass the binary name of the class whose {@code main} method runs
      * @return everything the process printed on both of its streams, in the order it wrote them
-     * @throws IOException if the process cannot be started or its output cannot be read
+     * @throws IOException if the process cannot be started, its output cannot be read, or its transcript cannot
+     *     be removed after a successful run
      * @throws IllegalStateException if the fixture build resolved no such jar, if the process exits with a status
-     *     other than {@code 0}, whose output the message carries, if it exceeds two minutes and is forcibly
-     *     destroyed, or if the thread is interrupted while it runs, in which case it is also destroyed
+     *     other than {@code 0}, if it exceeds two minutes, if a live child cannot be reaped after forcible
+     *     destruction, or if the thread is interrupted while it runs; the interrupted exception is retained as
+     *     the cause and the thread's interrupt status is restored
      */
     public String runMain(String mainClass) throws IOException {
         String version = graphmaquinaVersion();
@@ -710,6 +714,7 @@ public final class MavenFixture {
                 "-classpath", directory.resolve("target/classes") + File.pathSeparator + core, mainClass);
         Path transcript = Files.createTempFile(directory, "publications-", ".out");
         Process process = null;
+        Throwable originalFailure = null;
         try {
             process = new ProcessBuilder(command)
                     .directory(directory.toFile())
@@ -717,8 +722,6 @@ public final class MavenFixture {
                     .redirectOutput(transcript.toFile())
                     .start();
             if (!process.waitFor(2, TimeUnit.MINUTES)) {
-                process.destroyForcibly();
-                process.waitFor(10, TimeUnit.SECONDS);
                 throw new IllegalStateException(mainClass + " did not terminate within two minutes:\n"
                         + Files.readString(transcript, StandardCharsets.UTF_8));
             }
@@ -730,13 +733,55 @@ public final class MavenFixture {
             return output;
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            if (process != null) {
-                process.destroyForcibly();
-            }
-            throw new IllegalStateException("interrupted while running " + String.join(" ", command),
-                    interrupted);
+            IllegalStateException failure = new IllegalStateException(
+                    "interrupted while running " + String.join(" ", command), interrupted);
+            originalFailure = failure;
+            throw failure;
+        } catch (IOException | RuntimeException | Error failure) {
+            originalFailure = failure;
+            throw failure;
         } finally {
-            Files.deleteIfExists(transcript);
+            try {
+                if (process != null && process.isAlive()) {
+                    process.destroyForcibly();
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                    boolean reaped = false;
+                    boolean cleanupInterrupted = false;
+                    while (!reaped) {
+                        long remaining = deadline - System.nanoTime();
+                        if (remaining <= 0) {
+                            break;
+                        }
+                        try {
+                            reaped = process.waitFor(remaining, TimeUnit.NANOSECONDS);
+                        } catch (InterruptedException interrupted) {
+                            cleanupInterrupted = true;
+                        }
+                    }
+                    if (cleanupInterrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                    if (!reaped) {
+                        throw new IllegalStateException(mainClass
+                                + " remained alive after forcible destruction");
+                    }
+                }
+            } catch (RuntimeException | Error cleanupFailure) {
+                if (originalFailure == null) {
+                    originalFailure = cleanupFailure;
+                    throw cleanupFailure;
+                }
+                originalFailure.addSuppressed(cleanupFailure);
+            } finally {
+                try {
+                    Files.deleteIfExists(transcript);
+                } catch (IOException deletion) {
+                    if (originalFailure == null) {
+                        throw deletion;
+                    }
+                    originalFailure.addSuppressed(deletion);
+                }
+            }
         }
     }
 
