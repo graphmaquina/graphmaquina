@@ -1464,13 +1464,13 @@ The engine keeps the boundary between domain failures and technical ones:
 
 - Only what the action throws, or completes its stage with, is classified. A `CompletionException` or an
   `ExecutionException` that carries a cause is unwrapped first; a subclass of either is classified as itself.
-- `Error`, `CancellationException` and `StateMachineException`, with their subtypes, are excluded: the runtime
-  never matches them, whatever an edge declares, and it excludes them before it reads any declaration, so a rule
-  on `IllegalStateException` never receives a `CancellationException`. Exclusion is what the runtime never
-  matches; `SG302` is what you may not declare, in a rule as in `failsOn`: `Throwable`, `Exception`,
+- `Error`, `CancellationException` and `StateMachineException`, with their subtypes, are excluded: the runtime never
+  matches them, so no declared type accepts them, whatever an edge declares, and it excludes them before it reads any
+  declaration, so a rule on `IllegalStateException` never receives a `CancellationException`. Exclusion is what the
+  runtime never matches; `SG302` is what you may not declare, in a rule as in `failsOn`: `Throwable`, `Exception`,
   `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, and exactly
-  `CompletionException` or `ExecutionException`. An `Error` the action throws propagates as itself; one that
-  completes the stage, or arrives wrapped, aborts the call with it as cause.
+  `CompletionException` or `ExecutionException`. An `Error` the action throws propagates as itself; one that completes
+  the stage, or arrives wrapped, aborts the call with it as cause.
 - A failure of the call itself, such as the abort a failed cascade throws into the action, is never routed: the engine
   throws it as itself or, when the transaction is poisoned, the failure that poisoned the transaction. Once a failed
   cascade poisoned the unit of work, an exception that a declared type accepts, from an action that does not run as a
@@ -2282,30 +2282,33 @@ function. An `Error` poisons through such an abort too, but reaches your action 
 does not make the transaction safe to commit. Once the engine has your action's outcome, it throws the failure that
 poisoned the transaction instead of applying it. It does the same for a failure of the call that your action throws or
 completes its stage with, and, unless the action is a recovery action, for a throwable that its `failsOn` or one of its
-recovery rules accepts; no failure route is taken, and a recovery action's route was already taken. Your action can
-still end the call in another failure, such as an abort the engine raises for a null outcome or a wait that timed out,
-or one that carries a throwable no declared type accepts. A cascade that names an unknown machine poisons too, by key or
-by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
-`cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its
-collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
-change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
-propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
-facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
-reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
-runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
+recovery rules accepts, which an `Error`, a `CancellationException` or a `StateMachineException` never is; no failure
+route is taken, and a recovery action's route was already taken. Your action can still end the call in another failure,
+such as an abort the engine raises for a null outcome or a wait that timed out, or one that carries a throwable no
+declared type accepts. A cascade that names an unknown machine poisons too, by key or by facade type, even over an empty
+collection. A refused argument poisons nothing: a null peer, a null element, which `cascadeAll` refuses before any
+element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its collection once, before any
+element runs, and never reads it again, so elements added or removed while the cascade runs change neither which
+elements run nor their order; an exception or an `Error` the collection throws while it is copied propagates as it is
+and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another facade operation
+from inside an action: nested facade entry points on the action's own thread violate the runtime's reentrancy rules. A
+call submitted through `async(...)` runs separately on the executor's thread, unless that executor runs tasks inline, in
+which case the returned future fails with the `ReentrantTransitionException`.
 
-For a throwable that a declared type accepts and that an action other than a recovery action throws or completes with,
-the engine checks the poison before it reads the throwable's message, for synchronous throws and exceptional completions
-of completed or pending stages alike. Exceptional stage completions retain their original throwable through the wait, so
-the engine's own reading of the message never comes first. The JDK may already have read that message, for example when
-`supplyAsync` wrapped the throwable in a `CompletionException`. When the edge's action, other than a recovery action,
-throws or completes with a throwable that no declared type accepts and that is neither an `Error` thrown as itself nor a
-failure of this call, the engine aborts the call with a message composed from that throwable's string, which may read
-its message, whether or not the transaction is poisoned. A throwable that a recovery action throws or completes with is
-never routed, whatever the recovery edge declares: an `Error` thrown as itself propagates; the engine throws a failure
-of this call as itself or, when the transaction is poisoned, the failure that poisoned the transaction; and on any other
-throwable the engine aborts the call with a message composed from the recovery action's name and the original failure's
-reason, never from that throwable's string, whether or not the transaction is poisoned.
+No declared type accepts an `Error`, a `CancellationException` or a `StateMachineException`. For a throwable that a
+declared type accepts and that an action other than a recovery action throws or completes with, the engine checks the
+poison before it reads the throwable's message, for synchronous throws and exceptional completions of completed or
+pending stages alike. Exceptional stage completions retain their original throwable through the wait, so the engine's
+own reading of the message never comes first. The JDK may already have read that message, for example when `supplyAsync`
+wrapped the throwable in a `CompletionException`. When the edge's action, other than a recovery action, throws or
+completes with a throwable that no declared type accepts, a `CancellationException` included, and that is neither an
+`Error` thrown as itself nor a failure of this call, the engine aborts the call with a message composed from that
+throwable's string, which may read its message, whether or not the transaction is poisoned. A throwable that a recovery
+action throws or completes with is never routed, whatever the recovery edge declares: an `Error` thrown as itself
+propagates; the engine throws a failure of this call as itself or, when the transaction is poisoned, the failure that
+poisoned the transaction; and on any other throwable the engine aborts the call with a message composed from the
+recovery action's name and the original failure's reason, never from that throwable's string, whether or not the
+transaction is poisoned.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.
@@ -2998,8 +3001,7 @@ Add `import io.github.graphmaquina.api.GuardResult;` for the guard above. Every 
 `transition(id, from, to)` opens one edge and `endTransition()` closes it. `recover(kind, id)` names the recovery
 for a returned failure of that kind or a throwable whose most specific declared type is one of the rule's;
 `onFailure(id)` names the fallback for every other returned failure and for a throwable whose most specific declared
-type is one of the edge's `failsOn`. Recovery identifiers resolve from the failing
-edge's origin.
+type is one of the edge's `failsOn`. Recovery identifiers resolve from the failing edge's origin.
 `statePolicy` / `reject` word the answers a node gives. A state has exactly the edges
 you declare. An edge left open, or one that declares more than one action, `onFailure` or `timeout`, fails
 `build()` with `SG507`. An edge's stage refuses every further call with `IllegalStateException` once

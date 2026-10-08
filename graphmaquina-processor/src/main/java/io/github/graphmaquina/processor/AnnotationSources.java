@@ -28,15 +28,16 @@ import javax.lang.model.type.DeclaredType;
 /**
  * Binds explicitly written annotation values to their source expressions, including implicit repeatable containers.
  * Indexes only the annotated declaration's modifiers and keeps semantic identities within one processing environment.
- * Defaults, classfile declarations and malformed shapes without a matching expression have no source location.
- * Without {@code Trees}, which a processing environment other than plain javac does not provide, nothing has one.
+ * Defaults, classfile declarations and malformed shapes without a matching expression have no source location. Without
+ * {@code Trees}, which the processor has only in plain javac and only when its class loader can load
+ * {@code com.sun.source}, nothing has one.
  */
 final class AnnotationSources {
 
     /** The exact source expression, its compilation unit and its start offset for declaration-order comparisons. */
     record Location(CompilationUnitTree unit, Tree tree, long start) { }
 
-    /** Null when the processing environment offers no trees. */
+    /** Null when no {@code Trees} is available to the processor (see {@code Diagnostics.treesOf}). */
     private final Trees trees;
     private final Map<Element, Index> declarations = new IdentityHashMap<>();
 

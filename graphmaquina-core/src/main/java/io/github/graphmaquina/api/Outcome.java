@@ -214,18 +214,19 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * Domain-level failure routed through {@code failureTransition}: the action returned a failed outcome, or failed
-     * with a throwable that a type its edge declares accepts, which {@code cause} then holds. A returned failure takes
-     * the recovery of the edge's recovery rule that declares its failure kind, compared by identity, and the edge's
-     * onFailure otherwise. A throwable takes the route of the most specific declared type that accepts it, among the
-     * types of the edge's recovery rules and of its failsOn: that rule's recovery, or onFailure for a failsOn type.
-     * {@code failureKind} is the kind the action returned with its failure, whichever route took it, or the kind of
-     * the rule whose type routed the throwable; it is empty for a failure returned without one and for a throwable a
-     * failsOn type routed. The entity moves to {@code movedTo}. Returned by a root call, it committed, with
-     * {@code records} and {@code reactions} as in {@link Applied}; returned by a cascade, it is written only if its
-     * root commits, and both lists are empty. The constructor refuses a blank reason, and a present failure kind that
-     * {@link ActionOutcome#failed(Class, String)} would refuse; the constructor without {@code failureKind} reports
-     * none. When a throwable was routed, it carries it as {@code cause} and a reason composed from it, so
-     * {@link #explanation()} leaves that reason out.
+     * with a throwable that a type its edge declares accepts, which {@code cause} then holds; no declared type accepts
+     * an Error, a CancellationException or a StateMachineException. A returned failure takes the recovery of the edge's
+     * recovery rule that declares its failure kind, compared by identity, and the edge's onFailure otherwise. A
+     * throwable takes the route of the most specific declared type that accepts it, among the types of the edge's
+     * recovery rules and of its failsOn, for the types the DSL and RecoveryRule admit: that rule's recovery, or
+     * onFailure for a failsOn type. {@code failureKind} is the kind the action returned with its failure, whichever
+     * route took it, or the kind of the rule whose type routed the throwable; it is empty for a failure returned
+     * without one and for a throwable a failsOn type routed. The entity moves to {@code movedTo}. Returned by a root
+     * call, it committed, with {@code records} and {@code reactions} as in {@link Applied}; returned by a cascade, it
+     * is written only if its root commits, and both lists are empty. The constructor refuses a blank reason, and a
+     * present failure kind that {@link ActionOutcome#failed(Class, String)} would refuse; the constructor without
+     * {@code failureKind} reports none. When a throwable was routed, it carries it as {@code cause} and a reason
+     * composed from it, so {@link #explanation()} leaves that reason out.
      */
     record Failed<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,
