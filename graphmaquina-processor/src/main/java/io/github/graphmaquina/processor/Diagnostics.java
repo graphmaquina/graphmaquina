@@ -13,6 +13,9 @@ import javax.tools.Diagnostic;
 /**
  * Reports and counts javac errors as "[SGnnn] message". Explicit annotation values use verified source expressions,
  * including nested repeatables; defaults and declarations without source retain Messager's available anchor.
+ * The source expressions come from javac's {@code Trees}, which only a plain javac processing environment provides.
+ * In any other environment, such as a wrapped one, no source is available: every diagnostic is reported through
+ * {@code Messager} with the element, annotation and value anchors, as for a declaration without source.
  */
 final class Diagnostics {
 
@@ -23,8 +26,17 @@ final class Diagnostics {
 
     Diagnostics(ProcessingEnvironment environment) {
         messager = environment.getMessager();
-        trees = Trees.instance(environment);
+        trees = treesOf(environment);
         sources = new AnnotationSources(trees);
+    }
+
+    /** The trees of a plain javac environment; null when the environment is not one and has no source to offer. */
+    private static Trees treesOf(ProcessingEnvironment environment) {
+        try {
+            return Trees.instance(environment);
+        } catch (IllegalArgumentException unsupported) {
+            return null;
+        }
     }
 
     /** Source start of an explicitly written value, shared by diagnostic emission and occurrence ordering. */

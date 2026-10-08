@@ -41,7 +41,8 @@ import javax.lang.model.type.DeclaredType;
  * Entry point. Claims the annotations {@link ManifestRegistry} enumerates for this compilation, the fixed ones
  * and the generated ones alike, so it coexists with other processors and never matches a name it does not own.
  *
- * <p>Exact annotation-value diagnostics use javac's public {@code Trees} API. This processor therefore does not
+ * <p>Exact annotation-value diagnostics use javac's public {@code Trees} API where the processing environment
+ * provides it; in any other environment the diagnostics keep Messager's anchors. This processor therefore does not
  * register for Gradle incremental annotation processing, whose wrapped processing environment cannot expose that
  * service. Build adapters may still skip unchanged compilation tasks through their normal up-to-date checks.</p>
  *

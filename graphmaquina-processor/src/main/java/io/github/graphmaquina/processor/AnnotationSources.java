@@ -29,12 +29,14 @@ import javax.lang.model.type.DeclaredType;
  * Binds explicitly written annotation values to their source expressions, including implicit repeatable containers.
  * Indexes only the annotated declaration's modifiers and keeps semantic identities within one processing environment.
  * Defaults, classfile declarations and malformed shapes without a matching expression have no source location.
+ * Without {@code Trees}, which a processing environment other than plain javac does not provide, nothing has one.
  */
 final class AnnotationSources {
 
     /** The exact source expression, its compilation unit and its start offset for declaration-order comparisons. */
     record Location(CompilationUnitTree unit, Tree tree, long start) { }
 
+    /** Null when the processing environment offers no trees. */
     private final Trees trees;
     private final Map<Element, Index> declarations = new IdentityHashMap<>();
 
@@ -44,6 +46,9 @@ final class AnnotationSources {
 
     /** Finds only a verified explicit value binding, never javac's enclosing-declaration fallback. */
     Optional<Location> find(Element element, AnnotationMirror annotation, AnnotationValue value) {
+        if (trees == null) {
+            return Optional.empty();
+        }
         Index index = declarations.computeIfAbsent(element, (Element declaration) -> new Index(declaration));
         Map<AnnotationValue, Location> values = index.annotations.get(annotation);
         return values == null ? Optional.empty() : Optional.ofNullable(values.get(value));
@@ -150,7 +155,8 @@ final class AnnotationSources {
         }
 
         /** Recursion follows only matching semantic/source shapes; omitted defaults cannot consume source arguments. */
-        private void bindValue(Map<AnnotationValue, Location> values, AnnotationValue value, ExpressionTree expression) {
+        private void bindValue(Map<AnnotationValue, Location> values, AnnotationValue value,
+                ExpressionTree expression) {
             if (expression.getKind() == Tree.Kind.ERRONEOUS) {
                 return;
             }
