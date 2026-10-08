@@ -20,8 +20,10 @@ import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
@@ -691,10 +693,15 @@ class PublishedArtifactSmokeTest {
                 + artifact("graphmaquina-test", ".jar");
         Path pidFile = workDir.resolve("consumer.pid");
         AtomicReference<Throwable> observed = new AtomicReference<>();
+        AtomicReference<Process> launched = new AtomicReference<>();
+        CountDownLatch launchObserved = new CountDownLatch(1);
         Thread runner = new Thread(() -> {
             try {
                 runConsumer(workDir, jars, "published.recovery.WaitingConsumer",
-                        INTERRUPTED_CONSUMER_SOURCE, "NEVER_PRINTED");
+                        INTERRUPTED_CONSUMER_SOURCE, "NEVER_PRINTED", (Process child) -> {
+                            launched.set(child);
+                            launchObserved.countDown();
+                        });
             } catch (Throwable failure) {
                 observed.set(failure);
             }
@@ -711,18 +718,26 @@ class PublishedArtifactSmokeTest {
                 assertTrue(event.reset(), "the watched consumer directory became unavailable");
             }
             childPid = Long.parseLong(Files.readString(pidFile, UTF_8));
+            assertTrue(launchObserved.await(30, TimeUnit.SECONDS), "the runner did not report its launched child");
+            Process owned = launched.get();
+            assertNotNull(owned, "the fixture did not report the Process it launched");
+            assertEquals(childPid, owned.pid(), "the PID file must come from the owned child");
             runner.interrupt();
             runner.join(10_000);
             assertFalse(runner.isAlive(), "the interrupted runner did not finish its bounded cleanup");
             assertTrue(observed.get() instanceof InterruptedException,
                     "the interrupted wait must propagate its original exception: " + observed.get());
-            long exitedPid = childPid;
-            assertFalse(ProcessHandle.of(exitedPid).map((ProcessHandle child) -> child.isAlive()).orElse(false),
-                    "the interrupted runner left its consumer JVM alive: " + exitedPid);
+            assertFalse(owned.isAlive(), "the interrupted runner left its consumer JVM alive: " + owned.pid());
         } finally {
             runner.interrupt();
-            if (childPid > 0) {
-                ProcessHandle.of(childPid).ifPresent((ProcessHandle child) -> child.destroyForcibly());
+            Process owned = launched.get();
+            if (owned != null && owned.isAlive()) {
+                owned.destroyForcibly();
+                try {
+                    owned.waitFor(10, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
             runner.join(10_000);
         }
@@ -758,11 +773,17 @@ class PublishedArtifactSmokeTest {
      * Compiles {@code source}, whose public class is {@code mainClass}, against {@code jars} alone, then runs that
      * class in a separate JVM whose classpath holds the compiled consumer and those jars and nothing else, with
      * {@code workDir} as its only argument, and expects it to exit normally after printing {@code marker}. The
-     * runner waits at most two minutes; on interruption, timeout or another failure, it forcibly destroys a live
-     * child and waits up to ten seconds to reap it while preserving the original failure.
+     * runner waits at most two minutes; on interruption, timeout or another failure, it attempts to forcibly stop a
+     * live child and waits up to ten seconds to reap it, suppressing cleanup errors onto the original failure.
      */
     private static void runConsumer(Path workDir, String jars, String mainClass, String source, String marker)
             throws IOException, InterruptedException {
+        runConsumer(workDir, jars, mainClass, source, marker, (Process ignored) -> { });
+    }
+
+    /** The same runner, with a test-only callback that observes the exact child {@link Process} after launch. */
+    private static void runConsumer(Path workDir, String jars, String mainClass, String source, String marker,
+            Consumer<Process> onStart) throws IOException, InterruptedException {
         Path classes = Files.createDirectories(workDir.resolve("classes"));
         List<String> diagnostics = compile(workDir, jars, classes, mainClass, source);
         assertEquals(List.of(), diagnostics, "the consumer source must compile against the published jars");
@@ -775,6 +796,7 @@ class PublishedArtifactSmokeTest {
                 .start();
         Throwable originalFailure = null;
         try {
+            onStart.accept(process);
             if (!process.waitFor(2, TimeUnit.MINUTES)) {
                 fail("the consumer process did not terminate");
             }
@@ -786,33 +808,35 @@ class PublishedArtifactSmokeTest {
             originalFailure = failure;
             throw failure;
         } finally {
-            if (process.isAlive()) {
-                process.destroyForcibly();
-                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-                boolean reaped = false;
-                boolean cleanupInterrupted = false;
-                while (!reaped) {
-                    long remaining = deadline - System.nanoTime();
-                    if (remaining <= 0) {
-                        break;
+            try {
+                if (process.isAlive()) {
+                    process.destroyForcibly();
+                    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                    boolean reaped = false;
+                    boolean cleanupInterrupted = false;
+                    while (!reaped) {
+                        long remaining = deadline - System.nanoTime();
+                        if (remaining <= 0) {
+                            break;
+                        }
+                        try {
+                            reaped = process.waitFor(remaining, TimeUnit.NANOSECONDS);
+                        } catch (InterruptedException interrupted) {
+                            cleanupInterrupted = true;
+                        }
                     }
-                    try {
-                        reaped = process.waitFor(remaining, TimeUnit.NANOSECONDS);
-                    } catch (InterruptedException interrupted) {
-                        cleanupInterrupted = true;
+                    if (cleanupInterrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                    if (!reaped) {
+                        throw new AssertionError("the consumer process remained alive after forcible destruction");
                     }
                 }
-                if (cleanupInterrupted) {
-                    Thread.currentThread().interrupt();
+            } catch (RuntimeException | Error cleanupFailure) {
+                if (originalFailure == null) {
+                    throw cleanupFailure;
                 }
-                if (!reaped) {
-                    AssertionError cleanupFailure = new AssertionError(
-                            "the consumer process remained alive after forcible destruction");
-                    if (originalFailure == null) {
-                        throw cleanupFailure;
-                    }
-                    originalFailure.addSuppressed(cleanupFailure);
-                }
+                originalFailure.addSuppressed(cleanupFailure);
             }
         }
     }

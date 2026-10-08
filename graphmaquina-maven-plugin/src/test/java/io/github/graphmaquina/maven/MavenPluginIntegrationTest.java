@@ -33,6 +33,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.jar.Attributes;
@@ -2462,9 +2463,14 @@ class MavenPluginIntegrationTest {
         Path pidFile = directory.resolve("publications.pid");
         AtomicReference<Throwable> observed = new AtomicReference<>();
         AtomicReference<Boolean> interruptStatus = new AtomicReference<>();
+        AtomicReference<Process> launched = new AtomicReference<>();
+        CountDownLatch launchObserved = new CountDownLatch(1);
         Thread runner = new Thread(() -> {
             try {
-                fixture.runMain("fxr.WaitingPublications");
+                fixture.runMain("fxr.WaitingPublications", (Process child) -> {
+                    launched.set(child);
+                    launchObserved.countDown();
+                });
             } catch (Throwable failure) {
                 observed.set(failure);
                 interruptStatus.set(Thread.currentThread().isInterrupted());
@@ -2482,6 +2488,10 @@ class MavenPluginIntegrationTest {
                 assertTrue(event.reset(), "the watched fixture directory became unavailable");
             }
             childPid = Long.parseLong(Files.readString(pidFile));
+            assertTrue(launchObserved.await(30, TimeUnit.SECONDS), "the runner did not report its launched child");
+            Process owned = launched.get();
+            assertNotNull(owned, "the fixture did not report the Process it launched");
+            assertEquals(childPid, owned.pid(), "the PID file must come from the owned child");
             runner.interrupt();
             runner.join(10_000);
             assertFalse(runner.isAlive(), "the interrupted Maven fixture runner did not finish cleanup");
@@ -2490,17 +2500,21 @@ class MavenPluginIntegrationTest {
             assertTrue(failure.getCause() instanceof InterruptedException,
                     "the original interruption was lost: " + failure);
             assertEquals(Boolean.TRUE, interruptStatus.get(), "the runner did not restore interrupt status");
-            long exitedPid = childPid;
-            assertFalse(ProcessHandle.of(exitedPid).map((ProcessHandle child) -> child.isAlive()).orElse(false),
-                    "the interrupted runner left its child JVM alive: " + exitedPid);
+            assertFalse(owned.isAlive(), "the interrupted runner left its child JVM alive: " + owned.pid());
             try (Stream<Path> entries = Files.list(directory)) {
                 assertFalse(entries.anyMatch((Path path) -> path.getFileName().toString()
                         .startsWith("publications-")), "the runner left its transcript behind");
             }
         } finally {
             runner.interrupt();
-            if (childPid > 0) {
-                ProcessHandle.of(childPid).ifPresent((ProcessHandle child) -> child.destroyForcibly());
+            Process owned = launched.get();
+            if (owned != null && owned.isAlive()) {
+                owned.destroyForcibly();
+                try {
+                    owned.waitFor(10, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
             }
             runner.join(10_000);
         }

@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -689,9 +690,10 @@ public final class MavenFixture {
     /**
      * Runs {@code mainClass} in a JVM of the JDK running these tests, over the classes the main compilation wrote and
      * the {@code graphmaquina-core} jar the fixture build resolved into its local repository, and nothing else; run a
-     * build that compiles the main sources first. The runner waits at most two minutes and, after any abnormal
-     * exit, forcibly destroys a live child and waits up to ten seconds for it to terminate. It retains the original
-     * failure and the caller's interrupt status, attaching cleanup failures as suppressed exceptions.
+     * build that compiles the main sources first. The runner waits at most two minutes. On an abnormal exit, it
+     * attempts to forcibly stop a live child and waits up to ten seconds for confirmed termination before removing
+     * the transcript. If termination cannot be confirmed, it retains the transcript. It retains the original failure
+     * and the caller's interrupt status, attaching cleanup failures as suppressed exceptions.
      *
      * @param mainClass the binary name of the class whose {@code main} method runs
      * @return everything the process printed on both of its streams, in the order it wrote them
@@ -703,6 +705,11 @@ public final class MavenFixture {
      *     the cause and the thread's interrupt status is restored
      */
     public String runMain(String mainClass) throws IOException {
+        return runMain(mainClass, (Process ignored) -> { });
+    }
+
+    /** The same fixture runner, with a package-local test callback for the exact child {@link Process}. */
+    String runMain(String mainClass, Consumer<Process> onStart) throws IOException {
         String version = graphmaquinaVersion();
         Path core = Path.of(localRepository(), "io", "github", "graphmaquina", "graphmaquina-core", version,
                 "graphmaquina-core-" + version + ".jar");
@@ -714,6 +721,7 @@ public final class MavenFixture {
                 "-classpath", directory.resolve("target/classes") + File.pathSeparator + core, mainClass);
         Path transcript = Files.createTempFile(directory, "publications-", ".out");
         Process process = null;
+        boolean terminated = false;
         Throwable originalFailure = null;
         try {
             process = new ProcessBuilder(command)
@@ -721,10 +729,12 @@ public final class MavenFixture {
                     .redirectErrorStream(true)
                     .redirectOutput(transcript.toFile())
                     .start();
+            onStart.accept(process);
             if (!process.waitFor(2, TimeUnit.MINUTES)) {
                 throw new IllegalStateException(mainClass + " did not terminate within two minutes:\n"
                         + Files.readString(transcript, StandardCharsets.UTF_8));
             }
+            terminated = true;
             String output = Files.readString(transcript, StandardCharsets.UTF_8);
             int status = process.exitValue();
             if (status != 0) {
@@ -741,19 +751,20 @@ public final class MavenFixture {
             originalFailure = failure;
             throw failure;
         } finally {
-            try {
-                if (process != null && process.isAlive()) {
-                    process.destroyForcibly();
+            if (process != null && !terminated) {
+                try {
+                    if (process.isAlive()) {
+                        process.destroyForcibly();
+                    }
                     long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-                    boolean reaped = false;
                     boolean cleanupInterrupted = false;
-                    while (!reaped) {
+                    while (!terminated) {
                         long remaining = deadline - System.nanoTime();
                         if (remaining <= 0) {
                             break;
                         }
                         try {
-                            reaped = process.waitFor(remaining, TimeUnit.NANOSECONDS);
+                            terminated = process.waitFor(remaining, TimeUnit.NANOSECONDS);
                         } catch (InterruptedException interrupted) {
                             cleanupInterrupted = true;
                         }
@@ -761,21 +772,22 @@ public final class MavenFixture {
                     if (cleanupInterrupted) {
                         Thread.currentThread().interrupt();
                     }
-                    if (!reaped) {
+                    if (!terminated) {
                         throw new IllegalStateException(mainClass
                                 + " remained alive after forcible destruction");
                     }
+                } catch (RuntimeException | Error cleanupFailure) {
+                    if (originalFailure == null) {
+                        originalFailure = cleanupFailure;
+                        throw cleanupFailure;
+                    }
+                    originalFailure.addSuppressed(cleanupFailure);
                 }
-            } catch (RuntimeException | Error cleanupFailure) {
-                if (originalFailure == null) {
-                    originalFailure = cleanupFailure;
-                    throw cleanupFailure;
-                }
-                originalFailure.addSuppressed(cleanupFailure);
-            } finally {
+            }
+            if (process == null || terminated) {
                 try {
                     Files.deleteIfExists(transcript);
-                } catch (IOException deletion) {
+                } catch (IOException | RuntimeException | Error deletion) {
                     if (originalFailure == null) {
                         throw deletion;
                     }
