@@ -2998,15 +2998,14 @@ public final class ProgrammaticTickets {
 ```
 
 Add `import io.github.graphmaquina.api.GuardResult;` for the guard above. Every stage names an identifier:
-`transition(id, from, to)` opens one edge and `endTransition()` closes it. `recover(kind, id)` names the recovery
-for a returned failure of that kind or a throwable whose most specific declared type is one of the rule's;
-`onFailure(id)` names the fallback for every other returned failure and for a throwable whose most specific declared
-type is one of the edge's `failsOn`. Recovery identifiers resolve from the failing edge's origin.
-`statePolicy` / `reject` word the answers a node gives. A state has exactly the edges
-you declare. An edge left open, or one that declares more than one action, `onFailure` or `timeout`, fails
-`build()` with `SG507`. An edge's stage refuses every further call with `IllegalStateException` once
-`endTransition()` closed it, and once `build()` has run, even a `build()` that failed, every stage refuses
-further declarations, and a second `build()`, the same way.
+`transition(id, from, to)` opens one edge and `endTransition()` closes it. `recover(kind, id)` names the recovery for a
+returned failure of that kind or a throwable whose most specific declared type is one of the rule's; `onFailure(id)`
+names the fallback for every other returned failure and for a throwable whose most specific declared type is one of the
+edge's `failsOn`. Recovery identifiers resolve from the failing edge's origin. `statePolicy` / `reject` word the answers
+a node gives. A state has exactly the edges you declare. An edge left open, or one that declares more than one action,
+`onFailure` or `timeout`, fails `build()` with `SG507`. An edge's stage refuses every further call with
+`IllegalStateException` once `endTransition()` closed it, and once `build()` has run, even a `build()` that failed,
+every stage refuses further declarations, and a second `build()`, the same way.
 
 The DSL exposes runtime functions directly, so this alternative does not need generated action symbols. It
 deliberately omits the quickstart's self-loop, auto-approval and commit hook; add them through the DSL when

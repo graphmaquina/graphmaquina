@@ -6,7 +6,7 @@ import lombok.NonNull;
 /**
  * One recovery rule of an edge seen only through names. A view keeps the rules of its edge in the order they
  * were declared, which is no priority: the runtime routes a returned failure by its kind and a thrown one by the
- * most specific declared type, whatever the order.
+ * most specific declared type, whatever the order, for the types the DSL and {@code RecoveryRule} admit.
  *
  * @param kind binary name of the failure kind, as {@link Class#getName()} gives it
  * @param transition name of the recovery identifier, resolved from the edge's origin
