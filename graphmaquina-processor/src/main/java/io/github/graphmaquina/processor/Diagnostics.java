@@ -14,7 +14,9 @@ import javax.tools.Diagnostic;
  * Reports and counts javac errors as "[SGnnn] message". Explicit annotation values use verified source expressions,
  * including nested repeatables; defaults and declarations without source retain Messager's available anchor.
  * The source expressions come from javac's {@code Trees}, which only a plain javac processing environment provides.
- * In any other environment, such as a wrapped one, no source is available: every diagnostic is reported through
+ * The fallback covers a processing environment that {@code Trees} refuses (IllegalArgumentException) and a runtime
+ * on which the {@code Trees} class itself cannot be loaded (NoClassDefFoundError, as without the jdk.compiler
+ * module). In either case, such as a wrapped one, no source is available: every diagnostic is reported through
  * {@code Messager} with the element, annotation and value anchors, as for a declaration without source.
  */
 final class Diagnostics {
@@ -34,7 +36,7 @@ final class Diagnostics {
     private static Trees treesOf(ProcessingEnvironment environment) {
         try {
             return Trees.instance(environment);
-        } catch (IllegalArgumentException unsupported) {
+        } catch (IllegalArgumentException | NoClassDefFoundError unsupported) {
             return null;
         }
     }

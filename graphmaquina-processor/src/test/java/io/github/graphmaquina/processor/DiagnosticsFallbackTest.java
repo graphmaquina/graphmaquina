@@ -2,8 +2,9 @@ package io.github.graphmaquina.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.List;
 import java.util.Set;
@@ -42,18 +43,18 @@ class DiagnosticsFallbackTest {
         assertFalse(wrapped.success(), wrapped.describe());
         assertEquals(plain.errors(), wrapped.errors(), wrapped.describe());
         assertEquals(1, wrapped.countError("SG302"), wrapped.describe());
-        Diagnostic<? extends JavaFileObject> diagnostic = wrapped.diagnostics().stream()
-                .filter((Diagnostic<? extends JavaFileObject> candidate) -> candidate.getKind() == Diagnostic.Kind.ERROR
-                        && candidate.getMessage(null).startsWith("[SG302]"))
-                .findFirst().orElseThrow();
-        assertTrue(diagnostic.getLineNumber() > 0, wrapped.describe());
-        Diagnostic<? extends JavaFileObject> exact = plain.diagnostics().stream()
-                .filter((Diagnostic<? extends JavaFileObject> candidate) -> candidate.getKind() == Diagnostic.Kind.ERROR
-                        && candidate.getMessage(null).startsWith("[SG302]"))
-                .findFirst().orElseThrow();
         String source = RecoveryFixtures.sources(FORBIDDEN_RULE).get("fx.Tickets");
-        assertEquals("RuntimeException.class", source.substring((int) exact.getStartPosition(),
-                (int) exact.getEndPosition()), plain.describe());
+        String literal = "RuntimeException.class";
+        long start = source.indexOf(literal);
+        for (Compilation.Result result : List.of(wrapped, plain)) {
+            Diagnostic<? extends JavaFileObject> diagnostic = result.diagnostics().stream()
+                    .filter((Diagnostic<? extends JavaFileObject> candidate) ->
+                            candidate.getKind() == Diagnostic.Kind.ERROR
+                            && candidate.getMessage(null).startsWith("[SG302]"))
+                    .findFirst().orElseThrow();
+            assertEquals(start, diagnostic.getStartPosition(), result.describe());
+            assertEquals(start + literal.length(), diagnostic.getEndPosition(), result.describe());
+        }
     }
 
     /**
@@ -69,10 +70,10 @@ class DiagnosticsFallbackTest {
             super.init(environment);
             ProcessingEnvironment wrapped = (ProcessingEnvironment) Proxy.newProxyInstance(
                     ProcessingEnvironment.class.getClassLoader(), new Class<?>[] {ProcessingEnvironment.class},
-                    (Object proxy, java.lang.reflect.Method method, Object[] arguments) -> {
+                    (Object proxy, Method method, Object[] arguments) -> {
                         try {
                             return method.invoke(environment, arguments);
-                        } catch (java.lang.reflect.InvocationTargetException failure) {
+                        } catch (InvocationTargetException failure) {
                             throw failure.getCause();
                         }
                     });
