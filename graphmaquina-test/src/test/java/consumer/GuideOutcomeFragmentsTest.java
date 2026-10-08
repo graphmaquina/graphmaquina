@@ -1,6 +1,7 @@
 package consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -168,6 +169,8 @@ class GuideOutcomeFragmentsTest {
         List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
         Path coreJar = publishedCoreJar();
 
+        assertJavaBlockCount(guide, SECTION_HEADING, 5);
+
         StringBuilder source = new StringBuilder(HEADER);
         source.append(blockAfter(guide, SECTION_HEADING, 1)).append('\n');
         source.append("    // --- block 2 (TransitionResponse and httpStatus)\n");
@@ -197,6 +200,8 @@ class GuideOutcomeFragmentsTest {
         List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
         Path coreJar = publishedCoreJar();
 
+        assertJavaBlockCount(guide, RECOVERY_HEADING, 5);
+
         StringBuilder source = new StringBuilder(RECOVERY_HEADER);
         source.append(blockAfter(guide, RECOVERY_HEADING, 1)).append('\n');
         source.append("    // --- block 2 (the DSL declaration), wrapped in a method\n");
@@ -219,6 +224,29 @@ class GuideOutcomeFragmentsTest {
         List<String> diagnostics = compile(workDir, "GuideRecoveryFragments", source.toString(), coreJar);
         assertTrue(diagnostics.isEmpty(), "the guide's recovery fragments must compile against the published core:\n"
                 + String.join("\n", diagnostics) + "\n--- generated GuideRecoveryFragments.java ---\n" + source);
+    }
+
+    /** Fails unless the section of {@code heading}, up to the next level-two heading, has {@code expected} blocks. */
+    private static void assertJavaBlockCount(List<String> guide, String heading, int expected) {
+        boolean inside = false;
+        boolean fenced = false;
+        int count = 0;
+        for (String line : guide) {
+            if (!inside) {
+                inside = line.equals(heading);
+            } else if (fenced) {
+                fenced = !line.startsWith("```");
+            } else if (line.startsWith("## ")) {
+                break;
+            } else if (line.startsWith("```")) {
+                fenced = true;
+                if (line.startsWith("```java")) {
+                    count++;
+                }
+            }
+        }
+        assertEquals(expected, count, "the guide's section '" + heading + "' no longer has the " + expected
+                + " java blocks this test compiles; cover the new block here or fix the count");
     }
 
     /** Returns the {@code n}th java block after {@code heading} and before the next level-two heading. */

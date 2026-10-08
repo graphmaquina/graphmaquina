@@ -209,6 +209,9 @@ class TestingGuideFragmentsTest {
         List<String> page = Files.readAllLines(Path.of(property("testingGuidePath")), UTF_8);
         String jars = publishedJar("graphmaquina-core") + File.pathSeparator + publishedJar("graphmaquina-test");
 
+        assertEquals(4, javaBlockCount(page), "the testing guide's section '" + SECTION_HEADING + "' no longer has "
+                + "the 4 java blocks this test compiles and runs; cover the new block here or fix the count");
+
         StringBuilder source = new StringBuilder(HEADER);
         source.append("    // --- blocks 1 and 2: the routes a synchronous call took, then the declared rules\n");
         source.append("    static void syncRouting() {\n");
@@ -275,6 +278,28 @@ class TestingGuideFragmentsTest {
                 originalFailure.addSuppressed(cleanupFailure);
             }
         }
+    }
+
+    /** Counts the java blocks after the section heading and before the next heading of any level. */
+    private static int javaBlockCount(List<String> page) {
+        boolean inside = false;
+        boolean fenced = false;
+        int count = 0;
+        for (String line : page) {
+            if (!inside) {
+                inside = line.equals(SECTION_HEADING);
+            } else if (fenced) {
+                fenced = !line.startsWith("```");
+            } else if (line.startsWith("#")) {
+                break;
+            } else if (line.startsWith("```")) {
+                fenced = true;
+                if (line.equals("```java")) {
+                    count++;
+                }
+            }
+        }
+        return count;
     }
 
     /** Returns the {@code n}th java block after the section heading and before the next heading of any level. */
