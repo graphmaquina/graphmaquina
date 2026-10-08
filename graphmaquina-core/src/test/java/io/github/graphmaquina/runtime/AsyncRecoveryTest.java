@@ -45,6 +45,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -1300,6 +1301,78 @@ class AsyncRecoveryTest {
                     recovered(second, secondInput, null, secondOutcome));
             assertEquals(List.of("publish", "schedule retry"), first.calls);
             assertEquals(List.of("publish", "record rejection"), second.calls);
+        });
+    }
+
+    /** PUBLISH over IllegalStateException: as a rule to SCHEDULE_RETRY, or in failsOn; both with an onFailure. */
+    private static UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> overIllegalState(
+            boolean asRule) {
+        return (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> (asRule
+                ? publish.recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
+                        IllegalStateException.class)
+                : publish.failsOn(IllegalStateException.class))
+                .onFailure(TicketChange.MARK_INTEGRATION_FAILED);
+    }
+
+    /** Asserts that a call ended aborted by a CancellationException, with no route taken and no state written. */
+    private static void assertCancelledAbort(Ticket ticket,
+                                             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call)
+            throws Exception {
+        ExecutionException failure = assertThrows(ExecutionException.class,
+                () -> call.get(WAIT_SECONDS, TimeUnit.SECONDS));
+        TransitionAbortedException aborted = assertInstanceOf(TransitionAbortedException.class, failure.getCause());
+        assertInstanceOf(CancellationException.class, aborted.getCause());
+        assertEquals(List.of("publish"), ticket.calls);
+        assertEquals(TicketState.READY, ticket.state);
+        assertEquals(0, ticket.stateWrites);
+    }
+
+    /**
+     * A stage that is already cancelled when the action returns it aborts the call and is never routed, whether the
+     * rule over IllegalStateException is a recovery or a failsOn, and an onFailure is declared either way.
+     */
+    @Test
+    void anAlreadyCancelledStageAbortsWithoutBeingRouted() {
+        bounded(() -> {
+            for (boolean asRule : new boolean[] {true, false}) {
+                StateMachine<Ticket, TicketState, TicketChange> machine = machine(tickets(
+                        (TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
+                                overIllegalState(asRule).apply(publish.asyncAction("publish",
+                                        (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                                            ctx.entity().calls.add("publish");
+                                            CompletableFuture<ActionOutcome> cancelled = new CompletableFuture<>();
+                                            cancelled.cancel(true);
+                                            return cancelled;
+                                        }))));
+                Ticket ticket = new Ticket(asRule ? "rule" : "failsOn");
+                assertCancelledAbort(ticket, start(machine, ticket, new Request(ticket.id)));
+            }
+        });
+    }
+
+    /**
+     * A pending stage cancelled after the engine registered on it aborts the call and is never routed, whether the
+     * rule over IllegalStateException is a recovery or a failsOn, and an onFailure is declared either way.
+     */
+    @Test
+    void aPendingStageCancelledLaterAbortsWithoutBeingRouted() {
+        bounded(() -> {
+            for (boolean asRule : new boolean[] {true, false}) {
+                RegisteredStage<ActionOutcome> stage = registeredStage();
+                StateMachine<Ticket, TicketState, TicketChange> machine = machine(tickets(
+                        (TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
+                                overIllegalState(asRule).apply(publish.asyncAction("publish",
+                                        (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                                            ctx.entity().calls.add("publish");
+                                            return stage;
+                                        }))));
+                Ticket ticket = new Ticket(asRule ? "rule" : "failsOn");
+                CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
+                        start(machine, ticket, new Request(ticket.id));
+                stage.awaitPendingRegistration();
+                stage.cancel(true);
+                assertCancelledAbort(ticket, call);
+            }
         });
     }
 }
