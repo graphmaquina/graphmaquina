@@ -1,5 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1100" viewBox="0 0 1440 1100" role="img" aria-labelledby="title desc">
-<title id="title">How an operation selects its edge and its result</title><desc id="desc">An operation names a transition identifier. The engine resolves the single edge keyed by the current state and that identifier. With no such edge the node's policy rejects the request as NO_TRANSITION. Otherwise guards run, and a rejecting guard rejects as GUARD. A move or successful action commits the resolved edge as Applied; a returned business failure resolves, from the same origin, the identifier of the recovery rule that declares its failure kind, or else the onFailure identifier, and commits it as Failed. Reevaluation is a separate entry point whose only results are Ignored with NO_WATCH or NO_RULE_MATCHED. Technical errors throw instead of producing an outcome.</desc>
+<title id="title">How an operation selects its edge and its result</title>
+<desc id="desc">An operation names a transition identifier. The engine resolves the single edge keyed by the current
+state and that identifier. With no such edge the node's policy rejects the request as NO_TRANSITION. Otherwise
+guards run, and a rejecting guard rejects as GUARD. A move or successful action commits the resolved edge as
+Applied; a returned business failure resolves, from the same origin,
+the identifier of the recovery rule that declares its failure kind, or else the onFailure identifier,
+and commits it as Failed. Reevaluation is a separate entry point. With no watch it returns Ignored with NO_WATCH;
+with no matching rule it returns Ignored with NO_RULE_MATCHED. With a matching rule it executes the selected edge
+and returns that execution's outcome. Technical errors throw instead of producing an outcome.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>

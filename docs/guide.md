@@ -1452,8 +1452,8 @@ the rule while every other `IOException` goes to the fallback.
 - One type declared in two rules, or in a rule and in `failsOn`, is `SG304`, so the winner is always one type. A
   type repeated inside `failsOn` alone is accepted, since every copy leads to the fallback.
 - An exception that no declared type accepts aborts the call even when the edge has a fallback: `onFailure` never
-  admits an exception by itself. A `failsOn` type on an edge without `onFailure` ends the call in
-  `UnhandledFailureException`.
+  admits an exception by itself. If the most specific matching type belongs to the edge's own `failsOn` and the edge
+  has no `onFailure`, the call ends in `UnhandledFailureException`.
 - The reason is composed from the exception's simple name and its message, or from its binary name for an
   anonymous class. `cause()` is the very exception the action threw, once unwrapped.
 - `explanation()` holds the reason of a returned failure and stays empty when an exception was routed, whichever
