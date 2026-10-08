@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRecord;
@@ -473,25 +474,25 @@ class CascadeRecoveryTest {
         Map<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> endings =
                 new LinkedHashMap<>();
         AtomicReference<TransitionAbortedException> caught = new AtomicReference<>();
-        Listing listing = new Listing("l1");
+        AtomicReference<Listing> listingRef = new AtomicReference<>();
         endings.put("a sync action returns null", (TransitionBuilder<Ticket, TicketState, TicketChange> publish) ->
                 publish.action("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                     ctx.entity().calls.add("publish");
-                    cascadeAndCatch(ctx, listing, caught);
+                    cascadeAndCatch(ctx, listingRef.get(), caught);
                     return null;
                 }));
         endings.put("an async action returns a null stage",
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.asyncAction("publish",
                         (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                             ctx.entity().calls.add("publish");
-                            cascadeAndCatch(ctx, listing, caught);
+                            cascadeAndCatch(ctx, listingRef.get(), caught);
                             return null;
                         }));
         endings.put("an async stage times out",
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.asyncAction("publish",
                         (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                             ctx.entity().calls.add("publish");
-                            cascadeAndCatch(ctx, listing, caught);
+                            cascadeAndCatch(ctx, listingRef.get(), caught);
                             return new CompletableFuture<ActionOutcome>();
                         }).timeout(Duration.ofMillis(50)));
         List<String> ends = new ArrayList<>();
@@ -499,6 +500,8 @@ class CascadeRecoveryTest {
         for (Map.Entry<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> ending
                 : endings.entrySet()) {
             caught.set(null);
+            Listing listing = new Listing("l1");
+            listingRef.set(listing);
             GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = tickets(
                     (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
                             ending.getValue().apply(publish)),
@@ -507,13 +510,12 @@ class CascadeRecoveryTest {
             try (MachineRegistry registry = registry(ticketGraph, failingListings(), 10)) {
                 Ticket ticket = new Ticket("t1");
                 TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
-                        () -> registry.of(RecoveryFixtures.KEY).execute(ticket, TicketChange.PUBLISH));
-                assertInstanceOf(TransitionAbortedException.class, caught.get(), ending.getKey());
-                assertSame(caught.get(), error, ending.getKey());
-                ends.add(ending.getKey() + ": calls " + ticket.calls + "; " + written(ticket) + "; "
-                        + written(listing) + "; " + journal(error).contains("publish THREW"));
-                expected.add(ending.getKey() + ": calls [publish]; ticket READY after 0 write(s); l1 DRAFT after 0"
-                        + " write(s); true");
+                        () -> registry.of(RecoveryFixtures.KEY).execute(ticket, TicketChange.PUBLISH),
+                        ending.getKey());
+                ends.add(ending.getKey() + ": the poison " + (error == caught.get()) + ", calls " + ticket.calls
+                        + "; " + written(ticket) + "; " + written(listing) + "; journal " + journal(error));
+                expected.add(ending.getKey() + ": the poison true, calls [publish]; ticket READY after 0 write(s);"
+                        + " l1 DRAFT after 0 write(s); journal [publish THREW, go live THREW]");
             }
         }
         assertEquals(expected, ends);
@@ -543,7 +545,7 @@ class CascadeRecoveryTest {
             assertEquals(List.of("publish", "schedule retry"), ticket.calls);
             assertEquals("ticket READY after 0 write(s); l1 DRAFT after 0 write(s)",
                     written(ticket) + "; " + written(listing));
-            assertEquals(true, journal(error).contains("schedule retry THREW"));
+            assertEquals(List.of("publish FAILED", "schedule retry THREW", "go live THREW"), journal(error));
         }
     }
 
@@ -558,8 +560,47 @@ class CascadeRecoveryTest {
             Ticket ticket = new Ticket("t1");
             TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(RecoveryFixtures.KEY).execute(ticket, TicketChange.PUBLISH));
-            assertEquals(true, error.getMessage().contains("the action publish returned null"), error.getMessage());
+            assertTrue(error.getMessage().contains("the action publish returned null"), error.getMessage());
             assertEquals(List.of("publish THREW"), journal(error));
+        }
+    }
+
+    /**
+     * A depth-1 action catches the abort of a failed depth-2 cascade and returns null. The step of the depth-1 action
+     * ends in the poison, which the root action catches: it is the very abort of the depth-2 cascade.
+     */
+    @Test
+    void aNestedActionThatReturnsNullOnAPoisonedUnitOfWorkHandsTheRootThePoison() {
+        Listing listing = new Listing("l1");
+        Ticket root = new Ticket("root");
+        Ticket peer = new Ticket("peer");
+        AtomicReference<TransitionAbortedException> deep = new AtomicReference<>();
+        AtomicReference<TransitionAbortedException> atRoot = new AtomicReference<>();
+        GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = tickets(
+                (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish",
+                        (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            ctx.entity().calls.add("publish");
+                            if (ctx.entity() == peer) {
+                                cascadeAndCatch(ctx, listing, deep);
+                                return null;
+                            }
+                            try {
+                                ctx.cascade(RecoveryFixtures.KEY, peer, TicketChange.PUBLISH);
+                            } catch (TransitionAbortedException failure) {
+                                atRoot.set(failure);
+                            }
+                            return ActionOutcome.ok();
+                        }),
+                (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry);
+        try (MachineRegistry registry = registry(ticketGraph, failingListings(), 10)) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(RecoveryFixtures.KEY).execute(root, TicketChange.PUBLISH));
+            assertInstanceOf(TransitionAbortedException.class, deep.get());
+            assertSame(deep.get(), atRoot.get());
+            assertSame(deep.get(), error);
+            assertEquals(List.of("publish"), root.calls);
+            assertEquals(List.of("publish"), peer.calls);
+            assertEquals(0, root.stateWrites + peer.stateWrites + listing.stateWrites);
         }
     }
 

@@ -34,19 +34,19 @@ import lombok.Getter;
  * recovery action, whose failure route was already taken, no failure route is taken, so no recovery action runs. The
  * engine's own aborts of the action step, for a null outcome or stage or for a wait that timed out, was interrupted
  * or was refused, also end in the failure that poisoned the transaction. The action can still end the call in another
- * failure, an abort that carries a throwable no declared type accepts. For synchronous throws and exceptional
- * completions of completed or pending stages alike, the engine checks the poison before it reads the message of a
- * throwable that a declared type accepts and that an action other than a recovery action throws or completes with; the
- * JDK may already have read that message, for example when {@code supplyAsync} wrapped the throwable in a
- * CompletionException. When the edge's action, other than a recovery
- * action, throws or completes with a throwable that no declared type accepts, a CancellationException included, and
- * that is neither an Error thrown as itself nor a failure of this call, the engine aborts the call with a message
- * composed from that throwable's string, which may read its message, whether or not the transaction is poisoned. A
- * throwable that a recovery action throws or completes with is never routed, whatever the recovery edge declares: an
- * Error thrown as itself propagates; the engine throws a failure of this call as itself or, when the transaction is
- * poisoned, the failure that poisoned the transaction; and on any other throwable the engine aborts the call with a
- * message composed from the recovery action's name and the original failure's reason, never from that throwable's
- * string, whether or not the transaction is poisoned.
+ * failure, such as an abort that carries a throwable no declared type accepts, or an Error it throws as itself. For
+ * synchronous throws and exceptional completions of completed or pending stages alike, the engine checks the poison
+ * before it reads the message of a throwable that a declared type accepts and that an action other than a recovery
+ * action throws or completes with; the JDK may already have read that message, for example when {@code supplyAsync}
+ * wrapped the throwable in a CompletionException. When the edge's action, other than a recovery action, throws or
+ * completes with a throwable that no declared type accepts, a CancellationException included, and that is neither an
+ * Error thrown as itself nor a failure of this call, the engine aborts the call with a message composed from that
+ * throwable's string, which may read its message, whether or not the transaction is poisoned. A throwable that a
+ * recovery action throws or completes with is never routed, whatever the recovery edge declares: an Error thrown as
+ * itself propagates; the engine throws a failure of this call as itself or, when the transaction is poisoned, the
+ * failure that poisoned the transaction; and on any other throwable the engine aborts the call with a message
+ * composed from the recovery action's name and the original failure's reason, never from that throwable's string,
+ * whether or not the transaction is poisoned.
  */
 @Getter
 public final class PoisonedUnitOfWorkException extends TransitionAbortedException {

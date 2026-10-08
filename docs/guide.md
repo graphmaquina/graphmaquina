@@ -2285,16 +2285,16 @@ completes its stage with, and, unless the action is a recovery action, for a thr
 recovery rules accepts, which an `Error`, a `CancellationException` or a `StateMachineException` never is; no failure
 route is taken, and a recovery action's route was already taken. The engine's own aborts of the action step, for a null
 outcome or stage or a wait that timed out, was interrupted or was refused, also end in the failure that poisoned the
-transaction. Your action can still end the call in another failure, an abort that carries a throwable no
-declared type accepts. A cascade that names an unknown machine poisons too, by key or by facade type, even over an empty
-collection. A refused argument poisons nothing: a null peer, a null element, which `cascadeAll` refuses before any
-element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its collection once, before any
-element runs, and never reads it again, so elements added or removed while the cascade runs change neither which
-elements run nor their order; an exception or an `Error` the collection throws while it is copied propagates as it is
-and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another facade operation
-from inside an action: nested facade entry points on the action's own thread violate the runtime's reentrancy rules. A
-call submitted through `async(...)` runs separately on the executor's thread, unless that executor runs tasks inline, in
-which case the returned future fails with the `ReentrantTransitionException`.
+transaction. Your action can still end the call in another failure, such as an abort that carries a throwable no
+declared type accepts, or an `Error` it throws as itself. A cascade that names an unknown machine poisons too, by key or
+by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
+`cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its
+collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
+change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
+propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
+facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
+reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
+runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
 
 No declared type accepts an `Error`, a `CancellationException` or a `StateMachineException`. For a throwable that a
 declared type accepts and that an action other than a recovery action throws or completes with, the engine checks the
