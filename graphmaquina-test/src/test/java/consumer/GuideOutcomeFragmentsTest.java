@@ -135,17 +135,17 @@ class GuideOutcomeFragmentsTest {
                 /** Vocabulary stand-in for the generated publication graph. */
                 static final class PublicationsGraph {
                     private PublicationsGraph() { }
+                    /** A generated recovery annotation stand-in. */
                     @Target({})
                     @Retention(RetentionPolicy.CLASS)
-                    /** A generated recovery annotation stand-in. */
                     @interface Recovery {
                         Class<? extends FailureKind> kind();
                         PublicationChange transition();
                         Class<? extends Throwable>[] failsOn() default {};
                     }
+                    /** A generated transition annotation stand-in. */
                     @Target({ElementType.TYPE, ElementType.METHOD})
                     @Retention(RetentionPolicy.CLASS)
-                    /** A generated transition annotation stand-in. */
                     @interface Transition {
                         PublicationChange id();
                         PublicationState[] from();
@@ -204,6 +204,7 @@ class GuideOutcomeFragmentsTest {
         source.append("            PublicationAdapter adapter) {\n");
         source.append(blockAfter(guide, RECOVERY_HEADING, 2)).append("    }\n\n");
         source.append("    // --- block 3 (the annotated operation), on a facade\n");
+        source.append("    /** Publication facade stand-in for the annotation sample. */\n");
         source.append("    interface Publications {\n");
         source.append(blockAfter(guide, RECOVERY_HEADING, 3)).append("    }\n\n");
         source.append("    // --- block 4 (the most specific type), applied to an edge\n");
