@@ -369,8 +369,8 @@ class AsyncRecoveryTest {
 
     /** A pool of one worker that may not start a spare one: a wait on that worker is refused. */
     private ForkJoinPool capped() {
-        ForkJoinPool pool = new ForkJoinPool(1, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, false, 0, 1, 1, null, 60,
-                TimeUnit.SECONDS);
+        ForkJoinPool pool = new ForkJoinPool(1, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, false, 0, 1, 1,
+                null, 60, TimeUnit.SECONDS);
         pools.add(pool);
         return pool;
     }
@@ -614,7 +614,8 @@ class AsyncRecoveryTest {
                             }));
             UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> asyncThrows =
                     (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
-                            publish.asyncAction("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            publish.asyncAction("publish",
+                                    (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                                 throw rejected;
                             }));
             UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> asyncFails =
@@ -683,9 +684,11 @@ class AsyncRecoveryTest {
             for (Map.Entry<String, Publication> path : paths.entrySet()) {
                 Ticket ticket = new Ticket(path.getKey());
                 Request input = new Request(path.getKey());
-                ends.add(path.getKey() + ": " + recovered(ticket, input, reset, path.getValue().publish(ticket, input)));
+                ends.add(path.getKey() + ": "
+                        + recovered(ticket, input, reset, path.getValue().publish(ticket, input)));
                 expected.add(path.getKey() + ": FAILURE_ROUTED SCHEDULE_RETRY to RETRY_PENDING, kind Unavailable, the"
-                        + " thrown exception; ticket RETRY_PENDING after 1 write(s); its recovery got the call's input");
+                        + " thrown exception; ticket RETRY_PENDING after 1 write(s);"
+                                + " its recovery got the call's input");
             }
             assertEquals(expected, ends);
         });
@@ -999,14 +1002,16 @@ class AsyncRecoveryTest {
             RegisteredStage<ActionOutcome> stage = registeredStage();
             StateMachine<Ticket, TicketState, TicketChange> machine = machine(tickets(
                     (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
-                            publish.asyncAction("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            publish.asyncAction("publish",
+                                    (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                                 ctx.entity().calls.add("publish");
                                 return stage;
                             }).afterCommit("published", (Ticket ticket) -> ticket.calls.add("hook of PUBLISH"))),
                     (TransitionBuilder<Ticket, TicketState, TicketChange> edge) -> edge
                             .action("schedule retry", recording("schedule retry"))
                             .afterCommitWith("retry scheduled",
-                                    (Ticket ticket, CommitContext<TicketState, TicketChange> commit) -> ticket.calls.add(
+                                    (Ticket ticket, CommitContext<TicketState, TicketChange> commit) ->
+                                            ticket.calls.add(
                                             "hook of " + commit.transition() + " sees " + ticket.state + " after "
                                                     + ticket.stateWrites + " write(s)"))));
             Ticket ticket = new Ticket("t1");
@@ -1058,7 +1063,8 @@ class AsyncRecoveryTest {
                         : failures.entrySet()) {
                     StateMachine<Ticket, TicketState, TicketChange> machine = machine(tickets(
                             unavailable(),
-                            (TransitionBuilder<Ticket, TicketState, TicketChange> edge) -> failure.getValue().apply(edge)
+                            (TransitionBuilder<Ticket, TicketState, TicketChange> edge) ->
+                                    failure.getValue().apply(edge)
                                     .recover(PublicationFailures.Rejected.class, TicketChange.RECORD_REJECTION,
                                             ProviderRejectedException.class)
                                     .onFailure(TicketChange.MARK_INTEGRATION_FAILED)));
@@ -1077,11 +1083,14 @@ class AsyncRecoveryTest {
                 unanswered.complete(ActionOutcome.ok());
             }
             assertEquals(List.of(
-                    "returns a failure: TransitionAbortedException with no cause, journal [publish FAILED, schedule retry"
+                    "returns a failure: TransitionAbortedException with no cause, journal [publish FAILED,"
+                            + " schedule retry"
                             + " FAILED], calls [publish, schedule retry]; ticket READY after 0 write(s)",
-                    "throws: TransitionAbortedException with the thrown exception, journal [publish FAILED, schedule retry"
+                    "throws: TransitionAbortedException with the thrown exception, journal [publish FAILED,"
+                            + " schedule retry"
                             + " THREW], calls [publish, schedule retry]; ticket READY after 0 write(s)",
-                    "times out: TransitionAbortedException with TimeoutException, journal [publish FAILED, schedule retry"
+                    "times out: TransitionAbortedException with TimeoutException, journal [publish FAILED,"
+                            + " schedule retry"
                             + " THREW], calls [publish, schedule retry]; ticket READY after 0 write(s)"), ends);
             for (Ticket ticket : failedTickets) {
                 assertEquals(TicketState.READY, ticket.state, ticket.id);
@@ -1158,7 +1167,8 @@ class AsyncRecoveryTest {
                         machine(RecoveryFixtures.exampleAsyncGraph(action));
                 ends.add(wrapper.getKey() + ": " + aborted(new Ticket(wrapper.getKey()), wrapper.getValue(),
                         (Ticket ticket, Request input) -> machine.execute(ticket, TicketChange.PUBLISH)));
-                expected.add(wrapper.getKey() + ": TransitionAbortedException caused by the expected cause; ticket READY"
+                expected.add(wrapper.getKey() + ": TransitionAbortedException caused by the expected cause;"
+                        + " ticket READY"
                         + " after 0 write(s)");
             }
             assertEquals(expected, ends);
@@ -1209,7 +1219,8 @@ class AsyncRecoveryTest {
                         machine(RecoveryFixtures.exampleAsyncGraph(action));
                 ends.add(wrapper.getKey() + ": " + aborted(new Ticket(wrapper.getKey()), wrapper.getValue(),
                         (Ticket ticket, Request input) -> machine.execute(ticket, TicketChange.PUBLISH)));
-                expected.add(wrapper.getKey() + ": TransitionAbortedException caused by the expected cause; ticket READY"
+                expected.add(wrapper.getKey() + ": TransitionAbortedException caused by the expected cause;"
+                        + " ticket READY"
                         + " after 0 write(s)");
             }
             assertEquals(expected, ends);
@@ -1279,7 +1290,8 @@ class AsyncRecoveryTest {
                     Map.of("first", registeredStage(), "second", registeredStage());
             StateMachine<Ticket, TicketState, TicketChange> machine = machine(tickets(
                     (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
-                            publish.asyncAction("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            publish.asyncAction("publish",
+                                    (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
                                 ctx.entity().calls.add("publish");
                                 return stages.get(ctx.entity().id);
                             }))), Duration.ofMinutes(1));

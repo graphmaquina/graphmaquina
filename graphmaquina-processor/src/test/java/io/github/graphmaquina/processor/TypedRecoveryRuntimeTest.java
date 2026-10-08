@@ -34,7 +34,8 @@ class TypedRecoveryRuntimeTest {
             package fx;
             import io.github.graphmaquina.annotation.StateGraphs;
             import io.github.graphmaquina.api.Machines;
-            /** Set owning the publication facade. */ @StateGraphs public interface Desk extends Machines { Tickets tickets(); }
+            /** Set owning the publication facade. */ \
+            @StateGraphs public interface Desk extends Machines { Tickets tickets(); }
             """;
 
     /**
@@ -515,7 +516,8 @@ class TypedRecoveryRuntimeTest {
                 "@TicketsGraph.Transition(id = SCHEDULE_RETRY, from = READY, to = RETRY_PENDING)",
                 "@TicketsGraph.Transition(id = SCHEDULE_RETRY, from = READY, to = RETRY_PENDING,\n"
                         + "    action = TicketActionsRefs.ScheduleRetry.class)"));
-        sources.put("fx.Attempt", "package fx;\n/** Input shared by publication and recovery. */ public final class Attempt { }\n");
+        sources.put("fx.Attempt",
+                "package fx;\n/** Input shared by publication and recovery. */ public final class Attempt { }\n");
         sources.put("fx.Desk", DESK);
         sources.put("fx.Scenario", """
                 package fx;
@@ -627,14 +629,16 @@ class TypedRecoveryRuntimeTest {
         Map<String, String> sources = RecoveryFixtures.sources(publish);
         sources.put("fx.Tickets", sources.get("fx.Tickets").replace("import io.github.graphmaquina.api.Outcome;\n",
                 "import io.github.graphmaquina.api.Outcome;\nimport billing.Outages;\n"));
-        sources.put("fx.billing", "package fx;\n/** Deliberate type shadowing the billing package. */ public final class billing { }\n");
+        sources.put("fx.billing",
+                "package fx;\n/** Deliberate type shadowing the billing package. */ public final class billing { }\n");
         sources.put("billing.Outages", """
                 package billing;
                 import io.github.graphmaquina.api.FailureKind;
                 /** Failure declarations used to probe package shadowing. */ public final class Outages {
                     private Outages() { }
                     /** Kind declared in the billing package. */ public record Unavailable() implements FailureKind { }
-                    /** Throwable declared in the billing package. */ public static final class DownException extends RuntimeException {
+                    /** Throwable declared in the billing package. */ \
+                public static final class DownException extends RuntimeException {
                         public DownException(String message) {
                             super(message);
                         }

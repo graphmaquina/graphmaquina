@@ -80,17 +80,20 @@ class TypedRecoveryDiagnosticsTest {
                 """);
         sources.put("fx.Paused", """
                 package fx;
-                /** Fixture declaration for recovery diagnostics. */ public record Paused() implements io.github.graphmaquina.api.FailureKind { }
+                /** Fixture declaration for recovery diagnostics. */ \
+                public record Paused() implements io.github.graphmaquina.api.FailureKind { }
                 """);
         sources.put("fx.Throttled", """
                 package fx;
-                /** Fixture declaration for recovery diagnostics. */ public final class Throttled implements io.github.graphmaquina.api.FailureKind { }
+                /** Fixture declaration for recovery diagnostics. */ \
+                public final class Throttled implements io.github.graphmaquina.api.FailureKind { }
                 """);
         sources.put("fx.Limits", """
                 package fx;
                 /** Fixture declaration for recovery diagnostics. */ public final class Limits {
                     private Limits() { }
-                    /** Fixture declaration for recovery diagnostics. */ public static final class Exceeded implements io.github.graphmaquina.api.FailureKind { }
+                    /** Fixture declaration for recovery diagnostics. */ \
+                public static final class Exceeded implements io.github.graphmaquina.api.FailureKind { }
                 }
                 """);
 
@@ -125,7 +128,8 @@ class TypedRecoveryDiagnosticsTest {
                 package fx;
                 /** Fixture declaration for recovery diagnostics. */ public final class Adapter {
                     private Adapter() { }
-                    /** Fixture declaration for recovery diagnostics. */ public static final class Halted extends java.util.concurrent.CancellationException { }
+                    /** Fixture declaration for recovery diagnostics. */ \
+                public static final class Halted extends java.util.concurrent.CancellationException { }
                 }
                 """);
         Compilation.Result cancellation = Compilation.compileTyped(sources);
@@ -146,11 +150,21 @@ class TypedRecoveryDiagnosticsTest {
     @Test
     void sg303ForAKindThatIsNotAFailureKind() {
         Map<String, String> kinds = new LinkedHashMap<>();
-        kinds.put("fx.Broken", "/** Deliberately invalid failure-kind declaration. */ public final class Broken extends RuntimeException implements FailureKind { }");
-        kinds.put("fx.Open", "/** Deliberately invalid failure-kind declaration. */ public class Open implements FailureKind { }");
-        kinds.put("fx.Partial", "/** Deliberately invalid failure-kind declaration. */ public abstract class Partial implements FailureKind { }");
-        kinds.put("fx.Outage", "/** Deliberately invalid failure-kind declaration. */ public interface Outage extends FailureKind { }");
-        kinds.put("fx.Severity", "/** Deliberately invalid failure-kind declaration. */ public enum Severity implements FailureKind { HIGH }");
+        kinds.put("fx.Broken",
+                "/** Deliberately invalid failure-kind declaration. */ "
+                + "public final class Broken extends RuntimeException implements FailureKind { }");
+        kinds.put("fx.Open",
+                "/** Deliberately invalid failure-kind declaration. */ "
+                + "public class Open implements FailureKind { }");
+        kinds.put("fx.Partial",
+                "/** Deliberately invalid failure-kind declaration. */ "
+                + "public abstract class Partial implements FailureKind { }");
+        kinds.put("fx.Outage",
+                "/** Deliberately invalid failure-kind declaration. */ "
+                + "public interface Outage extends FailureKind { }");
+        kinds.put("fx.Severity",
+                "/** Deliberately invalid failure-kind declaration. */ "
+                + "public enum Severity implements FailureKind { HIGH }");
         for (Map.Entry<String, String> kind : kinds.entrySet()) {
             Map<String, String> sources = RecoveryFixtures.sources("""
                         @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
@@ -203,7 +217,8 @@ class TypedRecoveryDiagnosticsTest {
                 """);
         sources.put("fx.Open", """
                 package fx;
-                /** Fixture declaration for recovery diagnostics. */ public class Open implements io.github.graphmaquina.api.FailureKind { }
+                /** Fixture declaration for recovery diagnostics. */ \
+                public class Open implements io.github.graphmaquina.api.FailureKind { }
                 """);
 
         Compilation.Result result = Compilation.compileTyped(sources);
@@ -217,7 +232,8 @@ class TypedRecoveryDiagnosticsTest {
 
     /**
      * A throwable type selects a single route, so one edge declares it once: twice in one rule, in two rules, or in a
-     * rule and in the edge's own failsOn is refused at the second occurrence. Occurrences follow source order, with deterministic rule-then-fallback
+     * rule and in the edge's own failsOn is refused at the second occurrence.
+     * Occurrences follow source order, with deterministic rule-then-fallback
      * order only when source is unavailable.
      */
     @Test
@@ -348,9 +364,12 @@ class TypedRecoveryDiagnosticsTest {
                 import io.github.graphmaquina.api.FailureKind;
                 /** Fixture declaration for recovery diagnostics. */ public final class Outages {
                     private Outages() { }
-                    /** Fixture declaration for recovery diagnostics. */ public record Unavailable() implements FailureKind { }
-                    /** Fixture declaration for recovery diagnostics. */ public static class Open implements FailureKind { }
-                    /** Fixture declaration for recovery diagnostics. */ public static final class DownException extends RuntimeException {
+                    /** Fixture declaration for recovery diagnostics. */ \
+                public record Unavailable() implements FailureKind { }
+                    /** Fixture declaration for recovery diagnostics. */ \
+                public static class Open implements FailureKind { }
+                    /** Fixture declaration for recovery diagnostics. */ \
+                public static final class DownException extends RuntimeException {
                         public DownException(String message) {
                             super(message);
                         }
@@ -406,7 +425,8 @@ class TypedRecoveryDiagnosticsTest {
                 """);
         sources.put("billing.Hidden", """
                 package billing;
-                /** Fixture declaration for recovery diagnostics. */ record Hidden() implements io.github.graphmaquina.api.FailureKind { }
+                /** Fixture declaration for recovery diagnostics. */ \
+                record Hidden() implements io.github.graphmaquina.api.FailureKind { }
                 """);
 
         Compilation.Result result = Compilation.compileTyped(sources);
@@ -430,7 +450,8 @@ class TypedRecoveryDiagnosticsTest {
                             failsOn = {RuntimeException.class, RuntimeException.class}),
                         @TicketsGraph.Recovery(kind = Open.class, transition = RECORD_REJECTION)})
                 """;
-        for (String form : List.of("method", "repeated-type", "container-type", "container-method", "repeated-method")) {
+        for (String form : List.of("method", "repeated-type", "container-type", "container-method",
+                "repeated-method")) {
             Map<String, String> sources = RecoveryFixtures.sources(edge
                     + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n");
             sources.put("fx.Open", "package fx; /** Nonfinal candidate rejected by SG303. */ "
@@ -441,7 +462,8 @@ class TypedRecoveryDiagnosticsTest {
                         .replace(edge + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n", "");
             } else if (form.equals("container-type")) {
                 List<String> transitions = source.lines()
-                        .filter((String line) -> line.startsWith("@TicketsGraph.Transition(") && !line.contains("id = PUBLISH"))
+                        .filter((String line) -> line.startsWith("@TicketsGraph.Transition(")
+                                && !line.contains("id = PUBLISH"))
                         .toList();
                 for (String transition : transitions) {
                     source = source.replace(transition + "\n", "");
@@ -453,7 +475,8 @@ class TypedRecoveryDiagnosticsTest {
             } else if (form.equals("container-method")) {
                 source = source.replace(edge, "@TicketsGraph.Transitions(" + edge.strip() + ")\n");
             } else if (form.equals("repeated-method")) {
-                source = source.replace(edge, "@TicketsGraph.Transition(id = PUBLISH, from = RETRY_PENDING, to = READY)\n" + edge);
+                source = source.replace(edge,
+                        "@TicketsGraph.Transition(id = PUBLISH, from = RETRY_PENDING, to = READY)\n" + edge);
             }
             sources.put("fx.Tickets", source);
             Compilation.Result result = Compilation.compileTyped(sources);
@@ -482,9 +505,11 @@ class TypedRecoveryDiagnosticsTest {
                         + "onFailure = MARK_INTEGRATION_FAILED)\n"
                         + "Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);\n");
                 Compilation.Result result = Compilation.compileTyped(sources);
-                assertEquals(List.of("[SG304] fx.ServiceUnavailableException" + REPEATED), result.errors(), result.describe());
+                assertEquals(List.of("[SG304] fx.ServiceUnavailableException" + REPEATED), result.errors(),
+                        result.describe());
                 int occurrence = fallbackFirst && duplicateFallback ? 2 : 1;
-                assertLocation(result, "SG304", 0, sources.get("fx.Tickets"), "ServiceUnavailableException.class", occurrence);
+                assertLocation(result, "SG304", 0, sources.get("fx.Tickets"), "ServiceUnavailableException.class",
+                        occurrence);
             }
         }
     }
@@ -529,7 +554,8 @@ class TypedRecoveryDiagnosticsTest {
         assertEquals(List.of(forbidden, forbidden, forbidden, "[SG304] java.lang.RuntimeException" + REPEATED),
                 result.errors(), result.describe());
         for (int occurrence = 0; occurrence < 3; occurrence++) {
-            assertLocation(result, "SG302", occurrence, sources.get("fx.Tickets"), "RuntimeException.class", occurrence);
+            assertLocation(result, "SG302", occurrence, sources.get("fx.Tickets"), "RuntimeException.class",
+                    occurrence);
         }
         assertLocation(result, "SG304", 0, sources.get("fx.Tickets"), "RuntimeException.class", 1);
     }
@@ -537,7 +563,8 @@ class TypedRecoveryDiagnosticsTest {
     /** An unreadable sibling leaves SG302 on the full forbidden edge-level literal, in either array order. */
     @Test
     void sg302AnchorsTheForbiddenEdgeTypeBesideAnUnreadableSibling() {
-        for (String literals : List.of("RuntimeException.class, Missing.class", "Missing.class, RuntimeException.class")) {
+        for (String literals : List.of("RuntimeException.class, Missing.class",
+                "Missing.class, RuntimeException.class")) {
             Map<String, String> sources = RecoveryFixtures.sources("""
                     @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
                         action = TicketActionsRefs.Publish.class,
@@ -549,7 +576,8 @@ class TypedRecoveryDiagnosticsTest {
             assertFalse(result.success(), result.describe());
             assertEquals(2, result.errors().size(), result.describe());
             assertEquals(1, result.diagnostics().stream()
-                    .filter((Diagnostic<? extends JavaFileObject> diagnostic) -> diagnostic.getKind() == Diagnostic.Kind.ERROR
+                    .filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
+                            diagnostic.getKind() == Diagnostic.Kind.ERROR
                             && diagnostic.getCode().startsWith("compiler.err.cant.resolve")
                             && diagnostic.getMessage(null).contains("class Missing"))
                     .count(), result.describe());
@@ -641,9 +669,11 @@ class TypedRecoveryDiagnosticsTest {
     private static void assertLocation(Compilation.Result result, String code, int diagnosticIndex,
             String source, String literal, int occurrence) {
         List<Diagnostic<? extends JavaFileObject>> matching = result.diagnostics().stream()
-                .filter((Diagnostic<? extends JavaFileObject> diagnostic) -> diagnostic.getKind() == Diagnostic.Kind.ERROR
+                .filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
+                        diagnostic.getKind() == Diagnostic.Kind.ERROR
                         && diagnostic.getMessage(null).startsWith("[" + code + "]"))
-                .sorted(java.util.Comparator.comparing((Diagnostic<? extends JavaFileObject> diagnostic) -> diagnostic.getMessage(null)))
+                .sorted(java.util.Comparator.comparing(
+                        (Diagnostic<? extends JavaFileObject> diagnostic) -> diagnostic.getMessage(null)))
                 .toList();
         assertTrue(matching.size() > diagnosticIndex, result.describe());
         Diagnostic<? extends JavaFileObject> diagnostic = matching.get(diagnosticIndex);

@@ -41,11 +41,13 @@ class RecoveryVocabularyTest {
         Map<String, String> sources = new LinkedHashMap<>();
         sources.put("fx.DocStatus", """
             package fx;
-            /** State enum used by the generated vocabulary fixture. */ public enum DocStatus { DRAFT, REVIEW, PUBLISHED, RETRY_PENDING, REJECTED, ARCHIVED }
+            /** State enum used by the generated vocabulary fixture. */ \
+            public enum DocStatus { DRAFT, REVIEW, PUBLISHED, RETRY_PENDING, REJECTED, ARCHIVED }
             """);
         sources.put("fx.DocTransition", """
             package fx;
-            /** Transition enum used by the generated vocabulary fixture. */ public enum DocTransition { SUBMIT, PUBLISH, RETRY_LATER, REJECT, ARCHIVE }
+            /** Transition enum used by the generated vocabulary fixture. */ \
+            public enum DocTransition { SUBMIT, PUBLISH, RETRY_LATER, REJECT, ARCHIVE }
             """);
         sources.put("fx.Doc", """
             package fx;
@@ -72,8 +74,10 @@ class RecoveryVocabularyTest {
             import io.github.graphmaquina.api.FailureKind;
             /** Failure-kind fixtures used by typed recovery declarations. */ public final class PublicationFailures {
                 private PublicationFailures() { }
-                /** Failure category for a publication service that is unavailable. */ public record Unavailable() implements FailureKind { }
-                /** Failure category for a publication rejected by policy. */ public record Rejected() implements FailureKind { }
+                /** Failure category for a publication service that is unavailable. */ \
+            public record Unavailable() implements FailureKind { }
+                /** Failure category for a publication rejected by policy. */ \
+            public record Rejected() implements FailureKind { }
                 /** Failure category for an invalid publication. */ public record Invalid() implements FailureKind { }
             }
             """);
@@ -179,7 +183,9 @@ class RecoveryVocabularyTest {
     @Test
     void refusesAKindThatIsNotAFailureKindAsAJavacTypeError() {
         SourceFiles.Compilation compilation = compile(emitted(), Map.of(
-                "use.NotAKind", "package use; /** Candidate kind missing FailureKind for a type-error fixture. */ public record NotAKind() { }",
+                "use.NotAKind",
+                "package use; /** Candidate kind missing FailureKind for a type-error fixture. */ "
+                        + "public record NotAKind() { }",
                 "use.WrongRecovery", SINGLE_RECOVERY.formatted("use.NotAKind.class",
                         "fx.DocTransition.RETRY_LATER")));
 
@@ -209,8 +215,11 @@ class RecoveryVocabularyTest {
     void refusesANameWhoseFirstSegmentTheNestedRecoveryTakesOver() {
         GenerationModel unnamed = inspect("unnamed", Map.of(
                 "Doc", "/** Entity fixture for the unnamed-package collision case. */ public class Doc {}",
-                "Phase", "/** State enum used by the unnamed-package collision fixture. */ public enum Phase { OPEN, CLOSED }",
-                "Recovery", "/** Transition enum deliberately named Recovery for the SG603 fixture. */ public enum Recovery { CLOSE }",
+                "Phase",
+                "/** State enum used by the unnamed-package collision fixture. */ public enum Phase { OPEN, CLOSED }",
+                "Recovery",
+                "/** Transition enum deliberately named Recovery for the SG603 fixture. */ "
+                        + "public enum Recovery { CLOSE }",
                 "Tickets", """
                     import io.github.graphmaquina.annotation.GenerateGraphApi;
                     import io.github.graphmaquina.api.Machine;
@@ -226,7 +235,11 @@ class RecoveryVocabularyTest {
 
         GenerationModel packaged = inspect("packaged", Map.of(
                 "Recovery.Doc",
-                    "package Recovery; /** Entity with nested enums for the package-segment collision fixture. */ public class Doc { /** State enum nested in Recovery.Doc for the SG603 fixture. */ public enum Status { DRAFT } /** Transition enum nested in Recovery.Doc for the SG603 fixture. */ public enum Step { GO } }",
+                    "package Recovery; /** Entity with nested enums for the package-segment collision fixture. */ "
+                            + "public class Doc { /** State enum nested in Recovery.Doc for the SG603 fixture. */ "
+                            + "public enum Status { DRAFT } "
+                            + "/** Transition enum nested in Recovery.Doc for the SG603 fixture. */ "
+                            + "public enum Step { GO } }",
                 "fx.Docs", """
                     package fx;
                     import Recovery.Doc;

@@ -104,13 +104,16 @@ final class RecoveryFixtures {
                 import io.github.graphmaquina.api.FailureKind;
                 /** Fixture declaration for recovery diagnostics. */ public final class PublicationFailures {
                     private PublicationFailures() { }
-                    /** Fixture declaration for recovery diagnostics. */ public record Unavailable() implements FailureKind { }
-                    /** Fixture declaration for recovery diagnostics. */ public record Rejected() implements FailureKind { }
+                    /** Fixture declaration for recovery diagnostics. */ \
+                public record Unavailable() implements FailureKind { }
+                    /** Fixture declaration for recovery diagnostics. */ \
+                public record Rejected() implements FailureKind { }
                 }
                 """);
         sources.put("fx.ServiceUnavailableException", """
                 package fx;
-                /** Fixture declaration for recovery diagnostics. */ public class ServiceUnavailableException extends RuntimeException {
+                /** Fixture declaration for recovery diagnostics. */ \
+                public class ServiceUnavailableException extends RuntimeException {
                     public ServiceUnavailableException(String message) {
                         super(message);
                     }
@@ -118,7 +121,8 @@ final class RecoveryFixtures {
                 """);
         sources.put("fx.RateLimitedException", """
                 package fx;
-                /** Fixture declaration for recovery diagnostics. */ public final class RateLimitedException extends ServiceUnavailableException {
+                /** Fixture declaration for recovery diagnostics. */ \
+                public final class RateLimitedException extends ServiceUnavailableException {
                     public RateLimitedException(String message) {
                         super(message);
                     }
@@ -126,7 +130,8 @@ final class RecoveryFixtures {
                 """);
         sources.put("fx.ProviderRejectedException", """
                 package fx;
-                /** Fixture declaration for recovery diagnostics. */ public final class ProviderRejectedException extends RuntimeException {
+                /** Fixture declaration for recovery diagnostics. */ \
+                public final class ProviderRejectedException extends RuntimeException {
                     public ProviderRejectedException(String message) {
                         super(message);
                     }
@@ -134,7 +139,8 @@ final class RecoveryFixtures {
                 """);
         sources.put("fx.InvalidResponseException", """
                 package fx;
-                /** Fixture declaration for recovery diagnostics. */ public final class InvalidResponseException extends RuntimeException {
+                /** Fixture declaration for recovery diagnostics. */ \
+                public final class InvalidResponseException extends RuntimeException {
                     public InvalidResponseException(String message) {
                         super(message);
                     }

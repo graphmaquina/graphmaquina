@@ -36,7 +36,10 @@ import javax.tools.ToolProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Exercises source-binding boundaries that recovery integration cannot expose: defaults, malformed and classfile input. */
+/**
+ * Exercises source-binding boundaries that recovery integration cannot expose: defaults, malformed and classfile
+ * input.
+ */
 class AnnotationSourcesTest {
 
     @TempDir
@@ -78,7 +81,8 @@ class AnnotationSourcesTest {
                             assertTrue(sources.find(element, annotation, array).isEmpty());
                         } else {
                             assertTrue(location.isPresent(), element + " " + annotation);
-                            String literal = ((TypeMirror) value.getValue()).toString().replace("java.lang.", "") + ".class";
+                            String literal = ((TypeMirror) value.getValue()).toString().replace("java.lang.", "")
+                                    + ".class";
                             AnnotationSources.Location position = location.orElseThrow();
                             assertEquals(source.lastIndexOf(literal), position.start());
                             long end = Trees.instance(environment).getSourcePositions()
@@ -103,7 +107,8 @@ class AnnotationSourcesTest {
                 /** Annotation carrier with an unresolved class literal beside a readable class literal. */
                 @Sample.Flags({String.class, Missing.class})
                 public class Sample {
-                    /** Class-array annotation for malformed-input coverage. */ public @interface Flags { Class<?>[] value(); }
+                    /** Class-array annotation for malformed-input coverage. */ \
+                public @interface Flags { Class<?>[] value(); }
                 }
                 """;
         Probe processor = new Probe((ProcessingEnvironment environment) -> {
@@ -120,7 +125,8 @@ class AnnotationSourcesTest {
             });
             AnnotationMirror annotation = sample.getAnnotationMirrors().getFirst();
             AnnotationValue readable = annotations.array(annotation, "value").getFirst();
-            assertEquals(source.indexOf("String.class"), sources.find(sample, annotation, readable).orElseThrow().start());
+            assertEquals(source.indexOf("String.class"),
+                    sources.find(sample, annotation, readable).orElseThrow().start());
         });
         Run result = compile("Sample", source, processor);
         assertFalse(result.success());
@@ -136,7 +142,8 @@ class AnnotationSourcesTest {
                 /** Source and defaulted values exercise both diagnostic emission paths. */
                 @Sample.Flag(String.class)
                 public class Sample {
-                    /** Optional value with a class default. */ public @interface Flag { Class<?> value() default Long.class; }
+                    /** Optional value with a class default. */ \
+                public @interface Flag { Class<?> value() default Long.class; }
                     @Flag int defaulted;
                 }
                 """;
@@ -159,7 +166,8 @@ class AnnotationSourcesTest {
         assertEquals(2, result.diagnostics().size(), result.diagnostics().toString());
         Diagnostic<? extends JavaFileObject> explicit = result.diagnostics().getFirst();
         assertEquals(source.indexOf("String.class"), explicit.getStartPosition());
-        assertEquals("String.class", source.substring((int) explicit.getStartPosition(), (int) explicit.getEndPosition()));
+        assertEquals("String.class",
+                source.substring((int) explicit.getStartPosition(), (int) explicit.getEndPosition()));
     }
 
     @Test
@@ -171,7 +179,8 @@ class AnnotationSourcesTest {
                     recoveries = @Carrier.Recovery(kind = Carrier.Kind.class,
                         failsOn = {java.io.IOException.class, IllegalArgumentException.class}))
                 public class Carrier {
-                    /** Valid named failure kind. */ public record Kind() implements io.github.graphmaquina.api.FailureKind {}
+                    /** Valid named failure kind. */ \
+                public record Kind() implements io.github.graphmaquina.api.FailureKind {}
                     /** Stand-in nested recovery annotation. */ public @interface Recovery {
                         Class<?> kind(); Class<?>[] failsOn();
                     }
@@ -202,7 +211,8 @@ class AnnotationSourcesTest {
                             annotations.array(edge, "failsOn"), carrier, edge);
             assertEquals(2, diagnostics.errors());
         });
-        Run result = compile("Trigger", "package fx; /** Triggers processing of the classfile carrier. */ public class Trigger {}", processor);
+        Run result = compile("Trigger",
+                "package fx; /** Triggers processing of the classfile carrier. */ public class Trigger {}", processor);
         assertFalse(result.success());
         assertEquals(List.of("[SG304] java.lang.IllegalArgumentException", "[SG304] java.io.IOException"),
                 result.diagnostics().stream().map((Diagnostic<? extends JavaFileObject> diagnostic) ->
@@ -222,7 +232,8 @@ class AnnotationSourcesTest {
                     @Carrier.Recovery(kind = Carrier.Second.class, failsOn = IllegalArgumentException.class)})
                 public class Carrier {
                     /** First valid kind. */ public record First() implements io.github.graphmaquina.api.FailureKind {}
-                    /** Second valid kind. */ public record Second() implements io.github.graphmaquina.api.FailureKind {}
+                    /** Second valid kind. */ \
+                public record Second() implements io.github.graphmaquina.api.FailureKind {}
                     /** Rule with an omitted throwable default. */ public @interface Recovery {
                         Class<?> kind(); Class<?>[] failsOn() default java.io.IOException.class;
                     }
@@ -239,7 +250,8 @@ class AnnotationSourcesTest {
             List<RecoveryModel> recoveries = new ArrayList<>();
             for (AnnotationMirror rule : annotations.annotations(edge, "recoveries")) {
                 AnnotationValue kind = annotations.value(rule, "kind");
-                recoveries.add(new RecoveryModel((TypeMirror) kind.getValue(), "RETRY", annotations.types(rule, "failsOn"),
+                recoveries.add(new RecoveryModel((TypeMirror) kind.getValue(), "RETRY",
+                        annotations.types(rule, "failsOn"),
                         rule, kind, annotations.array(rule, "failsOn")));
             }
             new StructuralChecks(new Signatures(environment.getElementUtils(), environment.getTypeUtils()), diagnostics)
@@ -250,7 +262,8 @@ class AnnotationSourcesTest {
         Run result = compile("Carrier", source, processor);
         assertFalse(result.success());
         assertEquals(1, result.diagnostics().size(), result.diagnostics().toString());
-        assertEquals(source.lastIndexOf("IllegalArgumentException.class"), result.diagnostics().getFirst().getStartPosition());
+        assertEquals(source.lastIndexOf("IllegalArgumentException.class"),
+                result.diagnostics().getFirst().getStartPosition());
     }
 
     /** Visits declarations and parameters, without scanning source expressions or method bodies. */
@@ -273,7 +286,8 @@ class AnnotationSourcesTest {
         Path classes = Files.createDirectories(directory.resolve("classes"));
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         DiagnosticCollector<JavaFileObject> collector = new DiagnosticCollector<>();
-        try (StandardJavaFileManager manager = compiler.getStandardFileManager(collector, null, StandardCharsets.UTF_8)) {
+        try (StandardJavaFileManager manager =
+                compiler.getStandardFileManager(collector, null, StandardCharsets.UTF_8)) {
             List<String> options = new ArrayList<>(List.of("-classpath", System.getProperty("java.class.path")
                     + File.pathSeparator + classes, "-d", classes.toString()));
             options.add(processor == null ? "-proc:none" : "-proc:only");
