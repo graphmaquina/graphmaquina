@@ -605,6 +605,102 @@ class CascadeRecoveryTest {
     }
 
     /**
+     * Under COLLECT, a peer whose action catches the abort of a failed cascade and returns null ends in the poison,
+     * which COLLECT collects as that element's error; the other peer still runs. The root catches the aggregate,
+     * whose only error is the very abort the peer caught, and nothing is written.
+     */
+    @Test
+    void collectGathersThePoisonTheNullReturningPeerEndsInAndRunsTheOtherPeer() {
+        Listing listing = new Listing("l1");
+        Ticket root = new Ticket("root");
+        Ticket p1 = new Ticket("p1");
+        Ticket p2 = new Ticket("p2");
+        AtomicReference<TransitionAbortedException> caught = new AtomicReference<>();
+        AtomicReference<CascadeException> aggregate = new AtomicReference<>();
+        GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = tickets(
+                (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish",
+                        (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            ctx.entity().calls.add("publish");
+                            if (ctx.entity() == p1) {
+                                cascadeAndCatch(ctx, listing, caught);
+                                return null;
+                            }
+                            if (ctx.entity() == root) {
+                                try {
+                                    ctx.cascadeAll(RecoveryFixtures.KEY, List.of(p1, p2), TicketChange.PUBLISH,
+                                            CascadePolicy.COLLECT);
+                                } catch (CascadeException failure) {
+                                    aggregate.set(failure);
+                                }
+                            }
+                            return ActionOutcome.ok();
+                        }),
+                (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry);
+        try (MachineRegistry registry = registry(ticketGraph, failingListings(), 10)) {
+            String scenario = "COLLECT with a null-returning peer on a poisoned unit of work";
+            CascadeException error = assertThrows(CascadeException.class,
+                    () -> registry.of(RecoveryFixtures.KEY).execute(root, TicketChange.PUBLISH), scenario);
+            assertSame(aggregate.get(), error, scenario + ": the call ends with the aggregate");
+            assertEquals(1, error.errors().size(), scenario + ": one error is collected");
+            assertSame(caught.get(), error.errors().get(0), scenario + ": the error is the abort the peer caught");
+            assertTrue(p2.calls.contains("publish"), scenario + ": the second peer ran, calls " + p2.calls);
+            assertEquals(0, root.stateWrites + p1.stateWrites + p2.stateWrites + listing.stateWrites,
+                    scenario + ": nothing is written");
+        }
+    }
+
+    /**
+     * Under COLLECT, a peer that cascades into an unregistered machine poisons through a wrapper of a failure that
+     * is not a failure of the call, so COLLECT stops: the second peer never runs and the root receives the very abort
+     * the first peer caught.
+     */
+    @Test
+    void collectStopsWhenThePeerPoisonsThroughAnUnregisteredMachine() {
+        MachineKey<Listing, TicketState, TicketChange> unregistered =
+                MachineKey.of(Listing.class, TicketState.class, TicketChange.class);
+        Listing listing = new Listing("l1");
+        Ticket root = new Ticket("root");
+        Ticket p1 = new Ticket("p1");
+        Ticket p2 = new Ticket("p2");
+        AtomicReference<TransitionAbortedException> caught = new AtomicReference<>();
+        AtomicReference<TransitionAbortedException> atRoot = new AtomicReference<>();
+        GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = tickets(
+                (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish",
+                        (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                            ctx.entity().calls.add("publish");
+                            if (ctx.entity() == p1) {
+                                try {
+                                    ctx.cascade(unregistered, listing, TicketChange.PUBLISH);
+                                } catch (TransitionAbortedException failure) {
+                                    caught.set(failure);
+                                }
+                                return null;
+                            }
+                            if (ctx.entity() == root) {
+                                try {
+                                    ctx.cascadeAll(RecoveryFixtures.KEY, List.of(p1, p2), TicketChange.PUBLISH,
+                                            CascadePolicy.COLLECT);
+                                } catch (TransitionAbortedException failure) {
+                                    atRoot.set(failure);
+                                }
+                            }
+                            return ActionOutcome.ok();
+                        }),
+                (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry);
+        try (MachineRegistry registry = registry(ticketGraph, failingListings(), 10)) {
+            String scenario = "COLLECT with a peer that cascades into an unregistered machine";
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(RecoveryFixtures.KEY).execute(root, TicketChange.PUBLISH), scenario);
+            assertTrue(caught.get() != null, scenario + ": the first peer caught an abort");
+            assertSame(caught.get(), atRoot.get(), scenario + ": the root receives the very abort the peer caught");
+            assertSame(caught.get(), error, scenario + ": the call ends with that abort");
+            assertTrue(p2.calls.isEmpty(), scenario + ": the second peer never ran, calls " + p2.calls);
+            assertEquals(0, root.stateWrites + p1.stateWrites + p2.stateWrites + listing.stateWrites,
+                    scenario + ": nothing is written");
+        }
+    }
+
+    /**
      * A recovery's cascade fails: SCHEDULE_RETRY cascades GO_LIVE to a listing whose action throws what nothing
      * declares. Whether the recovery lets that abort through, catches it and succeeds, or catches it and returns a
      * failure its own rule lists, the call ends with that very abort; no other route runs and nothing is written.
