@@ -2,6 +2,7 @@ package consumer;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -9,13 +10,18 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
@@ -29,6 +35,7 @@ import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
@@ -587,6 +594,28 @@ class PublishedArtifactSmokeTest {
             }
             """;
 
+    /** A standalone consumer that reports its PID before holding the runner in a process wait. */
+    private static final String INTERRUPTED_CONSUMER_SOURCE = """
+            package published.recovery;
+
+            import java.nio.file.Files;
+            import java.nio.file.Path;
+            import java.util.concurrent.CountDownLatch;
+
+            /** Reports its PID to the parent test, then waits until that test terminates this JVM. */
+            public final class WaitingConsumer {
+                private WaitingConsumer() { }
+
+                public static void main(String[] args) throws Exception {
+                    Path directory = Path.of(args[0]);
+                    Path written = Files.writeString(directory.resolve("consumer.pid.tmp"),
+                            Long.toString(ProcessHandle.current().pid()));
+                    Files.move(written, directory.resolve("consumer.pid"));
+                    new CountDownLatch(1).await();
+                }
+            }
+            """;
+
     private static final List<String> SUFFIXES = List.of(".jar", ".pom", "-sources.jar", "-javadoc.jar");
 
     @Test
@@ -654,6 +683,51 @@ class PublishedArtifactSmokeTest {
                 "TYPED_RECOVERY_OK");
     }
 
+    /** An interrupted parent must not leave the published consumer JVM alive. */
+    @Test
+    @Timeout(value = 90, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void interruptedConsumerWaitDestroysItsChild(@TempDir Path workDir) throws Exception {
+        String jars = artifact("graphmaquina-core", ".jar") + File.pathSeparator
+                + artifact("graphmaquina-test", ".jar");
+        Path pidFile = workDir.resolve("consumer.pid");
+        AtomicReference<Throwable> observed = new AtomicReference<>();
+        Thread runner = new Thread(() -> {
+            try {
+                runConsumer(workDir, jars, "published.recovery.WaitingConsumer",
+                        INTERRUPTED_CONSUMER_SOURCE, "NEVER_PRINTED");
+            } catch (Throwable failure) {
+                observed.set(failure);
+            }
+        }, "published-consumer-interruption");
+        runner.setDaemon(true);
+        long childPid = -1;
+        try (WatchService watch = FileSystems.getDefault().newWatchService()) {
+            workDir.register(watch, StandardWatchEventKinds.ENTRY_CREATE);
+            runner.start();
+            while (!Files.isRegularFile(pidFile)) {
+                WatchKey event = watch.poll(30, TimeUnit.SECONDS);
+                assertNotNull(event, "the child did not publish its PID");
+                event.pollEvents();
+                assertTrue(event.reset(), "the watched consumer directory became unavailable");
+            }
+            childPid = Long.parseLong(Files.readString(pidFile, UTF_8));
+            runner.interrupt();
+            runner.join(10_000);
+            assertFalse(runner.isAlive(), "the interrupted runner did not finish its bounded cleanup");
+            assertTrue(observed.get() instanceof InterruptedException,
+                    "the interrupted wait must propagate its original exception: " + observed.get());
+            long exitedPid = childPid;
+            assertFalse(ProcessHandle.of(exitedPid).map((ProcessHandle child) -> child.isAlive()).orElse(false),
+                    "the interrupted runner left its consumer JVM alive: " + exitedPid);
+        } finally {
+            runner.interrupt();
+            if (childPid > 0) {
+                ProcessHandle.of(childPid).ifPresent((ProcessHandle child) -> child.destroyForcibly());
+            }
+            runner.join(10_000);
+        }
+    }
+
     @Test
     void semanticAssertionsRunWithoutAnyGraphicExporter(@TempDir Path workDir)
             throws IOException, InterruptedException {
@@ -683,7 +757,9 @@ class PublishedArtifactSmokeTest {
     /**
      * Compiles {@code source}, whose public class is {@code mainClass}, against {@code jars} alone, then runs that
      * class in a separate JVM whose classpath holds the compiled consumer and those jars and nothing else, with
-     * {@code workDir} as its only argument, and expects it to exit normally after printing {@code marker}.
+     * {@code workDir} as its only argument, and expects it to exit normally after printing {@code marker}. The
+     * runner waits at most two minutes; on interruption, timeout or another failure, it forcibly destroys a live
+     * child and waits up to ten seconds to reap it while preserving the original failure.
      */
     private static void runConsumer(Path workDir, String jars, String mainClass, String source, String marker)
             throws IOException, InterruptedException {
@@ -697,14 +773,48 @@ class PublishedArtifactSmokeTest {
                 .redirectErrorStream(true)
                 .redirectOutput(transcript.toFile())
                 .start();
-        if (!process.waitFor(2, TimeUnit.MINUTES)) {
-            process.destroyForcibly();
-            fail("the consumer process did not terminate");
+        Throwable originalFailure = null;
+        try {
+            if (!process.waitFor(2, TimeUnit.MINUTES)) {
+                fail("the consumer process did not terminate");
+            }
+            String output = Files.readString(transcript, UTF_8);
+            assertEquals(0, process.exitValue(), "the consumer process failed: " + output);
+            String lastLine = output.lines().reduce((String earlier, String later) -> later).orElse("");
+            assertEquals(marker, lastLine, "the consumer did not print its marker on the last line: " + output);
+        } catch (IOException | InterruptedException | RuntimeException | Error failure) {
+            originalFailure = failure;
+            throw failure;
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+                boolean reaped = false;
+                boolean cleanupInterrupted = false;
+                while (!reaped) {
+                    long remaining = deadline - System.nanoTime();
+                    if (remaining <= 0) {
+                        break;
+                    }
+                    try {
+                        reaped = process.waitFor(remaining, TimeUnit.NANOSECONDS);
+                    } catch (InterruptedException interrupted) {
+                        cleanupInterrupted = true;
+                    }
+                }
+                if (cleanupInterrupted) {
+                    Thread.currentThread().interrupt();
+                }
+                if (!reaped) {
+                    AssertionError cleanupFailure = new AssertionError(
+                            "the consumer process remained alive after forcible destruction");
+                    if (originalFailure == null) {
+                        throw cleanupFailure;
+                    }
+                    originalFailure.addSuppressed(cleanupFailure);
+                }
+            }
         }
-        String output = Files.readString(transcript, UTF_8);
-        assertEquals(0, process.exitValue(), "the consumer process failed: " + output);
-        String lastLine = output.lines().reduce((String earlier, String later) -> later).orElse("");
-        assertEquals(marker, lastLine, "the consumer did not print its marker on the last line: " + output);
     }
 
     /**
