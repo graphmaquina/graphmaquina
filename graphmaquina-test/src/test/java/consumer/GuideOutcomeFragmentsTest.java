@@ -226,62 +226,66 @@ class GuideOutcomeFragmentsTest {
                 + String.join("\n", diagnostics) + "\n--- generated GuideRecoveryFragments.java ---\n" + source);
     }
 
-    /** Whether the line opens a java block: exactly {@code ```java}, or {@code ```java} then a space and any text. */
-    private static boolean isJavaFence(String line) {
-        return line.equals("```java") || line.startsWith("```java ");
-    }
-
     /**
      * Fails unless {@code heading} has {@code expected} java blocks after it and before the next level-two
-     * heading.
+     * heading. Headings are matched outside code fences only.
      */
     private static void assertJavaBlockCount(List<String> guide, String heading, int expected) {
         boolean inside = false;
-        boolean fenced = false;
+        MarkdownFence fence = null;
         int count = 0;
         for (String line : guide) {
-            if (!inside) {
-                inside = line.equals(heading);
-            } else if (fenced) {
-                fenced = !line.startsWith("```");
-            } else if (line.startsWith("## ")) {
-                break;
-            } else if (line.startsWith("```")) {
-                fenced = true;
-                if (isJavaFence(line)) {
+            if (fence != null) {
+                fence = fence.closes(line) ? null : fence;
+                continue;
+            }
+            fence = MarkdownFence.opening(line).orElse(null);
+            if (fence != null) {
+                if (inside && fence.java()) {
                     count++;
                 }
+            } else if (!inside) {
+                inside = line.equals(heading);
+            } else if (line.startsWith("## ")) {
+                break;
             }
         }
         assertEquals(expected, count, "the guide's section '" + heading + "' has " + count
                 + " java blocks; this test covers exactly " + expected + ": update the test to match the section");
     }
 
-    /** Returns the {@code n}th java block after {@code heading} and before the next level-two heading. */
+    /**
+     * Returns the {@code n}th java block after {@code heading} and before the next level-two heading. Headings
+     * are matched outside code fences only. Fails when the block is missing or empty.
+     */
     private static String blockAfter(List<String> guide, String heading, int n) {
         boolean inside = false;
-        boolean fenced = false;
         boolean taking = false;
+        MarkdownFence fence = null;
         int count = 0;
         StringBuilder block = new StringBuilder();
         for (String line : guide) {
-            if (!inside) {
-                inside = line.equals(heading);
-            } else if (taking) {
-                if (line.startsWith("```")) {
-                    break;
+            if (fence != null) {
+                if (fence.closes(line)) {
+                    if (taking) {
+                        break;
+                    }
+                    fence = null;
+                } else if (taking) {
+                    block.append(line).append('\n');
                 }
-                block.append(line).append('\n');
-            } else if (fenced) {
-                fenced = !line.startsWith("```");
-            } else if (line.startsWith("## ")) {
-                break;
-            } else if (line.startsWith("```")) {
-                fenced = true;
-                if (isJavaFence(line)) {
+                continue;
+            }
+            fence = MarkdownFence.opening(line).orElse(null);
+            if (fence != null) {
+                if (inside && fence.java()) {
                     count++;
                     taking = count == n;
                 }
+            } else if (!inside) {
+                inside = line.equals(heading);
+            } else if (line.startsWith("## ")) {
+                break;
             }
         }
         assertFalse(block.isEmpty(), "no non-empty java block number " + n + " after the heading '"
@@ -289,22 +293,22 @@ class GuideOutcomeFragmentsTest {
         return block.toString();
     }
 
-    /** Returns the java block whose first line starts with the prefix. */
+    /** Returns the java block whose first line starts with the prefix. Fails when there is none or it is empty. */
     private static String blockStarting(List<String> guide, String prefix) {
         StringBuilder block = new StringBuilder();
-        boolean open = false;
+        MarkdownFence fence = null;
         boolean first = false;
         boolean taking = false;
         for (String line : guide) {
-            if (!open) {
-                open = isJavaFence(line);
-                first = open;
-            } else if (line.startsWith("```")) {
+            if (fence == null) {
+                fence = MarkdownFence.opening(line).orElse(null);
+                first = fence != null && fence.java();
+            } else if (fence.closes(line)) {
                 if (taking) {
                     break;
                 }
-                open = false;
-            } else {
+                fence = null;
+            } else if (fence.java()) {
                 if (first) {
                     first = false;
                     taking = line.startsWith(prefix);

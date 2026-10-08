@@ -283,60 +283,65 @@ class TestingGuideFragmentsTest {
         }
     }
 
-    /** Whether the line opens a java block: exactly {@code ```java}, or {@code ```java} then a space and any text. */
-    private static boolean isJavaFence(String line) {
-        return line.equals("```java") || line.startsWith("```java ");
-    }
-
-    /** Counts the java blocks after the section heading and before the next heading of any level. */
+    /**
+     * Counts the java blocks after the section heading and before the next heading of any level. Headings are
+     * matched outside code fences only.
+     */
     private static int javaBlockCount(List<String> page) {
         boolean inside = false;
-        boolean fenced = false;
+        MarkdownFence fence = null;
         int count = 0;
         for (String line : page) {
-            if (!inside) {
-                inside = line.equals(SECTION_HEADING);
-            } else if (fenced) {
-                fenced = !line.startsWith("```");
-            } else if (line.startsWith("#")) {
-                break;
-            } else if (line.startsWith("```")) {
-                fenced = true;
-                if (isJavaFence(line)) {
+            if (fence != null) {
+                fence = fence.closes(line) ? null : fence;
+                continue;
+            }
+            fence = MarkdownFence.opening(line).orElse(null);
+            if (fence != null) {
+                if (inside && fence.java()) {
                     count++;
                 }
+            } else if (!inside) {
+                inside = line.equals(SECTION_HEADING);
+            } else if (line.startsWith("#")) {
+                break;
             }
         }
         return count;
     }
 
-    /** Returns the {@code n}th java block after the section heading and before the next heading of any level. */
+    /**
+     * Returns the {@code n}th java block after the section heading and before the next heading of any level.
+     * Headings are matched outside code fences only. Fails when the block is missing or empty.
+     */
     private static String blockAfter(List<String> page, int n) {
         boolean inside = false;
-        boolean fenced = false;
         boolean taking = false;
+        MarkdownFence fence = null;
         int count = 0;
         StringBuilder block = new StringBuilder();
         for (String line : page) {
-            if (!inside) {
-                inside = line.equals(SECTION_HEADING);
-            } else if (fenced) {
-                if (line.startsWith("```")) {
+            if (fence != null) {
+                if (fence.closes(line)) {
                     if (taking) {
                         break;
                     }
-                    fenced = false;
+                    fence = null;
                 } else if (taking) {
                     block.append(line).append('\n');
                 }
-            } else if (line.startsWith("#")) {
-                break;
-            } else if (line.startsWith("```")) {
-                fenced = true;
-                if (isJavaFence(line)) {
+                continue;
+            }
+            fence = MarkdownFence.opening(line).orElse(null);
+            if (fence != null) {
+                if (inside && fence.java()) {
                     count++;
                     taking = count == n;
                 }
+            } else if (!inside) {
+                inside = line.equals(SECTION_HEADING);
+            } else if (line.startsWith("#")) {
+                break;
             }
         }
         assertFalse(block.isEmpty(), "no non-empty java block number " + n + " after the heading '"
