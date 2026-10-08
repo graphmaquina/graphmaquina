@@ -9,7 +9,8 @@ import java.util.Optional;
  * whatever {@code failsOn} or a recovery rule of its edge declares: once unwrapped from CompletionException and
  * ExecutionException, it aborts the call with it as cause, a failure of this call that it lets through excepted, for
  * which the engine throws it as itself or, when the transaction is poisoned, the failure that poisoned the transaction.
- * An Error thrown as itself propagates.
+ * An Error thrown as itself propagates. {@link io.github.graphmaquina.error.TransitionAbortedException} says what
+ * aborting the call means inside a cascade.
  */
 public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 

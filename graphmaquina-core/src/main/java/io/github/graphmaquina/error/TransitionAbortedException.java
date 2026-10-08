@@ -11,8 +11,9 @@ import java.util.Optional;
 import lombok.Getter;
 
 /**
- * ABORT: nothing moved; the unit of work, if one was started, was discarded. Its phase is RESOLVE, GUARD or ACTION,
- * and it never wrote a state.
+ * ABORT: nothing moved. When this exception ends the call, the unit of work, if one was started, was discarded; the
+ * abort of a nested step first reaches the action that cascaded it, or is collected under COLLECT, as the last
+ * paragraph says. Its phase is RESOLVE, GUARD or ACTION, and it never wrote a state.
  *
  * <p>When a guard or an action failed, the cause is what it threw, checked exceptions and library exceptions of other
  * calls included, once unwrapped from CompletionException and ExecutionException. A failure of this same call that a
@@ -24,11 +25,12 @@ import lombok.Getter;
  * CompletionException or ExecutionException, or when an action swallowed it from a cascade and the poison it left
  * aborted the root.
  *
- * <p>Where this library's documentation says that a step aborts, or that it aborts the call, the engine throws this
- * exception, or a subclass, from that step. At the root step, the call throws it. Outside COLLECT, the abort of a
- * nested step, one that a cascade runs, poisons the transaction unless it is already poisoned, and reaches the action
- * that cascaded it, which may catch it; under COLLECT, the cascade collects it instead, unless the poison wraps a
- * failure that is no failure of the call. What the caller finally receives therefore depends on the enclosing steps.
+ * <p>Where this library's documentation says that a step aborts, that something aborts the call, that the call aborts,
+ * or that the call ends in this exception or one of its subclasses, the engine throws this exception, or a subclass,
+ * from the step that is running. At the root step, the call throws it. Outside COLLECT, the abort of a nested step, one
+ * that a cascade runs, poisons the transaction unless it is already poisoned, and reaches the action that cascaded it,
+ * which may catch it; under COLLECT, the cascade collects it instead, unless the poison wraps a failure that is no
+ * failure of the call. What the caller finally receives therefore depends on the enclosing steps.
  */
 public class TransitionAbortedException extends CallFailedException {
 

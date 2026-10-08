@@ -1474,7 +1474,7 @@ The engine keeps the boundary between domain failures and technical ones:
 - A failure of the call itself, which a failed cascade throws into the action, is never routed: the engine throws it as
   itself or, when the transaction is poisoned, the failure that poisoned the transaction. Once a failed cascade poisoned
   the unit of work, an exception that a declared type accepts, from an action that does not run as a recovery action,
-  takes no route either: the engine throws the failure that poisoned it, before any route is chosen.
+  takes no route either: the engine throws the failure that poisoned the transaction, before any route is chosen.
 - A cancelled stage, and the timeout, interruption or refusal of the engine's own wait, abort the call and never
   reach a rule. A timeout that the adapter's own client throws, such as a `SocketTimeoutException`, is an exception
   like any other and can be declared.
@@ -2274,19 +2274,18 @@ from its pending state like any other.
 than an ordinary root-level `Rejected` result. A handled domain failure can select the child's declared failure route.
 Any failure that leaves a cascade poisons the unit of work. A failure of the call itself, such as an abort in the peer's
 step, a cycle or the depth limit, reaches your action as it is. The `TransitionAbortedException` Javadoc says where the
-abort of a nested step goes. Anything else reaches it as a
-`TransitionAbortedException` that names the cascade and carries the failure as its cause: an engine exception that
-describes no call, such as an unknown machine or an ambiguous identity, or a throwable other than an `Error` from a
-callback the engine does not wrap, such as an identity function. An `Error` poisons through such an abort too, but
-reaches your action as itself. Catching it in your action does not make the transaction safe to commit. When the action
-then returns or lets a failure of the call through, or, unless it is a recovery action, throws a throwable that its
-`failsOn` or one of its recovery rules accepts, the engine throws the failure that poisoned the transaction and, unless
-the action is a recovery action, whose failure route was already taken, takes no failure route. A cascade that names an
-unknown machine poisons too, by key
-or by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
-`cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its
-collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
-change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
+abort of a nested step goes. Anything else reaches your action as a `TransitionAbortedException` that names the cascade
+and carries the failure as its cause: an engine exception that describes no call, such as an unknown machine or an
+ambiguous identity, or a throwable other than an `Error` from a callback the engine does not wrap, such as an identity
+function. An `Error` poisons through such an abort too, but reaches your action as itself. Catching it in your action
+does not make the transaction safe to commit. When the action then returns or lets a failure of the call through, or,
+unless it is a recovery action, throws a throwable that its `failsOn` or one of its recovery rules accepts, the engine
+throws the failure that poisoned the transaction and, unless the action is a recovery action, whose failure route was
+already taken, takes no failure route. A cascade that names an unknown machine poisons too, by key or by facade type,
+even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which `cascadeAll`
+refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its collection
+once, before any element runs, and never reads it again, so elements added or removed while the cascade runs change
+neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
 propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
 facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
 reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor

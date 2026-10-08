@@ -21,13 +21,13 @@ import lombok.NonNull;
  * a StateMachineException never match, and for a failure of the call itself the engine throws it as itself or, when the
  * transaction is poisoned, the failure that poisoned the transaction. Once a failed cascade poisoned the transaction,
  * for an accepted throwable of an action that does not run as a recovery action the engine throws the failure that
- * poisoned it, and no route is taken. For the types the DSL and this record admit, the order of the declarations plays
- * no part; a hand-built TransitionSpec may hold an interface type in its failsOn, and then the order of failsOn's
- * entries can change the route. The recovery edge runs without its guards and without consulting its own rules or
- * onFailure. For a throwable a declared type accepts, from an action that does not run as a recovery action, the engine
- * checks the poison before it reads the throwable's message, for synchronous throws and exceptional stage completions
- * alike; the JDK may already have read that message, for example when {@code supplyAsync} wrapped the throwable in a
- * CompletionException.
+ * poisoned the transaction, and no route is taken. For the types the DSL and this record admit, the order of the
+ * declarations plays no part; a hand-built TransitionSpec may hold an interface type in its failsOn, and then the order
+ * of failsOn's entries can change the route. The recovery edge runs without its guards and without consulting its own
+ * rules or onFailure. For a throwable a declared type accepts, from an action that does not run as a recovery action,
+ * the engine checks the poison before it reads the throwable's message, for synchronous throws and exceptional stage
+ * completions alike; the JDK may already have read that message, for example when {@code supplyAsync} wrapped the
+ * throwable in a CompletionException.
  *
  * <p>A valid kind is a named final class or record that implements FailureKind and is not an interface, an enum, a
  * local or anonymous class, or a Throwable. The types that may not be declared are Throwable, Exception and
