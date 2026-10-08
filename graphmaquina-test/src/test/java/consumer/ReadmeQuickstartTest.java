@@ -95,7 +95,8 @@ class ReadmeQuickstartTest {
      * line equal to {@code context} outside any fence opens. The section runs until the next line outside a fence
      * that starts with {@code #}, of any heading level, or until the end of the guide. A fence of another language is
      * skipped up to its own closing line. Each content line is returned as written, followed by a newline. Fails
-     * when no line equals the context, when the section holds no such fence, or when that fence is never closed.
+     * when no line outside a fence equals the context, when the section holds no such fence, or when that fence is
+     * never closed.
      */
     private static String fenceAfter(String readme, String context, String language) {
         List<String> lines = readme.lines().toList();

@@ -6,7 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
-/** Pins the CommonMark fence rules that the guide fragment tests rely on to cut java blocks out of the guides. */
+/**
+ * Pins the CommonMark fence rules that the guide fragment tests and ReadmeQuickstartTest rely on to cut java and
+ * kotlin blocks out of the guides.
+ */
 class MarkdownFenceTest {
 
     private static MarkdownFence open(String line) {
