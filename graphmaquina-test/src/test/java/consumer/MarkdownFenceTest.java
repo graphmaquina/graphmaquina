@@ -17,50 +17,53 @@ class MarkdownFenceTest {
 
     @Test
     void backtickAndTildeLinesOpenFences() {
-        assertTrue(open("```").closes("```"));
-        assertTrue(open("~~~").closes("~~~"));
-        assertTrue(MarkdownFence.opening("``").isEmpty());
-        assertTrue(MarkdownFence.opening("text").isEmpty());
-        assertTrue(MarkdownFence.opening("").isEmpty());
+        assertTrue(open("```").closes("```"), "```");
+        assertTrue(open("~~~").closes("~~~"), "~~~");
+        assertTrue(MarkdownFence.opening("``").isEmpty(), "``");
+        assertTrue(MarkdownFence.opening("text").isEmpty(), "text");
+        assertTrue(MarkdownFence.opening("").isEmpty(), "");
     }
 
     @Test
     void javaIsTheFirstWordOfTheInfoString() {
-        assertTrue(open("```java").java());
-        assertTrue(open("```java title=x").java());
-        assertTrue(open("~~~java").java());
-        assertFalse(open("```javascript").java());
-        assertFalse(open("```").java());
-        assertFalse(open("```text java").java());
+        assertTrue(open("```java").java(), "```java");
+        assertTrue(open("```java title=x").java(), "```java title=x");
+        assertTrue(open("~~~java").java(), "~~~java");
+        assertTrue(open("```  java").java(), "```  java");
+        assertFalse(open("```javascript").java(), "```javascript");
+        assertFalse(open("```").java(), "```");
+        assertFalse(open("```text java").java(), "```text java");
     }
 
     @Test
     void aBacktickInABacktickInfoStringIsNotAFence() {
-        assertTrue(MarkdownFence.opening("```java `x`").isEmpty());
-        assertTrue(open("~~~java `x`").java());
+        assertTrue(MarkdownFence.opening("```java `x`").isEmpty(), "```java `x`");
+        assertTrue(open("~~~java `x`").java(), "~~~java `x`");
     }
 
     @Test
     void aShorterRunDoesNotCloseALongerFence() {
         MarkdownFence fence = open("````java");
-        assertFalse(fence.closes("```"));
-        assertTrue(fence.closes("````"));
-        assertTrue(fence.closes("`````"));
+        assertFalse(fence.closes("```"), "```");
+        assertTrue(fence.closes("````"), "````");
+        assertTrue(fence.closes("`````"), "`````");
     }
 
     @Test
     void aTildeLineDoesNotCloseABacktickFence() {
-        assertFalse(open("```java").closes("~~~"));
-        assertFalse(open("~~~java").closes("```"));
+        assertFalse(open("```java").closes("~~~"), "~~~ after ```java");
+        assertFalse(open("~~~java").closes("```"), "``` after ~~~java");
     }
 
     @Test
     void aClosingFenceMayHaveTrailingWhitespaceOnly() {
         MarkdownFence fence = open("```java");
-        assertTrue(fence.closes("```   "));
-        assertTrue(fence.closes("```\t"));
-        assertFalse(fence.closes("``` text"));
-        assertFalse(fence.closes("```java"));
-        assertFalse(fence.closes("text"));
+        assertTrue(fence.closes("```   "), "```   ");
+        assertTrue(fence.closes("```\t"), "```\t");
+        assertFalse(fence.closes("``` text"), "``` text");
+        assertFalse(fence.closes("```java"), "```java");
+        assertFalse(fence.closes("text"), "text");
+        assertFalse(fence.closes("```\u000B"), "``` and a vertical tab");
+        assertFalse(fence.closes("```\u00A0"), "``` and a no-break space");
     }
 }

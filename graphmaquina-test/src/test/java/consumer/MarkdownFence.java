@@ -6,7 +6,7 @@ import java.util.Optional;
  * An opening fence of a CommonMark fenced code block, for lines without indentation, which is how the guides write
  * them. An opening line starts with at least three backticks or at least three tildes; the rest of the line,
  * trimmed, is the info string, and a backtick fence's info string cannot contain a backtick. A fence is closed by a
- * line of the same character, at least as long as the opening run, followed only by whitespace. Anything between
+ * line of the same character, at least as long as the opening run, followed only by spaces or tabs. Anything between
  * the two lines is content, whatever it looks like.
  */
 final class MarkdownFence {
@@ -30,7 +30,7 @@ final class MarkdownFence {
         }
         char marker = line.charAt(0);
         int run = runLength(line, marker);
-        String info = line.substring(run).trim();
+        String info = line.substring(run).replaceAll("^[ \t]+|[ \t]+$", "");
         if (run < MINIMUM_RUN || (marker == '`' && info.indexOf('`') >= 0)) {
             return Optional.empty();
         }
@@ -39,13 +39,13 @@ final class MarkdownFence {
 
     /** Whether the first word of the info string is exactly {@code java}. */
     boolean java() {
-        return info.split("\\s+", 2)[0].equals("java");
+        return info.split("[ \t]+", 2)[0].equals("java");
     }
 
     /** Whether the line closes this fence. */
     boolean closes(String line) {
         int run = runLength(line, marker);
-        return run >= length && line.substring(run).isBlank();
+        return run >= length && line.substring(run).chars().allMatch(c -> c == ' ' || c == '\t');
     }
 
     private static int runLength(String line, char marker) {
