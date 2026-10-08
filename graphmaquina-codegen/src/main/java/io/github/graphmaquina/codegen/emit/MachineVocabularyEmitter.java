@@ -151,8 +151,12 @@ final class MachineVocabularyEmitter {
         source.line(symbolClass("GuardSymbol") + "[] guards() default {};");
         source.line(transition + "[] onFailure() default {};");
         source.line("java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};");
-        source.line("/** The recovery rules of this edge, each a {@link " + vocabulary
-            + ".Recovery}; none by default. */");
+        source.javadoc("The recovery rules of this edge, each a {@link " + vocabulary + ".Recovery}, which need"
+                + " an action.",
+            "A failed outcome or a throwable of the action takes the transition of the rule that selects",
+            "it, the most specific declared type winning across the rules and {@code failsOn}, and",
+            "{@code onFailure} stays the fallback. Each transition is resolved from the edge's origin and",
+            "entered without its guards or any recovery of its own.");
         source.line(vocabulary + ".Recovery[] recoveries() default {};");
         source.line("io.github.graphmaquina.annotation.Timeout[] timeout() default {};");
         source.line(symbolClass("HookSymbol") + "[] afterCommit() default {};");
@@ -169,8 +173,18 @@ final class MachineVocabularyEmitter {
 
     private static void recovery(JavaSource source, String vocabulary, String machine, String transition) {
         describe(source, "One recovery rule in the {@code recoveries} of a {@link " + vocabulary + ".Transition} of",
-            "{@link " + machine + "}: the failure kind {@code kind}, the transition identifier {@code transition}",
-            "and the throwable types {@code failsOn}, none by default.");
+            "{@link " + machine + "}. A failed outcome the edge's action returns with {@code kind}, or a",
+            "throwable the action fails with whose most specific declared type is one of {@code failsOn},",
+            "none by default, takes {@code transition}, and the call's failed outcome reports",
+            "{@code kind} as its failure kind.",
+            "",
+            "<p>The most specific declared type wins across the whole edge, whether a rule or the edge's",
+            "own {@code failsOn} declares it, and declaration order never matters. A type of the edge's",
+            "own {@code failsOn}, and a failed outcome that carries no kind or one no rule declares, take",
+            "the edge's {@code onFailure}, the fallback, when it declares one. {@code transition} is",
+            "resolved from the origin the entity is in, so an edge with that identifier must leave every",
+            "origin of the declaring edge. Entered as a recovery, that edge runs without its guards and",
+            "applies no rule or fallback of its own: a recovery never chains.</p>");
         annotation(source, machine, "RECOVERY", "{}", null, "Recovery");
         source.line("java.lang.Class<? extends io.github.graphmaquina.api.FailureKind> kind();");
         source.line(transition + " transition();");

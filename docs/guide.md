@@ -1155,9 +1155,9 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 throwable class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn`, `recoveries` and
 `timeout` require an action, and `timeout` requires an asynchronous one.
 
-The processor currently reads and validates `recoveries`, including their failure kinds, throwable types and
-recovery transitions. Generated companions do not yet emit the corresponding `recover(...)` calls, so these
-annotations do not yet change runtime routing.
+The processor reads and validates `recoveries`, including their failure kinds, throwable types and recovery
+transitions. Generated companions emit one typed `recover(...)` call per rule in declaration order, so annotated
+facades route failures through those rules just as graphs built directly with the DSL do.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
 `onFailure`, `timeout`, `afterCommit`, `Transition.action` and custom `When.condition` accept zero or one value.
