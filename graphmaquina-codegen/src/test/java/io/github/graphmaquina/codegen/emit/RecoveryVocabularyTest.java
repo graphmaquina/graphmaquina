@@ -55,13 +55,13 @@ class RecoveryVocabularyTest {
             package fx;
             import io.github.graphmaquina.annotation.GenerateGraphApi;
             import io.github.graphmaquina.api.Machine;
-            /** Machine fixture that emits the documentation vocabulary. */ @GenerateGraphApi
+            /** The Docs machine, whose vocabulary the tests generate. */ @GenerateGraphApi
             public interface Docs extends Machine<Doc, DocStatus, DocTransition> {}
             """);
         sources.put("fx.DocActions", """
             package fx;
             import io.github.graphmaquina.annotation.GraphAction;
-            /** Action reference fixture used by the recovery transition. */ public class DocActions {
+            /** The action of the PUBLISH edge, the edge that declares the recovery rules. */ public class DocActions {
                 @GraphAction
                 public Doc publish(Doc doc) { return doc; }
             }
