@@ -497,7 +497,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   could pass for this call's. For a failure of the call itself, from a cascade, the engine throws it as itself or, when
   the transaction is poisoned, the failure that poisoned the transaction. So when the action lets a
   `PoisonedUnitOfWorkException` through while the transaction is poisoned, the engine throws the failure that poisoned
-  the transaction, not that exception.
+  the transaction.
 - **Failures before the state is read are aborts.** The root entity's identity function that throws or returns null, its
   state getter that throws, a null root state, and a watch's peers reader or condition that throws while a `reevaluate`
   resolves end the call in a `TransitionAbortedException` of phase `RESOLVE` that carries the failure; they used to

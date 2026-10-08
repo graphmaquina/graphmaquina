@@ -27,10 +27,11 @@ import lombok.Getter;
  *
  * <p>Where this library's documentation says that a step aborts, that something aborts the call, that the call aborts,
  * or that the call ends in this exception or one of its subclasses, the engine throws this exception, or a subclass,
- * from the step that is running. At the root step, the call throws it. Outside COLLECT, the abort of a nested step, one
- * that a cascade runs, poisons the transaction unless it is already poisoned, and reaches the action that cascaded it,
- * which may catch it; under COLLECT, the cascade collects it instead, unless the poison wraps a failure that is no
- * failure of the call. What the caller finally receives therefore depends on the enclosing steps.
+ * from the step that is running, or from the call itself when it fails before any step runs. At the root step, the call
+ * throws it. Outside COLLECT, the abort of a nested step, one that a cascade runs, poisons the transaction unless it is
+ * already poisoned, and reaches the action that cascaded it, which may catch it; under COLLECT, the cascade collects it
+ * instead, unless the poison wraps a failure that is no failure of the call. What the caller finally receives therefore
+ * depends on the enclosing steps.
  */
 public class TransitionAbortedException extends CallFailedException {
 

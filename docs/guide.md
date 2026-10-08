@@ -2268,7 +2268,7 @@ from its pending state like any other.
 | Policy | Behavior |
 | --- | --- |
 | `FAIL_FAST` | Stop when a cascade fails. |
-| `COLLECT` | Try peers under savepoints, aggregate the transition aborts of the call, then abort the whole root if any were collected. Any other failure stops it at once, and so does an element whose step a nested cascade poisoned with a failure that is no failure of the call. |
+| `COLLECT` | Try peers under savepoints and collect the transition aborts of the call; if any were collected, poison the transaction with a `CascadeException` that aggregates them and throw it into the action that cascaded. Any other failure stops it at once, and so does an element whose step a nested cascade poisoned with a failure that is no failure of the call. |
 
 `COLLECT` is not partial commit. A nested transition that no edge carries, or that a guard rejected, is an abort rather
 than an ordinary root-level `Rejected` result. A handled domain failure can select the child's declared failure route.
