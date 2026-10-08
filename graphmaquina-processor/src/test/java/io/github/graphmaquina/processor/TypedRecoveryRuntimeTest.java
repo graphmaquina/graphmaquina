@@ -53,6 +53,7 @@ class TypedRecoveryRuntimeTest {
             import java.util.ArrayList;
             import java.util.List;
             import java.util.Optional;
+            import java.util.concurrent.CompletableFuture;
             import java.util.concurrent.TimeUnit;
             /** Executes publication scenarios inside the compiled consumer. */ public final class Scenario {
                 private Scenario() { }
@@ -407,7 +408,8 @@ class TypedRecoveryRuntimeTest {
     /**
      * The facade's {@code async(...)} runs the call on the machine's executor, and the rules route alike whether the
      * action is synchronous or returns a stage: a returned kind, then a thrown or failed-with exception. The
-     * asynchronous action's machine takes its timeout from the set's builder.
+     * asynchronous action's machine takes its timeout from the set's builder. Each submitted call is cancelled in
+     * {@code finally} if its bounded wait exits before completion.
      */
     @Test
     void theAsyncFacadeRoutesASynchronousAndAnAsynchronousActionAlike() throws Exception {
@@ -415,12 +417,22 @@ class TypedRecoveryRuntimeTest {
                     Tickets tickets = desk.tickets();
                     actions.result = ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected");
                     Ticket rejected = new Ticket("rejected");
-                    ends.add(describe(rejected,
-                            tickets.async(() -> tickets.publish(rejected)).get(5, TimeUnit.SECONDS), null));
+                    CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> rejectedCall =
+                            tickets.async(() -> tickets.publish(rejected));
+                    try {
+                        ends.add(describe(rejected, rejectedCall.get(5, TimeUnit.SECONDS), null));
+                    } finally {
+                        rejectedCall.cancel(true);
+                    }
                     actions.failure = unavailable;
                     Ticket failing = new Ticket("unavailable");
-                    ends.add(describe(failing,
-                            tickets.async(() -> tickets.publish(failing)).get(5, TimeUnit.SECONDS), unavailable));
+                    CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> failingCall =
+                            tickets.async(() -> tickets.publish(failing));
+                    try {
+                        ends.add(describe(failing, failingCall.get(5, TimeUnit.SECONDS), unavailable));
+                    } finally {
+                        failingCall.cancel(true);
+                    }
                 """;
         String opening = """
                 TicketActions actions = new TicketActions();
