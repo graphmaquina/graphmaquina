@@ -2394,6 +2394,34 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * A facade that declares {@code recoveries}, built by the published plugin from the artifacts of this build: the
+     * generated vocabulary carries {@code Recovery}, the generated companion one {@code recover} call per rule, and
+     * the program compiled with them sees each failure of PUBLISH take the route its kind or its type selects.
+     */
+    @Test
+    void routesTheFailuresOfAFacadeThatDeclaresRecoveries() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.writeSources(MavenFixture.recoverySources());
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.jarContains("fxr/TicketsGraph$Recovery.class"), result.output());
+        String companion = Files.readString(fixture.projectDirectory()
+                .resolve("target/generated-sources/annotations/fxr/TicketsRuntime.java"), StandardCharsets.UTF_8);
+        assertTrue(companion.contains(".recover(fxr.PublicationFailures.Unavailable.class,"
+                + " TicketChange.SCHEDULE_RETRY, fxr.ServiceUnavailableException.class)"), companion);
+        assertTrue(companion.contains(".recover(fxr.PublicationFailures.Rejected.class,"
+                + " TicketChange.RECORD_REJECTION, fxr.ProviderRejectedException.class)"), companion);
+        String output = fixture.runMain("fxr.Publications");
+        assertEquals(List.of(
+                "ROUTED unavailable SCHEDULE_RETRY RETRY_PENDING kind=Unavailable cause=none",
+                "ROUTED rejected RECORD_REJECTION REJECTED_BY_PROVIDER kind=Rejected cause=ProviderRejectedException",
+                "ROUTED invalid MARK_INTEGRATION_FAILED INTEGRATION_FAILED kind=none cause=InvalidResponseException"),
+                output.lines().filter((String line) -> line.startsWith("ROUTED ")).toList(), output);
+    }
+
+    /**
      * javac reads the sources of a project in the encoding the compiler is given, which defaults to
      * {@code project.build.sourceEncoding}, and at the release it compiles for, so the generator is told both: an
      * accented identifier of a project kept in ISO-8859-1 reaches the generated vocabulary intact.

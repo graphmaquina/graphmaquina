@@ -549,6 +549,223 @@ public final class PluginFixture {
     }
 
     /**
+     * The publication domain of typed recovery, in a package of its own: {@code fxr.Tickets} declares PUBLISH with
+     * two {@code recoveries}, a {@code failsOn} type and a fallback, {@code fxr.TicketActions} makes each ticket meet
+     * the failure its id names, and {@code fxr.Publications} publishes one ticket per route and prints one line
+     * {@code ROUTED <id> <recovery> <state> kind=<kind> cause=<cause>} for each.
+     *
+     * @return a mutable copy of the domain, one entry per compilation unit, keyed by qualified name
+     */
+    public static Map<String, String> recoverySources() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("fxr.TicketState", """
+                package fxr;
+
+                /** The states a ticket moves through. */
+                public enum TicketState {
+                    READY, PUBLISHED, RETRY_PENDING, REJECTED_BY_PROVIDER, INTEGRATION_FAILED, CLOSED
+                }
+                """);
+        sources.put("fxr.TicketChange", """
+                package fxr;
+
+                /** The identified transitions of the publication graph. */
+                public enum TicketChange {
+                    PUBLISH, SCHEDULE_RETRY, RECORD_REJECTION, MARK_INTEGRATION_FAILED, RETRY, CLOSE
+                }
+                """);
+        sources.put("fxr.PublicationFailures", """
+                package fxr;
+
+                import io.github.graphmaquina.api.FailureKind;
+
+                /** The failure kinds the publication adapter reports. */
+                public final class PublicationFailures {
+
+                    private PublicationFailures() {
+                    }
+
+                    /** The provider could not take the publication now. */
+                    public record Unavailable() implements FailureKind {
+                    }
+
+                    /** The provider refused the content. */
+                    public record Rejected() implements FailureKind {
+                    }
+                }
+                """);
+        sources.put("fxr.ServiceUnavailableException", """
+                package fxr;
+
+                /** Thrown when the provider is temporarily unavailable. */
+                public final class ServiceUnavailableException extends RuntimeException {
+
+                    public ServiceUnavailableException(String message) {
+                        super(message);
+                    }
+                }
+                """);
+        sources.put("fxr.ProviderRejectedException", """
+                package fxr;
+
+                /** Thrown when the provider rejects the request. */
+                public final class ProviderRejectedException extends RuntimeException {
+
+                    public ProviderRejectedException(String message) {
+                        super(message);
+                    }
+                }
+                """);
+        sources.put("fxr.InvalidResponseException", """
+                package fxr;
+
+                /** Thrown when the provider's response cannot be read. */
+                public final class InvalidResponseException extends RuntimeException {
+
+                    public InvalidResponseException(String message) {
+                        super(message);
+                    }
+                }
+                """);
+        sources.put("fxr.Ticket", """
+                package fxr;
+
+                import io.github.graphmaquina.annotation.GraphProperty;
+
+                /** The entity of the publication graph; its id names the failure its publication meets. */
+                public final class Ticket {
+
+                    private final String id;
+
+                    @GraphProperty
+                    private TicketState status = TicketState.READY;
+
+                    public Ticket(String id) {
+                        this.id = id;
+                    }
+
+                    @GraphProperty
+                    public String getId() {
+                        return id;
+                    }
+
+                    public TicketState getStatus() {
+                        return status;
+                    }
+
+                    public void setStatus(TicketState value) {
+                        status = value;
+                    }
+                }
+                """);
+        sources.put("fxr.TicketActions", """
+                package fxr;
+
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+
+                /** The action host of the publication graph: the id of each ticket picks the failure it meets. */
+                public final class TicketActions {
+
+                    @GraphAction
+                    public ActionOutcome publish(TransitionContext<Ticket, TicketState, TicketChange> context) {
+                        return switch (context.entity().getId()) {
+                            case "unavailable" -> ActionOutcome.failed(PublicationFailures.Unavailable.class,
+                                    "provider unavailable");
+                            case "rejected" -> throw new ProviderRejectedException("content rejected");
+                            case "invalid" -> throw new InvalidResponseException("unreadable response");
+                            default -> ActionOutcome.ok();
+                        };
+                    }
+                }
+                """);
+        sources.put("fxr.Tickets", """
+                package fxr;
+
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+
+                import static fxr.TicketState.CLOSED;
+                import static fxr.TicketState.INTEGRATION_FAILED;
+                import static fxr.TicketState.PUBLISHED;
+                import static fxr.TicketState.READY;
+                import static fxr.TicketState.REJECTED_BY_PROVIDER;
+                import static fxr.TicketState.RETRY_PENDING;
+
+                /** The publication machine: a failure of PUBLISH takes the route its kind or its type selects. */
+                @GenerateGraphApi
+                @TicketsGraph.Definition(initial = READY, terminals = {PUBLISHED, CLOSED}, allowsCycle = READY,
+                    state = TicketRefs.Status.class, id = TicketRefs.Id.class)
+                @TicketsGraph.StatePolicy(state = READY, otherwise = "publish the ticket")
+                @TicketsGraph.StatePolicy(state = RETRY_PENDING, otherwise = "retry the publication explicitly")
+                @TicketsGraph.StatePolicy(state = REJECTED_BY_PROVIDER, otherwise = "close the rejected ticket")
+                @TicketsGraph.StatePolicy(state = INTEGRATION_FAILED, otherwise = "close after manual review")
+                @TicketsGraph.Transition(id = TicketChange.SCHEDULE_RETRY, from = READY, to = RETRY_PENDING)
+                @TicketsGraph.Transition(id = TicketChange.RECORD_REJECTION, from = READY, to = REJECTED_BY_PROVIDER)
+                @TicketsGraph.Transition(id = TicketChange.MARK_INTEGRATION_FAILED, from = READY,
+                    to = INTEGRATION_FAILED)
+                @TicketsGraph.Transition(id = TicketChange.RETRY, from = RETRY_PENDING, to = READY)
+                @TicketsGraph.Transition(id = TicketChange.CLOSE, from = {REJECTED_BY_PROVIDER, INTEGRATION_FAILED},
+                    to = CLOSED)
+                public interface Tickets extends Machine<Ticket, TicketState, TicketChange> {
+
+                    @TicketsGraph.Transition(id = TicketChange.PUBLISH, from = READY, to = PUBLISHED,
+                        action = TicketActionsRefs.Publish.class,
+                        recoveries = {
+                            @TicketsGraph.Recovery(kind = PublicationFailures.Unavailable.class,
+                                transition = TicketChange.SCHEDULE_RETRY,
+                                failsOn = ServiceUnavailableException.class),
+                            @TicketsGraph.Recovery(kind = PublicationFailures.Rejected.class,
+                                transition = TicketChange.RECORD_REJECTION,
+                                failsOn = ProviderRejectedException.class)},
+                        failsOn = InvalidResponseException.class,
+                        onFailure = TicketChange.MARK_INTEGRATION_FAILED)
+                    Outcome<Ticket, TicketState, TicketChange> publish(Ticket ticket);
+                }
+                """);
+        sources.put("fxr.Publications", """
+                package fxr;
+
+                import io.github.graphmaquina.api.Outcome;
+                import io.github.graphmaquina.runtime.StateMachines;
+                import java.util.List;
+
+                /** Publishes one ticket per declared route and prints where the failure of each one took it. */
+                public final class Publications {
+
+                    private Publications() {
+                    }
+
+                    public static void main(String[] arguments) {
+                        Tickets tickets = new TicketsRuntime(
+                                StateMachines.from(TicketsRuntime.graph(new TicketActions()))
+                                        .state(Ticket::getStatus, Ticket::setStatus)
+                                        .build());
+                        for (String id : List.of("unavailable", "rejected", "invalid")) {
+                            Ticket ticket = new Ticket(id);
+                            Outcome<Ticket, TicketState, TicketChange> outcome = tickets.publish(ticket);
+                            Outcome.Failed<Ticket, TicketState, TicketChange> failed = outcome.asFailed()
+                                    .orElseThrow(() -> new IllegalStateException(id + " was not routed: " + outcome));
+                            if (ticket.getStatus() != failed.movedTo()) {
+                                throw new IllegalStateException(id + " moved to " + failed.movedTo()
+                                        + " but the ticket is " + ticket.getStatus());
+                            }
+                            String kind = failed.failureKind().map(Class::getSimpleName).orElse("none");
+                            String cause = failed.cause()
+                                    .map((Throwable error) -> error.getClass().getSimpleName())
+                                    .orElse("none");
+                            System.out.println("ROUTED " + id + " " + failed.failureTransition() + " "
+                                    + failed.movedTo() + " kind=" + kind + " cause=" + cause);
+                        }
+                    }
+                }
+                """);
+        return sources;
+    }
+
+    /**
      * Writes {@code sources} under {@code src/main/java}, one file per qualified name, replacing whatever the
      * main source root held before, which is what editing a source tree does.
      *
