@@ -27,9 +27,10 @@ import java.util.Optional;
  * throwable that a declared type accepts takes no route either: the call ends with the failure that poisoned it.
  * For a throwable that a declared type accepts, the engine checks the poison before it reads the throwable's message,
  * for synchronous throws and exceptional completions of completed or pending stages alike; the JDK may already have
- * read that message, for example when {@code supplyAsync} wrapped the throwable in a CompletionException. Any other
- * throwable that aborts the call, as above, has its message read to compose the abort's message, whether or not the
- * transaction is poisoned.
+ * read that message, for example when {@code supplyAsync} wrapped the throwable in a CompletionException. The abort of
+ * a throwable that no declared type accepts, a CancellationException or a StateMachineException that is not a failure
+ * of this call, or an Error that completes a stage or arrives wrapped, is composed from that throwable's string, which
+ * may read its message, whether or not the transaction is poisoned.
  */
 public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 

@@ -26,9 +26,12 @@ import lombok.NonNull;
  * @param guards guards evaluated in declaration order
  * @param onFailure identifier of the fallback recovery edge, resolved from {@code from}: it takes a failure the action
  *     returns with a failure kind no recovery rule declares, or without one, and a throwable whose most specific
- *     declared type is one of failsOn, with the same exception for a hand-built failsOn
+ *     declared type is one of failsOn; for a hand-built failsOn that holds an interface type, see the
+ *     recoveryRules parameter
  * @param failsOn throwable types that turn an action's throwable into a domain failure, which takes onFailure unless a
- *     more specific type that a recovery rule declares accepts the throwable; the throwable is unwrapped from
+ *     more specific type that a recovery rule declares accepts the throwable, for the types the DSL and RecoveryRule
+ *     admit (an interface type in a hand-built failsOn can keep the win over a more specific rule type, as the
+ *     recoveryRules parameter says); the throwable is unwrapped from
  *     CompletionException and ExecutionException first, and the engine never matches an Error, a
  *     CancellationException or a StateMachineException, whatever this list or a rule holds; the DSL also refuses
  *     those three and their subtypes, the supertypes Throwable, Exception and RuntimeException, and the wrappers

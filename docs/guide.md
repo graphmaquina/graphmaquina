@@ -1344,10 +1344,10 @@ public final class PublicationFailures {
 
 Each public type goes in its own file. `ServiceUnavailableException`, `ProviderRejectedException` and
 `InvalidResponseException` are the adapter's own unchecked exceptions. An action reports a kind by returning
-`ActionOutcome.failed(kind, reason)`, or by throwing an exception whose most specific declared type is one of that
-rule's, within the exclusions below. In the DSL, each `recover(kind, transition)` call declares one rule. A third
-argument adds one throwable type to the rule, and a `List` adds several; the list is copied when the rule is declared.
-A rule without types is selected only by a returned failure of its kind:
+`ActionOutcome.failed(kind, reason)`, or by throwing an exception whose most specific declared type is one of the
+types of the rule that declares that kind, within the exclusions below. In the DSL, each `recover(kind, transition)`
+call declares one rule. A third argument adds one throwable type to the rule, and a `List` adds several; the list is
+copied when the rule is declared. A rule without types is selected only by a returned failure of its kind:
 
 ```java
 GraphDefinition<Publication, PublicationState, PublicationChange> graph = StateGraph.define(key)
@@ -2293,8 +2293,10 @@ For a throwable that a declared type accepts, the engine checks the poison befor
 for synchronous throws and exceptional completions of completed or pending stages alike. Exceptional stage
 completions retain their original throwable through the wait, so the engine's own reading of the message never comes
 first. The JDK may already have read that message, for example when `supplyAsync` wrapped the throwable in a
-`CompletionException`. Any other throwable that aborts the call, as above, has its message read to compose the
-abort's message, whether or not the transaction is poisoned.
+`CompletionException`. The abort of a throwable that no declared type accepts, a
+`CancellationException` or a `StateMachineException` that is not a failure of this call, or an `Error` that completes
+a stage or arrives wrapped, is composed from that throwable's string, which may read its message, whether or not the
+transaction is poisoned.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.

@@ -95,7 +95,8 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * declares, in its rules and in its own {@code failsOn}: a type of this rule's {@code failsOn} routes it to {@code
      * transition} with {@code kind}, and a type of the edge's own {@code failsOn} to {@code onFailure} without a kind.
      * For the types the DSL admits, the order of the declarations never matters. A throwable no declared type accepts
-     * aborts the call, and so do a CancellationException and a StateMachineException, which never match. An Error
+     * aborts the call, and so do a CancellationException and a StateMachineException that is not a failure of this
+     * call, which never match. An Error
      * thrown as itself propagates; an Error completing the stage or arriving wrapped aborts. A failure of the call
      * itself ends it as itself, or as the failure that poisoned the transaction, and once a failed cascade poisoned the
      * transaction, an accepted throwable ends the call with the failure that poisoned it. A declared type also accepts
