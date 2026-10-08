@@ -17,7 +17,8 @@ import javax.tools.Diagnostic;
  * The fallback covers a processing environment that {@code Trees} refuses (IllegalArgumentException) and a runtime
  * on which the {@code Trees} class itself cannot be loaded (NoClassDefFoundError, as without the jdk.compiler
  * module). In either case, the first being a wrapped environment, no source is available: every diagnostic is
- * reported through {@code Messager} with the element, annotation and value anchors, as for a declaration without source.
+ * reported through {@code Messager} with the element, annotation and value anchors, as for a declaration without
+ * source.
  */
 final class Diagnostics {
 
