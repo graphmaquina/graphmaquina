@@ -296,6 +296,9 @@ final class StructuralChecks {
      */
     void checkRecoveries(List<RecoveryModel> recoveries, List<TypeMirror> failsOn, List<AnnotationValue> failsOnValues,
             Element element, AnnotationMirror mirror) {
+        if (recoveries.isEmpty()) {
+            return;
+        }
         List<TypeMirror> kinds = new ArrayList<>();
         List<TypeMirror> repeatedKinds = new ArrayList<>();
         List<ThrowableOccurrence> occurrences = new ArrayList<>();
@@ -328,7 +331,8 @@ final class StructuralChecks {
             }
         }
         // Explicit values follow source order; unwritten values retain traversal order after them.
-        occurrences.sort(Comparator.comparingLong((ThrowableOccurrence occurrence) -> occurrence.start().orElse(Long.MAX_VALUE)));
+        occurrences.sort(Comparator.comparingLong(
+                (ThrowableOccurrence occurrence) -> occurrence.start().orElse(Long.MAX_VALUE)));
         List<TypeMirror> types = new ArrayList<>();
         List<TypeMirror> repeatedTypes = new ArrayList<>();
         for (ThrowableOccurrence occurrence : occurrences) {

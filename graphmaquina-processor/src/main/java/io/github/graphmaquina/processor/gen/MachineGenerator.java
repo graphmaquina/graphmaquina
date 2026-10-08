@@ -41,7 +41,7 @@ import javax.lang.model.util.Elements;
  * {@code failsOn} calls and before its hook: {@code recover(K.class, id)} for a rule that lists no throwable type,
  * {@code recover(K.class, id, A.class)} for a rule that lists one, and
  * {@code recover(K.class, id, List.of(A.class, B.class))} for a rule that lists more, which is the only case in which
- * the companion writes {@code java.util.List}.</p>
+ * the companion claims {@code java.util.List} through {@link Names}.</p>
  *
  * <p>Types are written along two paths. The types the companion names itself, its {@code java.lang} ones
  * included, are written as {@link Names} decides from what the companion's scope already holds, the member types
