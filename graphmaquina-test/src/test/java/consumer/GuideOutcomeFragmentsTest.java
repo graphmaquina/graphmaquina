@@ -293,7 +293,7 @@ class GuideOutcomeFragmentsTest {
         return block.toString();
     }
 
-    /** Returns the java block whose first line starts with the prefix. Fails when there is none or it is empty. */
+    /** Returns the first java block whose first line starts with the prefix. Fails when there is none. */
     private static String blockStarting(List<String> guide, String prefix) {
         StringBuilder block = new StringBuilder();
         MarkdownFence fence = null;
