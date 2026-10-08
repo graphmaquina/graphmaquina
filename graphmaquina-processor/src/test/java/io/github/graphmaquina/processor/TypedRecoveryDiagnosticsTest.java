@@ -650,6 +650,7 @@ class TypedRecoveryDiagnosticsTest {
             Compilation.Result result = Compilation.compileTyped(sources);
 
             assertFalse(result.success(), result.describe());
+            assertEquals(2, result.errors().size(), result.describe());
             assertEquals(1, result.diagnostics().stream()
                     .filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
                             diagnostic.getKind() == Diagnostic.Kind.ERROR

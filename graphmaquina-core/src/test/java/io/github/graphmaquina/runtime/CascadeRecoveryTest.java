@@ -36,6 +36,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
@@ -380,6 +381,61 @@ class CascadeRecoveryTest {
                         + "; " + written(ticket) + "; " + written(listing));
                 expected.add(then.getKey() + ": the abort PUBLISH caught caused by IllegalStateException, calls"
                         + " [publish]; ticket READY after 0 write(s); l1 DRAFT after 0 write(s)");
+            }
+        }
+        assertEquals(expected, ends);
+    }
+
+    /**
+     * A CancellationException is an IllegalStateException, but no declared type accepts it. On a poisoned unit of
+     * work, whether failsOn or a rule names IllegalStateException, PUBLISH throwing one ends in a new abort whose cause
+     * is that very exception and whose message is composed from it, not in the poison; no route runs.
+     */
+    @Test
+    void aCancellationUnderADeclaredIllegalStateExceptionAbortsAPoisonedUnitOfWorkWithoutTheRoute() {
+        Map<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> declarations =
+                new LinkedHashMap<>();
+        declarations.put("failsOn", (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish
+                .failsOn(IllegalStateException.class).onFailure(TicketChange.MARK_INTEGRATION_FAILED));
+        declarations.put("a rule", (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish
+                .recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
+                        IllegalStateException.class));
+        List<String> ends = new ArrayList<>();
+        List<String> expected = new ArrayList<>();
+        for (Map.Entry<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> declaration
+                : declarations.entrySet()) {
+            Listing listing = new Listing("l1");
+            AtomicReference<TransitionAbortedException> poison = new AtomicReference<>();
+            CancellationException cancelled = new CancellationException("cancelled by the adapter");
+            GraphDefinition<Ticket, TicketState, TicketChange> ticketGraph = tickets(
+                    (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> declaration.getValue().apply(
+                            publish.action("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                                ctx.entity().calls.add("publish");
+                                try {
+                                    ctx.cascade(LISTINGS, listing, ListingChange.GO_LIVE);
+                                } catch (TransitionAbortedException failure) {
+                                    poison.set(failure);
+                                }
+                                throw cancelled;
+                            })),
+                    (TransitionBuilder<Ticket, TicketState, TicketChange> retry) ->
+                            retry.action("schedule retry", logsOnTicket("schedule retry")));
+            GraphDefinition<Listing, ListingState, ListingChange> listingGraph = listings(
+                    (TransitionContext<Listing, ListingState, ListingChange> ctx) -> {
+                        throw new IllegalStateException("listing service down");
+                    },
+                    logsOnListing("suspend"));
+            try (MachineRegistry registry = registry(ticketGraph, listingGraph, 10)) {
+                Ticket ticket = new Ticket("t1");
+                TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                        () -> registry.of(RecoveryFixtures.KEY).execute(ticket, TicketChange.PUBLISH));
+                assertInstanceOf(TransitionAbortedException.class, poison.get(), declaration.getKey());
+                ends.add(declaration.getKey() + ": " + (error == poison.get() ? "the poison" : "a new abort")
+                        + ", cause is the thrown exception " + (error.getCause() == cancelled)
+                        + ", message names it " + error.getMessage().contains("cancelled by the adapter")
+                        + ", calls " + ticket.calls + "; " + written(ticket) + "; " + written(listing));
+                expected.add(declaration.getKey() + ": a new abort, cause is the thrown exception true, message"
+                        + " names it true, calls [publish]; ticket READY after 0 write(s); l1 DRAFT after 0 write(s)");
             }
         }
         assertEquals(expected, ends);
