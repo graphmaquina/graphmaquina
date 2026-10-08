@@ -21,7 +21,7 @@ class MarkdownFenceTest {
         assertTrue(open("~~~").closes("~~~"), "~~~");
         assertTrue(MarkdownFence.opening("``").isEmpty(), "``");
         assertTrue(MarkdownFence.opening("text").isEmpty(), "text");
-        assertTrue(MarkdownFence.opening("").isEmpty(), "");
+        assertTrue(MarkdownFence.opening("").isEmpty(), "an empty line");
     }
 
     @Test
@@ -56,10 +56,10 @@ class MarkdownFenceTest {
     }
 
     @Test
-    void aClosingFenceMayHaveTrailingWhitespaceOnly() {
+    void aClosingFenceMayHaveTrailingSpacesOrTabsOnly() {
         MarkdownFence fence = open("```java");
-        assertTrue(fence.closes("```   "), "```   ");
-        assertTrue(fence.closes("```\t"), "```\t");
+        assertTrue(fence.closes("```   "), "``` and three spaces");
+        assertTrue(fence.closes("```\t"), "``` and a tab");
         assertFalse(fence.closes("``` text"), "``` text");
         assertFalse(fence.closes("```java"), "```java");
         assertFalse(fence.closes("text"), "text");
