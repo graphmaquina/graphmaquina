@@ -252,7 +252,10 @@ class RecoveryDslTest {
                 error.problems());
     }
 
-    /** A rule and the onFailure that name the same identifier, which leaves nowhere, are two problems. */
+    /**
+     * A rule and the onFailure that name the same identifier, which no transition from READY carries, are two
+     * problems.
+     */
     @Test
     void sg301WhenARuleAndTheOnFailureNameTheSameMissingIdentifier() {
         InvalidGraphException error = refused(
