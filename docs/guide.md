@@ -2069,12 +2069,13 @@ Three objects can be involved:
 | The action's own stage is cancelled by its owner | Cancellation is treated as a technical action failure, not a handled business result |
 | The outer operation future is cancelled or given a caller timeout | No cancellation link stops the running operation; do not assume it prevented commit |
 
-In particular, `pending.cancel(true)`, `pending.orTimeout(...)` or a timed `pending.get(...)` is not a
-transaction rollback API. The operation may already be running, may continue running and may commit after
-the caller stops waiting. Interrupting an operation thread while it is waiting causes a technical abort,
-but GraphMaquina still does not cancel the foreign stage. A `ForkJoinPool` that refuses to let its worker block
-for the wait, as one does when it cannot start a spare worker in its place, causes a technical abort as well,
-whose cause is that pool's `RejectedExecutionException`.
+In particular, `pending.cancel(true)`, `pending.orTimeout(...)` or a timed `pending.get(...)` is not a transaction
+rollback API. The operation may already be running, may continue running and may commit after the caller stops waiting.
+Interrupting an operation thread while it is waiting causes a technical abort, but GraphMaquina still does not cancel
+the foreign stage. A `ForkJoinPool` that refuses to let its worker block for the wait, as one does when it cannot start
+a spare worker in its place, causes a technical abort as well, whose cause is that pool's `RejectedExecutionException`,
+unless a failed cascade has already poisoned the transaction, in which case the call ends in the failure that poisoned
+it.
 
 A late remote success can mean "the service processed the request, but the graph did not commit". Use a
 stable request/idempotency key and a service-level deadline where needed. Reconcile uncertain remote results

@@ -520,8 +520,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   task could fail with `ReentrantTransitionException`, keep the wait past its timeout, or cascade through the
   root's context. A task the stage needs must now run on another worker, so on a pool whose other workers are all
   busy, or blocked where the pool cannot see them, the wait can run to its timeout. A pool that refuses to let its
-  worker block now aborts the transition, with its `RejectedExecutionException` as the cause; that exception used
-  to escape the call.
+  worker block now aborts the transition, where its `RejectedExecutionException` used to escape the call. The abort
+  carries that exception as its cause, unless a failed cascade has already poisoned the transaction: the call then
+  ends in the failure that poisoned it.
 - **Standalone machines.** `StateMachines.Builder.build()` registers the `as(...)` facade and dispatches the
   machine's own watches; a watch on another machine is refused at `build()`.
 - **Blank reasons are refused.** `StatePolicy` refuses a blank reason for an identifier, as it refused a blank
