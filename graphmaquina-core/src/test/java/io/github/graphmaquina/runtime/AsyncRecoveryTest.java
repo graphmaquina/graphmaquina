@@ -616,7 +616,7 @@ class AsyncRecoveryTest {
                     (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
                             publish.asyncAction("publish",
                                     (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
-                                    throw rejected;
+                                        throw rejected;
                                     }));
             UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> asyncFails =
                     (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
@@ -1004,8 +1004,8 @@ class AsyncRecoveryTest {
                     (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
                             publish.asyncAction("publish",
                                     (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
-                                    ctx.entity().calls.add("publish");
-                                    return stage;
+                                        ctx.entity().calls.add("publish");
+                                        return stage;
                                     }).afterCommit("published",
                                             (Ticket ticket) -> ticket.calls.add("hook of PUBLISH"))),
                     (TransitionBuilder<Ticket, TicketState, TicketChange> edge) -> edge
@@ -1290,8 +1290,8 @@ class AsyncRecoveryTest {
                     (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
                             publish.asyncAction("publish",
                                     (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
-                                    ctx.entity().calls.add("publish");
-                                    return stages.get(ctx.entity().id);
+                                        ctx.entity().calls.add("publish");
+                                        return stages.get(ctx.entity().id);
                                     }))), Duration.ofMinutes(1));
             Ticket first = new Ticket("first");
             Ticket second = new Ticket("second");
