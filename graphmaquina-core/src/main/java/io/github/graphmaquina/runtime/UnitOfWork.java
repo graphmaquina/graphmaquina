@@ -240,7 +240,7 @@ final class UnitOfWork {
     }
 
     /**
-     * A fresh immutable snapshot of the log in entry order, with newly created records that retain the
+     * An immutable snapshot of the log in entry order, with newly created records that retain the
      * original entity references. Later appends and rollbacks do not change an existing snapshot.
      */
     List<TransitionRecord<?, ?, ?>> records() {

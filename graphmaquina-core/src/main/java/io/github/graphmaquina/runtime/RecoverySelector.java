@@ -13,9 +13,13 @@ import java.util.Optional;
  * declares accepts it, among the types of its rules and of its own failsOn, unless it is an Error, a
  * CancellationException or a StateMachineException, which are never admitted whatever the edge declares. The most
  * specific accepting type then wins, whatever the order of the declarations: a rule's type routes to that rule's
- * recovery, with its kind, and a failsOn type to onFailure, without one. That winner is unique: the accepting types
- * all lie on the superclass chain of the throwable's class, and the edge's constructor refuses a type declared in two
- * rules, or in a rule and in failsOn; failsOn may repeat its own types, which all take onFailure. Neither a reason
+ * recovery, with its kind, and a failsOn type to onFailure, without one. For the types the DSL and RecoveryRule
+ * admit, that winner is unique: the accepting types all lie on the superclass chain of the throwable's class, and
+ * the edge's constructor refuses a type declared in two rules, or in a rule and in failsOn; failsOn may repeat its
+ * own types, which all take onFailure. A hand-built TransitionSpec does not harden its failsOn, so it may hold an
+ * interface type. The scan is deterministic: failsOn first, then the rules in order, and an accepting type replaces
+ * the current winner only when it is the same type or a subtype of it, so an entry unrelated to a later one keeps
+ * the win and failsOn comes first. Neither a reason
  * nor a message plays a part. The selector only picks an identifier: the transaction keeps a failure of the call
  * itself out of it, checks the poison between admitting a throwable and choosing its route, and resolves the
  * identifier from the failing edge's origin; an empty one leaves the failure unhandled.
