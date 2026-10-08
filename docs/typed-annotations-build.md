@@ -135,11 +135,12 @@ snapshot lookups, and Maven keeps serving whatever release artifact it already r
 
 The annotation processor uses javac's public `Trees` API to place diagnostics at the exact annotation value,
 including nested values in repeated annotations. It does not opt into Gradle incremental annotation processing:
-Gradle's incremental processor environment hides it. Builds that use the GraphMaquina Gradle plugin are
-unaffected: the plugin already disables incremental Java compilation, so that the compilation covers the complete
-generated vocabulary and source set together; normal task up-to-date checks and configuration-cache reuse still
-apply. The processor is not meant to run without the plugin: without its manifest, typed declarations are refused
-with `SG602`.
+Gradle's incremental processor environment hides the `Trees` API. Builds that use the GraphMaquina Gradle plugin
+are unaffected: the plugin already disables incremental Java compilation, because its completion enumerates every
+class file the compilation produced, which an incremental recompilation of only some sources would leave
+incomplete; normal task up-to-date checks and configuration-cache reuse still apply. The processor is not meant to
+run without a GraphMaquina build adapter: without the manifest its generation step writes, typed declarations are
+refused with `SG602`.
 
 ```kotlin
 plugins {

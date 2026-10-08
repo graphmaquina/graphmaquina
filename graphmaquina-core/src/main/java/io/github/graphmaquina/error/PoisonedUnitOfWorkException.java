@@ -33,9 +33,9 @@ import lombok.Getter;
  * other throwable, or COLLECT's aggregate. No failure route is taken, so no recovery action runs. For synchronous
  * throws and exceptional completions of completed or pending stages alike, the engine makes this check before it
  * reads the message of a throwable that a declared type accepts; the JDK may already have read that message, for
- * example when {@code supplyAsync} wrapped the throwable in a CompletionException. A throwable that no declared type
- * accepts aborts the call with it as cause, and in a poisoned transaction that abort's message is composed from the
- * cause.
+ * example when {@code supplyAsync} wrapped the throwable in a CompletionException. Any other throwable that aborts
+ * the call, as above, has its message read to compose the abort's message, whether or not the transaction is
+ * poisoned.
  */
 @Getter
 public final class PoisonedUnitOfWorkException extends TransitionAbortedException {

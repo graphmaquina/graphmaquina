@@ -92,19 +92,19 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      *
      * <p>A throwable the action throws, or completes its stage with, once unwrapped from CompletionException and
      * ExecutionException, takes the route of the most specific type that accepts it among every type this edge
-     * declares, in its rules and in its own {@code failsOn}: a type of this rule's {@code failsOn} routes it to
-     * {@code transition} with {@code kind}, and a type of the edge's own {@code failsOn} to {@code onFailure} without
-     * a kind. The order of the declarations never matters. A throwable no declared type accepts aborts the call, and
-     * so do a CancellationException and a StateMachineException, which never match. An Error thrown as itself
-     * propagates; an Error completing the stage or arriving wrapped aborts. A failure of the call
-     * itself ends it as itself, and once a failed cascade poisoned the transaction, an accepted throwable ends the call
-     * with the failure that poisoned it. A declared type also accepts the JDK exceptions the engine throws from the
-     * action's context, such as a NullPointerException for a null argument, an IllegalArgumentException for an
-     * identifier of another catalogue, a ClassCastException from {@code input(Class)} or a WrongThreadException off
-     * the action's thread: they are matched like the action's own. For a throwable a declared type accepts, the
-     * engine checks the poison before it reads the throwable's message, for synchronous throws and exceptional
-     * completions of completed or pending stages alike; the JDK may already have read that message, for example when
-     * {@code supplyAsync} wrapped the throwable in a CompletionException.
+     * declares, in its rules and in its own {@code failsOn}: a type of this rule's {@code failsOn} routes it to {@code
+     * transition} with {@code kind}, and a type of the edge's own {@code failsOn} to {@code onFailure} without a kind.
+     * For the types the DSL admits, the order of the declarations never matters. A throwable no declared type accepts
+     * aborts the call, and so do a CancellationException and a StateMachineException, which never match. An Error
+     * thrown as itself propagates; an Error completing the stage or arriving wrapped aborts. A failure of the call
+     * itself ends it as itself, or as the failure that poisoned the transaction, and once a failed cascade poisoned the
+     * transaction, an accepted throwable ends the call with the failure that poisoned it. A declared type also accepts
+     * the JDK exceptions the engine throws from the action's context, such as a NullPointerException for a null
+     * argument, an IllegalArgumentException for an identifier of another catalogue, a ClassCastException from {@code
+     * input(Class)} or a WrongThreadException off the action's thread: they are matched like the action's own. For a
+     * throwable a declared type accepts, the engine checks the poison before it reads the throwable's message, for
+     * synchronous throws and exceptional completions of completed or pending stages alike; the JDK may already have
+     * read that message, for example when {@code supplyAsync} wrapped the throwable in a CompletionException.
      *
      * <p>{@code transition} is resolved from this edge's origin, and the recovery edge runs without its guards and
      * without consulting its own rules or {@code onFailure}. Two rules may name the same recovery, and a rule may name

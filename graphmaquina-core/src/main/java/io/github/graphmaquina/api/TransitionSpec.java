@@ -26,7 +26,7 @@ import lombok.NonNull;
  * @param guards guards evaluated in declaration order
  * @param onFailure identifier of the fallback recovery edge, resolved from {@code from}: it takes a failure the action
  *     returns with a failure kind no recovery rule declares, or without one, and a throwable whose most specific
- *     declared type is one of failsOn
+ *     declared type is one of failsOn, with the same exception for a hand-built failsOn
  * @param failsOn throwable types that turn an action's throwable into a domain failure, which takes onFailure unless a
  *     more specific type that a recovery rule declares accepts the throwable; the throwable is unwrapped from
  *     CompletionException and ExecutionException first, and the engine never matches an Error, a
@@ -41,8 +41,9 @@ import lombok.NonNull;
  * @param recoveryRules recovery rules declared on this edge, in declaration order: each names a failure kind, the
  *     identifier of a recovery edge and the throwable types it declares. A failure the action returns with a rule's
  *     kind takes that rule's recovery edge, resolved from {@code from}, and so does a throwable when the most specific
- *     type that accepts it, among the types of every rule and of failsOn, is one of the rule's; declaration order plays
- *     no part
+ *     type that accepts it, among the types of every rule and of failsOn, is one of the rule's; for the types the DSL
+ *     and RecoveryRule admit, declaration order plays no part, while an interface type in a hand-built failsOn can make
+ *     the order of its entries change the route
  */
 public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         @NonNull S from, @NonNull T transition, @NonNull S to,

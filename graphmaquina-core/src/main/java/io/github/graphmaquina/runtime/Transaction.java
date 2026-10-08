@@ -265,11 +265,11 @@ final class Transaction {
     /**
      * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. Whatever the action
      * throws, an Error aside, or completes its stage with, checked exceptions included, which Kotlin or
-     * {@code @SneakyThrows} code can throw without declaring them, and library exceptions too, becomes an ActionFailure
-     * that its caller classifies. An Error is never routed: thrown as itself, it propagates; wrapped in
-     * CompletionException or ExecutionException, it is unwrapped and aborts. Exceptional stage completions carry
-     * the throwable they carry into ActionFailure; the engine reads no message before classification, though the JDK
-     * may already have read it, as when {@code supplyAsync} wrapped the throwable in a CompletionException.
+     * {@code @SneakyThrows} code can throw without declaring them, and library exceptions too, becomes an
+     * ActionFailure that its caller classifies. An Error is never routed: thrown as itself, it propagates; wrapped in CompletionException
+     * or ExecutionException, it is unwrapped and aborts. Exceptional stage completions hand the throwable they
+     * completed with to ActionFailure; the engine reads no message before classification, though the JDK may already
+     * have read it, as when {@code supplyAsync} wrapped the throwable in a CompletionException.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome executeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
