@@ -56,7 +56,7 @@ class ReadmeQuickstartTest {
                     () -> "README consumer timed out; transcript: " + transcript);
             String output = Files.readString(transcript);
             assertEquals(0, process.exitValue(), output);
-            assertTrue(output.lines().anyMatch(line -> line.equals("> Task :test")), output);
+            assertTrue(output.lines().anyMatch((String line) -> line.equals("> Task :test")), output);
             assertTrue(output.contains("All ticket scenarios passed."), output);
             assertTicketTestResult(project.resolve(
                     "build/test-results/test/TEST-com.example.tickets.TicketsTest.xml"));
@@ -90,18 +90,47 @@ class ReadmeQuickstartTest {
         assertEquals("aDomainFailureCommitsItsDeclaredFailureState()", test.getAttribute("name"));
     }
 
-    /** Locate the documented file/section, then copy its complete fenced source without rewriting it. */
+    /**
+     * Returns the content of the first fence whose first info word is {@code language}, in the section that the first
+     * line equal to {@code context} outside any fence opens. The section runs until the next line outside a fence
+     * that starts with {@code #}, of any heading level, or until the end of the guide. A fence of another language is
+     * skipped up to its own closing line. Each content line is returned as written, followed by a newline. Fails
+     * when no line equals the context, when the section holds no such fence, or when that fence is never closed.
+     */
     private static String fenceAfter(String readme, String context, String language) {
-        int heading = readme.indexOf(context + "\n");
-        assertTrue(heading >= 0, "README context missing: " + context);
-        String opening = "```" + language + "\n";
-        int start = readme.indexOf(opening, heading + context.length());
-        int nextHeading = readme.indexOf("\n#", heading + context.length());
-        assertTrue(start >= 0 && (nextHeading < 0 || start < nextHeading),
-                "README source missing in section: " + context);
-        int end = readme.indexOf("\n```", start + opening.length());
-        assertTrue(end >= 0, "README source not closed after: " + context);
-        return readme.substring(start + opening.length(), end) + "\n";
+        List<String> lines = readme.lines().toList();
+        int index = 0;
+        boolean found = false;
+        MarkdownFence skipping = null;
+        while (index < lines.size() && !found) {
+            String line = lines.get(index++);
+            if (skipping != null) {
+                skipping = skipping.closes(line) ? null : skipping;
+            } else {
+                found = line.equals(context);
+                skipping = found ? null : MarkdownFence.opening(line).orElse(null);
+            }
+        }
+        assertTrue(found, "README context missing: " + context);
+        MarkdownFence block = null;
+        while (index < lines.size() && block == null && !lines.get(index).startsWith("#")) {
+            MarkdownFence fence = MarkdownFence.opening(lines.get(index++)).orElse(null);
+            if (fence != null && fence.language(language)) {
+                block = fence;
+            } else if (fence != null) {
+                while (index < lines.size() && !fence.closes(lines.get(index))) {
+                    index++;
+                }
+                index++;
+            }
+        }
+        assertNotNull(block, "README source missing in section: " + context);
+        StringBuilder source = new StringBuilder();
+        while (index < lines.size() && !block.closes(lines.get(index))) {
+            source.append(lines.get(index++)).append('\n');
+        }
+        assertTrue(index < lines.size(), "README source not closed after: " + context);
+        return source.toString();
     }
 
     private static String property(String name) {
