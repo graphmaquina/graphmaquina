@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Source fixtures of the typed-recovery tests: the publication machine of the spec's example, declared with the
+ * Source fixtures of the typed-recovery tests: the publication machine of the example graph, declared with the
  * vocabulary generated for it. Everything lives in package {@code fx}, one entry per compilation unit, and no entry
  * names a generated type the pre-javac generator does not produce from these very sources.
  *
@@ -27,7 +27,7 @@ final class RecoveryFixtures {
     /** The line of the facade on which the declaration of {@code publish} that {@link #sources} takes starts. */
     static final int PUBLISH_LINE = 21;
 
-    /** The declaration of {@code publish} the spec's example writes: two rules, a failsOn of its own and a fallback. */
+    /** The declaration of {@code publish} the example graph has: two rules, a failsOn of its own and a fallback. */
     static final String EXAMPLE_PUBLISH = """
                 @TicketsGraph.Transition(id = PUBLISH, from = READY, to = PUBLISHED,
                     action = TicketActionsRefs.Publish.class,
@@ -67,7 +67,7 @@ final class RecoveryFixtures {
 
     private RecoveryFixtures() { }
 
-    /** The spec's example: {@link #sources} with {@link #EXAMPLE_PUBLISH}. */
+    /** The example graph: {@link #sources} with {@link #EXAMPLE_PUBLISH}. */
     static Map<String, String> example() {
         return sources(EXAMPLE_PUBLISH);
     }

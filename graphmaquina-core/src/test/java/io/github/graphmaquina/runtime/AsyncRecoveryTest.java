@@ -238,7 +238,7 @@ class AsyncRecoveryTest {
     }
 
     /**
-     * PUBLISH with the rules of the spec's example and a synchronous action that logs "publish" and returns a failure
+     * PUBLISH with the rules of the example graph and a synchronous action that logs "publish" and returns a failure
      * of the kind Unavailable, whose rule selects SCHEDULE_RETRY.
      */
     private static UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> unavailable() {
@@ -400,11 +400,17 @@ class AsyncRecoveryTest {
         }
     }
 
-    /** One literal row of R4, with the state and route expected independently of the selector implementation. */
+    /**
+     * One literal row of the returned-failure routing table, with the state and route expected independently of the
+     * selector implementation.
+     */
     private record ReturnedCase(String name, Class<? extends FailureKind> kind, boolean fallback,
                                 TicketChange route, TicketState state) { }
 
-    /** R4 in full through the async facade: synchronous, already completed and pending asynchronous actions. */
+    /**
+     * The whole returned-failure routing table through the async facade: synchronous, already completed and pending
+     * asynchronous actions.
+     */
     @Test
     void everyReturnedFailureRowKeepsItsRouteKindAndInputOnEveryAsyncPath() throws Exception {
         bounded(() -> {
@@ -1160,9 +1166,9 @@ class AsyncRecoveryTest {
     }
 
     /**
-     * Spec R6 and section 11 on the asynchronous path: a CompletionException subclass that completes the stage is
-     * not unwrapped either. Its cause is a type a rule lists, yet the call aborts with the subclass itself as cause,
-     * as it does when the action throws the same wrapper, rather than route by the cause.
+     * On the asynchronous path, a CompletionException subclass that completes the stage is not unwrapped. Its cause
+     * is a type a rule lists, yet the call aborts with the subclass itself as cause, as it does when the action
+     * throws the same wrapper, rather than route by the cause.
      */
     @Test
     void aCompletionExceptionSubclassCompletingTheStageIsNotUnwrapped() {

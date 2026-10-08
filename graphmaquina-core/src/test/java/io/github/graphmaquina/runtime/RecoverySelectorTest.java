@@ -158,7 +158,7 @@ class RecoverySelectorTest {
         }
     }
 
-    /** Spec R5's example, both ways round: the more specific declaration wins wherever it sits. */
+    /** Both ways round: the more specific declaration wins wherever it sits. */
     @Test
     void theMostSpecificTypeWinsBetweenARuleAndFailsOn() {
         TransitionSpec<Ticket, TicketState, TicketChange> legacySubtype = publish(

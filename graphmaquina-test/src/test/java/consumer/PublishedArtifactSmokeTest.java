@@ -365,7 +365,7 @@ class PublishedArtifactSmokeTest {
 
                 private RecoveryConsumer() { }
 
-                /** The graph of the spec's example: {@code action} gives PUBLISH its action, and the rules follow. */
+                /** The graph of the example: {@code action} gives PUBLISH its action, and the rules follow. */
                 private static GraphDefinition<Ticket, TicketState, TicketChange> graph(
                         UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> action) {
                     TransitionBuilder<Ticket, TicketState, TicketChange> publish = action.apply(StateGraph.define(KEY)

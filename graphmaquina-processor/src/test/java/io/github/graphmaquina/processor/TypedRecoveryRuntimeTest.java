@@ -228,13 +228,13 @@ class TypedRecoveryRuntimeTest {
             """;
 
     /**
-     * The spec's example: each rule is one call with its one type, in declaration order and after the edge's own
-     * failsOn, and the companion names no {@code List}. Each row of the spec's table ends as the table says: a
+     * The example graph: each rule is one call with its one type, in declaration order and after the edge's own
+     * failsOn, and the companion names no {@code List}. Each case ends as the assertion lists: a
      * returned kind and a thrown type of one rule reach its transition with its kind, with no cause and with the
      * exception, the fallback takes what no rule selects, and an exception no declaration names aborts the call.
      */
     @Test
-    void theSpecsExampleRoutesEveryRowOfItsTableThroughTheCompanion() throws Exception {
+    void theExampleGraphRoutesEveryReturnedAndThrownCaseThroughTheCompanion() throws Exception {
         Compilation.Result result = compile(RecoveryFixtures.example(), """
                 TicketActions actions = new TicketActions();
                 List<String> ends = new ArrayList<>();

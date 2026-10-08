@@ -55,7 +55,7 @@ import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /**
- * Spec R5: a throwable the action throws takes the route of the most specific type its edge declares that accepts it,
+ * A throwable the action throws takes the route of the most specific type its edge declares that accepts it,
  * among the types of its recovery rules and of its own failsOn, after the ownership, exclusion and poison checks; one
  * that no declared type accepts aborts, whatever fallback the edge has. The cause keeps its identity and the reason
  * its composition. Guards, setters and hooks are never classified.
@@ -110,7 +110,7 @@ class ThrownFailureRoutingTest {
         return end + ", " + ticket.state;
     }
 
-    /** Spec §9: each declared exception of the example takes its own route, and any other one aborts. */
+    /** Each declared exception of the example graph takes its own route, and any other one aborts. */
     @Test
     void theExampleRoutesEachDeclaredExceptionAndAbortsOnAnyOther() {
         Map<String, Throwable> failures = new LinkedHashMap<>();
@@ -202,7 +202,7 @@ class ThrownFailureRoutingTest {
                         SocketTimeoutException.class);
     }
 
-    /** Spec R5's example, both ways round: the more specific declaration wins, in a rule or in failsOn. */
+    /** Both ways round: the more specific declaration wins, in a rule or in failsOn. */
     @Test
     void theMostSpecificTypeWinsBetweenARuleAndFailsOn() {
         UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> legacySubtype =

@@ -16,8 +16,8 @@ import java.util.List;
 import java.util.function.UnaryOperator;
 
 /**
- * The shared fixture of the typed-recovery tests: the publication machine of the spec's example. PUBLISH leaves
- * READY towards PUBLISHED and is configured entirely by each test, which declares its action and every recovery
+ * The shared fixture of the typed-recovery tests: the publication machine every example graph is built on. PUBLISH
+ * leaves READY towards PUBLISHED and is configured entirely by each test, which declares its action and every recovery
  * rule, failsOn and onFailure it needs. The rest of the graph is fixed: SCHEDULE_RETRY, RECORD_REJECTION and
  * MARK_INTEGRATION_FAILED leave READY, RETRY returns to READY, and CLOSE ends both failure states.
  */
@@ -104,7 +104,7 @@ public final class RecoveryFixtures {
     }
 
     /**
-     * The rules of the spec's example on top of a PUBLISH that already has its action: two recover rules, the
+     * The rules of the example graph on top of a PUBLISH that already has its action: two recover rules, the
      * failsOn of the invalid response and the fallback.
      */
     public static TransitionBuilder<Ticket, TicketState, TicketChange> exampleRules(

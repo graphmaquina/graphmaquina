@@ -42,7 +42,7 @@ import java.util.function.UnaryOperator;
 import org.junit.jupiter.api.Test;
 
 /**
- * Spec R4: a failure the action returns takes the recovery rule of its failure kind, or else onFailure, which keeps
+ * A failure the action returns takes the recovery rule of its failure kind, or else onFailure, which keeps
  * the kind; with neither, the call throws UnhandledFailureException. The kind decides the route only: the outcome is
  * still FAILED and FAILURE_ROUTED, a cascade hands it to the parent action, and a recovery that names no edge from
  * the origin aborts as an onFailure that names none.
@@ -65,7 +65,7 @@ class ReturnedFailureRoutingTest {
         return (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> outcome;
     }
 
-    /** The two rules of the spec's example, without failsOn types and without a fallback. */
+    /** The two rules of the example graph, without failsOn types and without a fallback. */
     private static TransitionBuilder<Ticket, TicketState, TicketChange> rulesOnly(
             TransitionBuilder<Ticket, TicketState, TicketChange> publish) {
         return publish
@@ -80,7 +80,7 @@ class ReturnedFailureRoutingTest {
         return outcome.asFailed().orElseThrow(() -> new AssertionError("expected a failed outcome: " + outcome));
     }
 
-    /** R4, first row: no kind, a fallback. */
+    /** No kind, a fallback. */
     @Test
     void aFailureWithoutAKindTakesTheFallbackAndReportsNoKind() {
         Ticket ticket = new Ticket("T-1");
@@ -94,7 +94,7 @@ class ReturnedFailureRoutingTest {
         assertEquals(TicketState.INTEGRATION_FAILED, ticket.state);
     }
 
-    /** R4, second row: no kind and no fallback. Rules never take a failure without a kind. */
+    /** No kind and no fallback. Rules never take a failure without a kind. */
     @Test
     void aFailureWithoutAKindAndWithoutAFallbackIsUnhandled() {
         GraphDefinition<Ticket, TicketState, TicketChange> graph = publishing(
@@ -109,7 +109,7 @@ class ReturnedFailureRoutingTest {
         assertEquals(0, ticket.stateWrites);
     }
 
-    /** R4, third row: the rule of the kind takes the failure, whether or not the edge also has a fallback. */
+    /** The rule of the kind takes the failure, whether or not the edge also has a fallback. */
     @Test
     void aFailureOfARulesKindTakesThatRuleWithOrWithoutAFallback() {
         TransitionAction<Ticket, TicketState, TicketChange> action =
@@ -129,7 +129,7 @@ class ReturnedFailureRoutingTest {
                 "without a fallback: SCHEDULE_RETRY, Unavailable, RETRY_PENDING"), ends);
     }
 
-    /** The spec's example: two kinds, two recoveries, two states, and the requested edge still reported. */
+    /** The example graph: two kinds, two recoveries, two states, and the requested edge still reported. */
     @Test
     void twoKindsTakeTwoRecoveriesToTwoStates() {
         Ticket unavailable = new Ticket("T-1");
@@ -175,7 +175,7 @@ class ReturnedFailureRoutingTest {
     }
 
     /**
-     * Spec §11, "Categorías": a failure kind belongs to no edge and no machine. Two edges of one machine, PUBLISH
+     * A failure kind belongs to no edge and no machine. Two edges of one machine, PUBLISH
      * from READY and RETRY from RETRY_PENDING, and the PUBLISH of another machine declare the same kind, each with a
      * recovery of its own, and a failure of that kind takes the recovery of the edge it failed on.
      */
@@ -223,7 +223,7 @@ class ReturnedFailureRoutingTest {
                 ends);
     }
 
-    /** R4, fourth row: a kind no rule declares falls back, and the outcome still reports it. */
+    /** A kind no rule declares falls back, and the outcome still reports it. */
     @Test
     void aKindNoRuleDeclaresTakesTheFallbackAndKeepsItsKind() {
         Ticket ticket = new Ticket("T-1");
@@ -235,7 +235,7 @@ class ReturnedFailureRoutingTest {
         assertEquals(TicketState.INTEGRATION_FAILED, ticket.state);
     }
 
-    /** R4, fifth row: a kind no rule declares and no fallback; the exception carries no kind (D2). */
+    /** A kind no rule declares and no fallback; the exception carries no kind. */
     @Test
     void aKindNoRuleDeclaresWithoutAFallbackIsUnhandled() {
         GraphDefinition<Ticket, TicketState, TicketChange> graph = publishing(
@@ -322,7 +322,7 @@ class ReturnedFailureRoutingTest {
     }
 
     /**
-     * Spec R7: a definition built without the DSL whose recovery names no edge from the origin aborts as an onFailure
+     * A definition built without the DSL whose recovery names no edge from the origin aborts as an onFailure
      * that names none always did: the lookup of the recovery edge fails, and the call aborts in ACTION with that
      * failure as cause, nothing written and the action's journal entry FAILED.
      */

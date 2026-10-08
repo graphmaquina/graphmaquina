@@ -171,7 +171,7 @@ class CascadeRecoveryTest {
     }
 
     /**
-     * PUBLISH with the rules of the spec's example and a synchronous action that logs "publish" and returns a failure
+     * PUBLISH with the rules of the example graph and a synchronous action that logs "publish" and returns a failure
      * of the kind Unavailable, whose rule selects SCHEDULE_RETRY.
      */
     private static UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> unavailable() {
