@@ -1297,9 +1297,9 @@ compiles, and the exception is handled as the same exception thrown undeclared w
 action failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a guard
 or action throws or completes its stage with, bare or wrapped in one of those two classes, is never matched against
 `failsOn`, whatever the edge lists: it aborts the call and becomes its cause, so a failure of another call never
-passes for a failure of this one. A failure of the call itself, which a failed cascade throws into the action, is the
-exception: the engine throws it as itself or, when the transaction is poisoned, the failure that poisoned the
-transaction. An `Error` is never routed either: thrown as itself it propagates unchanged, and one that completes a
+passes for a failure of this one. A failure of the call itself, such as the abort a failed cascade throws into the
+action, is the exception: the engine throws it as itself or, when the transaction is poisoned, the failure that poisoned
+the transaction. An `Error` is never routed either: thrown as itself it propagates unchanged, and one that completes a
 stage, or that one of those two classes carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine exception, or
@@ -1471,10 +1471,11 @@ The engine keeps the boundary between domain failures and technical ones:
   `RuntimeException`, an `Error`, a library exception, a `CancellationException` or one of its subtypes, and exactly
   `CompletionException` or `ExecutionException`. An `Error` the action throws propagates as itself; one that
   completes the stage, or arrives wrapped, aborts the call with it as cause.
-- A failure of the call itself, which a failed cascade throws into the action, is never routed: the engine throws it as
-  itself or, when the transaction is poisoned, the failure that poisoned the transaction. Once a failed cascade poisoned
-  the unit of work, an exception that a declared type accepts, from an action that does not run as a recovery action,
-  takes no route either: the engine throws the failure that poisoned the transaction, before any route is chosen.
+- A failure of the call itself, such as the abort a failed cascade throws into the action, is never routed: the engine
+  throws it as itself or, when the transaction is poisoned, the failure that poisoned the transaction. Once a failed
+  cascade poisoned the unit of work, an exception that a declared type accepts, from an action that does not run as a
+  recovery action, takes no route either: the engine throws the failure that poisoned the transaction, before any route
+  is chosen.
 - A cancelled stage, and the timeout, interruption or refusal of the engine's own wait, abort the call and never
   reach a rule. A timeout that the adapter's own client throws, such as a `SocketTimeoutException`, is an exception
   like any other and can be declared.
@@ -2278,20 +2279,20 @@ abort of a nested step goes. Anything else reaches your action as a `TransitionA
 and carries the failure as its cause: an engine exception that describes no call, such as an unknown machine or an
 ambiguous identity, or a throwable other than an `Error` from a callback the engine does not wrap, such as an identity
 function. An `Error` poisons through such an abort too, but reaches your action as itself. Catching it in your action
-does not make the transaction safe to commit. When the action then returns an outcome, or completes its stage with one,
-throws or completes its stage with a failure of the call, or, unless it is a recovery action, throws a throwable that
-its `failsOn` or one of its recovery rules accepts, the engine throws the failure that poisoned the transaction and,
-unless the action is a recovery action, whose failure route was already taken, takes no failure route; an abort the
-engine raises itself, for a null outcome or stage or for a wait that timed out, was interrupted or was refused, is
-thrown instead. A cascade that names an unknown machine poisons too, by key or by facade type, even over an empty
-collection. A refused argument poisons nothing: a null peer, a null element, which `cascadeAll` refuses before any
-element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its collection once, before any
-element runs, and never reads it again, so elements added or removed while the cascade runs change neither which
-elements run nor their order; an exception or an `Error` the collection throws while it is copied propagates as it is
-and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another facade operation
-from inside an action: nested facade entry points on the action's own thread violate the runtime's reentrancy rules. A
-call submitted through `async(...)` runs separately on the executor's thread, unless that executor runs tasks inline, in
-which case the returned future fails with the `ReentrantTransitionException`.
+does not make the transaction safe to commit. Once the engine has your action's outcome, it throws the failure that
+poisoned the transaction instead of applying it. It does the same for a failure of the call that your action throws or
+completes its stage with, and, unless the action is a recovery action, for a throwable that its `failsOn` or one of its
+recovery rules accepts; no failure route is taken, and a recovery action's route was already taken. Your action can
+still end the call in another failure, such as an abort the engine raises for a null outcome or a wait that timed out,
+or one that carries a throwable no declared type accepts. A cascade that names an unknown machine poisons too, by key or
+by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
+`cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its
+collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
+change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
+propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
+facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
+reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
+runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
 
 For a throwable that a declared type accepts and that an action other than a recovery action throws or completes with,
 the engine checks the poison before it reads the throwable's message, for synchronous throws and exceptional completions
@@ -3085,7 +3086,7 @@ code runs.
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
 | `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, it arrives as the cause of that call's abort. |
 | `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
-| `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. The caller receives that failure, never this exception. |
+| `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. When the action lets this exception through, or the engine has the action's outcome, while the transaction is poisoned, the engine throws the failure that poisoned the transaction; the `PoisonedUnitOfWorkException` Javadoc says what else can end the call. |
 | `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
 | `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Thrown by a guard or an action, it arrives as the cause of that call's abort. |

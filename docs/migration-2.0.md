@@ -478,13 +478,12 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `CommitFailedException`, or, in a watch reaction, aborts the reevaluation that `Reaction.Aborted` reports; one an
   owner lookup throws arrives wrapped in `UndeclaredThrowableException`. It used to escape unchanged.
 - **A failed cascade always poisons.** An `Error`, or a throwable from a callback the engine does not wrap, that leaves
-  a cascade poisons the unit of work as an engine failure does, even when the action catches it, and an exception
-  that a recovery rule or `failsOn` matches after it no longer takes a failure route. `cascadeAll` refuses a null
-  element before any element runs, and an
-  unknown machine even over an empty collection; an unknown facade in a cascade poisons like an unknown key. What
-  poisons without being a failure of the call, an unknown machine or facade, an ambiguous identity, a null peer state,
-  reaches the action as an abort that carries it, and that abort ends the call unless the action replaces it with an
-  exception of its own.
+  a cascade poisons the unit of work as an engine failure does, even when the action catches it, and an exception that a
+  recovery rule or `failsOn` matches after it no longer takes a failure route. `cascadeAll` refuses a null element
+  before any element runs, and an unknown machine even over an empty collection; an unknown facade in a cascade poisons
+  like an unknown key. What poisons without being a failure of the call, an unknown machine or facade, an ambiguous
+  identity, a null peer state, reaches the action as an abort that carries it. The transaction is poisoned; the
+  `PoisonedUnitOfWorkException` Javadoc says what the engine throws when the action ends.
 - **`cascadeAll` reads its collection once.** It copies the collection before any element runs, so elements
   added or removed while the cascade runs change neither which elements run nor their order. It used to fail with
   a `ConcurrentModificationException` of its own iteration or stop early, which could let the root commit a
