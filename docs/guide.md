@@ -2277,9 +2277,9 @@ step, a cycle or the depth limit, reaches your action as it is. Anything else re
 describes no call, such as an unknown machine or an ambiguous identity, or a throwable other than an `Error` from a
 callback the engine does not wrap, such as an identity function. An `Error` poisons through such an abort too, but
 reaches your action as itself. Catching it in your action does not make the transaction safe to commit. When the action
-then returns, throws a throwable that its `failsOn` or one of its recovery rules accepts, or lets a failure of the call
-through, the root throws the failure that poisoned it, commits nothing and runs no failure route. A cascade that names
-an unknown machine poisons too, by key
+then returns or lets a failure of the call through, or, unless it is a recovery action, throws a throwable that its
+`failsOn` or one of its recovery rules accepts, the root throws the failure that poisoned it, commits nothing and runs
+no failure route. A cascade that names an unknown machine poisons too, by key
 or by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
 `cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its
 collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
@@ -2289,16 +2289,18 @@ facade operation from inside an action: nested facade entry points on the action
 reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
 runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
 
-For a throwable that a declared type accepts, the engine checks the poison before it reads the throwable's message, for
-synchronous throws and exceptional completions of completed or pending stages alike. Exceptional stage completions
-retain their original throwable through the wait, so the engine's own reading of the message never comes first. The JDK
-may already have read that message, for example when `supplyAsync` wrapped the throwable in a `CompletionException`. The
-abort of a throwable that the edge's action, other than a recovery action, throws or completes with is composed from
-that throwable's string, which may read its message, whether or not the transaction is poisoned: a throwable that no
-declared type accepts, a `CancellationException` or a `StateMachineException` that is not a failure of this call, or an
-`Error` that completes a stage or arrives wrapped. A throwable that a recovery action throws or completes with, other
-than an `Error` thrown as itself or a failure of this call, aborts the call with a message composed from the recovery
-action's name and the original failure's reason, never from that throwable's string.
+For a throwable that a declared type accepts and that an action other than a recovery action throws or completes with,
+the engine checks the poison before it reads the throwable's message, for synchronous throws and exceptional completions
+of completed or pending stages alike. Exceptional stage completions retain their original throwable through the wait, so
+the engine's own reading of the message never comes first. The JDK may already have read that message, for example when
+`supplyAsync` wrapped the throwable in a `CompletionException`. A throwable that the edge's action, other than a
+recovery action, throws or completes with, that no declared type accepts, and that is neither an `Error` thrown as
+itself nor a failure of this call, aborts the call with a message composed from that throwable's string, which may read
+its message, whether or not the transaction is poisoned. A throwable that a recovery action throws or completes with is
+never routed: an `Error` thrown as itself propagates, a failure of this call ends the call as itself or as the failure
+that poisoned the transaction, and any other throwable, whatever the recovery edge declares and whether or not the
+transaction is poisoned, aborts the call with a message composed from the recovery action's name and the original
+failure's reason, never from that throwable's string.
 
 `@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
 unused watch-pair declaration.
