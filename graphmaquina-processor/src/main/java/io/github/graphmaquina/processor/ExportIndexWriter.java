@@ -50,7 +50,7 @@ final class ExportIndexWriter {
 
     ExportIndexWriter(ProcessingEnvironment environment) {
         this.environment = environment;
-        this.diagnostics = new Diagnostics(environment.getMessager());
+        this.diagnostics = new Diagnostics(environment);
     }
 
     /**

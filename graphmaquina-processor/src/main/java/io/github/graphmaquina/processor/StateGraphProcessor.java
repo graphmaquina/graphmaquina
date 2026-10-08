@@ -41,6 +41,10 @@ import javax.lang.model.type.DeclaredType;
  * Entry point. Claims the annotations {@link ManifestRegistry} enumerates for this compilation, the fixed ones
  * and the generated ones alike, so it coexists with other processors and never matches a name it does not own.
  *
+ * <p>Exact annotation-value diagnostics use javac's public {@code Trees} API. This processor therefore does not
+ * register for Gradle incremental annotation processing, whose wrapped processing environment cannot expose that
+ * service. Build adapters may still skip unchanged compilation tasks through their normal up-to-date checks.</p>
+ *
  * <p>What the processor learns is kept for the whole compilation, not for one round: a machine is resolved
  * once, its companion is handed to the {@code Filer} once, and a machine that failed is not built again by the
  * set that holds it. Each declaration is handled in the round it appears in, and the round that ends the
@@ -107,7 +111,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     public synchronized void init(ProcessingEnvironment env) {
         super.init(env);
         manifests = ManifestRegistry.load(env);
-        diagnostics = new Diagnostics(env.getMessager());
+        diagnostics = new Diagnostics(env);
         models = new LinkedHashMap<>();
         failed = new HashSet<>();
         withheld = new HashSet<>();

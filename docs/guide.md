@@ -1152,8 +1152,12 @@ In this table, `S` is the machine's state enum, `T` its transition enum and `P` 
 
 `StatePolicy`, `Transition` and `Reject` are repeatable, through the generated `StatePolicies`, `Transitions` and
 `Rejects` containers. `from` must contain at least one state. Guard arrays execute in declaration order. `failsOn` takes
-throwable class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn` and `timeout` require an
-action, and `timeout` requires an asynchronous one.
+throwable class literals. An absent `action` makes the edge a `MOVE`; `onFailure`, `failsOn`, `recoveries` and
+`timeout` require an action, and `timeout` requires an asynchronous one.
+
+The processor currently reads and validates `recoveries`, including their failure kinds, throwable types and
+recovery transitions. Generated companions do not yet emit the corresponding `recover(...)` calls, so these
+annotations do not yet change runtime routing.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
 `onFailure`, `timeout`, `afterCommit`, `Transition.action` and custom `When.condition` accept zero or one value.
@@ -2806,7 +2810,7 @@ code runs.
 | `SG604` | Invalid or contradictory export/role, or a host its generated references container cannot access, such as a private nested class. Check markers and exported signatures. |
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |
 | `SG606` | Graph or watch vocabulary belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract operations. On a default, static or private method of its own facade it is `SG504`. |
-| `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit` or `When.condition`. |
+| `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit` or `When.condition`. `recoveries` is no such element: it holds any number of rules, and several rules are never several fallbacks. |
 | `SG608` | Invalid, duplicated or unused peer, a watched peer outside this compilation, or a peer whose types the owner's package cannot name. |
 | `SG609` | A retired 1.x graph annotation is still on the class path and still used. Replace it as [migrating to 2.0](migration-2.0.md) describes. |
 

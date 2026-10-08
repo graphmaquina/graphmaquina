@@ -3,6 +3,7 @@ package io.github.graphmaquina.processor;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineTypes;
+import io.github.graphmaquina.processor.model.RecoveryModel;
 import io.github.graphmaquina.processor.model.TransitionModel;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -26,6 +27,14 @@ import javax.lang.model.type.TypeMirror;
  * <p>Every state and every identifier is read as the constant it is and checked against the machine's own enum
  * before its name is used, and every symbol is resolved to the method the generated code calls. No name reaches
  * the model without one of those two checks having accepted it first.</p>
+ *
+ * <p>The recovery rules of an edge are read from the nested {@code Recovery} values of its {@code recoveries}, in
+ * declaration order, each with the values it was read from, and {@link StructuralChecks} reports a problem of one at
+ * the value that is wrong: a throwable type a failsOn may not name, a kind that is not a failure kind, or a kind or a
+ * type the edge declares twice. Rules on an edge that runs no action are reported where its {@code to} is. Whether a
+ * rule's transition leaves every origin of the edge is a question about the whole graph, which its outline answers.
+ * A rule whose kind or transition javac could not read, and a type of its failsOn javac could not read, are left
+ * out, since javac has already refused them.</p>
  */
 final class TypedTransitions {
 
@@ -90,10 +99,15 @@ final class TypedTransitions {
                 : annotations.array(mirror, "failsOn");
         List<TypeMirror> failsOn = classes(failsOnValues);
         structure.checkFailsOn(failsOn, failsOnValues, element, mirror);
+        List<RecoveryModel> recoveries = recoveries(mirror, machine);
+        List<AnnotationValue> failsOnClasses = classValues(failsOnValues);
+        structure.checkRecoveries(recoveries, classes(failsOnClasses), failsOnClasses, element, mirror);
         Optional<Binding> afterCommit = afterCommit(element, mirror, machine)
                 .or(() -> defaultAfterCommit);
 
         structure.checkActionRequired(declaredAction.isPresent(), onFailure, failsOn, timeout, "",
+                DiagnosticAnchor.of(element, mirror, declaredTo.get()));
+        structure.checkRecoveriesNeedAction(declaredAction.isPresent(), recoveries, "",
                 DiagnosticAnchor.of(element, mirror, declaredTo.get()));
         structure.checkAsyncTimeout(timeout, action,
                 DiagnosticAnchor.of(element, mirror, declaredTimeout.orElse(declaredTo.get())));
@@ -102,7 +116,7 @@ final class TypedTransitions {
         }
         return Optional.of(new TransitionModel(id.get(), from.get(), to.get(),
                 action.isPresent() ? TransitionKind.ACTION : TransitionKind.MOVE, label(action, operation),
-                action, guards, onFailure, failsOn, timeout, afterCommit));
+                action, guards, onFailure, failsOn, timeout, afterCommit, recoveries));
     }
 
     /** Resolves the optional hook on a definition or transition at its own declaration. */
@@ -161,6 +175,40 @@ final class TypedTransitions {
         return timeouts.read(timeout, DiagnosticAnchor.of(element, mirror, value));
     }
 
+    /**
+     * The recovery rules {@code mirror} declares in its {@code recoveries}, in declaration order: none when its
+     * annotation type declares no such element.
+     */
+    private List<RecoveryModel> recoveries(AnnotationMirror mirror, MachineTypes machine) {
+        List<AnnotationValue> declared = annotations.find(mirror, "recoveries").isEmpty()
+                ? List.of()
+                : annotations.array(mirror, "recoveries");
+        List<RecoveryModel> recoveries = new ArrayList<>();
+        for (AnnotationValue value : declared) {
+            if (value.getValue() instanceof AnnotationMirror recovery) {
+                recovery(recovery, machine).ifPresent(recoveries::add);
+            }
+        }
+        return recoveries;
+    }
+
+    /**
+     * The rule {@code recovery} declares, or empty when javac could not read its kind as a class or its transition as
+     * a constant of {@code machine}'s own enum. A type of its failsOn javac could not read as a class is left out.
+     */
+    private Optional<RecoveryModel> recovery(AnnotationMirror recovery, MachineTypes machine) {
+        Optional<AnnotationValue> declaredKind = annotations.find(recovery, "kind");
+        Optional<AnnotationValue> declaredTransition = annotations.find(recovery, "transition");
+        if (declaredKind.isEmpty() || declaredTransition.isEmpty()
+                || !(declaredKind.get().getValue() instanceof TypeMirror kind)) {
+            return Optional.empty();
+        }
+        Optional<String> transition = TypedValues.constantName(declaredTransition.get(), machine.transitionsElement());
+        List<AnnotationValue> failsOnValues = classValues(annotations.array(recovery, "failsOn"));
+        return transition.map((String identifier) -> new RecoveryModel(kind, identifier, classes(failsOnValues),
+                recovery, declaredKind.get(), failsOnValues));
+    }
+
     /** The exception types an array element names, skipping any value javac could not read as a class. */
     private static List<TypeMirror> classes(List<AnnotationValue> values) {
         List<TypeMirror> types = new ArrayList<>();
@@ -170,6 +218,17 @@ final class TypedTransitions {
             }
         }
         return types;
+    }
+
+    /** The values of an array element that javac read as a class, in their order, skipping any other. */
+    private static List<AnnotationValue> classValues(List<AnnotationValue> values) {
+        List<AnnotationValue> classes = new ArrayList<>();
+        for (AnnotationValue value : values) {
+            if (value.getValue() instanceof TypeMirror) {
+                classes.add(value);
+            }
+        }
+        return classes;
     }
 
     /** The label of the edge: the operation's own name, the selected action's for a type-level edge, empty for a move. */

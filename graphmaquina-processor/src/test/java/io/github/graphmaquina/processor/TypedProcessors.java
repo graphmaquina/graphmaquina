@@ -128,7 +128,7 @@ public final class TypedProcessors {
             Elements elements = processingEnv.getElementUtils();
             Types types = processingEnv.getTypeUtils();
             Signatures signatures = new Signatures(elements, types);
-            Diagnostics diagnostics = new Diagnostics(processingEnv.getMessager());
+            Diagnostics diagnostics = new Diagnostics(processingEnv);
             Map<String, SymbolDescriptor> symbols = SymbolResolver.symbols(registry.manifest().orElseThrow());
             SymbolResolver methods = new SymbolResolver(symbols, signatures, new EffectiveMethods(signatures),
                     new Bindings(signatures), diagnostics);

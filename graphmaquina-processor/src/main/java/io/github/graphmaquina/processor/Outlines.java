@@ -5,6 +5,7 @@ import io.github.graphmaquina.dsl.PolicyOutline;
 import io.github.graphmaquina.dsl.TransitionOutline;
 import io.github.graphmaquina.dsl.WatchOutline;
 import io.github.graphmaquina.processor.model.MachineModel;
+import io.github.graphmaquina.processor.model.RecoveryModel;
 import io.github.graphmaquina.processor.model.RejectionModel;
 import io.github.graphmaquina.processor.model.RuleModel;
 import io.github.graphmaquina.processor.model.StatePolicyModel;
@@ -17,8 +18,9 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Turns a model into the structural outline the DSL builds too: only the edges that were declared, one policy
- * per state that declares one or is terminal, and the identifiers each watch executes. No pair is materialized.
+ * Turns a model into the structural outline the DSL builds too: only the edges that were declared, each with the
+ * identifiers its fallback and its recovery rules recover through, one policy per state that declares one or is
+ * terminal, and the identifiers each watch executes. No pair is materialized.
  */
 final class Outlines {
 
@@ -27,9 +29,13 @@ final class Outlines {
     static MachineOutline of(MachineModel model) {
         List<TransitionOutline> edges = new ArrayList<>();
         for (TransitionModel transition : model.allTransitions()) {
+            List<String> recoveries = new ArrayList<>();
+            for (RecoveryModel recovery : transition.recoveries()) {
+                recoveries.add(recovery.transition());
+            }
             for (String from : transition.from()) {
                 edges.add(new TransitionOutline(from, transition.transitionId(), transition.to(), transition.kind(),
-                        transition.onFailure()));
+                        transition.onFailure(), recoveries));
             }
         }
         List<WatchOutline> watches = new ArrayList<>();

@@ -10,9 +10,9 @@ import javax.lang.model.element.Element;
  * Where a diagnostic belongs: the declaration that carries it and, when they are known, the annotation and the
  * exact value inside that annotation.
  *
- * <p>javac underlines the narrowest anchor it is given, so a reader is pointed at the value that is wrong
- * instead of at the whole declaration. An anchor is carried alongside a model so that the element which
- * produced a value is still reachable when the failure is finally reported.</p>
+ * <p>Diagnostics binds explicit values to their source expressions, including values in implicit repeatable
+ * containers. When source is unavailable or a value is defaulted, Messager retains the available anchor. The
+ * semantic values stay reachable alongside the model until validation reports a problem.</p>
  */
 record DiagnosticAnchor(Element element, Optional<AnnotationMirror> annotation, Optional<AnnotationValue> value) {
 
