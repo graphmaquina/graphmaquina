@@ -226,6 +226,23 @@ class MachineOutlineValidatorTest {
                 MachineOutlineValidator.validate(outline));
     }
 
+    /** A rule and the onFailure that miss the same identifier are checked apart: two problems, rule first. */
+    @Test
+    void sg301ARuleAndTheOnFailureThatMissTheSameRecoveryTransition() {
+        MachineOutline outline = new MachineOutline("Doc/DocStatus", STATES, CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, "ARCHIVE", "ARCHIVE"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                policies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of());
+        assertEquals(List.of(
+                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares recovery"
+                                + " ARCHIVE, but no transition ARCHIVE leaves REVIEW"),
+                        new InvalidGraphException.Problem("SG301", "REVIEW -PUBLISH-> PUBLISHED declares onFailure ="
+                                + " ARCHIVE, but no transition ARCHIVE leaves REVIEW")),
+                MachineOutlineValidator.validate(outline));
+    }
+
     /** On one edge the rules come first, in declaration order, and the onFailure last. */
     @Test
     void theRecoveryTransitionsOfAnEdgeAreReportedBeforeItsOnFailure() {

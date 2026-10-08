@@ -48,7 +48,7 @@ class OutlineValidationDifferentialTest {
 
     @Test
     void theCorpusEnumeratesEveryGraphOfThreeStatesAndTheDeclaredFixtures() {
-        assertEquals(512 * PERMISSIONS.size() * TERMINALS.size() * POLICIES.size() + 20, CORPUS.size());
+        assertEquals(512 * PERMISSIONS.size() * TERMINALS.size() * POLICIES.size() + 21, CORPUS.size());
     }
 
     @Test
@@ -221,6 +221,12 @@ class OutlineValidationDifferentialTest {
                 Set.of("REVIEW"),
                 List.of(move("DRAFT", "SUBMIT", "REVIEW"),
                         recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, null, "ARCHIVE", "ARCHIVE"),
+                        move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
+                docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
+        outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),
+                Set.of("REVIEW"),
+                List.of(move("DRAFT", "SUBMIT", "REVIEW"),
+                        recovering("REVIEW", "PUBLISH", "PUBLISHED", TransitionKind.ACTION, "ARCHIVE", "ARCHIVE"),
                         move("REVIEW", "SEND_BACK", "DRAFT"), move("PUBLISHED", "ARCHIVE", "ARCHIVED")),
                 docPolicies("DRAFT", "REVIEW", "PUBLISHED", "ARCHIVED"), List.of()));
         outlines.add(new MachineOutline("Doc/DocStatus", DOC_STATES, DOC_CATALOG, "DRAFT", Set.of("ARCHIVED"),

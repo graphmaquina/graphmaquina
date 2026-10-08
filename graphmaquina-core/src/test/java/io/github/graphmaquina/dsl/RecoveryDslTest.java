@@ -252,6 +252,21 @@ class RecoveryDslTest {
                 error.problems());
     }
 
+    /** A rule and the onFailure that name the same identifier, which leaves nowhere, are two problems. */
+    @Test
+    void sg301WhenARuleAndTheOnFailureNameTheSameMissingIdentifier() {
+        InvalidGraphException error = refused(
+                (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish.action("publish", SUCCEEDS)
+                        .recover(PublicationFailures.Unavailable.class, TicketChange.CLOSE)
+                        .onFailure(TicketChange.CLOSE));
+        assertEquals(List.of(
+                        new InvalidGraphException.Problem("SG301", WHERE + " declares recovery CLOSE, but no"
+                                + " transition CLOSE leaves READY"),
+                        new InvalidGraphException.Problem("SG301", WHERE + " declares onFailure = CLOSE, but no"
+                                + " transition CLOSE leaves READY")),
+                error.problems());
+    }
+
     @Test
     void sg302AForbiddenTypeInARule() {
         InvalidGraphException error = refused(
