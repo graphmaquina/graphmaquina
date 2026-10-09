@@ -3025,7 +3025,9 @@ that behavior is required.
 `Optional`. `submachine(state, child)` binds a machine over the same entity, whose lookups return the entity itself.
 `exit(terminal, id)` maps a terminal state of the child to an identifier of the parent, its exit, and
 `endSubmachine()` returns to the graph. `build()` checks the bindings (`SG801` to `SG805`), and the definition's
-`submachine(state)` returns the binding of a state.
+`submachine(state)` returns the binding of a state. A registry that holds the parent must hold the child's machine
+too, built from that very definition: otherwise `MachineRegistry.Builder.build()` throws `IllegalStateException`, and
+so does a standalone `build()`, whose registry holds no other machine.
 
 Other stages support named guards, async guards, async actions, `failsOn`, `recover`, `timeout`, `afterCommit`,
 `afterCommitWith`, watches, sub-machines and cycle allowances. A low-level `StateMachine` exposes

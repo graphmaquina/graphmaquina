@@ -64,11 +64,15 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * it was asked for without allocating an Optional.
      */
     private final List<Optional<Enum<?>>> presentTransitions;
+    /** See {@link #bindingsAsChild()}. */
+    private final List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild;
+    /** See {@link #bindsSubmachines()}. */
+    private final boolean bindsSubmachines;
 
     DefaultStateMachine(GraphDefinition<E, S, T> definition, Function<? super E, ? extends S> getter,
                         BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
                         Optional<Duration> asyncTimeout, Executor executor, boolean ownsExecutor,
-                        MachineRegistry registry) {
+                        MachineRegistry registry, List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild) {
         this.definition = definition;
         this.getter = getter;
         this.setter = setter;
@@ -79,7 +83,29 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.registry = registry;
         this.async = new DefaultAsyncStateMachine<>(this);
         this.presentTransitions = present(definition.key().transitions());
+        this.bindingsAsChild = bindingsAsChild;
+        this.bindsSubmachines = bindsSubmachines(definition);
     }
+
+    /** Whether some state of {@code definition} holds a sub-machine. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> boolean bindsSubmachines(
+            GraphDefinition<E, S, T> definition) {
+        for (S state : definition.key().states().getEnumConstants()) {
+            if (definition.submachine(state).isPresent()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The bindings in which this machine is the child, in the order the registry indexed them: the order of its
+     * builders, then of each parent's states. Immutable, and empty for a machine that no definition binds.
+     */
+    List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild() { return bindingsAsChild; }
+
+    /** Whether some state of this machine's own definition holds a sub-machine; computed once, at construction. */
+    boolean bindsSubmachines() { return bindsSubmachines; }
 
     /** {@code Optional.of(constant)} for each constant of {@code type}, in ordinal order. */
     private static List<Optional<Enum<?>>> present(Class<? extends Enum<?>> type) {

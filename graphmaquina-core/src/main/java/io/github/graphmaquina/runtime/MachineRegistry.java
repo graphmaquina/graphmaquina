@@ -6,12 +6,14 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.UnknownFacadeException;
 import io.github.graphmaquina.error.UnknownPeerMachineException;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -23,8 +25,11 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Resolves peers and cascades. Built from builders and passed to itself into every machine. Its maps are filled
- * once, when it is assembled for {@link Builder#build()} or for a standalone machine, and never touched again.
+ * Resolves peers and cascades, and hands each machine the sub-machine bindings in which it is the child. Built from
+ * builders and passed to itself into every machine. Its maps are filled once, when it is assembled for
+ * {@link Builder#build()} or for a standalone machine, and never touched again. Assembling refuses a binding whose
+ * child machine is not in the registry, or was built from another {@code GraphDefinition} instance than the one the
+ * binding holds.
  *
  * <p>A cascade runs inside the root's transaction and under the root machine's deadline: a cascaded peer's
  * asynchronous waits are bounded by the asyncTimeout of the machine whose call started the root, not by its own.
@@ -61,17 +66,21 @@ public final class MachineRegistry implements AutoCloseable {
     /**
      * The one way machines join a registry, standalone ones included. Every check runs before the first machine
      * builder is consumed, so a build that fails leaves every builder as it was, ready to be fixed and built again.
+     * Each machine receives the bindings in which it is the child, in the order of the builders and then of the
+     * parent's states.
      */
     private static MachineRegistry assemble(List<? extends StateMachines.Builder<?, ?, ?>> builders,
                                             int maxCascadeDepth, int maxWatchChain, Observers observers) {
-        Set<MachineKey<?, ?, ?>> keys = new HashSet<>();
+        Map<MachineKey<?, ?, ?>, StateMachines.Builder<?, ?, ?>> byKey = new HashMap<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
-            keys.add(builder.key());
+            byKey.put(builder.key(), builder);
         }
+        Map<MachineKey<?, ?, ?>, List<SubmachineBinding<?, ?, ?, ?, ?, ?>>> bindings = new HashMap<>();
         Set<Class<?>> facadeTypes = new HashSet<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             builder.validate();
-            checkWatches(builder.definition(), keys);
+            checkWatches(builder.definition(), byKey.keySet());
+            indexBindings(builder.definition(), byKey, bindings);
             // Defensive: as(...) is typed by (E, S) and add(...) already rejects a duplicate key,
             // so a typed caller cannot reach this collision.
             Optional<? extends Class<?>> facade = builder.facade();
@@ -82,7 +91,8 @@ public final class MachineRegistry implements AutoCloseable {
         }
         MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, observers);
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
-            DefaultStateMachine<?, ?, ?> machine = builder.build(registry);
+            DefaultStateMachine<?, ?, ?> machine =
+                    builder.build(registry, List.copyOf(bindings.getOrDefault(builder.key(), List.of())));
             registry.machines.put(machine.key(), machine);
             Optional<? extends Class<?>> facade = builder.facade();
             if (facade.isPresent()) {
@@ -102,6 +112,33 @@ public final class MachineRegistry implements AutoCloseable {
                 throw new IllegalStateException("the watch of " + definition.key() + "." + state + " points to "
                         + watch.get().peer() + ", which is not in the registry");
             }
+        }
+    }
+
+    /**
+     * Adds a binding for each sub-machine of {@code definition}, in state order, under the key of its child. The child
+     * must be in the registry and built from the very definition the binding holds.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void indexBindings(
+            GraphDefinition<E, S, T> definition, Map<MachineKey<?, ?, ?>, StateMachines.Builder<?, ?, ?>> builders,
+            Map<MachineKey<?, ?, ?>, List<SubmachineBinding<?, ?, ?, ?, ?, ?>>> bindings) {
+        for (S state : definition.key().states().getEnumConstants()) {
+            Optional<SubmachineSpec<E, S, T, ?, ?, ?>> submachine = definition.submachine(state);
+            if (submachine.isEmpty()) {
+                continue;
+            }
+            SubmachineSpec<E, S, T, ?, ?, ?> spec = submachine.get();
+            Optional<StateMachines.Builder<?, ?, ?>> child = Optional.ofNullable(builders.get(spec.childKey()));
+            if (child.isEmpty()) {
+                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state + " is "
+                        + spec.childKey() + ", which is not in the registry");
+            }
+            if (child.get().definition() != spec.child()) {
+                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state
+                        + " was built from another definition of " + spec.childKey() + " than the registered machine");
+            }
+            bindings.computeIfAbsent(spec.childKey(), (MachineKey<?, ?, ?> key) -> new ArrayList<>())
+                    .add(new SubmachineBinding<>(definition.key(), spec));
         }
     }
 
@@ -288,8 +325,8 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
-         * Checks every machine builder, its identity, accessors, asyncTimeout, watches and facade, before it consumes
-         * any of them; only a build that succeeds marks this builder and its machine builders used.
+         * Checks every machine builder, its identity, accessors, asyncTimeout, watches, sub-machines and facade,
+         * before it consumes any of them; only a build that succeeds marks this builder and its machine builders used.
          */
         public MachineRegistry build() {
             requireUnused();

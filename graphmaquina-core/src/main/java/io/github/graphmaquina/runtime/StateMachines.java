@@ -5,6 +5,7 @@ import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StateMachine;
 import java.time.Duration;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Executor;
@@ -108,7 +109,8 @@ public final class StateMachines {
          * Standalone machine: a registry of one, built by the same code as {@link MachineRegistry.Builder#build()},
          * but with no observer, since only {@link MachineRegistry.Builder#observer} adds one. Its own facade from
          * {@code as(...)} and its own key are the only peers it reaches, with reference identity if none was
-         * declared. Its watches react after each commit, and a watch on any other machine is refused here. That
+         * declared. Its watches react after each commit, and a watch on any other machine is refused here. So is a
+         * definition that binds another machine as a sub-machine, since that machine is not in its registry. That
          * registry is internal and unreachable, so nothing can close it: when no {@code asyncExecutor} was given, its
          * default executor is never closed.
          */
@@ -122,7 +124,10 @@ public final class StateMachines {
 
         boolean hasIdentity() { return identity.isPresent(); }
 
-        /** Every check build(registry) makes, without consuming the builder, so that a failed build can be retried. */
+        /**
+         * Every check build(registry, bindingsAsChild) makes, without consuming the builder, so that a failed build can
+         * be retried.
+         */
         void validate() {
             requireUnused();
             if (getter.isEmpty() || setter.isEmpty()) {
@@ -134,13 +139,15 @@ public final class StateMachines {
             }
         }
 
-        DefaultStateMachine<E, S, T> build(MachineRegistry registry) {
+        /** {@code bindingsAsChild} are the bindings in which the machine is the child, as the registry indexed them. */
+        DefaultStateMachine<E, S, T> build(MachineRegistry registry,
+                                           List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild) {
             validate();
             used = true;
             boolean owns = executor.isEmpty();
             Executor resolved = executor.isPresent() ? executor.get() : Executors.newVirtualThreadPerTaskExecutor();
             return new DefaultStateMachine<>(definition, getter.get(), setter.get(), identity, asyncTimeout, resolved,
-                    owns, registry);
+                    owns, registry, bindingsAsChild);
         }
 
         private void requireUnused() {
