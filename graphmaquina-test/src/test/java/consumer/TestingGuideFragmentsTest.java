@@ -33,10 +33,10 @@ import org.junit.jupiter.api.io.TempDir;
  * {@code docs/testing.md} verbatim. They are wrapped only by the types and helpers each section names and by one
  * method per sample, so an expectation the page shows has to hold for this test to pass: the publication types and
  * the {@code graph}, {@code asyncGraph} and {@code machine} helpers for the first section, and the order and payment
- * types, their keys {@code ORDERS} and {@code PAYMENTS} and the {@code orders()} helper for the second. A heading or
- * block that cannot be found fails the test instead of compiling nothing. The page, the repository and the release
- * come from the {@code testingGuidePath}, {@code artifactRepository} and {@code artifactVersion} system properties
- * that {@code publishedArtifactTest} sets.
+ * types, their keys {@code ORDERS} and {@code PAYMENTS} and the {@code orders}, {@code asyncOrders} and
+ * {@code registry} helpers for the second. A heading or block that cannot be found fails the test instead of compiling
+ * nothing. The page, the repository and the release come from the {@code testingGuidePath},
+ * {@code artifactRepository} and {@code artifactVersion} system properties that {@code publishedArtifactTest} sets.
  */
 class TestingGuideFragmentsTest {
 
@@ -60,11 +60,15 @@ class TestingGuideFragmentsTest {
             import io.github.graphmaquina.dsl.GraphBuilder;
             import io.github.graphmaquina.dsl.StateGraph;
             import io.github.graphmaquina.dsl.TransitionBuilder;
+            import io.github.graphmaquina.runtime.MachineRegistry;
             import io.github.graphmaquina.runtime.StateMachines;
             import io.github.graphmaquina.test.AsyncAssertions;
+            import io.github.graphmaquina.test.StateSnapshot;
+            import io.github.graphmaquina.test.probe.ActionCall;
             import io.github.graphmaquina.test.probe.ActionProbe;
             import io.github.graphmaquina.test.probe.CallTrace;
             import io.github.graphmaquina.test.probe.ControlledAsyncAction;
+            import io.github.graphmaquina.test.probe.PendingInvocation;
             import java.time.Duration;
             import java.util.List;
             import java.util.Optional;
@@ -254,15 +258,29 @@ class TestingGuideFragmentsTest {
 
                 /** The order graph, whose PAYING holds the payment of the order. */
                 static GraphDefinition<Order, OrderState, OrderChange> orders() {
-                    return StateGraph.define(ORDERS)
+                    return declareOrders(UnaryOperator.identity());
+                }
+
+                /** The same order graph, with {@code action} as the asynchronous action of the exit PAY. */
+                static GraphDefinition<Order, OrderState, OrderChange> asyncOrders(
+                        AsyncTransitionAction<Order, OrderState, OrderChange> action) {
+                    return declareOrders((TransitionBuilder<Order, OrderState, OrderChange> pay) ->
+                            pay.asyncAction("pay", action));
+                }
+
+                /** The order graph of the guide's sub-machine section, PAY given its action by withAction. */
+                private static GraphDefinition<Order, OrderState, OrderChange> declareOrders(
+                        UnaryOperator<TransitionBuilder<Order, OrderState, OrderChange>> withAction) {
+                    GraphBuilder<Order, OrderState, OrderChange> builder = StateGraph.define(ORDERS)
                             .initial(OrderState.CART)
                             .terminal(OrderState.PAID)
                             .terminal(OrderState.REFUSED)
                             .terminal(OrderState.ABANDONED)
                             .statePolicy(OrderState.CART, "check the cart out first")
                             .statePolicy(OrderState.PAYING, "the payment decides")
-                            .transition(OrderChange.CHECKOUT, OrderState.CART, OrderState.PAYING).endTransition()
-                            .transition(OrderChange.PAY, OrderState.PAYING, OrderState.PAID).endTransition()
+                            .transition(OrderChange.CHECKOUT, OrderState.CART, OrderState.PAYING).endTransition();
+                    return withAction.apply(builder.transition(OrderChange.PAY, OrderState.PAYING, OrderState.PAID))
+                            .endTransition()
                             .transition(OrderChange.REFUSE, OrderState.PAYING, OrderState.REFUSED).endTransition()
                             .transition(OrderChange.ABANDON, OrderState.CART, OrderState.ABANDONED).endTransition()
                             .transition(OrderChange.ABANDON, OrderState.PAYING, OrderState.ABANDONED).endTransition()
@@ -274,12 +292,31 @@ class TestingGuideFragmentsTest {
                             .build();
                 }
 
+                /** A registry of the order machine built from {@code orders} and of the payment machine. */
+                static MachineRegistry registry(GraphDefinition<Order, OrderState, OrderChange> orders) {
+                    return MachineRegistry.builder()
+                            .add(StateMachines.from(orders)
+                                    .state((Order order) -> order.state,
+                                            (Order order, OrderState state) -> order.state = state)
+                                    .identity((Order order) -> order.id)
+                                    .asyncTimeout(Duration.ofSeconds(5)))
+                            .add(StateMachines.from(PAYMENT_GRAPH)
+                                    .state((Payment payment) -> payment.state,
+                                            (Payment payment, PaymentState state) -> payment.state = state)
+                                    .identity((Payment payment) -> payment.id)
+                                    .asyncTimeout(Duration.ofSeconds(5)))
+                            .build();
+                }
+
                 /** Runs the extracted assertions and prints a marker only after all pass. */
                 public static void main(String[] args) {
                     syncRouting();
                     actionResults();
                     asyncRouting();
                     submachineDefinition();
+                    submachineStarts();
+                    submachineRefusals();
+                    asyncExit();
                     System.out.println("TESTING_GUIDE_OK");
                 }
 
@@ -295,7 +332,7 @@ class TestingGuideFragmentsTest {
         String jars = publishedJar("graphmaquina-core") + File.pathSeparator + publishedJar("graphmaquina-test");
 
         assertBlockCount(page, RECOVERY, 4);
-        assertBlockCount(page, SUBMACHINES, 1);
+        assertBlockCount(page, SUBMACHINES, 4);
 
         StringBuilder source = new StringBuilder(HEADER);
         source.append("    // --- blocks 1 and 2: the routes a synchronous call took, then the declared rules\n");
@@ -309,7 +346,16 @@ class TestingGuideFragmentsTest {
         source.append(blockAfter(page, RECOVERY, 4)).append("    }\n\n");
         source.append("    // --- sub-machines, block 1: the binding of a state\n");
         source.append("    static void submachineDefinition() {\n");
-        source.append(blockAfter(page, SUBMACHINES, 1)).append("    }\n}\n");
+        source.append(blockAfter(page, SUBMACHINES, 1)).append("    }\n\n");
+        source.append("    // --- sub-machines, block 2: the start of a child, then its exit\n");
+        source.append("    static void submachineStarts() {\n");
+        source.append(blockAfter(page, SUBMACHINES, 2)).append("    }\n\n");
+        source.append("    // --- sub-machines, block 3: a reserved exit and a detached child\n");
+        source.append("    static void submachineRefusals() {\n");
+        source.append(blockAfter(page, SUBMACHINES, 3)).append("    }\n\n");
+        source.append("    // --- sub-machines, block 4: an asynchronous exit, held open\n");
+        source.append("    static void asyncExit() {\n");
+        source.append(blockAfter(page, SUBMACHINES, 4)).append("    }\n}\n");
 
         Path classes = Files.createDirectories(workDir.resolve("classes"));
         List<String> diagnostics = compile(workDir, source.toString(), jars, classes);

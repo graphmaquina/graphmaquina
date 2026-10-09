@@ -2,7 +2,7 @@
 
 `graphmaquina-test` is a test-scoped module of typed assertions, probes and graph snapshots for machines
 built with GraphMaquina. It asserts over the runtime's own values — definitions, edges,
-node policies, outcomes, transition records, reactions, engine exceptions — and reports every unmet
+node policies, outcomes, transition records, reactions, sub-machine starts, engine exceptions — and reports every unmet
 expectation as a `GraphAssertionError` carrying the context, the property, the expected value and the actual
 one.
 
@@ -85,9 +85,9 @@ final Items items = shop.items();
 
 One static import, `io.github.graphmaquina.test.GraphAssertions.assertThat`, reaches the views for every
 subject a test holds directly: a definition, an outcome, an action or guard result, a throwable, an entity.
-A bare list of transition records and a bare list of reactions would need two overloads with the same
-erasure, so they keep their own factories, `TransitionRecordsAssert.assertThat` and
-`ReactionsAssert.assertThat`; inside a chain they are reached as `records()` and `reactions()`. The overload
+A bare list of transition records, of reactions or of sub-machine starts would need overloads with the same
+erasure, so each keeps its own factory, `TransitionRecordsAssert.assertThat`, `ReactionsAssert.assertThat` and
+`StartsAssert.assertThat`; inside a chain they are reached as `records()`, `reactions()` and `starts()`. The overload
 is chosen from the subject's static type, and the chain keeps the entity, state and transition types of that
 subject, so the two enums of the machine under test are the only ones the compiler accepts along it:
 
@@ -117,14 +117,15 @@ constant of another machine's catalogue does not compile inside it.
 | A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
 | A bound state | `assertThat(definition).submachine(state, childKey)` | that the state holds that child machine, and its exits in declaration order, each the identifier of the parent that a terminal state of the child selects |
 | Reachability | `assertThat(definition).topology()` | nodes, successors, reachable set, an explicit walk, the shortest path, absence of a path, cycles |
-| Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()` and `reactions()` |
+| Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()`, `reactions()` and `starts()` |
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
 | Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, failure kind, reason, cause |
-| Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, and `isRejectedByGuardNamed` for `GUARD` |
+| Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, `isRejectedByGuardNamed` for `GUARD`, `isDetached()` for `DETACHED` and `isReservedExit()` for `RESERVED_EXIT` |
 | Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED` |
 | Transition records | `.records()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
-| Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal; phase, states written and the failing call |
+| Sub-machine starts | `.starts()`, or `StartsAssert.assertThat(list)` | size, and per child: the state it started at, its state before, the parent and the bound state that started it, and the depth |
+| Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal; phase, states written and the failing call; the hops and starts of an after-commit failure |
 | Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, the reason, and the failure kind of a failed action |
 | Live entity | `assertThat(entity, Order::status)` | the state the getter reads at that moment |
 | Completed calls | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome statuses, and the outcome sequence of one entity |
@@ -138,7 +139,7 @@ constant of another machine's catalogue does not compile inside it.
 
 ## Asserting on identity
 
-Four expectations answer four different questions about an edge that may or may not be there. They are easy
+Six expectations answer six different questions about an edge that may or may not be there. They are easy
 to confuse, so keep them apart:
 
 | What you want to establish | Expectation |
@@ -147,6 +148,8 @@ to confuse, so keep them apart:
 | This identifier has no edge from this origin | `hasNoTransition(from, id)` |
 | The request was refused because nothing was keyed | `isRejected().hasNoTransition()` |
 | The request was refused by a guard on an edge that does exist | `isRejected().isRejectedByGuardNamed(name)` |
+| The request was refused because the entity is a sub-machine whose parent is not in the bound state | `isRejected().isDetached()` |
+| The request named an exit of the sub-machine bound to the origin, which only the end of that sub-machine runs | `isRejected().isReservedExit()` |
 
 `hasTransitionsExactly` takes identifiers, not destinations, so two edges that reach the same state are two
 entries. No set of destinations could express that, which is exactly the point.
@@ -626,6 +629,85 @@ expectation of the view first checks that the state holds the child of that key,
 on the property `child`, and a state that holds no sub-machine fails as a view without a subject. None of them runs
 the binding's lookups.
 
+`registry(orders)` registers the order machine built from `orders` and the payment machine, each with a five-second
+`asyncTimeout`. An outcome's `starts()` holds the sub-machines its call started. `forChild` selects them by the child's
+key and identity, as `records().forEntity` does, and a child can start more than once in one call, so the selection
+is read with `single()` or `atIndex(i)`. A start is no hop: when a later call ends the child, the exit is one more
+record of that call:
+
+```java
+Payment payment = new Payment("p1");
+Order order = new Order("o1", payment);
+try (MachineRegistry registry = registry(orders())) {
+    assertThat(registry.of(ORDERS).execute(order, OrderChange.CHECKOUT)).isApplied()
+            .movedTo(OrderState.PAYING)
+            .starts().forChild(PAYMENTS, payment).single()
+            .startedAt(PaymentState.AUTHORIZING)
+            .hadPrevious(PaymentState.AUTHORIZING)
+            .byParent(ORDERS, order, OrderState.PAYING)
+            .atDepth(0);
+
+    assertThat(registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE)).isApplied()
+            .records().forEntity(ORDERS, order).single()
+            .hasTransition(OrderChange.PAY).to(OrderState.PAID).hasDepth(1);
+}
+```
+
+`hadPrevious` is the child's state before the start, here the payment's own initial state. A call whose hook threw
+after its states were written keeps its starts too: `isAfterCommit().starts()` reads them.
+
+A sub-machine refuses two kinds of request, and the rejected view names each kind. A child whose parent is no longer in
+the bound state is detached, and an exit requested on the parent is reserved, since only the end of the child runs it:
+
+```java
+Payment payment = new Payment("p2");
+Order order = new Order("o2", payment);
+try (MachineRegistry registry = registry(orders())) {
+    registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
+    assertThat(registry.of(ORDERS).execute(order, OrderChange.PAY)).isRejected()
+            .isReservedExit()
+            .hasReason("PAY leaves PAYING only when its sub-machine ends");
+
+    registry.of(ORDERS).execute(order, OrderChange.ABANDON);
+    assertThat(registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE)).isRejected()
+            .isDetached()
+            .hasReason("the parent is not in PAYING");
+}
+```
+
+An exit can run an asynchronous action. `asyncOrders(pay)` declares the same order graph with `pay` as the
+asynchronous action of `PAY`, so a capture waits for that action before it writes anything. A `ControlledAsyncAction`
+holds the wait open without a sleep: while the exit is pending neither entity has moved, and once the test answers,
+the call commits the payment and the order together:
+
+```java
+Duration testBudget = Duration.ofSeconds(10);
+ControlledAsyncAction<Order, OrderState, OrderChange> pay = ControlledAsyncAction.create();
+Payment payment = new Payment("p3");
+Order order = new Order("o3", payment);
+try (MachineRegistry registry = registry(asyncOrders(pay)); pay) {
+    registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
+    StateSnapshot before = StateSnapshot.builder()
+            .track(ORDERS, order, (Order value) -> value.state)
+            .track(PAYMENTS, payment, (Payment value) -> value.state)
+            .capture();
+    CompletableFuture<Outcome<Payment, PaymentState, PaymentChange>> captured =
+            registry.of(PAYMENTS).async().execute(payment, PaymentChange.CAPTURE);
+    PendingInvocation<ActionCall<Order, OrderState, OrderChange>, ActionOutcome> pending =
+            pay.awaitInvocation(testBudget);
+    before.assertUnchanged();
+
+    pending.complete(ActionOutcome.ok());
+    AsyncAssertions.await(captured, testBudget).isApplied().movedTo(PaymentState.CAPTURED)
+            .records().forEntity(ORDERS, order).single().hasTransition(OrderChange.PAY);
+    assertThat(order, (Order value) -> value.state).isIn(OrderState.PAID);
+}
+```
+
+The payment's machine declares an `asyncTimeout`, as
+[controlled asynchronous invocations](#controlled-asynchronous-invocations) explains, because its call runs the
+order's asynchronous exit. That deadline is the engine's; `testBudget` is how long the test waits.
+
 ## Goldens and structural snapshots
 
 Machine contracts and visual output have separate tests. Do not use a graphical export to validate machine
@@ -806,9 +888,9 @@ A test that needs no properties at all can pass options explicitly —
 - **Two edges to one state need two expectations.** `transition(from, APPROVE)` and
   `transition(from, AUTO_APPROVE)` are separate subjects even though both `hasTarget` the same state. A test
   that asserts only the destination cannot tell which action ran; assert the action name, or observe it.
-- **Entities are selected by reference.** `forEntity(key, entity)` matches on identity, so two entities that
-  carry the same id are two different subjects.
-- **`hasTerminalsExactly` compares as a set; records, guards and reactions keep order and multiplicity, and
+- **Entities are selected by reference.** `forEntity(key, entity)` and `forChild(key, child)` match on identity, so
+  two entities that carry the same id are two different subjects.
+- **`hasTerminalsExactly` compares as a set; records, guards, reactions and starts keep order and multiplicity, and
   `hasExitsExactly` keeps the declaration order of the exits.**
 - **Assert on the fields, not the type.** A `GraphAssertionError` carries `context()`, `property()`,
   `expected()` and `actual()`. A test that only checks that something was thrown cannot tell a real

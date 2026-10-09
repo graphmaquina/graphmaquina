@@ -47,6 +47,21 @@ public final class RejectedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>
         return this;
     }
 
+    /**
+     * The entity is a sub-machine whose parent is not in the bound state, so the request was refused before any edge
+     * was resolved.
+     */
+    public RejectedOutcomeAssert<E, S, T> isDetached() {
+        Checks.equal(context, "kind", RejectionKind.DETACHED, rejected.kind());
+        return this;
+    }
+
+    /** The identifier is an exit of the sub-machine bound to the origin, which only the end of that child runs. */
+    public RejectedOutcomeAssert<E, S, T> isReservedExit() {
+        Checks.equal(context, "kind", RejectionKind.RESERVED_EXIT, rejected.kind());
+        return this;
+    }
+
     public RejectedOutcomeAssert<E, S, T> hasReason(String expected) {
         Objects.requireNonNull(expected, "expected");
         Checks.equal(context, "reason", expected, rejected.reason());

@@ -2845,9 +2845,9 @@ entry. Preserve the graph generation lifecycle for any test graphs.
 ### Typed assertions, probes and graph snapshots
 
 `graphmaquina-test` is a test-scoped module that asserts over the runtime's own values — definitions, edges,
-policies, outcomes, transition records, reactions and engine exceptions — and reports every unmet expectation as a
-`GraphAssertionError` carrying the context, the property, the expected value and the actual one. It imposes
-no test framework: nothing in its API mentions JUnit or AssertJ, so it works under the runner your project
+policies, outcomes, transition records, reactions, sub-machine starts and engine exceptions — and reports every unmet
+expectation as a `GraphAssertionError` carrying the context, the property, the expected value and the actual one. It
+imposes no test framework: nothing in its API mentions JUnit or AssertJ, so it works under the runner your project
 already uses.
 
 The [install command](#configure-gradle) writes it with the other modules, and its POM pins

@@ -124,6 +124,15 @@ class PublicApiCompilationTest {
                             .hasExitsExactly(ExitExpectation.exit(ChildState.DONE, Id.PREPARE))
                             .hasExit(ChildState.DONE, Id.PREPARE);
                 }
+
+                public static void starts(Outcome<String, State, Id> outcome) {
+                    MachineKey<String, ChildState, ChildId> child =
+                            MachineKey.of(String.class, ChildState.class, ChildId.class);
+                    MachineKey<String, State, Id> parent = MachineKey.of(String.class, State.class, Id.class);
+                    GraphAssertions.assertThat(outcome).starts().forChild(child, "child").single()
+                            .startedAt(ChildState.DONE).hadPrevious(ChildState.DONE)
+                            .byParent(parent, "parent", State.NEW).atDepth(0);
+                }
             }
             """;
 
@@ -216,6 +225,19 @@ class PublicApiCompilationTest {
     void aForeignStateIsRejectedInAnExpectedExit(@TempDir Path workDir) throws IOException {
         assertRejected(workDir, "ExitExpectation.exit(ChildState.DONE, Id.PREPARE)",
                 "ExitExpectation.exit(OtherState.READY, Id.PREPARE)");
+    }
+
+    /** A start is typed by the child's key: a state of the parent is no state the child started at. */
+    @Test
+    void aStateOfTheParentIsRejectedAsTheStateTheChildStartedAt(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, ".startedAt(ChildState.DONE)", ".startedAt(State.READY)");
+    }
+
+    /** The node a start names is a state of the parent key given beside it. */
+    @Test
+    void aForeignStateIsRejectedAsTheNodeOfTheParent(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, ".byParent(parent, \"parent\", State.NEW)",
+                ".byParent(parent, \"parent\", OtherState.READY)");
     }
 
     @Test

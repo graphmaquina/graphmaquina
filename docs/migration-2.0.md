@@ -299,6 +299,7 @@ The last two are new in 2.0 and have no 1.x counterpart. The record enforces the
 kind with a guard, or a `GUARD` rejection without one, throws `IllegalArgumentException` at construction. In
 the testing library, `hasNoTransition()` asserts `NO_TRANSITION` and `isRejectedByGuardNamed(name)` asserts
 `GUARD` — and the latter now checks the kind as well as the name, which the 1.x `isRejectedByGuardNamed` did not.
+`isDetached()` and `isReservedExit()` assert the two new kinds.
 
 `Rejected` also stopped reporting a `to`. There is no destination to report before an edge is resolved, and
 inventing one was how a caller could end up believing a route existed.
@@ -704,7 +705,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   called, since `pending()` no longer lists the one that threw.
 - **`AfterCommitAssert` reads the hook and its hop.** `hasHookNamed(name)` replaces `hasStepNamed(name)`,
   `at(key, entity, from, transition, to)` compares the committed hop the failing hook ran for, its identifier
-  included, and `records()` reads every hop the call committed.
+  included, `records()` reads every hop the call committed, and `starts()` every sub-machine it started.
 - **`CallFailureAssert`**, reached through `isCallFailure()`, and every narrowed view of a call failure expect a call
   failure's `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` is available on all of them.
 - **`AbortAssert.atUnreadState(key, entity[, transition])`** is new: it locates an abort raised before the entity's

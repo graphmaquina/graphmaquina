@@ -17,10 +17,11 @@ import java.util.function.Function;
  * <p>Entity and state views keep the entity and state types of their subjects, which is what makes a chain typed:
  * the state enum of the machine under test is the only one the compiler accepts anywhere along it.
  *
- * <p>Three shapes are deliberately absent. A list of transition records, a list of reactions and a journal
- * of action records all erase to the same parameter, so one facade cannot carry all three; every one of them
- * keeps its own factory, {@link TransitionRecordsAssert#assertThat(java.util.List)},
- * {@link ReactionsAssert#assertThat(java.util.List)} and {@link JournalAssert#assertThat(java.util.List)}.
+ * <p>Four shapes are deliberately absent. A list of transition records, a list of reactions, a list of sub-machine
+ * starts and a journal of action records all erase to the same parameter, so one facade cannot carry all four; every
+ * one of them keeps its own factory, {@link TransitionRecordsAssert#assertThat(java.util.List)},
+ * {@link ReactionsAssert#assertThat(java.util.List)}, {@link StartsAssert#assertThat(java.util.List)} and
+ * {@link JournalAssert#assertThat(java.util.List)}.
  * Probes, snapshots, goldens and bounded waits are not subjects to assert over but tools to build one, and
  * stay where they are — {@link AsyncAssertions}, {@link GraphSnapshots}, {@link GraphGoldens} and the
  * {@code probe} package. Recorded guard and action calls are subjects for {@link CallInputAssert}.
