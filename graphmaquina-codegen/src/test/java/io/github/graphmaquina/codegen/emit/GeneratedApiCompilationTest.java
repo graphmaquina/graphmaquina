@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -86,7 +87,7 @@ class GeneratedApiCompilationTest {
 
     /**
      * The originals of {@link #ORIGINALS} with a second machine, {@code fx.Pages}, which {@code fx.Docs} declares as
-     * its peer, so the generation also emits the watch vocabulary of {@code fx.Docs} over it.
+     * its peer, so the generation also emits the vocabulary of the pair {@code fx.Docs} over it.
      */
     private static Map<String, String> withPeer() {
         Map<String, String> sources = new LinkedHashMap<>(ORIGINALS);
@@ -467,7 +468,7 @@ class GeneratedApiCompilationTest {
     }
 
     /**
-     * The watch vocabulary of machines {@code Retention} and {@code Policy} is named {@code RetentionPolicy}, a
+     * The pair vocabulary of machines {@code Retention} and {@code Policy} is named {@code RetentionPolicy}, a
      * simple name an import of the vocabulary's own unit would already claim; no unit generated in the machines'
      * package imports anything.
      */
@@ -547,10 +548,49 @@ class GeneratedApiCompilationTest {
     }
 
     /**
+     * The same holds inside the vocabulary of a pair, whose sub-machine annotations are nested types too: a
+     * transition enum of the unnamed package named {@code Exit} cannot be named inside {@code DocsPages}, where
+     * {@code Exit} means the annotation an exit is written with.
+     */
+    @Test
+    void refusesANameOfTheUnnamedPackageThatASubmachineAnnotationOfAPairShadows() {
+        GenerationModel pair = inspect("pair", Map.of(
+                "Doc", "/** Fixture type for the nested Exit name collision. */ public class Doc {}",
+                "Page", "/** Fixture type for the nested Exit name collision. */ public class Page {}",
+                "Status", "/** Fixture type for the nested Exit name collision. */ public enum Status { OPEN, DONE }",
+                "Exit", "/** Fixture type for the nested Exit name collision. */ public enum Exit { CLOSE }",
+                "PageStatus", "/** Fixture type for the nested Exit name collision. */ public enum PageStatus { OPEN, DONE }",
+                "PageStep", "/** Fixture type for the nested Exit name collision. */ public enum PageStep { FINISH }",
+                "Docs", """
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.annotation.GraphPeers;
+                    import io.github.graphmaquina.api.Machine;
+                    /** A facade used to check the nested Exit name collision. */
+                    @GenerateGraphApi
+                    @GraphPeers(Pages.class)
+                    public interface Docs extends Machine<Doc, Status, Exit> {}
+                    """,
+                "Pages", """
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    /** A facade used to check the nested Exit name collision. */
+                    @GenerateGraphApi
+                    public interface Pages extends Machine<Page, PageStatus, PageStep> {}
+                    """));
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> ApiEmitter.emit(pair, "pair"));
+
+        assertEquals("SG603", failure.code());
+        assertEquals("the pair vocabulary DocsPages cannot name the transition type Exit of Docs: inside it, Exit"
+                + " means its own nested type DocsPages.Exit", failure.getMessage());
+        assertEquals("pair/Docs.java", failure.location().orElseThrow().path());
+    }
+
+    /**
      * A type the generator creates in a package is a top-level type there, in scope inside every unit generated in
      * that package, so it obscures a package of the same name (JLS 6.4.2). A name whose first segment is one of them
      * is refused at its declaration: an enum of package {@code DocsGraph} inside {@code fx.DocsGraph}, a peer of
-     * that package inside the watch vocabulary {@code fx.DocsPages}, and a host of package {@code DocRefs} inside its
+     * that package inside the pair vocabulary {@code fx.DocsPages}, and a host of package {@code DocRefs} inside its
      * own container {@code DocRefs.DocRefs}.
      */
     @Test
@@ -596,7 +636,7 @@ class GeneratedApiCompilationTest {
                     """));
         CodegenException watch = assertThrows(CodegenException.class, () -> ApiEmitter.emit(pair, "pair"));
         assertEquals("SG603", watch.code());
-        assertEquals("the watch vocabulary DocsPages cannot name the peer machine DocsGraph.Pages: inside it,"
+        assertEquals("the pair vocabulary DocsPages cannot name the peer machine DocsGraph.Pages: inside it,"
                 + " DocsGraph means the type fx.DocsGraph generated in package fx", watch.getMessage());
         assertEquals("pair/fx/Docs.java", watch.location().orElseThrow().path());
 
@@ -671,12 +711,13 @@ class GeneratedApiCompilationTest {
         assertTrue(failure.getMessage().contains("_1machine"), failure.getMessage());
     }
 
-    /** The annotations of both machine vocabularies and of the watch vocabulary of the pair they form. */
+    /** The annotations of both machine vocabularies and of the vocabulary of the pair they form. */
     @Test
     void namesEveryGeneratedAnnotationAndContainerCanonically() {
         assertEquals(List.of("fx.DocsGraph.Definition", "fx.DocsGraph.Recovery", "fx.DocsGraph.Reject",
                 "fx.DocsGraph.Rejects", "fx.DocsGraph.StatePolicies", "fx.DocsGraph.StatePolicy",
-                "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsPages.Watch", "fx.DocsPages.Watches",
+                "fx.DocsGraph.Transition", "fx.DocsGraph.Transitions", "fx.DocsPages.Exit", "fx.DocsPages.Submachine",
+                "fx.DocsPages.Submachines", "fx.DocsPages.Watch", "fx.DocsPages.Watches",
                 "fx.DocsPages.When", "fx.PagesGraph.Definition", "fx.PagesGraph.Recovery", "fx.PagesGraph.Reject",
                 "fx.PagesGraph.Rejects", "fx.PagesGraph.StatePolicies", "fx.PagesGraph.StatePolicy",
                 "fx.PagesGraph.Transition", "fx.PagesGraph.Transitions"),
@@ -685,21 +726,21 @@ class GeneratedApiCompilationTest {
 
     /**
      * The processor routes on these markers, so each annotation must carry the kind it was emitted for, in both
-     * machine vocabularies and in the watch vocabulary of the pair they form.
+     * machine vocabularies and in the vocabulary of the pair they form.
      */
     @Test
     void marksEveryAnnotationWithTheVocabularyKindItDeclares() {
         Map<String, String> kinds = new TreeMap<>();
         for (GeneratedSource source : ApiEmitter.emit(inspect("peered", withPeer()), "peered")) {
-            String kind = null;
+            Optional<String> kind = Optional.empty();
             for (String line : source.content().lines().map(String::strip).toList()) {
                 int marker = line.indexOf("VocabularyKind.");
                 if (marker >= 0) {
-                    kind = line.substring(marker + "VocabularyKind.".length(), line.lastIndexOf(')'));
-                } else if (kind != null && line.startsWith("public @interface ")) {
+                    kind = Optional.of(line.substring(marker + "VocabularyKind.".length(), line.lastIndexOf(')')));
+                } else if (kind.isPresent() && line.startsWith("public @interface ")) {
                     String name = line.substring("public @interface ".length(), line.indexOf(" {"));
-                    kinds.put(source.qualifiedName() + '.' + name, kind);
-                    kind = null;
+                    kinds.put(source.qualifiedName() + '.' + name, kind.get());
+                    kind = Optional.empty();
                 }
             }
         }
@@ -718,6 +759,9 @@ class GeneratedApiCompilationTest {
         expected.put("fx.DocsPages.Watch", "WATCH");
         expected.put("fx.DocsPages.Watches", "WATCHES");
         expected.put("fx.DocsPages.When", "WHEN");
+        expected.put("fx.DocsPages.Submachine", "SUBMACHINE");
+        expected.put("fx.DocsPages.Submachines", "SUBMACHINES");
+        expected.put("fx.DocsPages.Exit", "EXIT");
         assertEquals(expected, kinds);
     }
 

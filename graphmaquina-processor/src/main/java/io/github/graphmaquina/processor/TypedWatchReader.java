@@ -30,7 +30,9 @@ import javax.lang.model.type.TypeMirror;
  * <p>Watch vocabulary belongs to an ordered pair, not to a single machine, so identity is checked on both
  * halves of it: the annotation must have been generated for this very facade, and the peer it names must be one
  * the facade declares with {@code @GraphPeers}. The pair is therefore never repeated in a declaration and can
- * never be inferred from the states, which two machines may well share.</p>
+ * never be inferred from the states, which two machines may well share. The vocabulary of a pair also holds the
+ * sub-machine annotations; the identity of each {@code Submachine} on the facade is checked here the same way,
+ * and nothing else of it is read.</p>
  *
  * <p>The declaration of the pair and its uses must agree in both directions. A peer nothing watches is a
  * declaration that generated vocabulary for nothing, and a peer declared twice generates it twice; both are
@@ -83,15 +85,19 @@ final class TypedWatchReader {
 
     /**
      * The watches {@code facade} declares, in the order it spells them; a watch with a problem is left out, and one
-     * whose problem this processor reports makes the machine's own builder refuse the machine as a whole.
+     * whose problem this processor reports makes the machine's own builder refuse the machine as a whole. The
+     * identity of each sub-machine annotation on {@code facade} is checked too.
      */
     List<WatchModel> read(TypeElement facade, MachineTypes machine) {
         Peers peers = peers(facade);
         Set<String> watched = new LinkedHashSet<>();
         Set<String> states = new LinkedHashSet<>();
         List<WatchModel> watches = new ArrayList<>();
+        for (AnnotationMirror submachine : vocabulary.findAll(facade, VocabularyKind.SUBMACHINE)) {
+            peer(facade, submachine, peers, "declares a sub-machine of");
+        }
         for (AnnotationMirror watch : vocabulary.findAll(facade, VocabularyKind.WATCH)) {
-            Optional<String> peer = peer(facade, watch, peers);
+            Optional<String> peer = peer(facade, watch, peers, "watches");
             if (peer.isEmpty()) {
                 continue;
             }
@@ -143,29 +149,30 @@ final class TypedWatchReader {
     }
 
     /**
-     * The peer the pair of {@code watch} names, or empty after reporting {@code SG606} when the vocabulary was
-     * generated for another machine, and {@code SG608} when the facade declares no such peer.
+     * The peer the pair of {@code declared} names, or empty after reporting {@code SG606} when the vocabulary was
+     * generated for another machine, and {@code SG608} when the facade declares no such peer, saying that the
+     * facade {@code uses} it, as in {@code watches}.
      */
-    private Optional<String> peer(TypeElement facade, AnnotationMirror watch, Peers peers) {
-        TypeElement declaration = (TypeElement) watch.getAnnotationType().asElement();
+    private Optional<String> peer(TypeElement facade, AnnotationMirror declared, Peers peers, String uses) {
+        TypeElement declaration = (TypeElement) declared.getAnnotationType().asElement();
         AnnotationMirror metadata = annotations.find(declaration, GeneratedVocabulary.class).orElseThrow();
         TypeMirror owner = TypedValues.classLiteral(annotations.value(metadata, "machine"));
         if (!(owner instanceof DeclaredType declaredOwner) || !declaredOwner.asElement().equals(facade)) {
-            DiagnosticAnchor.of(facade, watch).report(diagnostics, FOREIGN, declaration.getQualifiedName()
-                    + " is the watch vocabulary of " + owner + ", not of " + facade.getQualifiedName());
+            DiagnosticAnchor.of(facade, declared).report(diagnostics, FOREIGN, declaration.getQualifiedName()
+                    + " is the vocabulary of a pair of " + owner + ", not of " + facade.getQualifiedName());
             return Optional.empty();
         }
         List<AnnotationValue> pair = annotations.array(metadata, "peer");
         Optional<TypeElement> peer = pair.size() == 1 ? element(pair.get(0)) : Optional.empty();
         if (peer.isEmpty()) {
-            DiagnosticAnchor.of(facade, watch).report(diagnostics, FOREIGN, declaration.getQualifiedName()
-                    + " names no single peer machine to watch, so it is not the vocabulary of a pair");
+            DiagnosticAnchor.of(facade, declared).report(diagnostics, FOREIGN, declaration.getQualifiedName()
+                    + " names no single peer machine, so it is not the vocabulary of a pair");
             return Optional.empty();
         }
         String name = peer.get().getQualifiedName().toString();
         if (!peers.declared().containsKey(name)) {
-            DiagnosticAnchor.of(facade, watch).report(diagnostics, PAIR, facade.getSimpleName() + " watches " + name
-                    + ", which it does not declare with @GraphPeers");
+            DiagnosticAnchor.of(facade, declared).report(diagnostics, PAIR, facade.getSimpleName() + " " + uses + " "
+                    + name + ", which it does not declare with @GraphPeers");
             return Optional.empty();
         }
         return Optional.of(name);

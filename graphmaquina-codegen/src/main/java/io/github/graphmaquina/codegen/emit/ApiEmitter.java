@@ -17,7 +17,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Turns one resolved model into the compilation units of a generation: the vocabulary of every machine, the watch
+ * Turns one resolved model into the compilation units of a generation: the vocabulary of every machine, the pair
  * vocabulary of every machine over each peer it declares, the references container of every host and the carrier
  * of the compilation itself.
  *
@@ -86,7 +86,7 @@ public final class ApiEmitter {
 
     /**
      * The simple names of the top-level types {@code model} generates, by the package each is generated in: the
-     * vocabulary of every machine, the watch vocabulary of every machine over each peer it declares and the
+     * vocabulary of every machine, the pair vocabulary of every machine over each peer it declares and the
      * references container of every host. Each of them is in scope inside every unit generated in its package.
      */
     private static Map<String, Set<String>> generatedTypes(GenerationModel model) {
@@ -114,8 +114,8 @@ public final class ApiEmitter {
     }
 
     /**
-     * The machines {@code graph} declares as peers, resolved against this compilation. Watch vocabulary needs the
-     * peer's own state enum, so a peer that is not generated here cannot be typed at all.
+     * The machines {@code graph} declares as peers, resolved against this compilation. The vocabulary of a pair
+     * needs the peer's own state enum, so a peer that is not generated here cannot be typed at all.
      *
      * @throws CodegenException {@code SG608} anchored at the owner, naming the peer it cannot resolve
      */

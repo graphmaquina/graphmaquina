@@ -6,7 +6,10 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Declares peer machines for which typed watch vocabulary must be generated. */
+/**
+ * Declares peer machines for which the typed vocabulary of each pair, its watch and sub-machine annotations, must
+ * be generated.
+ */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.CLASS)
 public @interface GraphPeers {

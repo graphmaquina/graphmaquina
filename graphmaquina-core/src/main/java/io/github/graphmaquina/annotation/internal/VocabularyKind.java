@@ -20,5 +20,6 @@ public enum VocabularyKind {
     WHEN,
     SUBMACHINE,
     SUBMACHINES,
+    /** One exit of a sub-machine, written only inside the {@code exits} of a {@link #SUBMACHINE}. */
     EXIT
 }

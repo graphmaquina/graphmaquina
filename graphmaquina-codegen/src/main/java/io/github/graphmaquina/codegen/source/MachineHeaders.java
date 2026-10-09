@@ -117,7 +117,7 @@ public final class MachineHeaders {
     }
 
     /**
-     * Refuses a peer whose watch vocabulary its owner's package could not compile. The vocabulary of an ordered
+     * Refuses a peer whose pair vocabulary its owner's package could not compile. The vocabulary of an ordered
      * pair is generated in the owner's package and names the peer machine and the peer's state enum, so both must
      * be accessible there, and no type of that package or of {@code java.lang} may be named like the first segment
      * of a qualified name it writes. A peer is the type its class literal names. A declared peer that is none of
@@ -153,10 +153,10 @@ public final class MachineHeaders {
                     if (reason.isPresent()) {
                         throw new CodegenException(UNUSABLE_PEER, "the peer machine " + peer + " declared by "
                                 + graph.facade() + " cannot be watched from " + where(graph.packageName())
-                                + ", where its watch vocabulary is generated: " + reason.get(), graph.origin());
+                                + ", where its pair vocabulary is generated: " + reason.get(), graph.origin());
                     }
                 }
-                index.requireUnobscured(graph.packageName(), "the watch vocabulary generated for the machine "
+                index.requireUnobscured(graph.packageName(), "the pair vocabulary generated for the machine "
                         + graph.facade() + " over " + peer + " in " + where(graph.packageName()),
                         qualifiedNames(index, List.of(owner.facade(), peerMachine.facade(), owner.state(),
                                 owner.transition(), peerMachine.state())), graph.origin());

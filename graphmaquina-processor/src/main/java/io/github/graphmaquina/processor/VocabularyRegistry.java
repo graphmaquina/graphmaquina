@@ -88,6 +88,7 @@ final class VocabularyRegistry {
         containers.put(VocabularyKind.TRANSITION, VocabularyKind.TRANSITIONS);
         containers.put(VocabularyKind.REJECT, VocabularyKind.REJECTS);
         containers.put(VocabularyKind.WATCH, VocabularyKind.WATCHES);
+        containers.put(VocabularyKind.SUBMACHINE, VocabularyKind.SUBMACHINES);
         return Map.copyOf(containers);
     }
 }

@@ -175,21 +175,24 @@ class WatchVocabularyTest {
     }
 
     /**
-     * A machine has the watch vocabulary of each peer it declares, and no pair it does not declare has one: here
-     * {@code Docs} watches {@code Pages} and {@code Notes}, {@code Pages} watches {@code Docs}, and {@code Notes}
-     * declares no peer.
+     * A machine has the vocabulary of each pair it declares, its watch annotations first and its sub-machine
+     * annotations after them, and no pair it does not declare has one: here {@code Docs} declares {@code Pages}
+     * and {@code Notes}, {@code Pages} declares {@code Docs}, and {@code Notes} declares no peer.
      */
     @Test
-    void namesTheWatchAnnotationsOfEveryOrderedPairAMachineDeclaresAndOfNoOther() {
+    void namesTheAnnotationsOfEveryOrderedPairAMachineDeclaresAndOfNoOther() {
         GenerationModel model = new GenerationModel(List.of(graph("Docs", List.of("fx.Pages", "fx.Notes")),
                 graph("Notes", List.of()), graph("Pages", List.of("fx.Docs"))), List.of());
 
-        List<String> watches = ApiEmitter.annotationTypes(model).stream()
+        List<String> pairs = ApiEmitter.annotationTypes(model).stream()
                 .filter((String name) -> !name.contains("Graph.")).toList();
 
         assertEquals(List.of("fx.DocsPages.Watch", "fx.DocsPages.Watches", "fx.DocsPages.When",
+                "fx.DocsPages.Submachine", "fx.DocsPages.Submachines", "fx.DocsPages.Exit",
                 "fx.DocsNotes.Watch", "fx.DocsNotes.Watches", "fx.DocsNotes.When",
-                "fx.PagesDocs.Watch", "fx.PagesDocs.Watches", "fx.PagesDocs.When"), watches);
+                "fx.DocsNotes.Submachine", "fx.DocsNotes.Submachines", "fx.DocsNotes.Exit",
+                "fx.PagesDocs.Watch", "fx.PagesDocs.Watches", "fx.PagesDocs.When",
+                "fx.PagesDocs.Submachine", "fx.PagesDocs.Submachines", "fx.PagesDocs.Exit"), pairs);
     }
 
     @Test
