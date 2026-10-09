@@ -610,7 +610,8 @@ A state can hold a sub-machine, which the [programmatic DSL](guide.md#programmat
 graph: its binding reaches the payment of an order and the order of a payment, and the payment's terminal states
 `CAPTURED` and `DECLINED` exit through `PAY` and `REFUSE`. `ORDERS` and `PAYMENTS` are the keys of the two machines.
 [TestingGuideFragmentsTest](../graphmaquina-test/src/test/java/consumer/TestingGuideFragmentsTest.java) writes out
-those helpers and types, cuts the samples out of this page, compiles them against the published jars and runs them.
+those helpers and types, and the ones named below, cuts the samples out of this page, compiles them against the
+published jars and runs them.
 
 `submachine(state, childKey)` narrows to the binding of one state. The view is typed by the child's key, so the
 compiler accepts only a state of the child as a terminal state and only an identifier of the parent as its exit:
@@ -675,6 +676,59 @@ try (MachineRegistry registry = registry(orders())) {
 }
 ```
 
+A payment has one active parent at a time. `invoices()` declares an invoice whose `SETTLING` state holds its payment
+too, and `registryWithInvoices(orders)` registers the invoice machine beside the other two. Once an order and an
+invoice both hold the same payment in their bound states, a call to the payment cannot tell whose exit to run: it
+throws before any edge is looked up, and `captureFailure` hands back what it threw:
+
+```java
+Payment payment = new Payment("p4");
+Order order = new Order("o4", payment);
+Invoice invoice = new Invoice("i4", payment);
+try (MachineRegistry registry = registryWithInvoices(orders())) {
+    registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
+    registry.of(INVOICES).execute(invoice, InvoiceChange.SETTLE);
+    assertThat(captureFailure(() -> registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE))).isAbort()
+            .hasPhase(CallPhase.RESOLVE)
+            .hasStatesWritten(StatesWritten.NONE)
+            .hasCause(AmbiguousParentException.class);
+}
+assertThat(payment, (Payment value) -> value.state).isIn(PaymentState.AUTHORIZING);
+```
+
+The abort's phase is `RESOLVE` because the payment's call is the root; inside a cascade it would be `ACTION`.
+
+An exit is an edge of the parent, so the probes stand on it as on any edge. `orders(pay)` declares the order graph with
+`pay` applied to the declaration of the exit `PAY`, and `registry(orders, observer)` adds an observer to the registry.
+The exit's guard, action and hook run in the payment's call, the action one level deeper and without input. A
+`TransitionRecorder` counts that call once, so the checkout and the capture are its two calls, and the exit is a record
+of the second:
+
+```java
+CallTrace trace = CallTrace.create();
+GuardProbe<Order, OrderState, OrderChange> inStock =
+        GuardProbe.<Order, OrderState, OrderChange>create("inStock", trace).otherwiseReturn(GuardResult.pass());
+ActionProbe<Order, OrderState, OrderChange> confirm =
+        ActionProbe.<Order, OrderState, OrderChange>create("confirm", trace).otherwiseReturn(ActionOutcome.ok());
+HookProbe<Order> receipt = HookProbe.<Order>create("receipt", trace).otherwiseSucceed();
+TransitionRecorder recorder = TransitionRecorder.create();
+Payment payment = new Payment("p5");
+Order order = new Order("o5", payment);
+try (MachineRegistry registry = registry(orders((TransitionBuilder<Order, OrderState, OrderChange> pay) ->
+        pay.guard("inStock", inStock).action("confirm", confirm).afterCommit("receipt", receipt)), recorder)) {
+    registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
+    registry.of(PAYMENTS).execute(payment, PaymentChange.CAPTURE);
+}
+trace.assertNamesExactly("inStock", "confirm", "receipt");
+assertThat(confirm.calls().single()).hasNoInput();
+recorder.assertRecorded()
+        .hasSize(2)
+        .hasKeysExactly(ORDERS, PAYMENTS)
+        .forEntity(PAYMENTS, payment).single()
+        .isApplied().records().forEntity(ORDERS, order).single()
+        .hasTransition(OrderChange.PAY).hasActionNamed("confirm").hasDepth(1);
+```
+
 An exit can run an asynchronous action. `asyncOrders(pay)` declares the same order graph with `pay` as the
 asynchronous action of `PAY`, so a capture waits for that action before it writes anything. A `ControlledAsyncAction`
 holds the wait open without a sleep: while the exit is pending neither entity has moved, and once the test answers,
@@ -707,6 +761,33 @@ try (MachineRegistry registry = registry(asyncOrders(pay)); pay) {
 The payment's machine declares an `asyncTimeout`, as
 [controlled asynchronous invocations](#controlled-asynchronous-invocations) explains, because its call runs the
 order's asynchronous exit. That deadline is the engine's; `testBudget` is how long the test waits.
+
+A sub-machine can also govern a second state of its parent's own entity, as the
+[guide](guide.md#sub-machines-over-the-same-entity) explains. Here the order charges itself: `charge` is a second
+state of `Order`, which the payment graph governs under the key `CHARGES`. `chargedOrders()` declares the order graph
+with `PAYING` bound to that graph through `submachine(state, child)`, and `chargeRegistry()` registers both machines,
+each with the accessors of its own field. A `StateSnapshot` tracks the one order under both keys, so a refused request
+leaves both of its states unchanged:
+
+```java
+Order order = new Order("o7", new Payment("p7"));
+try (MachineRegistry registry = chargeRegistry()) {
+    registry.of(ORDERS).execute(order, OrderChange.CHECKOUT);
+    StateSnapshot before = StateSnapshot.builder()
+            .track(ORDERS, order, (Order value) -> value.state)
+            .track(CHARGES, order, (Order value) -> value.charge)
+            .capture();
+    assertThat(registry.of(ORDERS).execute(order, OrderChange.PAY)).isRejected().isReservedExit();
+    before.assertUnchanged();
+
+    assertThat(registry.of(CHARGES).execute(order, PaymentChange.CAPTURE)).isApplied()
+            .records().forEntity(ORDERS, order).single().hasTransition(OrderChange.PAY).hasDepth(1);
+}
+assertThat(order, (Order value) -> value.state).isIn(OrderState.PAID);
+assertThat(order, (Order value) -> value.charge).isIn(PaymentState.CAPTURED);
+```
+
+Each key reads its own field, so `changes()` reports a moved state under its own key, even for one entity.
 
 ## Goldens and structural snapshots
 

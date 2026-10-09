@@ -32,11 +32,13 @@ import org.junit.jupiter.api.io.TempDir;
  * and the compiled samples, nothing else. The page promises that its samples run, and these are cut out of
  * {@code docs/testing.md} verbatim. They are wrapped only by the types and helpers each section names and by one
  * method per sample, so an expectation the page shows has to hold for this test to pass: the publication types and
- * the {@code graph}, {@code asyncGraph} and {@code machine} helpers for the first section, and the order and payment
- * types, their keys {@code ORDERS} and {@code PAYMENTS} and the {@code orders}, {@code asyncOrders} and
- * {@code registry} helpers for the second. A heading or block that cannot be found fails the test instead of compiling
- * nothing. The page, the repository and the release come from the {@code testingGuidePath},
- * {@code artifactRepository} and {@code artifactVersion} system properties that {@code publishedArtifactTest} sets.
+ * the {@code graph}, {@code asyncGraph} and {@code machine} helpers for the first section, and for the second the
+ * order, payment and invoice types, their keys {@code ORDERS}, {@code PAYMENTS}, {@code INVOICES} and
+ * {@code CHARGES}, and the {@code orders}, {@code asyncOrders}, {@code chargedOrders}, {@code invoices},
+ * {@code registry}, {@code registryWithInvoices} and {@code chargeRegistry} helpers. A heading or block that cannot be
+ * found fails the test instead of compiling nothing. The page, the repository and the release come from the
+ * {@code testingGuidePath}, {@code artifactRepository} and {@code artifactVersion} system properties that
+ * {@code publishedArtifactTest} sets.
  */
 class TestingGuideFragmentsTest {
 
@@ -47,27 +49,36 @@ class TestingGuideFragmentsTest {
     private static final String HEADER = """
             import static io.github.graphmaquina.test.ExitExpectation.exit;
             import static io.github.graphmaquina.test.GraphAssertions.assertThat;
+            import static io.github.graphmaquina.test.GraphAssertions.captureFailure;
 
             import io.github.graphmaquina.api.ActionOutcome;
             import io.github.graphmaquina.api.AsyncTransitionAction;
+            import io.github.graphmaquina.api.CallPhase;
             import io.github.graphmaquina.api.FailureKind;
             import io.github.graphmaquina.api.GraphDefinition;
+            import io.github.graphmaquina.api.GuardResult;
             import io.github.graphmaquina.api.MachineKey;
+            import io.github.graphmaquina.api.MachineObserver;
             import io.github.graphmaquina.api.Outcome;
             import io.github.graphmaquina.api.RecoveryRule;
             import io.github.graphmaquina.api.StateMachine;
+            import io.github.graphmaquina.api.StatesWritten;
             import io.github.graphmaquina.api.TransitionAction;
             import io.github.graphmaquina.dsl.GraphBuilder;
             import io.github.graphmaquina.dsl.StateGraph;
             import io.github.graphmaquina.dsl.TransitionBuilder;
+            import io.github.graphmaquina.error.AmbiguousParentException;
             import io.github.graphmaquina.runtime.MachineRegistry;
             import io.github.graphmaquina.runtime.StateMachines;
             import io.github.graphmaquina.test.AsyncAssertions;
             import io.github.graphmaquina.test.StateSnapshot;
+            import io.github.graphmaquina.test.TransitionRecorder;
             import io.github.graphmaquina.test.probe.ActionCall;
             import io.github.graphmaquina.test.probe.ActionProbe;
             import io.github.graphmaquina.test.probe.CallTrace;
             import io.github.graphmaquina.test.probe.ControlledAsyncAction;
+            import io.github.graphmaquina.test.probe.GuardProbe;
+            import io.github.graphmaquina.test.probe.HookProbe;
             import io.github.graphmaquina.test.probe.PendingInvocation;
             import java.time.Duration;
             import java.util.List;
@@ -213,22 +224,24 @@ class TestingGuideFragmentsTest {
                 /** The transition identifiers of a payment. */
                 enum PaymentChange { CAPTURE, DECLINE }
 
-                /** A payment, which knows its order once the order is created. */
+                /** A payment, which knows its order and its invoice once they are created. */
                 static final class Payment {
                     final String id;
                     PaymentState state = PaymentState.AUTHORIZING;
                     Optional<Order> order = Optional.empty();
+                    Optional<Invoice> invoice = Optional.empty();
 
                     Payment(String id) {
                         this.id = id;
                     }
                 }
 
-                /** An order, which its payment pays while the order is PAYING. */
+                /** An order, which its payment pays while the order is PAYING, or which charges itself. */
                 static final class Order {
                     final String id;
                     final Payment payment;
                     OrderState state = OrderState.CART;
+                    PaymentState charge = PaymentState.AUTHORIZING;
 
                     Order(String id, Payment payment) {
                         this.id = id;
@@ -243,34 +256,71 @@ class TestingGuideFragmentsTest {
                 static final MachineKey<Payment, PaymentState, PaymentChange> PAYMENTS =
                         MachineKey.of(Payment.class, PaymentState.class, PaymentChange.class);
 
+                /** The key of an order's own charge: a second state of the order, over the payment states. */
+                static final MachineKey<Order, PaymentState, PaymentChange> CHARGES =
+                        MachineKey.of(Order.class, PaymentState.class, PaymentChange.class);
+
                 /** Built once: a child's machine must be built from the very definition its parent binds. */
                 static final GraphDefinition<Payment, PaymentState, PaymentChange> PAYMENT_GRAPH =
-                        StateGraph.define(PAYMENTS)
-                                .initial(PaymentState.AUTHORIZING)
-                                .terminal(PaymentState.CAPTURED)
-                                .terminal(PaymentState.DECLINED)
-                                .statePolicy(PaymentState.AUTHORIZING, "capture or decline the authorization")
-                                .transition(PaymentChange.CAPTURE, PaymentState.AUTHORIZING, PaymentState.CAPTURED)
-                                .endTransition()
-                                .transition(PaymentChange.DECLINE, PaymentState.AUTHORIZING, PaymentState.DECLINED)
-                                .endTransition()
-                                .build();
+                        paymentGraph(PAYMENTS);
+
+                /** The same payment graph over the order itself, which governs the order's charge. */
+                static final GraphDefinition<Order, PaymentState, PaymentChange> CHARGE_GRAPH =
+                        paymentGraph(CHARGES);
+
+                /** The payment graph over the entity of {@code key}. */
+                private static <P> GraphDefinition<P, PaymentState, PaymentChange> paymentGraph(
+                        MachineKey<P, PaymentState, PaymentChange> key) {
+                    return StateGraph.define(key)
+                            .initial(PaymentState.AUTHORIZING)
+                            .terminal(PaymentState.CAPTURED)
+                            .terminal(PaymentState.DECLINED)
+                            .statePolicy(PaymentState.AUTHORIZING, "capture or decline the authorization")
+                            .transition(PaymentChange.CAPTURE, PaymentState.AUTHORIZING, PaymentState.CAPTURED)
+                            .endTransition()
+                            .transition(PaymentChange.DECLINE, PaymentState.AUTHORIZING, PaymentState.DECLINED)
+                            .endTransition()
+                            .build();
+                }
 
                 /** The order graph, whose PAYING holds the payment of the order. */
                 static GraphDefinition<Order, OrderState, OrderChange> orders() {
-                    return declareOrders(UnaryOperator.identity());
+                    return orders(UnaryOperator.identity());
+                }
+
+                /** The same order graph, {@code pay} applied to the declaration of the exit PAY. */
+                static GraphDefinition<Order, OrderState, OrderChange> orders(
+                        UnaryOperator<TransitionBuilder<Order, OrderState, OrderChange>> pay) {
+                    return declareOrders(pay, (GraphBuilder<Order, OrderState, OrderChange> builder) ->
+                            builder.submachine(OrderState.PAYING, PAYMENT_GRAPH,
+                                            (Order order) -> Optional.of(order.payment),
+                                            (Payment payment) -> payment.order)
+                                    .exit(PaymentState.CAPTURED, OrderChange.PAY)
+                                    .exit(PaymentState.DECLINED, OrderChange.REFUSE)
+                                    .endSubmachine());
                 }
 
                 /** The same order graph, with {@code action} as the asynchronous action of the exit PAY. */
                 static GraphDefinition<Order, OrderState, OrderChange> asyncOrders(
                         AsyncTransitionAction<Order, OrderState, OrderChange> action) {
-                    return declareOrders((TransitionBuilder<Order, OrderState, OrderChange> pay) ->
+                    return orders((TransitionBuilder<Order, OrderState, OrderChange> pay) ->
                             pay.asyncAction("pay", action));
                 }
 
-                /** The order graph of the guide's sub-machine section, PAY given its action by withAction. */
+                /** The order graph whose PAYING holds the order's own charge instead of its payment. */
+                static GraphDefinition<Order, OrderState, OrderChange> chargedOrders() {
+                    return declareOrders(UnaryOperator.identity(),
+                            (GraphBuilder<Order, OrderState, OrderChange> builder) ->
+                                    builder.submachine(OrderState.PAYING, CHARGE_GRAPH)
+                                            .exit(PaymentState.CAPTURED, OrderChange.PAY)
+                                            .exit(PaymentState.DECLINED, OrderChange.REFUSE)
+                                            .endSubmachine());
+                }
+
+                /** The order graph of the guide's sub-machine section, PAY given by pay and PAYING bound by bind. */
                 private static GraphDefinition<Order, OrderState, OrderChange> declareOrders(
-                        UnaryOperator<TransitionBuilder<Order, OrderState, OrderChange>> withAction) {
+                        UnaryOperator<TransitionBuilder<Order, OrderState, OrderChange>> pay,
+                        UnaryOperator<GraphBuilder<Order, OrderState, OrderChange>> bind) {
                     GraphBuilder<Order, OrderState, OrderChange> builder = StateGraph.define(ORDERS)
                             .initial(OrderState.CART)
                             .terminal(OrderState.PAID)
@@ -279,21 +329,100 @@ class TestingGuideFragmentsTest {
                             .statePolicy(OrderState.CART, "check the cart out first")
                             .statePolicy(OrderState.PAYING, "the payment decides")
                             .transition(OrderChange.CHECKOUT, OrderState.CART, OrderState.PAYING).endTransition();
-                    return withAction.apply(builder.transition(OrderChange.PAY, OrderState.PAYING, OrderState.PAID))
+                    return bind.apply(pay.apply(builder.transition(OrderChange.PAY, OrderState.PAYING, OrderState.PAID))
+                                    .endTransition()
+                                    .transition(OrderChange.REFUSE, OrderState.PAYING, OrderState.REFUSED)
+                                    .endTransition()
+                                    .transition(OrderChange.ABANDON, OrderState.CART, OrderState.ABANDONED)
+                                    .endTransition()
+                                    .transition(OrderChange.ABANDON, OrderState.PAYING, OrderState.ABANDONED)
+                                    .endTransition())
+                            .build();
+                }
+
+                /** The states of an invoice. */
+                enum InvoiceState { OPEN, SETTLING, SETTLED, UNPAID }
+
+                /** The transition identifiers of an invoice. */
+                enum InvoiceChange { SETTLE, CLEAR, DEFAULT }
+
+                /** An invoice, which its payment settles while the invoice is SETTLING: a second parent of payments. */
+                static final class Invoice {
+                    final String id;
+                    final Payment payment;
+                    InvoiceState state = InvoiceState.OPEN;
+
+                    Invoice(String id, Payment payment) {
+                        this.id = id;
+                        this.payment = payment;
+                        payment.invoice = Optional.of(this);
+                    }
+                }
+
+                static final MachineKey<Invoice, InvoiceState, InvoiceChange> INVOICES =
+                        MachineKey.of(Invoice.class, InvoiceState.class, InvoiceChange.class);
+
+                /** The invoice graph, whose SETTLING holds the payment of the invoice. */
+                static GraphDefinition<Invoice, InvoiceState, InvoiceChange> invoices() {
+                    return StateGraph.define(INVOICES)
+                            .initial(InvoiceState.OPEN)
+                            .terminal(InvoiceState.SETTLED)
+                            .terminal(InvoiceState.UNPAID)
+                            .statePolicy(InvoiceState.OPEN, "settle the invoice first")
+                            .statePolicy(InvoiceState.SETTLING, "the payment decides")
+                            .transition(InvoiceChange.SETTLE, InvoiceState.OPEN, InvoiceState.SETTLING)
                             .endTransition()
-                            .transition(OrderChange.REFUSE, OrderState.PAYING, OrderState.REFUSED).endTransition()
-                            .transition(OrderChange.ABANDON, OrderState.CART, OrderState.ABANDONED).endTransition()
-                            .transition(OrderChange.ABANDON, OrderState.PAYING, OrderState.ABANDONED).endTransition()
-                            .submachine(OrderState.PAYING, PAYMENT_GRAPH, (Order order) -> Optional.of(order.payment),
-                                    (Payment payment) -> payment.order)
-                            .exit(PaymentState.CAPTURED, OrderChange.PAY)
-                            .exit(PaymentState.DECLINED, OrderChange.REFUSE)
+                            .transition(InvoiceChange.CLEAR, InvoiceState.SETTLING, InvoiceState.SETTLED)
+                            .endTransition()
+                            .transition(InvoiceChange.DEFAULT, InvoiceState.SETTLING, InvoiceState.UNPAID)
+                            .endTransition()
+                            .submachine(InvoiceState.SETTLING, PAYMENT_GRAPH,
+                                    (Invoice invoice) -> Optional.of(invoice.payment),
+                                    (Payment payment) -> payment.invoice)
+                            .exit(PaymentState.CAPTURED, InvoiceChange.CLEAR)
+                            .exit(PaymentState.DECLINED, InvoiceChange.DEFAULT)
                             .endSubmachine()
                             .build();
                 }
 
                 /** A registry of the order machine built from {@code orders} and of the payment machine. */
                 static MachineRegistry registry(GraphDefinition<Order, OrderState, OrderChange> orders) {
+                    return orderAndPayment(orders).build();
+                }
+
+                /** The same registry, with {@code observer} told of every call. */
+                static MachineRegistry registry(GraphDefinition<Order, OrderState, OrderChange> orders,
+                        MachineObserver observer) {
+                    return orderAndPayment(orders).observer(observer).build();
+                }
+
+                /** The same registry, with the invoice machine as a second parent of payments. */
+                static MachineRegistry registryWithInvoices(GraphDefinition<Order, OrderState, OrderChange> orders) {
+                    return orderAndPayment(orders)
+                            .add(StateMachines.from(invoices())
+                                    .state((Invoice invoice) -> invoice.state,
+                                            (Invoice invoice, InvoiceState state) -> invoice.state = state)
+                                    .identity((Invoice invoice) -> invoice.id))
+                            .build();
+                }
+
+                /** A registry of the charged order machine and of the charge machine, both over the order. */
+                static MachineRegistry chargeRegistry() {
+                    return MachineRegistry.builder()
+                            .add(StateMachines.from(chargedOrders())
+                                    .state((Order order) -> order.state,
+                                            (Order order, OrderState state) -> order.state = state)
+                                    .identity((Order order) -> order.id))
+                            .add(StateMachines.from(CHARGE_GRAPH)
+                                    .state((Order order) -> order.charge,
+                                            (Order order, PaymentState state) -> order.charge = state)
+                                    .identity((Order order) -> order.id))
+                            .build();
+                }
+
+                /** The order machine built from {@code orders} and the payment machine, both with a timeout. */
+                private static MachineRegistry.Builder orderAndPayment(
+                        GraphDefinition<Order, OrderState, OrderChange> orders) {
                     return MachineRegistry.builder()
                             .add(StateMachines.from(orders)
                                     .state((Order order) -> order.state,
@@ -304,8 +433,7 @@ class TestingGuideFragmentsTest {
                                     .state((Payment payment) -> payment.state,
                                             (Payment payment, PaymentState state) -> payment.state = state)
                                     .identity((Payment payment) -> payment.id)
-                                    .asyncTimeout(Duration.ofSeconds(5)))
-                            .build();
+                                    .asyncTimeout(Duration.ofSeconds(5)));
                 }
 
                 /** Runs the extracted assertions and prints a marker only after all pass. */
@@ -316,7 +444,10 @@ class TestingGuideFragmentsTest {
                     submachineDefinition();
                     submachineStarts();
                     submachineRefusals();
+                    ambiguousParent();
+                    exitProbes();
                     asyncExit();
+                    sameEntity();
                     System.out.println("TESTING_GUIDE_OK");
                 }
 
@@ -332,7 +463,7 @@ class TestingGuideFragmentsTest {
         String jars = publishedJar("graphmaquina-core") + File.pathSeparator + publishedJar("graphmaquina-test");
 
         assertBlockCount(page, RECOVERY, 4);
-        assertBlockCount(page, SUBMACHINES, 4);
+        assertBlockCount(page, SUBMACHINES, 7);
 
         StringBuilder source = new StringBuilder(HEADER);
         source.append("    // --- blocks 1 and 2: the routes a synchronous call took, then the declared rules\n");
@@ -353,9 +484,18 @@ class TestingGuideFragmentsTest {
         source.append("    // --- sub-machines, block 3: a reserved exit and a detached child\n");
         source.append("    static void submachineRefusals() {\n");
         source.append(blockAfter(page, SUBMACHINES, 3)).append("    }\n\n");
-        source.append("    // --- sub-machines, block 4: an asynchronous exit, held open\n");
+        source.append("    // --- sub-machines, block 4: two active parents\n");
+        source.append("    static void ambiguousParent() {\n");
+        source.append(blockAfter(page, SUBMACHINES, 4)).append("    }\n\n");
+        source.append("    // --- sub-machines, block 5: probes on an exit, and the recorded calls\n");
+        source.append("    static void exitProbes() {\n");
+        source.append(blockAfter(page, SUBMACHINES, 5)).append("    }\n\n");
+        source.append("    // --- sub-machines, block 6: an asynchronous exit, held open\n");
         source.append("    static void asyncExit() {\n");
-        source.append(blockAfter(page, SUBMACHINES, 4)).append("    }\n}\n");
+        source.append(blockAfter(page, SUBMACHINES, 6)).append("    }\n\n");
+        source.append("    // --- sub-machines, block 7: a child over its parent's own entity\n");
+        source.append("    static void sameEntity() {\n");
+        source.append(blockAfter(page, SUBMACHINES, 7)).append("    }\n}\n");
 
         Path classes = Files.createDirectories(workDir.resolve("classes"));
         List<String> diagnostics = compile(workDir, source.toString(), jars, classes);

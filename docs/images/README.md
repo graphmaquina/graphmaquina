@@ -12,6 +12,7 @@ the guide also supplies alternative text and keeps the detailed semantics in ord
 | [Operation decisions](operation-decisions.svg) | How one identifier selects one edge, and which outcome each path produces |
 | [Commit lifecycle](commit-lifecycle.svg) | Shared unit of work and the normal post-commit sequence |
 | [Watch reactions](watch-reactions.svg) | Item commit followed by an independent owner reaction |
+| [Sub-machine binding](submachine-binding.svg) | One payment machine bound in two states of a booking: the starts, the exits from the child's terminal states, an interruption from the state's border, and the three rules of a binding |
 
 The images use native SVG geometry and text, without embedded bitmaps, scripts, external fonts or linked
 resources. They do not change the library's Graphviz exporter.

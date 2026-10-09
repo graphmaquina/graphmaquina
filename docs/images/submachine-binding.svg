@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1132" viewBox="0 0 1440 1132" role="img" aria-labelledby="title desc">
+<title id="title">Sub-machines: one payment machine bound in two states of a booking</title><desc id="desc">The booking machine binds the same payment machine in two of its states, DEPOSIT and BALANCE. Each state is drawn as a cluster that holds the payment graph: AUTHORIZING and its three terminal states CAPTURED, DECLINED and VOIDED. BOOK enters DEPOSIT and starts the deposit payment at AUTHORIZING. A captured deposit exits through DEPOSIT_PAID, which moves the booking to BALANCE and starts the balance payment; a captured balance exits through BALANCE_PAID to CONFIRMED. A declined payment exits through DEPOSIT_DECLINED or BALANCE_DECLINED and a voided one through PAYMENT_VOIDED, both to CANCELLED. CANCEL leaves either state from its border, by an edge of the booking, and runs no exit. Entering a bound state starts the child; a child whose parent is not in the bound state is rejected as DETACHED; the terminal state of the child selects the exit, which commits with the child in the same unit of work. The payment machine knows no parent, and the subscription machine binds it again in RENEWAL.</desc>
+<defs>
+  <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
+</defs>
+<rect x="0" y="0" width="1440" height="1132" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="1132" rx="24" fill="url(#grid)" />
+<text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / SUB-MACHINES</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">A state can hold a whole machine.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Bookings binds the same Payments machine in DEPOSIT and in BALANCE.</text>
+<rect x="52" y="190" width="1336" height="600" rx="20" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="80" y="230" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#c3a2ff" text-anchor="start">BOOKINGS</text>
+<text x="186" y="230" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="start">the parent machine</text>
+<rect x="66" y="330" width="180" height="80" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="66" y="344" width="4" height="52" rx="2" fill="#7aafff" />
+<text x="88" y="364" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="650" fill="#f2f6fc" text-anchor="start">REQUESTED</text>
+<text x="88" y="394" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="start">initial</text>
+<rect x="320" y="260" width="600" height="220" rx="20" fill="url(#glow)" stroke="#c3a2ff" stroke-width="2" />
+<text x="344" y="298" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="700" fill="#f2f6fc" text-anchor="start">DEPOSIT</text>
+<text x="471" y="298" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">holds Payments</text>
+<text x="344" y="456" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">BOOK starts the deposit</text>
+<rect x="350" y="359" width="190" height="42" rx="21" fill="#0b1220" stroke="#7aafff" stroke-width="2" />
+<text x="445" y="387" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="17" font-weight="600" fill="#7aafff" text-anchor="middle">AUTHORIZING</text>
+<rect x="720" y="307" width="170" height="42" rx="21" fill="#0b1220" stroke="#ff8998" stroke-width="2" />
+<rect x="725" y="312" width="160" height="32" rx="16" fill="none" stroke="#ff8998" stroke-width="1" />
+<text x="805" y="335" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="17" font-weight="600" fill="#ff8998" text-anchor="middle">VOIDED</text>
+<path d="M 540 380 L 720 328" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 710 321 L 720 328 L 710 335" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="720" y="359" width="170" height="42" rx="21" fill="#0b1220" stroke="#ff8998" stroke-width="2" />
+<rect x="725" y="364" width="160" height="32" rx="16" fill="none" stroke="#ff8998" stroke-width="1" />
+<text x="805" y="387" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="17" font-weight="600" fill="#ff8998" text-anchor="middle">DECLINED</text>
+<path d="M 540 380 L 720 380" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 710 373 L 720 380 L 710 387" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="720" y="411" width="170" height="42" rx="21" fill="#0b1220" stroke="#55e0c0" stroke-width="2" />
+<rect x="725" y="416" width="160" height="32" rx="16" fill="none" stroke="#55e0c0" stroke-width="1" />
+<text x="805" y="439" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="17" font-weight="600" fill="#55e0c0" text-anchor="middle">CAPTURED</text>
+<path d="M 540 380 L 720 432" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 710 425 L 720 432 L 710 439" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="320" y="550" width="600" height="220" rx="20" fill="url(#glow)" stroke="#c3a2ff" stroke-width="2" />
+<text x="344" y="588" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="700" fill="#f2f6fc" text-anchor="start">BALANCE</text>
+<text x="471" y="588" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">holds Payments</text>
+<text x="344" y="746" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">DEPOSIT_PAID starts the balance</text>
+<rect x="350" y="649" width="190" height="42" rx="21" fill="#0b1220" stroke="#7aafff" stroke-width="2" />
+<text x="445" y="677" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="17" font-weight="600" fill="#7aafff" text-anchor="middle">AUTHORIZING</text>
+<rect x="720" y="597" width="170" height="42" rx="21" fill="#0b1220" stroke="#ff8998" stroke-width="2" />
+<rect x="725" y="602" width="160" height="32" rx="16" fill="none" stroke="#ff8998" stroke-width="1" />
+<text x="805" y="625" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="17" font-weight="600" fill="#ff8998" text-anchor="middle">VOIDED</text>
+<path d="M 540 670 L 720 618" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 710 611 L 720 618 L 710 625" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="720" y="649" width="170" height="42" rx="21" fill="#0b1220" stroke="#ff8998" stroke-width="2" />
+<rect x="725" y="654" width="160" height="32" rx="16" fill="none" stroke="#ff8998" stroke-width="1" />
+<text x="805" y="677" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="17" font-weight="600" fill="#ff8998" text-anchor="middle">DECLINED</text>
+<path d="M 540 670 L 720 670" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 710 663 L 720 670 L 710 677" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="720" y="701" width="170" height="42" rx="21" fill="#0b1220" stroke="#55e0c0" stroke-width="2" />
+<rect x="725" y="706" width="160" height="32" rx="16" fill="none" stroke="#55e0c0" stroke-width="1" />
+<text x="805" y="729" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="17" font-weight="600" fill="#55e0c0" text-anchor="middle">CAPTURED</text>
+<path d="M 540 670 L 720 722" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 710 715 L 720 722 L 710 729" fill="none" stroke="#7aafff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="1130" y="288" width="240" height="380" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="1130" y="302" width="4" height="352" rx="2" fill="#ff8998" />
+<text x="1152" y="322" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="650" fill="#f2f6fc" text-anchor="start">CANCELLED</text>
+<text x="1152" y="652" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="start">terminal</text>
+<rect x="1130" y="690" width="240" height="80" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="1130" y="704" width="4" height="52" rx="2" fill="#55e0c0" />
+<text x="1152" y="724" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="650" fill="#f2f6fc" text-anchor="start">CONFIRMED</text>
+<text x="1152" y="754" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="400" fill="#a9b8ce" text-anchor="start">terminal</text>
+<path d="M 246 380 L 350 380" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 340 373 L 350 380 L 340 387" fill="none" stroke="#c3a2ff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="283" y="366" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="18" font-weight="600" fill="#c3a2ff" text-anchor="middle">BOOK</text>
+<path d="M 805 453 L 805 515 L 290 515 L 290 670 L 350 670" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 340 663 L 350 670 L 340 677" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="580" y="506" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="18" font-weight="600" fill="#55e0c0" text-anchor="middle">DEPOSIT_PAID</text>
+<path d="M 890 328 L 1130 328" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 321 L 1130 328 L 1120 335" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1025" y="319" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ff8998" text-anchor="middle">PAYMENT_VOIDED</text>
+<path d="M 890 380 L 1130 380" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 373 L 1130 380 L 1120 387" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1025" y="371" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ff8998" text-anchor="middle">DEPOSIT_DECLINED</text>
+<path d="M 890 618 L 1130 618" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 611 L 1130 618 L 1120 625" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1025" y="609" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ff8998" text-anchor="middle">PAYMENT_VOIDED</text>
+<path d="M 890 670 L 1130 670" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 663 L 1130 670 L 1120 677" fill="none" stroke="#ff8998" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1025" y="661" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ff8998" text-anchor="middle">BALANCE_DECLINED</text>
+<path d="M 890 722 L 1130 722" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 715 L 1130 722 L 1120 729" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1025" y="713" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#55e0c0" text-anchor="middle">BALANCE_PAID</text>
+<circle cx="920" cy="450" r="5" fill="#ffc77a"/>
+<path d="M 920 450 L 1130 450" fill="none" stroke="#ffc77a" stroke-width="3" stroke-dasharray="9 8" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 443 L 1130 450 L 1120 457" fill="none" stroke="#ffc77a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1025" y="441" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ffc77a" text-anchor="middle">CANCEL</text>
+<circle cx="920" cy="568" r="5" fill="#ffc77a"/>
+<path d="M 920 568 L 1130 568" fill="none" stroke="#ffc77a" stroke-width="3" stroke-dasharray="9 8" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 1120 561 L 1130 568 L 1120 575" fill="none" stroke="#ffc77a" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="1025" y="559" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ffc77a" text-anchor="middle">CANCEL</text>
+<rect x="52" y="820" width="430" height="136" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="52" y="836" width="4" height="104" rx="2" fill="#c3a2ff" />
+<text x="76" y="862" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="650" fill="#c3a2ff" text-anchor="start">Entering starts the child</text>
+<text x="76" y="900" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">An edge into DEPOSIT or BALANCE</text>
+<text x="76" y="930" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">starts its payment at AUTHORIZING.</text>
+<rect x="505" y="820" width="430" height="136" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="505" y="836" width="4" height="104" rx="2" fill="#ffc77a" />
+<text x="529" y="862" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="650" fill="#ffc77a" text-anchor="start">Parent elsewhere: DETACHED</text>
+<text x="529" y="900" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">A payment whose booking has left the</text>
+<text x="529" y="930" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">state is refused; no edge is looked up.</text>
+<rect x="958" y="820" width="430" height="136" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="958" y="836" width="4" height="104" rx="2" fill="#55e0c0" />
+<text x="982" y="862" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="650" fill="#55e0c0" text-anchor="start">Terminal selects the exit</text>
+<text x="982" y="900" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">A capture and its DEPOSIT_PAID</text>
+<text x="982" y="930" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">commit in one unit of work.</text>
+<rect x="52" y="982" width="1336" height="64" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="1022" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#7aafff" text-anchor="start">REUSED</text>
+<text x="196" y="1022" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Payments knows no parent. Subscriptions binds the same machine in RENEWAL.</text>
+<path d="M 52 1068 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="1103" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">CANCEL leaves either state by an edge of the booking: no exit runs, and its action voids the payment it leaves.</text>
+</svg>
