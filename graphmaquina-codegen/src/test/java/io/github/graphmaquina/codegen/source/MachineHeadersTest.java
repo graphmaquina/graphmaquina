@@ -547,7 +547,7 @@ class MachineHeadersTest {
                         directory.resolve("out/classes"), directory.resolve("out/work"), "shop:main")));
 
         assertEquals("SG608", failure.code());
-        assertEquals("the peer machine stock.Stocks declared by shop.Orders cannot be watched from package shop,"
+        assertEquals("the peer machine stock.Stocks declared by shop.Orders cannot be named from package shop,"
                 + " where its pair vocabulary is generated: stock.StockState is not public and belongs to package"
                 + " stock", failure.getMessage());
         assertEquals("src/shop/Orders.java", failure.location().orElseThrow().path());

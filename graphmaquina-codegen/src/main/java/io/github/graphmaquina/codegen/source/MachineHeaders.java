@@ -152,7 +152,7 @@ public final class MachineHeaders {
                     Optional<String> reason = index.inaccessibility(named, graph.packageName());
                     if (reason.isPresent()) {
                         throw new CodegenException(UNUSABLE_PEER, "the peer machine " + peer + " declared by "
-                                + graph.facade() + " cannot be watched from " + where(graph.packageName())
+                                + graph.facade() + " cannot be named from " + where(graph.packageName())
                                 + ", where its pair vocabulary is generated: " + reason.get(), graph.origin());
                     }
                 }

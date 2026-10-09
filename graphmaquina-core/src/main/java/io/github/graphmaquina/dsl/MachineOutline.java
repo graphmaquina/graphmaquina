@@ -28,7 +28,7 @@ import lombok.NonNull;
  * @param policies the rejection policies; both producers give one to each state that declares one or is terminal,
  *     and none to any other state
  * @param watches the declared watches
- * @param submachines the declared sub-machine bindings, in the order the producer lists them: the DSL in
+ * @param submachines the declared sub-machine bindings, in the order the producer lists them: both producers in
  *     declaration order; a state may appear more than once, which the validator reports
  */
 public record MachineOutline(@NonNull String name, @NonNull List<String> states, @NonNull List<String> catalog,

@@ -61,7 +61,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 | Capability | How it works |
 | --- | --- |
 | A graph of identified transitions | You declare edges `(from, transition, to)`. An identifier selects the edge, so parallel edges and self-loops are ordinary declarations. |
-| Compile-time structural validation | Checks include reachability, terminal states, intentional cycles, duplicate `(from, id)` keys, failure routes and watch rules. |
+| Compile-time structural validation | Checks include reachability, terminal states, intentional cycles, duplicate `(from, id)` keys, failure routes, watch rules and sub-machine bindings. |
 | Typed operations | A machine interface exposes domain operations such as `submit(ticket)` or `pay(order)`, returning `Outcome<E, S, T>`. |
 | Explicit bindings | Generated `Refs` classes identify marked methods and properties; the processor checks their roles and signatures. |
 | Synchronous and asynchronous actions | Actions and guards may return values or `CompletionStage` results. The runtime waits under configured deadlines. |
@@ -1023,9 +1023,9 @@ You declare what it can do, and the policy words the answer for everything else.
   it recovers, because identity, not destination, tells them apart.
 - Every watch rule must name an identifier with an edge from the watched state. A terminal cannot watch.
 - A state that holds a sub-machine maps each terminal state of the child, and no other state, to exactly one exit:
-  an identifier with an edge from that state that no `onFailure`, recovery rule or watch rule of that state names. A
-  terminal state holds no sub-machine, another state holds at most one, and a machine's sub-machines never contain the
-  machine again.
+  an identifier with an edge from that state that no `onFailure`, recovery rule or watch rule of that state names,
+  and, with annotations, that no operation of the facade executes. A terminal state holds no sub-machine, another
+  state holds at most one, and a machine's sub-machines never contain the machine again.
 
 Unauthorised cycles are reported as one witness per cyclic strongly connected component rather than one
 message per elementary cycle. The rule about what is accepted is unchanged; the number of messages is
@@ -1111,7 +1111,7 @@ Import these from `io.github.graphmaquina.annotation`:
 | `@GraphHook` | Hook method | Export an after-commit binding |
 | `@GraphCondition` | Watch-condition method | Export a custom watch predicate |
 | `@GraphBindings` | Concrete binding host | Export inherited marked members through this concrete host |
-| `@GraphPeers` | Watching machine interface | Request typed vocabulary for its declared owner/peer pairs |
+| `@GraphPeers` | Machine interface that watches or binds other machines | Request typed vocabulary for its declared owner/peer pairs |
 | `@Timeout` | Nested annotation element | Express seconds and nanoseconds for an asynchronous action timeout |
 
 Markers identify exports; marking a method alone does not attach it to a transition. Reference its generated
@@ -1165,9 +1165,9 @@ transitions. Generated companions emit one typed `recover(...)` call per rule in
 facades route failures through those rules just as graphs built directly with the DSL do.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
-`onFailure`, `timeout`, `afterCommit`, `Transition.action` and custom `When.condition` accept zero or one value.
-Use the single-value syntax, for example `onFailure = TicketTransition.DECLINE`, or omit the element. Multiple
-values are `SG607`.
+`onFailure`, `timeout`, `afterCommit`, `Transition.action`, custom `When.condition`, and the `child`, `parent` and
+`parentLookup` of a `Submachine` accept zero or one value. Use the single-value syntax, for example
+`onFailure = TicketTransition.DECLINE`, or omit the element. Multiple values are `SG607`.
 
 ### Properties and accessors
 
@@ -1184,6 +1184,8 @@ normalization: `getState()` exports `state`, `items()` exports `items`, and `get
 | `Definition.id` | Public instance reader returning an identity value; values must be non-null at runtime |
 | `Watch.peers` | Owner reader returning `Collection<? extends PeerEntity>` |
 | `Watch.owner` | Peer reader returning `Optional<OwnerEntity>` or an owner entity |
+| `Submachine.child` | Parent reader returning `Optional<ChildEntity>` |
+| `Submachine.parent` | Child reader returning `Optional<ParentEntity>` |
 
 Use `Optional.empty()` for a peer with no owner. Keep relationship accessors consistent and return non-null
 collections. If the setter overloads are ambiguous, the processor reports the ambiguity instead of choosing
@@ -2340,8 +2342,9 @@ poisoned the transaction; and on any other throwable the engine aborts the call 
 recovery action's name and the original failure's reason, never from that throwable's string, whether or not the
 transaction is poisoned.
 
-`@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
-unused watch-pair declaration.
+`@GraphPeers` is for generating the vocabulary of a pair: the annotations that declare the owner's watches and
+sub-machines over the peer. A runtime peer read or cascade alone does not require a pair that no watch or
+sub-machine uses.
 
 ## Watch other machines
 
@@ -2419,7 +2422,7 @@ Close this set as described in [machine lifecycle](#build-and-manage-machine-set
 the generated builder's parameter list and order; regenerate before updating the application's wiring.
 
 A machine can have at most one watch per owner state. Multiple rules belong inside that watch. Declare only
-pairs that are actually watched; duplicate or unused `@GraphPeers` entries are errors.
+pairs that a watch or a sub-machine uses; duplicate or unused `@GraphPeers` entries are errors.
 
 ### Triggering and observing watches
 
@@ -3107,7 +3110,7 @@ code runs.
 | `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
 | `SG503` | Missing or incompatible public property accessor. |
 | `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes one parameter per class with instance members the machine binds, or none. That last refusal is reported once the machine's declarations have no other error and none of its vocabulary is misplaced, since fixing one can change what `graph(...)` takes; an error of its graph as a whole, such as `SG202`, `SG203` or `SG701`, and a refused companion name (`SG603`, or `SG602` when a previous compilation left its companion) are reported beside it. |
-| `SG505` | Exported method does not uniquely fit the action, guard, hook or condition role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
+| `SG505` | Exported method does not uniquely fit the action, guard, hook, condition or lookup role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
 | `SG507` | Invalid transition elements: empty `from`, `onFailure`, `failsOn` or recovery rules without an action, or a timeout without an asynchronous action. In the DSL, also an edge never closed with `endTransition()`, and an edge that declares more than one action, `onFailure` or `timeout`. |
 | `SG508` | Watch rule must choose exactly one supported predicate alternative. |
 | `SG509` | Invalid peer-machine type, a peer whose entity is a parameterized type, or a watched peer whose types the watcher's package cannot access. |
@@ -3119,8 +3122,9 @@ code runs.
 | `SG801` | A sub-machine's exits do not match the terminal states of its child: a terminal state of the child has no exit or more than one, or an exit is declared on a state that is not terminal in the child. Two terminal states may map to the same identifier. |
 | `SG802` | A sub-machine's exit names an identifier with no edge from the state the sub-machine is bound to. |
 | `SG803` | A terminal state holds a sub-machine, or one state holds more than one. |
-| `SG804` | An identifier that a sub-machine's exit names is also named, from the state the sub-machine is bound to, by an edge's `onFailure` or recovery rule, or by a rule of that state's watch. The same identifier from another state is not an exit. |
-| `SG805` | A machine's sub-machines contain the machine again, directly or through their own sub-machines. The DSL compares machine keys along the chain of child definitions, so it takes a second definition of the machine's own key, and prints one shortest path. |
+| `SG804` | An identifier that a sub-machine's exit names is also named, from the state the sub-machine is bound to, by an edge's `onFailure` or recovery rule, or by a rule of that state's watch. The same identifier from another state is not an exit. With annotations, an operation of the facade may not execute an exit either: it requests its identifier from whichever state the machine is in, the bound state included. |
+| `SG805` | A machine's sub-machines contain the machine again, directly or through their own sub-machines. The DSL compares machine keys along the chain of child definitions, so it takes a second definition of the machine's own key, and prints one shortest path. The processor follows the sub-machines each child declares in turn, and reports one shortest path at the binding it starts with, on every machine of the cycle. |
+| `SG806` | A sub-machine declared with annotations does not declare the ways between its entities that it needs: a child over another entity than the parent's needs `child` and exactly one of `parent` or `parentLookup`, and a child over the parent's own entity takes none of the three. |
 
 ### Generation and typed binding diagnostics
 
@@ -3133,8 +3137,8 @@ code runs.
 | `SG604` | Invalid or contradictory export/role, or a host its generated references container cannot access, such as a private nested class. Check markers and exported signatures. |
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |
 | `SG606` | Graph vocabulary or the vocabulary of a pair belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract operations. On a default, static or private method of its own facade it is `SG504`. |
-| `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit` or `When.condition`. `recoveries` is no such element: it holds any number of rules, and several rules are never several fallbacks. |
-| `SG608` | Invalid, duplicated or unused peer, a watched peer outside this compilation, or a peer whose types the owner's package cannot name. |
+| `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit`, `When.condition`, or the `child`, `parent` or `parentLookup` of a `Submachine`. `recoveries` is no such element: it holds any number of rules, and several rules are never several fallbacks. |
+| `SG608` | Invalid or duplicated peer, a peer that no watch or sub-machine of the machine uses, a watch or a sub-machine of a peer the machine does not declare, a peer outside this compilation, or a peer whose types the owner's package cannot name. |
 | `SG609` | A retired 1.x graph annotation is still on the class path and still used. Replace it as [migrating to 2.0](migration-2.0.md) describes. |
 
 ### Runtime exceptions
@@ -3191,7 +3195,7 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 | Area | Current status |
 | --- | --- |
 | Upgrade from 1.x | Deliberately incompatible. There is no alias of the retired API, no compatibility mode and no conversion of stored snapshots; [migrating to 2.0](migration-2.0.md) maps every contract. |
-| Watches between JARs/modules | Unsupported: both machines must be generated in one compilation. External peers fail with `SG608`; [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1). |
+| Watches and sub-machines between JARs/modules | Unsupported with annotations: both machines must be generated in one compilation. External peers fail with `SG608`; [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1). |
 | State hierarchy and parallel regions | A state can hold a sub-machine: another machine bound to it, which entering the state starts and whose terminal state selects the parent's exit. Parallel or orthogonal regions, a state that holds two machines at once, are not modelled. |
 | Event scheduling and automatic path execution | Absent. Each operation resolves and executes one edge, plus the cascades its actions request and the exits of the sub-machines it ends; nothing walks a path or fires on a timer. |
 | Unauthorised-cycle reporting | One witness per cyclic strongly connected component, not one message per elementary cycle. `Graph.cycles()` itself is unchanged. |

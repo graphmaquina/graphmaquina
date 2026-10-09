@@ -1,7 +1,9 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.dsl.ExitOutline;
 import io.github.graphmaquina.dsl.MachineOutline;
 import io.github.graphmaquina.dsl.PolicyOutline;
+import io.github.graphmaquina.dsl.SubmachineOutline;
 import io.github.graphmaquina.dsl.TransitionOutline;
 import io.github.graphmaquina.dsl.WatchOutline;
 import io.github.graphmaquina.processor.model.MachineModel;
@@ -9,6 +11,7 @@ import io.github.graphmaquina.processor.model.RecoveryModel;
 import io.github.graphmaquina.processor.model.RejectionModel;
 import io.github.graphmaquina.processor.model.RuleModel;
 import io.github.graphmaquina.processor.model.StatePolicyModel;
+import io.github.graphmaquina.processor.model.SubmachineModel;
 import io.github.graphmaquina.processor.model.TransitionModel;
 import io.github.graphmaquina.processor.model.WatchModel;
 import java.util.ArrayList;
@@ -20,7 +23,8 @@ import java.util.Set;
 /**
  * Turns a model into the structural outline the DSL builds too: only the edges that were declared, each with the
  * identifiers its fallback and its recovery rules recover through, one policy per state that declares one or is
- * terminal, and the identifiers each watch executes. No pair is materialized.
+ * terminal, the identifiers each watch executes, and each sub-machine with the terminal states of its child and its
+ * exits as declared. No pair is materialized.
  */
 final class Outlines {
 
@@ -46,9 +50,18 @@ final class Outlines {
             }
             watches.add(new WatchOutline(watch.state(), executed));
         }
+        List<SubmachineOutline> submachines = new ArrayList<>();
+        for (SubmachineModel submachine : model.submachines()) {
+            List<ExitOutline> exits = new ArrayList<>();
+            for (SubmachineModel.Exit exit : submachine.exits()) {
+                exits.add(new ExitOutline(exit.on(), exit.transition()));
+            }
+            submachines.add(new SubmachineOutline(submachine.state(),
+                    submachine.child().facade().getSimpleName().toString(), submachine.childTerminals(), exits));
+        }
         return new MachineOutline(model.facadeName(), model.types().stateNames(), model.types().transitionNames(),
                 model.initial(), Set.copyOf(model.terminals()), Set.copyOf(model.cycleAllowed()), edges,
-                policies(model), watches);
+                policies(model), watches, submachines);
     }
 
     /**

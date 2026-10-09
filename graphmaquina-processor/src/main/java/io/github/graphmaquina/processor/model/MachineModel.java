@@ -9,7 +9,7 @@ public record MachineModel(MachineTypes types, String packageName, String initia
                            List<String> cycleAllowed, Property stateGetter, Property stateSetter, Property idGetter,
                            List<StatePolicyModel> policies, List<RejectionModel> rejections,
                            List<TransitionModel> transitions, List<OperationModel> operations,
-                           List<WatchModel> watches) {
+                           List<WatchModel> watches, List<SubmachineModel> submachines) {
 
     public MachineModel {
         terminals = List.copyOf(terminals);
@@ -19,6 +19,7 @@ public record MachineModel(MachineTypes types, String packageName, String initia
         transitions = List.copyOf(transitions);
         operations = List.copyOf(operations);
         watches = List.copyOf(watches);
+        submachines = List.copyOf(submachines);
     }
 
     public String facadeName() {
