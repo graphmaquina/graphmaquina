@@ -536,6 +536,299 @@ public final class MavenFixture {
     }
 
     /**
+     * The billing domain of sub-machines, in a package of its own: {@code fxs.Bookings} binds {@code fxs.Payments} in
+     * two states, {@code DEPOSIT} and {@code BALANCE}, and finds the booking of each payment through a lookup of
+     * {@code fxs.Ledger}, an instance host; {@code fxs.Billing} is the set of both machines. {@code fxs.Bookkeeping}
+     * books a stay, captures its deposit and its balance, captures the deposit of a booking that was never booked,
+     * and prints one line {@code BILLING <call> <status> ...} per call, then one {@code BILLING states ...} line.
+     *
+     * @return a mutable copy of the domain, one entry per compilation unit, keyed by qualified name
+     */
+    public static Map<String, String> submachineSources() {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("fxs.PaymentStatus", """
+                package fxs;
+
+                /** The states a payment moves through. */
+                public enum PaymentStatus { PENDING, CAPTURED, DECLINED }
+                """);
+        sources.put("fxs.PaymentTransition", """
+                package fxs;
+
+                /** The identified transitions of the payment graph. */
+                public enum PaymentTransition { CAPTURE, DECLINE }
+                """);
+        sources.put("fxs.BookingStatus", """
+                package fxs;
+
+                /** The states a booking moves through. */
+                public enum BookingStatus { REQUESTED, DEPOSIT, BALANCE, CONFIRMED, CANCELLED }
+                """);
+        sources.put("fxs.BookingTransition", """
+                package fxs;
+
+                /** The identified transitions of the booking graph. */
+                public enum BookingTransition { BOOK, DEPOSIT_PAID, BALANCE_PAID, DECLINE }
+                """);
+        sources.put("fxs.Payment", """
+                package fxs;
+
+                import io.github.graphmaquina.annotation.GraphProperty;
+
+                /** The entity of the payment graph, the sub-machine; it knows no booking. */
+                public final class Payment {
+
+                    private final String id;
+
+                    @GraphProperty
+                    private PaymentStatus status = PaymentStatus.PENDING;
+
+                    public Payment(String id) {
+                        this.id = id;
+                    }
+
+                    @GraphProperty
+                    public String id() {
+                        return id;
+                    }
+
+                    public PaymentStatus status() {
+                        return status;
+                    }
+
+                    public void status(PaymentStatus value) {
+                        status = value;
+                    }
+
+                    @Override
+                    public String toString() {
+                        return id;
+                    }
+                }
+                """);
+        sources.put("fxs.Booking", """
+                package fxs;
+
+                import io.github.graphmaquina.annotation.GraphProperty;
+                import java.util.Optional;
+
+                /** The entity of the booking graph, the parent: it holds its deposit and its balance. */
+                public final class Booking {
+
+                    private final String id;
+
+                    @GraphProperty
+                    private BookingStatus status = BookingStatus.REQUESTED;
+
+                    private final Payment deposit;
+
+                    private final Payment balance;
+
+                    public Booking(String id, Payment deposit, Payment balance) {
+                        this.id = id;
+                        this.deposit = deposit;
+                        this.balance = balance;
+                    }
+
+                    @GraphProperty
+                    public String id() {
+                        return id;
+                    }
+
+                    public BookingStatus status() {
+                        return status;
+                    }
+
+                    public void status(BookingStatus value) {
+                        status = value;
+                    }
+
+                    @GraphProperty
+                    public Optional<Payment> deposit() {
+                        return Optional.of(deposit);
+                    }
+
+                    @GraphProperty
+                    public Optional<Payment> balance() {
+                        return Optional.of(balance);
+                    }
+                }
+                """);
+        sources.put("fxs.Ledger", """
+                package fxs;
+
+                import io.github.graphmaquina.annotation.GraphLookup;
+                import java.util.HashMap;
+                import java.util.Map;
+                import java.util.Optional;
+
+                /** The lookup host: it finds the booking a payment is the deposit or the balance of. */
+                public final class Ledger {
+
+                    private final Map<String, Booking> deposits = new HashMap<>();
+
+                    private final Map<String, Booking> balances = new HashMap<>();
+
+                    public void register(Booking booking) {
+                        deposits.put(booking.deposit().orElseThrow().id(), booking);
+                        balances.put(booking.balance().orElseThrow().id(), booking);
+                    }
+
+                    @GraphLookup
+                    public Optional<Booking> depositOf(Payment payment) {
+                        return Optional.ofNullable(deposits.get(payment.id()));
+                    }
+
+                    @GraphLookup
+                    public Optional<Booking> balanceOf(Payment payment) {
+                        return Optional.ofNullable(balances.get(payment.id()));
+                    }
+                }
+                """);
+        sources.put("fxs.Payments", """
+                package fxs;
+
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+
+                import static fxs.PaymentStatus.CAPTURED;
+                import static fxs.PaymentStatus.DECLINED;
+                import static fxs.PaymentStatus.PENDING;
+                import static fxs.PaymentTransition.CAPTURE;
+                import static fxs.PaymentTransition.DECLINE;
+
+                /** The payment machine, the child: it ends captured or declined. */
+                @GenerateGraphApi
+                @PaymentsGraph.Definition(initial = PENDING, terminals = {CAPTURED, DECLINED},
+                    state = PaymentRefs.Status.class, id = PaymentRefs.Id.class)
+                @PaymentsGraph.StatePolicy(state = PENDING, otherwise = "a payment is captured or declined")
+                public interface Payments extends Machine<Payment, PaymentStatus, PaymentTransition> {
+
+                    @PaymentsGraph.Transition(id = CAPTURE, from = PENDING, to = CAPTURED)
+                    Outcome<Payment, PaymentStatus, PaymentTransition> capture(Payment payment);
+
+                    @PaymentsGraph.Transition(id = DECLINE, from = PENDING, to = DECLINED)
+                    Outcome<Payment, PaymentStatus, PaymentTransition> decline(Payment payment);
+                }
+                """);
+        sources.put("fxs.Bookings", """
+                package fxs;
+
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.annotation.GraphPeers;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+
+                import static fxs.BookingStatus.BALANCE;
+                import static fxs.BookingStatus.CANCELLED;
+                import static fxs.BookingStatus.CONFIRMED;
+                import static fxs.BookingStatus.DEPOSIT;
+                import static fxs.BookingStatus.REQUESTED;
+                import static fxs.BookingTransition.BALANCE_PAID;
+                import static fxs.BookingTransition.BOOK;
+                import static fxs.BookingTransition.DECLINE;
+                import static fxs.BookingTransition.DEPOSIT_PAID;
+
+                /**
+                 * The booking machine, the parent: its deposit runs in DEPOSIT and its balance in BALANCE, and the end
+                 * of each payment selects the exit of its node.
+                 */
+                @GenerateGraphApi
+                @GraphPeers(Payments.class)
+                @BookingsGraph.Definition(initial = REQUESTED, terminals = {CONFIRMED, CANCELLED},
+                    state = BookingRefs.Status.class, id = BookingRefs.Id.class)
+                @BookingsGraph.StatePolicy(state = REQUESTED, otherwise = "a booking is requested first")
+                @BookingsGraph.StatePolicy(state = DEPOSIT, otherwise = "the deposit decides")
+                @BookingsGraph.StatePolicy(state = BALANCE, otherwise = "the balance decides")
+                @BookingsGraph.Transition(id = DEPOSIT_PAID, from = DEPOSIT, to = BALANCE)
+                @BookingsGraph.Transition(id = BALANCE_PAID, from = BALANCE, to = CONFIRMED)
+                @BookingsGraph.Transition(id = DECLINE, from = {DEPOSIT, BALANCE}, to = CANCELLED)
+                @BookingsPayments.Submachine(state = DEPOSIT, child = BookingRefs.Deposit.class,
+                    parentLookup = LedgerRefs.DepositOf.class,
+                    exits = {@BookingsPayments.Exit(on = PaymentStatus.CAPTURED, transition = DEPOSIT_PAID),
+                             @BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = DECLINE)})
+                @BookingsPayments.Submachine(state = BALANCE, child = BookingRefs.Balance.class,
+                    parentLookup = LedgerRefs.BalanceOf.class,
+                    exits = {@BookingsPayments.Exit(on = PaymentStatus.CAPTURED, transition = BALANCE_PAID),
+                             @BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = DECLINE)})
+                public interface Bookings extends Machine<Booking, BookingStatus, BookingTransition> {
+
+                    @BookingsGraph.Transition(id = BOOK, from = REQUESTED, to = DEPOSIT)
+                    Outcome<Booking, BookingStatus, BookingTransition> book(Booking booking);
+                }
+                """);
+        sources.put("fxs.Billing", """
+                package fxs;
+
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+
+                /** The set of both machines, which builds the payment definition once for both bindings. */
+                @StateGraphs
+                public interface Billing extends Machines {
+
+                    Bookings bookings();
+
+                    Payments payments();
+                }
+                """);
+        sources.put("fxs.Bookkeeping", """
+                package fxs;
+
+                import io.github.graphmaquina.api.Outcome;
+                import io.github.graphmaquina.api.SubmachineStart;
+                import io.github.graphmaquina.api.TransitionRecord;
+
+                /** Runs a stay through both of its payments, then a payment whose booking was never booked. */
+                public final class Bookkeeping {
+
+                    private Bookkeeping() {
+                    }
+
+                    public static void main(String[] arguments) {
+                        Ledger ledger = new Ledger();
+                        Payment deposit = new Payment("deposit");
+                        Payment balance = new Payment("balance");
+                        Booking stay = new Booking("stay", deposit, balance);
+                        Payment early = new Payment("early");
+                        Booking unbooked = new Booking("unbooked", early, new Payment("late"));
+                        ledger.register(stay);
+                        ledger.register(unbooked);
+                        try (Billing billing = BillingRuntime.builder(ledger).build()) {
+                            print("book", billing.bookings().book(stay));
+                            print("deposit", billing.payments().capture(deposit));
+                            print("balance", billing.payments().capture(balance));
+                            print("early", billing.payments().capture(early));
+                        }
+                        System.out.println("BILLING states stay=" + stay.status() + " deposit=" + deposit.status()
+                                + " balance=" + balance.status() + " unbooked=" + unbooked.status()
+                                + " early=" + early.status());
+                    }
+
+                    /** Prints the status of {@code outcome}, then its refusal, its hops and its starts. */
+                    private static void print(String call, Outcome<?, ?, ?> outcome) {
+                        StringBuilder line = new StringBuilder("BILLING ").append(call).append(' ')
+                                .append(outcome.status());
+                        if (outcome instanceof Outcome.Rejected<?, ?, ?> rejected) {
+                            line.append(' ').append(rejected.kind()).append(' ').append(rejected.reason());
+                        }
+                        for (TransitionRecord<?, ?, ?> hop : outcome.records()) {
+                            line.append(' ').append(hop.from()).append('-').append(hop.transition())
+                                    .append("->").append(hop.to());
+                        }
+                        for (SubmachineStart<?, ?, ?> start : outcome.starts()) {
+                            line.append(" start ").append(start.node()).append(':').append(start.child())
+                                    .append(':').append(start.initial());
+                        }
+                        System.out.println(line);
+                    }
+                }
+                """);
+        return sources;
+    }
+
+    /**
      * Writes {@code sources} under {@code src/main/java}, one file per qualified name, replacing whatever the
      * main source root held before, which is what editing a source tree does.
      *
