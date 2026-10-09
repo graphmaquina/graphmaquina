@@ -14,10 +14,11 @@ import java.util.Objects;
  * resource when the run is in update mode. A mismatch fails with the lines that changed, not with both
  * diagrams in full, so a review reads what moved.
  *
- * <p>The rendering draws every state as a node, an arrow into the initial state, a note linked to the state
- * of each watch and, between states, only the declared edges: parallel identifiers between the same pair of
- * states are separate arrows, and a rejection policy is an attribute of its node rather than an arrow. There
- * is no tabular or exhaustive mode, because absence has no diagram.
+ * <p>The rendering draws every state as a node, or as a cluster that holds the child's own rendering when a
+ * sub-machine is bound to it, as {@link GraphvizExporter} describes. It draws an arrow into the initial state, a
+ * note linked to the state of each watch and, between states, only the declared edges: parallel identifiers
+ * between the same pair of states are separate arrows, and a rejection policy is an attribute of its node rather
+ * than an arrow. There is no tabular or exhaustive mode, because absence has no diagram.
  *
  * <p>This checks visual output only. Use {@link GraphAssert} and {@link GraphSnapshots} for declared
  * contracts, and outcomes and observed state for machine behavior. Diagram text is not a semantic oracle.

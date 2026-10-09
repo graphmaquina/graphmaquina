@@ -617,8 +617,9 @@ logic.
   for focused expectations. Neither approach executes domain logic; test guards, actions, cascades and
   watches through real operations and assert their outcomes, records, reactions and observed entity states.
 - `GraphGoldens.assertMatches(definition, resource)` compares the Graphviz DOT output with a checked-in
-  `.dot` file. There is no detail mode: the export draws the declared edges and renders each node's policy
-  as that node's tooltip. This is a visual regression test only: a diagram change must not be the evidence
+  `.dot` file. There is no detail mode: the export draws the declared edges, draws each sub-machine as a
+  cluster inside the state it is bound to, and renders each node's policy as that node's tooltip, or as the
+  cluster's for a bound state. This is a visual regression test only: a diagram change must not be the evidence
   for a change in machine behavior.
 
 Snapshots are `graphmaquina-snapshot-v2`. `GraphSnapshot.parse` refuses a v1 document by name and asks for

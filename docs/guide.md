@@ -70,7 +70,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 | Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child whose parent is not in that state is rejected, and the step that ends the child runs the parent's exit in the same unit of work. |
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
 | Inspectable execution | Outcomes carry transition records, watch reactions and the sub-machines a call started; technical aborts carry diagnostic details where applicable. |
-| Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram. |
+| Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram, which draws each sub-machine inside the state it is bound to. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
 a durable job queue, HTTP endpoints or distributed transactions. See
@@ -2698,8 +2698,8 @@ System.out.println(diagram);
 ```
 
 This is a fragment: put the imports at file scope and the statements inside a method. Export does not run
-transitions or evaluate guards, and there is no detail mode: the exporter draws the declared edges and
-nothing else, because an edge nobody declared does not exist.
+transitions or evaluate guards, and there is no detail mode: the exporter draws the declared edges and no
+other, because an edge nobody declared does not exist.
 
 The export is deterministic DOT text with LF line endings. Each edge label begins with its identifier,
 followed by the action name, `[async]`, `[if guard, …]`, one `[recover Kind -> ID]` per recovery rule in
@@ -2711,6 +2711,13 @@ states have double outlines, and watches appear as notes connected by dashed lin
 is rendered as that node's `tooltip` — never as an arrow, because a refusal is an answer the node gives and
 not a transition. State names and labels are escaped, and every declared state remains visible even when no
 edge touches it.
+
+A state that holds a sub-machine is drawn as a cluster labelled with the state and the child machine, such as
+`DEPOSIT: Payment/PaymentStatus`, which holds the child's own diagram and has the state's policy as its tooltip.
+An edge into the state points at the child's initial state, an exit is drawn once from each terminal state of the
+child that selects it, and any other edge leaving the state, like the state's watch note, starts at the cluster's
+border. The DOT then sets `compound=true` and clips those arrows with `lhead` and `ltail`. A graph that binds no
+sub-machine has no cluster.
 
 The shop's order machine exports as:
 
