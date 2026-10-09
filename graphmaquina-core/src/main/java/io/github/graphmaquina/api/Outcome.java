@@ -49,8 +49,9 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * The reason given for this result: the reason of the state policy or of the guard for a rejection, and the reason
-     * the action returned for a failure. The graph's author writes them all, except the fixed text the library
-     * generates for a terminal state that declares no policy. Empty for an applied outcome, for an ignored one, whose
+     * the action returned for a failure. The graph's author writes them all, except the fixed texts the library
+     * generates: for a terminal state that declares no policy, and for a {@link RejectionKind#DETACHED} or
+     * {@link RejectionKind#RESERVED_EXIT} rejection. Empty for an applied outcome, for an ignored one, whose
      * why is its {@link IgnoreReason}, and for a failure that carries a cause because a declared throwable type, of
      * failsOn or of a recovery rule, routed it from an exception: that reason is composed from the exception and may
      * carry internal details, so it stays in the failure's {@code reason} and {@code cause}.
@@ -182,10 +183,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     }
 
     /**
-     * No edge leaves {@code from} with that identifier, or a guard rejected: no action ran and nothing was written,
-     * though on a guard rejection the guards up to the rejecting one ran. {@code guard} names that guard, and is
-     * empty for NO_TRANSITION. It reports no destination. Only a root call returns it: inside a cascade, a rejection
-     * aborts the root instead. The reason is never blank.
+     * The request was refused for the reason {@code kind} names: no edge leaves {@code from} with that identifier, a
+     * guard rejected, the entity is a sub-machine whose parent is not in the bound state, or the identifier is an exit
+     * of the sub-machine bound to {@code from}, which no request may ask for from there. No action ran and nothing was
+     * written, though on a guard rejection the guards up to the rejecting one ran. {@code guard} names that guard, and
+     * is empty for every other kind. It reports no destination. Only a root call returns it: inside a cascade, a
+     * rejection aborts the root instead. The reason is never blank.
      */
     record Rejected<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull String reason,
@@ -195,8 +198,8 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             if (reason.isBlank()) {
                 throw new IllegalArgumentException("reason must not be blank");
             }
-            if (kind == RejectionKind.NO_TRANSITION && guard.isPresent()) {
-                throw new IllegalArgumentException("a NO_TRANSITION rejection carries no guard");
+            if (kind != RejectionKind.GUARD && guard.isPresent()) {
+                throw new IllegalArgumentException("a " + kind + " rejection carries no guard");
             }
             if (kind == RejectionKind.GUARD && guard.isEmpty()) {
                 throw new IllegalArgumentException("a GUARD rejection names the guard that rejected");
@@ -218,6 +221,8 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             return switch (kind) {
                 case NO_TRANSITION -> OutcomeCode.NO_TRANSITION;
                 case GUARD -> OutcomeCode.GUARD_REJECTED;
+                case DETACHED -> OutcomeCode.DETACHED;
+                case RESERVED_EXIT -> OutcomeCode.RESERVED_EXIT;
             };
         }
 

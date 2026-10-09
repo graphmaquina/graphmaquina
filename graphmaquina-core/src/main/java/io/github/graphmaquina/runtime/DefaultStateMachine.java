@@ -69,6 +69,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild;
     /** See {@link #bindsSubmachines()}. */
     private final boolean bindsSubmachines;
+    /** See {@link #hasBindings()}. */
+    private final boolean hasBindings;
 
     DefaultStateMachine(GraphDefinition<E, S, T> definition, Function<? super E, ? extends S> getter,
                         BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
@@ -86,6 +88,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.presentTransitions = present(definition.key().transitions());
         this.bindingsAsChild = bindingsAsChild;
         this.bindsSubmachines = bindsSubmachines(definition);
+        this.hasBindings = bindsSubmachines || !bindingsAsChild.isEmpty();
     }
 
     /** Whether some state of {@code definition} holds a sub-machine. */
@@ -107,6 +110,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /** Whether some state of this machine's own definition holds a sub-machine; computed once, at construction. */
     boolean bindsSubmachines() { return bindsSubmachines; }
+
+    /**
+     * Whether this machine takes part in a binding: its own definition binds a sub-machine, or some definition binds
+     * it as one. Computed once, at construction.
+     */
+    boolean hasBindings() { return hasBindings; }
 
     /** {@code Optional.of(constant)} for each constant of {@code type}, in ordinal order. */
     private static List<Optional<Enum<?>>> present(Class<? extends Enum<?>> type) {

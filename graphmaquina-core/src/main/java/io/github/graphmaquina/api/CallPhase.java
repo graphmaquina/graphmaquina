@@ -8,8 +8,8 @@ package io.github.graphmaquina.api;
 public enum CallPhase {
 
     /**
-     * Reading the entity's identity and state and selecting the edge; in a reevaluation, also evaluating the watch.
-     * No guard, action or setter of the call has run.
+     * Reading the entity's identity and state, checking the binding of a sub-machine, and selecting the edge; in a
+     * reevaluation, also evaluating the watch. No guard, action or setter of the call has run.
      */
     RESOLVE,
 

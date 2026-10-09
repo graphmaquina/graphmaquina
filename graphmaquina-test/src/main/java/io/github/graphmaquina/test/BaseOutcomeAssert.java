@@ -116,7 +116,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
 
     /**
      * The reason given for this outcome, compared by value: the graph author's, or the library's fixed text for a
-     * terminal state that declares no policy.
+     * terminal state that declares no policy and for a detached sub-machine or a reserved exit.
      */
     public SELF hasExplanation(String expected) {
         Objects.requireNonNull(expected, "expected");

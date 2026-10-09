@@ -1559,7 +1559,7 @@ entity, to the application's transaction or to external systems. To assert kinds
 
 ## Handle transition outcomes
 
-![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception.](images/operation-decisions.svg)
+![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent is not in the bound state is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved.](images/operation-decisions.svg)
 
 `Outcome<E, S, T>` is a sealed interface with four variants. Every outcome classifies itself, so a caller that
 only needs to know what happened and why reads it without narrowing:
@@ -1567,7 +1567,7 @@ only needs to know what happened and why reads it without narrowing:
 | Variant | `status()` | `code()` | `explanation()` | State written? |
 | --- | --- | --- | --- | --- |
 | `Applied` | `APPLIED` | `APPLIED` | empty | Yes, the resolved edge committed |
-| `Rejected` | `REJECTED` | `NO_TRANSITION`, or `GUARD_REJECTED` | the policy's reason, or the guard's | No |
+| `Rejected` | `REJECTED` | `NO_TRANSITION`, `GUARD_REJECTED`, `DETACHED` or `RESERVED_EXIT` | the policy's reason, the guard's, or the library's fixed text for the last two | No |
 | `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` or a recovery rule routed a throwable | Yes, the failure route committed |
 | `Ignored` | `IGNORED` | `NO_WATCH`, or `NO_RULE_MATCHED` | empty | No |
 
@@ -1585,8 +1585,10 @@ Read the classification with its limits in mind:
   or a later call can move the entity again; read the entity when you need its live state.
 - `FAILED` does not mean that nothing happened: the failure route committed and the entity is at `movedTo`.
 - `explanation()` holds the reasons the graph declares: a policy's reason, a guard's, or the reason an action
-  returned with `ActionOutcome.failed(...)`. The only text the library writes there is the fixed reason of a
-  terminal state that declares no policy, such as `terminal state DONE accepts no transitions`. When `failsOn` or a
+  returned with `ActionOutcome.failed(...)`. The only texts the library writes there are the fixed reason of a
+  terminal state that declares no policy, such as `terminal state DONE accepts no transitions`, and the fixed reasons
+  of the two refusals of a sub-machine: `DETACHED`, such as `the parent is not in DEPOSIT`, and `RESERVED_EXIT`, such
+  as `DEPOSIT_PAID leaves DEPOSIT only when its sub-machine ends`. When `failsOn` or a
   recovery rule routes an exception, the failure's reason is composed from that exception and may carry internal
   details; it stays in `Failed.reason()` and `Failed.cause()`.
 - A commit here is GraphMaquina writing states through the setters. A JPA or other transaction around the call
@@ -1622,7 +1624,7 @@ record TransitionResponse(String id, OutcomeStatus status, OutcomeCode code, Tic
 static int httpStatus(OutcomeCode code) {
     return switch (code) {
         case APPLIED, FAILURE_ROUTED, NO_WATCH, NO_RULE_MATCHED -> 200;
-        case NO_TRANSITION -> 409;
+        case NO_TRANSITION, DETACHED, RESERVED_EXIT -> 409;
         case GUARD_REJECTED -> 422;
     };
 }
@@ -2284,8 +2286,9 @@ from its pending state like any other.
 | `FAIL_FAST` | Stop when a cascade fails. |
 | `COLLECT` | Try peers under savepoints and collect the transition aborts of the call; if any were collected, poison the transaction with a `CascadeException` that aggregates them and throw it into the action that cascaded. Any other failure stops it at once, and so does an element whose step a nested cascade poisoned with a failure that is no failure of the call. |
 
-`COLLECT` is not partial commit. A nested transition that no edge carries, or that a guard rejected, is an abort rather
-than an ordinary root-level `Rejected` result. A handled domain failure can select the child's declared failure route.
+`COLLECT` is not partial commit. A nested transition that is rejected, because no edge carries it, a guard rejected it
+or a sub-machine refused it, is an abort rather than an ordinary root-level `Rejected` result. A handled domain
+failure can select the child's declared failure route.
 Any failure that leaves a cascade poisons the unit of work. A failure of the call itself, such as an abort in the peer's
 step, a cycle or the depth limit, reaches your action as it is. The `TransitionAbortedException` Javadoc says where the
 abort of a nested step goes. Anything else reaches your action as a `TransitionAbortedException` that names the cascade
@@ -2430,7 +2433,8 @@ Outcome<Order, OrderStatus, OrderTransition> outcome = shop.orders().reevaluate(
 
 No watch produces `Outcome.Ignored` with `IgnoreReason.NO_WATCH`, and a watch whose rules all fail produces
 `IgnoreReason.NO_RULE_MATCHED`. These are the only two ways an `Ignored` is produced. A matching rule can still be
-rejected by the named edge's guards. Rules are not polled on a timer, and creating or paying an owner does not
+rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-machine whose parent is not in the bound
+state. Rules are not polled on a timer, and creating or paying an owner does not
 automatically mean all of its existing peers changed state.
 
 Cross-JAR watches are not supported yet. The owner and peer APIs must be generated in the same compilation.
@@ -2512,7 +2516,7 @@ or setting it to `{}`, inherits the default. `Definition.afterCommit` also accep
 multiple values are `SG607`.
 
 The default applies to every committed hop, including explicit self-loops, failure routes and transitions
-triggered by watches — they are all real edges. It never runs for a request with no edge, a guard rejection,
+triggered by watches — they are all real edges. It never runs for a rejected request, whatever its kind,
 an `Ignored`, an abort or a rollback. A failure route uses its own effective hook, not the hook of the edge
 that failed. Hooks still run per committed hop, so one entity can reach the default more than once in a
 cascade.
@@ -2563,7 +2567,9 @@ are notified in the order they were added.
 The entity owns its state. Initialize it in the constructor or field declaration, and persist it with your normal entity
 mapping. A null root state ends the call in a `TransitionAbortedException` of phase `RESOLVE` whose cause is an
 `UninitializedStateException`, and a cascaded peer's in one of phase `ACTION`, as does a sub-machine's, read when its
-parent enters the bound state; the runtime does not silently replace it with the graph's initial state.
+parent enters the bound state. A parent's, read to check the binding of a sub-machine, ends the call in one of phase
+`RESOLVE` when the sub-machine is the root, and in one of phase `ACTION` inside a cascade. The runtime does not
+silently replace a null state with the graph's initial state.
 
 During a transition, only the runtime should call the state setter. It checks state again before commit to
 catch action code or outside code that changed it unexpectedly. This check is not a lock: your application
@@ -3108,15 +3114,16 @@ code runs.
 
 | Exception | What to investigate |
 | --- | --- |
-| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`, and so does a sub-machine's, read when its parent enters the bound state. |
+| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`, and so does a sub-machine's, read when its parent enters the bound state. A parent's, read to check the binding of a sub-machine, arrives as the cause of an abort in `RESOLVE` when the sub-machine is the root and in `ACTION` inside a cascade. |
 | `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `from()`, `transition()` and `to()` are `Optional`. An abort raised before the entity's state was read, because its identity or its state could not be read, reports no state and no destination. One raised before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither identifier nor destination. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
 | `UnhandledFailureException` | An action failed, no recovery rule took the failure, and its edge has no `onFailure` route. |
 | `CascadeException` | Collected nested transition errors; inspect `errors()` and the journal. |
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
-| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, or by the start of a sub-machine whose `childOf` answers an instance with the identity of another one already in the call, it arrives as the cause of that call's abort. |
-| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, a sub-machine's `childOf`, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, a sub-machine's `childOf`, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
+| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, or by the start of a sub-machine whose `childOf` answers an instance with the identity of another one already in the call, it arrives as the cause of that call's abort. A sub-machine whose `childOf` answers another instance with the identity of the child being called raises it too. |
+| `AmbiguousParentException` | A sub-machine's entity was held by two bindings at once: two parents, each in its bound node or leaving it. It names the child machine and both parent machines and nodes. It arrives as the cause of the call's abort, of phase `RESOLVE` for the root's own step and `ACTION` inside a cascade. |
+| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, a sub-machine's `childOf` or `parentOf`, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, a sub-machine's `childOf` or `parentOf`, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
 | `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. When the action lets this exception through, or the engine has the action's outcome, while the transaction is poisoned, the engine throws the failure that poisoned the transaction; the `PoisonedUnitOfWorkException` Javadoc says what else can end the call. |
 | `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |

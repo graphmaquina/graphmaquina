@@ -20,6 +20,8 @@ import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AbortDetails;
+import io.github.graphmaquina.error.AmbiguousIdentityException;
+import io.github.graphmaquina.error.AmbiguousParentException;
 import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.CascadeCycleException;
 import io.github.graphmaquina.error.CascadeDepthExceededException;
@@ -33,6 +35,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.StringJoiner;
 import java.util.concurrent.CompletionStage;
 
 /**
@@ -131,13 +134,18 @@ final class Transaction {
     }
 
     /**
-     * One step: resolve (current state, identifier) exactly once, guards, annotate, execute, failure route. When the
-     * root's own step throws once it has read its state, it records that state and its edge for {@link #classify}.
-     * {@code input} is the operation input of the call, empty when it has none; the contexts hand it out as it is.
+     * One step: resolve (current state, identifier) exactly once, guards, annotate, execute, failure route. A machine
+     * that takes part in a binding takes {@link #step} instead, which checks its bindings too; any other pays one
+     * field read for that. When the root's own step throws once it has read its state, it records that state and its
+     * edge for {@link #classify}. {@code input} is the operation input of the call, empty when it has none; the
+     * contexts hand it out as it is.
      */
     <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine,
                                                                           E entity, T id, int depth,
                                                                           Optional<Object> input) {
+        if (machine.hasBindings()) {
+            return step(machine, entity, id, depth, input);
+        }
         machine.requireTransition(id);
         EntityRef ref;
         S from;
@@ -178,7 +186,7 @@ final class Transaction {
                     phase = CallPhase.ACTION;
                 }
                 int savepoint = uow.savepoint();
-                appendHop(machine, ref, entity, transition, depth);
+                uow.append(new LogEntry.Hop(ref, transition, depth));
                 if (transition.action().isEmpty()) {
                     return new StepResult.Applied<>(from, id, transition.to());
                 }
@@ -212,6 +220,255 @@ final class Transaction {
 
     /** What the root's own step had read and selected when it threw; {@code edge} is empty when it selected none. */
     private record RootStep(Enum<?> from, Optional<? extends TransitionSpec<?, ?, ?>> edge) { }
+
+    /**
+     * One step of a machine that takes part in a binding: read the state, check the bindings of a sub-machine,
+     * resolve (current state, identifier) exactly once, refuse a reserved exit, then guards, annotate, execute and
+     * failure route as {@link #runEdge} says. For a machine that no graph binds as a sub-machine, the binding check is
+     * one test of an empty list, and for one whose own graph binds none, the reserved-exit check is one field read.
+     * When the root's own step throws once it has read its state, it records that state and its edge for
+     * {@link #classify}.
+     */
+    private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> step(DefaultStateMachine<E, S, T> machine,
+                                                                            E entity, T id, int depth,
+                                                                            Optional<Object> input) {
+        machine.requireTransition(id);
+        EntityRef ref;
+        S from;
+        try {
+            ref = uow.register(machine.refOf(entity));
+            from = currentState(machine, ref, entity);
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            if (depth > 0) {
+                throw e;
+            }
+            throw unread(machine, entity, id, e);
+        }
+        try {
+            if (!machine.bindingsAsChild().isEmpty()) {
+                Optional<String> detached = detached(machine, ref, entity, from, id, depth);
+                if (detached.isPresent()) {
+                    return rejected(machine, ref, from, id, Optional.empty(), depth, detached.get(),
+                            RejectionKind.DETACHED, Optional.empty());
+                }
+            }
+            Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
+            if (selected.isEmpty()) {
+                return rejected(machine, ref, from, id, Optional.empty(), depth,
+                        machine.definition().policy(from).reasonFor(id), RejectionKind.NO_TRANSITION, Optional.empty());
+            }
+            TransitionSpec<E, S, T> transition = selected.orElseThrow();
+            if (isReservedExit(machine, from, id)) {
+                return rejected(machine, ref, from, id, Optional.of(transition.to()), depth,
+                        id + " leaves " + from + " only when its sub-machine ends", RejectionKind.RESERVED_EXIT,
+                        Optional.empty());
+            }
+            uow.push(ref, transition);
+            try {
+                return runEdge(machine, ref, entity, from, transition, depth, input);
+            } finally {
+                uow.pop();
+            }
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            if (depth == 0) {
+                rootStep = Optional.of(new RootStep(from, selectedEdge(machine, from, id)));
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * The selected edge of a {@link #step}, with the step's frame pushed: guards, annotate, execute, failure route.
+     * The hop is logged as {@link #appendHop} says.
+     */
+    private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> runEdge(
+            DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from, TransitionSpec<E, S, T> transition,
+            int depth, Optional<Object> input) {
+        if (depth == 0 && !transition.guards().isEmpty()) {
+            phase = CallPhase.GUARD;
+        }
+        for (GuardRef<E, S, T> guard : transition.guards()) {
+            DefaultGuardContext<E, S, T> guardContext =
+                    new DefaultGuardContext<>(this, machine, entity, transition, depth, input);
+            contexts.add(guardContext);
+            GuardResult verdict = evaluateGuard(machine, ref, transition, depth, guard, guardContext);
+            if (verdict instanceof GuardResult.Reject reject) {
+                return rejected(machine, ref, from, transition.transition(), Optional.of(transition.to()), depth,
+                        reject.reason(), RejectionKind.GUARD, Optional.of(guard.name()));
+            }
+        }
+        if (depth == 0) {
+            phase = CallPhase.ACTION;
+        }
+        int savepoint = uow.savepoint();
+        appendHop(machine, ref, entity, transition, depth);
+        if (transition.action().isEmpty()) {
+            return new StepResult.Applied<>(from, transition.transition(), transition.to());
+        }
+        return runAction(machine, ref, entity, transition, depth, savepoint, input);
+    }
+
+    /**
+     * The binding check of a child's step (spec R7), for a machine that some graph binds as a sub-machine, once the
+     * child's state is read and before its edge is looked up. Each binding, in the order the registry indexed them,
+     * asks its parentOf for the child's parent; a parent it finds joins the unit of work with its machine's identity.
+     * The binding is active when, besides, the parent's childOf answers this very child and the parent is in the bound
+     * node or leaving it, as {@link #holds} says. Returns the reason of the DETACHED rejection when some binding found
+     * a parent and none is active, naming the node of each binding that found one, in order. Returns empty for a free
+     * child, which no binding found a parent for, and for a child that exactly one binding holds. Two active bindings
+     * abort the step with an {@link AmbiguousParentException} as cause. A lookup that returns null or throws, and a
+     * parent or child that cannot be read, abort it too, as {@link #bindingAbort} says. Every lookup runs inside the
+     * root, under its reentrancy marker.
+     */
+    private <E, S extends Enum<S>, T extends Enum<T>> Optional<String> detached(
+            DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from, T id, int depth) {
+        Optional<SubmachineBinding<?, ?, ?, ?, ?, ?>> active = Optional.empty();
+        List<Enum<?>> found = new ArrayList<>();
+        for (SubmachineBinding<?, ?, ?, ?, ?, ?> binding : machine.bindingsAsChild()) {
+            Optional<EntityRef> parent = findParent(machine, ref, entity, from, id, depth, binding);
+            if (parent.isEmpty()) {
+                continue;
+            }
+            found.add(binding.spec().state());
+            if (!holds(machine, ref, from, id, depth, binding, parent.get())) {
+                continue;
+            }
+            if (active.isPresent()) {
+                SubmachineBinding<?, ?, ?, ?, ?, ?> first = active.get();
+                AmbiguousParentException ambiguous = new AmbiguousParentException(machine.key(), first.parentKey(),
+                        first.spec().state(), binding.parentKey(), binding.spec().state());
+                throw bindingAbort(machine, ref, from, id, depth, ambiguous.getMessage(), Optional.of(ambiguous));
+            }
+            active = Optional.of(binding);
+        }
+        if (active.isPresent() || found.isEmpty()) {
+            return Optional.empty();
+        }
+        StringJoiner reason = new StringJoiner(" or ", "the parent is not in ", "");
+        for (Enum<?> node : found) {
+            reason.add(node.name());
+        }
+        return Optional.of(reason.toString());
+    }
+
+    /**
+     * The parent that {@code binding}'s parentOf answers for {@code entity}, the child, registered in the unit of
+     * work with the identity of the parent's machine; empty when it answers none.
+     */
+    private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> Optional<EntityRef>
+            findParent(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Object entity, Enum<?> from, Enum<?> id,
+                       int depth, SubmachineBinding<A, B, C, P, Q, U> binding) {
+        String name = binding.parentKey() + "." + binding.spec().state();
+        Optional<A> parent;
+        try {
+            parent = binding.spec().parentOf().apply(binding.spec().childKey().entity().cast(entity));
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            Throwable cause = Unwrap.unwrap(e);
+            throw bindingAbort(machine, ref, from, id, depth, "the parentOf of " + name + " threw " + cause,
+                    Optional.of(cause));
+        }
+        if (parent == null) {
+            throw bindingAbort(machine, ref, from, id, depth, "the parentOf of " + name + " returned null",
+                    Optional.empty());
+        }
+        if (parent.isEmpty()) {
+            return Optional.empty();
+        }
+        DefaultStateMachine<A, B, C> parentMachine = registry.machineFor(binding.parentKey());
+        try {
+            return Optional.of(uow.register(parentMachine.refOf(parent.get())));
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            throw bindingAbort(machine, ref, from, id, depth, "checking the binding " + name + " threw " + e,
+                    Optional.of(e));
+        }
+    }
+
+    /**
+     * Whether {@code binding} holds the child {@code ref}: the childOf of the parent {@code parentRef} answers an
+     * entity with the child's identity, which must be the child's own instance, and the parent's state, its pending
+     * one first, is the bound node, or the parent is in flight on an edge that leaves the node. Another child, or
+     * none, is no hold; another instance with the child's identity aborts the step with an
+     * {@link AmbiguousIdentityException} as cause, and so does a parent whose state is null, with an
+     * {@code UninitializedStateException}.
+     */
+    private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> boolean holds(
+            DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> id, int depth,
+            SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef) {
+        SubmachineSpec<A, B, C, P, Q, U> spec = binding.spec();
+        String name = binding.parentKey() + "." + spec.state();
+        A parent = binding.parentKey().entity().cast(parentRef.instance());
+        Optional<P> child;
+        try {
+            child = spec.childOf().apply(parent);
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            Throwable cause = Unwrap.unwrap(e);
+            throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " threw " + cause,
+                    Optional.of(cause));
+        }
+        if (child == null) {
+            throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " returned null",
+                    Optional.empty());
+        }
+        if (child.isEmpty()) {
+            return false;
+        }
+        B state;
+        try {
+            EntityRef answered = registry.machineFor(spec.childKey()).refOf(child.get());
+            if (!answered.equals(ref)) {
+                return false;
+            }
+            if (answered.instance() != ref.instance()) {
+                throw new AmbiguousIdentityException(ref.key(), ref.id(), ref.instance(), answered.instance());
+            }
+            state = currentState(registry.machineFor(binding.parentKey()), parentRef, parent);
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            throw bindingAbort(machine, ref, from, id, depth, "checking the binding " + name + " threw " + e,
+                    Optional.of(e));
+        }
+        if (state == spec.state()) {
+            return true;
+        }
+        Optional<InFlight> flight = uow.inFlight(parentRef);
+        return flight.isPresent() && flight.get().spec().from() == spec.state()
+                && flight.get().spec().to() != spec.state();
+    }
+
+    /**
+     * An abort of a child's step from its binding check, before its edge was looked up: in RESOLVE at the root, in
+     * ACTION and poisoning when nested. A lookup's throwable that is not an Error is the cause, unwrapped from
+     * CompletionException and ExecutionException; what reading the parent or the child threw is the cause as it is.
+     */
+    private TransitionAbortedException bindingAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
+                                                    Enum<?> id, int depth, String message, Optional<Throwable> cause) {
+        return abort(machine, ref, from, Optional.of(id), Optional.empty(), Optional.empty(), depth, message, cause);
+    }
+
+    /**
+     * Whether {@code id} is an exit of the sub-machine bound to {@code from} in the machine's own graph (spec R4), so
+     * that a request for it from {@code from} is refused. A machine whose graph binds no sub-machine pays one field
+     * read.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> boolean isReservedExit(
+            DefaultStateMachine<E, S, T> machine, S from, T id) {
+        if (!machine.bindsSubmachines()) {
+            return false;
+        }
+        Optional<SubmachineSpec<E, S, T, ?, ?, ?>> binding = machine.definition().submachine(from);
+        return binding.isPresent() && binding.get().exits().containsValue(id);
+    }
 
     /**
      * Logs the hop of {@code entity} along {@code edge}. When the edge enters a state of the machine's own graph that
@@ -616,7 +873,12 @@ final class Transaction {
         if (depth == 0) {
             return new StepResult.Rejected<>(from, id, reason, kind, guard);
         }
-        String who = guard.map((String name) -> "guard " + name).orElse("no such transition");
+        String who = switch (kind) {
+            case NO_TRANSITION -> "no such transition";
+            case GUARD -> "guard " + guard.orElseThrow();
+            case DETACHED -> "detached sub-machine";
+            case RESERVED_EXIT -> "reserved exit";
+        };
         throw abort(machine, ref, from, Optional.of(id), to.map((S state) -> (Enum<?>) state), Optional.empty(), depth,
                 "rejected inside a cascade by " + who + ": " + reason, Optional.empty());
     }

@@ -292,11 +292,13 @@ written down as a contract, and it was easy to get backwards.
 |---|---|---|
 | `NO_TRANSITION` | No edge is keyed by `(from, transition)`. Nothing ran. The reason comes from the node's policy. | Always empty |
 | `GUARD` | The edge exists and a guard on it rejected. The reason is the guard's own text. | Always present |
+| `DETACHED` | The machine is bound as a sub-machine, and the entity's parent is not in the bound state. Nothing ran. The reason is the library's fixed text. | Always empty |
+| `RESERVED_EXIT` | The identifier is an exit of the sub-machine bound to `from`, which no request may ask for from there. Nothing ran. The reason is the library's fixed text. | Always empty |
 
-The record enforces the pairing: a `NO_TRANSITION` rejection with a guard, or a `GUARD` rejection without
-one, throws `IllegalArgumentException` at construction. In the testing library, `hasNoTransition()` asserts
-the first and `isRejectedByGuardNamed(name)` asserts the second — and the latter now checks the kind as well
-as the name, which the 1.x `isRejectedByGuardNamed` did not.
+The last two are new in 2.0 and have no 1.x counterpart. The record enforces the pairing: a rejection of any other
+kind with a guard, or a `GUARD` rejection without one, throws `IllegalArgumentException` at construction. In
+the testing library, `hasNoTransition()` asserts `NO_TRANSITION` and `isRejectedByGuardNamed(name)` asserts
+`GUARD` — and the latter now checks the kind as well as the name, which the 1.x `isRejectedByGuardNamed` did not.
 
 `Rejected` also stopped reporting a `to`. There is no destination to report before an edge is resolved, and
 inventing one was how a caller could end up believing a route existed.

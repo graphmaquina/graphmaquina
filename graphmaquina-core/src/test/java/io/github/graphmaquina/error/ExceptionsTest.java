@@ -190,4 +190,19 @@ class ExceptionsTest {
         assertThrows(UnsupportedOperationException.class, () -> error.starts().clear());
         assertEquals(List.of(hop), error.records());
     }
+
+    /** It names the child machine and both bindings, never an entity. */
+    @Test
+    void ambiguousParentNamesTheChildAndBothBindings() {
+        MachineKey<Integer, Month, DayOfWeek> parent = MachineKey.of(Integer.class, Month.class, DayOfWeek.class);
+        AmbiguousParentException error = new AmbiguousParentException(KEY, parent, Month.MARCH, parent, Month.MAY);
+        assertEquals(KEY, error.child());
+        assertEquals(List.of(parent, parent), error.parents());
+        assertEquals(List.of(Month.MARCH, Month.MAY), error.nodes());
+        assertEquals("String/DayOfWeek is bound to two active parents: Integer/Month in MARCH and Integer/Month in MAY",
+                error.getMessage());
+        assertThrows(UnsupportedOperationException.class, () -> error.parents().clear());
+        assertThrows(NullPointerException.class,
+                () -> new AmbiguousParentException(KEY, parent, Month.MARCH, parent, null));
+    }
 }

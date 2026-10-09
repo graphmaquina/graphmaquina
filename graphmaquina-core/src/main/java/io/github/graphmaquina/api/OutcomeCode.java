@@ -17,6 +17,15 @@ public enum OutcomeCode {
     /** A guard of the selected edge rejected it: {@link RejectionKind#GUARD}. */
     GUARD_REJECTED(OutcomeStatus.REJECTED),
 
+    /** The entity's parent is not in the state its sub-machine is bound to: {@link RejectionKind#DETACHED}. */
+    DETACHED(OutcomeStatus.REJECTED),
+
+    /**
+     * The identifier is an exit of the sub-machine bound to the origin, which no request may ask for from there:
+     * {@link RejectionKind#RESERVED_EXIT}.
+     */
+    RESERVED_EXIT(OutcomeStatus.REJECTED),
+
     /** The action failed and its failure route was taken: {@link Outcome.Failed}. */
     FAILURE_ROUTED(OutcomeStatus.FAILED),
 
