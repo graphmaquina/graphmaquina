@@ -6,6 +6,7 @@ import io.github.graphmaquina.annotation.GraphBindings;
 import io.github.graphmaquina.annotation.GraphCondition;
 import io.github.graphmaquina.annotation.GraphGuard;
 import io.github.graphmaquina.annotation.GraphHook;
+import io.github.graphmaquina.annotation.GraphLookup;
 import io.github.graphmaquina.annotation.GraphPeers;
 import io.github.graphmaquina.annotation.GraphProperty;
 import io.github.graphmaquina.annotation.StateGraphs;
@@ -149,7 +150,7 @@ final class ManifestRegistry {
     private static Set<String> fixed() {
         List<Class<? extends Annotation>> types = List.of(
             GenerateGraphApi.class, GraphPeers.class, GraphAction.class, GraphGuard.class, GraphHook.class,
-            GraphCondition.class, GraphProperty.class, GraphBindings.class, Timeout.class,
+            GraphCondition.class, GraphLookup.class, GraphProperty.class, GraphBindings.class, Timeout.class,
             GeneratedVocabulary.class, GeneratedSymbol.class, GraphCompilation.class, GeneratedCompanion.class,
             StateGraphs.class);
         Set<String> names = new TreeSet<>(LegacyDeclarations.retiredAnnotationTypes());

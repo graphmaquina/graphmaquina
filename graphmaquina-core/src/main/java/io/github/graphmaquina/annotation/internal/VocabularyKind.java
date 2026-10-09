@@ -17,5 +17,8 @@ public enum VocabularyKind {
     REJECTS,
     WATCH,
     WATCHES,
-    WHEN
+    WHEN,
+    SUBMACHINE,
+    SUBMACHINES,
+    EXIT
 }

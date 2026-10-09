@@ -375,6 +375,9 @@ class GeneratedApiCompilationTest {
                 @GraphGuard public boolean GuardSymbol() { return true; }
                 @GraphHook public void HookSymbol() {}
                 @GraphCondition public boolean ConditionSymbol() { return true; }
+                @GraphLookup public java.util.Optional<Object> LookupSymbol(Object child) {
+                    return java.util.Optional.empty();
+                }
                 @GraphProperty public String PropertySymbol;
                 @GraphAction public void GeneratedSymbol() {}
                 @GraphAction public void SymbolKind() {}
@@ -387,7 +390,12 @@ class GeneratedApiCompilationTest {
             directory.resolve("classes"), directory.resolve("work"), "shadowed-imports"));
         List<GeneratedSource> emitted = ApiEmitter.emit(model, "shadowed-imports");
         assertEquals(List.of("ActionSymbol", "ConditionSymbol", "GeneratedSymbol", "GuardSymbol", "HookSymbol",
-            "PropertySymbol", "SymbolKind"), model.symbols().stream().map(symbol -> symbol.member()).toList());
+            "LookupSymbol", "PropertySymbol", "SymbolKind"),
+            model.symbols().stream().map((io.github.graphmaquina.codegen.model.SymbolDescriptor symbol) -> symbol.member()).toList());
+        assertTrue(content(emitted, "fx.ActionsRefs").contains("@io.github.graphmaquina.annotation.internal"
+            + ".GeneratedSymbol(host = fx.Actions.class, member = \"LookupSymbol\", kinds = io.github.graphmaquina"
+            + ".annotation.internal.SymbolKind.LOOKUP)\n    public static final class LookupSymbol implements"
+            + " io.github.graphmaquina.symbol.LookupSymbol {"), content(emitted, "fx.ActionsRefs"));
         files.addAll(write(directory.resolve("generated"), emitted));
         files.addAll(SourceFiles.write(directory.resolve("usage"), Map.of("fx.Usage", """
             package fx;
@@ -398,6 +406,7 @@ class GeneratedApiCompilationTest {
                 Class<? extends io.github.graphmaquina.symbol.GuardSymbol> guard = ActionsRefs.GuardSymbol.class;
                 Class<? extends io.github.graphmaquina.symbol.HookSymbol> hook = ActionsRefs.HookSymbol.class;
                 Class<? extends io.github.graphmaquina.symbol.ConditionSymbol> condition = ActionsRefs.ConditionSymbol.class;
+                Class<? extends io.github.graphmaquina.symbol.LookupSymbol> lookup = ActionsRefs.LookupSymbol.class;
                 Class<? extends io.github.graphmaquina.symbol.PropertySymbol> property = ActionsRefs.PropertySymbol.class;
             }
             """)));

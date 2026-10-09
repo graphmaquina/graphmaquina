@@ -13,6 +13,7 @@ import io.github.graphmaquina.symbol.ActionSymbol;
 import io.github.graphmaquina.symbol.ConditionSymbol;
 import io.github.graphmaquina.symbol.GuardSymbol;
 import io.github.graphmaquina.symbol.HookSymbol;
+import io.github.graphmaquina.symbol.LookupSymbol;
 import io.github.graphmaquina.symbol.PropertySymbol;
 import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
@@ -47,6 +48,7 @@ class TypedContractsTest {
                 GraphGuard.class,
                 GraphHook.class,
                 GraphCondition.class,
+                GraphLookup.class,
                 GraphProperty.class,
                 GraphBindings.class);
 
@@ -67,6 +69,8 @@ class TypedContractsTest {
                 GraphHook.class.getAnnotation(Target.class).value());
         assertArrayEquals(new ElementType[] {ElementType.METHOD},
                 GraphCondition.class.getAnnotation(Target.class).value());
+        assertArrayEquals(new ElementType[] {ElementType.METHOD},
+                GraphLookup.class.getAnnotation(Target.class).value());
         assertArrayEquals(new ElementType[] {ElementType.FIELD, ElementType.METHOD},
                 GraphProperty.class.getAnnotation(Target.class).value());
         assertArrayEquals(new ElementType[] {ElementType.TYPE},
@@ -105,19 +109,22 @@ class TypedContractsTest {
     @Test
     void categorySetsAreClosedAndStable() {
         assertArrayEquals(new SymbolKind[] {
-                SymbolKind.ACTION, SymbolKind.GUARD, SymbolKind.HOOK, SymbolKind.CONDITION, SymbolKind.PROPERTY
+                SymbolKind.ACTION, SymbolKind.GUARD, SymbolKind.HOOK, SymbolKind.CONDITION, SymbolKind.PROPERTY,
+                SymbolKind.LOOKUP
         }, SymbolKind.values());
         assertArrayEquals(new VocabularyKind[] {
                 VocabularyKind.DEFINITION, VocabularyKind.STATE_POLICY, VocabularyKind.STATE_POLICIES,
                 VocabularyKind.TRANSITION, VocabularyKind.TRANSITIONS, VocabularyKind.RECOVERY, VocabularyKind.REJECT,
-                VocabularyKind.REJECTS, VocabularyKind.WATCH, VocabularyKind.WATCHES, VocabularyKind.WHEN
+                VocabularyKind.REJECTS, VocabularyKind.WATCH, VocabularyKind.WATCHES, VocabularyKind.WHEN,
+                VocabularyKind.SUBMACHINE, VocabularyKind.SUBMACHINES, VocabularyKind.EXIT
         }, VocabularyKind.values());
     }
 
     @Test
     void symbolContractsRemainPureCategoryTypes() {
         List<Class<?>> symbols = List.of(
-                ActionSymbol.class, GuardSymbol.class, HookSymbol.class, ConditionSymbol.class, PropertySymbol.class);
+                ActionSymbol.class, GuardSymbol.class, HookSymbol.class, ConditionSymbol.class, PropertySymbol.class,
+                LookupSymbol.class);
 
         for (Class<?> symbol : symbols) {
             assertEquals(0, symbol.getDeclaredMethods().length, symbol.getSimpleName());

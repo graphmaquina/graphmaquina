@@ -4,6 +4,7 @@ import io.github.graphmaquina.annotation.GraphAction;
 import io.github.graphmaquina.annotation.GraphCondition;
 import io.github.graphmaquina.annotation.GraphGuard;
 import io.github.graphmaquina.annotation.GraphHook;
+import io.github.graphmaquina.annotation.GraphLookup;
 import io.github.graphmaquina.annotation.internal.SymbolKind;
 import io.github.graphmaquina.processor.model.Binding;
 import java.lang.annotation.Annotation;
@@ -150,6 +151,7 @@ final class EffectiveMethods {
         roles.put(GraphGuard.class, SymbolKind.GUARD);
         roles.put(GraphHook.class, SymbolKind.HOOK);
         roles.put(GraphCondition.class, SymbolKind.CONDITION);
+        roles.put(GraphLookup.class, SymbolKind.LOOKUP);
         return Collections.unmodifiableMap(roles);
     }
 }

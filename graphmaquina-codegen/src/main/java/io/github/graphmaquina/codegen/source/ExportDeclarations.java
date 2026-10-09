@@ -359,6 +359,7 @@ public final class ExportDeclarations {
         roles.put("io.github.graphmaquina.annotation.GraphHook", SymbolKind.HOOK);
         roles.put("io.github.graphmaquina.annotation.GraphCondition", SymbolKind.CONDITION);
         roles.put("io.github.graphmaquina.annotation.GraphProperty", SymbolKind.PROPERTY);
+        roles.put("io.github.graphmaquina.annotation.GraphLookup", SymbolKind.LOOKUP);
         return Collections.unmodifiableMap(roles);
     }
 

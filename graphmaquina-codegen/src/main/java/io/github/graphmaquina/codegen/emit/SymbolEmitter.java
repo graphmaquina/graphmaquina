@@ -40,6 +40,7 @@ final class SymbolEmitter {
         categories.put(SymbolKind.HOOK, "io.github.graphmaquina.symbol.HookSymbol");
         categories.put(SymbolKind.CONDITION, "io.github.graphmaquina.symbol.ConditionSymbol");
         categories.put(SymbolKind.PROPERTY, "io.github.graphmaquina.symbol.PropertySymbol");
+        categories.put(SymbolKind.LOOKUP, "io.github.graphmaquina.symbol.LookupSymbol");
         return Map.copyOf(categories);
     }
 

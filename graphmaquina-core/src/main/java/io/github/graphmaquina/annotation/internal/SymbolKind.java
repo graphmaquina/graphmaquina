@@ -10,5 +10,6 @@ public enum SymbolKind {
     GUARD,
     HOOK,
     CONDITION,
-    PROPERTY
+    PROPERTY,
+    LOOKUP
 }

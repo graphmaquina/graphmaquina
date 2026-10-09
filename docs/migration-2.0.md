@@ -353,7 +353,7 @@ The twelve deprecated matrix annotations — `Action`, `Cell`, `Cells`, `Forbid`
 `StateGraph`, `Watch`, `Watches` and `When` — are removed rather than deprecated: a project still using them fails
 to resolve the type instead of compiling against a retired contract. `io.github.graphmaquina.dsl.StateGraph`, the
 DSL entry point, keeps its name. `VocabularyKind` now reads `DEFINITION, STATE_POLICY, STATE_POLICIES, TRANSITION,
-TRANSITIONS, RECOVERY, REJECT, REJECTS, WATCH, WATCHES, WHEN`.
+TRANSITIONS, RECOVERY, REJECT, REJECTS, WATCH, WATCHES, WHEN, SUBMACHINE, SUBMACHINES, EXIT`.
 
 ## Generated vocabulary and build artefacts
 
