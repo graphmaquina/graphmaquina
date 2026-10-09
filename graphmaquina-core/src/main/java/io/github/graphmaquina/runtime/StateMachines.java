@@ -66,13 +66,18 @@ public final class StateMachines {
 
         /**
          * The wait budget of every root transaction this machine starts, counted from the moment the root begins
-         * executing. It bounds the waits of the root's asynchronous guards and actions, and those of every peer the
-         * root cascades to: inside a cascade, the peer waits under this root's budget, never under its own
-         * asyncTimeout. An edge's own timeout can only shorten it. Any positive duration is accepted, and one of
-         * {@code Duration.ofNanos(Long.MAX_VALUE)} or more means no limit. Mandatory for a machine with asynchronous
-         * transitions; a machine without them may leave it out, and then its roots have no deadline: the asynchronous
-         * waits of the peers they cascade to are unbounded, whatever those peers' own asyncTimeout, and only an edge
-         * that declares a timeout of its own still bounds its action's wait.
+         * executing. It bounds the waits of the root's asynchronous guards and actions, those of every peer the root
+         * cascades to, and those of every exit of a sub-machine the root runs: inside a cascade or an exit, the peer
+         * or the parent waits under this root's budget, never under its own asyncTimeout. An edge's own timeout can
+         * only shorten it. Any positive duration is accepted, and one of {@code Duration.ofNanos(Long.MAX_VALUE)} or
+         * more means no limit. Mandatory for a machine with asynchronous transitions, and, within a registry, for a
+         * machine whose calls can run an asynchronous edge implicitly: the exit of a binding in which it is the child,
+         * a failure route of an implicit edge, an exit that an implicit edge leads to, or an exit selected by a
+         * terminal initial descendant of a binding its own edge enters, as {@link MachineRegistry} lists them. Any
+         * other machine may leave it out, and then its roots have no deadline: the asynchronous waits
+         * of the peers they cascade to, and of the exits those peers' steps run, are unbounded, whatever the own
+         * asyncTimeout of those peers and parents, and only an edge that declares a timeout of its own still bounds
+         * its action's wait.
          */
         public Builder<E, S, T> asyncTimeout(Duration timeout) {
             requireUnused();
@@ -123,6 +128,8 @@ public final class StateMachines {
         GraphDefinition<E, S, T> definition() { return definition; }
 
         boolean hasIdentity() { return identity.isPresent(); }
+
+        boolean hasAsyncTimeout() { return asyncTimeout.isPresent(); }
 
         /**
          * Every check build(registry, bindingsAsChild) makes, without consuming the builder, so that a failed build can

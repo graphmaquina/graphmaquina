@@ -488,8 +488,11 @@ for it. Listed the other way round, a test that fails before answering an invoca
 out the machine's whole `asyncTimeout` — once per unanswered invocation — before the fixture ever gets to
 cancel it.
 
-The machine that holds an async edge must declare `asyncTimeout(...)`, as any async machine does. That
-deadline is the engine's; the budgets above are the test's, and the two are unrelated — see
+The machine that holds an async edge must declare `asyncTimeout(...)`, as any async machine does. When a call
+on a sub-machine can run that edge implicitly, as the exit of its binding or an edge that exit leads to, the
+sub-machine's machine must declare one too: the call runs the edge under its own deadline. The same applies to
+a caller whose own edge starts a binding with a terminal initial descendant that selects an async exit.
+That deadline is the engine's; the budgets above are the test's, and the two are unrelated — see
 [what a check does not prove](#what-a-check-does-not-prove).
 
 ### Failure kinds and recovery rules

@@ -1753,7 +1753,9 @@ Read the subsections in this order:
 | Either kind of binding | `tickets.async(() -> tickets.complete(ticket))` | Submits the whole operation to the configured executor and returns `CompletableFuture<Outcome<...>>` |
 
 With the default executor, the last form runs the operation on a virtual thread, allowing the calling thread
-to continue. A custom executor determines its own scheduling; a direct executor can execute inline.
+to continue. A custom executor determines its own scheduling; a direct executor can execute inline. The whole
+operation runs on the executor of the machine you called, the exit of a sub-machine it ends included, and the
+binding of a sub-machine is checked when the operation starts running, not when it is submitted.
 
 ![Direct invocation waits on the caller thread; machine.async uses the default virtual-thread executor to run the operation while the caller receives a future. Both paths wait for the action stage before committing.](images/async-execution.svg)
 
@@ -2037,7 +2039,7 @@ machine's budget and for an action's `@Timeout` alike.
 
 | Setting | When its clock starts | What it bounds |
 | --- | --- | --- |
-| Set default or per-machine `asyncTimeout` | When a root operation begins execution, after executor queueing | Pending async waits in that root and its nested cascades |
+| Set default or per-machine `asyncTimeout` | When a root operation begins execution, after executor queueing | Pending async waits in that root, its nested cascades and the sub-machine exits it runs |
 | Action `@Timeout` | After the action method returns its stage | That action's pending wait, capped by the root's remaining deadline |
 | Async guard | Uses the existing root deadline | That guard's pending wait; an action's `@Timeout` does not cover its guards |
 | Service/client timeout | Defined by your service client | The service request according to that client's cancellation/timeout contract |
@@ -2059,6 +2061,16 @@ budget. Set defaults are installed only on machines with declared async bindings
 that cascades to an async peer therefore has no root deadline supplied just by the set default. A timeout on
 the peer action can still bound its wait, but an async guard on that path has no finite root budget. Choose
 the entry point and timeout configuration deliberately when mixing synchronous and asynchronous machines.
+
+The exit of a sub-machine shares the root's deadline too: it waits under the budget of the call's root, which is
+the child machine's own when you called the child, and the exit edge's timeout can only shorten it. An exit runs
+without any action of yours requesting it, and so do the edges it leads to: its failure routes, the exit that a
+parent's terminal state selects one level up, and the exits of a sub-machine that the parent enters on the way.
+Entering a bound state through the caller's own edge also starts its child's initial binding chain: a terminal
+initial descendant selects its exit without an explicit cascade. The same rule covers those descendant exits,
+including descendants started by an implicit edge. A registry therefore refuses a machine that declares no
+`asyncTimeout` when any edge that its calls can run this way has an async action or guard: `MachineRegistry.Builder.build()` throws `IllegalStateException` and names the edge.
+A cascade your action requests is explicit and asks nothing of the kind.
 
 Watch reactions are different: they execute after the triggering commit and start separate root
 transactions with their own deadlines. The original operation waits for synchronous watch dispatch before
@@ -2575,6 +2587,10 @@ silently replace a null state with the graph's initial state.
 During a transition, only the runtime should call the state setter. It checks state again before commit to
 catch action code or outside code that changed it unexpectedly. This check is not a lock: your application
 must serialize conflicting operations, or provide an appropriate database locking/versioning strategy.
+A sub-machine shows where the check stops. A call that ends a child runs its parent's exit, so the parent is in
+the commit, and the check catches a parent that another call moved meanwhile. A call that moves the child to a
+state that is not terminal leaves the parent out of the commit, and nothing notices that the parent moved.
+Serialize the calls of a parent and its sub-machines as those of one aggregate.
 
 The runtime does not roll back a setter that already ran if a subsequent setter throws.
 `CommitFailedException` reports the entities whose setter returned (`applied()`), the one whose setter threw
@@ -3041,7 +3057,10 @@ that behavior is required.
 `endSubmachine()` returns to the graph. `build()` checks the bindings (`SG801` to `SG805`), and the definition's
 `submachine(state)` returns the binding of a state. A registry that holds the parent must hold the child's machine
 too, built from that very definition: otherwise `MachineRegistry.Builder.build()` throws `IllegalStateException`, and
-so does a standalone `build()`, whose registry holds no other machine.
+so does a standalone `build()`, whose registry holds no other machine. Every machine whose calls can run an edge
+implicitly must also declare `asyncTimeout(...)` when that edge is asynchronous, including a child's binding exit
+and a terminal initial descendant's exit started by the caller's own entry, as
+[Deadline rules](#deadline-rules) explains.
 
 Other stages support named guards, async guards, async actions, `failsOn`, `recover`, `timeout`, `afterCommit`,
 `afterCommitWith`, watches, sub-machines and cycle allowances. A low-level `StateMachine` exposes
