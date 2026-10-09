@@ -45,8 +45,8 @@ final class Transaction {
     private final List<ContextHandle> contexts = new ArrayList<>();
     private final MachineKey<?, ?, ?> callKey;
     private final Object callEntity;
-    /** The identifier the call requested; null for a reevaluation, which requests none. */
-    private final Enum<?> requested;
+    /** The identifier the call requested; empty for a reevaluation, which requests none. */
+    private final Optional<Enum<?>> requested;
     private final boolean reaction;
     /** Created by the first exception that needs it, unless an observer brought it; the same instance afterwards. */
     private Optional<MachineCall> call;
@@ -56,13 +56,11 @@ final class Transaction {
      */
     private CallPhase phase = CallPhase.RESOLVE;
     private boolean writing;
-    /** The state the root's own step read, null until it was read. */
-    private Enum<?> rootFrom;
-    /** The edge the root's own step selected, null until it selected one. */
-    private TransitionSpec<?, ?, ?> rootSpec;
+    /** The state the root's own step read and the edge it selected, recorded when that step throws; empty before. */
+    private Optional<RootStep> rootStep = Optional.empty();
 
     Transaction(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
-                Enum<?> requested, boolean reaction, Optional<MachineCall> call) {
+                Optional<Enum<?>> requested, boolean reaction, Optional<MachineCall> call) {
         this.registry = registry;
         this.uow = uow;
         this.callKey = callKey;
@@ -75,7 +73,7 @@ final class Transaction {
     /** The call this transaction runs: created the first time it is needed, the same instance afterwards. */
     MachineCall call() {
         if (call.isEmpty()) {
-            call = Optional.of(new MachineCall(callKey, callEntity, Optional.ofNullable(requested), reaction));
+            call = Optional.of(new MachineCall(callKey, callEntity, requested, reaction));
         }
         return call.get();
     }
@@ -131,7 +129,10 @@ final class Transaction {
         return transition(machine, entity, id, depth, null);
     }
 
-    /** One step: resolve (current state, identifier) exactly once, guards, annotate, execute, failure route. */
+    /**
+     * One step: resolve (current state, identifier) exactly once, guards, annotate, execute, failure route. When the
+     * root's own step throws once it has read its state, it records that state and its edge for {@link #classify}.
+     */
     <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine,
                                                                           E entity, T id, int depth, Object input) {
         machine.requireTransition(id);
@@ -148,46 +149,66 @@ final class Transaction {
             }
             throw unread(machine, entity, id, e);
         }
-        if (depth == 0) {
-            rootFrom = from;
-        }
-        Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
-        if (selected.isEmpty()) {
-            return rejected(machine, ref, from, id, Optional.empty(), depth,
-                    machine.definition().policy(from).reasonFor(id), RejectionKind.NO_TRANSITION, Optional.empty());
-        }
-        TransitionSpec<E, S, T> transition = selected.orElseThrow();
-        if (depth == 0) {
-            rootSpec = transition;
-        }
-        uow.push(ref, transition);
         try {
-            if (depth == 0 && !transition.guards().isEmpty()) {
-                phase = CallPhase.GUARD;
+            Optional<TransitionSpec<E, S, T>> selected = machine.definition().findTransition(from, id);
+            if (selected.isEmpty()) {
+                return rejected(machine, ref, from, id, Optional.empty(), depth,
+                        machine.definition().policy(from).reasonFor(id), RejectionKind.NO_TRANSITION, Optional.empty());
             }
-            for (GuardRef<E, S, T> guard : transition.guards()) {
-                DefaultGuardContext<E, S, T> guardContext =
-                        new DefaultGuardContext<>(this, machine, entity, transition, depth, input);
-                contexts.add(guardContext);
-                GuardResult verdict = evaluateGuard(machine, ref, transition, depth, guard, guardContext);
-                if (verdict instanceof GuardResult.Reject reject) {
-                    return rejected(machine, ref, from, id, Optional.of(transition.to()), depth, reject.reason(),
-                            RejectionKind.GUARD, Optional.of(guard.name()));
+            TransitionSpec<E, S, T> transition = selected.orElseThrow();
+            uow.push(ref, transition);
+            try {
+                if (depth == 0 && !transition.guards().isEmpty()) {
+                    phase = CallPhase.GUARD;
                 }
+                for (GuardRef<E, S, T> guard : transition.guards()) {
+                    DefaultGuardContext<E, S, T> guardContext =
+                            new DefaultGuardContext<>(this, machine, entity, transition, depth, input);
+                    contexts.add(guardContext);
+                    GuardResult verdict = evaluateGuard(machine, ref, transition, depth, guard, guardContext);
+                    if (verdict instanceof GuardResult.Reject reject) {
+                        return rejected(machine, ref, from, id, Optional.of(transition.to()), depth, reject.reason(),
+                                RejectionKind.GUARD, Optional.of(guard.name()));
+                    }
+                }
+                if (depth == 0) {
+                    phase = CallPhase.ACTION;
+                }
+                int savepoint = uow.savepoint();
+                uow.append(new LogEntry(ref, transition, depth));
+                if (transition.action().isEmpty()) {
+                    return new StepResult.Applied<>(from, id, transition.to());
+                }
+                return runAction(machine, ref, entity, transition, depth, savepoint, input);
+            } finally {
+                uow.pop();
             }
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
             if (depth == 0) {
-                phase = CallPhase.ACTION;
+                rootStep = Optional.of(new RootStep(from, selectedEdge(machine, from, id)));
             }
-            int savepoint = uow.savepoint();
-            uow.append(new LogEntry(ref, transition, depth));
-            if (transition.action().isEmpty()) {
-                return new StepResult.Applied<>(from, id, transition.to());
-            }
-            return runAction(machine, ref, entity, transition, depth, savepoint, input);
-        } finally {
-            uow.pop();
+            throw e;
         }
     }
+
+    /**
+     * The edge a root step that threw had selected for {@code (from, id)}, looked up again for its abort: a definition
+     * answers the same edge for the same key every time. Empty when the definition declares none, and when the lookup
+     * itself throws, as it does for a state of another enum, which only a getter that broke its type returns.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> Optional<? extends TransitionSpec<?, ?, ?>> selectedEdge(
+            DefaultStateMachine<E, S, T> machine, S from, T id) {
+        try {
+            return machine.definition().findTransition(from, id);
+        } catch (RuntimeException lookup) {
+            return Optional.empty();
+        }
+    }
+
+    /** What the root's own step had read and selected when it threw; {@code edge} is empty when it selected none. */
+    private record RootStep(Enum<?> from, Optional<? extends TransitionSpec<?, ?, ?>> edge) { }
 
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> runAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> transition,
@@ -542,18 +563,21 @@ final class Transaction {
      * engine code that calls into the application can let through before the commit, an identity's hashCode while
      * the log is rolled back for instance, an abort of the call in its current phase with it as cause. The commit,
      * the hooks and the reactions classify every failure of their own where it happens, so a phase after ACTION never
-     * reaches the abort.
+     * reaches the abort. The abort names what the root's own step recorded when it threw: the state it read, and the
+     * edge it selected with that edge's identifier and destination, or else the identifier the call requested.
      */
     CallFailedException classify(Throwable error) {
         if (error instanceof CallFailedException failure && owns(failure)) {
             return failure;
         }
         uow.markRunningAsThrew();
-        Optional<Enum<?>> transition = rootSpec == null ? Optional.ofNullable(requested)
-                : Optional.of(rootSpec.transition());
-        Optional<Enum<?>> to = rootSpec == null ? Optional.empty() : Optional.of(rootSpec.to());
-        AbortDetails details = new AbortDetails(callKey, callEntity, Optional.ofNullable(rootFrom), transition, to,
-                Optional.empty(), uow.path(), uow.journal());
+        Optional<Enum<?>> from = rootStep.map(RootStep::from);
+        Optional<? extends TransitionSpec<?, ?, ?>> edge =
+                rootStep.isPresent() ? rootStep.get().edge() : Optional.empty();
+        Optional<Enum<?>> transition = edge.isPresent() ? Optional.of(edge.get().transition()) : requested;
+        Optional<Enum<?>> to = edge.isPresent() ? Optional.of(edge.get().to()) : Optional.empty();
+        AbortDetails details = new AbortDetails(callKey, callEntity, from, transition, to, Optional.empty(),
+                uow.path(), uow.journal());
         return new TransitionAbortedException(call(), phase, details, "the engine could not go on: " + error, error);
     }
 
