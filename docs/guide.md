@@ -2889,7 +2889,7 @@ let a test decide when an asynchronous callback answers, a recorder of completed
 golden comparison for both the rendered diagram and the complete structure of a graph. The
 [testing guide](testing.md) covers installation, what each entry point checks, what each check does not
 prove, and the golden update procedure for Gradle and Maven. Every sample in it runs in this repository: most
-are copied from a test, and the recovery samples are cut out of the page and run by one.
+are copied from a test, and the samples of recovery rules and of sub-machines are cut out of the page and run by one.
 
 Useful behavior to cover in your own domain:
 

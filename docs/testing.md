@@ -21,8 +21,8 @@ example module is.
 - [Maintaining test support](#maintaining-test-support)
 
 Every Java sample below runs in this repository. Most are copied verbatim out of a test; the samples of
-[failure kinds and recovery rules](#failure-kinds-and-recovery-rules) go the other way, cut out of this page and
-run by a test. Each section names the test file.
+[failure kinds and recovery rules](#failure-kinds-and-recovery-rules) and of [sub-machines](#sub-machines) go the
+other way, cut out of this page and run by a test. Each section names the test file.
 
 ## Install
 
@@ -111,10 +111,11 @@ constant of another machine's catalogue does not compile inside it.
 
 | Subject | Entry point | What the view can expect |
 | --- | --- | --- |
-| Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch |
+| Graph definition | `assertThat(definition)` | initial state, terminal set, presence or absence of async, the identifiers declared from a state, the absence of one identifier, the absence of a watch or of a sub-machine |
 | One edge | `assertThat(definition).transition(from, id)` | destination, kind, action name and sync/async mode, guard names and modes in order, fallback failure identifier, `failsOn` classes, recovery rules in declaration order, timeout, after-commit hook |
 | One node's policy | `assertThat(definition).policy(state)` | the default reason and the reason declared for one identifier |
 | A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
+| A bound state | `assertThat(definition).submachine(state, childKey)` | that the state holds that child machine, and its exits in declaration order, each the identifier of the parent that a terminal state of the child selects |
 | Reachability | `assertThat(definition).topology()` | nodes, successors, reachable set, an explicit walk, the shortest path, absence of a path, cycles |
 | Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()` and `reactions()` |
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
@@ -599,6 +600,32 @@ try (publish) {
 `testBudget` is how long the test waits, not the engine's deadline. The fixture is the only resource of the
 try-with-resources header because a standalone machine has no registry to close.
 
+### Sub-machines
+
+A state can hold a sub-machine, which the [programmatic DSL](guide.md#programmatic-dsl) declares with
+`submachine(...)`. These samples use an order whose `PAYING` state holds its payment. `orders()` declares the order
+graph: its binding reaches the payment of an order and the order of a payment, and the payment's terminal states
+`CAPTURED` and `DECLINED` exit through `PAY` and `REFUSE`. `ORDERS` and `PAYMENTS` are the keys of the two machines.
+[TestingGuideFragmentsTest](../graphmaquina-test/src/test/java/consumer/TestingGuideFragmentsTest.java) writes out
+those helpers and types, cuts the samples out of this page, compiles them against the published jars and runs them.
+
+`submachine(state, childKey)` narrows to the binding of one state. The view is typed by the child's key, so the
+compiler accepts only a state of the child as a terminal state and only an identifier of the parent as its exit:
+
+```java
+assertThat(orders())
+        .hasNoSubmachine(OrderState.CART)
+        .submachine(OrderState.PAYING, PAYMENTS)
+        .hasExitsExactly(exit(PaymentState.CAPTURED, OrderChange.PAY),
+                exit(PaymentState.DECLINED, OrderChange.REFUSE))
+        .hasExit(PaymentState.DECLINED, OrderChange.REFUSE);
+```
+
+`exit` is the static factory of `ExitExpectation`. `hasExitsExactly` compares the exits in declaration order. Each
+expectation of the view first checks that the state holds the child of that key, so a binding of another child fails
+on the property `child`, and a state that holds no sub-machine fails as a view without a subject. None of them runs
+the binding's lookups.
+
 ## Goldens and structural snapshots
 
 Machine contracts and visual output have separate tests. Do not use a graphical export to validate machine
@@ -781,7 +808,8 @@ A test that needs no properties at all can pass options explicitly —
   that asserts only the destination cannot tell which action ran; assert the action name, or observe it.
 - **Entities are selected by reference.** `forEntity(key, entity)` matches on identity, so two entities that
   carry the same id are two different subjects.
-- **`hasTerminalsExactly` compares as a set; records, guards and reactions keep order and multiplicity.**
+- **`hasTerminalsExactly` compares as a set; records, guards and reactions keep order and multiplicity, and
+  `hasExitsExactly` keeps the declaration order of the exits.**
 - **Assert on the fields, not the type.** A `GraphAssertionError` carries `context()`, `property()`,
   `expected()` and `actual()`. A test that only checks that something was thrown cannot tell a real
   rejection from an incidental failure. When the actual value is a throwable, it is the error's cause as well,

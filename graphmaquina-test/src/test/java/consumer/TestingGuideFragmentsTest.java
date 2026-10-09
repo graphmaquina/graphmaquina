@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
@@ -26,20 +27,25 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Compiles the Java samples of the testing guide's "Failure kinds and recovery rules" section against the published
- * core and test jars, then runs them in a separate JVM whose class path holds those two jars and the compiled samples,
- * nothing else. The page promises that its samples run, and these are cut out of {@code docs/testing.md} verbatim:
- * they are wrapped only by the publication types, by the {@code graph}, {@code asyncGraph} and {@code machine}
- * helpers the section names and by one method per sample, so an expectation the page shows has to hold for this test
- * to pass. A heading or block that cannot be found fails the test instead of compiling nothing. The page, the
- * repository and the release come from the {@code testingGuidePath}, {@code artifactRepository} and
- * {@code artifactVersion} system properties that {@code publishedArtifactTest} sets.
+ * Compiles the Java samples of the testing guide's "Failure kinds and recovery rules" and "Sub-machines" sections
+ * against the published core and test jars, then runs them in a separate JVM whose class path holds those two jars
+ * and the compiled samples, nothing else. The page promises that its samples run, and these are cut out of
+ * {@code docs/testing.md} verbatim. They are wrapped only by the types and helpers each section names and by one
+ * method per sample, so an expectation the page shows has to hold for this test to pass: the publication types and
+ * the {@code graph}, {@code asyncGraph} and {@code machine} helpers for the first section, and the order and payment
+ * types, their keys {@code ORDERS} and {@code PAYMENTS} and the {@code orders()} helper for the second. A heading or
+ * block that cannot be found fails the test instead of compiling nothing. The page, the repository and the release
+ * come from the {@code testingGuidePath}, {@code artifactRepository} and {@code artifactVersion} system properties
+ * that {@code publishedArtifactTest} sets.
  */
 class TestingGuideFragmentsTest {
 
-    private static final String SECTION_HEADING = "### Failure kinds and recovery rules";
+    private static final String RECOVERY = "### Failure kinds and recovery rules";
+
+    private static final String SUBMACHINES = "### Sub-machines";
 
     private static final String HEADER = """
+            import static io.github.graphmaquina.test.ExitExpectation.exit;
             import static io.github.graphmaquina.test.GraphAssertions.assertThat;
 
             import io.github.graphmaquina.api.ActionOutcome;
@@ -61,10 +67,11 @@ class TestingGuideFragmentsTest {
             import io.github.graphmaquina.test.probe.ControlledAsyncAction;
             import java.time.Duration;
             import java.util.List;
+            import java.util.Optional;
             import java.util.concurrent.CompletableFuture;
             import java.util.function.UnaryOperator;
 
-            /** The recovery samples of docs/testing.md, extracted verbatim, run against the published jars. */
+            /** Samples of docs/testing.md, extracted verbatim, run against the published jars. */
             public final class TestingFragments {
                 private TestingFragments() { }
 
@@ -190,45 +197,123 @@ class TestingGuideFragmentsTest {
                             .build();
                 }
 
+                /** The states of an order. */
+                enum OrderState { CART, PAYING, PAID, REFUSED, ABANDONED }
+
+                /** The transition identifiers of an order. */
+                enum OrderChange { CHECKOUT, PAY, REFUSE, ABANDON }
+
+                /** The states of a payment. */
+                enum PaymentState { AUTHORIZING, CAPTURED, DECLINED }
+
+                /** The transition identifiers of a payment. */
+                enum PaymentChange { CAPTURE, DECLINE }
+
+                /** A payment, which knows its order once the order is created. */
+                static final class Payment {
+                    final String id;
+                    PaymentState state = PaymentState.AUTHORIZING;
+                    Optional<Order> order = Optional.empty();
+
+                    Payment(String id) {
+                        this.id = id;
+                    }
+                }
+
+                /** An order, which its payment pays while the order is PAYING. */
+                static final class Order {
+                    final String id;
+                    final Payment payment;
+                    OrderState state = OrderState.CART;
+
+                    Order(String id, Payment payment) {
+                        this.id = id;
+                        this.payment = payment;
+                        payment.order = Optional.of(this);
+                    }
+                }
+
+                static final MachineKey<Order, OrderState, OrderChange> ORDERS =
+                        MachineKey.of(Order.class, OrderState.class, OrderChange.class);
+
+                static final MachineKey<Payment, PaymentState, PaymentChange> PAYMENTS =
+                        MachineKey.of(Payment.class, PaymentState.class, PaymentChange.class);
+
+                /** Built once: a child's machine must be built from the very definition its parent binds. */
+                static final GraphDefinition<Payment, PaymentState, PaymentChange> PAYMENT_GRAPH =
+                        StateGraph.define(PAYMENTS)
+                                .initial(PaymentState.AUTHORIZING)
+                                .terminal(PaymentState.CAPTURED)
+                                .terminal(PaymentState.DECLINED)
+                                .statePolicy(PaymentState.AUTHORIZING, "capture or decline the authorization")
+                                .transition(PaymentChange.CAPTURE, PaymentState.AUTHORIZING, PaymentState.CAPTURED)
+                                .endTransition()
+                                .transition(PaymentChange.DECLINE, PaymentState.AUTHORIZING, PaymentState.DECLINED)
+                                .endTransition()
+                                .build();
+
+                /** The order graph, whose PAYING holds the payment of the order. */
+                static GraphDefinition<Order, OrderState, OrderChange> orders() {
+                    return StateGraph.define(ORDERS)
+                            .initial(OrderState.CART)
+                            .terminal(OrderState.PAID)
+                            .terminal(OrderState.REFUSED)
+                            .terminal(OrderState.ABANDONED)
+                            .statePolicy(OrderState.CART, "check the cart out first")
+                            .statePolicy(OrderState.PAYING, "the payment decides")
+                            .transition(OrderChange.CHECKOUT, OrderState.CART, OrderState.PAYING).endTransition()
+                            .transition(OrderChange.PAY, OrderState.PAYING, OrderState.PAID).endTransition()
+                            .transition(OrderChange.REFUSE, OrderState.PAYING, OrderState.REFUSED).endTransition()
+                            .transition(OrderChange.ABANDON, OrderState.CART, OrderState.ABANDONED).endTransition()
+                            .transition(OrderChange.ABANDON, OrderState.PAYING, OrderState.ABANDONED).endTransition()
+                            .submachine(OrderState.PAYING, PAYMENT_GRAPH, (Order order) -> Optional.of(order.payment),
+                                    (Payment payment) -> payment.order)
+                            .exit(PaymentState.CAPTURED, OrderChange.PAY)
+                            .exit(PaymentState.DECLINED, OrderChange.REFUSE)
+                            .endSubmachine()
+                            .build();
+                }
+
                 /** Runs the extracted assertions and prints a marker only after all pass. */
                 public static void main(String[] args) {
                     syncRouting();
                     actionResults();
                     asyncRouting();
+                    submachineDefinition();
                     System.out.println("TESTING_GUIDE_OK");
                 }
 
             """;
 
-    /** Compiles and runs all four documented samples with a preemptive watchdog and retained failure transcript. */
+    /** Compiles and runs every sample of both sections with a preemptive watchdog and retained failure transcript. */
     @Test
     @Timeout(value = 150, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
-    void theRecoverySamplesOfTheTestingGuideRunAgainstThePublishedJars(
+    void theSamplesOfTheTestingGuideRunAgainstThePublishedJars(
             @TempDir(cleanup = CleanupMode.ON_SUCCESS) Path workDir)
             throws IOException, InterruptedException {
         List<String> page = Files.readAllLines(Path.of(property("testingGuidePath")), UTF_8);
         String jars = publishedJar("graphmaquina-core") + File.pathSeparator + publishedJar("graphmaquina-test");
 
-        int expectedBlocks = 4;
-        int actualBlocks = javaBlockCount(page);
-        assertEquals(expectedBlocks, actualBlocks, "the testing guide's section '" + SECTION_HEADING + "' has "
-                + actualBlocks + " java blocks; this test covers exactly " + expectedBlocks
-                + ": update the test to match the section");
+        assertBlockCount(page, RECOVERY, 4);
+        assertBlockCount(page, SUBMACHINES, 1);
 
         StringBuilder source = new StringBuilder(HEADER);
         source.append("    // --- blocks 1 and 2: the routes a synchronous call took, then the declared rules\n");
         source.append("    static void syncRouting() {\n");
-        source.append(blockAfter(page, 1)).append(blockAfter(page, 2)).append("    }\n\n");
+        source.append(blockAfter(page, RECOVERY, 1)).append(blockAfter(page, RECOVERY, 2)).append("    }\n\n");
         source.append("    // --- block 3: an action result on its own\n");
         source.append("    static void actionResults() {\n");
-        source.append(blockAfter(page, 3)).append("    }\n\n");
+        source.append(blockAfter(page, RECOVERY, 3)).append("    }\n\n");
         source.append("    // --- block 4: the routes an asynchronous action took\n");
         source.append("    static void asyncRouting() {\n");
-        source.append(blockAfter(page, 4)).append("    }\n}\n");
+        source.append(blockAfter(page, RECOVERY, 4)).append("    }\n\n");
+        source.append("    // --- sub-machines, block 1: the binding of a state\n");
+        source.append("    static void submachineDefinition() {\n");
+        source.append(blockAfter(page, SUBMACHINES, 1)).append("    }\n}\n");
 
         Path classes = Files.createDirectories(workDir.resolve("classes"));
         List<String> diagnostics = compile(workDir, source.toString(), jars, classes);
-        assertTrue(diagnostics.isEmpty(), "the testing guide's recovery samples must compile against the published "
+        assertTrue(diagnostics.isEmpty(), "the testing guide's samples must compile against the published "
                 + "jars:\n" + String.join("\n", diagnostics) + "\n--- generated TestingFragments.java ---\n" + source);
 
         Path transcript = workDir.resolve("samples-output.txt");
@@ -237,17 +322,17 @@ class TestingGuideFragmentsTest {
                 .redirectErrorStream(true)
                 .redirectOutput(transcript.toFile())
                 .start();
-        Throwable originalFailure = null;
+        Optional<Throwable> originalFailure = Optional.empty();
         try {
             if (!process.waitFor(2, TimeUnit.MINUTES)) {
-                fail("the testing guide's recovery samples did not terminate; transcript: " + transcript);
+                fail("the testing guide's samples did not terminate; transcript: " + transcript);
             }
             String output = Files.readString(transcript, UTF_8);
-            assertEquals(0, process.exitValue(), "the testing guide's recovery samples failed: " + output
+            assertEquals(0, process.exitValue(), "the testing guide's samples failed: " + output
                     + "\n--- generated TestingFragments.java ---\n" + source);
             assertTrue(output.contains("TESTING_GUIDE_OK"), "the samples did not reach their last line: " + output);
         } catch (IOException | InterruptedException | RuntimeException | Error failure) {
-            originalFailure = failure;
+            originalFailure = Optional.of(failure);
             throw failure;
         } finally {
             try {
@@ -275,34 +360,34 @@ class TestingGuideFragmentsTest {
                     }
                 }
             } catch (RuntimeException | Error cleanupFailure) {
-                if (originalFailure == null) {
+                if (originalFailure.isEmpty()) {
                     throw cleanupFailure;
                 }
-                originalFailure.addSuppressed(cleanupFailure);
+                originalFailure.get().addSuppressed(cleanupFailure);
             }
         }
     }
 
     /**
-     * Counts the java blocks after the section heading and before the next heading of any level. Headings are
-     * matched outside code fences only.
+     * Counts the java blocks after {@code heading} and before the next heading of any level. Headings are matched
+     * outside code fences only.
      */
-    private static int javaBlockCount(List<String> page) {
+    private static int javaBlockCount(List<String> page, String heading) {
         boolean inside = false;
-        MarkdownFence fence = null;
+        Optional<MarkdownFence> fence = Optional.empty();
         int count = 0;
         for (String line : page) {
-            if (fence != null) {
-                fence = fence.closes(line) ? null : fence;
+            if (fence.isPresent()) {
+                fence = fence.get().closes(line) ? Optional.empty() : fence;
                 continue;
             }
-            fence = MarkdownFence.opening(line).orElse(null);
-            if (fence != null) {
-                if (inside && fence.language("java")) {
+            fence = MarkdownFence.opening(line);
+            if (fence.isPresent()) {
+                if (inside && fence.get().language("java")) {
                     count++;
                 }
             } else if (!inside) {
-                inside = line.equals(SECTION_HEADING);
+                inside = line.equals(heading);
             } else if (line.startsWith("#")) {
                 break;
             }
@@ -310,42 +395,49 @@ class TestingGuideFragmentsTest {
         return count;
     }
 
+    /** Fails unless the section under {@code heading} holds exactly {@code expected} java blocks. */
+    private static void assertBlockCount(List<String> page, String heading, int expected) {
+        int actual = javaBlockCount(page, heading);
+        assertEquals(expected, actual, "the testing guide's section '" + heading + "' has " + actual
+                + " java blocks; this test covers exactly " + expected + ": update the test to match the section");
+    }
+
     /**
-     * Returns the {@code n}th java block after the section heading and before the next heading of any level.
-     * Headings are matched outside code fences only. Fails when the block is missing or empty.
+     * Returns the {@code n}th java block after {@code heading} and before the next heading of any level. Headings
+     * are matched outside code fences only. Fails when the block is missing or empty.
      */
-    private static String blockAfter(List<String> page, int n) {
+    private static String blockAfter(List<String> page, String heading, int n) {
         boolean inside = false;
         boolean taking = false;
-        MarkdownFence fence = null;
+        Optional<MarkdownFence> fence = Optional.empty();
         int count = 0;
         StringBuilder block = new StringBuilder();
         for (String line : page) {
-            if (fence != null) {
-                if (fence.closes(line)) {
+            if (fence.isPresent()) {
+                if (fence.get().closes(line)) {
                     if (taking) {
                         break;
                     }
-                    fence = null;
+                    fence = Optional.empty();
                 } else if (taking) {
                     block.append(line).append('\n');
                 }
                 continue;
             }
-            fence = MarkdownFence.opening(line).orElse(null);
-            if (fence != null) {
-                if (inside && fence.language("java")) {
+            fence = MarkdownFence.opening(line);
+            if (fence.isPresent()) {
+                if (inside && fence.get().language("java")) {
                     count++;
                     taking = count == n;
                 }
             } else if (!inside) {
-                inside = line.equals(SECTION_HEADING);
+                inside = line.equals(heading);
             } else if (line.startsWith("#")) {
                 break;
             }
         }
         assertFalse(block.isEmpty(), "no non-empty java block number " + n + " after the heading '"
-                + SECTION_HEADING + "' of the testing guide");
+                + heading + "' of the testing guide");
         return block.toString();
     }
 
