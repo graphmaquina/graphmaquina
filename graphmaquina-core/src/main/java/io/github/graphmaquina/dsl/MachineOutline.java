@@ -8,12 +8,14 @@ import lombok.NonNull;
 
 /**
  * Structural model of a machine by names only: its states, its catalogue of transition identifiers, the edges
- * that were actually declared, the policies and the watches. The DSL builds it from its drafts and the annotation
- * processor from the annotations, so the same validator runs in {@code build()} and in javac, each time only once
- * that producer has found no problem of its own. There is no expected number of pairs and no index by endpoints.
- * The constructor refuses, with {@link IllegalArgumentException}, an empty state list, a repeated state or
- * identifier and any name that is not one of them, the identifiers that an edge's recovery rules name included;
- * everything else, invalid combinations included, is left for the validator to report.
+ * that were actually declared, the policies, the watches and the sub-machines. The DSL builds it from its drafts and
+ * the annotation processor from the annotations, so the same validator runs in {@code build()} and in javac, each time
+ * only once that producer has found no problem of its own. There is no expected number of pairs and no index by
+ * endpoints. The constructor refuses, with {@link IllegalArgumentException}, an empty state list, a repeated state or
+ * identifier and any name that is not one of them, the identifiers that an edge's recovery rules name, the state a
+ * sub-machine is bound to and the identifiers its exits name included. The states a sub-machine's exits are declared
+ * on and its terminal states are names of the child, which this outline does not hold, so the constructor does not
+ * check them. Everything else, invalid combinations included, is left for the validator to report.
  *
  * @param name the machine's display name
  * @param states state names, in declaration order
@@ -26,11 +28,13 @@ import lombok.NonNull;
  * @param policies the rejection policies; both producers give one to each state that declares one or is terminal,
  *     and none to any other state
  * @param watches the declared watches
+ * @param submachines the declared sub-machine bindings, in the order the producer lists them: the DSL in
+ *     declaration order; a state may appear more than once, which the validator reports
  */
 public record MachineOutline(@NonNull String name, @NonNull List<String> states, @NonNull List<String> catalog,
                              @NonNull String initial, @NonNull Set<String> terminals, @NonNull Set<String> cycleAllowed,
                              @NonNull List<TransitionOutline> transitions, @NonNull List<PolicyOutline> policies,
-                             @NonNull List<WatchOutline> watches) {
+                             @NonNull List<WatchOutline> watches, @NonNull List<SubmachineOutline> submachines) {
 
     public MachineOutline {
         states = List.copyOf(states);
@@ -40,6 +44,7 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
         transitions = List.copyOf(transitions);
         policies = List.copyOf(policies);
         watches = List.copyOf(watches);
+        submachines = List.copyOf(submachines);
         Set<String> stateNames = new HashSet<>(states);
         Set<String> transitionNames = new HashSet<>(catalog);
         if (states.isEmpty() || stateNames.size() != states.size()) {
@@ -78,6 +83,19 @@ public record MachineOutline(@NonNull String name, @NonNull List<String> states,
                 requireTransition(name, catalog, transitionNames, transition, "watch.transition");
             }
         }
+        for (SubmachineOutline submachine : submachines) {
+            requireState(name, states, stateNames, submachine.state(), "submachine.state");
+            for (ExitOutline exit : submachine.exits()) {
+                requireTransition(name, catalog, transitionNames, exit.transition(), "submachine.exit");
+            }
+        }
+    }
+
+    /** An outline that declares no sub-machine. */
+    public MachineOutline(String name, List<String> states, List<String> catalog, String initial, Set<String> terminals,
+                          Set<String> cycleAllowed, List<TransitionOutline> transitions, List<PolicyOutline> policies,
+                          List<WatchOutline> watches) {
+        this(name, states, catalog, initial, terminals, cycleAllowed, transitions, policies, watches, List.of());
     }
 
     private static void requireState(String name, List<String> states, Set<String> stateNames, String state,

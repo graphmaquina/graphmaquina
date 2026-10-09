@@ -4,16 +4,20 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionKey;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.InvalidGraphException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -25,7 +29,8 @@ import lombok.NonNull;
 
 /**
  * Default, single-use implementation of {@link GraphBuilder}: accumulates drafts and assembles them on build().
- * It keeps every edge draft it opens, so that build() reports one that was never closed.
+ * It keeps every edge draft it opens, so that build() reports one that was never closed, and every sub-machine draft,
+ * so that build() reports a state bound twice.
  */
 final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> implements GraphBuilder<E, S, T> {
 
@@ -41,6 +46,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final List<TransitionDraft<E, S, T>> drafts = new ArrayList<>();
     private final List<TransitionSpec<E, S, T>> declared = new ArrayList<>();
     private final Map<S, WatchDraft<E, S, T, ?, ?, ?>> watches;
+    private final List<SubmachineDraft<E, S, T, ?, ?, ?>> submachines = new ArrayList<>();
     private final Problems problems = new Problems();
     private boolean built;
 
@@ -159,6 +165,23 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         return draft;
     }
 
+    @Override
+    public <P, Q extends Enum<Q>, U extends Enum<U>> SubmachineBuilder<E, S, T, P, Q, U> submachine(
+            @NonNull S state, @NonNull GraphDefinition<P, Q, U> child,
+            @NonNull Function<? super E, Optional<P>> childOf, @NonNull Function<? super P, Optional<E>> parentOf) {
+        requireUnbuilt();
+        requireState(state);
+        SubmachineDraft<E, S, T, P, Q, U> draft = new SubmachineDraft<>(this, state, child, childOf, parentOf);
+        submachines.add(draft);
+        return draft;
+    }
+
+    @Override
+    public <Q extends Enum<Q>, U extends Enum<U>> SubmachineBuilder<E, S, T, E, Q, U> submachine(
+            @NonNull S state, @NonNull GraphDefinition<E, Q, U> child) {
+        return submachine(state, child, Optional::of, Optional::of);
+    }
+
     /** Called by {@code endTransition()}: a closed draft adds its one edge, or records its problems and adds none. */
     void close(TransitionDraft<E, S, T> draft) {
         draft.toSpec(problems).ifPresent(declared::add);
@@ -178,9 +201,11 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         }
         Map<TransitionKey<S, T>, TransitionSpec<E, S, T>> index = new LinkedHashMap<>();
         for (TransitionSpec<E, S, T> transition : declared) {
-            if (index.putIfAbsent(transition.key(), transition) != null) {
+            if (index.containsKey(transition.key())) {
                 problems.add("SG102", transition.from().ordinal(), transition.transition().ordinal(),
                         "duplicate transition " + transition.key());
+            } else {
+                index.put(transition.key(), transition);
             }
         }
         List<TransitionSpec<E, S, T>> ordered = new ArrayList<>(index.values());
@@ -195,10 +220,74 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         if (problems.isEmpty()) {
             MachineOutlineValidator.validate(outline(ordered, policies, watchSpecs), problems);
         }
+        // SG805 reads only the children, which were built before this graph: it is checked whatever else was found.
+        compositionCycle();
         if (!problems.isEmpty()) {
             throw new InvalidGraphException(key, problems.sorted());
         }
-        return new DslGraphDefinition<>(key, states, initial.orElseThrow(), terminals, ordered, policies, watchSpecs);
+        return new DslGraphDefinition<>(key, states, initial.orElseThrow(), terminals, ordered, policies, watchSpecs,
+                resolveSubmachines());
+    }
+
+    /** The first binding declared on each state; SG803 has already reported a second one. */
+    private Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> resolveSubmachines() {
+        Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> resolved = new EnumMap<>(key.states());
+        for (SubmachineDraft<E, S, T, ?, ?, ?> draft : submachines) {
+            if (!resolved.containsKey(draft.state())) {
+                resolved.put(draft.state(), draft.toSpec());
+            }
+        }
+        return resolved;
+    }
+
+    /** One step of the walk of {@link #compositionCycle()}: a definition, its path and that path's ancestor keys. */
+    private record Visit(GraphDefinition<?, ?, ?> definition, String path, Set<MachineKey<?, ?, ?>> ancestors) {
+        Visit {
+            ancestors = Set.copyOf(ancestors);
+        }
+    }
+
+    /**
+     * SG805 when the sub-machines of this graph, followed through the children's own sub-machines, reach a definition
+     * of this graph's own key. The walk is breadth first, so the path it reports is a shortest one: it starts from
+     * this graph's bindings in the order of their states, and visits each child's states in declaration order. It
+     * expands each key once per path, so distinct definitions of the same key in separate paths are checked and a
+     * hand-written definition that hands out new instances of itself still ends. A return to this graph's key is
+     * checked before pruning a repeated ancestor.
+     */
+    private void compositionCycle() {
+        List<SubmachineDraft<E, S, T, ?, ?, ?>> byState = new ArrayList<>(submachines);
+        byState.sort(Comparator.comparingInt((SubmachineDraft<E, S, T, ?, ?, ?> draft) -> draft.state().ordinal()));
+        Deque<Visit> queue = new ArrayDeque<>();
+        for (SubmachineDraft<E, S, T, ?, ?, ?> draft : byState) {
+            queue.add(new Visit(draft.child(), key + "." + draft.state().name(), Set.of(key)));
+        }
+        while (!queue.isEmpty()) {
+            Visit visit = queue.removeFirst();
+            MachineKey<?, ?, ?> reached = visit.definition().key();
+            if (reached.equals(key)) {
+                problems.add("SG805", "the sub-machines of " + key + " contain " + key + " again: " + visit.path()
+                        + " -> " + key);
+                return;
+            }
+            if (!visit.ancestors().contains(reached)) {
+                Set<MachineKey<?, ?, ?>> ancestors = new HashSet<>(visit.ancestors());
+                ancestors.add(reached);
+                visitChildren(visit.definition(), visit.path(), ancestors, queue);
+            }
+        }
+    }
+
+    /** Queues each child in state order, with its path and an immutable copy of that path's ancestor keys. */
+    private static <P, Q extends Enum<Q>, U extends Enum<U>> void visitChildren(GraphDefinition<P, Q, U> definition,
+            String path, Set<MachineKey<?, ?, ?>> ancestors, Deque<Visit> queue) {
+        for (Q state : definition.key().states().getEnumConstants()) {
+            Optional<SubmachineSpec<P, Q, U, ?, ?, ?>> bound = definition.submachine(state);
+            if (bound.isPresent()) {
+                queue.add(new Visit(bound.get().child(), path + " -> " + definition.key() + "." + state.name(),
+                        ancestors));
+            }
+        }
     }
 
     /**
@@ -254,13 +343,13 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         }
         List<PolicyOutline> policyOutlines = new ArrayList<>();
         for (S state : states) {
-            String otherwise = statePolicies.get(state);
-            if (otherwise == null && !terminals.contains(state)) {
+            Optional<String> otherwise = Optional.ofNullable(statePolicies.get(state));
+            if (otherwise.isEmpty() && !terminals.contains(state)) {
                 continue;
             }
-            StatePolicy<S, T> resolved = policies.get(state);
-            String text = otherwise != null ? otherwise
-                    : resolved != null ? resolved.otherwise() : "terminal state " + state.name() + " accepts no transitions";
+            String text = otherwise
+                    .or(() -> Optional.ofNullable(policies.get(state)).map(StatePolicy::otherwise))
+                    .orElse("terminal state " + state.name() + " accepts no transitions");
             Map<String, String> declaredRejections = new LinkedHashMap<>();
             for (Map.Entry<T, String> rejection : rejections.getOrDefault(state, Map.of()).entrySet()) {
                 declaredRejections.put(rejection.getKey().name(), rejection.getValue());
@@ -283,7 +372,11 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         for (S state : cycleAllowed) {
             cycleNames.add(state.name());
         }
+        List<SubmachineOutline> submachineOutlines = new ArrayList<>();
+        for (SubmachineDraft<E, S, T, ?, ?, ?> draft : submachines) {
+            submachineOutlines.add(draft.toOutline());
+        }
         return new MachineOutline(key.toString(), stateNames, catalogNames, initial.orElseThrow().name(), terminalNames,
-                cycleNames, edges, policyOutlines, watchOutlines);
+                cycleNames, edges, policyOutlines, watchOutlines, submachineOutlines);
     }
 }

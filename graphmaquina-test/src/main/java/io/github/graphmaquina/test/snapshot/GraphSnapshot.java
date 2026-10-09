@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
 import io.github.graphmaquina.api.WatchSpec;
@@ -18,10 +19,10 @@ import java.util.TreeMap;
  * is asynchronous, the states and their order, the catalogue of transition identifiers, the initial and
  * terminal states, every declared edge under {@code /transitions/<from>/<id>} with its destination, kind,
  * action, guards, fallback recovery identifier, the exception types its failsOn lists, recovery rules, timeout
- * and hook, the rejection policy of every state, and the watches with their peers and rules. It carries what a
- * diagram leaves out, so two definitions that render identically still differ here, and it carries names, types
- * and declared values such as timeouts and rejection reasons, never lambdas or the identity of a callback, so a
- * snapshot is stable across runs.
+ * and hook, the rejection policy of every state, the watches with their peers and rules, and the sub-machines
+ * with their child machines and exits. It carries what a diagram leaves out, so two definitions that render
+ * identically still differ here, and it carries names, types and declared values such as timeouts and rejection
+ * reasons, never lambdas or the identity of a callback, so a snapshot is stable across runs.
  *
  * <p>Absence is not recorded: a pair of an origin and an identifier with no edge has no path at all. What the
  * state would answer such a request with lives in its policy instead.
@@ -34,6 +35,11 @@ import java.util.TreeMap;
  * in, although that order selects nothing: a returned failure is routed by its kind and a thrown one by the most
  * specific declared type. Two definitions that only reorder the rules of an edge therefore route every failure
  * alike and still differ here, at the index paths.
+ *
+ * <p>The sub-machine bound to a state lives under {@code /submachines/<state>}: its child machine at
+ * {@code child/entity}, {@code child/states} and {@code child/transitions}, as a watch records its peer, and at
+ * {@code exits/<terminal>} the identifier that each terminal state of the child exits through. A state without one
+ * has no path, and neither lookup of the binding is ever invoked.
  *
  * <p>The map is immutable and always in canonical order — ascending {@link String#compareTo} of the path —
  * which is also the order {@link #serialize()} writes and the order a parsed snapshot comes back in.
@@ -101,6 +107,8 @@ public final class GraphSnapshot {
         for (S state : states) {
             capturePolicy(fields, definition.policy(state));
             definition.watch(state).ifPresent(watch -> captureWatch(fields, watch));
+            definition.submachine(state).ifPresent(
+                    (SubmachineSpec<E, S, T, ?, ?, ?> submachine) -> captureSubmachine(fields, submachine));
         }
         return new GraphSnapshot(fields);
     }
@@ -154,6 +162,18 @@ public final class GraphSnapshot {
         fields.put(path + "/otherwise", policy.otherwise());
         for (Map.Entry<T, String> rejection : policy.rejectionReasons().entrySet()) {
             fields.put(path + "/rejects/" + rejection.getKey().name(), rejection.getValue());
+        }
+    }
+
+    /** The child machine of a sub-machine, by its key's three types, and the exit of each terminal state. */
+    private static <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>
+            void captureSubmachine(Map<String, String> fields, SubmachineSpec<E, S, T, P, Q, U> submachine) {
+        String path = "/submachines/" + submachine.state().name();
+        fields.put(path + "/child/entity", submachine.childKey().entity().getName());
+        fields.put(path + "/child/states", submachine.childKey().states().getName());
+        fields.put(path + "/child/transitions", submachine.childKey().transitions().getName());
+        for (Map.Entry<Q, T> exit : submachine.exits().entrySet()) {
+            fields.put(path + "/exits/" + exit.getKey().name(), exit.getValue().name());
         }
     }
 

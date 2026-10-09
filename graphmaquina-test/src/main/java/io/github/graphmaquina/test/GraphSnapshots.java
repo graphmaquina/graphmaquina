@@ -13,8 +13,8 @@ import java.util.Objects;
  * Compares the structural snapshot of a graph against a checked-in golden resource, and rewrites that
  * resource when the run is in update mode. Where {@link GraphGoldens} pins what a diagram shows, this pins
  * everything the definition declares — transition identifiers, timeouts, recovery routes, guard modes, hooks,
- * policies — by name and value, never by the code behind a name, so a change no diagram would reveal still
- * breaks the build, and it fails with the paths that differ rather than with two files.
+ * policies, sub-machines — by name and value, never by the code behind a name, so a change no diagram would
+ * reveal still breaks the build, and it fails with the paths that differ rather than with two files.
  *
  * <p>In read mode a stored snapshot of an unknown version or a broken format is a fixture problem, not a
  * mismatch: it is reported as such rather than compared. Update mode never reads the old text as a snapshot

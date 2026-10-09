@@ -7,10 +7,11 @@ import java.util.Set;
 
 /**
  * The graph as the runtime reads it: the runtime reaches edges, policies, watches and terminal states only through
- * this interface. The library's only implementation is the one the DSL builds, and the code the annotation processor
- * generates builds its graph through the DSL. The runtime does not validate an implementation built otherwise: when a
- * failure selects a recovery identifier, through a recovery rule or onFailure, that names no edge leaving the failing
- * edge's origin, the call aborts in ACTION with a {@code TransitionAbortedException}.
+ * this interface. It also holds the sub-machine bound to each state, which {@link #submachine(Enum)} returns. The
+ * library's only implementation is the one the DSL builds, and the code the annotation processor generates builds its
+ * graph through the DSL. The runtime does not validate an implementation built otherwise: when a failure selects a
+ * recovery identifier, through a recovery rule or onFailure, that names no edge leaving the failing edge's origin, the
+ * call aborts in ACTION with a {@code TransitionAbortedException}.
  */
 public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
 
@@ -36,6 +37,9 @@ public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
     StatePolicy<S, T> policy(S state);
 
     Optional<WatchSpec<E, S, T, ?, ?, ?>> watch(S state);
+
+    /** The sub-machine bound to {@code state}, if any. Runs no lookup. */
+    Optional<SubmachineSpec<E, S, T, ?, ?, ?>> submachine(S state);
 
     /** Some edge is asynchronous. */
     boolean hasAsync();

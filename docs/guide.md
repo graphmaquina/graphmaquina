@@ -1021,6 +1021,10 @@ You declare what it can do, and the policy words the answer for everything else.
   exists from the failing edge's own origin. Such an edge may legitimately reach the same destination as the edge
   it recovers, because identity, not destination, tells them apart.
 - Every watch rule must name an identifier with an edge from the watched state. A terminal cannot watch.
+- A state that holds a sub-machine maps each terminal state of the child, and no other state, to exactly one exit:
+  an identifier with an edge from that state that no `onFailure`, recovery rule or watch rule of that state names. A
+  terminal state holds no sub-machine, another state holds at most one, and a machine's sub-machines never contain the
+  machine again.
 
 Unauthorised cycles are reported as one witness per cyclic strongly connected component rather than one
 message per elementary cycle. The rule about what is accepted is unchanged; the number of messages is
@@ -2650,8 +2654,8 @@ System.out.println(graph.policy(TicketState.OPEN).reasonFor(TicketTransition.APP
 themselves, and `findTransition` the single spec keyed by `(from, id)`, as an `Optional` that is empty when
 no edge is declared. `graph()` returns the `DirectedGraph<S, T>`, which keeps parallel edges and offers
 `nodes()`, `edges()`, `outgoing`, `incoming` and a `topology()` projection. `initial()`, `terminals()`,
-`policy(state)`, `watch(state)` and `hasAsync()` are also available. None of these runs a guard, an action or
-a hook.
+`policy(state)`, `watch(state)`, `submachine(state)` and `hasAsync()` are also available. None of these runs a
+guard, an action, a hook or a sub-machine's lookup.
 
 To export [Graphviz DOT](https://graphviz.org/doc/info/lang.html) from an existing ticket facade:
 
@@ -3016,8 +3020,15 @@ The DSL exposes runtime functions directly, so this alternative does not need ge
 deliberately omits the quickstart's self-loop, auto-approval and commit hook; add them through the DSL when
 that behavior is required.
 
+`submachine(state, child, childOf, parentOf)` binds another machine to a state: `child` is that machine's own
+`GraphDefinition`, `childOf` returns the child entity of a parent and `parentOf` the parent of a child, both as an
+`Optional`. `submachine(state, child)` binds a machine over the same entity, whose lookups return the entity itself.
+`exit(terminal, id)` maps a terminal state of the child to an identifier of the parent, its exit, and
+`endSubmachine()` returns to the graph. `build()` checks the bindings (`SG801` to `SG805`), and the definition's
+`submachine(state)` returns the binding of a state.
+
 Other stages support named guards, async guards, async actions, `failsOn`, `recover`, `timeout`, `afterCommit`,
-`afterCommitWith`, watches and cycle allowances. A low-level `StateMachine` exposes
+`afterCommitWith`, watches, sub-machines and cycle allowances. A low-level `StateMachine` exposes
 `execute(entity, id)`, `execute(entity, id, input)` and `async().execute(...)`; a generated application
 facade intentionally presents the domain operations instead. Keep registry lifetime explicit to close owned
 executors.
@@ -3063,6 +3074,11 @@ code runs.
 | `SG701` | A state declares no rejection policy. |
 | `SG702` | One `(from, transition)` key both declares an edge and rejects the identifier. |
 | `SG703` | Two annotations of one method name different identifiers, or two methods claim the same identifier. A type-level `Transition` may add branches of an identifier a method owns while their keys stay disjoint. |
+| `SG801` | A sub-machine's exits do not match the terminal states of its child: a terminal state of the child has no exit or more than one, or an exit is declared on a state that is not terminal in the child. Two terminal states may map to the same identifier. |
+| `SG802` | A sub-machine's exit names an identifier with no edge from the state the sub-machine is bound to. |
+| `SG803` | A terminal state holds a sub-machine, or one state holds more than one. |
+| `SG804` | An identifier that a sub-machine's exit names is also named, from the state the sub-machine is bound to, by an edge's `onFailure` or recovery rule, or by a rule of that state's watch. The same identifier from another state is not an exit. |
+| `SG805` | A machine's sub-machines contain the machine again, directly or through their own sub-machines. The DSL compares machine keys along the chain of child definitions, so it takes a second definition of the machine's own key, and prints one shortest path. |
 
 ### Generation and typed binding diagnostics
 
@@ -3133,7 +3149,7 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 | --- | --- |
 | Upgrade from 1.x | Deliberately incompatible. There is no alias of the retired API, no compatibility mode and no conversion of stored snapshots; [migrating to 2.0](migration-2.0.md) maps every contract. |
 | Watches between JARs/modules | Unsupported: both machines must be generated in one compilation. External peers fail with `SG608`; [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1). |
-| State hierarchy and parallel regions | Not modelled. A machine is one flat graph of states with identified edges; there are no nested or orthogonal regions. |
+| State hierarchy and parallel regions | A state can hold a sub-machine: another machine bound to it. Parallel or orthogonal regions, a state that holds two machines at once, are not modelled. |
 | Event scheduling and automatic path execution | Absent. Each operation resolves and executes one edge; nothing walks a path or fires on a timer. |
 | Unauthorised-cycle reporting | One witness per cyclic strongly connected component, not one message per elementary cycle. `Graph.cycles()` itself is unchanged. |
 | IDE acceptance | Generated-root build integration is automated; manual IntelliJ navigation, editor completion and rename/regeneration checks remain pending. |

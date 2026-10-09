@@ -17,6 +17,7 @@ import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
@@ -256,6 +257,10 @@ class GraphOnlyExportTest {
         @Override public Optional<WatchSpec<E,S,T,?,?,?>> watch(S state) {
             watchCalls.add(state);
             return delegate.watch(state);
+        }
+
+        @Override public Optional<SubmachineSpec<E,S,T,?,?,?>> submachine(S state) {
+            return delegate.submachine(state);
         }
 
         @Override public boolean hasAsync() { return delegate.hasAsync(); }

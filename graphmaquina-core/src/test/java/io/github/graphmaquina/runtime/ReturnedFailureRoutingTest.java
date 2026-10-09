@@ -15,6 +15,7 @@ import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionAction;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionKey;
@@ -422,6 +423,11 @@ class ReturnedFailureRoutingTest {
         @Override
         public Optional<WatchSpec<Ticket, TicketState, TicketChange, ?, ?, ?>> watch(TicketState state) {
             return delegate.watch(state);
+        }
+
+        @Override
+        public Optional<SubmachineSpec<Ticket, TicketState, TicketChange, ?, ?, ?>> submachine(TicketState state) {
+            return delegate.submachine(state);
         }
 
         @Override

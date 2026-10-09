@@ -343,9 +343,9 @@ explicit `statePolicy` overrides it.
 ## Retired types
 
 `EdgeKind`, `EdgeSpec`, `MatrixRenderer`, `GraphOutline`, `CellOutline`, `GraphOutlineValidator`, `GraphValidator`,
-`RowBuilder`, `EdgeStart`, `ActionEdge`, `AsyncActionEdge`, `MoveEdge`, `StayEdge`, `EdgeView` and `Detail` are
-gone from core. The structural model is now `MachineOutline` with `TransitionOutline`, `PolicyOutline` and
-`WatchOutline`, validated by `MachineOutlineValidator`, which the DSL and the annotation processor share.
+`RowBuilder`, `EdgeStart`, `ActionEdge`, `AsyncActionEdge`, `MoveEdge`, `StayEdge`, `EdgeView` and `Detail` are gone
+from core. The structural model is now `MachineOutline` with `TransitionOutline`, `PolicyOutline`, `WatchOutline`,
+`SubmachineOutline` and `ExitOutline`, validated by `MachineOutlineValidator`, which the DSL and the processor share.
 
 The twelve deprecated matrix annotations — `Action`, `Cell`, `Cells`, `Forbid`, `Forbids`, `Move`, `Row`, `Rows`,
 `StateGraph`, `Watch`, `Watches` and `When` — are removed rather than deprecated: a project still using them fails

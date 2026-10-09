@@ -3,6 +3,7 @@ package io.github.graphmaquina.dsl;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionKey;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
@@ -38,12 +39,14 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
     private final Map<S, List<TransitionSpec<E, S, T>>> outgoing;
     private final Map<S, StatePolicy<S, T>> policies;
     private final Map<S, WatchSpec<E, S, T, ?, ?, ?>> watches;
+    private final Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> submachines;
     @Getter
     private final boolean hasAsync;
 
     DslGraphDefinition(MachineKey<E, S, T> key, S[] states, S initial, Set<S> terminals,
                        List<TransitionSpec<E, S, T>> ordered, Map<S, StatePolicy<S, T>> policies,
-                       Map<S, WatchSpec<E, S, T, ?, ?, ?>> watches) {
+                       Map<S, WatchSpec<E, S, T, ?, ?, ?>> watches,
+                       Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> submachines) {
         this.key = key;
         this.initial = initial;
         EnumSet<S> terminalCopy = EnumSet.noneOf(key.states());
@@ -72,6 +75,9 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
         this.graph = DirectedGraph.of(Arrays.asList(states), edges);
         this.policies = Collections.unmodifiableMap(new EnumMap<>(policies));
         this.watches = Collections.unmodifiableMap(new LinkedHashMap<>(watches));
+        Map<S, SubmachineSpec<E, S, T, ?, ?, ?>> bound = new EnumMap<>(key.states());
+        bound.putAll(submachines);
+        this.submachines = Collections.unmodifiableMap(bound);
         this.hasAsync = async;
     }
 
@@ -98,6 +104,12 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
     public Optional<WatchSpec<E, S, T, ?, ?, ?>> watch(@NonNull S state) {
         requireState(state);
         return Optional.ofNullable(watches.get(state));
+    }
+
+    @Override
+    public Optional<SubmachineSpec<E, S, T, ?, ?, ?>> submachine(@NonNull S state) {
+        requireState(state);
+        return Optional.ofNullable(submachines.get(state));
     }
 
     private <V> V required(Map<S, V> map, S state) {

@@ -604,7 +604,8 @@ logic.
 - `GraphSnapshots.assertMatches(definition, resource)` compares declared metadata with a checked-in
   `.graph` file: the machine key including the transition enum, the ordered catalogue of identifiers,
   ordered states, initial state, terminals, async mode, node policies, watches and their ordered rules with
-  the identifier each one executes, and for every edge its `(from, id)` key, destination, kind, reason-free
+  the identifier each one executes, each sub-machine with its child machine and the identifier each terminal state
+  of the child exits through, and for every edge its `(from, id)` key, destination, kind, reason-free
   action and guard names/modes, fallback failure identifier, `failsOn` classes, timeout, after-commit hook and, only
   when the edge declares some, its recovery rules in declaration order, each with its failure kind, recovery
   identifier and `failsOn` classes. That order routes nothing, yet reordering the rules changes the snapshot.
