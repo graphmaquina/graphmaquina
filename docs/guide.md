@@ -1110,6 +1110,7 @@ Import these from `io.github.graphmaquina.annotation`:
 | `@GraphGuard` | Guard method | Export a guard binding |
 | `@GraphHook` | Hook method | Export an after-commit binding |
 | `@GraphCondition` | Watch-condition method | Export a custom watch predicate |
+| `@GraphLookup` | Parent-lookup method | Export the lookup that finds the parent of a sub-machine's entity |
 | `@GraphBindings` | Concrete binding host | Export inherited marked members through this concrete host |
 | `@GraphPeers` | Machine interface that watches or binds other machines | Request typed vocabulary for its declared owner/peer pairs |
 | `@Timeout` | Nested annotation element | Express seconds and nanoseconds for an asynchronous action timeout |
@@ -1194,7 +1195,7 @@ based on declaration order.
 ### Method signatures
 
 Public methods must match the role where the graph uses them. `E/S/T` refer to the owner entity, state and
-transition types; `P/Q/U` refer to the peer's.
+transition types; `P/Q/U` refer to the peer's: the watched machine's for a condition, the sub-machine's for a lookup.
 
 | Marker | Supported signature |
 | --- | --- |
@@ -1204,6 +1205,7 @@ transition types; `P/Q/U` refer to the peer's.
 | `@GraphGuard`, async | `CompletionStage<GuardResult> method(GuardContext<E, S, T> ctx)` |
 | `@GraphHook` | `void method(E entity)` or `void method(E entity, CommitContext<S, T> context)` |
 | `@GraphCondition` | `boolean method(E owner, Collection<? extends P> peers, PeerView<P, Q, U> view)` |
+| `@GraphLookup` | `Optional<E> method(P child)` |
 
 Static bindings are called statically. Instance bindings become constructor/builder dependencies. For example,
 using three instance members of `OrderActions` adds one `OrderActions` dependency, not three instances. A class
@@ -1298,16 +1300,16 @@ The corresponding async action calls a gateway and returns a stage. An exception
 an exception of a subclass of either is classified as itself, not through its cause. It also classifies a
 checked exception that an action throws like any other, whether the method declares it, so that an action
 declared `throws IOException` with `failsOn = IOException.class` takes the failure route, or throws it without
-declaring it, as Kotlin or `@SneakyThrows` code can. A guard, a hook, a watch condition, a state or identity
-accessor, or a watch's peers or owner reader may declare a checked exception too: the generated companion
-compiles, and the exception is handled as the same exception thrown undeclared would be. `failsOn` applies to
-action failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a guard
-or action throws or completes its stage with, bare or wrapped in one of those two classes, is never matched against
-`failsOn`, whatever the edge lists: it aborts the call and becomes its cause, so a failure of another call never
-passes for a failure of this one. A failure of the call itself, such as the abort a failed cascade throws into the
-action, is the exception: the engine throws it as itself or, when the transaction is poisoned, the failure that poisoned
-the transaction. An `Error` is never routed either: thrown as itself it propagates unchanged, and one that completes a
-stage, or that one of those two classes carries, aborts.
+declaring it, as Kotlin or `@SneakyThrows` code can. A guard, a hook, a watch condition, a lookup, a state or identity
+accessor, a watch's peers or owner reader, or a sub-machine's child or parent reader may declare a checked exception
+too: the generated companion compiles, and the exception is handled as the same exception thrown undeclared would be.
+`failsOn` applies to action failures; a guard exception is a technical abort. A library exception, a
+`StateMachineException`, that a guard or action throws or completes its stage with, bare or wrapped in one of those two
+classes, is never matched against `failsOn`, whatever the edge lists: it aborts the call and becomes its cause, so a
+failure of another call never passes for a failure of this one. A failure of the call itself, such as the abort a failed
+cascade throws into the action, is the exception: the engine throws it as itself or, when the transaction is poisoned,
+the failure that poisoned the transaction. An `Error` is never routed either: thrown as itself it propagates unchanged,
+and one that completes a stage, or that one of those two classes carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine exception, or
 a `CancellationException` or one of its subtypes, which are never domain failures; nor `CompletionException` or
@@ -2059,8 +2061,9 @@ calculated after that return. A stage already completed when inspected can succe
 wait time. There is no deadline check that interrupts setters, after-commit hooks or observers.
 
 Cascades share the root's unit of work and deadline; entering a peer does not restart its machine-level
-budget. Set defaults are installed only on machines with declared async bindings. A synchronous-only root
-that cascades to an async peer therefore has no root deadline supplied just by the set default. A timeout on
+budget. Set defaults are installed only on asynchronous machines: those with declared async bindings, and those
+whose calls can run an async edge implicitly, as the next paragraph explains. A synchronous-only root that cascades
+to an async peer therefore has no root deadline supplied just by the set default. A timeout on
 the peer action can still bound its wait, but an async guard on that path has no finite root budget. Choose
 the entry point and timeout configuration deliberately when mixing synchronous and asynchronous machines.
 
@@ -2071,8 +2074,11 @@ parent's terminal state selects one level up, and the exits of a sub-machine tha
 Entering a bound state through the caller's own edge also starts its child's initial binding chain: a terminal
 initial descendant selects its exit without an explicit cascade. The same rule covers those descendant exits,
 including descendants started by an implicit edge. A registry therefore refuses a machine that declares no
-`asyncTimeout` when any edge that its calls can run this way has an async action or guard: `MachineRegistry.Builder.build()` throws `IllegalStateException` and names the edge.
-A cascade your action requests is explicit and asks nothing of the kind.
+`asyncTimeout` when any edge that its calls can run this way has an async action or guard:
+`MachineRegistry.Builder.build()` throws `IllegalStateException` and names the edge.
+A generated set installs its default on each such machine, and its `asyncTimeout(Machine.class, Duration)` accepts
+one, so the set never builds a machine that the registry refuses. A cascade your action requests is explicit and
+asks nothing of the kind.
 
 Watch reactions are different: they execute after the triggering commit and start separate root
 transactions with their own deadlines. The original operation waits for synchronous watch dispatch before
@@ -3109,11 +3115,11 @@ code runs.
 | `SG404` | A watch has no rules. In the DSL, also a `when(...)` that no `execute(...)` follows, and an `execute(...)` with no pending `when(...)`. |
 | `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
 | `SG503` | Missing or incompatible public property accessor. |
-| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes one parameter per class with instance members the machine binds, or none. That last refusal is reported once the machine's declarations have no other error and none of its vocabulary is misplaced, since fixing one can change what `graph(...)` takes; an error of its graph as a whole, such as `SG202`, `SG203` or `SG701`, and a refused companion name (`SG603`, or `SG602` when a previous compilation left its companion) are reported beside it. |
+| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes the definition of each machine it binds as a sub-machine, then one parameter per class with instance members the machine binds, or none. That last refusal is reported once the machine's declarations have no other error and none of its vocabulary is misplaced, since fixing one can change what `graph(...)` takes; an error of its graph as a whole, such as `SG202`, `SG203` or `SG701`, and a refused companion name (`SG603`, or `SG602` when a previous compilation left its companion) are reported beside it. |
 | `SG505` | Exported method does not uniquely fit the action, guard, hook, condition or lookup role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
 | `SG507` | Invalid transition elements: empty `from`, `onFailure`, `failsOn` or recovery rules without an action, or a timeout without an asynchronous action. In the DSL, also an edge never closed with `endTransition()`, and an edge that declares more than one action, `onFailure` or `timeout`. |
 | `SG508` | Watch rule must choose exactly one supported predicate alternative. |
-| `SG509` | Invalid peer-machine type, a peer whose entity is a parameterized type, or a watched peer whose types the watcher's package cannot access. |
+| `SG509` | Invalid peer-machine type, a peer whose entity is a parameterized type, a watched peer whose types the watcher's package cannot access, or a sub-machine whose entity, states or transitions its parent's package cannot access. |
 | `SG510` | Invalid set accessor, duplicate/missing machine or missing watched peer in the set. Also an accessor the set inherits from another interface, two machines that write the same entity and state enum, a machine whose types the set's package cannot access, and an instance method of the set, declared or inherited, abstract or default, with the signature of the companion's static `builder(...)`, which takes the timeout shared by the set's asynchronous machines, when it has any, then every class with instance members its machines use. That last refusal is reported only once the set's accessors and machines have no other error, since fixing one can change what `builder(...)` takes. |
 | `SG511` | Invalid timeout duration: it must be positive. |
 | `SG701` | A state declares no rejection policy. |
@@ -3124,7 +3130,7 @@ code runs.
 | `SG803` | A terminal state holds a sub-machine, or one state holds more than one. |
 | `SG804` | An identifier that a sub-machine's exit names is also named, from the state the sub-machine is bound to, by an edge's `onFailure` or recovery rule, or by a rule of that state's watch. The same identifier from another state is not an exit. With annotations, an operation of the facade may not execute an exit either: it requests its identifier from whichever state the machine is in, the bound state included. |
 | `SG805` | A machine's sub-machines contain the machine again, directly or through their own sub-machines. The DSL compares machine keys along the chain of child definitions, so it takes a second definition of the machine's own key, and prints one shortest path. The processor follows the sub-machines each child declares in turn, and reports one shortest path at the binding it starts with, on every machine of the cycle. |
-| `SG806` | A sub-machine declared with annotations does not declare the ways between its entities that it needs: a child over another entity than the parent's needs `child` and exactly one of `parent` or `parentLookup`, and a child over the parent's own entity takes none of the three. |
+| `SG806` | A sub-machine declared with annotations does not declare the ways between its entities that it needs: a child over another entity than the parent's needs `child` and exactly one of `parent` or `parentLookup`, and a child over the parent's own entity takes none of the three. Also a set that holds a machine but not the machine bound to one of its states, which the set could not build, whether the parent was generated by this compilation or comes from a dependency jar. |
 
 ### Generation and typed binding diagnostics
 

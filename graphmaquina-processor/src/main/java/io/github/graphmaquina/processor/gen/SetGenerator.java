@@ -4,6 +4,7 @@ import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineAccessor;
 import io.github.graphmaquina.processor.model.MachineModel;
+import io.github.graphmaquina.processor.model.MachineTypes;
 import io.github.graphmaquina.processor.model.Property;
 import io.github.graphmaquina.processor.model.SetModel;
 import java.util.ArrayList;
@@ -32,9 +33,17 @@ import javax.lang.model.type.TypeMirror;
  * it is given, observers add up in the order they are given, and the builder is single-use. The state and the identity
  * of each machine are read and written by lambdas that call the very accessors the property selected, never by a method
  * reference, which would also consider a static overload of the same name.</p>
+ *
+ * <p>The definition of a machine that another machine of the set binds as a sub-machine is built once, before the
+ * definition of any machine that binds it, into a local variable of the {@code Builder}'s constructor named after its
+ * accessor and followed by {@code Graph}. That one instance is what {@code StateMachines.from(...)} takes for the
+ * child and what the {@code graph(...)} of each of its parents takes, as the registry requires. The shared timeout
+ * goes to the machines {@link SetModel#asynchronous} names, and {@code asyncTimeout(Machine.class, Duration)}
+ * accepts those only.</p>
  */
 public final class SetGenerator {
 
+    private static final String GRAPH_DEFINITION = "io.github.graphmaquina.api.GraphDefinition";
     private static final String MACHINE = "io.github.graphmaquina.api.Machine";
     private static final String MACHINE_OBSERVER = "io.github.graphmaquina.api.MachineObserver";
     private static final String MACHINE_REGISTRY = "io.github.graphmaquina.runtime.MachineRegistry";
@@ -60,8 +69,9 @@ public final class SetGenerator {
             "observer", "built");
 
     /**
-     * The longest forwarder doc text emitted as a one-line comment; a longer one takes the multi-line form. The bound
-     * stays below what one emitted line can hold within 120 columns at the Builder's indentation.
+     * The longest doc text of a {@code Builder} method emitted as a one-line comment; a longer one takes the
+     * multi-line form. The bound stays below what one emitted line can hold within 120 columns at the Builder's
+     * indentation.
      */
     private static final int DOC_LINE_WIDTH = 100;
 
@@ -75,16 +85,17 @@ public final class SetGenerator {
      * that keeps the registry; {@code builders} names, by accessor, the field of the {@code Builder} that holds each
      * machine's own builder, beside {@code registryBuilder} and {@code used}. {@code parameters} maps the qualified
      * name of each parameter type of {@code builder(...)} to the parameter's name, the shared timeout first when
-     * the set has one, whose name {@code timeout} holds as well; {@code entity} and {@code state} name the
-     * parameters of the accessor lambdas, and {@code setters}, by role, the parameters of the {@code Builder}'s
-     * methods and the local variable of its {@code build()}. {@code rethrow} names the private method that throws on
-     * what an accessor lambda caught, and {@code failure} the parameter of its catch clause; both are empty when no
-     * accessor lambda catches anything.</p>
+     * the set has one, whose name {@code timeout} holds as well; {@code definitions} names, by accessor, the local
+     * variable of the {@code Builder}'s constructor that holds the definition of each machine another machine binds as
+     * a sub-machine; {@code entity} and {@code state} name the parameters of the accessor lambdas, and
+     * {@code setters}, by role, the parameters of the {@code Builder}'s methods and the local variable of its
+     * {@code build()}. {@code rethrow} names the private method that throws on what an accessor lambda caught, and
+     * {@code failure} the parameter of its catch clause; both are empty when no accessor lambda catches anything.</p>
      */
     private record Variables(Map<String, String> fields, String registry, Map<String, String> builders,
                              String registryBuilder, String used, Map<String, String> parameters, String timeout,
-                             String entity, String state, Map<String, String> setters, String rethrow,
-                             String failure) { }
+                             Map<String, String> definitions, String entity, String state,
+                             Map<String, String> setters, String rethrow, String failure) { }
 
     public static String qualifiedName(SetModel model) {
         return SymbolNames.qualified(model.packageName(), SymbolNames.runtimeName(model.setName()));
@@ -195,21 +206,22 @@ public final class SetGenerator {
         for (String name : variables.parameters().values()) {
             out.line(objects + ".requireNonNull(" + name + ", " + MachineGenerator.quote(name) + ");");
         }
+        for (MachineAccessor child : children(model)) {
+            out.line(definitionType(child.machine(), names) + " " + variables.definitions().get(child.method()) + " = "
+                    + graph(model, child, names, variables) + ";");
+        }
         for (MachineAccessor accessor : model.machines()) {
             MachineModel machine = accessor.machine();
-            List<String> arguments = new ArrayList<>();
-            for (TypeElement dependency : machine.instanceDependencies()) {
-                arguments.add(variables.parameters().get(dependency.getQualifiedName().toString()));
-            }
             String builder = variables.builders().get(accessor.method());
-            out.line("this." + builder + " = " + names.qualifier(STATE_MACHINES) + ".from("
-                    + companionQualifier(accessor, names) + ".graph(" + String.join(", ", arguments) + "))");
+            String definition = variables.definitions().containsKey(accessor.method())
+                    ? variables.definitions().get(accessor.method()) : graph(model, accessor, names, variables);
+            out.line("this." + builder + " = " + names.qualifier(STATE_MACHINES) + ".from(" + definition + ")");
             out.indent().indent();
             out.line(".state(" + accessors(machine, names, invocations, variables) + ")");
             out.line(".identity(" + reader(machine, machine.idGetter(), names, invocations, variables) + ")");
             out.line(".as(" + facadeName(accessor, names) + ".class);");
             out.outdent().outdent();
-            if (machine.hasAsync()) {
+            if (model.asynchronous(machine)) {
                 out.line(builder + ".asyncTimeout(" + variables.timeout() + ");");
             }
             out.line(registry + ".add(" + builder + ");");
@@ -219,14 +231,15 @@ public final class SetGenerator {
         if (model.hasAsync()) {
             String machine = setters.get("machine");
             String timeout = setters.get("timeout");
-            out.line("/** Overrides the shared timeout for one asynchronous machine. */");
+            comment(out, "Overrides the shared timeout for one asynchronous machine: one whose own graph has an"
+                    + " asynchronous edge, or whose calls can run one implicitly, such as the exit of a sub-machine.");
             out.open("public Builder asyncTimeout(" + names.of(CLASS) + "<? extends " + names.of(MACHINE)
                     + "<?, ?, ?>> " + machine + ", " + names.of(DURATION) + " " + timeout + ")");
             out.line("checkUnused();");
             out.line(objects + ".requireNonNull(" + machine + ", \"machine\");");
             out.line(objects + ".requireNonNull(" + timeout + ", \"timeout\");");
             for (MachineAccessor accessor : model.machines()) {
-                if (accessor.machine().hasAsync()) {
+                if (model.asynchronous(accessor.machine())) {
                     out.open("if (" + machine + ".equals(" + facadeName(accessor, names) + ".class))");
                     out.line(variables.builders().get(accessor.method()) + ".asyncTimeout(" + timeout + ");");
                     out.line("return this;");
@@ -248,8 +261,9 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
-        forward(out, "Bounds how deep a cascade may go, the root being at depth 0; the default is 10, and a value"
-                + " below 1 is refused.", "maxCascadeDepth", "int " + setters.get("depth"),
+        forward(out, "Bounds how deep a cascade may go, the root being at depth 0 and the exit of a sub-machine one"
+                + " level deeper than the step that ended it; the default is 10, and a value below 1 is refused.",
+                "maxCascadeDepth", "int " + setters.get("depth"),
                 registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
         forward(out, "Bounds how many watch reactions may follow one another; the default is 10, and a value below 1"
                 + " is refused.", "maxWatchChain", "int " + setters.get("chain"),
@@ -279,31 +293,97 @@ public final class SetGenerator {
 
     /**
      * One setting the {@code Builder} hands to the registry's builder as soon as it is given, documented by
-     * {@code doc}: on one line when the text is at most {@code DOC_LINE_WIDTH} characters, else in the multi-line
-     * form, so that no emitted comment line passes 120 columns.
+     * {@code doc} as {@link #comment} writes it.
      */
     private static void forward(SourceWriter out, String doc, String method, String parameter, String statement) {
-        if (doc.length() <= DOC_LINE_WIDTH) {
-            out.line("/** " + doc + " */");
-        } else {
-            out.line("/**");
-            StringBuilder line = new StringBuilder();
-            for (String word : doc.split(" ")) {
-                if (line.length() > 0 && line.length() + 1 + word.length() > DOC_LINE_WIDTH) {
-                    out.line(" * " + line);
-                    line.setLength(0);
-                }
-                line.append(line.length() == 0 ? "" : " ").append(word);
-            }
-            out.line(" * " + line);
-            out.line(" */");
-        }
+        comment(out, doc);
         out.open("public Builder " + method + "(" + parameter + ")");
         out.line("checkUnused();");
         out.line(statement);
         out.line("return this;");
         out.close();
         out.blank();
+    }
+
+    /**
+     * {@code doc} as a documentation comment: on one line when the text is at most {@code DOC_LINE_WIDTH} characters,
+     * else in the multi-line form, so that no emitted comment line passes 120 columns.
+     */
+    private static void comment(SourceWriter out, String doc) {
+        if (doc.length() <= DOC_LINE_WIDTH) {
+            out.line("/** " + doc + " */");
+            return;
+        }
+        out.line("/**");
+        StringBuilder line = new StringBuilder();
+        for (String word : doc.split(" ")) {
+            if (line.length() > 0 && line.length() + 1 + word.length() > DOC_LINE_WIDTH) {
+                out.line(" * " + line);
+                line.setLength(0);
+            }
+            line.append(line.length() == 0 ? "" : " ").append(word);
+        }
+        out.line(" * " + line);
+        out.line(" */");
+    }
+
+    /**
+     * The machines of {@code model} that another machine of the set binds as a sub-machine, children before parents:
+     * the order in which the {@code Builder} builds their definitions. Each machine comes after every machine it binds,
+     * and otherwise in accessor order.
+     */
+    private static List<MachineAccessor> children(SetModel model) {
+        Set<String> bound = new LinkedHashSet<>();
+        for (MachineAccessor accessor : model.machines()) {
+            for (MachineTypes child : accessor.machine().children()) {
+                bound.add(child.facade().getQualifiedName().toString());
+            }
+        }
+        List<MachineAccessor> ordered = new ArrayList<>();
+        Set<String> visited = new LinkedHashSet<>();
+        for (MachineAccessor accessor : model.machines()) {
+            visit(model, accessor, bound, visited, ordered);
+        }
+        return ordered;
+    }
+
+    /** Adds the bound machines {@code accessor} reaches to {@code ordered}, each after the machines it binds. */
+    private static void visit(SetModel model, MachineAccessor accessor, Set<String> bound, Set<String> visited,
+                              List<MachineAccessor> ordered) {
+        String facade = accessor.machine().types().facade().getQualifiedName().toString();
+        if (!visited.add(facade)) {
+            return;
+        }
+        for (MachineTypes child : accessor.machine().children()) {
+            model.accessorOf(child.facade()).ifPresent((MachineAccessor held) ->
+                    visit(model, held, bound, visited, ordered));
+        }
+        if (bound.contains(facade)) {
+            ordered.add(accessor);
+        }
+    }
+
+    /**
+     * {@code <Machine>Runtime.graph(...)} for {@code accessor}: the definitions of the machines it binds, from the
+     * local variables the {@code Builder}'s constructor holds them in, then its classes with instance members.
+     */
+    private static String graph(SetModel model, MachineAccessor accessor, Names names, Variables variables) {
+        List<String> arguments = new ArrayList<>();
+        for (MachineTypes child : accessor.machine().children()) {
+            arguments.add(variables.definitions().get(model.accessorOf(child.facade()).orElseThrow().method()));
+        }
+        for (TypeElement dependency : accessor.machine().instanceDependencies()) {
+            arguments.add(variables.parameters().get(dependency.getQualifiedName().toString()));
+        }
+        return companionQualifier(accessor, names) + ".graph(" + String.join(", ", arguments) + ")";
+    }
+
+    /** {@code GraphDefinition<E, S, T>} for {@code machine}, as this file writes it. */
+    private static String definitionType(MachineModel machine, Names names) {
+        return names.of(GRAPH_DEFINITION) + "<"
+                + names.of(machine.types().entityElement().getQualifiedName().toString()) + ", "
+                + names.of(machine.types().statesElement().getQualifiedName().toString()) + ", "
+                + names.of(machine.types().transitionsElement().getQualifiedName().toString()) + ">";
     }
 
     /**
@@ -396,6 +476,10 @@ public final class SetGenerator {
         Map<String, String> dependencies = MachineGenerator.parameterNames(model.dependencies(), taken);
         parameters.putAll(dependencies);
         taken.addAll(dependencies.values());
+        Map<String, String> definitions = new LinkedHashMap<>();
+        for (MachineAccessor child : children(model)) {
+            definitions.put(child.method(), MachineGenerator.unique(child.method() + "Graph", taken));
+        }
         String entity = MachineGenerator.unique("entity", taken);
         String state = MachineGenerator.unique("state", taken);
         boolean catches = !caught(model, invocations).isEmpty();
@@ -405,8 +489,8 @@ public final class SetGenerator {
         for (String role : SETTER_PARAMETERS) {
             setters.put(role, MachineGenerator.unique(role, new LinkedHashSet<>(taken)));
         }
-        return new Variables(fields, registry, builders, registryBuilder, used, parameters, timeout, entity, state,
-                setters, rethrow, failure);
+        return new Variables(fields, registry, builders, registryBuilder, used, parameters, timeout, definitions,
+                entity, state, setters, rethrow, failure);
     }
 
     /**
@@ -435,13 +519,16 @@ public final class SetGenerator {
 
     /**
      * Every type the set companion writes through {@link Names}, in the order it claims them: its own first, then
-     * the fixed ones, then the machines', then, where an accessor lambda catches what an accessor throws,
-     * {@code Throwable} and the types the lambdas catch.
+     * {@code GraphDefinition} when a machine binds another one, then the fixed ones, then the machines', then, where
+     * an accessor lambda catches what an accessor throws, {@code Throwable} and the types the lambdas catch.
      */
     private static Map<String, String> types(SetModel model, BoundInvocation invocations) {
         Map<String, String> types = new LinkedHashMap<>();
         Names.claim(types, model.type());
         Names.claim(types, qualifiedName(model));
+        if (!children(model).isEmpty()) {
+            Names.claim(types, GRAPH_DEFINITION);
+        }
         if (model.hasAsync()) {
             for (String fixed : List.of(MACHINE, DURATION, CLASS, ILLEGAL_ARGUMENT)) {
                 Names.claim(types, fixed);

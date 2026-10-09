@@ -18,7 +18,9 @@ import org.junit.jupiter.api.Test;
  * The processor reads every {@code Submachine} a facade declares with the vocabulary of one of its pairs: the child
  * is reached through a property of the parent's entity, and the parent through a property of the child's entity or
  * an exported lookup, each a single value of the right type; a child over the parent's own entity takes none of the
- * three. A pair that a sub-machine uses is a used pair. These tests are about reading and diagnostics only.
+ * three. A pair that a sub-machine uses is a used pair. The companion of the parent names the child's types, which its
+ * package must reach, and a set that holds the parent must hold the child too. These tests are about reading and
+ * diagnostics only.
  */
 class TypedSubmachineTest {
 
@@ -182,6 +184,75 @@ class TypedSubmachineTest {
         assertTrue(result.errors().contains("[SG509] fx.Pages declares its entity as fx.Page<java.lang.String>, a"
                 + " parameterized type, which a parent cannot bind as its sub-machine"), result.describe());
         assertEquals(0, result.countError("SG605"), result.describe());
+    }
+
+    /** A set that holds the parent but not its child could not build the binding. */
+    @Test
+    void sg806ASetThatHoldsTheParentButNotTheChild() {
+        Map<String, String> sources = bound(BOUND);
+        sources.put("fx.Library", sources.get("fx.Library").replace("    Pages pages();\n", ""));
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(List.of("[SG806] the sub-machine of Docs.REVIEW is Pages, which is not in Library"),
+                result.errors(), result.describe());
+        assertTrue(result.hasGenerated("fx.DocsRuntime"), result.describe());
+        assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
+    }
+
+    /**
+     * The companion of {@code Docs} names the child's transition enum, in the type of the child's definition, so a
+     * child in another package whose transition enum is not public is refused at the binding.
+     */
+    @Test
+    void sg509AChildWhoseTypesTheParentsPackageCannotAccess() {
+        Map<String, String> sources = bound(BOUND);
+        sources.remove("fx.Library");
+        sources.remove("fx.Pages");
+        sources.remove("fx.PageTransition");
+        sources.put("fx.pages.PageTransition", "package fx.pages;\n/** Transitions of the inaccessible child fixture. */\nenum PageTransition { FINISH }\n");
+        sources.put("fx.pages.Pages", """
+                package fx.pages;
+                import fx.Page;
+                import fx.PageRefs;
+                import fx.PageStatus;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import static fx.PageStatus.*;
+                import static fx.pages.PageTransition.*;
+                /** Child of the inaccessible transition fixture. */
+                @GenerateGraphApi
+                @PagesGraph.Definition(initial = OPEN, terminals = DONE,
+                    state = PageRefs.Status.class, id = PageRefs.Id.class)
+                @PagesGraph.StatePolicy(state = OPEN, otherwise = "a page is finished")
+                public interface Pages extends Machine<Page, PageStatus, PageTransition> {
+                    @PagesGraph.Transition(id = FINISH, from = OPEN, to = DONE)
+                    Outcome<Page, PageStatus, PageTransition> finish(Page page);
+                }
+                """);
+        sources.put("fx.Docs", sources.get("fx.Docs").replace("import io.github.graphmaquina.annotation.GraphPeers;\n",
+                "import io.github.graphmaquina.annotation.GraphPeers;\nimport fx.pages.Pages;\n"));
+        sources.put("fx.DocActions", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+                /** Actions of the accessibility fixture. */
+                public final class DocActions {
+                    @GraphAction
+                    public ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(List.of("[SG509] fx.pages.Pages is bound as a sub-machine with fx.pages.PageTransition, which"
+                + " package fx, where the companion of Docs is generated, cannot access: make it public"),
+                result.errors(), result.describe());
+        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
     }
 
     @Test

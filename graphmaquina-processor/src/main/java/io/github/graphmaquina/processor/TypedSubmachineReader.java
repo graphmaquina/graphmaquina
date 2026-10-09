@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -43,10 +44,14 @@ import javax.lang.model.type.TypeMirror;
  * an operation of the facade that executes an exit, which it would request from the bound state too, is {@code SG804}
  * at that exit; and a machine that its sub-machines contain again, followed through the sub-machines each child
  * declares in turn, is {@code SG805} at the binding that starts the shortest such path.</p>
+ *
+ * <p>The companion of the parent names the child's entity, states and transitions, so a child is refused as
+ * {@code SG509} when one of those types is not accessible from the package the companion is generated in.</p>
  */
 final class TypedSubmachineReader {
 
     private static final String WAYS = "SG806";
+    private static final String NOT_A_MACHINE = "SG509";
     private static final String CLAIMED_EXIT = "SG804";
     private static final String CYCLE = "SG805";
 
@@ -109,6 +114,9 @@ final class TypedSubmachineReader {
             return Optional.empty();
         }
         MachineTypes child = resolved.get();
+        if (!reachable(facade, submachine, child)) {
+            return Optional.empty();
+        }
         Optional<AnnotationValue> childValue = single(facade, submachine, "child");
         Optional<AnnotationValue> parentValue = single(facade, submachine, "parent");
         Optional<AnnotationValue> lookupValue = single(facade, submachine, "parentLookup");
@@ -139,6 +147,28 @@ final class TypedSubmachineReader {
         }
         return Optional.of(new SubmachineModel(state.get(), child, terminals.get(), childOf, parentOf, parentLookup,
                 exits));
+    }
+
+    /**
+     * Whether the companion of {@code facade}, generated in the facade's package, can name the types it binds
+     * {@code child} with: the child's entity, which the lambdas of the binding take, its states, which the exits name,
+     * and its transitions, which the type of its definition names. {@code SG509} otherwise, naming each type that
+     * package cannot access.
+     */
+    private boolean reachable(TypeElement facade, AnnotationMirror submachine, MachineTypes child) {
+        String packageName = Accessibility.packageOf(facade);
+        Set<String> inaccessible = new LinkedHashSet<>();
+        for (TypeMirror type : List.of(child.entity(), child.states(), child.transitions())) {
+            inaccessible.addAll(Accessibility.inaccessible(type, packageName));
+        }
+        if (inaccessible.isEmpty()) {
+            return true;
+        }
+        DiagnosticAnchor.of(facade, submachine).report(diagnostics, NOT_A_MACHINE, child.facade().getQualifiedName()
+                + " is bound as a sub-machine with " + String.join(" and ", inaccessible) + ", which "
+                + Accessibility.describe(packageName) + ", where the companion of " + facade.getSimpleName()
+                + " is generated, cannot access: make " + (inaccessible.size() == 1 ? "it" : "them") + " public");
+        return false;
     }
 
     /**

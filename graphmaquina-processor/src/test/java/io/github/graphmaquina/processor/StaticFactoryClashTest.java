@@ -11,16 +11,17 @@ import javax.tools.JavaFileObject;
 import org.junit.jupiter.api.Test;
 
 /**
- * A machine's companion declares a static {@code graph(...)}, which takes one parameter per class with instance
- * members the machine binds, and a set's companion a static {@code builder(...)}, which takes the timeout of the set's
- * asynchronous machines, if it has any, and then every class with instance members its machines use. Both are public
- * API. javac refuses a static method that has the signature of an instance method the class declares or inherits,
- * abstract or default, which it would hide, or be declared beside; it compares parameter types as members of the
- * class, once erased. So a facade or a set that declares or inherits such a method is refused, as {@code SG504} for a
- * facade and {@code SG510} for a set: where it declares the method, or where it inherits it, naming the interface that
- * declares it. This extends the refusal of a set accessor named {@code builder} when the companion's
- * {@code builder()} takes nothing. A method of that name with other parameter types is an overload, and is accepted,
- * as is a static or private method of the interface, which a class does not inherit.
+ * A machine's companion declares a static {@code graph(...)}, which takes the definition of each machine it binds as a
+ * sub-machine, then one parameter per class with instance members the machine binds, and a set's companion a static
+ * {@code builder(...)}, which takes the timeout of the set's asynchronous machines, if it has any, and then every
+ * class with instance members its machines use. Both are public API. javac refuses a static method that has the
+ * signature of an instance method the class declares or inherits, abstract or default, which it would hide, or be
+ * declared beside; it compares parameter types as members of the class, once erased. So a facade or a set that
+ * declares or inherits such a method is refused, as {@code SG504} for a facade and {@code SG510} for a set: where it
+ * declares the method, or where it inherits it, naming the interface that declares it. This extends the refusal of a
+ * set accessor named {@code builder} when the companion's {@code builder()} takes nothing. A method of that name with
+ * other parameter types is an overload, and is accepted, as is a static or private method of the interface, which a
+ * class does not inherit.
  */
 class StaticFactoryClashTest {
 
@@ -83,7 +84,8 @@ class StaticFactoryClashTest {
         Compilation.Result result = Compilation.compileTyped(sources);
 
         assertEquals(List.of("[SG504] graph() is the static graph() the generated PagesRuntime declares, which takes no"
-                + " parameter for a machine without instance dependencies: give the method another name"),
+                + " parameter for a machine without sub-machines and without instance dependencies: give the method"
+                + " another name"),
                 result.errors(), result.describe());
         assertEquals(line(sources, "fx.Pages", "default String graph()"), at(result, "SG504"), result.describe());
         assertFalse(result.hasGenerated("fx.PagesRuntime"), result.describe());
@@ -133,8 +135,8 @@ class StaticFactoryClashTest {
                 "extends Machine<Page, PageStatus, PageTransition>, Named"));
         Compilation.Result inherited = Compilation.compileTyped(named);
         assertEquals(List.of("[SG504] Pages inherits graph() from fx.Named, but the generated PagesRuntime declares a"
-                + " static graph(), which takes no parameter for a machine without instance dependencies: give that"
-                + " method another name"), inherited.errors(), inherited.describe());
+                + " static graph(), which takes no parameter for a machine without sub-machines and without instance"
+                + " dependencies: give that method another name"), inherited.errors(), inherited.describe());
         assertEquals(line(named, "fx.Pages", "public interface Pages"), at(inherited, "SG504"), inherited.describe());
         assertFalse(inherited.hasGenerated("fx.PagesRuntime"), inherited.describe());
 
