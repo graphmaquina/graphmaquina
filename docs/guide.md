@@ -3302,6 +3302,8 @@ Do not publish a bundle signed with a temporary test key. See the
 | [Build integration guide](typed-annotations-build.md) | Adapter lifecycle, toolchain checks, paths and repository configuration |
 | [Shop source](../graphmaquina-example/src/main/java/io/github/graphmaquina/example) | Complete two-machine domain with async payment, guards, cascades and watches |
 | [Shop tests](../graphmaquina-example/src/test/java/io/github/graphmaquina/example) | Executable behavior and expected diagrams |
+| [Billing source](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/billing) | One payment machine reused as a sub-machine, in two states of a booking and in one of a subscription |
+| [Billing tests](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/billing) | Starts and exits, a detached payment, an exit's failure route, an asynchronous exit and a sub-machine over its parent's own entity |
 | [Public API source](../graphmaquina-core/src/main/java/io/github/graphmaquina/api) | Exact signatures and outcome types |
 | [Programmatic DSL source](../graphmaquina-core/src/main/java/io/github/graphmaquina/dsl) | Lower-level builder stages |
 
