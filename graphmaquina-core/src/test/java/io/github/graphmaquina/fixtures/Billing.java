@@ -27,6 +27,9 @@ import java.util.function.Function;
  *       {@code BOOK} once that payment is {@code AUTHORIZING}.</li>
  *   <li>Every action runs {@link #bookingActions} or {@link #paymentActions}. Every edge runs the hook {@code Audit},
  *       which records its hop in {@link #hooks} and then runs {@link #afterHook}.</li>
+ *   <li>The exit {@code DEPOSIT_PAID} has the guard {@code Settled}, {@link #settled}, and the action {@code Settle},
+ *       whose failure takes {@code CANCEL}; the exit {@code BALANCE_PAID} has the action {@code Confirm}, with no
+ *       failure route. A capture from {@code HELD} that fails takes {@code DECLINE}.</li>
  *   <li>Each entity starts with every state it holds initialized.</li>
  * </ul>
  */
@@ -154,6 +157,8 @@ public final class Billing {
     public final Probe<Booking, BookingStatus, BookingTransition> bookingActions = new Probe<>();
     /** The action of every payment edge that declares one. */
     public final Probe<Payment, PaymentStatus, PaymentTransition> paymentActions = new Probe<>();
+    /** The guard {@code Settled} of the exit {@code DEPOSIT_PAID}. */
+    public final GuardProbe<Booking, BookingStatus, BookingTransition> settled = new GuardProbe<>();
     /** Every hop whose hook ran, as {@code entity:from-identifier>to}, in order. */
     public final List<String> hooks = new ArrayList<>();
     /** Runs after the hook recorded its hop; a test replaces it to make the hook throw. */
@@ -236,7 +241,8 @@ public final class Billing {
                 .transition(PaymentTransition.CAPTURE, PaymentStatus.AUTHORIZING, PaymentStatus.CAPTURED)
                     .action("Capture", paymentActions).afterCommitWith("Audit", audit).endTransition()
                 .transition(PaymentTransition.CAPTURE, PaymentStatus.HELD, PaymentStatus.CAPTURED)
-                    .action("Capture", paymentActions).afterCommitWith("Audit", audit).endTransition()
+                    .action("Capture", paymentActions).onFailure(PaymentTransition.DECLINE)
+                    .afterCommitWith("Audit", audit).endTransition()
                 .transition(PaymentTransition.DECLINE, PaymentStatus.AUTHORIZING, PaymentStatus.DECLINED)
                     .afterCommitWith("Audit", audit).endTransition()
                 .transition(PaymentTransition.DECLINE, PaymentStatus.HELD, PaymentStatus.DECLINED)
@@ -256,8 +262,8 @@ public final class Billing {
 
     /**
      * {@code REQUESTED} books into {@code DEPOSIT}, pays in full into {@code BALANCE}, falling back to {@code BOOK}
-     * when that action fails, or cancels. {@code DEPOSIT} restarts itself, goes on to {@code BALANCE} or cancels,
-     * and {@code BALANCE} confirms or cancels.
+     * when that action fails, or cancels. {@code DEPOSIT} restarts itself, goes on to {@code BALANCE}, falling back
+     * to {@code CANCEL} when that action fails, or cancels, and {@code BALANCE} confirms or cancels.
      */
     private GraphDefinition<Booking, BookingStatus, BookingTransition> bookings() {
         BiConsumer<Booking, CommitContext<BookingStatus, BookingTransition>> audit = audit();
@@ -278,13 +284,14 @@ public final class Billing {
                 .transition(BookingTransition.RESTART, BookingStatus.DEPOSIT, BookingStatus.DEPOSIT)
                     .afterCommitWith("Audit", audit).endTransition()
                 .transition(BookingTransition.DEPOSIT_PAID, BookingStatus.DEPOSIT, BookingStatus.BALANCE)
+                    .guard("Settled", settled).action("Settle", bookingActions).onFailure(BookingTransition.CANCEL)
                     .afterCommitWith("Audit", audit).endTransition()
                 .transition(BookingTransition.PAYMENT_FAILED, BookingStatus.DEPOSIT, BookingStatus.CANCELLED)
                     .afterCommitWith("Audit", audit).endTransition()
                 .transition(BookingTransition.CANCEL, BookingStatus.DEPOSIT, BookingStatus.CANCELLED)
                     .action("CancelBooking", bookingActions).afterCommitWith("Audit", audit).endTransition()
                 .transition(BookingTransition.BALANCE_PAID, BookingStatus.BALANCE, BookingStatus.CONFIRMED)
-                    .afterCommitWith("Audit", audit).endTransition()
+                    .action("Confirm", bookingActions).afterCommitWith("Audit", audit).endTransition()
                 .transition(BookingTransition.PAYMENT_FAILED, BookingStatus.BALANCE, BookingStatus.CANCELLED)
                     .afterCommitWith("Audit", audit).endTransition()
                 .transition(BookingTransition.CANCEL, BookingStatus.BALANCE, BookingStatus.CANCELLED)

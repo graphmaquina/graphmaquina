@@ -33,7 +33,7 @@ publishing {
             from(components["java"])
             pom {
                 name.set("graphmaquina-core")
-                description.set("State machines declared as graphs of identified transitions: cross-machine cascade, declared watches, async actions")
+                description.set("State machines declared as graphs of identified transitions: cross-machine cascade, declared watches, sub-machines bound to states, async actions")
             }
         }
     }

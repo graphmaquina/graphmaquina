@@ -6,12 +6,13 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * The graph as the runtime reads it: the runtime reaches edges, policies, watches and terminal states only through
- * this interface. It also holds the sub-machine bound to each state, which {@link #submachine(Enum)} returns. The
- * library's only implementation is the one the DSL builds, and the code the annotation processor generates builds its
- * graph through the DSL. The runtime does not validate an implementation built otherwise: when a failure selects a
- * recovery identifier, through a recovery rule or onFailure, that names no edge leaving the failing edge's origin, the
- * call aborts in ACTION with a {@code TransitionAbortedException}.
+ * The graph as the runtime reads it: the runtime reaches edges, policies, watches, sub-machines and terminal states
+ * only through this interface; {@link #submachine(Enum)} returns the sub-machine bound to each state. The library's
+ * only implementation is the one the DSL builds, and the code the annotation processor generates builds its graph
+ * through the DSL. The runtime does not validate an implementation built otherwise. When a failure selects a recovery
+ * identifier, through a recovery rule or onFailure, that names no edge leaving the failing edge's origin, the call
+ * aborts in ACTION with a {@code TransitionAbortedException}. So does a call whose child reaches a terminal state that
+ * its binding maps to no exit, or to an identifier with no edge leaving the bound state.
  */
 public interface GraphDefinition<E, S extends Enum<S>, T extends Enum<T>> {
 

@@ -4,7 +4,7 @@ import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.MachineCall;
 import lombok.Getter;
 
-/** Thrown when a cascade goes deeper than the configured maximum. */
+/** Thrown when a cascade, or the exit of a sub-machine, goes deeper than the configured maximum. */
 @Getter
 public final class CascadeDepthExceededException extends TransitionAbortedException {
 

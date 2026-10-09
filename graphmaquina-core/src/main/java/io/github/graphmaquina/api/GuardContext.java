@@ -29,8 +29,8 @@ public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * The value passed as this operation's second argument, if any; empty when called with one argument or an
-     * explicit {@code null}, and always empty in a cascaded step or a reevaluation, which carry none. Scoped to this
-     * invocation only, never a value left over from an earlier call.
+     * explicit {@code null}, and always empty in a cascaded step, the exit of a sub-machine or a reevaluation, which
+     * carry none. Scoped to this invocation only, never a value left over from an earlier call.
      */
     default Optional<?> input() {
         return Optional.empty();

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="830" viewBox="0 0 1440 830" role="img" aria-labelledby="title desc">
-<title id="title">Transition and commit lifecycle</title><desc id="desc">The engine evaluates guards and runs actions, staging the state changes of the root, its cascades and the sub-machines its hops enter, which start at their initial states, in a shared unit of work. Commit checks and writes state. Hooks and watch reactions run afterward, then the observers learn how the call ended; external side effects are not rolled back automatically.</desc>
+<title id="title">Transition and commit lifecycle</title><desc id="desc">The engine evaluates guards and runs actions, staging the state changes of the root, its cascades and its sub-machines, the starts of those its hops enter and the exits of those its steps end, in a shared unit of work. Commit checks and writes state. Hooks and watch reactions run afterward, then the observers learn how the call ended; external side effects are not rolled back automatically.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>

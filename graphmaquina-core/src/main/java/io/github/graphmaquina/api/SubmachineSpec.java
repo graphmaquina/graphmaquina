@@ -10,8 +10,9 @@ import lombok.NonNull;
 
 /**
  * A sub-machine bound to one state of a parent graph: the child's definition, how to reach the child from the parent
- * and back, and the parent identifier that each terminal state of the child maps to, its exit. Validates nothing about
- * the graphs; the DSL does, when it builds the parent graph.
+ * and back, and the parent identifier that each terminal state of the child selects, its exit. When a step of the
+ * child ends in that terminal state while the parent is in the bound state, the engine runs the exit on the parent in
+ * the same unit of work. Validates nothing about the graphs; the DSL does, when it builds the parent graph.
  *
  * @param <E> entity of the parent machine
  * @param <S> state enum of the parent machine

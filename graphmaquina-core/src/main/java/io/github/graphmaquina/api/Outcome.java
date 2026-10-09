@@ -59,9 +59,9 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
     Optional<String> explanation();
 
     /**
-     * The hops this root call committed, in log order, cascaded ones included. Empty for a rejected or ignored
-     * outcome, which committed nothing, and for any outcome a cascade returned, whose hops belong to its root. The
-     * start of a sub-machine is no hop: {@link #starts()} holds it.
+     * The hops this root call committed, in log order, cascaded ones and the exits of sub-machines included. Empty for
+     * a rejected or ignored outcome, which committed nothing, and for any outcome a cascade returned, whose hops belong
+     * to its root. The start of a sub-machine is no hop: {@link #starts()} holds it.
      */
     default List<TransitionRecord<?, ?, ?>> records() {
         return List.of();

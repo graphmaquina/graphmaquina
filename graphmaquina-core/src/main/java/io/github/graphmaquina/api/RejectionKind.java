@@ -20,8 +20,9 @@ public enum RejectionKind {
     DETACHED,
 
     /**
-     * The identifier is mapped as an exit of the sub-machine bound to the current state, so no request may ask for it
-     * from that state; from another state it is not reserved. Checked once the edge is selected, before its guards.
+     * The identifier is mapped as an exit of the sub-machine bound to the current state: from that state only the end
+     * of the sub-machine runs it, so no request may ask for it there; from another state it is not reserved. Checked
+     * once the edge is selected, before its guards.
      */
     RESERVED_EXIT
 }

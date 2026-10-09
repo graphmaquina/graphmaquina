@@ -67,6 +67,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 | Synchronous and asynchronous actions | Actions and guards may return values or `CompletionStage` results. The runtime waits under configured deadlines. |
 | Coordinated state changes | Cascades share a unit of work; entity state setters run after the root transition succeeds or selects a handled failure route. |
 | Declared watches | After a peer commits, a matching owner can be reevaluated and execute the identifier the first matching rule names. |
+| Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child whose parent is not in that state is rejected, and the step that ends the child runs the parent's exit in the same unit of work. |
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
 | Inspectable execution | Outcomes carry transition records, watch reactions and the sub-machines a call started; technical aborts carry diagnostic details where applicable. |
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram. |
@@ -1236,9 +1237,9 @@ throws `ClassCastException`; absence and a wrong type are different conditions. 
 arguments are boxed; read them with wrapper tokens such as `Integer.class`. Class tokens cannot validate
 erased generic arguments. Input operations do not support method type parameters or varargs.
 
-The same input reaches the transition's guards, action and handled failure action. Cascades, watch reactions
-and reevaluation have no input of their own and receive an empty optional. A shared guard must handle that
-absence. Hooks, observers and transition records retain their existing contracts.
+The same input reaches the transition's guards, action and handled failure action. Cascades, the exits of
+sub-machines, watch reactions and reevaluation have no input of their own and receive an empty optional. A shared
+guard must handle that absence. Hooks, observers and transition records retain their existing contracts.
 
 ### Domain failures
 
@@ -1559,7 +1560,7 @@ entity, to the application's transaction or to external systems. To assert kinds
 
 ## Handle transition outcomes
 
-![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent is not in the bound state is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved.](images/operation-decisions.svg)
+![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent is not in the bound state is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a sub-machine also commits its parent's exit.](images/operation-decisions.svg)
 
 `Outcome<E, S, T>` is a sealed interface with four variants. Every outcome classifies itself, so a caller that
 only needs to know what happened and why reads it without narrowing:
@@ -2212,7 +2213,7 @@ not instantiate service classes or discover dependency-injection beans.
 | --- | --- |
 | `asyncTimeout(Machine.class, Duration)` | Override timeout for one asynchronous machine |
 | `asyncExecutor(Executor)` | Supply the executor used by `async` calls; otherwise each machine owns a virtual-thread executor |
-| `maxCascadeDepth(int)` | Bound nested cascades; default `10`, minimum `1`, root depth is `0` |
+| `maxCascadeDepth(int)` | Bound nested cascades and sub-machine exits; default `10`, minimum `1`, root depth is `0` |
 | `maxWatchChain(int)` | Bound successive watch reactions; default `10`, minimum `1` |
 | `observer(MachineObserver)` | Observe every call of the set; observers add up, notified in the order given |
 | `build()` | Construct the registry and facades |
@@ -2453,8 +2454,8 @@ them before the exception leaves the call.
 The runtime's normal root execution follows this sequence:
 
 1. Read the effective entity state and resolve the single edge keyed by `(state, requested identifier)`.
-2. Evaluate guards and run actions, including any nested cascades and the starts of the sub-machines whose state an
-   edge enters, against a shared unit of work.
+2. Evaluate guards and run actions, including any nested cascades, the starts of the sub-machines whose state an
+   edge enters and the exits of those that end, against a shared unit of work.
 3. Before commit, verify that participating entities still have their expected original states.
 4. Write each participating entity's final state through its setter.
 5. Invalidate transition contexts and release the root reentrancy marker.
@@ -2515,11 +2516,11 @@ not composed, and there is no sentinel that switches the default off for one edg
 or setting it to `{}`, inherits the default. `Definition.afterCommit` also accepts zero or one value;
 multiple values are `SG607`.
 
-The default applies to every committed hop, including explicit self-loops, failure routes and transitions
-triggered by watches — they are all real edges. It never runs for a rejected request, whatever its kind,
-an `Ignored`, an abort or a rollback. A failure route uses its own effective hook, not the hook of the edge
-that failed. Hooks still run per committed hop, so one entity can reach the default more than once in a
-cascade.
+The default applies to every committed hop, including explicit self-loops, failure routes, transitions
+triggered by watches and the exits of sub-machines — they are all real edges. It never runs for a rejected
+request, whatever its kind, an `Ignored`, an abort or a rollback. A failure route uses its own effective hook,
+not the hook of the edge that failed. Hooks still run per committed hop, so one entity can reach the default
+more than once in a cascade.
 
 ### Observers
 
@@ -3165,8 +3166,8 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 | --- | --- |
 | Upgrade from 1.x | Deliberately incompatible. There is no alias of the retired API, no compatibility mode and no conversion of stored snapshots; [migrating to 2.0](migration-2.0.md) maps every contract. |
 | Watches between JARs/modules | Unsupported: both machines must be generated in one compilation. External peers fail with `SG608`; [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1). |
-| State hierarchy and parallel regions | A state can hold a sub-machine: another machine bound to it, which entering the state starts. Parallel or orthogonal regions, a state that holds two machines at once, are not modelled. |
-| Event scheduling and automatic path execution | Absent. Each operation resolves and executes one edge; nothing walks a path or fires on a timer. |
+| State hierarchy and parallel regions | A state can hold a sub-machine: another machine bound to it, which entering the state starts and whose terminal state selects the parent's exit. Parallel or orthogonal regions, a state that holds two machines at once, are not modelled. |
+| Event scheduling and automatic path execution | Absent. Each operation resolves and executes one edge, plus the cascades its actions request and the exits of the sub-machines it ends; nothing walks a path or fires on a timer. |
 | Unauthorised-cycle reporting | One witness per cyclic strongly connected component, not one message per elementary cycle. `Graph.cycles()` itself is unchanged. |
 | IDE acceptance | Generated-root build integration is automated; manual IntelliJ navigation, editor completion and rename/regeneration checks remain pending. |
 | External payments demo | Its strict-lint acceptance is still partial; it is outside this repository's library test totals. |

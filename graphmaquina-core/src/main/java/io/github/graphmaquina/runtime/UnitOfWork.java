@@ -176,6 +176,19 @@ final class UnitOfWork {
 
     List<LogEntry> entries() { return List.copyOf(log); }
 
+    /**
+     * The last start in the log whose parent is {@code parent}: when the parent's latest hop entered a bound state,
+     * the start of the sub-machine that hop started.
+     */
+    Optional<LogEntry.Start> lastStartUnder(EntityRef parent) {
+        for (int index = log.size() - 1; index >= 0; index--) {
+            if (log.get(index) instanceof LogEntry.Start start && start.parent().equals(parent)) {
+                return Optional.of(start);
+            }
+        }
+        return Optional.empty();
+    }
+
     int appendJournal(ActionRecord record) {
         journal.add(record);
         return journal.size() - 1;

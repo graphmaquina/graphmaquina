@@ -415,8 +415,8 @@ primitive tokens (including `void.class`) throw `IllegalArgumentException`, even
 wrapper classes for primitive operation arguments.
 
 Root guards, actions and failure actions record the root input, and the recovering action records the input
-of the invocation that failed. Cascades, watch reactions and reevaluation have their own calls with empty
-input; a later invocation never reuses a previous input. For a controlled
+of the invocation that failed. Cascades, the exits of sub-machines, watch reactions and reevaluation have their
+own calls with empty input; a later invocation never reuses a previous input. For a controlled
 async callback, inspect `assertThat(pending.call()).hasInputSameAs(verdict)` before answering it or after
 completion. The same reference remains in `fixture.invocations()` after close.
 
