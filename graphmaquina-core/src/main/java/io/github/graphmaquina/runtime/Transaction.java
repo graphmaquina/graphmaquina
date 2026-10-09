@@ -17,6 +17,7 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AbortDetails;
 import io.github.graphmaquina.error.CallFailedException;
@@ -123,18 +124,20 @@ final class Transaction {
         }
     }
 
-    /** For reevaluate, which has no per-call input to carry; a cascade passes {@code null} to the full overload. */
+    /** For reevaluate, which has no per-call input to carry; a cascade passes no input to the full overload either. */
     <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine,
                                                                           E entity, T id, int depth) {
-        return transition(machine, entity, id, depth, null);
+        return transition(machine, entity, id, depth, Optional.empty());
     }
 
     /**
      * One step: resolve (current state, identifier) exactly once, guards, annotate, execute, failure route. When the
      * root's own step throws once it has read its state, it records that state and its edge for {@link #classify}.
+     * {@code input} is the operation input of the call, empty when it has none; the contexts hand it out as it is.
      */
     <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine,
-                                                                          E entity, T id, int depth, Object input) {
+                                                                          E entity, T id, int depth,
+                                                                          Optional<Object> input) {
         machine.requireTransition(id);
         EntityRef ref;
         S from;
@@ -175,7 +178,7 @@ final class Transaction {
                     phase = CallPhase.ACTION;
                 }
                 int savepoint = uow.savepoint();
-                uow.append(new LogEntry(ref, transition, depth));
+                appendHop(machine, ref, entity, transition, depth);
                 if (transition.action().isEmpty()) {
                     return new StepResult.Applied<>(from, id, transition.to());
                 }
@@ -210,9 +213,100 @@ final class Transaction {
     /** What the root's own step had read and selected when it threw; {@code edge} is empty when it selected none. */
     private record RootStep(Enum<?> from, Optional<? extends TransitionSpec<?, ?, ?>> edge) { }
 
+    /**
+     * Logs the hop of {@code entity} along {@code edge}. When the edge enters a state of the machine's own graph that
+     * holds a sub-machine, the start of that child follows right after it, as {@link #start} says; a machine whose
+     * graph binds no sub-machine pays one field read. Both entries sit after the savepoint the caller took, so a
+     * rollback to it drops them together.
+     */
+    private <E, S extends Enum<S>, T extends Enum<T>> void appendHop(DefaultStateMachine<E, S, T> machine,
+                                                                     EntityRef ref, E entity,
+                                                                     TransitionSpec<E, S, T> edge, int depth) {
+        uow.append(new LogEntry.Hop(ref, edge, depth));
+        if (machine.bindsSubmachines()) {
+            Optional<SubmachineSpec<E, S, T, ?, ?, ?>> binding = machine.definition().submachine(edge.to());
+            if (binding.isPresent()) {
+                start(machine, ref, edge, depth, machine, ref, entity, binding.get());
+            }
+        }
+    }
+
+    /**
+     * Starts the child that {@code spec} binds to the node {@code parent} entered: registers it with its machine's
+     * identity, reads where it stands, its pending state first, logs the start at the depth of the entering step, and
+     * starts the grandchild the same way when the initial state of the child is bound too. A child that cannot be
+     * found or read aborts the step that entered the node, which {@code machine}, {@code ref} and {@code edge}
+     * describe, before that step's action runs; nested, the abort poisons. An Error propagates.
+     */
+    private <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>> void start(
+            DefaultStateMachine<?, ?, ?> machine, EntityRef ref, TransitionSpec<?, ?, ?> edge, int depth,
+            DefaultStateMachine<E, S, T> parentMachine, EntityRef parentRef, E parent,
+            SubmachineSpec<E, S, T, P, Q, U> spec) {
+        DefaultStateMachine<P, Q, U> childMachine = registry.machineFor(spec.childKey());
+        P child = childOf(machine, ref, edge, depth, parentMachine, parent, spec);
+        EntityRef childRef;
+        Q previous;
+        try {
+            childRef = uow.register(childMachine.refOf(child));
+            previous = currentState(childMachine, childRef, child);
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            throw entryAbort(machine, ref, edge, depth,
+                    "reading the sub-machine of " + parentMachine.key() + "." + spec.state() + " threw " + e,
+                    Optional.of(e));
+        }
+        Q initial = childMachine.definition().initial();
+        uow.appendStart(new LogEntry.Start(childRef, previous, initial, parentRef, spec.state(), depth));
+        if (childMachine.bindsSubmachines()) {
+            Optional<SubmachineSpec<P, Q, U, ?, ?, ?>> grandchild = childMachine.definition().submachine(initial);
+            if (grandchild.isPresent()) {
+                start(machine, ref, edge, depth, childMachine, childRef, child, grandchild.get());
+            }
+        }
+    }
+
+    /**
+     * The child that {@code spec}'s childOf returns for {@code parent}. An empty answer, a null one, which breaks the
+     * lookup's contract, and a throwable that is not an Error, unwrapped from CompletionException and
+     * ExecutionException, each abort the entering step.
+     */
+    private <E, S extends Enum<S>, T extends Enum<T>, P> P childOf(
+            DefaultStateMachine<?, ?, ?> machine, EntityRef ref, TransitionSpec<?, ?, ?> edge, int depth,
+            DefaultStateMachine<E, S, T> parentMachine, E parent, SubmachineSpec<E, S, T, P, ?, ?> spec) {
+        String binding = parentMachine.key() + "." + spec.state();
+        Optional<P> child;
+        try {
+            child = spec.childOf().apply(parent);
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            Throwable cause = Unwrap.unwrap(e);
+            throw entryAbort(machine, ref, edge, depth, "the childOf of " + binding + " threw " + cause,
+                    Optional.of(cause));
+        }
+        if (child == null) {
+            throw entryAbort(machine, ref, edge, depth, "the childOf of " + binding + " returned null",
+                    Optional.empty());
+        }
+        if (child.isEmpty()) {
+            throw entryAbort(machine, ref, edge, depth,
+                    parentMachine.key() + " entered " + spec.state() + " with no " + spec.childKey(), Optional.empty());
+        }
+        return child.get();
+    }
+
+    /** An abort of the step that entered a bound node along {@code edge}, before its action ran. */
+    private TransitionAbortedException entryAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
+                                                  TransitionSpec<?, ?, ?> edge, int depth, String message,
+                                                  Optional<Throwable> cause) {
+        return abort(machine, ref, edge.from(), Optional.of(edge.transition()), Optional.of(edge.to()),
+                Optional.empty(), depth, message, cause);
+    }
+
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> runAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> transition,
-            int depth, int savepoint, Object input) {
+            int depth, int savepoint, Optional<Object> input) {
         ActionRef<E, S, T> action = transition.action().orElseThrow();
         int journalIndex = uow.appendJournal(new ActionRecord(machine.key(), entity, transition.from(),
                 transition.transition(), transition.to(), action.name(), depth, ActionStatus.RUNNING));
@@ -325,9 +419,15 @@ final class Transaction {
                             Optional.of(action.name()), ctx.depth(),
                             "the action " + action.name() + " returned a null stage", Optional.empty());
                 }
-                yield await(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
-                        Optional.of(action.name()), ctx.depth(), "the action " + action.name(), stage,
-                        edgeDeadline(edgeBudget));
+                Optional<ActionOutcome> result = await(machine, ref, ctx.from(), Optional.of(ctx.transition()),
+                        Optional.of(ctx.to()), Optional.of(action.name()), ctx.depth(), "the action " + action.name(),
+                        stage, edgeDeadline(edgeBudget));
+                if (result.isEmpty()) {
+                    throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
+                            Optional.of(action.name()), ctx.depth(), "the action " + action.name() + " returned null",
+                            Optional.empty());
+                }
+                yield result.orElseThrow();
             }
         };
         if (outcome == null) {
@@ -373,8 +473,13 @@ final class Transaction {
                             "the guard " + guard.name() + " returned a null stage", Optional.empty());
                 }
                 try {
-                    yield await(machine, ref, transition.from(), id, to, Optional.empty(), depth,
+                    Optional<GuardResult> result = await(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                             "the guard " + guard.name(), stage, uow.deadlineNanos());
+                    if (result.isEmpty()) {
+                        throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
+                                "the guard " + guard.name() + " returned null", Optional.empty());
+                    }
+                    yield result.orElseThrow();
                 } catch (ActionFailure failure) {
                     throw guardFailure(machine, ref, transition, depth, guard, "failed:", failure.getCause());
                 }
@@ -391,11 +496,11 @@ final class Transaction {
      * Waits under the deadline. Timeout, interruption and the refusal of the thread's ForkJoinPool to let it block
      * are aborts, each caused by what ended the wait; the user's stage is left running.
      */
-    private <R> R await(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Optional<Enum<?>> id,
+    private <R> Optional<R> await(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Optional<Enum<?>> id,
                         Optional<Enum<?>> to, Optional<String> action, int depth, String what, CompletionStage<R> stage,
                         long deadlineNanos) {
         try {
-            return Await.await(stage, deadlineNanos);
+            return Await.completedOrAwait(stage, deadlineNanos);
         } catch (Await.Timeout timeout) {
             throw abort(machine, ref, from, id, to, action, depth, "waiting for " + what + " timed out",
                     Optional.of(timeout.getCause()));
@@ -444,7 +549,7 @@ final class Transaction {
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> failing, int depth,
             int savepoint, Optional<T> recovery, Optional<Class<? extends FailureKind>> failureKind, String reason,
-            Optional<Throwable> cause, Object input) {
+            Optional<Throwable> cause, Optional<Object> input) {
         uow.rollbackTo(savepoint);
         S from = failing.from();
         Optional<String> actionName = failing.action().map(ActionRef::name);
@@ -461,7 +566,7 @@ final class Transaction {
         // The failed action has ended. Keep one frame for the entity, now identifying the recovery edge.
         uow.pop();
         uow.push(ref, route);
-        uow.append(new LogEntry(ref, route, depth));
+        appendHop(machine, ref, entity, route, depth);
         if (route.action().isPresent()) {
             ActionRef<E, S, T> action = route.action().orElseThrow();
             int journalIndex = uow.appendJournal(new ActionRecord(machine.key(), entity, from, recoveryId, route.to(),
@@ -703,7 +808,7 @@ final class Transaction {
         if (depth > uow.maxDepth()) {
             throw new CascadeDepthExceededException(call(), details(caller), uow.maxDepth());
         }
-        return outcomeOf(peer, transition(machine, peer, id, depth, null));
+        return outcomeOf(peer, transition(machine, peer, id, depth, Optional.empty()));
     }
 
     /** The cascade path plus the entity that was re-entered, with the identifier in flight and the one requested. */
@@ -713,7 +818,9 @@ final class Transaction {
         return new CascadeCycleException(call(), details(caller), route, flight.transition(), requested);
     }
 
-    /** Adapts a nested step to an outcome: records and reactions belong to the root, so they stay empty here. */
+    /**
+     * Adapts a nested step to an outcome: records, reactions and starts belong to the root, so they stay empty here.
+     */
     private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> outcomeOf(P peer, StepResult<Q, U> step) {
         return switch (step) {
             case StepResult.Applied<Q, U> applied ->

@@ -18,7 +18,8 @@ public enum CallPhase {
 
     /**
      * From the moment the call's guards passed until its step ended: its action, the cascades the action ran with
-     * their guards and actions, and the failure route. The journal says which actions ran.
+     * their guards and actions, the failure route, and the start of each sub-machine whose state an edge enters. The
+     * journal says which actions ran.
      */
     ACTION,
 

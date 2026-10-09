@@ -59,9 +59,20 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * The hops this root call committed, in log order, cascaded ones included. Empty for a rejected or ignored
-     * outcome, which committed nothing, and for any outcome a cascade returned, whose hops belong to its root.
+     * outcome, which committed nothing, and for any outcome a cascade returned, whose hops belong to its root. The
+     * start of a sub-machine is no hop: {@link #starts()} holds it.
      */
     default List<TransitionRecord<?, ?, ?>> records() {
+        return List.of();
+    }
+
+    /**
+     * The sub-machines this root call started, in log order, cascaded steps included: one per hop that entered a
+     * bound state, followed by the start of a grandchild when the child's initial state is bound too. Empty for a
+     * rejected or ignored outcome, which committed nothing, and for any outcome a cascade returned, whose starts belong
+     * to its root.
+     */
+    default List<SubmachineStart<?, ?, ?>> starts() {
         return List.of();
     }
 
@@ -91,16 +102,25 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * The selected edge ran. Returned by a root call, it committed: {@code records} holds every hop the root
-     * committed, cascaded ones included, in log order, and {@code reactions} the watch reactions of that commit.
-     * Returned by a cascade, it is written only if its root commits, and both lists are empty.
+     * committed, cascaded ones included, in log order, {@code reactions} the watch reactions of that commit, and
+     * {@code starts} the sub-machines it started. Returned by a cascade, it is written only if its root commits, and
+     * the three lists are empty. The constructor without {@code starts} reports none.
      */
     record Applied<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,
             @NonNull List<TransitionRecord<?, ?, ?>> records,
-            @NonNull List<Reaction> reactions) implements Outcome<E, S, T> {
+            @NonNull List<Reaction> reactions,
+            @NonNull List<SubmachineStart<?, ?, ?>> starts) implements Outcome<E, S, T> {
         public Applied {
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
+            starts = List.copyOf(starts);
+        }
+
+        /** Builds an applied outcome that started no sub-machine. */
+        public Applied(E entity, S from, T transition, S to, List<TransitionRecord<?, ?, ?>> records,
+                       List<Reaction> reactions) {
+            this(entity, from, transition, to, records, reactions, List.of());
         }
 
         @Override
@@ -222,11 +242,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * onFailure for a failsOn type. {@code failureKind} is the kind the action returned with its failure, whichever
      * route took it, or the kind of the rule whose type routed the throwable; it is empty for a failure returned
      * without one and for a throwable a failsOn type routed. The entity moves to {@code movedTo}. Returned by a root
-     * call, it committed, with {@code records} and {@code reactions} as in {@link Applied}; returned by a cascade, it
-     * is written only if its root commits, and both lists are empty. The constructor refuses a blank reason, and a
-     * present failure kind that {@link ActionOutcome#failed(Class, String)} would refuse; the constructor without
-     * {@code failureKind} reports none. When a throwable was routed, it carries it as {@code cause} and a reason
-     * composed from it, so {@link #explanation()} leaves that reason out.
+     * call, it committed, with {@code records}, {@code reactions} and {@code starts} as in {@link Applied}; returned
+     * by a cascade, it is written only if its root commits, and the three lists are empty. The constructor refuses a
+     * blank reason, and a present failure kind that {@link ActionOutcome#failed(Class, String)} would refuse; the
+     * constructors without {@code failureKind} report none, and those without {@code starts} report none either.
+     * When a throwable was routed, it carries it as {@code cause} and a reason composed from it, so
+     * {@link #explanation()} leaves that reason out.
      */
     record Failed<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,
@@ -234,8 +255,9 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             @NonNull String reason, @NonNull Optional<Throwable> cause,
             @NonNull List<TransitionRecord<?, ?, ?>> records,
             @NonNull List<Reaction> reactions,
-            @NonNull Optional<Class<? extends FailureKind>> failureKind) implements Outcome<E, S, T> {
-        /** Validates the reason and failure kind, and copies the committed records and reactions. */
+            @NonNull Optional<Class<? extends FailureKind>> failureKind,
+            @NonNull List<SubmachineStart<?, ?, ?>> starts) implements Outcome<E, S, T> {
+        /** Validates the reason and failure kind, and copies the committed records, reactions and starts. */
         public Failed {
             if (reason.isBlank()) {
                 throw new IllegalArgumentException("reason must not be blank");
@@ -243,13 +265,22 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             failureKind.ifPresent(FailureTypes::requireValidKind);
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
+            starts = List.copyOf(starts);
         }
 
-        /** Builds a routed failure without a failure kind. */
+        /** Builds a routed failure that started no sub-machine. */
+        public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
+                      Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions,
+                      Optional<Class<? extends FailureKind>> failureKind) {
+            this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
+                    failureKind, List.of());
+        }
+
+        /** Builds a routed failure without a failure kind that started no sub-machine. */
         public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
                       Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions) {
             this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
-                    Optional.empty());
+                    Optional.empty(), List.of());
         }
 
         @Override

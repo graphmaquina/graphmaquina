@@ -2,6 +2,7 @@ package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AmbiguousIdentityException;
@@ -10,6 +11,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +19,8 @@ import java.util.Optional;
 
 /**
  * State of a root transaction. Local to the thread running the transition; no other thread touches it.
- * log answers what state each entity ends up in and is reverted by savepoint; pendingStates indexes that
+ * log holds the hops and the sub-machine starts of the transaction, in order; it answers what state each entity ends
+ * up in, whichever kind of entry moved it, and is reverted by savepoint; pendingStates indexes that
  * answer by entity and undo puts it back entry by entry, so a rollback never rebuilds the index.
  * pendingStates and undo are built from the log by the first lookup that finds it non-empty, and append
  * maintains them from then on, so a root that never reads a pending state after its first append allocates
@@ -45,6 +48,8 @@ final class UnitOfWork {
      * unknown machine or an Error. COLLECT never collects such an abort: it stops at once.
      */
     private boolean poisonWrapsAForeignFailure;
+    /** Whether a start was ever appended: until one is, every entry of the log is a hop. */
+    private boolean started;
 
     UnitOfWork(int maxDepth, long deadlineNanos) {
         this.maxDepth = maxDepth;
@@ -88,28 +93,39 @@ final class UnitOfWork {
     int savepoint() { return log.size(); }
 
     /**
-     * Undoes the index hop by hop. The subList call rejects the savepoint exactly as the old rollback did, before
-     * mutating. Before the index exists there is nothing to undo but the log: the discarded entries are cleared
-     * and the first lookup builds the index from what remains. Each hop restores the map before its undo record and
+     * Undoes the index hop by hop. Before the index exists, savepoint zero clears the whole log directly; zero is
+     * valid even for an empty log. Every other path first uses subList to reject invalid savepoints before mutating.
+     * Before the index exists there is nothing to undo but the log: the discarded entries are cleared and the first
+     * lookup builds the index from what remains. Each hop restores the map before its undo record and
      * its log entry are removed, so an identity whose equals or hashCode throws stops the rollback with the three
      * still in step, and the same rollback can be retried.
      */
     void rollbackTo(int savepoint) {
+        Optional<Map<EntityRef, Enum<?>>> pending = pendingStates();
+        if (savepoint == 0 && pending.isEmpty()) {
+            log.clear();
+            return;
+        }
         List<LogEntry> discarded = log.subList(savepoint, log.size());
-        if (pendingStates == null) {
+        if (pending.isEmpty()) {
             discarded.clear();
             return;
         }
+        Map<EntityRef, Enum<?>> states = pending.orElseThrow();
         while (log.size() > savepoint) {
             PendingUndo old = undo.get(undo.size() - 1);
             if (old.present()) {
-                pendingStates.put(old.ref(), old.previous());
+                states.put(old.ref(), old.previous());
             } else {
-                pendingStates.remove(old.ref());
+                states.remove(old.ref());
             }
             undo.remove(undo.size() - 1);
             log.remove(log.size() - 1);
         }
+    }
+
+    private Optional<Map<EntityRef, Enum<?>>> pendingStates() {
+        return Optional.ofNullable(pendingStates);
     }
 
     /**
@@ -150,6 +166,12 @@ final class UnitOfWork {
     private static void index(Map<EntityRef, Enum<?>> states, List<PendingUndo> undo, LogEntry entry) {
         Enum<?> previous = states.put(entry.ref(), entry.to());
         undo.add(new PendingUndo(entry.ref(), previous != null, previous));
+    }
+
+    /** Appends the start of a sub-machine as {@link #append} appends a hop, and notes that the log holds starts. */
+    void appendStart(LogEntry.Start start) {
+        append(start);
+        started = true;
     }
 
     List<LogEntry> entries() { return List.copyOf(log); }
@@ -228,7 +250,17 @@ final class UnitOfWork {
     }
 
     /** The log grouped into one change per entity, read straight off the log without copying its entries. */
-    CommitSummary commitSummary() { return CommitSummary.from(log); }
+    CommitSummary commitSummary() {
+        if (journal.isEmpty() && log.size() == 1) {
+            Iterator<LogEntry> entries = log.iterator();
+            CommitSummary summary = CommitSummary.single(entries.next());
+            if (entries.hasNext()) {
+                entries.next();
+            }
+            return summary;
+        }
+        return CommitSummary.from(log);
+    }
 
     /** Chains per entity, in order of first appearance. Kept as the control the summary is compared against. */
     Map<EntityRef, List<LogEntry>> chains() {
@@ -240,16 +272,50 @@ final class UnitOfWork {
     }
 
     /**
-     * An immutable snapshot of the log in entry order, with newly created records that retain the
-     * original entity references. Later appends and rollbacks do not change an existing snapshot.
+     * An immutable snapshot of the hops of the log in entry order, with newly created records that retain the
+     * original entity references; the starts are left out. Later appends and rollbacks do not change an existing
+     * snapshot. A log that never held a start is read entry by entry, every entry being a hop.
      */
     List<TransitionRecord<?, ?, ?>> records() {
+        if (started) {
+            return hopRecords();
+        }
         TransitionRecord<?, ?, ?>[] records = new TransitionRecord<?, ?, ?>[log.size()];
         for (int index = 0; index < records.length; index++) {
-            LogEntry entry = log.get(index);
-            records[index] = Typed.record(entry.ref().key(), entry);
+            LogEntry.Hop hop = (LogEntry.Hop) log.get(index);
+            records[index] = Typed.record(hop.ref().key(), hop);
         }
         return List.of(records);
+    }
+
+    /** {@link #records()} of a log that held a start: the hops alone. */
+    private List<TransitionRecord<?, ?, ?>> hopRecords() {
+        List<TransitionRecord<?, ?, ?>> records = new ArrayList<>();
+        for (int index = 0; index < log.size(); index++) {
+            if (log.get(index) instanceof LogEntry.Hop hop) {
+                records.add(Typed.record(hop.ref().key(), hop));
+            }
+        }
+        return List.copyOf(records);
+    }
+
+    /**
+     * An immutable snapshot of the starts of the log in entry order, each typed by its child's key. A log that never
+     * held a start answers the shared empty list and allocates nothing.
+     */
+    List<SubmachineStart<?, ?, ?>> starts() {
+        return started ? loggedStarts() : List.of();
+    }
+
+    /** {@link #starts()} of a log that held a start. */
+    private List<SubmachineStart<?, ?, ?>> loggedStarts() {
+        List<SubmachineStart<?, ?, ?>> starts = new ArrayList<>();
+        for (int index = 0; index < log.size(); index++) {
+            if (log.get(index) instanceof LogEntry.Start start) {
+                starts.add(Typed.start(start.ref().key(), start));
+            }
+        }
+        return List.copyOf(starts);
     }
 
     /**

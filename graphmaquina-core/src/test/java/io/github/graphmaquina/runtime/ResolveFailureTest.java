@@ -13,10 +13,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatesWritten;
@@ -31,6 +35,7 @@ import io.github.graphmaquina.fixtures.DocTransition;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -326,5 +331,172 @@ class ResolveFailureTest {
             assertSame(b, error.pending().get(2));
         }
         assertEquals(List.of(DRAFT, REVIEW, REVIEW), List.of(root.status(), a.status(), b.status()));
+    }
+
+    /** A passing guard arms the grouping callback without adding an action to the journal. */
+    private static GraphDefinition<Doc, DocStatus, DocTransition> guardArmed(Runnable arm, AtomicInteger hooks) {
+        return StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .guard("Arm", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        arm.run();
+                        return GuardResult.pass();
+                    })
+                    .afterCommit("Audit", (Doc doc) -> hooks.incrementAndGet())
+                    .endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+    }
+
+    /** Action-free grouping preserves the thrown object and the pending root before any setter or hook. */
+    @Test
+    void aGuardArmedGroupingHashFailureWritesNothingAndRetainsItsCause() {
+        IllegalStateException boom = new IllegalStateException("grouping hash failed");
+        AtomicBoolean armed = new AtomicBoolean();
+        AtomicInteger writes = new AtomicInteger();
+        AtomicInteger hooks = new AtomicInteger();
+        Doc root = new Doc("root", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(guardArmed(() -> armed.set(true), hooks))
+                .state(Doc::status, (Doc doc, DocStatus state) -> {
+                    writes.incrementAndGet();
+                    doc.setStatus(state);
+                })
+                .identity((Doc doc) -> new Key(doc.id(), armed, boom))
+                .build();
+        CommitFailedException error = assertThrows(CommitFailedException.class, () -> machine.execute(root, SUBMIT));
+        assertSame(boom, error.getCause());
+        assertEquals(CallPhase.COMMIT, error.phase());
+        assertEquals(StatesWritten.NONE, error.statesWritten());
+        assertEquals(List.of(), error.journal());
+        assertEquals(List.of(), error.applied());
+        assertEquals(Optional.empty(), error.failedEntity());
+        assertEquals(1, error.pending().size());
+        assertSame(root, error.pending().get(0));
+        assertSame(root, error.call().entity());
+        assertEquals(DRAFT, root.status());
+        assertEquals(0, writes.get());
+        assertEquals(0, hooks.get());
+    }
+
+    /** A stable identity whose armed one-shot hash callback can throw, mutate state or use a saved context. */
+    private static final class HashCallbackKey {
+
+        private final String name;
+        private Runnable onHash = () -> { };
+
+        HashCallbackKey(String name) {
+            this.name = name;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other instanceof HashCallbackKey that && that.name.equals(name);
+        }
+
+        @Override
+        public int hashCode() {
+            Runnable callback = onHash;
+            onHash = () -> { };
+            callback.run();
+            return name.hashCode();
+        }
+    }
+
+    /** An Error armed by a passing guard escapes grouping unchanged before the first write. */
+    @Test
+    void aGuardArmedGroupingHashErrorPropagatesBeforeAnyWrite() {
+        AssertionError boom = new AssertionError("grouping hash broken");
+        HashCallbackKey identity = new HashCallbackKey("root");
+        AtomicInteger writes = new AtomicInteger();
+        AtomicInteger hooks = new AtomicInteger();
+        Doc root = new Doc("root", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(guardArmed(() -> {
+            identity.onHash = () -> { throw boom; };
+        }, hooks)).state(Doc::status, (Doc doc, DocStatus state) -> {
+            writes.incrementAndGet();
+            doc.setStatus(state);
+        }).identity((Doc doc) -> identity).build();
+        assertSame(boom, assertThrows(AssertionError.class, () -> machine.execute(root, SUBMIT)));
+        assertEquals(DRAFT, root.status());
+        assertEquals(0, writes.get());
+        assertEquals(0, hooks.get());
+    }
+
+    /** The grouping hash runs before the conflict read, so its domain mutation is refused before setters. */
+    @Test
+    void aGuardArmedGroupingHashStateMutationIsSeenByTheConflictCheck() {
+        HashCallbackKey identity = new HashCallbackKey("root");
+        AtomicInteger writes = new AtomicInteger();
+        AtomicInteger hooks = new AtomicInteger();
+        Doc root = new Doc("root", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(guardArmed(() -> {
+            identity.onHash = () -> root.setStatus(PUBLISHED);
+        }, hooks)).state(Doc::status, (Doc doc, DocStatus state) -> {
+            writes.incrementAndGet();
+            doc.setStatus(state);
+        }).identity((Doc doc) -> identity).build();
+        CommitFailedException error = assertThrows(CommitFailedException.class, () -> machine.execute(root, SUBMIT));
+        assertEquals(CallPhase.COMMIT, error.phase());
+        assertEquals(StatesWritten.NONE, error.statesWritten());
+        assertEquals(Optional.empty(), Optional.ofNullable(error.getCause()));
+        assertTrue(error.getMessage().contains("expected DRAFT but is PUBLISHED"), error.getMessage());
+        assertEquals(List.of(), error.journal());
+        assertEquals(List.of(), error.applied());
+        assertEquals(Optional.empty(), error.failedEntity());
+        assertEquals(1, error.pending().size());
+        assertSame(root, error.pending().get(0));
+        assertEquals(PUBLISHED, root.status());
+        assertEquals(0, writes.get());
+        assertEquals(0, hooks.get());
+    }
+
+    /** An action's saved context can append a peer during grouping, which still fails on the general path. */
+    @Test
+    void anActionArmedGroupingHashCascadeFailsBeforeWritesAndListsBothPlannedEntities() {
+        HashCallbackKey identity = new HashCallbackKey("root");
+        AtomicInteger writes = new AtomicInteger();
+        AtomicInteger hooks = new AtomicInteger();
+        Doc root = new Doc("root", DRAFT);
+        Doc peer = new Doc("peer", REVIEW);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        identity.onHash = () -> ctx.cascade(DOCS, peer, PUBLISH);
+                        return ActionOutcome.ok();
+                    })
+                    .afterCommit("Audit", (Doc doc) -> hooks.incrementAndGet())
+                    .endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED)
+                    .afterCommit("Audit", (Doc doc) -> hooks.incrementAndGet()).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(graph).state(Doc::status, (Doc doc, DocStatus state) -> {
+                    writes.incrementAndGet();
+                    doc.setStatus(state);
+                }).identity((Doc doc) -> doc == root ? identity : doc.id()))
+                .build()) {
+            CommitFailedException error = assertThrows(CommitFailedException.class,
+                    () -> registry.of(DOCS).execute(root, SUBMIT));
+            assertInstanceOf(ConcurrentModificationException.class, error.getCause());
+            assertEquals(CallPhase.COMMIT, error.phase());
+            assertEquals(StatesWritten.NONE, error.statesWritten());
+            assertEquals(List.of(), error.applied());
+            assertEquals(Optional.empty(), error.failedEntity());
+            assertEquals(2, error.pending().size());
+            assertSame(root, error.pending().get(0));
+            assertSame(peer, error.pending().get(1));
+            assertEquals(1, error.journal().size());
+            assertEquals("Submit", error.journal().get(0).action());
+            assertEquals(ActionStatus.OK, error.journal().get(0).status());
+        }
+        assertEquals(DRAFT, root.status());
+        assertEquals(REVIEW, peer.status());
+        assertEquals(0, writes.get());
+        assertEquals(0, hooks.get());
     }
 }

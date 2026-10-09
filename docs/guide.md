@@ -68,7 +68,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 | Coordinated state changes | Cascades share a unit of work; entity state setters run after the root transition succeeds or selects a handled failure route. |
 | Declared watches | After a peer commits, a matching owner can be reevaluated and execute the identifier the first matching rule names. |
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
-| Inspectable execution | Outcomes carry transition records and watch reactions; technical aborts carry diagnostic details where applicable. |
+| Inspectable execution | Outcomes carry transition records, watch reactions and the sub-machines a call started; technical aborts carry diagnostic details where applicable. |
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
@@ -1574,10 +1574,10 @@ only needs to know what happened and why reads it without narrowing:
 A cascade returns `Applied` or `Failed` to the action that called `cascade(...)`; a rejection inside it aborts the
 root instead. Both are provisional there: their hops are written only if the root commits.
 
-Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransition()`, `records()` and
-`reactions()`. `recordedState()` is `to` for `Applied`, `movedTo` for `Failed` and `from` for the other two.
-`requestedTransition()` is empty only for `Ignored`, which selected no edge at all. [Records, journals and
-reactions](#records-journals-and-reactions) describes what `records()` and `reactions()` return.
+Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransition()`, `records()`,
+`reactions()` and `starts()`. `recordedState()` is `to` for `Applied`, `movedTo` for `Failed` and `from` for the
+other two. `requestedTransition()` is empty only for `Ignored`, which selected no edge at all. [Records, journals and
+reactions](#records-journals-and-reactions) describes what `records()`, `reactions()` and `starts()` return.
 
 Read the classification with its limits in mind:
 
@@ -1674,6 +1674,11 @@ written. [Handle a failed call](#handle-a-failed-call) shows how to read them.
 - `records()` and `reactions()` answer on every outcome. A root `Applied` or `Failed` returns the
   transaction's records and the reactions of its commit; `Rejected`, `Ignored` and a nested `cascade` result
   return empty lists, the last because it is provisional and has no independent root commit or reaction list.
+- `starts()` answers on every outcome too, and is empty in the same cases. When an edge enters a state that holds a
+  sub-machine, the child moves to the initial state of its graph in the same unit of work, and a root `Applied` or
+  `Failed` returns a `SubmachineStart` for each such start, in log order: the child's machine and entity, the state
+  it had and the one it started in, the parent's machine, entity and bound state, and the depth of the step. A start
+  is no hop, so it is not in `records()` and runs no hook.
 - A failed call's journal uses `ActionRecord` and `ActionStatus` (`OK`, `FAILED`, `THREW`; never `RUNNING` once the
   call failed) to report actions that actually ran. A journal is execution evidence, not an undo log for external
   side effects.
@@ -2434,8 +2439,8 @@ A peer in another module or dependency JAR is rejected with `SG608`. Track the e
 
 ## Commit, hooks and observers
 
-![Root actions and cascades stage changes in a shared unit of work. Commit checks original states and writes
-final states; hooks and independent watch reactions follow, then the observers learn how the call
+![Root actions, cascades and sub-machines stage changes in a shared unit of work. Commit checks original states and
+writes final states; hooks and independent watch reactions follow, then the observers learn how the call
 ended.](images/commit-lifecycle.svg)
 
 Observers are told that the call starts before step 1. A call that completes tells them in step 8; one that throws tells
@@ -2444,7 +2449,8 @@ them before the exception leaves the call.
 The runtime's normal root execution follows this sequence:
 
 1. Read the effective entity state and resolve the single edge keyed by `(state, requested identifier)`.
-2. Evaluate guards and run actions, including any nested cascades, against a shared unit of work.
+2. Evaluate guards and run actions, including any nested cascades and the starts of the sub-machines whose state an
+   edge enters, against a shared unit of work.
 3. Before commit, verify that participating entities still have their expected original states.
 4. Write each participating entity's final state through its setter.
 5. Invalidate transition contexts and release the root reentrancy marker.
@@ -2463,7 +2469,8 @@ committed hop from such a hook. The shop notifies its carrier after the shipping
 
 Hooks run synchronously on the operation's thread. Any throwable a hook throws that is not an `Error`, checked ones
 included, becomes `AfterCommitException`: the state is already committed. Its `hook()` names the hook, `hop()` the
-committed hop it ran for, and `records()` every hop the call committed. An `Error` propagates unchanged instead. Either
+committed hop it ran for, `records()` every hop the call committed, and `starts()` every sub-machine the call started;
+a start runs no hook. An `Error` propagates unchanged instead. Either
 stops the remaining normal post-commit sequence, so do not assume later hooks or watch dispatch ran; the observers are
 told the call failed. Make externally visible notifications idempotent and choose durable delivery separately if your
 application needs it.
@@ -2555,8 +2562,8 @@ are notified in the order they were added.
 
 The entity owns its state. Initialize it in the constructor or field declaration, and persist it with your normal entity
 mapping. A null root state ends the call in a `TransitionAbortedException` of phase `RESOLVE` whose cause is an
-`UninitializedStateException`, and a cascaded peer's in one of phase `ACTION`; the runtime does not silently replace it
-with the graph's initial state.
+`UninitializedStateException`, and a cascaded peer's in one of phase `ACTION`, as does a sub-machine's, read when its
+parent enters the bound state; the runtime does not silently replace it with the graph's initial state.
 
 During a transition, only the runtime should call the state setter. It checks state again before commit to
 catch action code or outside code that changed it unexpectedly. This check is not a lock: your application
@@ -3101,21 +3108,21 @@ code runs.
 
 | Exception | What to investigate |
 | --- | --- |
-| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`. |
+| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`, and so does a sub-machine's, read when its parent enters the bound state. |
 | `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `from()`, `transition()` and `to()` are `Optional`. An abort raised before the entity's state was read, because its identity or its state could not be read, reports no state and no destination. One raised before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither identifier nor destination. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
 | `UnhandledFailureException` | An action failed, no recovery rule took the failure, and its edge has no `onFailure` route. |
 | `CascadeException` | Collected nested transition errors; inspect `errors()` and the journal. |
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
-| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, it arrives as the cause of that call's abort. |
-| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
+| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, or by the start of a sub-machine whose `childOf` answers an instance with the identity of another one already in the call, it arrives as the cause of that call's abort. |
+| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, a sub-machine's `childOf`, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, a sub-machine's `childOf`, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
 | `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. When the action lets this exception through, or the engine has the action's outcome, while the transaction is poisoned, the engine throws the failure that poisoned the transaction; the `PoisonedUnitOfWorkException` Javadoc says what else can end the call. |
 | `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
 | `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Thrown by a guard or an action, it arrives as the cause of that call's abort. |
 | `CommitFailedException` | Phase `COMMIT`: the commit stopped before its first setter, because the pre-commit check failed or reading the states or grouping the log by entity threw (`NONE` written), or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
-| `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()` and `records()` say what. |
+| `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()`, `records()` and `starts()` say what. |
 | `InvalidGraphException` | Programmatic DSL definition failed validation; inspect its problem list. |
 
 A refused request is not an exception. `Rejected` with `RejectionKind.NO_TRANSITION` is the ordinary answer
@@ -3151,7 +3158,7 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 | --- | --- |
 | Upgrade from 1.x | Deliberately incompatible. There is no alias of the retired API, no compatibility mode and no conversion of stored snapshots; [migrating to 2.0](migration-2.0.md) maps every contract. |
 | Watches between JARs/modules | Unsupported: both machines must be generated in one compilation. External peers fail with `SG608`; [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1). |
-| State hierarchy and parallel regions | A state can hold a sub-machine: another machine bound to it. Parallel or orthogonal regions, a state that holds two machines at once, are not modelled. |
+| State hierarchy and parallel regions | A state can hold a sub-machine: another machine bound to it, which entering the state starts. Parallel or orthogonal regions, a state that holds two machines at once, are not modelled. |
 | Event scheduling and automatic path execution | Absent. Each operation resolves and executes one edge; nothing walks a path or fires on a timer. |
 | Unauthorised-cycle reporting | One witness per cyclic strongly connected component, not one message per elementary cycle. `Graph.cycles()` itself is unchanged. |
 | IDE acceptance | Generated-root build integration is automated; manual IntelliJ navigation, editor completion and rename/regeneration checks remain pending. |

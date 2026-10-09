@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.ActionRef;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionRecord;
@@ -32,12 +33,12 @@ class UnitOfWorkRecordsTest {
     enum OtherTransition { RUN }
 
     /** Builds a move whose entity identity and cascade depth can be checked in the snapshot. */
-    private static LogEntry move(Object entity, int depth) {
+    private static LogEntry.Hop move(Object entity, int depth) {
         MachineKey<Object, State, Transition> key = MachineKey.of(Object.class, State.class, Transition.class);
         EntityRef ref = new EntityRef(key, depth, entity);
         TransitionSpec<Object, State, Transition> spec = new TransitionSpec<>(State.A, Transition.GO, State.B,
                 Optional.empty(), List.of(), Optional.empty(), List.of(), Optional.empty(), Optional.empty());
-        return new LogEntry(ref, spec, depth);
+        return new LogEntry.Hop(ref, spec, depth);
     }
 
     /** Empty, small and larger snapshots retain entry order and reject mutation. */
@@ -81,7 +82,7 @@ class UnitOfWorkRecordsTest {
         TransitionSpec<String, OtherState, OtherTransition> spec = new TransitionSpec<>(
                 OtherState.BEFORE, OtherTransition.RUN, OtherState.AFTER, Optional.of(action), List.of(),
                 Optional.empty(), List.of(), Optional.empty(), Optional.empty());
-        work.append(new LogEntry(new EntityRef(key, "id", second), spec, 7));
+        work.append(new LogEntry.Hop(new EntityRef(key, "id", second), spec, 7));
 
         List<TransitionRecord<?, ?, ?>> records = work.records();
         assertEquals(2, records.size());
@@ -130,15 +131,48 @@ class UnitOfWorkRecordsTest {
     @Test
     void malformedEntriesStillFailAtTheTypedBoundary() {
         MachineKey<String, State, Transition> key = MachineKey.of(String.class, State.class, Transition.class);
-        LogEntry validEnums = move(new Object(), 0);
+        LogEntry.Hop validEnums = move(new Object(), 0);
         UnitOfWork wrongEntity = new UnitOfWork(100, Long.MAX_VALUE);
-        wrongEntity.append(new LogEntry(new EntityRef(key, 1, new Object()), validEnums.spec(), 0));
+        wrongEntity.append(new LogEntry.Hop(new EntityRef(key, 1, new Object()), validEnums.spec(), 0));
         assertThrows(ClassCastException.class, wrongEntity::records);
 
         MachineKey<Object, OtherState, OtherTransition> otherKey =
                 MachineKey.of(Object.class, OtherState.class, OtherTransition.class);
         UnitOfWork wrongEnums = new UnitOfWork(100, Long.MAX_VALUE);
-        wrongEnums.append(new LogEntry(new EntityRef(otherKey, 1, new Object()), validEnums.spec(), 0));
+        wrongEnums.append(new LogEntry.Hop(new EntityRef(otherKey, 1, new Object()), validEnums.spec(), 0));
         assertThrows(ClassCastException.class, wrongEnums::records);
+    }
+
+    /**
+     * A start is no hop: records leaves it out, in a log that interleaves both, and starts reads it back typed by
+     * its child's key, with the parent's key and instance. A rollback drops it as it drops a hop.
+     */
+    @Test
+    void recordsLeaveStartsOutAndStartsReadThemBack() {
+        UnitOfWork work = new UnitOfWork(100, Long.MAX_VALUE);
+        assertEquals(List.of(), work.starts());
+        Object parent = new Object();
+        LogEntry.Hop entered = move(parent, 0);
+        work.append(entered);
+        MachineKey<String, OtherState, OtherTransition> childKey =
+                MachineKey.of(String.class, OtherState.class, OtherTransition.class);
+        String child = new String("child");
+        work.appendStart(new LogEntry.Start(new EntityRef(childKey, "c", child), OtherState.AFTER, OtherState.BEFORE,
+                entered.ref(), State.B, 0));
+        Object cascaded = new Object();
+        work.append(move(cascaded, 1));
+        List<TransitionRecord<?, ?, ?>> records = work.records();
+        assertEquals(2, records.size());
+        assertSame(parent, records.get(0).entity());
+        assertSame(cascaded, records.get(1).entity());
+        List<SubmachineStart<?, ?, ?>> starts = work.starts();
+        assertEquals(List.of(new SubmachineStart<>(childKey, child, OtherState.AFTER, OtherState.BEFORE,
+                entered.ref().key(), parent, State.B, 0)), starts);
+        assertSame(child, starts.get(0).child());
+        assertSame(parent, starts.get(0).parent());
+        assertThrows(UnsupportedOperationException.class, starts::clear);
+        work.rollbackTo(1);
+        assertEquals(List.of(), work.starts());
+        assertEquals(1, work.records().size());
     }
 }

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="830" viewBox="0 0 1440 830" role="img" aria-labelledby="title desc">
-<title id="title">Transition and commit lifecycle</title><desc id="desc">The engine evaluates guards and runs actions, staging root and cascade state changes in a shared unit of work. Commit checks and writes state. Hooks and watch reactions run afterward, then the observers learn how the call ended; external side effects are not rolled back automatically.</desc>
+<title id="title">Transition and commit lifecycle</title><desc id="desc">The engine evaluates guards and runs actions, staging the state changes of the root, its cascades and the sub-machines its hops enter, which start at their initial states, in a shared unit of work. Commit checks and writes state. Hooks and watch reactions run afterward, then the observers learn how the call ended; external side effects are not rolled back automatically.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
@@ -16,7 +16,7 @@
 <rect x="78" y="293" width="4" height="122" rx="2" fill="#7aafff" />
 <text x="102" y="319" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Guards + actions</text>
 <text x="102" y="359" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Root operation</text>
-<text x="102" y="390" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Nested cascades</text>
+<text x="102" y="390" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#a9b8ce" text-anchor="start">Cascades, sub-machines</text>
 <rect x="467" y="275" width="347" height="158" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <rect x="467" y="293" width="4" height="122" rx="2" fill="#c3a2ff" />
 <text x="491" y="319" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="27" font-weight="650" fill="#f2f6fc" text-anchor="start">Pending changes</text>

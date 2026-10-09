@@ -14,6 +14,7 @@ import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
@@ -141,9 +142,10 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         requireTransition(transition);
         Reentrancy.check(key(), entity);
         Optional<Enum<?>> requested = presentTransitions.get(transition.ordinal());
+        Optional<Object> operationInput = Optional.ofNullable(input);
         Optional<Observed> observed = observe(entity, requested, false);
         return runRoot(entity, requested, false, observed,
-                (Transaction tx) -> tx.transition(this, entity, transition, 0, input), 0);
+                (Transaction tx) -> tx.transition(this, entity, transition, 0, operationInput), 0);
     }
 
     void requireTransition(T transition) {
@@ -277,6 +279,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         try {
             StepResult<S, T> step;
             List<TransitionRecord<?, ?, ?>> records;
+            List<SubmachineStart<?, ?, ?>> starts;
             List<LogEntry> committed;
             CommitSummary summary;
             Reentrancy.enter(key(), entity);
@@ -287,10 +290,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                     tx.enter(CallPhase.COMMIT);
                     summary = Commit.apply(registry, tx);
                     records = uow.records();
+                    starts = uow.starts();
                     committed = uow.entries();
                 } else {
                     summary = CommitSummary.EMPTY;
                     records = List.of();
+                    starts = List.of();
                     committed = List.of();
                 }
             } finally {
@@ -307,7 +312,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             outcome = switch (step) {
                 case StepResult.Applied<S, T> applied ->
                         new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(),
-                                records, reactions);
+                                records, reactions, starts);
                 case StepResult.Ignored<S, T> ignored ->
                         new Outcome.Ignored<>(entity, ignored.from(), ignored.reason());
                 case StepResult.Rejected<S, T> rejected ->
@@ -316,7 +321,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 case StepResult.Failed<S, T> failed ->
                         new Outcome.Failed<>(entity, failed.from(), failed.transition(), failed.to(),
                                 failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
-                                records, reactions, failed.failureKind());
+                                records, reactions, failed.failureKind(), starts);
             };
         } catch (Throwable thrown) {
             if (thrown instanceof Error fatal) {
@@ -365,19 +370,23 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     /**
-     * Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected. Any
-     * throwable a hook throws that is not an Error, checked ones included, becomes an AfterCommitException of the call,
-     * naming the hop and carrying every hop the call committed; an Error propagates unchanged.
+     * Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected; a
+     * sub-machine's start runs no hook. Any throwable a hook throws that is not an Error, checked ones included,
+     * becomes an AfterCommitException of the call, naming the hop and carrying every hop and every start the call
+     * committed; an Error propagates unchanged.
      */
     private void runHooks(Transaction tx, List<TransitionRecord<?, ?, ?>> records, List<LogEntry> committed) {
-        for (LogEntry entry : committed) {
-            runHook(tx, records, registry.anyMachineFor(entry.ref().key()), entry);
+        for (int index = 0; index < committed.size(); index++) {
+            LogEntry entry = committed.get(index);
+            if (entry instanceof LogEntry.Hop hop) {
+                runHook(tx, records, registry.anyMachineFor(hop.ref().key()), hop);
+            }
         }
     }
 
     private <P, Q extends Enum<Q>, U extends Enum<U>> void runHook(
             Transaction tx, List<TransitionRecord<?, ?, ?>> records, DefaultStateMachine<P, Q, U> owner,
-            LogEntry entry) {
+            LogEntry.Hop entry) {
         TransitionSpec<P, Q, U> spec = Typed.spec(owner.key(), entry);
         if (spec.afterCommit().isEmpty()) {
             return;
@@ -391,8 +400,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw new AfterCommitException(tx.call(), tx.uow().journal(), records, Typed.record(owner.key(), entry),
-                    hook.name(), e);
+            throw new AfterCommitException(tx.call(), tx.uow().journal(), records, tx.uow().starts(),
+                    Typed.record(owner.key(), entry), hook.name(), e);
         }
     }
 
