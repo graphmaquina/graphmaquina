@@ -13,11 +13,13 @@ import io.github.graphmaquina.error.InvalidGraphException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -251,9 +253,10 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
      * SG805 when the sub-machines of this graph, followed through the children's own sub-machines, reach a definition
      * of this graph's own key. The walk is breadth first, so the path it reports is a shortest one: it starts from
      * this graph's bindings in the order of their states, and visits each child's states in declaration order. It
-     * expands each key once per path, so distinct definitions of the same key in separate paths are checked and a
-     * hand-written definition that hands out new instances of itself still ends. A return to this graph's key is
-     * checked before pruning a repeated ancestor.
+     * expands each definition once, the first time it reaches it, so its cost grows with the definitions and bindings
+     * it reaches, never with the number of paths to them; distinct definitions of the same key are each expanded. It
+     * never expands a key that is already on the path, so a hand-written definition that hands out new instances of
+     * itself still ends. A return to this graph's key is checked before either pruning.
      */
     private void compositionCycle() {
         List<SubmachineDraft<E, S, T, ?, ?, ?>> byState = new ArrayList<>(submachines);
@@ -262,6 +265,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         for (SubmachineDraft<E, S, T, ?, ?, ?> draft : byState) {
             queue.add(new Visit(draft.child(), key + "." + draft.state().name(), Set.of(key)));
         }
+        Set<GraphDefinition<?, ?, ?>> expanded = Collections.newSetFromMap(new IdentityHashMap<>());
         while (!queue.isEmpty()) {
             Visit visit = queue.removeFirst();
             MachineKey<?, ?, ?> reached = visit.definition().key();
@@ -270,7 +274,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
                         + " -> " + key);
                 return;
             }
-            if (!visit.ancestors().contains(reached)) {
+            if (!visit.ancestors().contains(reached) && expanded.add(visit.definition())) {
                 Set<MachineKey<?, ?, ?>> ancestors = new HashSet<>(visit.ancestors());
                 ancestors.add(reached);
                 visitChildren(visit.definition(), visit.path(), ancestors, queue);

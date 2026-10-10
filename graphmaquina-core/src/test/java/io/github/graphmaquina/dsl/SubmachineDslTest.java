@@ -454,6 +454,19 @@ class SubmachineDslTest {
         assertEquals(PAYMENTS, graph.submachine(NEW).orElseThrow().childKey());
     }
 
+    /**
+     * The walk expands each definition once, however many paths reach it: a top that binds a middle machine in two
+     * states, which binds a counted leaf in two states, reads the leaf's bindings once per state, not once per path.
+     */
+    @Test
+    void theWalkExpandsADefinitionReachedByManyPathsOnce() {
+        Counted<Leaf> leaf = new Counted<>(ladderStep(Leaf.class, Optional.empty()));
+        GraphDefinition<Middle, Rung, RungMove> middle = ladderStep(Middle.class, Optional.of(leaf));
+        leaf.reads = 0;
+        ladderStep(Top.class, Optional.of(middle));
+        assertEquals(Rung.values().length, leaf.reads);
+    }
+
     /** A chain of sub-machines that never comes back to the parent's own key is no cycle. */
     @Test
     void aChainThatNeverReachesTheParentsKeyIsValid() {
@@ -544,6 +557,108 @@ class SubmachineDslTest {
             }
             return Optional.of(new SubmachineSpec<>(state, new SelfBinding(), (Payment payment) -> Optional.empty(),
                     (Payment payment) -> Optional.empty(), Map.of(PaymentStatus.CAPTURED, PaymentTransition.CAPTURE)));
+        }
+
+        @Override
+        public boolean hasAsync() {
+            return delegate.hasAsync();
+        }
+    }
+
+    /** States of one step of a ladder of machines: A leads to B or C, each of which leads to D. */
+    enum Rung { A, B, C, D }
+
+    /** Identifiers of a ladder step; X and Y are the exits of B and C when they hold the step below. */
+    enum RungMove { GO_B, GO_C, X, Y }
+
+    /** The entity of the top step of the ladder. */
+    static final class Top { }
+
+    /** The entity of the middle step of the ladder. */
+    static final class Middle { }
+
+    /** The entity of the bottom step of the ladder. */
+    static final class Leaf { }
+
+    /** One step of a ladder over {@code entity}; when {@code below} is present, B and C both bind it. */
+    private static <E, P> GraphDefinition<E, Rung, RungMove> ladderStep(
+            Class<E> entity, Optional<GraphDefinition<P, Rung, RungMove>> below) {
+        GraphBuilder<E, Rung, RungMove> graph = StateGraph.define(MachineKey.of(entity, Rung.class, RungMove.class))
+                .initial(Rung.A).terminal(Rung.D)
+                .statePolicy(Rung.A, "a step goes to B or C").statePolicy(Rung.B, "B goes to D")
+                .statePolicy(Rung.C, "C goes to D")
+                .transition(RungMove.GO_B, Rung.A, Rung.B).endTransition()
+                .transition(RungMove.GO_C, Rung.A, Rung.C).endTransition()
+                .transition(RungMove.X, Rung.B, Rung.D).endTransition()
+                .transition(RungMove.Y, Rung.C, Rung.D).endTransition();
+        if (below.isPresent()) {
+            graph.submachine(Rung.B, below.get(), (E parent) -> Optional.empty(), (P child) -> Optional.empty())
+                    .exit(Rung.D, RungMove.X).endSubmachine()
+                    .submachine(Rung.C, below.get(), (E parent) -> Optional.empty(), (P child) -> Optional.empty())
+                    .exit(Rung.D, RungMove.Y).endSubmachine();
+        }
+        return graph.build();
+    }
+
+    /** A definition that counts how many times its bindings are read, and otherwise answers as its delegate. */
+    private static final class Counted<E> implements GraphDefinition<E, Rung, RungMove> {
+
+        private final GraphDefinition<E, Rung, RungMove> delegate;
+        private int reads;
+
+        Counted(GraphDefinition<E, Rung, RungMove> delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public MachineKey<E, Rung, RungMove> key() {
+            return delegate.key();
+        }
+
+        @Override
+        public Rung initial() {
+            return delegate.initial();
+        }
+
+        @Override
+        public Set<Rung> terminals() {
+            return delegate.terminals();
+        }
+
+        @Override
+        public DirectedGraph<Rung, RungMove> graph() {
+            return delegate.graph();
+        }
+
+        @Override
+        public List<TransitionSpec<E, Rung, RungMove>> transitions() {
+            return delegate.transitions();
+        }
+
+        @Override
+        public List<TransitionSpec<E, Rung, RungMove>> outgoingFrom(Rung state) {
+            return delegate.outgoingFrom(state);
+        }
+
+        @Override
+        public Optional<TransitionSpec<E, Rung, RungMove>> findTransition(Rung from, RungMove transition) {
+            return delegate.findTransition(from, transition);
+        }
+
+        @Override
+        public StatePolicy<Rung, RungMove> policy(Rung state) {
+            return delegate.policy(state);
+        }
+
+        @Override
+        public Optional<WatchSpec<E, Rung, RungMove, ?, ?, ?>> watch(Rung state) {
+            return delegate.watch(state);
+        }
+
+        @Override
+        public Optional<SubmachineSpec<E, Rung, RungMove, ?, ?, ?>> submachine(Rung state) {
+            reads++;
+            return delegate.submachine(state);
         }
 
         @Override
