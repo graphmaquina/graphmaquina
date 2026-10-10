@@ -37,7 +37,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletionStage;
-import java.util.function.BiFunction;
 
 /**
  * Engine of a root transaction. All the state of the transition lives here and in the UnitOfWork, the phase of its
@@ -413,10 +412,11 @@ final class Transaction {
     /**
      * Spec R8: the step of a child along {@code last} ended in {@code terminal}, a terminal state of its graph, under
      * {@code binding}, which held it with the parent {@code parentRef}. The parent's exit runs unless the parent is in
-     * flight, entering the node or leaving it, or its pending state left the node, or its childOf no longer answers
-     * this child: an action of the child's step may have moved the parent or replaced the child. Otherwise the exit
-     * retains the binding's node as its source, so a parent moved externally since the binding check conflicts with
-     * that source at commit before any state is written. The parent's state is not read again here.
+     * flight, entering the node or leaving it, or its pending state left the node: an action of the child's step may
+     * have moved it. Otherwise the exit retains the binding's node as its source, so a parent moved externally since
+     * the binding check conflicts with that source at commit before any state is written. Neither the parent's state
+     * nor its childOf is read again: the binding check at the start of the child's step decided which parent holds
+     * the child, and only this unit of work's own effects can cancel the exit.
      */
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> void exitParent(
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> last, Enum<?> terminal,
@@ -427,10 +427,6 @@ final class Transaction {
         }
         Optional<Enum<?>> pending = uow.pendingState(parentRef);
         if (pending.isPresent() && pending.get() != spec.state()) {
-            return;
-        }
-        if (!answersChild(binding, parentRef, ref, (String message, Optional<Throwable> cause) -> abort(machine, ref,
-                from, Optional.of(last), Optional.of(terminal), Optional.empty(), depth, message, cause))) {
             return;
         }
         DefaultStateMachine<A, B, C> parentMachine = registry.machineFor(binding.parentKey());
@@ -578,20 +574,39 @@ final class Transaction {
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> id, int depth,
             SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef) {
         SubmachineSpec<A, B, C, P, Q, U> spec = binding.spec();
-        BiFunction<String, Optional<Throwable>, TransitionAbortedException> aborts =
-                (String message, Optional<Throwable> cause) -> bindingAbort(machine, ref, from, id, depth, message,
-                        cause);
-        if (!answersChild(binding, parentRef, ref, aborts)) {
+        String name = binding.parentKey() + "." + spec.state();
+        A parent = binding.parentKey().entity().cast(parentRef.instance());
+        Optional<P> child;
+        try {
+            child = spec.childOf().apply(parent);
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable e) {
+            Throwable cause = Unwrap.unwrap(e);
+            throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " threw " + cause,
+                    Optional.of(cause));
+        }
+        if (child == null) {
+            throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " returned null",
+                    Optional.empty());
+        }
+        if (child.isEmpty()) {
             return Optional.empty();
         }
-        A parent = binding.parentKey().entity().cast(parentRef.instance());
         B state;
         try {
+            EntityRef answered = registry.machineFor(spec.childKey()).refOf(child.get());
+            if (!answered.equals(ref)) {
+                return Optional.empty();
+            }
+            if (answered.instance() != ref.instance()) {
+                throw new AmbiguousIdentityException(ref.key(), ref.id(), ref.instance(), answered.instance());
+            }
             state = currentState(registry.machineFor(binding.parentKey()), parentRef, parent);
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw aborts.apply("checking the binding " + binding.parentKey() + "." + spec.state() + " threw " + e,
+            throw bindingAbort(machine, ref, from, id, depth, "checking the binding " + name + " threw " + e,
                     Optional.of(e));
         }
         if (state == spec.state()) {
@@ -603,50 +618,6 @@ final class Transaction {
             return Optional.of(Hold.LEAVING);
         }
         return Optional.empty();
-    }
-
-    /**
-     * Whether the childOf of {@code binding} answers the child {@code ref} for the parent {@code parentRef}: another
-     * child, or none, does not; another instance with the child's identity throws, with an
-     * {@link AmbiguousIdentityException} as cause. A childOf that returns null or throws, and a child whose identity
-     * cannot be read, throw too. {@code aborts} builds each of those aborts from its message and cause, so the binding
-     * check and the exit's check describe their own step.
-     */
-    private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> boolean answersChild(
-            SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef, EntityRef ref,
-            BiFunction<String, Optional<Throwable>, TransitionAbortedException> aborts) {
-        SubmachineSpec<A, B, C, P, Q, U> spec = binding.spec();
-        String name = binding.parentKey() + "." + spec.state();
-        A parent = binding.parentKey().entity().cast(parentRef.instance());
-        Optional<P> child;
-        try {
-            child = spec.childOf().apply(parent);
-        } catch (Error fatal) {
-            throw fatal;
-        } catch (Throwable e) {
-            Throwable cause = Unwrap.unwrap(e);
-            throw aborts.apply("the childOf of " + name + " threw " + cause, Optional.of(cause));
-        }
-        if (child == null) {
-            throw aborts.apply("the childOf of " + name + " returned null", Optional.empty());
-        }
-        if (child.isEmpty()) {
-            return false;
-        }
-        try {
-            EntityRef answered = registry.machineFor(spec.childKey()).refOf(child.get());
-            if (!answered.equals(ref)) {
-                return false;
-            }
-            if (answered.instance() != ref.instance()) {
-                throw new AmbiguousIdentityException(ref.key(), ref.id(), ref.instance(), answered.instance());
-            }
-            return true;
-        } catch (Error fatal) {
-            throw fatal;
-        } catch (Throwable e) {
-            throw aborts.apply("checking the binding " + name + " threw " + e, Optional.of(e));
-        }
     }
 
     /**

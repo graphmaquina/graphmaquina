@@ -1567,7 +1567,7 @@ entity, to the application's transaction or to external systems. To assert kinds
 
 ## Handle transition outcomes
 
-![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent does not hold it is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a sub-machine its parent still holds also commits the parent's exit.](images/operation-decisions.svg)
+![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent does not hold it is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a held sub-machine also commits the parent's exit, unless the step moved the parent.](images/operation-decisions.svg)
 
 `Outcome<E, S, T>` is a sealed interface with four variants. Every outcome classifies itself, so a caller that
 only needs to know what happened and why reads it without narrowing:
@@ -2487,8 +2487,11 @@ machines. Three rules make the contract:
   left the state, or holds another child or none there. A child for which no binding finds a parent is a free machine
   and runs as usual.
 - When a step of a bound child ends in one of its terminal states, that state selects the parent's exit. The exit runs
-  in the same unit of work, one level deeper, and commits with the child. When the step's own action moved the parent
-  out of the bound state, or made its `childOf` answer another child or none, no exit runs.
+  in the same unit of work, one level deeper, and commits with the child. The binding is judged when the child's step
+  begins: when the step ends, the exit runs unless the parent is in flight or the call itself moved it out of the
+  bound state. The parent's state and `childOf` are not read again, so replacing the parent's child during the
+  child's own action does not cancel the exit; to keep it from running, move the parent out of the state in the same
+  call.
 
 ### Declare a sub-machine
 
@@ -2777,9 +2780,9 @@ test `AsyncExitTest` holds the exit open with a `ControlledAsyncAction`.
 tests pin a booking with one payment machine bound in two states in
 [submachine-shared-child.dot](../graphmaquina-core/src/test/resources/golden/submachine-shared-child.dot).
 
-A call that ends a child its parent still holds commits the parent's exit, so the commit's check of the original
-states covers the parent. A call that moves a child to a state that is not terminal leaves the parent out of the
-commit, so serialize the calls of a parent and its sub-machines as those of one aggregate, as
+A call that ends a child its parent held commits the parent's exit, or moved the parent itself, so the commit's check
+of the original states covers the parent. A call that moves a child to a state that is not terminal leaves the parent
+out of the commit, so serialize the calls of a parent and its sub-machines as those of one aggregate, as
 [initialize and protect state](#initialize-and-protect-state) explains.
 
 Assert bindings, starts and both refusals with the typed views of the testing guide's

@@ -480,6 +480,45 @@ class SubmachineAsyncTest {
     }
 
     /**
+     * While the capture waits, another call cancels the booking and, in that edge's action, makes another payment its
+     * deposit. The capture still ends the payment the binding held when its step began, so the exit runs from DEPOSIT
+     * and puts the booking in the commit, whose check sees that the booking moved and writes nothing.
+     */
+    @Test
+    void aParentThatAnotherCallMovesAndReassignsWhileItsChildWaitsFailsTheCommitCheck() throws Exception {
+        Map<String, CompletableFuture<CompletableFuture<ActionOutcome>>> invoked =
+                new ConcurrentHashMap<>(Map.of("p1", new CompletableFuture<>()));
+        capture.park(invoked, Payment::id);
+        Payment deposit = new Payment("p1", PaymentStatus.AUTHORIZING);
+        Payment replacement = new Payment("p2", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
+        GraphDefinition<Booking, BookingStatus, BookingTransition> reassigning = bookings(payments,
+                UnaryOperator.identity(), UnaryOperator.identity(),
+                (TransitionBuilder<Booking, BookingStatus, BookingTransition> edge) -> edge.action("Reassign",
+                        (TransitionContext<Booking, BookingStatus, BookingTransition> ctx) -> {
+                            ctx.entity().attachDeposit(replacement);
+                            return ActionOutcome.ok();
+                        }),
+                UnaryOperator.identity(), Optional.empty());
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(bookingMachine(reassigning).asyncTimeout(HOUR))
+                .add(paymentMachine(payments).asyncTimeout(HOUR))
+                .build()) {
+            CompletableFuture<Outcome<Payment, PaymentStatus, PaymentTransition>> call =
+                    registry.of(PAYMENTS).async().execute(deposit, PaymentTransition.CAPTURE);
+            CompletableFuture<ActionOutcome> stage = invoked.get("p1").get(10, TimeUnit.SECONDS);
+            assertEquals(OutcomeCode.APPLIED, registry.of(BOOKINGS).execute(booking, BookingTransition.CANCEL).code());
+            stage.complete(ActionOutcome.ok());
+            ExecutionException error = assertThrows(ExecutionException.class,
+                    () -> call.get(10, TimeUnit.SECONDS));
+            CommitFailedException failure = assertInstanceOf(CommitFailedException.class, error.getCause());
+            assertEquals(StatesWritten.NONE, failure.statesWritten());
+            assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
+            assertEquals(BookingStatus.CANCELLED, booking.status());
+        }
+    }
+
+    /**
      * While a hold, which ends no sub-machine, waits, another call cancels the booking. The booking is not in the
      * hold's commit, so nothing sees that it moved: the hold commits, and the application has to serialize the calls
      * of one aggregate.

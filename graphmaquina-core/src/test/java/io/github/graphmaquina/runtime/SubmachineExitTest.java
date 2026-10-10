@@ -4,7 +4,6 @@ import static io.github.graphmaquina.fixtures.Billing.BOOKINGS;
 import static io.github.graphmaquina.fixtures.Billing.PAYMENTS;
 import static io.github.graphmaquina.fixtures.Billing.RISKS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -30,7 +29,6 @@ import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.api.WatchCondition;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.AfterCommitException;
-import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.CascadeDepthExceededException;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.TransitionAbortedException;
@@ -59,13 +57,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /**
- * The atomic exit: a child whose step ends in a terminal state while its parent is in the bound node and still holds it
- * runs the exit that terminal selects, as a step of the parent at the next depth, in the same unit of work, once the
- * child's own step is no longer in flight. An exit runs its guards, its action and its failure route as any step; a
- * rejection or an unhandled failure inside it aborts the whole call. A parent that enters a node whose child already
- * stands in a terminal state exits at the end of its own step. A parent in flight, leaving the node or entering it,
- * never exits from the child's step, and an exit that ends its parent in a terminal state runs the grandparent's exit
- * in turn.
+ * The atomic exit: a child whose parent held it when its step began, and whose step ends in a terminal state with that
+ * parent still in the bound node, runs the exit that terminal selects, as a step of the parent at the next depth, in
+ * the same unit of work, once the child's own step is no longer in flight. An exit runs its guards, its action and its
+ * failure route as any step; a rejection or an unhandled failure inside it aborts the whole call. A parent that enters
+ * a node whose child already stands in a terminal state exits at the end of its own step. A parent in flight, leaving
+ * the node or entering it, never exits from the child's step, and an exit that ends its parent in a terminal state runs
+ * the grandparent's exit in turn.
  */
 class SubmachineExitTest {
 
@@ -498,11 +496,11 @@ class SubmachineExitTest {
     }
 
     /**
-     * The capture's own action makes another payment the booking's deposit. When the capture ends, the booking's
-     * childOf no longer answers the captured payment, so the binding no longer holds it and no exit runs.
+     * The capture's own action makes another payment the booking's deposit. The binding held the captured payment when
+     * its step began, and its parent is still in DEPOSIT, so the exit runs: the binding is not judged again.
      */
     @Test
-    void aChildReplacedDuringItsActionRunsNoExit() {
+    void aChildReplacedDuringItsActionStillExitsItsParent() {
         Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
         Payment replacement = new Payment("d3", PaymentStatus.AUTHORIZING);
         Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit)
@@ -514,57 +512,43 @@ class SubmachineExitTest {
         try (MachineRegistry registry = billing.registry()) {
             Outcome<Payment, PaymentStatus, PaymentTransition> outcome =
                     registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE);
-            assertEquals(OutcomeCode.APPLIED, outcome.code());
-            assertEquals(List.of("Payment#d1:AUTHORIZING-CAPTURE>CAPTURED@0"), described(outcome.records()));
-            assertEquals(List.of(), outcome.starts());
-            assertEquals(BookingStatus.DEPOSIT, booking.status());
+            assertEquals(List.of("Payment#d1:AUTHORIZING-CAPTURE>CAPTURED@0",
+                    "Booking#b1:DEPOSIT-DEPOSIT_PAID>BALANCE@1"), described(outcome.records()));
+            assertEquals(BookingStatus.BALANCE, booking.status());
             assertEquals(PaymentStatus.CAPTURED, deposit.status());
             assertEquals(PaymentStatus.AUTHORIZING, replacement.status());
         }
     }
 
     /**
-     * When the capture ends, the booking's childOf answers another instance with the captured payment's identity:
-     * the exit's check of the binding aborts the call with AmbiguousIdentityException as its cause.
+     * BOOK starts the deposit and its action captures it; the capture's own action makes another payment the deposit.
+     * The booking is in flight, so the exit runs at the end of BOOK's step, for the payment that BOOK started: the
+     * engine takes it from its own log, not from the booking's childOf.
      */
     @Test
-    void aChildOfThatAnswersACopyOfTheEndedChildAbortsTheCall() {
+    void aChildReplacedDuringTheEnteringStepStillExitsItsParent() {
         Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
-        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
-        Payment copy = new Payment("d1", PaymentStatus.CAPTURED);
+        Payment replacement = new Payment("d2", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.REQUESTED).attachDeposit(deposit)
+                .attachBalance(new Payment("d3", PaymentStatus.AUTHORIZING));
+        billing.bookingActions.behaviour = (TransitionContext<Booking, BookingStatus, BookingTransition> ctx) -> {
+            if (ctx.transition() == BookingTransition.BOOK) {
+                ctx.cascade(PAYMENTS, deposit, PaymentTransition.CAPTURE);
+            }
+            return ActionOutcome.ok();
+        };
         billing.paymentActions.behaviour = (TransitionContext<Payment, PaymentStatus, PaymentTransition> ctx) -> {
-            billing.depositOf = (Booking value) -> Optional.of(copy);
+            booking.attachDeposit(replacement);
             return ActionOutcome.ok();
         };
         try (MachineRegistry registry = billing.registry()) {
-            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
-                    () -> registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE));
-            AmbiguousIdentityException cause = assertInstanceOf(AmbiguousIdentityException.class, error.getCause());
-            assertSame(deposit, cause.first());
-            assertSame(copy, cause.second());
-            assertEquals(BookingStatus.DEPOSIT, booking.status());
-            assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
-        }
-    }
-
-    /** When the capture ends, the booking's childOf throws: the exit's check of the binding aborts with that cause. */
-    @Test
-    void aChildOfThatThrowsWhenTheChildEndsAbortsTheCall() {
-        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
-        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
-        IllegalStateException failure = new IllegalStateException("the bookings are down");
-        billing.paymentActions.behaviour = (TransitionContext<Payment, PaymentStatus, PaymentTransition> ctx) -> {
-            billing.depositOf = (Booking value) -> {
-                throw failure;
-            };
-            return ActionOutcome.ok();
-        };
-        try (MachineRegistry registry = billing.registry()) {
-            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
-                    () -> registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE));
-            assertSame(failure, error.getCause());
-            assertEquals(BookingStatus.DEPOSIT, booking.status());
-            assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
+            Outcome<Booking, BookingStatus, BookingTransition> outcome =
+                    registry.of(BOOKINGS).execute(booking, BookingTransition.BOOK);
+            assertEquals(List.of("Booking#b1:REQUESTED-BOOK>DEPOSIT@0", "Payment#d1:AUTHORIZING-CAPTURE>CAPTURED@1",
+                    "Booking#b1:DEPOSIT-DEPOSIT_PAID>BALANCE@1"), described(outcome.records()));
+            assertEquals(BookingStatus.BALANCE, booking.status());
+            assertEquals(PaymentStatus.CAPTURED, deposit.status());
+            assertEquals(PaymentStatus.AUTHORIZING, replacement.status());
         }
     }
 
