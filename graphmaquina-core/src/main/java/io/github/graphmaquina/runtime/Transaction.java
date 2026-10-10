@@ -269,7 +269,7 @@ final class Transaction {
                         exitOf);
             }
             TransitionSpec<E, S, T> transition = selected.orElseThrow();
-            if ((exitOf.isEmpty() || exitOf.get() != from) && isReservedExit(machine, from, id)) {
+            if (exitOf.isEmpty() && isReservedExit(machine, from, id)) {
                 return rejected(machine, ref, from, id, Optional.of(transition.to()), depth,
                         id + " leaves " + from + " only when its sub-machine ends", RejectionKind.RESERVED_EXIT,
                         Optional.empty(), exitOf);
