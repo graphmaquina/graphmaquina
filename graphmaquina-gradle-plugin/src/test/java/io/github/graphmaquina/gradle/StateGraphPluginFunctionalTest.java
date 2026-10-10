@@ -702,7 +702,7 @@ class StateGraphPluginFunctionalTest {
                 "BILLING deposit APPLIED PENDING-CAPTURE->CAPTURED DEPOSIT-DEPOSIT_PAID->BALANCE"
                         + " start BALANCE:balance:PENDING",
                 "BILLING balance APPLIED PENDING-CAPTURE->CAPTURED BALANCE-BALANCE_PAID->CONFIRMED",
-                "BILLING early REJECTED DETACHED the parent is not in DEPOSIT",
+                "BILLING early REJECTED DETACHED no parent holds it in DEPOSIT",
                 "BILLING states stay=CONFIRMED deposit=CAPTURED balance=CAPTURED unbooked=REQUESTED early=PENDING"),
                 result.getOutput().lines().filter((String line) -> line.startsWith("BILLING ")).toList(),
                 result::getOutput);

@@ -406,7 +406,7 @@ class SubmachineAsyncTest {
             queued.get(0).run();
             Outcome<Payment, PaymentStatus, PaymentTransition> outcome = submitted.join();
             assertEquals(OutcomeCode.DETACHED, outcome.code());
-            assertEquals(Optional.of("the parent is not in DEPOSIT"), outcome.explanation());
+            assertEquals(Optional.of("no parent holds it in DEPOSIT"), outcome.explanation());
             assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
             assertEquals(BookingStatus.CANCELLED, booking.status());
         }

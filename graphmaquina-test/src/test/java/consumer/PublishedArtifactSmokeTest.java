@@ -722,7 +722,7 @@ class PublishedArtifactSmokeTest {
                         assertThat(registry.of(TICKETS).execute(ticket, TicketChange.DROP)).isApplied()
                                 .starts().isEmpty();
                         assertThat(registry.of(CHECKS).execute(check, CheckChange.PASS)).isRejected()
-                                .isDetached().hasReason("the parent is not in REVIEW");
+                                .isDetached().hasReason("no parent holds it in REVIEW");
                     }
                     Check audited = new Check();
                     Ticket failing = new Ticket(audited);

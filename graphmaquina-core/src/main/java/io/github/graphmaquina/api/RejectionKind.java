@@ -2,8 +2,8 @@ package io.github.graphmaquina.api;
 
 /**
  * Why a request was rejected: no edge leaves the current state with that identifier, a guard said no, the machine is
- * bound as a sub-machine and its parent is not in the bound state, or the identifier is an exit of the sub-machine
- * bound to the current state, which no request may ask for from that state.
+ * bound as a sub-machine and no parent holds the entity, or the identifier is an exit of the sub-machine bound to the
+ * current state, which no request may ask for from that state.
  */
 public enum RejectionKind {
 
@@ -14,8 +14,9 @@ public enum RejectionKind {
     GUARD,
 
     /**
-     * The entity has a parent under some sub-machine binding of its machine, and no such binding is active: the parent
-     * is neither in the bound state nor leaving it. Checked before the edge is looked up, so no guard ran.
+     * The entity has a parent under some sub-machine binding of its machine, and no such binding is active: no parent
+     * holds it, either because the parent is neither in the bound state nor leaving it, or because the parent's
+     * childOf answers another child or none. Checked before the edge is looked up, so no guard ran.
      */
     DETACHED,
 

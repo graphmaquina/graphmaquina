@@ -69,7 +69,7 @@ shop and billing domains the guide quotes.
 | Synchronous and asynchronous actions | Actions and guards may return values or `CompletionStage` results. The runtime waits under configured deadlines. |
 | Coordinated state changes | Cascades share a unit of work; entity state setters run after the root transition succeeds or selects a handled failure route. |
 | Declared watches | After a peer commits, a matching owner can be reevaluated and execute the identifier the first matching rule names. |
-| Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child whose parent is not in that state is rejected, and the step that ends the child runs the parent's exit in the same unit of work. See [compose machines](#compose-machines). |
+| Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child that no parent holds there is rejected, and the step that ends the child runs the parent's exit in the same unit of work. See [compose machines](#compose-machines). |
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
 | Inspectable execution | Outcomes carry transition records, watch reactions and the sub-machines a call started; technical aborts carry diagnostic details where applicable. |
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram, which draws each sub-machine inside the state it is bound to. |
@@ -961,7 +961,7 @@ observable result.
 
 | Situation | What the engine does | Outcome |
 | --- | --- | --- |
-| No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION` |
+| No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION`; a sub-machine that no parent holds is `DETACHED` first |
 | An explicit self-loop `A --T--> A` is requested | The edge runs like any other: guards, action, commit, hook. | `Applied`, with `recordedState() == A` |
 | `reevaluate(entity)` finds no watch, or no rule that holds | Nothing runs. | `Ignored`, with `IgnoreReason.NO_WATCH` or `NO_RULE_MATCHED` |
 
@@ -1567,7 +1567,7 @@ entity, to the application's transaction or to external systems. To assert kinds
 
 ## Handle transition outcomes
 
-![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent is not in the bound state is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a sub-machine also commits its parent's exit.](images/operation-decisions.svg)
+![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine that no parent holds is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a sub-machine its parent still holds also commits the parent's exit.](images/operation-decisions.svg)
 
 `Outcome<E, S, T>` is a sealed interface with four variants. Every outcome classifies itself, so a caller that
 only needs to know what happened and why reads it without narrowing:
@@ -1595,7 +1595,7 @@ Read the classification with its limits in mind:
 - `explanation()` holds the reasons the graph declares: a policy's reason, a guard's, or the reason an action
   returned with `ActionOutcome.failed(...)`. The only texts the library writes there are the fixed reason of a
   terminal state that declares no policy, such as `terminal state DONE accepts no transitions`, and the fixed reasons
-  of the two refusals of a sub-machine: `DETACHED`, such as `the parent is not in DEPOSIT`, and `RESERVED_EXIT`, such
+  of the two refusals of a sub-machine: `DETACHED`, such as `no parent holds it in DEPOSIT`, and `RESERVED_EXIT`, such
   as `DEPOSIT_PAID leaves DEPOSIT only when its sub-machine ends`. When `failsOn` or a
   recovery rule routes an exception, the failure's reason is composed from that exception and may carry internal
   details; it stays in `Failed.reason()` and `Failed.cause()`.
@@ -2458,8 +2458,8 @@ Outcome<Order, OrderStatus, OrderTransition> outcome = shop.orders().reevaluate(
 
 No watch produces `Outcome.Ignored` with `IgnoreReason.NO_WATCH`, and a watch whose rules all fail produces
 `IgnoreReason.NO_RULE_MATCHED`. These are the only two ways an `Ignored` is produced. A matching rule can still be
-rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-machine whose parent is not in the bound
-state. Rules are not polled on a timer, and creating or paying an owner does not
+rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-machine that no parent holds. Rules are
+not polled on a timer, and creating or paying an owner does not
 automatically mean all of its existing peers changed state.
 
 Cross-JAR watches are not supported yet. The owner and peer APIs must be generated in the same compilation.
@@ -2482,8 +2482,10 @@ machines. Three rules make the contract:
 
 - An edge that enters a bound state starts the child at the initial state of the child's graph, in the same unit of
   work as that edge.
-- A call to a child whose parent is not in the bound state is refused as `DETACHED`. A child for which no binding
-  finds a parent is a free machine and runs as usual.
+- A parent holds its child while it is in the bound state, or leaving it, and its `childOf` answers that very child.
+  A call to a child is refused as `DETACHED` when a binding finds its parent but no parent holds it: the parent has
+  left the state, or holds another child or none there. A child for which no binding finds a parent is a free machine
+  and runs as usual.
 - When a step of a bound child ends in one of its terminal states, that state selects the parent's exit. The exit runs
   in the same unit of work, one level deeper, and commits with the child. When the step's own action moved the parent
   out of the bound state, or made its `childOf` answer another child or none, no exit runs.
@@ -2663,7 +2665,7 @@ so the voided payment runs no exit: `PAYMENT_VOIDED` does not run, and the booki
 An interruption whose action leaves the child alone leaves it in the state it had reached.
 
 Once the booking is cancelled, its payments are detached. `billing.payments().capture(deposit)` then returns a
-`Rejected` outcome with the code `DETACHED` and the reason `the parent is not in DEPOSIT or BALANCE`, which names the
+`Rejected` outcome with the code `DETACHED` and the reason `no parent holds it in DEPOSIT or BALANCE`, which names the
 bound state of every binding that found the booking. No guard and no action runs, and the check comes before the edge is
 looked up, so a detached child is refused as `DETACHED` even for an identifier it has no edge for. Inside a cascade the
 refusal aborts the call, like any nested rejection. Entering a bound state again restarts its child at the initial
@@ -2775,9 +2777,9 @@ test `AsyncExitTest` holds the exit open with a `ControlledAsyncAction`.
 tests pin a booking with one payment machine bound in two states in
 [submachine-shared-child.dot](../graphmaquina-core/src/test/resources/golden/submachine-shared-child.dot).
 
-A call that ends a child commits its parent's exit, so the commit's check of the original states covers the parent. A
-call that moves a child to a state that is not terminal leaves the parent out of the commit, so serialize the calls of
-a parent and its sub-machines as those of one aggregate, as
+A call that ends a child its parent still holds commits the parent's exit, so the commit's check of the original
+states covers the parent. A call that moves a child to a state that is not terminal leaves the parent out of the
+commit, so serialize the calls of a parent and its sub-machines as those of one aggregate, as
 [initialize and protect state](#initialize-and-protect-state) explains.
 
 Assert bindings, starts and both refusals with the typed views of the testing guide's

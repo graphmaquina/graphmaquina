@@ -320,7 +320,7 @@ class SubmachineBindingTest {
             Outcome.Rejected<Payment, PaymentStatus, PaymentTransition> rejected = outcome.asRejected().orElseThrow();
             assertEquals(RejectionKind.DETACHED, rejected.kind());
             assertEquals(OutcomeCode.DETACHED, outcome.code());
-            assertEquals(Optional.of("the parent is not in DEPOSIT or BALANCE"), outcome.explanation());
+            assertEquals(Optional.of("no parent holds it in DEPOSIT or BALANCE"), outcome.explanation());
             assertEquals(Optional.empty(), rejected.guard());
             assertEquals(PaymentStatus.AUTHORIZING, outcome.from());
             assertEquals(List.of(), billing.paymentActions.calls);
@@ -352,7 +352,7 @@ class SubmachineBindingTest {
             Outcome<Payment, PaymentStatus, PaymentTransition> outcome =
                     registry.of(PAYMENTS).execute(stale, PaymentTransition.HOLD);
             assertEquals(OutcomeCode.DETACHED, outcome.code());
-            assertEquals(Optional.of("the parent is not in DEPOSIT or BALANCE"), outcome.explanation());
+            assertEquals(Optional.of("no parent holds it in DEPOSIT or BALANCE"), outcome.explanation());
             assertEquals(PaymentStatus.AUTHORIZING, stale.status());
         }
     }
@@ -403,7 +403,7 @@ class SubmachineBindingTest {
             assertEquals(CallPhase.ACTION, error.phase());
             assertEquals(StatesWritten.NONE, error.statesWritten());
             assertEquals("transition aborted in Payment/PaymentStatus AUTHORIZING -CAPTURE-> ?: rejected inside a"
-                    + " cascade by detached sub-machine: the parent is not in DEPOSIT or BALANCE"
+                    + " cascade by detached sub-machine: no parent holds it in DEPOSIT or BALANCE"
                     + " [route Booking/BookingStatus#b2]", error.getMessage());
             assertEquals(List.of(), billing.paymentActions.calls);
             assertEquals(BookingStatus.REQUESTED, booking.status());
@@ -433,7 +433,7 @@ class SubmachineBindingTest {
                     () -> bookings.execute(booking, BookingTransition.CANCEL));
             assertEquals(CallPhase.ACTION, error.phase());
             assertEquals("transition aborted in Payment/PaymentStatus AUTHORIZING -HOLD-> ?: rejected inside a cascade"
-                    + " by detached sub-machine: the parent is not in DEPOSIT or BALANCE"
+                    + " by detached sub-machine: no parent holds it in DEPOSIT or BALANCE"
                     + " [route Booking/BookingStatus#b2]", error.getMessage());
             assertEquals(BookingStatus.DEPOSIT, owner.status());
             assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
@@ -777,7 +777,7 @@ class SubmachineBindingTest {
             Outcome<Booking, BookingStatus, BookingTransition> outcome = registry.of(BOOKINGS).reevaluate(booking);
             assertEquals(OutcomeCode.DETACHED, outcome.code());
             assertEquals(Optional.of(BookingTransition.BOOK), outcome.requestedTransition());
-            assertEquals(Optional.of("the parent is not in HOLDING"), outcome.explanation());
+            assertEquals(Optional.of("no parent holds it in HOLDING"), outcome.explanation());
             assertEquals(List.of(), billing.bookingActions.calls);
             assertEquals(BookingStatus.REQUESTED, booking.status());
         }

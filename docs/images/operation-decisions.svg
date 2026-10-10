@@ -2,11 +2,11 @@
 <title id="title">How an operation selects its edge and its result</title>
 <desc id="desc">An operation names a transition identifier. The engine resolves the single edge keyed by the current
 state and that identifier. With no such edge the node's policy rejects the request as NO_TRANSITION. Otherwise
-guards run, and a rejecting guard rejects as GUARD. A machine bound as a sub-machine is checked first: before the
-edge is resolved, an entity whose parent is not in the bound state is rejected as DETACHED, and once it is resolved,
-an identifier that the sub-machine bound to the current state maps as an exit is rejected as RESERVED_EXIT. When a
-step ends a sub-machine in a terminal state while its parent is in the bound state, the parent's exit runs and
-commits with that step, and the outcome is still the step's. A move or successful action commits the resolved edge as
+guards run, and a rejecting guard rejects as GUARD. Before the edge is resolved, a machine bound as a sub-machine
+rejects as DETACHED an entity that no parent holds; once it is resolved, a machine whose current state holds a
+sub-machine rejects as RESERVED_EXIT an identifier that this binding maps as an exit. When a step ends a sub-machine
+in a terminal state while its parent is in the bound state and still holds it, the parent's exit runs and commits
+with that step, and the outcome is still the step's. A move or successful action commits the resolved edge as
 Applied; a returned business failure resolves, from the same origin,
 the identifier of the recovery rule that declares its failure kind, or else the onFailure identifier,
 and commits it as Failed. Reevaluation is a separate entry point. With no watch it returns Ignored with NO_WATCH;
@@ -104,9 +104,9 @@ and returns that execution's outcome. Technical errors throw instead of producin
 
 <rect x="52" y="911" width="1336" height="158" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <text x="78" y="947" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ffc77a" text-anchor="start">SUB-MACHINES</text>
-<text x="78" y="981" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Before resolving, a child whose parent is not in the bound state: Rejected · DETACHED.</text>
+<text x="78" y="981" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Before resolving, a child that no parent holds: Rejected · DETACHED.</text>
 <text x="78" y="1015" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">After resolving, an exit of the sub-machine bound to the origin: Rejected · RESERVED_EXIT.</text>
-<text x="78" y="1049" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A step that ends a sub-machine also commits its parent's exit; the outcome stays the step's.</text>
+<text x="78" y="1049" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A step that ends a sub-machine its parent still holds also commits the parent's exit; the outcome stays the step's.</text>
 
 <rect x="52" y="1116" width="1336" height="89" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <text x="78" y="1152" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ff8998" text-anchor="start">TECHNICAL EXCEPTION</text>

@@ -511,7 +511,7 @@ final class Transaction {
         if (active.isPresent() || found.isEmpty()) {
             return new BindingCheck(active, Optional.empty());
         }
-        StringJoiner reason = new StringJoiner(" or ", "the parent is not in ", "");
+        StringJoiner reason = new StringJoiner(" or ", "no parent holds it in ", "");
         for (Enum<?> node : found) {
             reason.add(node.name());
         }

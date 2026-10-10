@@ -98,7 +98,7 @@ class BookingFlowTest {
 
         assertThat(payments.capture(deposit)).isRejected()
                 .isDetached()
-                .hasReason("the parent is not in DEPOSIT or BALANCE");
+                .hasReason("no parent holds it in DEPOSIT or BALANCE");
         assertThat(deposit, Payment::status).isIn(PaymentStatus.VOIDED);
         assertThat(booking, Booking::status).isIn(BookingStatus.CANCELLED);
     }

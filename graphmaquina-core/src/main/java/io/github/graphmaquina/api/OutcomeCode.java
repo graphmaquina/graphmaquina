@@ -17,7 +17,7 @@ public enum OutcomeCode {
     /** A guard of the selected edge rejected it: {@link RejectionKind#GUARD}. */
     GUARD_REJECTED(OutcomeStatus.REJECTED),
 
-    /** The entity's parent is not in the state its sub-machine is bound to: {@link RejectionKind#DETACHED}. */
+    /** The entity is a sub-machine that no parent holds: {@link RejectionKind#DETACHED}. */
     DETACHED(OutcomeStatus.REJECTED),
 
     /**

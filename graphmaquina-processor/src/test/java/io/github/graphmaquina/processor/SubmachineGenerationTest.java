@@ -125,7 +125,7 @@ class SubmachineGenerationTest {
     /** A deposit whose booking was cancelled is detached: its parent is no longer in {@code DEPOSIT}. */
     @Test
     void aPaymentWhoseBookingLeftTheBoundStateIsDetached() throws Exception {
-        assertEquals("REJECTED DETACHED the parent is not in DEPOSIT | CANCELLED PENDING",
+        assertEquals("REJECTED DETACHED no parent holds it in DEPOSIT | CANCELLED PENDING",
                 run(billing(), "builder(ledger)", """
                         Payment deposit = new Payment("deposit");
                         Booking booking = new Booking("booking", deposit, new Payment("balance"));

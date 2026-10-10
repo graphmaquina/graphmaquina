@@ -35,10 +35,10 @@ class SubmachineRejectionsTest {
     @Test
     void aDetachedRejectionReportsItsCodeAndReason() {
         Outcome.Rejected<String, DayOfWeek, Month> detached =
-                rejected(RejectionKind.DETACHED, "the parent is not in MONDAY");
+                rejected(RejectionKind.DETACHED, "no parent holds it in MONDAY");
         assertEquals(OutcomeCode.DETACHED, detached.code());
         assertEquals(OutcomeStatus.REJECTED, detached.status());
-        assertEquals(Optional.of("the parent is not in MONDAY"), detached.explanation());
+        assertEquals(Optional.of("no parent holds it in MONDAY"), detached.explanation());
         assertEquals(Optional.empty(), detached.guard());
     }
 

@@ -94,7 +94,7 @@ class SubmachineOutcomeAssertionsTest {
             RejectedOutcomeAssert<Payment, PaymentState, PaymentChange> view =
                     assertThat(registry.of(Checkout.PAYMENTS).execute(payment, PaymentChange.CAPTURE)).isRejected();
             assertSame(view, view.isDetached());
-            view.hasReason("the parent is not in PAYING");
+            view.hasReason("no parent holds it in PAYING");
             assertFailure(assertThrows(GraphAssertionError.class, view::isReservedExit),
                     "rejected outcome", "kind", RejectionKind.RESERVED_EXIT, RejectionKind.DETACHED);
             assertFailure(assertThrows(GraphAssertionError.class, view::hasNoTransition),

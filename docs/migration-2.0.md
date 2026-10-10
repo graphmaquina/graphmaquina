@@ -292,7 +292,7 @@ written down as a contract, and it was easy to get backwards.
 |---|---|---|
 | `NO_TRANSITION` | No edge is keyed by `(from, transition)`. Nothing ran. The reason comes from the node's policy. | Always empty |
 | `GUARD` | The edge exists and a guard on it rejected. The reason is the guard's own text. | Always present |
-| `DETACHED` | The machine is bound as a sub-machine, and the entity's parent is not in the bound state. Nothing ran. The reason is the library's fixed text. | Always empty |
+| `DETACHED` | The machine is bound as a sub-machine, a binding finds the entity's parent, and no parent holds the entity: it is not in the bound state nor leaving it, or its `childOf` answers another child or none. Nothing ran. The reason is the library's fixed text. | Always empty |
 | `RESERVED_EXIT` | The identifier is an exit of the sub-machine bound to `from`, which no request may ask for from there. Nothing ran. The reason is the library's fixed text. | Always empty |
 
 The last two are new in 2.0 and have no 1.x counterpart. The record enforces the pairing: a rejection of any other
