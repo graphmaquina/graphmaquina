@@ -4,6 +4,7 @@ import static io.github.graphmaquina.fixtures.Billing.BOOKINGS;
 import static io.github.graphmaquina.fixtures.Billing.PAYMENTS;
 import static io.github.graphmaquina.fixtures.Billing.RISKS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -29,6 +30,7 @@ import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.api.WatchCondition;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.AfterCommitException;
+import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.CascadeDepthExceededException;
 import io.github.graphmaquina.error.CommitFailedException;
 import io.github.graphmaquina.error.TransitionAbortedException;
@@ -491,6 +493,77 @@ class SubmachineExitTest {
                     described(outcome.records()));
             assertEquals(BookingStatus.CANCELLED, booking.status());
             assertEquals(PaymentStatus.CAPTURED, deposit.status());
+        }
+    }
+
+    /**
+     * The capture's own action makes another payment the booking's deposit. When the capture ends, the booking's
+     * childOf no longer answers the captured payment, so the binding no longer holds it and no exit runs.
+     */
+    @Test
+    void aChildReplacedDuringItsActionRunsNoExit() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Payment replacement = new Payment("d3", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit)
+                .attachBalance(new Payment("d2", PaymentStatus.AUTHORIZING));
+        billing.paymentActions.behaviour = (TransitionContext<Payment, PaymentStatus, PaymentTransition> ctx) -> {
+            booking.attachDeposit(replacement);
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry registry = billing.registry()) {
+            Outcome<Payment, PaymentStatus, PaymentTransition> outcome =
+                    registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE);
+            assertEquals(OutcomeCode.APPLIED, outcome.code());
+            assertEquals(List.of("Payment#d1:AUTHORIZING-CAPTURE>CAPTURED@0"), described(outcome.records()));
+            assertEquals(List.of(), outcome.starts());
+            assertEquals(BookingStatus.DEPOSIT, booking.status());
+            assertEquals(PaymentStatus.CAPTURED, deposit.status());
+            assertEquals(PaymentStatus.AUTHORIZING, replacement.status());
+        }
+    }
+
+    /**
+     * When the capture ends, the booking's childOf answers another instance with the captured payment's identity:
+     * the exit's check of the binding aborts the call with AmbiguousIdentityException as its cause.
+     */
+    @Test
+    void aChildOfThatAnswersACopyOfTheEndedChildAbortsTheCall() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
+        Payment copy = new Payment("d1", PaymentStatus.CAPTURED);
+        billing.paymentActions.behaviour = (TransitionContext<Payment, PaymentStatus, PaymentTransition> ctx) -> {
+            billing.depositOf = (Booking value) -> Optional.of(copy);
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry registry = billing.registry()) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE));
+            AmbiguousIdentityException cause = assertInstanceOf(AmbiguousIdentityException.class, error.getCause());
+            assertSame(deposit, cause.first());
+            assertSame(copy, cause.second());
+            assertEquals(BookingStatus.DEPOSIT, booking.status());
+            assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
+        }
+    }
+
+    /** When the capture ends, the booking's childOf throws: the exit's check of the binding aborts with that cause. */
+    @Test
+    void aChildOfThatThrowsWhenTheChildEndsAbortsTheCall() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
+        IllegalStateException failure = new IllegalStateException("the bookings are down");
+        billing.paymentActions.behaviour = (TransitionContext<Payment, PaymentStatus, PaymentTransition> ctx) -> {
+            billing.depositOf = (Booking value) -> {
+                throw failure;
+            };
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry registry = billing.registry()) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE));
+            assertSame(failure, error.getCause());
+            assertEquals(BookingStatus.DEPOSIT, booking.status());
+            assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
         }
     }
 

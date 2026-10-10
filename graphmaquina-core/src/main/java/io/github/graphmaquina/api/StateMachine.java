@@ -36,8 +36,9 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * cascade aborts the whole call. A call is rejected as {@link RejectionKind#DETACHED} when this machine is bound
      * as a sub-machine and the entity's parent is neither in the bound state nor leaving it, and as
      * {@link RejectionKind#RESERVED_EXIT} when the identifier is an exit of the sub-machine bound to the current state.
-     * When the step ends a sub-machine whose parent is in the bound state, the parent's exit runs in the same call,
-     * and the outcome is still this step's; an exit that is rejected or fails without a route aborts the call. A null
+     * When the step ends a sub-machine whose parent is in the bound state and whose childOf still answers it, the
+     * parent's exit runs in the same call, and the outcome is still this step's; an exit that is rejected or fails
+     * without a route aborts the call. A null
      * argument, an identifier of another catalogue and a call made where no call may start are refused before the call
      * starts and throw as themselves. Blocks on an asynchronous edge.
      */

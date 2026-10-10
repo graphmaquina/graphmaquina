@@ -2485,7 +2485,8 @@ machines. Three rules make the contract:
 - A call to a child whose parent is not in the bound state is refused as `DETACHED`. A child for which no binding
   finds a parent is a free machine and runs as usual.
 - When a step of a bound child ends in one of its terminal states, that state selects the parent's exit. The exit runs
-  in the same unit of work, one level deeper, and commits with the child.
+  in the same unit of work, one level deeper, and commits with the child. When the step's own action moved the parent
+  out of the bound state, or made its `childOf` answer another child or none, no exit runs.
 
 ### Declare a sub-machine
 
