@@ -412,11 +412,12 @@ final class Transaction {
     /**
      * Spec R8: the step of a child along {@code last} ended in {@code terminal}, a terminal state of its graph, under
      * {@code binding}, which held it with the parent {@code parentRef}. The parent's exit runs unless the parent is in
-     * flight, entering the node or leaving it, or its pending state left the node: an action of the child's step may
-     * have moved it. Otherwise the exit retains the binding's node as its source, so a parent moved externally since
-     * the binding check conflicts with that source at commit before any state is written. Neither the parent's state
-     * nor its childOf is read again: the binding check at the start of the child's step decided which parent holds
-     * the child, and only this unit of work's own effects can cancel the exit.
+     * flight, entering the node or leaving it, or its pending state left the node, or the latest start under the
+     * parent in this node started another child: an action of the child's step may have moved the parent, or entered
+     * the node again with a new child. Otherwise the exit retains the binding's node as its source, so a parent moved
+     * externally since the binding check conflicts with that source at commit before any state is written. Neither
+     * the parent's state nor its childOf is read again: the binding check at the start of the child's step decided
+     * which parent holds the child, and only this unit of work's own effects can cancel the exit.
      */
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> void exitParent(
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> last, Enum<?> terminal,
@@ -427,6 +428,10 @@ final class Transaction {
         }
         Optional<Enum<?>> pending = uow.pendingState(parentRef);
         if (pending.isPresent() && pending.get() != spec.state()) {
+            return;
+        }
+        Optional<LogEntry.Start> latest = uow.lastStartUnder(parentRef);
+        if (latest.isPresent() && latest.get().node() == spec.state() && !latest.get().ref().equals(ref)) {
             return;
         }
         DefaultStateMachine<A, B, C> parentMachine = registry.machineFor(binding.parentKey());

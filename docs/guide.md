@@ -1567,7 +1567,7 @@ entity, to the application's transaction or to external systems. To assert kinds
 
 ## Handle transition outcomes
 
-![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent does not hold it is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a held sub-machine also commits the parent's exit, unless the step moved the parent.](images/operation-decisions.svg)
+![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent does not hold it is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a held sub-machine also commits the parent's exit, unless the parent is in flight or the call moved it.](images/operation-decisions.svg)
 
 `Outcome<E, S, T>` is a sealed interface with four variants. Every outcome classifies itself, so a caller that
 only needs to know what happened and why reads it without narrowing:
@@ -2488,10 +2488,10 @@ machines. Three rules make the contract:
   and runs as usual.
 - When a step of a bound child ends in one of its terminal states, that state selects the parent's exit. The exit runs
   in the same unit of work, one level deeper, and commits with the child. The binding is judged when the child's step
-  begins: when the step ends, the exit runs unless the parent is in flight or the call itself moved it out of the
-  bound state. The parent's state and `childOf` are not read again, so replacing the parent's child during the
-  child's own action does not cancel the exit; to keep it from running, move the parent out of the state in the same
-  call.
+  begins: when the step ends, the exit runs unless the parent is in flight, or the call itself moved it out of the
+  bound state or entered it again with another child. The parent's state and `childOf` are not read again, so
+  replacing the parent's child during the child's own action does not cancel the exit; to keep it from running, move
+  the parent out of the state, or restart it there, in the same call.
 
 ### Declare a sub-machine
 
@@ -2924,8 +2924,9 @@ silently replace a null state with the graph's initial state.
 During a transition, only the runtime should call the state setter. It checks state again before commit to
 catch action code or outside code that changed it unexpectedly. This check is not a lock: your application
 must serialize conflicting operations, or provide an appropriate database locking/versioning strategy.
-A sub-machine shows where the check stops. A call that ends a child runs its parent's exit, so the parent is in
-the commit, and the check catches a parent that another call moved meanwhile. A call that moves the child to a
+A sub-machine shows where the check stops. A call that ends a child its parent held commits the parent's exit, or
+moved the parent itself, so the parent is in the commit, and the check catches a parent that another call moved
+meanwhile. A call that moves the child to a
 state that is not terminal leaves the parent out of the commit, and nothing notices that the parent moved.
 Serialize the calls of a parent and its sub-machines as those of one aggregate.
 

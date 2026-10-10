@@ -30,17 +30,18 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
     GraphDefinition<E, S, T> definition();
 
     /**
-     * Returns the domain-level result as a value; a technical failure throws, always a {@code CallFailedException}
-     * of this call or an Error. Two domain-level results throw as well: a domain failure that no recovery rule of its
-     * edge takes, on an edge without onFailure, throws {@code UnhandledFailureException}, and a rejection inside a
-     * cascade aborts the whole call. A call is rejected as {@link RejectionKind#DETACHED} when this machine is bound as
-     * a sub-machine, a binding finds the entity's parent, and no parent holds the entity: none is in the bound state,
-     * or leaving it, with a childOf that answers this entity; and as {@link RejectionKind#RESERVED_EXIT} when the
+     * Returns the domain-level result as a value; a technical failure throws, always a {@code CallFailedException} of
+     * this call or an Error. Two domain-level results throw as well: a domain failure that no recovery rule of its edge
+     * takes, on an edge without onFailure, throws {@code UnhandledFailureException}, and a rejection inside a cascade
+     * aborts the whole call. A call is rejected as {@link RejectionKind#DETACHED} when this machine is bound as a
+     * sub-machine, a binding finds the entity's parent, and no parent holds the entity: none is in the bound state, or
+     * leaving it, with a childOf that answers this entity; and as {@link RejectionKind#RESERVED_EXIT} when the
      * identifier is an exit of the sub-machine bound to the current state. When the step ends a sub-machine that a
-     * parent held when the step began, the parent's exit runs in the same call unless the call moved that parent, and
-     * the outcome is still this step's; an exit that is rejected or fails without a route aborts the call. A null
-     * argument, an identifier of another catalogue and a call made where no call may start are refused before the call
-     * starts and throw as themselves. Blocks on an asynchronous edge.
+     * parent held when the step began, the parent's exit runs in the same call unless that parent is in flight, or the
+     * call moved it out of the bound state or entered it again, and the outcome is still this step's; an exit that is
+     * rejected or fails without a route aborts the call. A null argument, an identifier of another catalogue and a call
+     * made where no call may start are refused before the call starts and throw as themselves. Blocks on an
+     * asynchronous edge.
      */
     Outcome<E, S, T> execute(E entity, T transition);
 
