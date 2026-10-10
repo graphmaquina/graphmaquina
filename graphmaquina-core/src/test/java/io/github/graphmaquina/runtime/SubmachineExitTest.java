@@ -679,6 +679,142 @@ class SubmachineExitTest {
     }
 
     /**
+     * No child's lookup of its parent finds one here, so a child's own end never runs its parent's exit: only the exit
+     * that an entering step defers can. START's action moves the token, whose action opens the office, which starts
+     * the desk in SERVING and the token in QUEUED; START's action then stamps the stamp. START's step ends with the
+     * desk in SERVING, so it runs the token's deferred exit SERVE, whose action renews SERVING: the same token starts
+     * again, its stamp is stamped again, and the token ends SERVED a second time. The renewal entered SERVING with
+     * the same token, so the desk's deferred exit still runs, once.
+     */
+    @Test
+    void aReentryWithTheSameChildDuringADeferredExitStillExitsTheParent() {
+        Token token = new Token(new Stamp());
+        Desk desk = new Desk(token);
+        Office office = new Office(desk);
+        Outcome<Desk, DeskState, DeskId> outcome = startTheDesk(desk, office, false);
+        assertEquals(OutcomeCode.APPLIED, outcome.code());
+        assertEquals(List.of("Desk:NEW-START>WAITING@0", "Token:CALLED-MOVE>SERVED@1",
+                "Office:IDLE-OPEN_UP>OPEN@2", "Stamp:BLANK-STAMP>STAMPED@1", "Token:QUEUED-SERVE>SERVED@1",
+                "Desk:SERVING-RENEW>SERVING@2", "Stamp:BLANK-STAMP>STAMPED@2", "Token:QUEUED-SERVE>SERVED@2",
+                "Desk:SERVING-FINISH>DONE@1"), described(outcome.records()));
+        assertEquals(DeskState.DONE, desk.state);
+        assertEquals(TokenState.SERVED, token.state);
+        assertEquals(OfficeState.OPEN, office.state);
+    }
+
+    /**
+     * The same scenario, with the renewal made through a relay, one level deeper: its start of the same token differs
+     * from the first one only in depth. The latest start since the selection still names the same token, which ends
+     * SERVED, so the desk's deferred exit runs, once.
+     */
+    @Test
+    void aReentryWithTheSameChildAtAnotherDepthStillExitsTheParent() {
+        Token token = new Token(new Stamp());
+        Desk desk = new Desk(token);
+        Office office = new Office(desk);
+        Outcome<Desk, DeskState, DeskId> outcome = startTheDesk(desk, office, true);
+        assertEquals(OutcomeCode.APPLIED, outcome.code());
+        assertEquals(List.of("Desk:NEW-START>WAITING@0", "Token:CALLED-MOVE>SERVED@1",
+                "Office:IDLE-OPEN_UP>OPEN@2", "Stamp:BLANK-STAMP>STAMPED@1", "Token:QUEUED-SERVE>SERVED@1",
+                "Relay:BLANK-STAMP>STAMPED@2", "Desk:SERVING-RENEW>SERVING@3", "Stamp:BLANK-STAMP>STAMPED@2",
+                "Token:QUEUED-SERVE>SERVED@2", "Desk:SERVING-FINISH>DONE@1"), described(outcome.records()));
+        assertEquals(DeskState.DONE, desk.state);
+        assertEquals(TokenState.SERVED, token.state);
+    }
+
+    /** Runs START on the desk of the re-entry scenarios; the first SERVE renews it directly or through a relay. */
+    private static Outcome<Desk, DeskState, DeskId> startTheDesk(Desk desk, Office office, boolean throughRelay) {
+        Token token = desk.token;
+        Stamp stamp = token.stamp;
+        Relay relay = new Relay();
+        GraphDefinition<Stamp, StampState, StampId> stamps = StateGraph.define(STAMPS)
+                .initial(StampState.BLANK).terminal(StampState.STAMPED)
+                .statePolicy(StampState.BLANK, "stamp it")
+                .transition(StampId.STAMP, StampState.BLANK, StampState.STAMPED).endTransition()
+                .build();
+        GraphDefinition<Token, TokenState, TokenId> tokens = StateGraph.define(TOKENS)
+                .initial(TokenState.QUEUED).terminal(TokenState.SERVED)
+                .statePolicy(TokenState.QUEUED, "wait for the stamp")
+                .statePolicy(TokenState.CALLED, "move")
+                .transition(TokenId.CALL, TokenState.QUEUED, TokenState.CALLED).endTransition()
+                .transition(TokenId.MOVE, TokenState.CALLED, TokenState.SERVED)
+                    .action("Move", (TransitionContext<Token, TokenState, TokenId> ctx) -> {
+                        ctx.cascade(OFFICES, office, OfficeId.OPEN_UP);
+                        return ActionOutcome.ok();
+                    }).endTransition()
+                .transition(TokenId.SERVE, TokenState.QUEUED, TokenState.SERVED)
+                    .action("Serve", (TransitionContext<Token, TokenState, TokenId> ctx) -> {
+                        token.serves++;
+                        if (token.serves == 1) {
+                            if (throughRelay) {
+                                ctx.cascade(RELAYS, relay, StampId.STAMP);
+                            } else {
+                                ctx.cascade(DESKS, desk, DeskId.RENEW);
+                            }
+                            ctx.cascade(STAMPS, stamp, StampId.STAMP);
+                        }
+                        return ActionOutcome.ok();
+                    }).endTransition()
+                .submachine(TokenState.QUEUED, stamps, (Token value) -> Optional.of(value.stamp),
+                        (Stamp value) -> Optional.empty())
+                    .exit(StampState.STAMPED, TokenId.SERVE).endSubmachine()
+                .build();
+        GraphDefinition<Desk, DeskState, DeskId> desks = StateGraph.define(DESKS)
+                .initial(DeskState.SERVING).terminal(DeskState.DONE).allowsCycle(DeskState.SERVING)
+                .statePolicy(DeskState.NEW, "start")
+                .statePolicy(DeskState.WAITING, "resume")
+                .statePolicy(DeskState.SERVING, "wait for the token")
+                .transition(DeskId.START, DeskState.NEW, DeskState.WAITING)
+                    .action("Start", (TransitionContext<Desk, DeskState, DeskId> ctx) -> {
+                        ctx.cascade(TOKENS, token, TokenId.MOVE);
+                        ctx.cascade(STAMPS, stamp, StampId.STAMP);
+                        return ActionOutcome.ok();
+                    }).endTransition()
+                .transition(DeskId.RESUME, DeskState.WAITING, DeskState.SERVING).endTransition()
+                .transition(DeskId.BACK, DeskState.SERVING, DeskState.NEW).endTransition()
+                .transition(DeskId.RENEW, DeskState.SERVING, DeskState.SERVING).endTransition()
+                .transition(DeskId.FINISH, DeskState.SERVING, DeskState.DONE).endTransition()
+                .submachine(DeskState.SERVING, tokens, (Desk value) -> Optional.of(value.token),
+                        (Token value) -> Optional.empty())
+                    .exit(TokenState.SERVED, DeskId.FINISH).endSubmachine()
+                .build();
+        GraphDefinition<Office, OfficeState, OfficeId> offices = StateGraph.define(OFFICES)
+                .initial(OfficeState.IDLE).terminal(OfficeState.CLOSED)
+                .statePolicy(OfficeState.IDLE, "open up")
+                .statePolicy(OfficeState.OPEN, "wait for the desk")
+                .transition(OfficeId.OPEN_UP, OfficeState.IDLE, OfficeState.OPEN).endTransition()
+                .transition(OfficeId.SHUT, OfficeState.OPEN, OfficeState.CLOSED).endTransition()
+                .submachine(OfficeState.OPEN, desks, (Office value) -> Optional.of(value.desk),
+                        (Desk value) -> Optional.empty())
+                    .exit(DeskState.DONE, OfficeId.SHUT).endSubmachine()
+                .build();
+        GraphDefinition<Relay, StampState, StampId> relays = StateGraph.define(RELAYS)
+                .initial(StampState.BLANK).terminal(StampState.STAMPED)
+                .statePolicy(StampState.BLANK, "relay the renewal")
+                .transition(StampId.STAMP, StampState.BLANK, StampState.STAMPED)
+                    .action("Relay", (TransitionContext<Relay, StampState, StampId> ctx) -> {
+                        ctx.cascade(DESKS, desk, DeskId.RENEW);
+                        return ActionOutcome.ok();
+                    }).endTransition()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(relays).state((Relay value) -> value.state,
+                        (Relay value, StampState state) -> value.state = state).identity((Relay value) -> "r"))
+                .add(StateMachines.from(offices).state((Office value) -> value.state,
+                        (Office value, OfficeState state) -> value.state = state).identity((Office value) -> "o"))
+                .add(StateMachines.from(desks).state((Desk value) -> value.state,
+                        (Desk value, DeskState state) -> value.state = state).identity((Desk value) -> "d"))
+                .add(StateMachines.from(tokens).state((Token value) -> value.state,
+                        (Token value, TokenState state) -> value.state = state).identity((Token value) -> "t"))
+                .add(StateMachines.from(stamps).state((Stamp value) -> value.state,
+                        (Stamp value, StampState state) -> value.state = state).identity((Stamp value) -> "s"))
+                .build()) {
+            return registry.of(DESKS).execute(desk, DeskId.START);
+        }
+    }
+
+
+    /**
      * Entering BOUND starts the first member, whose leaf is already done, so the holding's step defers the member's
      * exit SETTLE to its end. That exit's action makes the second member the holding's and renews BOUND, which starts
      * it; the second member's exit fails into PARKED, so the holding stays in BOUND. The first member then ends
@@ -943,6 +1079,96 @@ class SubmachineExitTest {
             assertEquals(List.of(new SubmachineStart<>(PAYMENTS, deposit, PaymentStatus.CAPTURED,
                     PaymentStatus.AUTHORIZING, BOOKINGS, booking, BookingStatus.DEPOSIT, 1)), outcome.starts());
         }
+    }
+
+    /** The states of an office, whose OPEN state holds its desk. */
+    enum OfficeState { IDLE, OPEN, CLOSED }
+
+    /** Identifiers of the office machine: SHUT is the exit a done desk selects. */
+    enum OfficeId { OPEN_UP, SHUT }
+
+    /** The states of a desk, whose SERVING state, its initial one, holds its token. */
+    enum DeskState { NEW, WAITING, SERVING, DONE }
+
+    /** Identifiers of the desk machine: FINISH is the exit a served token selects. */
+    enum DeskId { START, RESUME, BACK, RENEW, FINISH }
+
+    /** The states of a token, whose QUEUED state, its initial one, holds its stamp. */
+    enum TokenState { QUEUED, CALLED, SERVED }
+
+    /** Identifiers of the token machine: SERVE is the exit a stamped stamp selects. */
+    enum TokenId { CALL, MOVE, SERVE }
+
+    /** The states of a stamp. */
+    enum StampState { BLANK, STAMPED }
+
+    /** The only identifier of the stamp machine. */
+    enum StampId { STAMP }
+
+    static final MachineKey<Office, OfficeState, OfficeId> OFFICES =
+            MachineKey.of(Office.class, OfficeState.class, OfficeId.class);
+    static final MachineKey<Desk, DeskState, DeskId> DESKS = MachineKey.of(Desk.class, DeskState.class, DeskId.class);
+    static final MachineKey<Token, TokenState, TokenId> TOKENS =
+            MachineKey.of(Token.class, TokenState.class, TokenId.class);
+    static final MachineKey<Relay, StampState, StampId> RELAYS =
+            MachineKey.of(Relay.class, StampState.class, StampId.class);
+    static final MachineKey<Stamp, StampState, StampId> STAMPS =
+            MachineKey.of(Stamp.class, StampState.class, StampId.class);
+
+    /** An office and its desk. */
+    static final class Office {
+        private final Desk desk;
+        private OfficeState state = OfficeState.IDLE;
+
+        Office(Desk desk) {
+            this.desk = desk;
+        }
+
+        @Override
+        public String toString() { return "Office"; }
+    }
+
+    /** A desk and its token. */
+    static final class Desk {
+        private final Token token;
+        private DeskState state = DeskState.NEW;
+
+        Desk(Token token) {
+            this.token = token;
+        }
+
+        @Override
+        public String toString() { return "Desk"; }
+    }
+
+    /** A token, its stamp, and how many times its exit SERVE has run. */
+    static final class Token {
+        private final Stamp stamp;
+        private TokenState state = TokenState.CALLED;
+        private int serves;
+
+        Token(Stamp stamp) {
+            this.stamp = stamp;
+        }
+
+        @Override
+        public String toString() { return "Token"; }
+    }
+
+    /** A relay whose STAMP action renews the desk one level deeper than a direct cascade would. */
+    static final class Relay {
+        private StampState state = StampState.BLANK;
+
+        @Override
+        public String toString() { return "Relay"; }
+    }
+
+    /** A stamp. */
+    static final class Stamp {
+        private StampState state = StampState.STAMPED;
+
+        @Override
+        public String toString() { return "Stamp"; }
     }
 
     /** The states of a holding whose bound state holds its current member. */

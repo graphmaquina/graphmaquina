@@ -373,10 +373,12 @@ final class Transaction {
      * Completes surviving recursively started bindings deepest first, after the entering action and frame. Each
      * containing node and actual child reference comes from the current pending state and its last surviving start,
      * never another lookup. A start has no transition: until a real exit runs, failures describe the original entering
-     * step, which {@code origin}, {@code originRef}, {@code from}, {@code last} and {@code reached} retain. Descendant
-     * starts share that step's depth; every actual exit increases depth and processes its own exits normally. A start
-     * under the parent logged once its start was selected, an entry of the node made by a descendant's exit, cancels
-     * the node's exit: the position of the log at the selection marks what came after, as in {@link #exitParent}.
+     * step, which {@code origin}, {@code originRef}, {@code from}, {@code last} and {@code reached} retain. The starts
+     * one hop logs for its descendants share that hop's depth; every actual exit increases depth and processes its own
+     * exits normally. When a descendant's exit enters the node again, the latest start under the parent logged since
+     * the selection decides, as in {@link #exitParent}: another child cancels the node's exit, and for the same child
+     * the exit runs only if its state, read again, is terminal. The position of the log at the selection marks what
+     * came after; starts are never compared by value.
      * Returns whether any exit ran, including an exit that already completed the containing machine.
      */
     private <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>> boolean exitEntered(
@@ -400,8 +402,10 @@ final class Transaction {
                         descendant.get(), depth, origin, originRef, from, last, reached);
             }
         }
+        Optional<LogEntry.Start> reentry = uow.lastStartUnderSince(ref, selectedAt);
         if (uow.inFlight(ref).isPresent() || uow.pendingState(ref).orElseThrow() != spec.state()
-                || uow.lastStartUnderSince(ref, selectedAt).isPresent()) {
+                || (reentry.isPresent() && reentry.get().node() == spec.state()
+                        && !reentry.get().ref().equals(start.ref()))) {
             return exited;
         }
         state = spec.childKey().states().cast(uow.pendingState(start.ref()).orElseThrow());
