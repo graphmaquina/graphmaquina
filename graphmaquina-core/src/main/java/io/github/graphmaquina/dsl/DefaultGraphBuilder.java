@@ -253,13 +253,15 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /**
      * SG805 when the sub-machines of this graph, followed through the children's own sub-machines, reach a definition
-     * of this graph's own key. The walk is breadth first, so the path it reports is a shortest one: it starts from
-     * this graph's bindings in the order of their states, and visits each child's states in declaration order. It
-     * never expands a key that is already on the path, so a hand-written definition that hands out new instances of
-     * itself still ends, and distinct definitions of the same key are each checked on their own paths. What a visit
-     * expands depends only on its definition and the keys on its path, so the walk expands each such pair once: paths
-     * that reach one definition through the same keys, such as a child bound in several states of each level, cost one
-     * expansion, not one per path. A return to this graph's key is checked before either pruning.
+     * of this graph's own key along a path this walk expands. The walk is breadth first, so the path it reports is a
+     * shortest one: it starts from this graph's bindings in the order of their states, and visits each child's states
+     * in declaration order. It never expands a key that is already on the path, so a hand-written definition that
+     * hands out new instances of itself still ends; distinct definitions of the same key are each checked on their own
+     * paths, but a second definition of a key already on a path is not expanded there. It takes a definition's bindings
+     * to be the same each time it asks, so what a visit expands depends only on its definition and the keys on its
+     * path, and the walk expands each such pair once: paths that reach one definition through the same keys, such as a
+     * child bound in several states of each level, cost one expansion, not one per path. A return to this graph's key
+     * is checked before either pruning.
      */
     private void compositionCycle() {
         List<SubmachineDraft<E, S, T, ?, ?, ?>> byState = new ArrayList<>(submachines);

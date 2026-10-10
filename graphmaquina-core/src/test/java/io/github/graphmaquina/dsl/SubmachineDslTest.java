@@ -455,11 +455,12 @@ class SubmachineDslTest {
     }
 
     /**
-     * The walk expands each definition once, however many paths reach it: a top that binds a middle machine in two
-     * states, which binds a counted leaf in two states, reads the leaf's bindings once per state, not once per path.
+     * The walk expands a definition once for each set of keys on the paths that reach it: a top that binds a middle
+     * machine in two states, which binds a counted leaf in two states, reaches the leaf by four paths through the same
+     * keys and reads the leaf's bindings once per state, not once per path.
      */
     @Test
-    void theWalkExpandsADefinitionReachedByManyPathsOnce() {
+    void theWalkExpandsADefinitionReachedThroughTheSameKeysOnce() {
         Counted<Leaf> leaf = new Counted<>(rung(Leaf.class, Optional.empty(), Optional.empty()).build());
         GraphDefinition<Middle, Rung, RungMove> middle =
                 rung(Middle.class, Optional.of(leaf), Optional.of(leaf)).build();
