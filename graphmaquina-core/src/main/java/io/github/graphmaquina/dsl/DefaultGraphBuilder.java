@@ -74,7 +74,10 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         }
     }
 
-    /** The same refusal for a stage this graph opened; {@code stage} names the edge or the watch it would change. */
+    /**
+     * The same refusal for a stage this graph opened; {@code stage} names the edge, the watch or the sub-machine it
+     * would change.
+     */
     void requireUnbuilt(String stage) {
         if (built) {
             throw new IllegalStateException(
