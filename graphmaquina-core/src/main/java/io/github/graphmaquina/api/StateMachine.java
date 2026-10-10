@@ -38,7 +38,7 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * leaving it, with a childOf that answers this entity; and as {@link RejectionKind#RESERVED_EXIT} when the
      * identifier is an exit of the sub-machine bound to the current state. When the step ends a sub-machine that a
      * parent held when the step began, the parent's exit runs in the same call unless that parent is in flight, or the
-     * call moved it out of the bound state or entered it again, and the outcome is still this step's; an exit that is
+     * step moved it out of the bound state or entered it again, and the outcome is still this step's; an exit that is
      * rejected or fails without a route aborts the call. A null argument, an identifier of another catalogue and a call
      * made where no call may start are refused before the call starts and throw as themselves. Blocks on an
      * asynchronous edge.

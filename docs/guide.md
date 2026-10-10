@@ -1567,7 +1567,7 @@ entity, to the application's transaction or to external systems. To assert kinds
 
 ## Handle transition outcomes
 
-![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent does not hold it is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a held sub-machine also commits the parent's exit, unless the parent is in flight or the call moved it.](images/operation-decisions.svg)
+![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent does not hold it is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a held sub-machine also commits the parent's exit, unless the parent is in flight or the step moved it.](images/operation-decisions.svg)
 
 `Outcome<E, S, T>` is a sealed interface with four variants. Every outcome classifies itself, so a caller that
 only needs to know what happened and why reads it without narrowing:
@@ -2488,10 +2488,10 @@ machines. Three rules make the contract:
   and runs as usual.
 - When a step of a bound child ends in one of its terminal states, that state selects the parent's exit. The exit runs
   in the same unit of work, one level deeper, and commits with the child. The binding is judged when the child's step
-  begins: when the step ends, the exit runs unless the parent is in flight, or the call itself moved it out of the
-  bound state or entered it again with another child. The parent's state and `childOf` are not read again, so
-  replacing the parent's child during the child's own action does not cancel the exit; to keep it from running, move
-  the parent out of the state, or restart it there, in the same call.
+  begins: when the step ends, the exit runs unless the parent is in flight, or the step itself, through its action,
+  moved the parent out of the bound state or entered it again. The parent's state and `childOf` are not read again,
+  so replacing the parent's child during the child's own action does not cancel the exit; to keep it from running,
+  move the parent out of the state, or restart it there, from that action.
 
 ### Declare a sub-machine
 

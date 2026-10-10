@@ -364,7 +364,7 @@ final class Transaction {
         }
         if (holder.isPresent() && machine.definition().terminals().contains(current)) {
             exitParent(machine, ref, result.from(), last, current, depth, holder.get().binding(),
-                    holder.get().parent());
+                    holder.get().parent(), holder.get().startAtCheck());
         }
         return result;
     }
@@ -412,16 +412,18 @@ final class Transaction {
     /**
      * Spec R8: the step of a child along {@code last} ended in {@code terminal}, a terminal state of its graph, under
      * {@code binding}, which held it with the parent {@code parentRef}. The parent's exit runs unless the parent is in
-     * flight, entering the node or leaving it, or its pending state left the node, or the latest start under the
-     * parent in this node started another child: an action of the child's step may have moved the parent, or entered
-     * the node again with a new child. Otherwise the exit retains the binding's node as its source, so a parent moved
-     * externally since the binding check conflicts with that source at commit before any state is written. Neither
-     * the parent's state nor its childOf is read again: the binding check at the start of the child's step decided
-     * which parent holds the child, and only this unit of work's own effects can cancel the exit.
+     * flight, entering the node or leaving it, or its pending state left the node, or a start under the parent newer
+     * than {@code startAtCheck}, the latest one when the child's binding check ran, started another child in this
+     * node: an action of the child's step may have moved the parent, or entered the node again with a new child.
+     * Otherwise the exit retains the binding's node as its source, so a parent moved externally since the binding
+     * check conflicts with that source at commit before any state is written. Neither the parent's state nor its
+     * childOf is read again: the binding check at the start of the child's step decided which parent holds the child,
+     * and only this unit of work's own effects since then can cancel the exit.
      */
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> void exitParent(
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> last, Enum<?> terminal,
-            int depth, SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef) {
+            int depth, SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef,
+            Optional<LogEntry.Start> startAtCheck) {
         SubmachineSpec<A, B, C, P, Q, U> spec = binding.spec();
         if (uow.inFlight(parentRef).isPresent()) {
             return;
@@ -431,7 +433,8 @@ final class Transaction {
             return;
         }
         Optional<LogEntry.Start> latest = uow.lastStartUnder(parentRef);
-        if (latest.isPresent() && latest.get().node() == spec.state() && !latest.get().ref().equals(ref)) {
+        if (latest.isPresent() && !latest.equals(startAtCheck) && latest.get().node() == spec.state()
+                && !latest.get().ref().equals(ref)) {
             return;
         }
         DefaultStateMachine<A, B, C> parentMachine = registry.machineFor(binding.parentKey());
@@ -496,7 +499,7 @@ final class Transaction {
             if (active.isPresent()) {
                 if (active.get().parent().equals(parent.get()) && activeHold.get() != hold.get()) {
                     if (hold.get() == Hold.IN_NODE) {
-                        active = Optional.of(new Holder(binding, parent.get()));
+                        active = Optional.of(new Holder(binding, parent.get(), uow.lastStartUnder(parent.get())));
                         activeHold = hold;
                     }
                     continue;
@@ -506,7 +509,7 @@ final class Transaction {
                         first.spec().state(), binding.parentKey(), binding.spec().state());
                 throw bindingAbort(machine, ref, from, id, depth, ambiguous.getMessage(), Optional.of(ambiguous));
             }
-            active = Optional.of(new Holder(binding, parent.get()));
+            active = Optional.of(new Holder(binding, parent.get(), uow.lastStartUnder(parent.get())));
             activeHold = hold;
         }
         if (active.isPresent() || found.isEmpty()) {
@@ -525,8 +528,12 @@ final class Transaction {
      */
     private record BindingCheck(Optional<Holder> holder, Optional<String> detached) { }
 
-    /** The binding that holds a child for one step, and the parent it found, registered in the unit of work. */
-    private record Holder(SubmachineBinding<?, ?, ?, ?, ?, ?> binding, EntityRef parent) { }
+    /**
+     * The binding that holds a child for one step, the parent it found, registered in the unit of work, and the latest
+     * start under that parent when the step began, which tells a later entry of the node apart.
+     */
+    private record Holder(SubmachineBinding<?, ?, ?, ?, ?, ?> binding, EntityRef parent,
+                          Optional<LogEntry.Start> startAtCheck) { }
 
     /** How a binding holds a child: its parent is in the bound node, or in flight on an edge that leaves it. */
     private enum Hold { IN_NODE, LEAVING }

@@ -11,7 +11,7 @@ import lombok.NonNull;
 /**
  * A sub-machine bound to one state of a parent graph: the child's definition, how to reach the child from the parent
  * and back, and the parent identifier that each terminal state of the child selects, its exit. When a step of the child
- * that began with the parent holding it ends in that terminal state, the parent is not in flight, and the call neither
+ * that began with the parent holding it ends in that terminal state, the parent is not in flight, and the step neither
  * moved it out of the bound state nor entered it again, the engine runs the exit on the parent in the same unit of
  * work. Validates nothing about the graphs; the
  * DSL does, when it builds the parent graph, and so does the annotation processor, when it reads a binding declared

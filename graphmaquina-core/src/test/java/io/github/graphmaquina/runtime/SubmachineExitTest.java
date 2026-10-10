@@ -58,12 +58,12 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The atomic exit: a child whose parent held it when its step began, and whose step ends in a terminal state with that
- * parent still in the bound node and not entered again, runs the exit that terminal selects, as a step of the parent at
- * the next depth, in the same unit of work, once the child's own step is no longer in flight. An exit runs its guards,
- * its action and its failure route as any step; a rejection or an unhandled failure inside it aborts the whole call. A
- * parent that enters a node whose child already stands in a terminal state exits at the end of its own step. A parent
- * in flight, leaving the node or entering it, never exits from the child's step, and an exit that ends its parent in a
- * terminal state runs the grandparent's exit in turn.
+ * parent still in the bound node and not entered again by that step, runs the exit that terminal selects, as a step of
+ * the parent at the next depth, in the same unit of work, once the child's own step is no longer in flight. An exit
+ * runs its guards, its action and its failure route as any step; a rejection or an unhandled failure inside it aborts
+ * the whole call. A parent that enters a node whose child already stands in a terminal state exits at the end of its
+ * own step. A parent in flight, leaving the node or entering it, never exits from the child's step, and an exit that
+ * ends its parent in a terminal state runs the grandparent's exit in turn.
  */
 class SubmachineExitTest {
 
@@ -605,6 +605,36 @@ class SubmachineExitTest {
                     described(outcome.records()));
             assertEquals(BookingStatus.BALANCE, booking.status());
             assertEquals(PaymentStatus.CAPTURED, deposit.status());
+        }
+    }
+
+    /**
+     * A free payment's action restarts the booking in DEPOSIT, then makes another payment its deposit and captures it.
+     * The restart came before the new deposit's step began, which found the new deposit held, so its exit runs.
+     */
+    @Test
+    void aChildHeldAfterAnEarlierReentryOfItsNodeExitsIt() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Payment replacement = new Payment("d3", PaymentStatus.AUTHORIZING);
+        Payment free = new Payment("f1", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit)
+                .attachBalance(new Payment("d2", PaymentStatus.AUTHORIZING));
+        billing.paymentActions.behaviour = (TransitionContext<Payment, PaymentStatus, PaymentTransition> ctx) -> {
+            if (ctx.entity() == free) {
+                ctx.cascade(BOOKINGS, booking, BookingTransition.RESTART);
+                booking.attachDeposit(replacement);
+                ctx.cascade(PAYMENTS, replacement, PaymentTransition.CAPTURE);
+            }
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry registry = billing.registry()) {
+            Outcome<Payment, PaymentStatus, PaymentTransition> outcome =
+                    registry.of(PAYMENTS).execute(free, PaymentTransition.CAPTURE);
+            assertEquals(List.of("Payment#f1:AUTHORIZING-CAPTURE>CAPTURED@0", "Booking#b1:DEPOSIT-RESTART>DEPOSIT@1",
+                    "Payment#d3:AUTHORIZING-CAPTURE>CAPTURED@1", "Booking#b1:DEPOSIT-DEPOSIT_PAID>BALANCE@2"),
+                    described(outcome.records()));
+            assertEquals(BookingStatus.BALANCE, booking.status());
+            assertEquals(PaymentStatus.CAPTURED, replacement.status());
         }
     }
 
