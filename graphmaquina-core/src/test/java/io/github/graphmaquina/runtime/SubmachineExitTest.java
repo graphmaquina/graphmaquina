@@ -54,6 +54,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -681,17 +682,22 @@ class SubmachineExitTest {
     /**
      * No child's lookup of its parent finds one here, so a child's own end never runs its parent's exit: only the exit
      * that an entering step defers can. START's action moves the token, whose action opens the office, which starts
-     * the desk in SERVING and the token in QUEUED; START's action then stamps the stamp. START's step ends with the
-     * desk in SERVING, so it runs the token's deferred exit SERVE, whose action renews SERVING: the same token starts
-     * again, its stamp is stamped again, and the token ends SERVED a second time. The renewal entered SERVING with
-     * the same token, so the desk's deferred exit still runs, once.
+     * the desk in SERVING, the token in QUEUED and its stamp in BLANK; START's action then stamps the stamp. START's
+     * step ends with the desk in SERVING, so it runs the token's deferred exit SERVE, whose action renews SERVING: the
+     * same token and its stamp start again, the stamp is stamped again, and the token ends SERVED a second time. The
+     * renewal entered SERVING with the same token, so the desk's deferred exit still runs, once.
      */
     @Test
     void aReentryWithTheSameChildDuringADeferredExitStillExitsTheParent() {
-        Token token = new Token(new Stamp());
+        Stamp stamp = new Stamp("s1");
+        Token token = new Token("t1", stamp);
         Desk desk = new Desk(token);
         Office office = new Office(desk);
-        Outcome<Desk, DeskState, DeskId> outcome = startTheDesk(desk, office, false);
+        Outcome<Desk, DeskState, DeskId> outcome = startTheDesk(desk, office,
+                (TransitionContext<Token, TokenState, TokenId> ctx) -> {
+                    ctx.cascade(DESKS, desk, DeskId.RENEW);
+                    ctx.cascade(STAMPS, stamp, StampId.STAMP);
+                });
         assertEquals(OutcomeCode.APPLIED, outcome.code());
         assertEquals(List.of("Desk:NEW-START>WAITING@0", "Token:CALLED-MOVE>SERVED@1",
                 "Office:IDLE-OPEN_UP>OPEN@2", "Stamp:BLANK-STAMP>STAMPED@1", "Token:QUEUED-SERVE>SERVED@1",
@@ -709,10 +715,16 @@ class SubmachineExitTest {
      */
     @Test
     void aReentryWithTheSameChildAtAnotherDepthStillExitsTheParent() {
-        Token token = new Token(new Stamp());
+        Stamp stamp = new Stamp("s1");
+        Token token = new Token("t1", stamp);
         Desk desk = new Desk(token);
         Office office = new Office(desk);
-        Outcome<Desk, DeskState, DeskId> outcome = startTheDesk(desk, office, true);
+        Relay relay = new Relay();
+        Outcome<Desk, DeskState, DeskId> outcome = startTheDesk(desk, office,
+                (TransitionContext<Token, TokenState, TokenId> ctx) -> {
+                    ctx.cascade(RELAYS, relay, StampId.STAMP);
+                    ctx.cascade(STAMPS, stamp, StampId.STAMP);
+                });
         assertEquals(OutcomeCode.APPLIED, outcome.code());
         assertEquals(List.of("Desk:NEW-START>WAITING@0", "Token:CALLED-MOVE>SERVED@1",
                 "Office:IDLE-OPEN_UP>OPEN@2", "Stamp:BLANK-STAMP>STAMPED@1", "Token:QUEUED-SERVE>SERVED@1",
@@ -722,11 +734,43 @@ class SubmachineExitTest {
         assertEquals(TokenState.SERVED, token.state);
     }
 
-    /** Runs START on the desk of the re-entry scenarios; the first SERVE renews it directly or through a relay. */
-    private static Outcome<Desk, DeskState, DeskId> startTheDesk(Desk desk, Office office, boolean throughRelay) {
+    /**
+     * The same scenario, where the first SERVE renews SERVING with another token and then again with the first one:
+     * the latest start since the deferred exit selected its start names the first token again, which ends SERVED, so
+     * the desk's deferred exit runs, once. The other token stays started in QUEUED.
+     */
+    @Test
+    void aReentryWithAnotherChildThenTheSameOneStillExitsTheParent() {
+        Stamp stamp = new Stamp("s1");
+        Token token = new Token("t1", stamp);
+        Token other = new Token("t2", new Stamp("s2"));
+        Desk desk = new Desk(token);
+        Office office = new Office(desk);
+        Outcome<Desk, DeskState, DeskId> outcome = startTheDesk(desk, office,
+                (TransitionContext<Token, TokenState, TokenId> ctx) -> {
+                    desk.token = other;
+                    ctx.cascade(DESKS, desk, DeskId.RENEW);
+                    desk.token = token;
+                    ctx.cascade(DESKS, desk, DeskId.RENEW);
+                    ctx.cascade(STAMPS, stamp, StampId.STAMP);
+                });
+        assertEquals(OutcomeCode.APPLIED, outcome.code());
+        assertEquals(List.of("Desk:NEW-START>WAITING@0", "Token:CALLED-MOVE>SERVED@1",
+                "Office:IDLE-OPEN_UP>OPEN@2", "Stamp:BLANK-STAMP>STAMPED@1", "Token:QUEUED-SERVE>SERVED@1",
+                "Desk:SERVING-RENEW>SERVING@2", "Desk:SERVING-RENEW>SERVING@2", "Stamp:BLANK-STAMP>STAMPED@2",
+                "Token:QUEUED-SERVE>SERVED@2", "Desk:SERVING-FINISH>DONE@1"), described(outcome.records()));
+        assertEquals(DeskState.DONE, desk.state);
+        assertEquals(TokenState.SERVED, token.state);
+        assertEquals(TokenState.QUEUED, other.state);
+    }
+
+    /**
+     * Runs START on the desk of the re-entry scenarios. START moves the desk's token and stamps its stamp; the first
+     * SERVE of any token runs {@code firstServe}.
+     */
+    private static Outcome<Desk, DeskState, DeskId> startTheDesk(Desk desk, Office office,
+            Consumer<TransitionContext<Token, TokenState, TokenId>> firstServe) {
         Token token = desk.token;
-        Stamp stamp = token.stamp;
-        Relay relay = new Relay();
         GraphDefinition<Stamp, StampState, StampId> stamps = StateGraph.define(STAMPS)
                 .initial(StampState.BLANK).terminal(StampState.STAMPED)
                 .statePolicy(StampState.BLANK, "stamp it")
@@ -744,14 +788,9 @@ class SubmachineExitTest {
                     }).endTransition()
                 .transition(TokenId.SERVE, TokenState.QUEUED, TokenState.SERVED)
                     .action("Serve", (TransitionContext<Token, TokenState, TokenId> ctx) -> {
-                        token.serves++;
-                        if (token.serves == 1) {
-                            if (throughRelay) {
-                                ctx.cascade(RELAYS, relay, StampId.STAMP);
-                            } else {
-                                ctx.cascade(DESKS, desk, DeskId.RENEW);
-                            }
-                            ctx.cascade(STAMPS, stamp, StampId.STAMP);
+                        ctx.entity().serves++;
+                        if (ctx.entity().serves == 1) {
+                            firstServe.accept(ctx);
                         }
                         return ActionOutcome.ok();
                     }).endTransition()
@@ -767,7 +806,7 @@ class SubmachineExitTest {
                 .transition(DeskId.START, DeskState.NEW, DeskState.WAITING)
                     .action("Start", (TransitionContext<Desk, DeskState, DeskId> ctx) -> {
                         ctx.cascade(TOKENS, token, TokenId.MOVE);
-                        ctx.cascade(STAMPS, stamp, StampId.STAMP);
+                        ctx.cascade(STAMPS, token.stamp, StampId.STAMP);
                         return ActionOutcome.ok();
                     }).endTransition()
                 .transition(DeskId.RESUME, DeskState.WAITING, DeskState.SERVING).endTransition()
@@ -805,20 +844,20 @@ class SubmachineExitTest {
                 .add(StateMachines.from(desks).state((Desk value) -> value.state,
                         (Desk value, DeskState state) -> value.state = state).identity((Desk value) -> "d"))
                 .add(StateMachines.from(tokens).state((Token value) -> value.state,
-                        (Token value, TokenState state) -> value.state = state).identity((Token value) -> "t"))
+                        (Token value, TokenState state) -> value.state = state).identity((Token value) -> value.name))
                 .add(StateMachines.from(stamps).state((Stamp value) -> value.state,
-                        (Stamp value, StampState state) -> value.state = state).identity((Stamp value) -> "s"))
+                        (Stamp value, StampState state) -> value.state = state).identity((Stamp value) -> value.name))
                 .build()) {
             return registry.of(DESKS).execute(desk, DeskId.START);
         }
     }
 
-
     /**
      * Entering BOUND starts the first member, whose leaf is already done, so the holding's step defers the member's
      * exit SETTLE to its end. That exit's action makes the second member the holding's and renews BOUND, which starts
      * it; the second member's exit fails into PARKED, so the holding stays in BOUND. The first member then ends
-     * SETTLED, but the holding entered BOUND again with another member since the first one was started: no CLOSE runs.
+     * SETTLED, but since the holding's deferred exit selected the first member's start, BOUND was entered again with
+     * another member: no CLOSE runs.
      */
     @Test
     void aDescendantExitThatReentersTheNodeWithAnotherChildCancelsTheDeferredExit() {
@@ -1128,9 +1167,9 @@ class SubmachineExitTest {
         public String toString() { return "Office"; }
     }
 
-    /** A desk and its token. */
+    /** A desk and the token it currently serves. */
     static final class Desk {
-        private final Token token;
+        private Token token;
         private DeskState state = DeskState.NEW;
 
         Desk(Token token) {
@@ -1143,11 +1182,13 @@ class SubmachineExitTest {
 
     /** A token, its stamp, and how many times its exit SERVE has run. */
     static final class Token {
+        private final String name;
         private final Stamp stamp;
         private TokenState state = TokenState.CALLED;
         private int serves;
 
-        Token(Stamp stamp) {
+        Token(String name, Stamp stamp) {
+            this.name = name;
             this.stamp = stamp;
         }
 
@@ -1165,7 +1206,12 @@ class SubmachineExitTest {
 
     /** A stamp. */
     static final class Stamp {
+        private final String name;
         private StampState state = StampState.STAMPED;
+
+        Stamp(String name) {
+            this.name = name;
+        }
 
         @Override
         public String toString() { return "Stamp"; }
