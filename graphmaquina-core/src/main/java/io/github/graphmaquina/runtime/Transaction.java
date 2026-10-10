@@ -902,8 +902,8 @@ final class Transaction {
                             "the guard " + guard.name() + " returned a null stage", Optional.empty());
                 }
                 try {
-                    Optional<GuardResult> result = await(machine, ref, transition.from(), id, to, Optional.empty(), depth,
-                            "the guard " + guard.name(), stage, uow.deadlineNanos());
+                    Optional<GuardResult> result = await(machine, ref, transition.from(), id, to, Optional.empty(),
+                            depth, "the guard " + guard.name(), stage, uow.deadlineNanos());
                     if (result.isEmpty()) {
                         throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                                 "the guard " + guard.name() + " returned null", Optional.empty());
@@ -925,9 +925,9 @@ final class Transaction {
      * Waits under the deadline. Timeout, interruption and the refusal of the thread's ForkJoinPool to let it block
      * are aborts, each caused by what ended the wait; the user's stage is left running.
      */
-    private <R> Optional<R> await(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Optional<Enum<?>> id,
-                        Optional<Enum<?>> to, Optional<String> action, int depth, String what, CompletionStage<R> stage,
-                        long deadlineNanos) {
+    private <R> Optional<R> await(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
+                                  Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action, int depth,
+                                  String what, CompletionStage<R> stage, long deadlineNanos) {
         try {
             return Await.completedOrAwait(stage, deadlineNanos);
         } catch (Await.Timeout timeout) {
