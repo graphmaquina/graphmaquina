@@ -45,7 +45,7 @@ class TransactionClassifyTest {
 
     private static Transaction transaction(Doc doc, DocTransition requested) {
         return new Transaction(null, new UnitOfWork(10, Long.MAX_VALUE), DOCS, doc, Optional.of(requested), false,
-                Optional.empty());
+                Optional.empty(), CallLog.OFF);
     }
 
     /**

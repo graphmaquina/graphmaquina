@@ -39,9 +39,11 @@ final class Observers {
         return observers.isEmpty();
     }
 
-    /** Reads the clock every end event of the call measures from, then notifies onStarted. */
-    Observed started(MachineCall call) {
-        long startNanos = System.nanoTime();
+    /**
+     * Notifies onStarted of a call whose clock was read at {@code startNanos}, the {@code System.nanoTime()} every end
+     * event of the call measures from; the caller reads it just before.
+     */
+    Observed started(MachineCall call, long startNanos) {
         notifyEach(call, "onStarted", (MachineObserver observer) -> observer.onStarted(call));
         return new Observed(this, call, startNanos);
     }

@@ -21,6 +21,7 @@ import io.github.graphmaquina.api.WatchRule;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.AbortDetails;
 import io.github.graphmaquina.error.AfterCommitException;
+import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.WatchChainExceededException;
@@ -152,8 +153,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         Reentrancy.check(key(), entity);
         Optional<Enum<?>> requested = presentTransitions.get(transition.ordinal());
         Optional<Object> operationInput = Optional.ofNullable(input);
-        Optional<Observed> observed = observe(entity, requested, false);
-        return runRoot(entity, requested, false, observed,
+        CallLog log = CallLog.open(Optional.empty());
+        Optional<Observed> observed = observe(entity, requested, false, log);
+        return runRoot(entity, requested, false, observed, log,
                 (Transaction tx) -> tx.transition(this, entity, transition, 0, operationInput), 0);
     }
 
@@ -167,7 +169,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     @Override
     public Outcome<E, S, T> reevaluate(E entity) {
         Objects.requireNonNull(entity, "entity");
-        return reevaluate(entity, 0);
+        return reevaluate(entity, 0, Optional.empty());
     }
 
     /**
@@ -176,16 +178,22 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * watch function runs. The state read and the watch functions, peersOf and the conditions, run with the
      * reentrancy marker set, so none of them can start a transition on this thread: a nested root would begin a chain
      * of its own that maxWatchChain never counts. The marker is released before the selected edge runs as a root.
-     * Observers see the whole of it as one call, which ends in RESOLVE if it throws before an edge runs.
+     * Observers see the whole of it as one call, which ends in RESOLVE if it throws before an edge runs, and so does
+     * its log. The log's start line names {@code trigger}: the id of the call whose commit triggered this watch
+     * reaction, when that call logged at DEBUG, and empty for a reevaluation the application made.
      */
-    Outcome<E, S, T> reevaluate(E entity, int chain) {
+    Outcome<E, S, T> reevaluate(E entity, int chain, Optional<Long> trigger) {
         Reentrancy.check(key(), entity);
         boolean reaction = chain > 0;
-        Optional<Observed> observed = observe(entity, Optional.empty(), reaction);
+        CallLog log = CallLog.open(trigger);
+        Optional<Observed> observed = observe(entity, Optional.empty(), reaction, log);
         S state;
         Optional<WatchSpec<E, S, T, ?, ?, ?>> watch;
         Optional<T> selected = Optional.empty();
         try {
+            if (log.debug()) {
+                log.start(key(), "reevaluate");
+            }
             Reentrancy.enter(key(), entity);
             try {
                 try {
@@ -216,16 +224,19 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             }
         } catch (Throwable thrown) {
             failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, thrown);
+            if (log.debug() && !(thrown instanceof Error)) {
+                log.failed(new CallFailure(CallPhase.RESOLVE, StatesWritten.NONE, thrown));
+            }
             throw thrown;
         }
         if (watch.isEmpty()) {
-            return completed(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_WATCH));
+            return completed(observed, log, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_WATCH));
         }
         if (selected.isEmpty()) {
-            return completed(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
+            return completed(observed, log, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
         T resolved = selected.orElseThrow();
-        return runRoot(entity, Optional.empty(), reaction, observed,
+        return runRoot(entity, Optional.empty(), reaction, observed, log,
                 (Transaction tx) -> tx.transition(this, entity, resolved, 0), chain);
     }
 
@@ -278,14 +289,21 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      * {@code requested} is the identifier execute was asked for, and empty for a reevaluation.
+     * The observers hear of the call before its log does: the start line follows onStarted, inside the try that tells
+     * them of an Error, and the end or failed line follows their end event. An execute logs its start line here; a
+     * reevaluation logged its own before it read the state. The committed hops and starts are logged once phase 2
+     * wrote them, before the hooks, and an Error gets no failed line.
      */
     Outcome<E, S, T> runRoot(E entity, Optional<Enum<?>> requested, boolean reaction, Optional<Observed> observed,
-                             Function<Transaction, StepResult<S, T>> body, int chain) {
+                             CallLog log, Function<Transaction, StepResult<S, T>> body, int chain) {
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), deadlineNanos());
         Transaction tx = new Transaction(registry, uow, key(), entity, requested, reaction,
-                observed.map(Observed::call));
+                observed.map(Observed::call), log);
         Outcome<E, S, T> outcome;
         try {
+            if (log.debug() && requested.isPresent()) {
+                log.start(key(), requested.get().name());
+            }
             StepResult<S, T> step;
             List<TransitionRecord<?, ?, ?>> records;
             List<SubmachineStart<?, ?, ?>> starts;
@@ -301,6 +319,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                     records = uow.records();
                     starts = uow.starts();
                     committed = uow.entries();
+                    if (log.debug()) {
+                        log.committed(committed);
+                    }
                 } else {
                     summary = CommitSummary.EMPTY;
                     records = List.of();
@@ -316,7 +337,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 tx.enter(CallPhase.HOOK);
                 runHooks(tx, records, committed);
                 tx.enter(CallPhase.REACTIONS);
-                reactions = registry.dispatchWatches(summary, chain);
+                reactions = registry.dispatchWatches(summary, chain,
+                        log.debug() ? Optional.of(log.id()) : Optional.empty());
             }
             outcome = switch (step) {
                 case StepResult.Applied<S, T> applied ->
@@ -336,18 +358,27 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             if (thrown instanceof Error fatal) {
                 throw failed(observed, tx, fatal);
             }
-            throw failed(observed, tx, tx.classify(thrown));
+            CallFailedException failure = failed(observed, tx, tx.classify(thrown));
+            if (log.debug()) {
+                log.failed(tx.failureOf(failure));
+            }
+            throw failure;
         }
-        return completed(observed, outcome);
+        return completed(observed, log, outcome);
     }
 
-    /** Tells the registry's observers that a call starts; reads no clock and allocates nothing when it has none. */
-    private Optional<Observed> observe(E entity, Optional<Enum<?>> requested, boolean reaction) {
+    /**
+     * Tells the registry's observers that a call starts; reads no clock and allocates nothing when it has none. The
+     * end events measure from the clock read of the call's log, when the call logs, and from a read of their own
+     * otherwise, so a call reads the clock once at its start either way.
+     */
+    private Optional<Observed> observe(E entity, Optional<Enum<?>> requested, boolean reaction, CallLog log) {
         Observers observers = registry.observers();
         if (observers.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(observers.started(new MachineCall(key(), entity, requested, reaction)));
+        long startNanos = log == CallLog.OFF ? System.nanoTime() : log.startNanos();
+        return Optional.of(observers.started(new MachineCall(key(), entity, requested, reaction), startNanos));
     }
 
     /** The call a reevaluation's own failure carries: the observed one, or a new one when nobody observes it. */
@@ -357,9 +388,13 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 : new MachineCall(key(), entity, Optional.empty(), reaction);
     }
 
-    private static <O extends Outcome<?, ?, ?>> O completed(Optional<Observed> observed, O outcome) {
+    /** Tells the observers, if any, that the call returned {@code outcome}, then logs its end line. */
+    private static <O extends Outcome<?, ?, ?>> O completed(Optional<Observed> observed, CallLog log, O outcome) {
         if (observed.isPresent()) {
             observed.get().completed(outcome);
+        }
+        if (log.debug()) {
+            log.end(outcome);
         }
         return outcome;
     }

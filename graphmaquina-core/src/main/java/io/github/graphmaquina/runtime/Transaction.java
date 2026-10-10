@@ -40,7 +40,7 @@ import java.util.concurrent.CompletionStage;
 
 /**
  * Engine of a root transaction. All the state of the transition lives here and in the UnitOfWork, the phase of its
- * call included.
+ * call included, and so does the call's log.
  */
 final class Transaction {
 
@@ -62,9 +62,11 @@ final class Transaction {
     private boolean writing;
     /** The state the root's own step read and the edge it selected, recorded when that step throws; empty before. */
     private Optional<RootStep> rootStep = Optional.empty();
+    /** The log of the call: {@link CallLog#OFF} when the call found both levels off. */
+    private final CallLog log;
 
     Transaction(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
-                Optional<Enum<?>> requested, boolean reaction, Optional<MachineCall> call) {
+                Optional<Enum<?>> requested, boolean reaction, Optional<MachineCall> call, CallLog log) {
         this.registry = registry;
         this.uow = uow;
         this.callKey = callKey;
@@ -72,7 +74,11 @@ final class Transaction {
         this.requested = requested;
         this.reaction = reaction;
         this.call = call;
+        this.log = log;
     }
+
+    /** The log of the call this transaction runs. */
+    CallLog log() { return log; }
 
     /** The call this transaction runs: created the first time it is needed, the same instance afterwards. */
     MachineCall call() {
@@ -138,7 +144,7 @@ final class Transaction {
      * identifier) exactly once, guards, annotate, execute, failure route. A machine that takes part in a binding takes
      * {@link #step} instead, which checks its bindings and runs its exits too; any other pays one field read for that.
      * When the root's own step throws once it has read its state, it records that state and its edge for
-     * {@link #classify}.
+     * {@link #classify}. The root's own step hands the reference it registered to the call's log, which prints it.
      * {@code input} is the operation input of the call, empty when it has none; the contexts hand it out as it is.
      */
     <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> transition(DefaultStateMachine<E, S, T> machine,
@@ -152,6 +158,9 @@ final class Transaction {
         S from;
         try {
             ref = uow.register(machine.refOf(entity));
+            if (depth == 0 && log.debug()) {
+                log.entity(ref);
+            }
             from = currentState(machine, ref, entity);
         } catch (Error fatal) {
             throw fatal;
@@ -232,7 +241,7 @@ final class Transaction {
      * for any other step. For a machine that no graph binds as a sub-machine, the binding check
      * is one test of an empty list, and for one whose own graph binds none, the reserved-exit check is one field read.
      * When the root's own step throws once it has read its state, it records that state and its edge for
-     * {@link #classify}.
+     * {@link #classify}. The root's own step hands the reference it registered to the call's log, which prints it.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> step(DefaultStateMachine<E, S, T> machine,
                                                                             E entity, T id, int depth,
@@ -243,6 +252,9 @@ final class Transaction {
         S from;
         try {
             ref = uow.register(machine.refOf(entity));
+            if (depth == 0 && log.debug()) {
+                log.entity(ref);
+            }
             from = exitOf.isPresent() ? machine.key().states().cast(exitOf.get()) : currentState(machine, ref, entity);
         } catch (Error fatal) {
             throw fatal;

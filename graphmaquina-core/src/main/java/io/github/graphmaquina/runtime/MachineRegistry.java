@@ -399,9 +399,10 @@ public final class MachineRegistry implements AutoCloseable {
      * re-evaluated only once even if several of its peers moved. A registry that indexed no watcher answers before
      * reading which entities moved, which is what most transactions pay. An owner lookup that throws a throwable that
      * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException. Each lookup runs
-     * with the reentrancy marker set, so one that calls execute or reevaluate ends that way too.
+     * with the reentrancy marker set, so one that calls execute or reevaluate ends that way too. {@code trigger} is
+     * the id of the call whose commit is dispatched, when that call logs at DEBUG; each reaction's log names it.
      */
-    List<Reaction> dispatchWatches(CommitSummary summary, int chain) {
+    List<Reaction> dispatchWatches(CommitSummary summary, int chain, Optional<Long> trigger) {
         if (watchers.isEmpty()) {
             return List.of();
         }
@@ -425,7 +426,7 @@ public final class MachineRegistry implements AutoCloseable {
             }
         }
         for (Map.Entry<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> entry : targets.entrySet()) {
-            reactions.add(entry.getValue().react(entry.getKey().instance(), chain + 1));
+            reactions.add(entry.getValue().react(entry.getKey().instance(), chain + 1, trigger));
         }
         return List.copyOf(reactions);
     }

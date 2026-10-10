@@ -43,6 +43,7 @@ shop and billing domains the guide quotes.
 - [Watch other machines](#watch-other-machines)
 - [Compose machines](#compose-machines)
 - [Commit, hooks and observers](#commit-hooks-and-observers)
+- [Debug a call](#debug-a-call)
 - [Concurrency, identity and persistence](#concurrency-identity-and-persistence)
 - [Inspect graphs and export diagrams](#inspect-graphs-and-export-diagrams)
 - [Test your machines](#test-your-machines)
@@ -72,6 +73,7 @@ shop and billing domains the guide quotes.
 | Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child whose parent does not hold it there is rejected, and the step that ends the child runs the parent's exit in the same unit of work. See [compose machines](#compose-machines). |
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
 | Inspectable execution | Outcomes carry transition records, watch reactions and the sub-machines a call started; technical aborts carry diagnostic details where applicable. |
+| Call logs | Each call can log its start, the hops and sub-machine starts it committed, and how it ended, through `System.Logger`; off by default. See [debug a call](#debug-a-call). |
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram, which draws each sub-machine inside the state it is bound to. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
@@ -2814,7 +2816,8 @@ The runtime's normal root execution follows this sequence:
 
 A rejected or ignored root does not commit state changes. A handled failure does commit its failure route.
 External side effects performed by actions, and mutations to other entity fields, are not automatically undone
-when the unit of work aborts.
+when the unit of work aborts. A call that [logs](#debug-a-call) at `DEBUG` writes its `committed` and `started` lines
+after step 4, and its `end` or `failed` line after the observers learn how it ended.
 
 ### After-commit hooks
 
@@ -2903,12 +2906,87 @@ how far it got in writing states; an `Error` is reported too, then propagates.
 
 An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
 `System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
-propagates. It cannot start a transition on its own thread either: an operation called from an observer throws
+propagates. That warning is the only record logged on `io.github.graphmaquina` itself: the lines of each call go to
+its child logger `io.github.graphmaquina.runtime`, as [debug a call](#debug-a-call) describes. An observer cannot
+start a transition on its own thread either: an operation called from an observer throws
 `ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread as
 a call of its own, unless that executor runs tasks inline, in which case the returned future fails with that exception
 as its cause. When a failure must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a
 machine. Observers run on the thread of every call, so keep them thread-safe and quick. Add as many as you need: they
 are notified in the order they were added.
+
+## Debug a call
+
+### Logs
+
+The runtime logs each call through `System.getLogger("io.github.graphmaquina.runtime")`, standalone machines and
+machine sets alike. Every line is logged at `DEBUG`, and nothing at `INFO` or above: the caller already receives the
+outcome or the exception. The logger is off by default. `java.util.logging`, the JDK's default backend for
+`System.Logger`, maps `DEBUG` to `FINE`, which its default configuration does not log.
+
+To see the lines, lower the logger and a handler to `FINE`, for instance in a `logging.properties` file:
+
+```properties
+handlers = java.util.logging.ConsoleHandler
+java.util.logging.ConsoleHandler.level = FINE
+java.util.logging.SimpleFormatter.format = %4$s: %5$s%n
+io.github.graphmaquina.runtime.level = FINE
+```
+
+Start the JVM with `-Djava.util.logging.config.file=logging.properties`. The console handler drops records below
+`INFO` until its own level is lowered, so the logger's level alone shows nothing. The format line is optional: it
+prints each record on one line. As a child of `io.github.graphmaquina`, the runtime logger takes that logger's level
+when it has none of its own.
+
+With this file, a ticket machine like the quickstart's, called as its `App` begins (submit and approve `T-1`, then
+submit `T-2` and `T-3`), logs these lines; the elapsed times vary from run to run:
+
+```text
+FINE: call=1 start Ticket/TicketState SUBMIT
+FINE: call=1 committed Ticket/TicketState#T-1 OPEN -SUBMIT-> REVIEW depth=0
+FINE: call=1 end code=APPLIED state=REVIEW entity=Ticket/TicketState#T-1 records=1 starts=0 reactions=0 aborted=0 elapsed=15033us
+FINE: call=2 start Ticket/TicketState APPROVE
+FINE: call=2 committed Ticket/TicketState#T-1 REVIEW -APPROVE-> DONE depth=0
+FINE: call=2 end code=APPLIED state=DONE entity=Ticket/TicketState#T-1 records=1 starts=0 reactions=0 aborted=0 elapsed=322us
+FINE: call=3 start Ticket/TicketState SUBMIT
+FINE: call=3 end code=GUARD_REJECTED state=OPEN entity=Ticket/TicketState#T-2 records=0 starts=0 reactions=0 aborted=0 reason="a ticket needs a title" elapsed=658us
+FINE: call=4 start Ticket/TicketState SUBMIT
+FINE: call=4 committed Ticket/TicketState#T-3 OPEN -DECLINE-> FAILED depth=0
+FINE: call=4 end code=FAILURE_ROUTED state=FAILED entity=Ticket/TicketState#T-3 records=1 starts=0 reactions=0 aborted=0 reason="the review board declined the ticket" elapsed=1060us
+```
+
+Each message starts with `call=<id>`. The id numbers the calls logged at `DEBUG`, from 1, with one counter for every
+machine. Square brackets below mark the parts a line may leave out.
+
+| Line | Logged when |
+| --- | --- |
+| `call=<id> start <machine> <request>[ trigger=<id>]` | A call starts. `<machine>` is the machine key, such as `Ticket/TicketState`, and `<request>` the identifier `execute` was asked for, or `reevaluate`. A watch reaction adds `trigger=` and the id of the call whose commit triggered it, if that call logged its own lines. |
+| `call=<id> committed <ref> <from> -<T>-> <to> depth=<d>` | The call committed a hop: one line per hop, cascaded hops and the exits of sub-machines included, at the depth of the step that took it. |
+| `call=<id> started <ref> <previous> -> <initial> parent=<ref> node=<node> depth=<d>` | The call committed the start of a sub-machine: the child moved from `<previous>` to its initial state when its parent entered `<node>`. |
+| `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n>[ reason="<reason>"] elapsed=<us>` | The call returned its outcome: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. |
+| `call=<id> failed phase=<phase> written=<written>[ entity=<ref>] error=<error> elapsed=<us>` | The call threw its `CallFailedException`: its `phase()` and `statesWritten()`, the exception's class name and message, without a stack trace, and the time since the call started. |
+
+The `committed` and `started` lines follow the order the call took its hops and starts, and come after the commit,
+before the hooks: a call whose commit fails logs none. A watch reaction is a call of its own, whose lines come between
+the `committed` lines and the `end` line of the call that triggered it. A cascade logs no line of its own, since it is
+part of the call that runs it. A request refused before it starts, as [observers](#observers) see it, logs nothing.
+Each call logs on the thread that runs it: one submitted through `async()` logs on the executor's thread, and the
+submission itself logs nothing.
+
+An entity appears in a line only as `<ref>`: its machine key and its identity, such as `Ticket/TicketState#T-1`. A
+standalone machine without `identity(...)` prints `#@` and the entity's identity hash code in hexadecimal instead.
+The runtime prints the identity it has already computed, so a line never calls the identity function, a getter or
+the entity's `toString()`. The `start` line names no entity, and `end` and `failed` name it only once the call
+computed it: a reevaluation that selected no edge, or that failed before its edge ran, names none. The identity may
+be personal data, such as an e-mail address used as an identifier; treat these logs like any record that carries
+your identifiers. If the `toString()` of an identity throws a `RuntimeException`, the line prints
+`<toString threw <exception class>>` in its place, and the call goes on; an `Error` propagates.
+
+The runtime asks the logger for its level once, when a call starts, and builds no line while the level is off: a
+level raised while a call runs applies from the next call, and a call that logs nothing pays for no line. A
+`RuntimeException` from the logging backend loses the line and changes nothing in the call; an `Error` propagates.
+An `Error` that ends a call is not a `CallFailedException` and gets no `failed` line: the lines logged before it
+stay, and none follows them.
 
 ## Concurrency, identity and persistence
 

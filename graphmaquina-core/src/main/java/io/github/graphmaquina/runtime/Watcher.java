@@ -39,11 +39,12 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
      * Re-evaluation of the owner: the edge its watch selects, if any, runs as a new root transaction. It does not
      * propagate the reevaluation's failure, because the commit that triggered it already happened: the failure, a
      * CallFailedException of the reevaluation, becomes {@link Reaction.Aborted}. An Error propagates unchanged.
+     * {@code trigger} is the id of the call whose commit triggered the reaction, which the reaction's log names.
      */
-    Reaction react(Object instance, int chain) {
+    Reaction react(Object instance, int chain, Optional<Long> trigger) {
         E entity = machine.key().entity().cast(instance);
         try {
-            return new Reaction.Done(machine.key(), entity, machine.reevaluate(entity, chain));
+            return new Reaction.Done(machine.key(), entity, machine.reevaluate(entity, chain, trigger));
         } catch (RuntimeException e) {
             return new Reaction.Aborted(machine.key(), entity, e);
         }

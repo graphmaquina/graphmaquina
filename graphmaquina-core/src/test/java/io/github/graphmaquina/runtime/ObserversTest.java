@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
@@ -29,7 +30,8 @@ import org.junit.jupiter.api.Test;
 /**
  * What the registry's observers are notified with, without a machine: an exception an observer throws is logged as a
  * warning naming the observer, the callback and the call but never the entity, the next observer is still notified,
- * an Error propagates, and the reentrancy marker is set during each callback and released after it.
+ * an Error propagates, the reentrancy marker is set during each callback and released after it, and the end events
+ * measure from the clock read the call hands in.
  */
 class ObserversTest {
 
@@ -101,7 +103,7 @@ class ObserversTest {
         };
         Doc entity = new Doc("secret", DRAFT);
         MachineCall call = new MachineCall(DOCS, entity, Optional.of(SUBMIT), false);
-        Observed observed = new Observers(List.of(new Failing(boom), next), logger).started(call);
+        Observed observed = new Observers(List.of(new Failing(boom), next), logger).started(call, System.nanoTime());
         observed.completed(ignored(entity));
         observed.failed(new CallFailure(CallPhase.ACTION, StatesWritten.NONE, new IllegalArgumentException("x")));
         String prefix = "WARNING: the observer " + Failing.class.getName() + " threw in ";
@@ -111,6 +113,25 @@ class ObserversTest {
                 prefix + "onFailed for Doc/DocStatus SUBMIT | " + boom), logger.records);
         assertFalse(logger.records.toString().contains("secret"));
         assertEquals(List.of("notified"), after);
+    }
+
+    /** The end events measure from the clock read the call hands in, which a call that logs shares with its log. */
+    @Test
+    void theEndEventsMeasureFromTheClockReadTheCallHandsIn() {
+        Doc entity = new Doc("1", DRAFT);
+        List<Duration> elapsed = new ArrayList<>();
+        MachineObserver observer = new MachineObserver() {
+            @Override
+            public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration time) {
+                elapsed.add(time);
+            }
+        };
+        long startNanos = System.nanoTime() - Duration.ofHours(1).toNanos();
+        Observed observed = new Observers(List.of(observer), new RecordingLogger())
+                .started(new MachineCall(DOCS, entity, Optional.of(SUBMIT), false), startNanos);
+        observed.completed(ignored(entity));
+        assertEquals(startNanos, observed.startNanos());
+        assertTrue(elapsed.get(0).compareTo(Duration.ofHours(1)) >= 0, elapsed.toString());
     }
 
     @Test
@@ -125,7 +146,7 @@ class ObserversTest {
             }
         };
         new Observers(List.of(probe), new RecordingLogger())
-                .started(new MachineCall(DOCS, entity, Optional.of(SUBMIT), false));
+                .started(new MachineCall(DOCS, entity, Optional.of(SUBMIT), false), System.nanoTime());
         assertEquals(List.of(ReentrantTransitionException.class), during);
         Reentrancy.check(DOCS, entity);
     }
@@ -142,7 +163,7 @@ class ObserversTest {
         };
         RecordingLogger logger = new RecordingLogger();
         Observed observed = new Observers(List.of(observer), logger)
-                .started(new MachineCall(DOCS, entity, Optional.of(SUBMIT), false));
+                .started(new MachineCall(DOCS, entity, Optional.of(SUBMIT), false), System.nanoTime());
         assertSame(broken, assertThrows(AssertionError.class, () -> observed.completed(ignored(entity))));
         assertEquals(List.of(), logger.records);
         Reentrancy.check(DOCS, entity);
