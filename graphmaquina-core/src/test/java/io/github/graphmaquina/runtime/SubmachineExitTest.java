@@ -59,12 +59,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 /**
- * The atomic exit: a child whose step ends in a terminal state while its parent is in the bound node runs the exit
- * that terminal selects, as a step of the parent at the next depth, in the same unit of work, once the child's own
- * step is no longer in flight. An exit runs its guards, its action and its failure route as any step; a rejection or an
- * unhandled failure inside it aborts the whole call. A parent that enters a node whose child already stands in a
- * terminal state exits at the end of its own step. A parent in flight, leaving the node or entering it, never exits
- * from the child's step, and an exit that ends its parent in a terminal state runs the grandparent's exit in turn.
+ * The atomic exit: a child whose step ends in a terminal state while its parent is in the bound node and still holds it
+ * runs the exit that terminal selects, as a step of the parent at the next depth, in the same unit of work, once the
+ * child's own step is no longer in flight. An exit runs its guards, its action and its failure route as any step; a
+ * rejection or an unhandled failure inside it aborts the whole call. A parent that enters a node whose child already
+ * stands in a terminal state exits at the end of its own step. A parent in flight, leaving the node or entering it,
+ * never exits from the child's step, and an exit that ends its parent in a terminal state runs the grandparent's exit
+ * in turn.
  */
 class SubmachineExitTest {
 

@@ -184,7 +184,7 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * The request was refused for the reason {@code kind} names: no edge leaves {@code from} with that identifier, a
-     * guard rejected, the entity is a sub-machine that no parent holds, or the identifier is an exit of the
+     * guard rejected, the entity is a sub-machine whose parent does not hold it, or the identifier is an exit of the
      * sub-machine bound to {@code from}, which no request may ask for from there. No action ran and nothing was
      * written, though on a guard rejection the guards up to the rejecting one ran. {@code guard} names that guard, and
      * is empty for every other kind. It reports no destination. Only a root call returns it: inside a cascade, a

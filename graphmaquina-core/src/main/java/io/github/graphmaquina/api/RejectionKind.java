@@ -2,7 +2,7 @@ package io.github.graphmaquina.api;
 
 /**
  * Why a request was rejected: no edge leaves the current state with that identifier, a guard said no, the machine is
- * bound as a sub-machine and no parent holds the entity, or the identifier is an exit of the sub-machine bound to the
+ * bound as a sub-machine and its parent does not hold it, or the identifier is an exit of the sub-machine bound to the
  * current state, which no request may ask for from that state.
  */
 public enum RejectionKind {

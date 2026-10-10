@@ -148,7 +148,7 @@ to confuse, so keep them apart:
 | This identifier has no edge from this origin | `hasNoTransition(from, id)` |
 | The request was refused because nothing was keyed | `isRejected().hasNoTransition()` |
 | The request was refused by a guard on an edge that does exist | `isRejected().isRejectedByGuardNamed(name)` |
-| The request was refused because the entity is a sub-machine that no parent holds | `isRejected().isDetached()` |
+| The request was refused because the entity is a sub-machine whose parent does not hold it | `isRejected().isDetached()` |
 | The request named an exit of the sub-machine bound to the origin, which only the end of that sub-machine runs | `isRejected().isReservedExit()` |
 
 `hasTransitionsExactly` takes identifiers, not destinations, so two edges that reach the same state are two

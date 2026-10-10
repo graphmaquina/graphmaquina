@@ -3,7 +3,7 @@
 <desc id="desc">An operation names a transition identifier. The engine resolves the single edge keyed by the current
 state and that identifier. With no such edge the node's policy rejects the request as NO_TRANSITION. Otherwise
 guards run, and a rejecting guard rejects as GUARD. Before the edge is resolved, a machine bound as a sub-machine
-rejects as DETACHED an entity that no parent holds; once it is resolved, a machine whose current state holds a
+rejects as DETACHED an entity whose parent does not hold it; once it is resolved, a machine whose current state holds a
 sub-machine rejects as RESERVED_EXIT an identifier that this binding maps as an exit. When a step ends a sub-machine
 in a terminal state while its parent is in the bound state and still holds it, the parent's exit runs and commits
 with that step, and the outcome is still the step's. A move or successful action commits the resolved edge as
@@ -104,7 +104,7 @@ and returns that execution's outcome. Technical errors throw instead of producin
 
 <rect x="52" y="911" width="1336" height="158" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <text x="78" y="947" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ffc77a" text-anchor="start">SUB-MACHINES</text>
-<text x="78" y="981" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Before resolving, a child that no parent holds: Rejected · DETACHED.</text>
+<text x="78" y="981" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">Before resolving, a child its parent does not hold: Rejected · DETACHED.</text>
 <text x="78" y="1015" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">After resolving, an exit of the sub-machine bound to the origin: Rejected · RESERVED_EXIT.</text>
 <text x="78" y="1049" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">A step that ends a sub-machine its parent still holds also commits the parent's exit; the outcome stays the step's.</text>
 

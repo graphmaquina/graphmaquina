@@ -69,7 +69,7 @@ shop and billing domains the guide quotes.
 | Synchronous and asynchronous actions | Actions and guards may return values or `CompletionStage` results. The runtime waits under configured deadlines. |
 | Coordinated state changes | Cascades share a unit of work; entity state setters run after the root transition succeeds or selects a handled failure route. |
 | Declared watches | After a peer commits, a matching owner can be reevaluated and execute the identifier the first matching rule names. |
-| Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child that no parent holds there is rejected, and the step that ends the child runs the parent's exit in the same unit of work. See [compose machines](#compose-machines). |
+| Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child whose parent does not hold it there is rejected, and the step that ends the child runs the parent's exit in the same unit of work. See [compose machines](#compose-machines). |
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
 | Inspectable execution | Outcomes carry transition records, watch reactions and the sub-machines a call started; technical aborts carry diagnostic details where applicable. |
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram, which draws each sub-machine inside the state it is bound to. |
@@ -961,7 +961,7 @@ observable result.
 
 | Situation | What the engine does | Outcome |
 | --- | --- | --- |
-| No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION`; a sub-machine that no parent holds is `DETACHED` first |
+| No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION`; a sub-machine whose parent does not hold it is `DETACHED` first |
 | An explicit self-loop `A --T--> A` is requested | The edge runs like any other: guards, action, commit, hook. | `Applied`, with `recordedState() == A` |
 | `reevaluate(entity)` finds no watch, or no rule that holds | Nothing runs. | `Ignored`, with `IgnoreReason.NO_WATCH` or `NO_RULE_MATCHED` |
 
@@ -1567,7 +1567,7 @@ entity, to the application's transaction or to external systems. To assert kinds
 
 ## Handle transition outcomes
 
-![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine that no parent holds is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a sub-machine its parent still holds also commits the parent's exit.](images/operation-decisions.svg)
+![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent does not hold it is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a sub-machine its parent still holds also commits the parent's exit.](images/operation-decisions.svg)
 
 `Outcome<E, S, T>` is a sealed interface with four variants. Every outcome classifies itself, so a caller that
 only needs to know what happened and why reads it without narrowing:
@@ -2458,8 +2458,8 @@ Outcome<Order, OrderStatus, OrderTransition> outcome = shop.orders().reevaluate(
 
 No watch produces `Outcome.Ignored` with `IgnoreReason.NO_WATCH`, and a watch whose rules all fail produces
 `IgnoreReason.NO_RULE_MATCHED`. These are the only two ways an `Ignored` is produced. A matching rule can still be
-rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-machine that no parent holds. Rules are
-not polled on a timer, and creating or paying an owner does not
+rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-machine whose parent does not hold it. Rules
+are not polled on a timer, and creating or paying an owner does not
 automatically mean all of its existing peers changed state.
 
 Cross-JAR watches are not supported yet. The owner and peer APIs must be generated in the same compilation.
