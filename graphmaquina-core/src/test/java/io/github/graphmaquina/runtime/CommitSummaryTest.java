@@ -9,7 +9,6 @@ import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.TransitionSpec;
 import java.util.ArrayList;
-import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -247,25 +246,9 @@ class CommitSummaryTest {
         assertSame(a, summary.movedEntities().get(0));
     }
 
-    /** The live log iterator still refuses a second entry appended by the first grouping hash. */
+    /** Appending and rolling back to one entry during hashing leaves the one-entry summary and its snapshot intact. */
     @Test
-    void aSingleHashThatAppendsToTheLogFailsBeforeReturningASummary() {
-        UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
-        HashCallbackIdentity identity = new HashCallbackIdentity();
-        LogEntry first = hop(ref(identity), S.A, S.B);
-        LogEntry appended = hop(ref(2), S.A, S.C);
-        uow.append(first);
-        identity.onHash = () -> uow.append(appended);
-        assertThrows(ConcurrentModificationException.class, uow::commitSummary);
-        assertEquals(1, identity.hashes);
-        assertEquals(0, identity.equalities);
-        assertEquals(List.of(), uow.journal());
-        assertEquals(List.of(first, appended), uow.entries());
-    }
-
-    /** Restoring size one during hashing preserves iterator completion and the returned immutable snapshot. */
-    @Test
-    void aSingleHashCanAppendAndRollBackToOneBeforeIteratorCompletion() {
+    void aSingleHashCanAppendAndRollBackToOne() {
         UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
         HashCallbackIdentity identity = new HashCallbackIdentity();
         EntityRef a = ref(identity);

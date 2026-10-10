@@ -22,7 +22,11 @@ final class CommitSummary {
         this.changes = changes;
     }
 
-    /** A single entry retains the first grouping hash before conflict checks, without grouping in a map. */
+    /**
+     * The summary of a log of one entry, without the map {@link #from} groups by. It still hashes the entry's reference
+     * once, as that map does: an identity whose hashCode throws or changes the entity then does so before the
+     * pre-commit conflict check and before any write, as on the general path.
+     */
     static CommitSummary single(LogEntry entry) {
         Change change = new Change(entry.ref(), entry, entry);
         Objects.hashCode(change.ref());

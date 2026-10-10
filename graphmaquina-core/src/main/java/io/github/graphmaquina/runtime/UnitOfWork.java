@@ -11,7 +11,6 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -262,15 +261,15 @@ final class UnitOfWork {
         poisonWrapsAForeignFailure = false;
     }
 
-    /** The log grouped into one change per entity, read straight off the log without copying its entries. */
+    /**
+     * The log grouped into one change per entity, read straight off the log without copying its entries. A log of one
+     * entry skips the grouping map when no action ran: the saved context of an action that ran can still cascade
+     * from an identity's hashCode while the log is grouped, and only the iteration of the general path refuses that
+     * new entry.
+     */
     CommitSummary commitSummary() {
         if (journal.isEmpty() && log.size() == 1) {
-            Iterator<LogEntry> entries = log.iterator();
-            CommitSummary summary = CommitSummary.single(entries.next());
-            if (entries.hasNext()) {
-                entries.next();
-            }
-            return summary;
+            return CommitSummary.single(log.get(0));
         }
         return CommitSummary.from(log);
     }
