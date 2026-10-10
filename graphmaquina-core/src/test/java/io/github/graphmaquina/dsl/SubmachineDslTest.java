@@ -460,11 +460,31 @@ class SubmachineDslTest {
      */
     @Test
     void theWalkExpandsADefinitionReachedByManyPathsOnce() {
-        Counted<Leaf> leaf = new Counted<>(ladderStep(Leaf.class, Optional.empty()));
-        GraphDefinition<Middle, Rung, RungMove> middle = ladderStep(Middle.class, Optional.of(leaf));
+        Counted<Leaf> leaf = new Counted<>(rung(Leaf.class, Optional.empty(), Optional.empty()).build());
+        GraphDefinition<Middle, Rung, RungMove> middle =
+                rung(Middle.class, Optional.of(leaf), Optional.of(leaf)).build();
         leaf.reads = 0;
-        ladderStep(Top.class, Optional.of(middle));
+        rung(Top.class, Optional.of(middle), Optional.of(middle)).build();
         assertEquals(Rung.values().length, leaf.reads);
+    }
+
+    /**
+     * Two definitions of one key: a hand-written one that takes its bindings from an outer machine, and one that binds
+     * the top's key again. The inner machine, reached first under the hand-written one, is expanded again on the path
+     * where that key is not an ancestor, so the walk still finds the cycle through the outer machine.
+     */
+    @Test
+    void sg805ExpandsADefinitionAgainOnAPathWithOtherAncestors() {
+        GraphDefinition<Top, Rung, RungMove> otherTop = rung(Top.class, Optional.empty(), Optional.empty()).build();
+        GraphDefinition<Reused, Rung, RungMove> bindsTop =
+                rung(Reused.class, Optional.of(otherTop), Optional.empty()).build();
+        GraphDefinition<Inner, Rung, RungMove> inner =
+                rung(Inner.class, Optional.of(bindsTop), Optional.empty()).build();
+        GraphDefinition<Outer, Rung, RungMove> outer = rung(Outer.class, Optional.of(inner), Optional.empty()).build();
+        Rebound<Reused> rebound = new Rebound<>(rung(Reused.class, Optional.empty(), Optional.empty()).build(), outer);
+        assertEquals(List.of(new Problem("SG805", "the sub-machines of Top/Rung contain Top/Rung again: Top/Rung.C"
+                        + " -> Outer/Rung.B -> Inner/Rung.B -> Reused/Rung.B -> Top/Rung")),
+                problems(rung(Top.class, Optional.of(rebound), Optional.of(outer))));
     }
 
     /** A chain of sub-machines that never comes back to the parent's own key is no cycle. */
@@ -580,9 +600,18 @@ class SubmachineDslTest {
     /** The entity of the bottom step of the ladder. */
     static final class Leaf { }
 
-    /** One step of a ladder over {@code entity}; when {@code below} is present, B and C both bind it. */
-    private static <E, P> GraphDefinition<E, Rung, RungMove> ladderStep(
-            Class<E> entity, Optional<GraphDefinition<P, Rung, RungMove>> below) {
+    /** The entity of a machine with two definitions of its key. */
+    static final class Reused { }
+
+    /** The entity of a machine between the outer machine and the reused key. */
+    static final class Inner { }
+
+    /** The entity of the machine whose bindings the hand-written definition takes. */
+    static final class Outer { }
+
+    /** One step of a ladder over {@code entity}: B binds {@code atB} and C binds {@code atC}, each when present. */
+    private static <E> GraphBuilder<E, Rung, RungMove> rung(Class<E> entity,
+            Optional<GraphDefinition<?, Rung, RungMove>> atB, Optional<GraphDefinition<?, Rung, RungMove>> atC) {
         GraphBuilder<E, Rung, RungMove> graph = StateGraph.define(MachineKey.of(entity, Rung.class, RungMove.class))
                 .initial(Rung.A).terminal(Rung.D)
                 .statePolicy(Rung.A, "a step goes to B or C").statePolicy(Rung.B, "B goes to D")
@@ -591,13 +620,94 @@ class SubmachineDslTest {
                 .transition(RungMove.GO_C, Rung.A, Rung.C).endTransition()
                 .transition(RungMove.X, Rung.B, Rung.D).endTransition()
                 .transition(RungMove.Y, Rung.C, Rung.D).endTransition();
-        if (below.isPresent()) {
-            graph.submachine(Rung.B, below.get(), (E parent) -> Optional.empty(), (P child) -> Optional.empty())
-                    .exit(Rung.D, RungMove.X).endSubmachine()
-                    .submachine(Rung.C, below.get(), (E parent) -> Optional.empty(), (P child) -> Optional.empty())
-                    .exit(Rung.D, RungMove.Y).endSubmachine();
+        if (atB.isPresent()) {
+            bind(graph, Rung.B, RungMove.X, atB.get());
         }
-        return graph.build();
+        if (atC.isPresent()) {
+            bind(graph, Rung.C, RungMove.Y, atC.get());
+        }
+        return graph;
+    }
+
+    /** Binds {@code child} to {@code state}, whose exit {@code exit} its terminal D selects; no lookup ever runs. */
+    private static <E, P> void bind(GraphBuilder<E, Rung, RungMove> graph, Rung state, RungMove exit,
+                                    GraphDefinition<P, Rung, RungMove> child) {
+        graph.submachine(state, child, (E parent) -> Optional.empty(), (P kid) -> Optional.empty())
+                .exit(Rung.D, exit).endSubmachine();
+    }
+
+    /** A definition of its delegate's key whose bindings are those of {@code donor}; only a hand can write one. */
+    private static final class Rebound<E> implements GraphDefinition<E, Rung, RungMove> {
+
+        private final GraphDefinition<E, Rung, RungMove> delegate;
+        private final GraphDefinition<?, Rung, RungMove> donor;
+
+        Rebound(GraphDefinition<E, Rung, RungMove> delegate, GraphDefinition<?, Rung, RungMove> donor) {
+            this.delegate = delegate;
+            this.donor = donor;
+        }
+
+        @Override
+        public MachineKey<E, Rung, RungMove> key() {
+            return delegate.key();
+        }
+
+        @Override
+        public Rung initial() {
+            return delegate.initial();
+        }
+
+        @Override
+        public Set<Rung> terminals() {
+            return delegate.terminals();
+        }
+
+        @Override
+        public DirectedGraph<Rung, RungMove> graph() {
+            return delegate.graph();
+        }
+
+        @Override
+        public List<TransitionSpec<E, Rung, RungMove>> transitions() {
+            return delegate.transitions();
+        }
+
+        @Override
+        public List<TransitionSpec<E, Rung, RungMove>> outgoingFrom(Rung state) {
+            return delegate.outgoingFrom(state);
+        }
+
+        @Override
+        public Optional<TransitionSpec<E, Rung, RungMove>> findTransition(Rung from, RungMove transition) {
+            return delegate.findTransition(from, transition);
+        }
+
+        @Override
+        public StatePolicy<Rung, RungMove> policy(Rung state) {
+            return delegate.policy(state);
+        }
+
+        @Override
+        public Optional<WatchSpec<E, Rung, RungMove, ?, ?, ?>> watch(Rung state) {
+            return delegate.watch(state);
+        }
+
+        @Override
+        public Optional<SubmachineSpec<E, Rung, RungMove, ?, ?, ?>> submachine(Rung state) {
+            return donor.submachine(state).map(this::rebind);
+        }
+
+        /** The donor's binding, with this definition's entity as the parent's and lookups that find nothing. */
+        private <P, Q extends Enum<Q>, U extends Enum<U>> SubmachineSpec<E, Rung, RungMove, ?, ?, ?> rebind(
+                SubmachineSpec<?, Rung, RungMove, P, Q, U> bound) {
+            return new SubmachineSpec<>(bound.state(), bound.child(), (E parent) -> Optional.<P>empty(),
+                    (P child) -> Optional.<E>empty(), bound.exits());
+        }
+
+        @Override
+        public boolean hasAsync() {
+            return delegate.hasAsync();
+        }
     }
 
     /** A definition that counts how many times its bindings are read, and otherwise answers as its delegate. */
