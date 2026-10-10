@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * What the log of a root transaction amounts to per entity, read once between the last rollback and the first
@@ -21,6 +22,17 @@ final class CommitSummary {
         this.changes = changes;
     }
 
+    /**
+     * The summary of a log of one entry, without the map {@link #from} groups by. It still hashes the entry's reference
+     * once, as that map does: an identity whose hashCode throws or changes the entity then does so before the
+     * pre-commit conflict check and before any write, as on the general path.
+     */
+    static CommitSummary single(LogEntry entry) {
+        Change change = new Change(entry.ref(), entry, entry);
+        Objects.hashCode(change.ref());
+        return new CommitSummary(List.of(change));
+    }
+
     static CommitSummary from(List<LogEntry> log) {
         Map<EntityRef, Change> grouped = new LinkedHashMap<>();
         for (LogEntry entry : log) {
@@ -35,10 +47,12 @@ final class CommitSummary {
     List<Change> changes() { return changes; }
 
     /**
-     * Entities whose final state differs from the initial one, in order of first appearance. The comparison is by
-     * reference, as it has always been: {@code TransitionSpec} declares both states {@code @NonNull}, and one
-     * entity's entries carry constants of its own state enum, so reference identity is the enum equality the base
-     * compared these two states by.
+     * Entities whose final state differs from the initial one, in order of first appearance: a child that a start
+     * moved from another state counts, one that stood at its initial state already does not. The comparison is by
+     * reference, as it has always been: neither kind of entry ever holds a null state, a hop's being the
+     * {@code @NonNull} states of its {@code TransitionSpec} and a start's the state read from the child and the
+     * initial state of its graph, and one entity's entries carry constants of its own state enum, so reference
+     * identity is the enum equality the base compared these two states by.
      */
     List<EntityRef> movedEntities() {
         List<EntityRef> moved = new ArrayList<>();

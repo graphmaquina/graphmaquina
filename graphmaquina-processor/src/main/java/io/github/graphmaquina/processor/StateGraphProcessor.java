@@ -139,10 +139,14 @@ public final class StateGraphProcessor extends AbstractProcessor {
             VocabularyRegistry vocabulary = new VocabularyRegistry(manifest, env.getElementUtils());
             PropertyResolver propertyResolver = new PropertyResolver(symbols, signatures, accessors, diagnostics);
             SymbolResolver symbolResolver = new SymbolResolver(symbols, signatures, effective, bindings, diagnostics);
+            TypedPairs pairs = new TypedPairs(structure, signatures, diagnostics);
             return new TypedMachineModelBuilder(vocabulary, structure, propertyResolver,
                     new TypedTransitions(structure, symbolResolver, new TypedTimeouts(annotations, diagnostics),
                             annotations, diagnostics),
-                    new TypedWatchReader(vocabulary, structure, propertyResolver, symbolResolver, signatures, diagnostics),
+                    pairs,
+                    new TypedWatchReader(vocabulary, pairs, propertyResolver, symbolResolver, signatures, diagnostics),
+                    new TypedSubmachineReader(vocabulary, pairs, propertyResolver, symbolResolver, signatures,
+                            diagnostics),
                     signatures, diagnostics);
         });
     }

@@ -56,8 +56,8 @@ import org.xml.sax.SAXException;
 class PublishedArtifactSmokeTest {
 
     /**
-     * The chain a consumer is promised, written as a consumer writes it and run from the jars; typed recovery has a
-     * consumer of its own.
+     * The chain a consumer is promised, written as a consumer writes it and run from the jars; typed recovery and the
+     * sub-machine assertions each have a consumer of their own.
      */
     private static final String CONSUMER_SOURCE = """
             import static io.github.graphmaquina.test.GraphAssertions.assertThat;
@@ -142,10 +142,10 @@ class PublishedArtifactSmokeTest {
                     assertThat(finished).isApplied().movedTo(State.DONE)
                             .requestedTransition(Id.FINISH)
                             .hasEntityState(value -> value.state, State.DONE).records().hasSize(1);
-                    // No default: this switch compiles only while OutcomeCode holds exactly these six codes.
+                    // No default: this switch compiles only while OutcomeCode holds exactly these eight codes.
                     String verdict = switch (finished.code()) {
                         case APPLIED -> "applied";
-                        case NO_TRANSITION, GUARD_REJECTED -> "rejected";
+                        case NO_TRANSITION, GUARD_REJECTED, DETACHED, RESERVED_EXIT -> "rejected";
                         case FAILURE_ROUTED -> "failed";
                         case NO_WATCH, NO_RULE_MATCHED -> "ignored";
                     };
@@ -599,6 +599,146 @@ class PublishedArtifactSmokeTest {
             }
             """;
 
+    /**
+     * The sub-machine assertions as a consumer writes them with the DSL, run from the jars: the binding read off the
+     * definition, the start a call reports, the start an after-commit failure keeps, and the two refusals of a
+     * sub-machine.
+     */
+    private static final String SUBMACHINE_CONSUMER_SOURCE = """
+            package published.submachines;
+
+            import static io.github.graphmaquina.test.ExitExpectation.exit;
+            import static io.github.graphmaquina.test.GraphAssertions.assertThat;
+            import static io.github.graphmaquina.test.GraphAssertions.captureFailure;
+
+            import io.github.graphmaquina.api.GraphDefinition;
+            import io.github.graphmaquina.api.MachineKey;
+            import io.github.graphmaquina.dsl.StateGraph;
+            import io.github.graphmaquina.runtime.MachineRegistry;
+            import io.github.graphmaquina.runtime.StateMachines;
+            import io.github.graphmaquina.test.StartsAssert;
+            import java.util.List;
+            import java.util.Optional;
+
+            /** A ticket whose REVIEW holds its check, asserted through the published jars alone. */
+            public final class SubmachineConsumer {
+                private SubmachineConsumer() { }
+
+                /** The states of a ticket. */
+                enum TicketState { OPEN, REVIEW, DONE, DROPPED }
+
+                /** The transition identifiers of a ticket; ACCEPT and REJECT are the exits of its check. */
+                enum TicketChange { SUBMIT, ACCEPT, REJECT, DROP }
+
+                /** The states of a check. */
+                enum CheckState { RUNNING, PASSED, FAILED }
+
+                /** The transition identifiers of a check. */
+                enum CheckChange { PASS, FAIL }
+
+                /** The check of a ticket, which knows its ticket once the ticket is created. */
+                static final class Check {
+                    CheckState state = CheckState.RUNNING;
+                    Optional<Ticket> ticket = Optional.empty();
+                }
+
+                /** A ticket, which its check decides while the ticket is in REVIEW. */
+                static final class Ticket {
+                    final Check check;
+                    TicketState state = TicketState.OPEN;
+
+                    Ticket(Check check) {
+                        this.check = check;
+                        check.ticket = Optional.of(this);
+                    }
+                }
+
+                static final MachineKey<Ticket, TicketState, TicketChange> TICKETS =
+                        MachineKey.of(Ticket.class, TicketState.class, TicketChange.class);
+
+                static final MachineKey<Check, CheckState, CheckChange> CHECKS =
+                        MachineKey.of(Check.class, CheckState.class, CheckChange.class);
+
+                static GraphDefinition<Check, CheckState, CheckChange> checks() {
+                    return StateGraph.define(CHECKS).initial(CheckState.RUNNING)
+                            .terminal(CheckState.PASSED).terminal(CheckState.FAILED)
+                            .statePolicy(CheckState.RUNNING, "the check passes or fails")
+                            .transition(CheckChange.PASS, CheckState.RUNNING, CheckState.PASSED).endTransition()
+                            .transition(CheckChange.FAIL, CheckState.RUNNING, CheckState.FAILED).endTransition()
+                            .build();
+                }
+
+                /** The ticket graph over {@code checks}; SUBMIT runs {@code audit} after its commit. */
+                static GraphDefinition<Ticket, TicketState, TicketChange> tickets(
+                        GraphDefinition<Check, CheckState, CheckChange> checks, Runnable audit) {
+                    return StateGraph.define(TICKETS).initial(TicketState.OPEN)
+                            .terminal(TicketState.DONE).terminal(TicketState.DROPPED)
+                            .statePolicy(TicketState.OPEN, "submit the ticket first")
+                            .statePolicy(TicketState.REVIEW, "the check decides")
+                            .transition(TicketChange.SUBMIT, TicketState.OPEN, TicketState.REVIEW)
+                            .afterCommit("audit", (Ticket ticket) -> audit.run()).endTransition()
+                            .transition(TicketChange.ACCEPT, TicketState.REVIEW, TicketState.DONE).endTransition()
+                            .transition(TicketChange.REJECT, TicketState.REVIEW, TicketState.DROPPED).endTransition()
+                            .transition(TicketChange.DROP, TicketState.REVIEW, TicketState.DROPPED).endTransition()
+                            .submachine(TicketState.REVIEW, checks, (Ticket ticket) -> Optional.of(ticket.check),
+                                    (Check check) -> check.ticket)
+                            .exit(CheckState.PASSED, TicketChange.ACCEPT)
+                            .exit(CheckState.FAILED, TicketChange.REJECT)
+                            .endSubmachine()
+                            .build();
+                }
+
+                static MachineRegistry registry(Runnable audit) {
+                    GraphDefinition<Check, CheckState, CheckChange> checks = checks();
+                    return MachineRegistry.builder()
+                            .add(StateMachines.from(tickets(checks, audit))
+                                    .state((Ticket ticket) -> ticket.state,
+                                            (Ticket ticket, TicketState state) -> ticket.state = state)
+                                    .identity((Ticket ticket) -> ticket))
+                            .add(StateMachines.from(checks)
+                                    .state((Check check) -> check.state,
+                                            (Check check, CheckState state) -> check.state = state)
+                                    .identity((Check check) -> check))
+                            .build();
+                }
+
+                public static void main(String[] args) {
+                    assertThat(tickets(checks(), () -> { }))
+                            .hasNoSubmachine(TicketState.OPEN)
+                            .submachine(TicketState.REVIEW, CHECKS)
+                            .hasExitsExactly(exit(CheckState.PASSED, TicketChange.ACCEPT),
+                                    exit(CheckState.FAILED, TicketChange.REJECT))
+                            .hasExit(CheckState.FAILED, TicketChange.REJECT);
+                    Check check = new Check();
+                    Ticket ticket = new Ticket(check);
+                    try (MachineRegistry registry = registry(() -> { })) {
+                        assertThat(registry.of(TICKETS).execute(ticket, TicketChange.SUBMIT)).isApplied()
+                                .starts().hasSize(1)
+                                .forChild(CHECKS, check).single()
+                                .startedAt(CheckState.RUNNING).hadPrevious(CheckState.RUNNING)
+                                .byParent(TICKETS, ticket, TicketState.REVIEW).atDepth(0);
+                        assertThat(registry.of(TICKETS).execute(ticket, TicketChange.ACCEPT)).isRejected()
+                                .isReservedExit().hasReason("ACCEPT leaves REVIEW only when its sub-machine ends");
+                        assertThat(registry.of(TICKETS).execute(ticket, TicketChange.DROP)).isApplied()
+                                .starts().isEmpty();
+                        assertThat(registry.of(CHECKS).execute(check, CheckChange.PASS)).isRejected()
+                                .isDetached().hasReason("no parent holds it in REVIEW");
+                    }
+                    Check audited = new Check();
+                    Ticket failing = new Ticket(audited);
+                    try (MachineRegistry registry = registry(() -> {
+                        throw new IllegalStateException("audit down");
+                    })) {
+                        assertThat(captureFailure(() -> registry.of(TICKETS).execute(failing, TicketChange.SUBMIT)))
+                                .isAfterCommit().starts().forChild(CHECKS, audited).single()
+                                .byParent(TICKETS, failing, TicketState.REVIEW);
+                    }
+                    StartsAssert.assertThat(List.of()).isEmpty();
+                    System.out.println("SUBMACHINE_ASSERTIONS_OK");
+                }
+            }
+            """;
+
     /** A standalone consumer that reports its PID before holding the runner in a process wait. */
     private static final String INTERRUPTED_CONSUMER_SOURCE = """
             package published.recovery;
@@ -686,6 +826,16 @@ class PublishedArtifactSmokeTest {
                 + artifact("graphmaquina-test", ".jar");
         runConsumer(workDir, jars, "published.recovery.RecoveryConsumer", RECOVERY_CONSUMER_SOURCE,
                 "TYPED_RECOVERY_OK");
+    }
+
+    /** The sub-machine assertions as the jars promise them, compiled and run against the core and test jars alone. */
+    @Test
+    void aSubmachineConsumerCompilesAndRunsAgainstThePublishedJarsAlone(@TempDir Path workDir)
+            throws IOException, InterruptedException {
+        String jars = artifact("graphmaquina-core", ".jar") + File.pathSeparator
+                + artifact("graphmaquina-test", ".jar");
+        runConsumer(workDir, jars, "published.submachines.SubmachineConsumer", SUBMACHINE_CONSUMER_SOURCE,
+                "SUBMACHINE_ASSERTIONS_OK");
     }
 
     /** An interrupted parent must not leave the published consumer JVM alive. */

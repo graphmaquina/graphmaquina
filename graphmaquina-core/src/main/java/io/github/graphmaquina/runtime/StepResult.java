@@ -21,8 +21,10 @@ sealed interface StepResult<S extends Enum<S>, T extends Enum<T>>
     record Ignored<S extends Enum<S>, T extends Enum<T>>(S from, IgnoreReason reason) implements StepResult<S, T> { }
 
     /**
-     * No edge with that identifier leaves {@code from}, or a guard rejected: nothing was logged and no action ran,
-     * though the guards up to the rejecting one did. Only a root step returns it; a deeper one aborts instead.
+     * The step was refused for the reason {@code kind} names: no edge with that identifier leaves {@code from}, a
+     * guard rejected, the entity is a sub-machine whose parent does not hold it, or the identifier is an exit of the
+     * sub-machine bound to {@code from}. Nothing was logged and no action ran, though on a guard
+     * rejection the guards up to the rejecting one did. Only a root step returns it; a deeper one aborts instead.
      */
     record Rejected<S extends Enum<S>, T extends Enum<T>>(S from, T transition, String reason, RejectionKind kind,
                                                           Optional<String> guard) implements StepResult<S, T> { }

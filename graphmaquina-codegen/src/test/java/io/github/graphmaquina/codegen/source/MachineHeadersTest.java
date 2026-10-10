@@ -512,7 +512,7 @@ class MachineHeadersTest {
     }
 
     /**
-     * The watch vocabulary of a pair is generated in the owner's package and names the peer's state enum, so a
+     * The vocabulary of a pair is generated in the owner's package and names the peer's state enum, so a
      * peer whose state enum is not public, in a package of its own, is refused at the owner.
      */
     @Test
@@ -547,8 +547,8 @@ class MachineHeadersTest {
                         directory.resolve("out/classes"), directory.resolve("out/work"), "shop:main")));
 
         assertEquals("SG608", failure.code());
-        assertEquals("the peer machine stock.Stocks declared by shop.Orders cannot be watched from package shop,"
-                + " where its watch vocabulary is generated: stock.StockState is not public and belongs to package"
+        assertEquals("the peer machine stock.Stocks declared by shop.Orders cannot be named from package shop,"
+                + " where its pair vocabulary is generated: stock.StockState is not public and belongs to package"
                 + " stock", failure.getMessage());
         assertEquals("src/shop/Orders.java", failure.location().orElseThrow().path());
     }
@@ -621,7 +621,7 @@ class MachineHeadersTest {
     }
 
     /**
-     * The watch vocabulary of a pair is generated in the owner's package and names the peer machine and its state
+     * The vocabulary of a pair is generated in the owner's package and names the peer machine and its state
      * enum there, so a type of the owner's package named like the peer's package is refused at the owner, naming it.
      */
     @Test
@@ -656,7 +656,7 @@ class MachineHeadersTest {
                         directory.resolve("out/classes"), directory.resolve("out/work"), "fx:main")));
 
         assertEquals("SG603", failure.code());
-        assertEquals("the watch vocabulary generated for the machine fx.Docs over shop.Orders in package fx cannot"
+        assertEquals("the pair vocabulary generated for the machine fx.Docs over shop.Orders in package fx cannot"
                 + " name shop.Orders: the type fx.shop obscures the package shop there", failure.getMessage());
         assertEquals("src/fx/Docs.java", failure.location().orElseThrow().path());
     }

@@ -20,7 +20,7 @@ import lombok.RequiredArgsConstructor;
 final class Bindings {
 
     /** What the method is used for; it fixes the expected signature. */
-    enum Role { ACTION, GUARD, HOOK, CONDITION }
+    enum Role { ACTION, GUARD, HOOK, CONDITION, LOOKUP }
 
     private static final String TRANSITION_CONTEXT = "io.github.graphmaquina.api.TransitionContext";
     private static final String COMMIT_CONTEXT = "io.github.graphmaquina.api.CommitContext";
@@ -30,6 +30,7 @@ final class Bindings {
     private static final String PEER_VIEW = "io.github.graphmaquina.api.PeerView";
     private static final String COLLECTION = "java.util.Collection";
     private static final String COMPLETION_STAGE = "java.util.concurrent.CompletionStage";
+    private static final String OPTIONAL = "java.util.Optional";
 
     private final Signatures signatures;
 
@@ -56,6 +57,9 @@ final class Bindings {
                     && signatures.assignable(signatures.declared(COLLECTION, signatures.extendsWildcard(peer.get().entity())), parameters.get(1))
                     && signatures.same(parameters.get(2), signatures.declared(PEER_VIEW, peer.get().entity(), peer.get().states(), peer.get().transitions()))
                     && returned.getKind() == TypeKind.BOOLEAN;
+            case LOOKUP -> peer.isPresent() && parameters.size() == 1
+                    && signatures.same(parameters.get(0), peer.get().entity())
+                    && signatures.same(returned, signatures.declared(OPTIONAL, machine.entity()));
         };
     }
 
@@ -63,7 +67,7 @@ final class Bindings {
      * The static types of the arguments the generated code passes to a {@code role} of {@code machine}: the
      * parameters of the functional interface the DSL takes for that role, which the emitter compares the selected
      * method's parameters against. For a hook, {@code arity} is the selected method's parameter count and picks the
-     * entity-only or the entity-plus-context form. A condition without a peer gets none.
+     * entity-only or the entity-plus-context form. A condition or a lookup without a peer gets none.
      */
     List<TypeMirror> arguments(Role role, MachineTypes machine, Optional<MachineTypes> peer, int arity) {
         return switch (role) {
@@ -75,6 +79,7 @@ final class Bindings {
                     machine.entity(),
                     signatures.declared(COLLECTION, signatures.extendsWildcard(found.entity())),
                     signatures.declared(PEER_VIEW, found.entity(), found.states(), found.transitions()))).orElseGet(List::of);
+            case LOOKUP -> peer.<List<TypeMirror>>map((MachineTypes found) -> List.of(found.entity())).orElseGet(List::of);
         };
     }
 
@@ -93,6 +98,7 @@ final class Bindings {
             case GUARD -> SymbolKind.GUARD;
             case HOOK -> SymbolKind.HOOK;
             case CONDITION -> SymbolKind.CONDITION;
+            case LOOKUP -> SymbolKind.LOOKUP;
         };
     }
 
@@ -111,6 +117,7 @@ final class Bindings {
             case HOOK -> "void " + name + "(" + e + ") or void " + name + "(" + e + ", CommitContext<" + s + ", " + t + ">)";
             case CONDITION -> "boolean " + name + "(" + e + ", Collection<? extends " + p + ">, PeerView<"
                     + p + ", " + q + ", " + u + ">)";
+            case LOOKUP -> "Optional<" + e + "> " + name + "(" + p + ")";
         };
     }
 }

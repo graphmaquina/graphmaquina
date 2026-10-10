@@ -234,6 +234,64 @@ class ExportDeclarationsTest {
         assertEquals(5L, failure.location().orElseThrow().line());
     }
 
+    /**
+     * A parent lookup is exported with its own role, static or instance alike, and each candidate keeps the
+     * signature its declaration spells: the child entity in, an {@code Optional} of the parent out.
+     */
+    @Test
+    void exportsStaticAndInstanceLookupsWithTheLookupRole() {
+        List<SymbolDescriptor> symbols = collect(Map.of(
+                "fx.Order", ORDER,
+                "fx.Payment", "package fx; public class Payment {}",
+                "fx.OrderLookups", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphLookup;
+                    import java.util.Optional;
+                    public class OrderLookups {
+                        @GraphLookup
+                        public static Optional<Order> orderPaying(Payment payment) { return Optional.empty(); }
+                        @GraphLookup
+                        public Optional<Order> orderRefunding(Payment payment) { return Optional.empty(); }
+                    }
+                    """));
+
+        assertEquals(List.of("fx.OrderLookupsRefs.OrderPaying", "fx.OrderLookupsRefs.OrderRefunding"),
+                symbols.stream().map(SymbolDescriptor::qualifiedName).toList());
+        SymbolDescriptor paying = symbol(symbols, "fx.OrderLookupsRefs.OrderPaying");
+        assertEquals(Set.of(SymbolKind.LOOKUP), paying.kinds());
+        assertEquals(Optional.empty(), paying.property());
+        MemberDescriptor candidate = paying.candidates().get(0);
+        assertEquals(List.of("fx.Payment"), candidate.parameterTypes());
+        assertEquals("java.util.Optional<fx.Order>", candidate.returnType());
+        assertEquals(SymbolKind.LOOKUP, candidate.role());
+        assertTrue(candidate.staticMember());
+        SymbolDescriptor refunding = symbol(symbols, "fx.OrderLookupsRefs.OrderRefunding");
+        assertEquals(Set.of(SymbolKind.LOOKUP), refunding.kinds());
+        assertFalse(refunding.candidates().get(0).staticMember());
+    }
+
+    @Test
+    void reportsALookupThatDeclaresASecondRole() {
+        CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of(
+                "fx.Order", ORDER,
+                "fx.OrderLookups", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphCondition;
+                    import io.github.graphmaquina.annotation.GraphLookup;
+                    import java.util.Optional;
+                    public class OrderLookups {
+                        @GraphLookup
+                        @GraphCondition
+                        public Optional<Order> orderOf(Order order) { return Optional.of(order); }
+                    }
+                    """)));
+
+        assertEquals("SG604", failure.code());
+        assertEquals("the member orderOf of fx.OrderLookups declares more than one graph role: "
+                + "CONDITION and LOOKUP", failure.getMessage());
+        assertEquals(6L, failure.location().orElseThrow().line());
+    }
+
     @Test
     void exportsAPrivateFieldAsPropertyMetadataOnly() {
         List<SymbolDescriptor> symbols = collect(Map.of(

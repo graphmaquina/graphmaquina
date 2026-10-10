@@ -1,0 +1,29 @@
+digraph "Payment/PaymentStatus" {
+    rankdir=LR;
+    compound=true;
+    initial [shape=point, label=""];
+    n1 [label="HELD", shape=ellipse, tooltip="otherwise: a hold is captured, declined or voided"];
+    n2 [label="CAPTURED", shape=doublecircle, tooltip="otherwise: terminal state CAPTURED accepts no transitions"];
+    n3 [label="DECLINED", shape=doublecircle, tooltip="otherwise: terminal state DECLINED accepts no transitions"];
+    n4 [label="VOIDED", shape=doublecircle, tooltip="otherwise: terminal state VOIDED accepts no transitions"];
+    subgraph cluster_s0 {
+        label="AUTHORIZING: Payment/RiskStatus";
+        tooltip="otherwise: an authorization is held, captured, declined or voided";
+        s0_anchor [shape=point, style=invis, label=""];
+        s0_initial [shape=point, label=""];
+        s0_n0 [label="SCORING", shape=ellipse, tooltip="otherwise: a risk score clears or flags the payment"];
+        s0_n1 [label="CLEARED", shape=doublecircle, tooltip="otherwise: terminal state CLEARED accepts no transitions"];
+        s0_n2 [label="FLAGGED", shape=doublecircle, tooltip="otherwise: terminal state FLAGGED accepts no transitions"];
+        s0_initial -> s0_n0;
+        s0_n0 -> s0_n1 [label="CLEAR"];
+        s0_n0 -> s0_n2 [label="FLAG"];
+    }
+    initial -> s0_n0 [lhead=cluster_s0];
+    s0_n1 -> n1 [label="HOLD"];
+    s0_anchor -> n2 [label="CAPTURE Capture", ltail=cluster_s0];
+    s0_n2 -> n3 [label="DECLINE"];
+    s0_anchor -> n4 [label="VOID", ltail=cluster_s0];
+    n1 -> n2 [label="CAPTURE Capture [onFailure DECLINE]"];
+    n1 -> n3 [label="DECLINE"];
+    n1 -> n4 [label="VOID"];
+}

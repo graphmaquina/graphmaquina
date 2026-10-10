@@ -4,12 +4,15 @@ import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineModel;
+import io.github.graphmaquina.processor.model.MachineTypes;
 import io.github.graphmaquina.processor.model.OperationModel;
+import io.github.graphmaquina.processor.model.Property;
 import io.github.graphmaquina.processor.model.RecoveryModel;
 import io.github.graphmaquina.processor.model.RejectionModel;
 import io.github.graphmaquina.processor.model.RuleKind;
 import io.github.graphmaquina.processor.model.RuleModel;
 import io.github.graphmaquina.processor.model.StatePolicyModel;
+import io.github.graphmaquina.processor.model.SubmachineModel;
 import io.github.graphmaquina.processor.model.TransitionModel;
 import io.github.graphmaquina.processor.model.WatchModel;
 import java.time.Duration;
@@ -43,6 +46,14 @@ import javax.lang.model.util.Elements;
  * {@code recover(K.class, id, List.of(A.class, B.class))} for a rule that lists more, which is the only case in which
  * the companion claims {@code java.util.List} through {@link Names}.</p>
  *
+ * <p>Each sub-machine of the model becomes one {@code submachine} call, after the watches, in declaration order, with
+ * one {@code exit} call per declared exit and then {@code endSubmachine()}. Its child's definition is a parameter of
+ * {@code graph(...)}: one per distinct child, in order of first appearance, before the classes with instance members.
+ * A child over the machine's own entity takes the DSL's overload without lookups; any other takes a lambda that reads
+ * the {@code child} property of the machine's entity, and one that reads the {@code parent} property of the child's
+ * entity or calls the {@code parentLookup}. Both properties return an {@code Optional} already, as the DSL takes them.
+ * </p>
+ *
  * <p>Types are written along two paths. The types the companion names itself, its {@code java.lang} ones
  * included, are written as {@link Names} decides from what the companion's scope already holds, the member types
  * it inherits from the facade among them: by their simple name where that name resolves to them, qualified
@@ -57,10 +68,11 @@ import javax.lang.model.util.Elements;
  * and simple name the companion writes and which of them an expression reads, and the processor refuses, as
  * {@code SG603} and before writing it, a facade whose companion would write one that its scope takes.</p>
  *
- * <p>Variables are named after the types they hold, or after their role. The parameter that takes the entity is
- * its decapitalized simple name; when that name is a keyword, or a name the companion already uses, it is that name
- * followed by {@code Entity}, and by the smallest numeric suffix from {@code 2} that frees it should that be used as
- * well: an entity {@code Case} is taken as {@code caseEntity}. Every other variable whose name is a keyword, is
+ * <p>Variables are named after the types they hold, or after their role. The parameter that takes the definition of a
+ * child is the decapitalized simple name of the child's facade followed by {@code Graph}. The parameter that takes the
+ * entity is its decapitalized simple name; when that name is a keyword, or a name the companion already uses, it is
+ * that name followed by {@code Entity}, and by the smallest numeric suffix from {@code 2} that frees it should that be
+ * used as well: an entity {@code Case} is taken as {@code caseEntity}. Every other variable whose name is a keyword, is
  * taken by another variable in scope, or is an identifier the file writes at the head of a type reference gets the
  * smallest numeric suffix from {@code 2} that frees it: a host {@code Default} is taken as {@code default2}. So no
  * variable the companion declares obscures a type or a package it names.</p>
@@ -102,17 +114,20 @@ public final class MachineGenerator {
      * The names the companion gives its variables. {@code reserved} holds the names no later variable takes: the
      * identifiers the file writes at the head of a type reference, which a variable would obscure, and the names
      * {@code machine}, {@code call}, {@code state} and {@code failure} hold, of its field, of the parameters of its
-     * constructor, {@code async} and {@code transitionsFrom}, and of every catch clause; {@code parameters} are the
-     * parameters of {@code graph(...)}, and {@code entity} names the entity wherever a method or a lambda takes it.
-     * {@code rethrow} names the private method that throws on what a lambda caught; it and {@code failure} are empty
-     * when no lambda catches anything.
+     * constructor, {@code async} and {@code transitionsFrom}, and of every catch clause; {@code definitions} and
+     * {@code parameters} are the parameters of {@code graph(...)}, the definitions of the children by the qualified
+     * name of their facade and the classes with instance members by their own, and {@code entity} names the entity
+     * wherever a method or a lambda takes it. {@code rethrow} names the private method that throws on what a lambda
+     * caught; it and {@code failure} are empty when no lambda catches anything.
      */
     private record Variables(Set<String> reserved, String machine, String state, String call,
-                             Map<String, String> parameters, String entity, String rethrow, String failure) {
+                             Map<String, String> definitions, Map<String, String> parameters, String entity,
+                             String rethrow, String failure) {
 
         /** Every name a lambda of {@code graph(...)} may not take. */
         Set<String> taken() {
-            Set<String> taken = new LinkedHashSet<>(parameters.values());
+            Set<String> taken = new LinkedHashSet<>(definitions.values());
+            taken.addAll(parameters.values());
             taken.addAll(reserved);
             return taken;
         }
@@ -249,14 +264,23 @@ public final class MachineGenerator {
         String failure = catches ? unique("failure", reserved) : "";
         String rethrow = catches ? rethrowName(model.types().facade(), invocations.elements()) : "";
         Map<String, String> parameters = parameterNames(model.instanceDependencies(), reserved);
-        return new Variables(Set.copyOf(reserved), machine, state, call, parameters,
-                entityParameter(model, parameters, reserved), rethrow, failure);
+        Set<String> named = new LinkedHashSet<>(reserved);
+        named.addAll(parameters.values());
+        Map<String, String> definitions = new LinkedHashMap<>();
+        for (MachineTypes child : model.children()) {
+            definitions.put(child.facade().getQualifiedName().toString(),
+                    unique(decapitalize(child.facade().getSimpleName().toString()) + "Graph", named));
+        }
+        Map<String, String> declared = new LinkedHashMap<>(definitions);
+        declared.putAll(parameters);
+        return new Variables(Set.copyOf(reserved), machine, state, call, definitions, parameters,
+                entityParameter(model, declared, reserved), rethrow, failure);
     }
 
     /**
      * The types the lambdas of the companion of {@code model} catch, in the order they first appear: one for each
-     * call to a bound method or to a watch's peers or owner reader that declares a checked exception, as
-     * {@link BoundInvocation#caught} decides; none when no call does.
+     * call to a bound method, to a watch's peers or owner reader, or to a sub-machine's child or parent reader that
+     * declares a checked exception, as {@link BoundInvocation#caught} decides; none when no call does.
      */
     private static Set<String> caught(MachineModel model, BoundInvocation invocations) {
         Set<String> caught = new LinkedHashSet<>();
@@ -267,10 +291,18 @@ public final class MachineGenerator {
             invocations.caught(watch.peers().accessor()).ifPresent(caught::add);
             invocations.caught(watch.owner().accessor()).ifPresent(caught::add);
         }
+        for (SubmachineModel submachine : model.submachines()) {
+            for (Optional<Property> property : List.of(submachine.childOf(), submachine.parentOf())) {
+                property.flatMap((Property read) -> invocations.caught(read.accessor())).ifPresent(caught::add);
+            }
+        }
         return caught;
     }
 
-    /** Every binding the companion calls: the edges' actions, guards and hooks, and the watches' conditions. */
+    /**
+     * Every binding the companion calls: the edges' actions, guards and hooks, the watches' conditions and the
+     * sub-machines' lookups.
+     */
     private static List<Binding> bindings(MachineModel model) {
         List<Binding> bindings = new ArrayList<>();
         for (TransitionModel transition : model.allTransitions()) {
@@ -278,6 +310,9 @@ public final class MachineGenerator {
         }
         for (WatchModel watch : model.watches()) {
             bindings.addAll(watch.bindings());
+        }
+        for (SubmachineModel submachine : model.submachines()) {
+            submachine.parentLookup().ifPresent(bindings::add);
         }
         return bindings;
     }
@@ -292,17 +327,25 @@ public final class MachineGenerator {
         String objects = names.qualifier(OBJECTS);
         Map<String, String> parameters = variables.parameters();
         List<String> declarations = new ArrayList<>();
-        for (TypeElement dependency : model.instanceDependencies()) {
-            declarations.add(names.of(dependency.getQualifiedName().toString()) + " "
-                    + parameters.get(dependency.getQualifiedName().toString()));
+        List<String> declared = new ArrayList<>();
+        for (MachineTypes child : model.children()) {
+            String name = variables.definitions().get(child.facade().getQualifiedName().toString());
+            declarations.add(definitionType(child, names) + " " + name);
+            declared.add(name);
         }
-        out.line("/** The definition, built from the annotations of {@link "
-                + names.of(model.types().facade().getQualifiedName().toString())
-                + "}. One parameter per class with instance members. */");
-        out.open("public static " + names.of(GRAPH_DEFINITION) + "<" + e + ", " + s + ", " + t + "> graph("
-                + String.join(", ", declarations) + ")");
         for (TypeElement dependency : model.instanceDependencies()) {
             String name = parameters.get(dependency.getQualifiedName().toString());
+            declarations.add(names.of(dependency.getQualifiedName().toString()) + " " + name);
+            declared.add(name);
+        }
+        out.line("/** The definition, built from the annotations of {@link "
+                + names.of(model.types().facade().getQualifiedName().toString()) + "}. "
+                + (model.children().isEmpty() ? "One parameter"
+                        : "One parameter per machine it binds as a sub-machine, which takes its definition, then one")
+                + " per class with instance members. */");
+        out.open("public static " + names.of(GRAPH_DEFINITION) + "<" + e + ", " + s + ", " + t + "> graph("
+                + String.join(", ", declarations) + ")");
+        for (String name : declared) {
             out.line(objects + ".requireNonNull(" + name + ", \"" + name + "\");");
         }
         out.line("return " + names.qualifier(STATE_GRAPH) + ".define(KEY)");
@@ -328,6 +371,9 @@ public final class MachineGenerator {
         }
         for (WatchModel watch : model.watches()) {
             emitWatch(model, names, variables, invocations, watch, out);
+        }
+        for (SubmachineModel submachine : model.submachines()) {
+            emitSubmachine(model, names, variables, invocations, submachine, out);
         }
         out.line(".build();");
         out.outdent().outdent();
@@ -428,10 +474,67 @@ public final class MachineGenerator {
     }
 
     /**
+     * One sub-machine: the state, the child's definition and, for a child over another entity, the way to the child
+     * and the way back, then its exits in declaration order.
+     */
+    private static void emitSubmachine(MachineModel model, Names names, Variables variables,
+                                       BoundInvocation invocations, SubmachineModel submachine, SourceWriter out) {
+        MachineTypes child = submachine.child();
+        String definition = variables.definitions().get(child.facade().getQualifiedName().toString());
+        StringBuilder line = new StringBuilder(".submachine(" + constant(names, model.types().statesElement(),
+                submachine.state()) + ", " + definition);
+        if (submachine.childOf().isPresent()) {
+            String e = names.of(model.types().entityElement().getQualifiedName().toString());
+            String p = names.of(child.entityElement().getQualifiedName().toString());
+            String entity = variables.entity();
+            String peer = unique(decapitalize(child.entityName()), variables.taken());
+            Property childOf = submachine.childOf().get();
+            line.append(", ").append(lambda(e + " " + entity, entity + "." + childOf.method() + "()",
+                    invocations.caught(childOf.accessor()).map(names::of), true, variables.rethrow(),
+                    variables.failure()));
+            String back = submachine.parentOf()
+                    .map((Property parentOf) -> lambda(p + " " + peer, peer + "." + parentOf.method() + "()",
+                            invocations.caught(parentOf.accessor()).map(names::of), true, variables.rethrow(),
+                            variables.failure()))
+                    .orElseGet(() -> lookup(submachine.parentLookup().orElseThrow(), p, peer, variables, names,
+                            invocations));
+            line.append(", ").append(back);
+        }
+        out.line(line.append(')').toString());
+        out.indent();
+        for (SubmachineModel.Exit exit : submachine.exits()) {
+            out.line(".exit(" + constant(names, child.statesElement(), exit.on()) + ", "
+                    + constant(names, model.types().transitionsElement(), exit.transition()) + ")");
+        }
+        out.line(".endSubmachine()");
+        out.outdent();
+    }
+
+    /**
+     * The lambda that finds the parent of a child entity, typed {@code p}, through {@code binding}, the lookup the
+     * sub-machine selected: on the host class for a static member and on the injected parameter for an instance one.
+     */
+    private static String lookup(Binding binding, String p, String peer, Variables variables, Names names,
+                                 BoundInvocation invocations) {
+        String receiver = binding.isStatic()
+                ? names.qualifier(binding.owner().getQualifiedName().toString())
+                : variables.parameters().get(binding.owner().getQualifiedName().toString());
+        return lambda(p + " " + peer, invocations.emit(binding, receiver, List.of(peer)),
+                invocations.caught(binding).map(names::of), true, variables.rethrow(), variables.failure());
+    }
+
+    /** {@code GraphDefinition<P, Q, U>} for the machine {@code types}, as this file writes it. */
+    private static String definitionType(MachineTypes types, Names names) {
+        return names.of(GRAPH_DEFINITION) + "<" + names.of(types.entityElement().getQualifiedName().toString()) + ", "
+                + names.of(types.statesElement().getQualifiedName().toString()) + ", "
+                + names.of(types.transitionsElement().getQualifiedName().toString()) + ">";
+    }
+
+    /**
      * Every type the companion writes through {@link Names}, each with the package that declares it, in the order it
-     * claims them: its own first, then the fixed ones, then the types of the watched peers, then {@code Duration},
-     * {@code Optional}, {@code WatchCondition} and {@code List} where an edge, a watch or a recovery rule that lists
-     * two throwable types or more needs them, then the model's other types,
+     * claims them: its own first, then the fixed ones, then the types of the watched peers and of the children, then
+     * {@code Duration}, {@code Optional}, {@code WatchCondition} and {@code List} where an edge, a watch or a
+     * recovery rule that lists two throwable types or more needs them, then the model's other types,
      * then, where a lambda catches what a call throws, {@code Throwable} and the types the lambdas catch.
      */
     private static Map<String, String> types(MachineModel model, BoundInvocation invocations) {
@@ -460,6 +563,11 @@ public final class MachineGenerator {
             Names.claim(types, watch.peer().entityElement());
             Names.claim(types, watch.peer().statesElement());
             Names.claim(types, watch.peer().transitionsElement());
+        }
+        for (MachineTypes child : model.children()) {
+            Names.claim(types, child.entityElement());
+            Names.claim(types, child.statesElement());
+            Names.claim(types, child.transitionsElement());
         }
         if (anyTimeout) {
             Names.claim(types, DURATION);

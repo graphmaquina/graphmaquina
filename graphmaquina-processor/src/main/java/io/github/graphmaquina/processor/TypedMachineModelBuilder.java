@@ -10,6 +10,7 @@ import io.github.graphmaquina.processor.model.Property;
 import io.github.graphmaquina.processor.model.RejectionModel;
 import io.github.graphmaquina.processor.model.StateAccess;
 import io.github.graphmaquina.processor.model.StatePolicyModel;
+import io.github.graphmaquina.processor.model.SubmachineModel;
 import io.github.graphmaquina.processor.model.TransitionModel;
 import io.github.graphmaquina.processor.model.WatchModel;
 import java.util.ArrayList;
@@ -71,18 +72,23 @@ final class TypedMachineModelBuilder {
     private final StructuralChecks structure;
     private final PropertyResolver properties;
     private final TypedTransitions transitions;
+    private final TypedPairs pairs;
     private final TypedWatchReader watches;
+    private final TypedSubmachineReader submachines;
     private final Signatures signatures;
     private final Diagnostics diagnostics;
     private final Annotations annotations;
 
     TypedMachineModelBuilder(VocabularyRegistry vocabulary, StructuralChecks structure, PropertyResolver properties,
-            TypedTransitions transitions, TypedWatchReader watches, Signatures signatures, Diagnostics diagnostics) {
+            TypedTransitions transitions, TypedPairs pairs, TypedWatchReader watches, TypedSubmachineReader submachines,
+            Signatures signatures, Diagnostics diagnostics) {
         this.vocabulary = vocabulary;
         this.structure = structure;
         this.properties = properties;
         this.transitions = transitions;
+        this.pairs = pairs;
         this.watches = watches;
+        this.submachines = submachines;
         this.signatures = signatures;
         this.diagnostics = diagnostics;
         this.annotations = new Annotations(signatures.elements());
@@ -155,13 +161,18 @@ final class TypedMachineModelBuilder {
         List<TransitionModel> declared = declared(type, types, defaultAfterCommit);
         List<OperationModel> operations = operations(type, types, defaultAfterCommit);
         structure.checkInheritedOperations(type);
-        List<WatchModel> watched = watches.read(type, types);
+        TypedPairs.Peers peers = pairs.peers(type);
+        Set<String> used = new LinkedHashSet<>();
+        List<SubmachineModel> bound = submachines.read(type, types, peers, used, operations);
+        List<WatchModel> watched = watches.read(type, types, peers, used);
+        pairs.checkUsed(type, peers, used);
         checkDuplicateKeys(type, declared, operations);
         if (state.isEmpty() || id.isEmpty() || diagnostics.errors() > before) {
             return Optional.empty();
         }
         MachineModel model = new MachineModel(types, packageName(type), initial.get(), terminals.get(), cycleAllowed.get(),
-                state.get().reader(), state.get().writer(), id.get(), policies, rejections, declared, operations, watched);
+                state.get().reader(), state.get().writer(), id.get(), policies, rejections, declared, operations, watched,
+                bound);
         if (complete) {
             structure.checkOutline(model, header);
             structure.checkGraphFactory(model);

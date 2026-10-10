@@ -8,8 +8,8 @@ package io.github.graphmaquina.api;
 public enum CallPhase {
 
     /**
-     * Reading the entity's identity and state and selecting the edge; in a reevaluation, also evaluating the watch.
-     * No guard, action or setter of the call has run.
+     * Reading the entity's identity and state, checking the binding of a sub-machine, and selecting the edge; in a
+     * reevaluation, also evaluating the watch. No guard, action or setter of the call has run.
      */
     RESOLVE,
 
@@ -18,7 +18,8 @@ public enum CallPhase {
 
     /**
      * From the moment the call's guards passed until its step ended: its action, the cascades the action ran with
-     * their guards and actions, and the failure route. The journal says which actions ran.
+     * their guards and actions, the failure route, the start of each sub-machine whose state an edge enters, and the
+     * exit of each one that ends. The journal says which actions ran.
      */
     ACTION,
 

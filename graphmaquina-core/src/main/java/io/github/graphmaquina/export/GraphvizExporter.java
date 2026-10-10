@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import lombok.NonNull;
 
 /**
@@ -18,58 +19,202 @@ import lombok.NonNull;
  * and {@code [watches <rules>]}, leaving out the parts the edge does not have. A rule's kind is its binary name
  * without the package, such as {@code PublicationFailures$Unavailable}. The throwable types of failsOn and of the
  * rules are not drawn, and a rule adds no arrow and no node.
+ *
+ * <p>A state that holds a sub-machine is drawn as a cluster instead of a node, labelled {@code <STATE>: <child>} after
+ * the child's view name, with the state's policy as its tooltip. The cluster holds an invisible anchor and the child's
+ * own graph, its initial arrow, edges, watches and sub-machines included, whose IDs carry the prefix {@code s<j>_},
+ * where {@code j} counts the bound states of the view in node order, and one more such prefix per level of nesting.
+ * An edge into the state points at the child's initial state, or, when that state holds a sub-machine too, at that
+ * one's initial state, and so on down; an exit, an edge whose identifier the binding maps a terminal state of the
+ * child to, is drawn once from each such terminal state; any other edge leaving the state, and the state's watch
+ * note, start at the anchor. Arrows entering a cluster use {@code lhead}; edges leaving an anchor and its watch
+ * connections use {@code ltail}. An exit starts at the selected terminal without clipping at its source cluster.
+ * Arrows whose ends lie in the same cluster omit clipping. The {@code compound=true} attribute enables cluster
+ * clipping; a view without sub-machines has no cluster and no {@code compound} attribute.
  */
 public final class GraphvizExporter {
 
     private GraphvizExporter() { }
 
-    /** Every declared edge, parallels included, in the view's order. */
+    /** Every declared edge, parallels included, in the view's order, and every sub-machine as a cluster. */
     public static String render(@NonNull GraphView view) {
-        Map<String, String> nodes = new LinkedHashMap<>();
-        view.states().forEach((String state) -> addState(nodes, state));
-        for (TransitionView transition : view.transitions()) {
-            addState(nodes, transition.from());
-            addState(nodes, transition.to());
-        }
-        addState(nodes, view.initial());
-        view.terminals().stream().sorted().forEach((String state) -> addState(nodes, state));
-        for (WatchView watch : view.watches()) {
-            addState(nodes, watch.state());
-        }
-        Map<String, PolicyView> policies = new LinkedHashMap<>();
-        for (PolicyView policy : view.policies()) {
-            policies.putIfAbsent(policy.state(), policy);
-        }
-
         StringBuilder out = new StringBuilder("digraph ").append(quote(view.name())).append(" {\n");
         out.append("    rankdir=LR;\n");
-        out.append("    initial [shape=point, label=\"\"];\n");
-        nodes.forEach((String state, String id) -> {
-            out.append("    ").append(id).append(" [label=").append(quote(state)).append(", shape=")
-                    .append(view.terminals().contains(state) ? "doublecircle" : "ellipse");
-            PolicyView policy = policies.get(state);
-            if (policy != null) {
-                out.append(", tooltip=").append(quote(tooltip(policy)));
-            }
-            out.append("];\n");
-        });
-        out.append("    initial -> ").append(nodes.get(view.initial())).append(";\n");
-        for (TransitionView transition : view.transitions()) {
-            out.append("    ").append(nodes.get(transition.from())).append(" -> ").append(nodes.get(transition.to()))
-                    .append(" [label=").append(quote(label(transition))).append("];\n");
+        if (!view.submachines().isEmpty()) {
+            out.append("    compound=true;\n");
         }
-        for (int i = 0; i < view.watches().size(); i++) {
-            WatchView watch = view.watches().get(i);
-            out.append("    watch").append(i).append(" [shape=note, label=")
-                    .append(quote("watches " + watch.peerMachine())).append("];\n");
-            out.append("    ").append(nodes.get(watch.state())).append(" -> watch").append(i)
-                    .append(" [style=dashed, arrowhead=none];\n");
-        }
+        Level.of(view, "").render(out, "    ");
         return out.append("}\n").toString();
     }
 
-    private static void addState(Map<String, String> nodes, String state) {
-        nodes.computeIfAbsent(state, ignored -> "n" + nodes.size());
+    /**
+     * One graph of the drawing, the view's own or a sub-machine's, whose IDs carry {@code prefix}: its states by
+     * internal ID in allocation order, the index of each bound state among the view's sub-machines, and each state's
+     * policy.
+     */
+    private record Level(GraphView view, String prefix, Map<String, String> nodes, Map<String, Integer> bound,
+                         Map<String, PolicyView> policies) {
+
+        static Level of(GraphView view, String prefix) {
+            Map<String, String> nodes = new LinkedHashMap<>();
+            view.states().forEach((String state) -> addState(nodes, state));
+            for (TransitionView transition : view.transitions()) {
+                addState(nodes, transition.from());
+                addState(nodes, transition.to());
+            }
+            addState(nodes, view.initial());
+            view.terminals().stream().sorted().forEach((String state) -> addState(nodes, state));
+            for (WatchView watch : view.watches()) {
+                addState(nodes, watch.state());
+            }
+            Map<String, Integer> bound = new LinkedHashMap<>();
+            for (int j = 0; j < view.submachines().size(); j++) {
+                addState(nodes, view.submachines().get(j).state());
+                bound.putIfAbsent(view.submachines().get(j).state(), j);
+            }
+            Map<String, PolicyView> policies = new LinkedHashMap<>();
+            for (PolicyView policy : view.policies()) {
+                policies.putIfAbsent(policy.state(), policy);
+            }
+            return new Level(view, prefix, nodes, bound, policies);
+        }
+
+        private static void addState(Map<String, String> nodes, String state) {
+            nodes.computeIfAbsent(state, (String ignored) -> "n" + nodes.size());
+        }
+
+        void render(StringBuilder out, String indent) {
+            out.append(indent).append(prefix).append("initial [shape=point, label=\"\"];\n");
+            nodes.forEach((String state, String id) -> {
+                if (bound.containsKey(state)) {
+                    return;
+                }
+                out.append(indent).append(prefix).append(id).append(" [label=").append(quote(state)).append(", shape=")
+                        .append(view.terminals().contains(state) ? "doublecircle" : "ellipse");
+                Optional<PolicyView> policy = policy(state);
+                if (policy.isPresent()) {
+                    out.append(", tooltip=").append(quote(tooltip(policy.get())));
+                }
+                out.append("];\n");
+            });
+            for (int j = 0; j < view.submachines().size(); j++) {
+                String inner = indent + "    ";
+                SubmachineView submachine = view.submachines().get(j);
+                out.append(indent).append("subgraph ").append(cluster(j)).append(" {\n");
+                out.append(inner).append("label=").append(quote(submachine.state() + ": " + submachine.child().name()))
+                        .append(";\n");
+                Optional<PolicyView> policy = policy(submachine.state());
+                if (policy.isPresent()) {
+                    out.append(inner).append("tooltip=").append(quote(tooltip(policy.get()))).append(";\n");
+                }
+                out.append(inner).append(anchor(j)).append(" [shape=point, style=invis, label=\"\"];\n");
+                child(j).render(out, inner);
+                out.append(indent).append("}\n");
+            }
+            arrow(out, indent, prefix + "initial", entry(view.initial()), Optional.empty(),
+                    Optional.ofNullable(bound.get(view.initial())), List.of());
+            for (TransitionView transition : view.transitions()) {
+                List<String> label = List.of("label=" + quote(label(transition)));
+                Optional<Integer> from = Optional.ofNullable(bound.get(transition.from()));
+                Optional<Integer> to = Optional.ofNullable(bound.get(transition.to()));
+                String head = entry(transition.to());
+                List<String> terminals = from.isPresent()
+                        ? terminalsSelecting(view.submachines().get(from.get()), transition.transition())
+                        : List.of();
+                if (!terminals.isEmpty()) {
+                    Level child = child(from.get());
+                    for (String terminal : terminals) {
+                        arrow(out, indent, child.node(terminal), head, from, to, label);
+                    }
+                } else if (from.isPresent()) {
+                    arrow(out, indent, anchor(from.get()), head, from, to, withTail(label, from.get(), to));
+                } else {
+                    arrow(out, indent, node(transition.from()), head, Optional.empty(), to, label);
+                }
+            }
+            for (int i = 0; i < view.watches().size(); i++) {
+                WatchView watch = view.watches().get(i);
+                String note = prefix + "watch" + i;
+                out.append(indent).append(note).append(" [shape=note, label=")
+                        .append(quote("watches " + watch.peerMachine())).append("];\n");
+                Optional<Integer> at = Optional.ofNullable(bound.get(watch.state()));
+                List<String> dashed = List.of("style=dashed", "arrowhead=none");
+                if (at.isPresent()) {
+                    arrow(out, indent, anchor(at.get()), note, Optional.empty(), Optional.empty(),
+                            withTail(dashed, at.get(), Optional.empty()));
+                } else {
+                    arrow(out, indent, node(watch.state()), note, Optional.empty(), Optional.empty(), dashed);
+                }
+            }
+        }
+
+        private Optional<PolicyView> policy(String state) {
+            return Optional.ofNullable(policies.get(state));
+        }
+
+        String node(String state) {
+            return prefix + nodes.get(state);
+        }
+
+        private String cluster(int j) {
+            return "cluster_" + prefix + "s" + j;
+        }
+
+        private String anchor(int j) {
+            return prefix + "s" + j + "_anchor";
+        }
+
+        private Level child(int j) {
+            return Level.of(view.submachines().get(j).child(), prefix + "s" + j + "_");
+        }
+
+        /** The node an arrow into {@code state} points at: its own, or the entry of the sub-machine bound to it. */
+        String entry(String state) {
+            Optional<Integer> j = Optional.ofNullable(bound.get(state));
+            if (j.isEmpty()) {
+                return node(state);
+            }
+            Level child = child(j.get());
+            return child.entry(child.view().initial());
+        }
+
+        /** {@code attributes}, then {@code ltail} for an arrow that leaves the cluster {@code from}. */
+        private List<String> withTail(List<String> attributes, int from, Optional<Integer> to) {
+            if (to.isPresent() && to.get() == from) {
+                return attributes;
+            }
+            List<String> all = new ArrayList<>(attributes);
+            all.add("ltail=" + cluster(from));
+            return all;
+        }
+
+        /**
+         * One arrow; {@code lhead} when its head lies in the cluster {@code to} and its tail, in the cluster
+         * {@code from} or outside every cluster, does not.
+         */
+        private void arrow(StringBuilder out, String indent, String tail, String head, Optional<Integer> from,
+                           Optional<Integer> to, List<String> attributes) {
+            List<String> all = new ArrayList<>(attributes);
+            if (to.isPresent() && !to.equals(from)) {
+                all.add("lhead=" + cluster(to.get()));
+            }
+            out.append(indent).append(tail).append(" -> ").append(head);
+            if (!all.isEmpty()) {
+                out.append(" [").append(String.join(", ", all)).append("]");
+            }
+            out.append(";\n");
+        }
+    }
+
+    /** The terminal states of the child that {@code submachine} maps to {@code transition}, in declaration order. */
+    private static List<String> terminalsSelecting(SubmachineView submachine, String transition) {
+        List<String> terminals = new ArrayList<>();
+        submachine.exits().forEach((String terminal, String exit) -> {
+            if (exit.equals(transition)) {
+                terminals.add(terminal);
+            }
+        });
+        return terminals;
     }
 
     private static String quote(String text) {

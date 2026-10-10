@@ -34,11 +34,12 @@ import lombok.RequiredArgsConstructor;
  * the values it has already resolved and the anchor it wants the answer reported at, so a rule is stated once
  * and a diagnostic still points at the declaration the author wrote.</p>
  *
- * <p>Everything about the assembled graph — policies, reachability, terminals, cycles, failure routes and watches —
- * is asked of {@link MachineOutlineValidator}, the very validator the DSL runs, so a machine declared in either
- * language is refused for the same reason under the same code. A key two edges claim, a state given two policies,
- * a rejection declared twice and a blank reason never reach it: {@link TypedMachineModelBuilder} reports them
- * first, as that validator's {@code SG102} and {@code SG103}, and builds no model.</p>
+ * <p>Everything about the assembled graph — policies, reachability, terminals, cycles, failure routes, watches and
+ * the exits of sub-machines — is asked of {@link MachineOutlineValidator}, the very validator the DSL runs, so a
+ * machine declared in either language is refused for the same reason under the same code. A key two edges claim,
+ * a state given two policies, a rejection declared twice and a blank reason never reach it:
+ * {@link TypedMachineModelBuilder} reports them first, as that validator's {@code SG102} and {@code SG103}, and
+ * builds no model.</p>
  */
 @RequiredArgsConstructor
 final class StructuralChecks {
@@ -49,6 +50,8 @@ final class StructuralChecks {
     private static final List<String> BUILT_IN = List.of(MACHINE, "java.lang.Object");
 
     private static final String FAILURE_KIND = "io.github.graphmaquina.api.FailureKind";
+
+    private static final String GRAPH_DEFINITION = "io.github.graphmaquina.api.GraphDefinition";
 
     /** What SG304 says after the binary name of a throwable type one edge declares twice. */
     private static final String REPEATED_TYPE = " is declared more than once across recover and failsOn; a throwable"
@@ -361,15 +364,18 @@ final class StructuralChecks {
     /**
      * SG504 for an instance method of the facade of {@code model}, abstract or default, declared or inherited, that
      * the static {@code graph(...)} of its companion would clash with, as {@link Signatures#clashing} finds it: one
-     * named {@code graph} taking what that {@code graph(...)} takes, one parameter per class with instance members the
-     * machine binds. javac would refuse the companion. A method the facade declares is reported where it is declared,
-     * as an operation when it is abstract, and one it only inherits at the facade, with the interface that declares
-     * it. This is the facade's counterpart of the refusal of a set's {@code builder} method by
-     * {@link SetModelBuilder}.
+     * named {@code graph} taking what that {@code graph(...)} takes, the definition of each machine it binds as a
+     * sub-machine, then one parameter per class with instance members the machine binds. javac would refuse the
+     * companion. A method the facade declares is reported where it is declared, as an operation when it is abstract,
+     * and one it only inherits at the facade, with the interface that declares it. This is the facade's counterpart
+     * of the refusal of a set's {@code builder} method by {@link SetModelBuilder}.
      */
     void checkGraphFactory(MachineModel model) {
         TypeElement facade = model.types().facade();
         List<TypeMirror> parameters = new ArrayList<>();
+        for (MachineTypes child : model.children()) {
+            parameters.add(signatures.declared(GRAPH_DEFINITION, child.entity(), child.states(), child.transitions()));
+        }
         for (TypeElement dependency : model.instanceDependencies()) {
             parameters.add(dependency.asType());
         }
@@ -378,8 +384,17 @@ final class StructuralChecks {
             return;
         }
         String graph = factory("graph", parameters);
-        String takes = parameters.isEmpty() ? "no parameter for a machine without instance dependencies"
-                : "every class with instance members the machine binds";
+        String takes;
+        if (parameters.isEmpty()) {
+            takes = "no parameter for a machine without sub-machines and without instance dependencies";
+        } else if (model.children().isEmpty()) {
+            takes = "every class with instance members the machine binds";
+        } else if (model.instanceDependencies().isEmpty()) {
+            takes = "the definition of each machine it binds as a sub-machine";
+        } else {
+            takes = "the definition of each machine it binds as a sub-machine, then every class with instance members"
+                    + " the machine binds";
+        }
         String companion = companion(model.facadeName());
         for (ExecutableElement method : clashing) {
             if (method.getEnclosingElement().equals(facade)) {

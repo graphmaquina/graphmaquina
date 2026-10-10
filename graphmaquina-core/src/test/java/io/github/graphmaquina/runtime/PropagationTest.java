@@ -31,6 +31,7 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatePolicy;
 import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
@@ -566,6 +567,11 @@ class PropagationTest {
         @Override
         public Optional<WatchSpec<E, S, T, ?, ?, ?>> watch(S state) {
             return delegate.watch(state);
+        }
+
+        @Override
+        public Optional<SubmachineSpec<E, S, T, ?, ?, ?>> submachine(S state) {
+            return delegate.submachine(state);
         }
 
         @Override

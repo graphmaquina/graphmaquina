@@ -1,8 +1,5 @@
 package io.github.graphmaquina.processor;
 
-import io.github.graphmaquina.annotation.GenerateGraphApi;
-import io.github.graphmaquina.annotation.GraphPeers;
-import io.github.graphmaquina.annotation.internal.GeneratedVocabulary;
 import io.github.graphmaquina.annotation.internal.VocabularyKind;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineTypes;
@@ -11,30 +8,20 @@ import io.github.graphmaquina.processor.model.RuleKind;
 import io.github.graphmaquina.processor.model.RuleModel;
 import io.github.graphmaquina.processor.model.WatchModel;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.TypeElement;
-import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 
 /**
  * Reads the watches a machine declares with the vocabulary generated for each of its pairs.
  *
- * <p>Watch vocabulary belongs to an ordered pair, not to a single machine, so identity is checked on both
- * halves of it: the annotation must have been generated for this very facade, and the peer it names must be one
- * the facade declares with {@code @GraphPeers}. The pair is therefore never repeated in a declaration and can
- * never be inferred from the states, which two machines may well share.</p>
- *
- * <p>The declaration of the pair and its uses must agree in both directions. A peer nothing watches is a
- * declaration that generated vocabulary for nothing, and a peer declared twice generates it twice; both are
- * refused as {@code SG608} rather than silently ignored. What the language itself refuses — a constant of the
+ * <p>The identity of each {@code Watch} is checked by {@link TypedPairs}: it was generated for this very facade,
+ * over a peer the facade declares with {@code @GraphPeers}. What the language itself refuses — a constant of the
  * wrong enum in {@code state}, {@code transition} or a filter — is left to javac, which has already reported it at
  * the exact value, and is never wrapped in a diagnostic of this tool.</p>
  *
@@ -48,8 +35,6 @@ import javax.lang.model.type.TypeMirror;
  */
 final class TypedWatchReader {
 
-    private static final String FOREIGN = "SG606";
-    private static final String PAIR = "SG608";
     private static final String NOT_A_MACHINE = "SG509";
     private static final String TWO_WATCHES = "SG403";
     private static final String NO_RULES = "SG404";
@@ -60,17 +45,17 @@ final class TypedWatchReader {
     private static final List<String> ALTERNATIVES = List.of("condition", "allIn", "anyIn", "noneIn");
 
     private final VocabularyRegistry vocabulary;
-    private final StructuralChecks structure;
+    private final TypedPairs pairs;
     private final PropertyResolver properties;
     private final SymbolResolver symbols;
     private final Signatures signatures;
     private final Diagnostics diagnostics;
     private final Annotations annotations;
 
-    TypedWatchReader(VocabularyRegistry vocabulary, StructuralChecks structure, PropertyResolver properties,
+    TypedWatchReader(VocabularyRegistry vocabulary, TypedPairs pairs, PropertyResolver properties,
             SymbolResolver symbols, Signatures signatures, Diagnostics diagnostics) {
         this.vocabulary = vocabulary;
-        this.structure = structure;
+        this.pairs = pairs;
         this.properties = properties;
         this.symbols = symbols;
         this.signatures = signatures;
@@ -78,97 +63,24 @@ final class TypedWatchReader {
         this.annotations = new Annotations(signatures.elements());
     }
 
-    /** The peers {@code @GraphPeers} declares: where it was written, the ones it names and the usable ones. */
-    private record Peers(Optional<AnnotationMirror> mirror, Map<String, TypeElement> declared, Set<String> usable) { }
-
     /**
      * The watches {@code facade} declares, in the order it spells them; a watch with a problem is left out, and one
-     * whose problem this processor reports makes the machine's own builder refuse the machine as a whole.
+     * whose problem this processor reports makes the machine's own builder refuse the machine as a whole. The peer of
+     * every watch whose identity holds is added to {@code used}.
      */
-    List<WatchModel> read(TypeElement facade, MachineTypes machine) {
-        Peers peers = peers(facade);
-        Set<String> watched = new LinkedHashSet<>();
+    List<WatchModel> read(TypeElement facade, MachineTypes machine, TypedPairs.Peers peers, Set<String> used) {
         Set<String> states = new LinkedHashSet<>();
         List<WatchModel> watches = new ArrayList<>();
         for (AnnotationMirror watch : vocabulary.findAll(facade, VocabularyKind.WATCH)) {
-            Optional<String> peer = peer(facade, watch, peers);
+            Optional<String> peer = pairs.peer(facade, watch, peers, "watches");
             if (peer.isEmpty()) {
                 continue;
             }
-            watched.add(peer.get());
-            if (peers.usable().contains(peer.get())) {
-                read(facade, watch, machine, peers.declared().get(peer.get()), states).ifPresent(watches::add);
-            }
-        }
-        for (String declared : peers.declared().keySet()) {
-            if (!watched.contains(declared)) {
-                DiagnosticAnchor.of(facade, peers.mirror().orElseThrow()).report(diagnostics, PAIR, declared
-                        + " is declared as a peer of " + facade.getSimpleName() + " but no watch of it uses that pair;"
-                        + " declare the peers this machine watches, and only those");
-            }
+            used.add(peer.get());
+            peers.usablePeer(peer.get()).flatMap((TypeElement peerElement) -> read(facade, watch, machine,
+                    peerElement, states)).ifPresent(watches::add);
         }
         return List.copyOf(watches);
-    }
-
-    /**
-     * The peers of {@code facade}, with {@code SG608} for one it names twice and for one not marked
-     * {@code @GenerateGraphApi}: watch vocabulary is typed with the peer's own states, which only such a machine's
-     * generated API declares.
-     */
-    private Peers peers(TypeElement facade) {
-        Optional<AnnotationMirror> mirror = annotations.find(facade, GraphPeers.class);
-        Map<String, TypeElement> declared = new LinkedHashMap<>();
-        Set<String> usable = new LinkedHashSet<>();
-        if (mirror.isEmpty()) {
-            return new Peers(mirror, Map.of(), Set.of());
-        }
-        for (AnnotationValue value : annotations.array(mirror.get(), "value")) {
-            Optional<TypeElement> peer = element(value);
-            if (peer.isEmpty()) {
-                // javac has already refused a value it could not read as the machine the element declares.
-                continue;
-            }
-            String name = peer.get().getQualifiedName().toString();
-            DiagnosticAnchor anchor = DiagnosticAnchor.of(facade, mirror.get(), value);
-            if (declared.putIfAbsent(name, peer.get()) != null) {
-                anchor.report(diagnostics, PAIR, name + " is declared twice as a peer of " + facade.getSimpleName());
-            } else if (annotations.find(peer.get(), GenerateGraphApi.class).isEmpty()) {
-                anchor.report(diagnostics, PAIR, name + " is not a @GenerateGraphApi machine: a watch is typed with"
-                        + " the peer's own states, which only a generated API declares");
-            } else {
-                usable.add(name);
-            }
-        }
-        return new Peers(mirror, Collections.unmodifiableMap(declared), Collections.unmodifiableSet(usable));
-    }
-
-    /**
-     * The peer the pair of {@code watch} names, or empty after reporting {@code SG606} when the vocabulary was
-     * generated for another machine, and {@code SG608} when the facade declares no such peer.
-     */
-    private Optional<String> peer(TypeElement facade, AnnotationMirror watch, Peers peers) {
-        TypeElement declaration = (TypeElement) watch.getAnnotationType().asElement();
-        AnnotationMirror metadata = annotations.find(declaration, GeneratedVocabulary.class).orElseThrow();
-        TypeMirror owner = TypedValues.classLiteral(annotations.value(metadata, "machine"));
-        if (!(owner instanceof DeclaredType declaredOwner) || !declaredOwner.asElement().equals(facade)) {
-            DiagnosticAnchor.of(facade, watch).report(diagnostics, FOREIGN, declaration.getQualifiedName()
-                    + " is the watch vocabulary of " + owner + ", not of " + facade.getQualifiedName());
-            return Optional.empty();
-        }
-        List<AnnotationValue> pair = annotations.array(metadata, "peer");
-        Optional<TypeElement> peer = pair.size() == 1 ? element(pair.get(0)) : Optional.empty();
-        if (peer.isEmpty()) {
-            DiagnosticAnchor.of(facade, watch).report(diagnostics, FOREIGN, declaration.getQualifiedName()
-                    + " names no single peer machine to watch, so it is not the vocabulary of a pair");
-            return Optional.empty();
-        }
-        String name = peer.get().getQualifiedName().toString();
-        if (!peers.declared().containsKey(name)) {
-            DiagnosticAnchor.of(facade, watch).report(diagnostics, PAIR, facade.getSimpleName() + " watches " + name
-                    + ", which it does not declare with @GraphPeers");
-            return Optional.empty();
-        }
-        return Optional.of(name);
     }
 
     /** One watch of {@code facade} over {@code peerElement}, or empty when it has a problem, which was reported. */
@@ -183,19 +95,11 @@ final class TypedWatchReader {
             // javac refuses a Watch that omits an element it requires, and leaves that element out.
             return Optional.empty();
         }
-        Optional<MachineTypes> resolved = structure.machineTypes(peerElement);
+        Optional<MachineTypes> resolved = pairs.peerTypes(facade, watch, peerElement, "a watch cannot follow");
         if (resolved.isEmpty()) {
-            DiagnosticAnchor.of(facade, watch).report(diagnostics, NOT_A_MACHINE, peerElement.getQualifiedName()
-                    + " must be an interface extending Machine<E, S, T> with a concrete entity type and two"
-                    + " distinct enum types for its states and its transition identifiers");
             return Optional.empty();
         }
         MachineTypes peer = resolved.get();
-        if (StructuralChecks.hasParameterizedEntity(peer)) {
-            DiagnosticAnchor.of(facade, watch).report(diagnostics, NOT_A_MACHINE, peerElement.getQualifiedName()
-                    + " declares its entity as " + peer.entity() + ", a parameterized type, which a watch cannot follow");
-            return Optional.empty();
-        }
         if (!reachable(facade, watch, peer)) {
             return Optional.empty();
         }
@@ -309,13 +213,6 @@ final class TypedWatchReader {
     /** The values of an array element, and none when this annotation does not declare that element at all. */
     private List<AnnotationValue> values(AnnotationMirror mirror, String name) {
         return annotations.find(mirror, name).isEmpty() ? List.of() : annotations.array(mirror, name);
-    }
-
-    /** The type {@code value} names, or empty when javac could not read it as a declared type. */
-    private static Optional<TypeElement> element(AnnotationValue value) {
-        return value.getValue() instanceof DeclaredType declared && declared.asElement() instanceof TypeElement element
-                ? Optional.of(element)
-                : Optional.empty();
     }
 
     /** The symbol {@code value} names, or empty when javac could not read it as a class literal. */

@@ -17,5 +17,9 @@ public enum VocabularyKind {
     REJECTS,
     WATCH,
     WATCHES,
-    WHEN
+    WHEN,
+    SUBMACHINE,
+    SUBMACHINES,
+    /** One exit of a sub-machine, written only inside the {@code exits} of a {@link #SUBMACHINE}. */
+    EXIT
 }

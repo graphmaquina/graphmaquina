@@ -39,8 +39,8 @@ class PendingStateIndexTest {
         return new EntityRef(MachineKey.of(Object.class, S.class, T.class), id, new Object());
     }
 
-    static LogEntry hop(EntityRef ref, S from, S to) {
-        return new LogEntry(ref, new TransitionSpec<Object, S, T>(from, T.GO, to,
+    static LogEntry.Hop hop(EntityRef ref, S from, S to) {
+        return new LogEntry.Hop(ref, new TransitionSpec<Object, S, T>(from, T.GO, to,
                 Optional.empty(), List.of(), Optional.empty(), List.of(),
                 Optional.empty(), Optional.empty()), 0);
     }

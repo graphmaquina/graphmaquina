@@ -11,7 +11,9 @@ import lombok.NonNull;
  * managed to run. The state, the requested identifier and the destination are optional because an abort can happen
  * before the state was read or before any edge was resolved, and no destination is invented for a request that
  * matched none. An abort raised for the caller of a cascade or a peer read, such as a cycle, the depth limit, a
- * failed cascade, COLLECT's aggregate or a poisoned transaction, describes the caller's own step.
+ * failed cascade, COLLECT's aggregate or a poisoned transaction, describes the caller's own step. One raised for the
+ * exit that the end of a sub-machine calls for, a terminal state with no exit or the depth limit, describes the step
+ * that ended, which is no longer in flight.
  *
  * @param key the machine that was running
  * @param entity the entity it was running on

@@ -7,6 +7,7 @@ import io.github.graphmaquina.processor.gen.SetGenerator;
 import io.github.graphmaquina.processor.model.MachineAccessor;
 import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.SetModel;
+import io.github.graphmaquina.processor.model.SubmachineModel;
 import io.github.graphmaquina.processor.model.WatchModel;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,7 +29,8 @@ import javax.lang.model.type.TypeMirror;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Turns a @StateGraphs interface into a {@link SetModel}: one accessor per machine, every watched peer inside the set.
+ * Turns a @StateGraphs interface into a {@link SetModel}: one accessor per machine, every watched peer and every
+ * sub-machine inside the set.
  *
  * <p>An accessor is read from the set's own declarations, which is what the companion implements, so one the set
  * inherits from another interface is refused. A method of {@code Machines}, {@code AutoCloseable} or
@@ -138,6 +140,13 @@ final class SetModelBuilder {
                 if (!seen.contains(peer)) {
                     diagnostics.error("SG510", "the watch of " + accessor.machine().facadeName() + "." + watch.state() + " points to "
                             + watch.peer().facade().getSimpleName() + ", which is not in " + type.getSimpleName(), type, set);
+                }
+            }
+            for (SubmachineModel submachine : accessor.machine().submachines()) {
+                if (!seen.contains(submachine.child().facade().getQualifiedName().toString())) {
+                    diagnostics.error("SG806", "the sub-machine of " + accessor.machine().facadeName() + "."
+                            + submachine.state() + " is " + submachine.child().facade().getSimpleName()
+                            + ", which is not in " + type.getSimpleName(), type, set);
                 }
             }
         }

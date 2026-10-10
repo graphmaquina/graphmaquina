@@ -2,6 +2,7 @@ package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.ArrayList;
@@ -13,10 +14,11 @@ import java.util.Set;
 
 /**
  * Chainable, typed assertion over a {@link GraphDefinition}. Every expectation reads the definition's
- * declared structure, so a graph whose actions, guards or hooks would fail if invoked can be inspected
- * without running any of them. {@link #transition(Enum, Enum)} narrows to the single edge keyed by an
- * origin and an identifier, {@link #policy(Enum)} to the rejection policy of a state, {@link #watch(Enum)}
- * to the watch declared on a state, and {@link #topology()} to the reachability graph.
+ * declared structure, so a graph whose actions, guards, hooks or sub-machine lookups would fail if invoked
+ * can be inspected without running any of them. {@link #transition(Enum, Enum)} narrows to the single edge
+ * keyed by an origin and an identifier, {@link #policy(Enum)} to the rejection policy of a state,
+ * {@link #watch(Enum)} to the watch declared on a state, {@link #submachine(Enum, MachineKey)} to the
+ * sub-machine bound to a state, and {@link #topology()} to the reachability graph.
  *
  * <p>There is no expectation over destinations alone: an identifier is what selects an edge, and two
  * identifiers may well reach the same state from the same origin.
@@ -125,6 +127,21 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
     }
 
     /**
+     * No sub-machine is bound to {@code state}, which must belong to the definition's own state enum: a
+     * state of a foreign enum would miss the binding and make this expectation pass without proving
+     * anything. A failure reports the key of the child that is bound.
+     */
+    public GraphAssert<E, S, T> hasNoSubmachine(S state) {
+        Objects.requireNonNull(state, "state");
+        Optional<?> none = Optional.empty();
+        String context = context() + " " + state.name();
+        GraphDefinition<E, S, T> definition = Checks.present(context, "submachine", none, definition());
+        requireDeclaredState(definition, state, "state");
+        Checks.equal(context, "submachine", none, definition.submachine(state).map(SubmachineSpec::childKey));
+        return this;
+    }
+
+    /**
      * Narrows to the edge keyed by {@code (from, transition)}. Both arguments must belong to the
      * definition's own enums: a state or an identifier of a foreign enum — reachable only through raw
      * types — would ask about a machine this definition does not describe. An undeclared key, like a
@@ -175,6 +192,24 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
     }
 
     /**
+     * Narrows to the sub-machine bound to {@code state}, which must belong to the definition's own state
+     * enum. The view is typed by {@code child}, the key of the machine the binding is expected to hold, and
+     * each expectation on it checks that key first. A state that holds no sub-machine — like a definition
+     * under test that is itself null — yields a view without a subject, and the first expectation on it
+     * reports that as an assertion failure. No lookup of the binding runs.
+     */
+    public <P, Q extends Enum<Q>, U extends Enum<U>> SubmachineAssert<E, S, T, P, Q, U> submachine(
+            S state, MachineKey<P, Q, U> child) {
+        Objects.requireNonNull(state, "state");
+        Objects.requireNonNull(child, "child");
+        String context = context() + " submachine " + state.name();
+        Optional<GraphDefinition<E, S, T>> definition = definition();
+        definition.ifPresent((GraphDefinition<E, S, T> declared) -> requireDeclaredState(declared, state, "state"));
+        return new SubmachineAssert<>(context, child,
+                definition.flatMap((GraphDefinition<E, S, T> declared) -> declared.submachine(state)));
+    }
+
+    /**
      * Narrows to the reachability graph: every state is a node, and every declared edge is an edge, with
      * parallel identifiers between the same pair collapsed into one. When the definition under test is
      * null so is the graph, and the first expectation on the returned view reports that as an assertion
@@ -186,6 +221,11 @@ public final class GraphAssert<E, S extends Enum<S>, T extends Enum<T>> {
             return new TopologyAssert<>(context, null);
         }
         return new TopologyAssert<>(context, actual.graph().topology());
+    }
+
+    /** The definition under test, wrapped once: the field is null only for a view built from a null subject. */
+    private Optional<GraphDefinition<E, S, T>> definition() {
+        return Optional.ofNullable(actual);
     }
 
     private String context() {

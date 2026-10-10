@@ -27,7 +27,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
     private final TransitionSpec<E, S, T> spec;
     @Getter
     private final int depth;
-    private final Object operationInput;
+    private final Optional<Object> operationInput;
     private final Thread owner = Thread.currentThread();
     private boolean stale;
 
@@ -41,7 +41,7 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
 
     @Override
     public Optional<?> input() {
-        return Optional.ofNullable(operationInput);
+        return operationInput;
     }
 
     @Override

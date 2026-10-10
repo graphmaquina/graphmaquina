@@ -21,21 +21,24 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Compiles the Java fragments of the guide's "Handle transition outcomes" section, its failed-call handler
- * included, plus its async completion callback and observer examples, against the published core jar. A second
- * test compiles every fragment of the guide's "Recover by failure kind and exception type" section the same way,
- * as a compilation unit of its own. This test runs no generator, so that section's annotated operation compiles
- * against stand-ins shaped like the {@code Transition} and {@code Recovery} annotations the generator emits. The
- * fragments are cut out of {@code docs/guide.md} verbatim and wrapped only by stand-in types and methods, so a
- * renamed accessor in the guide breaks this test the way it would break a reader. A heading or block that
- * cannot be found fails the test instead of compiling nothing. The guide, the repository and the release come
- * from the {@code readmePath}, {@code artifactRepository} and {@code artifactVersion} system properties that
+ * Compiles the Java fragments of the guide's "Handle transition outcomes" section, its failed-call handler included,
+ * plus its async completion callback and observer examples, against the published core jar. A second test compiles
+ * every fragment of the guide's "Recover by failure kind and exception type" section the same way, as a compilation
+ * unit of its own, and a third one every fragment of its "Compose machines" section. This test runs no generator, so
+ * the annotated declarations of those two sections compile against stand-ins shaped like what the generator and the
+ * processor emit: the {@code Transition} and {@code Recovery} annotations of the recovery section, and the billing
+ * example's graph and pair vocabulary, symbols and set builder, beside stand-ins for its entities, enums and hosts, for
+ * the composition section. The fragments are cut out of {@code docs/guide.md} verbatim and wrapped only by stand-in
+ * types and methods, so a renamed accessor in the guide breaks this test the way it would break a reader. A heading or
+ * block that cannot be found fails the test instead of compiling nothing. The guide, the repository and the release
+ * come from the {@code readmePath}, {@code artifactRepository} and {@code artifactVersion} system properties that
  * {@code publishedArtifactTest} sets.
  */
 class GuideOutcomeFragmentsTest {
 
     private static final String SECTION_HEADING = "## Handle transition outcomes";
     private static final String RECOVERY_HEADING = "### Recover by failure kind and exception type";
+    private static final String COMPOSITION_HEADING = "## Compose machines";
     private static final String FUTURE_PREFIX =
             "CompletableFuture<Outcome<Ticket, TicketState, TicketTransition>> pending =";
     private static final String OBSERVER_PREFIX =
@@ -164,6 +167,281 @@ class GuideOutcomeFragmentsTest {
                 // --- "Recover by failure kind and exception type", block 1 (states, identifiers, failure kinds)
             """;
 
+    private static final String COMPOSITION_HEADER = """
+            package guide;
+
+            import static guide.GuideCompositionFragments.BookingStatus.BALANCE;
+            import static guide.GuideCompositionFragments.BookingStatus.CANCELLED;
+            import static guide.GuideCompositionFragments.BookingStatus.CONFIRMED;
+            import static guide.GuideCompositionFragments.BookingStatus.DEPOSIT;
+            import static guide.GuideCompositionFragments.BookingStatus.REQUESTED;
+            import static guide.GuideCompositionFragments.SubscriptionStatus.RENEWAL;
+
+            import io.github.graphmaquina.annotation.GenerateGraphApi;
+            import io.github.graphmaquina.annotation.GraphAction;
+            import io.github.graphmaquina.annotation.GraphLookup;
+            import io.github.graphmaquina.annotation.GraphPeers;
+            import io.github.graphmaquina.annotation.Timeout;
+            import io.github.graphmaquina.api.ActionOutcome;
+            import io.github.graphmaquina.api.GraphDefinition;
+            import io.github.graphmaquina.api.Machine;
+            import io.github.graphmaquina.api.MachineKey;
+            import io.github.graphmaquina.api.Machines;
+            import io.github.graphmaquina.api.Outcome;
+            import io.github.graphmaquina.api.TransitionContext;
+            import io.github.graphmaquina.dsl.StateGraph;
+            import io.github.graphmaquina.runtime.MachineRegistry;
+            import io.github.graphmaquina.runtime.StateMachines;
+            import io.github.graphmaquina.symbol.ActionSymbol;
+            import io.github.graphmaquina.symbol.GuardSymbol;
+            import io.github.graphmaquina.symbol.HookSymbol;
+            import io.github.graphmaquina.symbol.LookupSymbol;
+            import io.github.graphmaquina.symbol.PropertySymbol;
+            import java.lang.annotation.ElementType;
+            import java.lang.annotation.Repeatable;
+            import java.lang.annotation.Retention;
+            import java.lang.annotation.RetentionPolicy;
+            import java.lang.annotation.Target;
+            import java.time.Duration;
+            import java.util.Map;
+            import java.util.Optional;
+            import java.util.concurrent.CompletionStage;
+            import java.util.concurrent.ConcurrentHashMap;
+
+            /** Every composition fragment of docs/guide.md, extracted verbatim, compiled against core. */
+            public final class GuideCompositionFragments {
+                private GuideCompositionFragments() { }
+
+                /** States of a payment. */
+                enum PaymentStatus { AUTHORIZING, CAPTURED, DECLINED, VOIDED }
+                /** Identifiers of a payment. */
+                enum PaymentTransition { CAPTURE, DECLINE, VOID }
+                /** States of a booking. */
+                enum BookingStatus { REQUESTED, DEPOSIT, BALANCE, CONFIRMED, CANCELLED }
+                /** Identifiers of a booking. */
+                enum BookingTransition {
+                    BOOK, DEPOSIT_PAID, DEPOSIT_DECLINED, BALANCE_PAID, BALANCE_DECLINED, PAYMENT_VOIDED, NO_ROOM,
+                    CANCEL
+                }
+                /** States of a subscription. */
+                enum SubscriptionStatus { ACTIVE, RENEWAL, LAPSED }
+                /** Identifiers of a subscription. */
+                enum SubscriptionTransition { START_RENEWAL, RENEWED, LAPSE }
+
+                /** Payment entity stand-in. */
+                static final class Payment {
+                    private final String id;
+                    Payment(String id) { this.id = id; }
+                    String id() { return id; }
+                }
+                /** Booking entity stand-in, which holds its deposit and its balance. */
+                static final class Booking {
+                    private final Payment deposit;
+                    private final Payment balance;
+                    Booking(String id, Payment deposit, Payment balance) {
+                        this.deposit = deposit;
+                        this.balance = balance;
+                    }
+                    Optional<Payment> deposit() { return Optional.of(deposit); }
+                    Optional<Payment> balance() { return Optional.of(balance); }
+                }
+                /** Subscription entity stand-in. */
+                static final class Subscription { }
+
+                /** Payment facade stand-in. */
+                interface Payments extends Machine<Payment, PaymentStatus, PaymentTransition> {
+                    Outcome<Payment, PaymentStatus, PaymentTransition> capture(Payment payment);
+                }
+                /** The port the asynchronous exit asks for a room. */
+                interface RoomDesk {
+                    CompletionStage<ActionOutcome> holdRoom(
+                            TransitionContext<Booking, BookingStatus, BookingTransition> context);
+                }
+
+                // Shaped like the vocabulary, symbols and set builder the generator and the processor emit.
+                /** Graph vocabulary stand-in of Bookings. */
+                static final class BookingsGraph {
+                    private BookingsGraph() { }
+                    /** A generated definition annotation stand-in. */
+                    @Target(ElementType.TYPE)
+                    @Retention(RetentionPolicy.CLASS)
+                    @interface Definition {
+                        BookingStatus initial();
+                        BookingStatus[] terminals() default {};
+                        BookingStatus[] allowsCycle() default {};
+                        Class<? extends PropertySymbol> state();
+                        Class<? extends PropertySymbol> id();
+                        Class<? extends HookSymbol>[] afterCommit() default {};
+                    }
+                    /** A generated state policy annotation stand-in. */
+                    @Target(ElementType.TYPE)
+                    @Retention(RetentionPolicy.CLASS)
+                    @Repeatable(StatePolicies.class)
+                    @interface StatePolicy {
+                        BookingStatus state();
+                        String otherwise();
+                    }
+                    /** Its container. */
+                    @Target(ElementType.TYPE)
+                    @Retention(RetentionPolicy.CLASS)
+                    @interface StatePolicies {
+                        StatePolicy[] value();
+                    }
+                    /** A generated transition annotation stand-in, without recovery rules. */
+                    @Target({ElementType.TYPE, ElementType.METHOD})
+                    @Retention(RetentionPolicy.CLASS)
+                    @Repeatable(Transitions.class)
+                    @interface Transition {
+                        BookingTransition id();
+                        BookingStatus[] from();
+                        BookingStatus to();
+                        Class<? extends ActionSymbol>[] action() default {};
+                        Class<? extends GuardSymbol>[] guards() default {};
+                        BookingTransition[] onFailure() default {};
+                        Class<? extends Throwable>[] failsOn() default {};
+                        Timeout[] timeout() default {};
+                        Class<? extends HookSymbol>[] afterCommit() default {};
+                    }
+                    /** Its container. */
+                    @Target({ElementType.TYPE, ElementType.METHOD})
+                    @Retention(RetentionPolicy.CLASS)
+                    @interface Transitions {
+                        Transition[] value();
+                    }
+                }
+                /** Pair vocabulary stand-in of Bookings over Payments. */
+                static final class BookingsPayments {
+                    private BookingsPayments() { }
+                    /** A generated sub-machine annotation stand-in. */
+                    @Target(ElementType.TYPE)
+                    @Retention(RetentionPolicy.CLASS)
+                    @Repeatable(Submachines.class)
+                    @interface Submachine {
+                        BookingStatus state();
+                        Class<? extends PropertySymbol>[] child() default {};
+                        Class<? extends PropertySymbol>[] parent() default {};
+                        Class<? extends LookupSymbol>[] parentLookup() default {};
+                        Exit[] exits();
+                    }
+                    /** Its container. */
+                    @Target(ElementType.TYPE)
+                    @Retention(RetentionPolicy.CLASS)
+                    @interface Submachines {
+                        Submachine[] value();
+                    }
+                    /** A generated exit annotation stand-in. */
+                    @Target({})
+                    @Retention(RetentionPolicy.CLASS)
+                    @interface Exit {
+                        PaymentStatus on();
+                        BookingTransition transition();
+                    }
+                }
+                /** Pair vocabulary stand-in of Subscriptions over Payments. */
+                static final class SubscriptionsPayments {
+                    private SubscriptionsPayments() { }
+                    /** A generated sub-machine annotation stand-in. */
+                    @Target(ElementType.TYPE)
+                    @Retention(RetentionPolicy.CLASS)
+                    @Repeatable(Submachines.class)
+                    @interface Submachine {
+                        SubscriptionStatus state();
+                        Class<? extends PropertySymbol>[] child() default {};
+                        Class<? extends PropertySymbol>[] parent() default {};
+                        Class<? extends LookupSymbol>[] parentLookup() default {};
+                        Exit[] exits();
+                    }
+                    /** Its container. */
+                    @Target(ElementType.TYPE)
+                    @Retention(RetentionPolicy.CLASS)
+                    @interface Submachines {
+                        Submachine[] value();
+                    }
+                    /** A generated exit annotation stand-in. */
+                    @Target({})
+                    @Retention(RetentionPolicy.CLASS)
+                    @interface Exit {
+                        PaymentStatus on();
+                        SubscriptionTransition transition();
+                    }
+                }
+                /** Property symbols of Booking. */
+                static final class BookingRefs {
+                    private BookingRefs() { }
+                    /** The state property. */
+                    static final class Status implements PropertySymbol { private Status() { } }
+                    /** The identity property. */
+                    static final class Id implements PropertySymbol { private Id() { } }
+                    /** The deposit property. */
+                    static final class Deposit implements PropertySymbol { private Deposit() { } }
+                    /** The balance property. */
+                    static final class Balance implements PropertySymbol { private Balance() { } }
+                }
+                /** Property symbols of Subscription. */
+                static final class SubscriptionRefs {
+                    private SubscriptionRefs() { }
+                    /** The renewal property. */
+                    static final class Renewal implements PropertySymbol { private Renewal() { } }
+                }
+                /** Lookup symbols of BillingLookups. */
+                static final class BillingLookupsRefs {
+                    private BillingLookupsRefs() { }
+                    /** The booking lookup. */
+                    static final class BookingOf implements LookupSymbol { private BookingOf() { } }
+                    /** The subscription lookup. */
+                    static final class SubscriptionOf implements LookupSymbol { private SubscriptionOf() { } }
+                }
+                /** Action symbols of BookingActions. */
+                static final class BookingActionsRefs {
+                    private BookingActionsRefs() { }
+                    /** The room action. */
+                    static final class HoldRoom implements ActionSymbol { private HoldRoom() { } }
+                    /** The cancel action. */
+                    static final class Cancel implements ActionSymbol { private Cancel() { } }
+                }
+                /** Set stand-in. */
+                interface BillingMachines extends Machines {
+                    Bookings bookings();
+                    Subscriptions subscriptions();
+                    Payments payments();
+                }
+                /** Generated set builder stand-in. */
+                static final class BillingMachinesRuntime {
+                    private BillingMachinesRuntime() { }
+                    static Builder builder(Duration asyncTimeout, BookingActions bookingActions,
+                            BillingLookups billingLookups) {
+                        return new Builder();
+                    }
+                    /** The builder. */
+                    static final class Builder {
+                        Builder asyncTimeout(Class<? extends Machine<?, ?, ?>> machine, Duration timeout) {
+                            return this;
+                        }
+                        BillingMachines build() {
+                            throw new UnsupportedOperationException("compiled, never run");
+                        }
+                    }
+                }
+
+                /** States of a stay. */
+                enum StayStatus { REQUESTED, PAYING, CONFIRMED, CANCELLED }
+                /** Identifiers of a stay. */
+                enum StayTransition { BOOK, CONFIRM, CANCEL }
+                /** A stay, which is its own payment. */
+                static final class Stay {
+                    final String id;
+                    StayStatus status = StayStatus.REQUESTED;
+                    PaymentStatus paymentStatus = PaymentStatus.AUTHORIZING;
+                    Stay(String id) { this.id = id; }
+                }
+                static final MachineKey<Stay, StayStatus, StayTransition> STAYS =
+                        MachineKey.of(Stay.class, StayStatus.class, StayTransition.class);
+                static final MachineKey<Stay, PaymentStatus, PaymentTransition> STAY_PAYMENTS =
+                        MachineKey.of(Stay.class, PaymentStatus.class, PaymentTransition.class);
+
+                // --- "Compose machines", block 1 (the Bookings interface)
+            """;
+
     @Test
     void everyOutcomeFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir) throws IOException {
         List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
@@ -224,6 +502,47 @@ class GuideOutcomeFragmentsTest {
         List<String> diagnostics = compile(workDir, "GuideRecoveryFragments", source.toString(), coreJar);
         assertTrue(diagnostics.isEmpty(), "the guide's recovery fragments must compile against the published core:\n"
                 + String.join("\n", diagnostics) + "\n--- generated GuideRecoveryFragments.java ---\n" + source);
+    }
+
+    /** Compiles the composition section's eight Java blocks against the staged core jar. */
+    @Test
+    void everyCompositionFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir) throws IOException {
+        List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
+        Path coreJar = publishedCoreJar();
+
+        assertJavaBlockCount(guide, COMPOSITION_HEADING, 8);
+
+        StringBuilder source = new StringBuilder(COMPOSITION_HEADER);
+        source.append(blockAfter(guide, COMPOSITION_HEADING, 1)).append('\n');
+        source.append("    // --- block 2 (the lookups), on their host\n");
+        source.append("    /** Lookup host stand-in. */\n");
+        source.append("    static final class BillingLookups {\n");
+        source.append("        private final Map<String, Booking> bookings = new ConcurrentHashMap<>();\n");
+        source.append("        private final Map<String, Subscription> subscriptions = new ConcurrentHashMap<>();\n");
+        source.append("        void register(Booking booking) { }\n");
+        source.append(blockAfter(guide, COMPOSITION_HEADING, 2)).append("    }\n\n");
+        source.append("    // --- blocks 3 and 4 (the set, then a booking and its deposit), wrapped in a method\n");
+        source.append("    static void book(RoomDesk desk) {\n");
+        source.append(blockAfter(guide, COMPOSITION_HEADING, 3));
+        source.append(blockAfter(guide, COMPOSITION_HEADING, 4)).append("    }\n\n");
+        source.append("    // --- block 5 (the interrupting action), on its host\n");
+        source.append("    /** Action host stand-in. */\n");
+        source.append("    static final class BookingActions {\n");
+        source.append("        BookingActions(RoomDesk desk) { }\n");
+        source.append(blockAfter(guide, COMPOSITION_HEADING, 5)).append("    }\n\n");
+        source.append("    // --- block 6 (the second parent's binding), on its facade\n");
+        source.append("    /** Subscription facade stand-in, which binds the reusable payment machine. */\n");
+        source.append(blockAfter(guide, COMPOSITION_HEADING, 6));
+        source.append("    interface Subscriptions\n");
+        source.append("            extends Machine<Subscription, SubscriptionStatus, SubscriptionTransition> { }\n\n");
+        source.append("    // --- block 7 (a child over the parent's own entity)\n");
+        source.append(blockAfter(guide, COMPOSITION_HEADING, 7)).append('\n');
+        source.append("    // --- block 8 (both machines over one entity)\n");
+        source.append(blockAfter(guide, COMPOSITION_HEADING, 8)).append("}\n");
+
+        List<String> diagnostics = compile(workDir, "GuideCompositionFragments", source.toString(), coreJar);
+        assertTrue(diagnostics.isEmpty(), "the guide's composition fragments must compile against the published core:\n"
+                + String.join("\n", diagnostics) + "\n--- generated GuideCompositionFragments.java ---\n" + source);
     }
 
     /**

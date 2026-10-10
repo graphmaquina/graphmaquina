@@ -54,6 +54,7 @@ class PublicApiCompilationTest {
             import io.github.graphmaquina.api.Outcome;
             import io.github.graphmaquina.api.Reaction;
             import io.github.graphmaquina.api.RecoveryRule;
+            import io.github.graphmaquina.test.ExitExpectation;
             import io.github.graphmaquina.test.GraphAssertions;
             import java.util.List;
 
@@ -74,6 +75,12 @@ class PublicApiCompilationTest {
 
                 /** A kind accepted by the recovery assertion. */
                 record Declined() implements FailureKind { }
+
+                /** The states of a sub-machine bound to the machine. */
+                enum ChildState { DONE }
+
+                /** The transition identifiers of that sub-machine. */
+                enum ChildId { GO }
 
                 public static void run() {
                     Outcome.Applied<String, State, Id> result = new Outcome.Applied<>(
@@ -108,6 +115,23 @@ class PublicApiCompilationTest {
                     GraphAssertions.assertThat(outcome).isFailed().hasFailureKind(Declined.class);
                     GraphAssertions.assertThat(definition).transition(State.NEW, Id.PREPARE)
                             .recoversExactly(List.of(new RecoveryRule<>(Declined.class, Id.PREPARE, List.of())));
+                }
+
+                public static void submachine(GraphDefinition<String, State, Id> definition) {
+                    MachineKey<String, ChildState, ChildId> child =
+                            MachineKey.of(String.class, ChildState.class, ChildId.class);
+                    GraphAssertions.assertThat(definition).submachine(State.NEW, child)
+                            .hasExitsExactly(ExitExpectation.exit(ChildState.DONE, Id.PREPARE))
+                            .hasExit(ChildState.DONE, Id.PREPARE);
+                }
+
+                public static void starts(Outcome<String, State, Id> outcome) {
+                    MachineKey<String, ChildState, ChildId> child =
+                            MachineKey.of(String.class, ChildState.class, ChildId.class);
+                    MachineKey<String, State, Id> parent = MachineKey.of(String.class, State.class, Id.class);
+                    GraphAssertions.assertThat(outcome).starts().forChild(child, "child").single()
+                            .startedAt(ChildState.DONE).hadPrevious(ChildState.DONE)
+                            .byParent(parent, "parent", State.NEW).atDepth(0);
                 }
             }
             """;
@@ -178,6 +202,42 @@ class PublicApiCompilationTest {
     void aForeignIdentifierIsRejectedInAnExpectedRecoveryRule(@TempDir Path workDir) throws IOException {
         assertRejected(workDir, "new RecoveryRule<>(Declined.class, Id.PREPARE, List.of())",
                 "new RecoveryRule<>(Declined.class, OtherId.PREPARE, List.of())");
+    }
+
+    @Test
+    void aForeignStateIsRejectedOnTheSubmachineSelector(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, "submachine(State.NEW, child)", "submachine(OtherState.READY, child)");
+    }
+
+    /** The view is typed by the child's key: a state of the parent is no terminal state of the child. */
+    @Test
+    void aStateOfTheParentIsRejectedAsATerminalStateOfTheChild(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, ".hasExit(ChildState.DONE, Id.PREPARE)", ".hasExit(State.READY, Id.PREPARE)");
+    }
+
+    /** An exit is an identifier of the parent, never one of the child. */
+    @Test
+    void anIdentifierOfTheChildIsRejectedAsAnExit(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, ".hasExit(ChildState.DONE, Id.PREPARE)", ".hasExit(ChildState.DONE, ChildId.GO)");
+    }
+
+    @Test
+    void aForeignStateIsRejectedInAnExpectedExit(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, "ExitExpectation.exit(ChildState.DONE, Id.PREPARE)",
+                "ExitExpectation.exit(OtherState.READY, Id.PREPARE)");
+    }
+
+    /** A start is typed by the child's key: a state of the parent is no state the child started at. */
+    @Test
+    void aStateOfTheParentIsRejectedAsTheStateTheChildStartedAt(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, ".startedAt(ChildState.DONE)", ".startedAt(State.READY)");
+    }
+
+    /** The node a start names is a state of the parent key given beside it. */
+    @Test
+    void aForeignStateIsRejectedAsTheNodeOfTheParent(@TempDir Path workDir) throws IOException {
+        assertRejected(workDir, ".byParent(parent, \"parent\", State.NEW)",
+                ".byParent(parent, \"parent\", OtherState.READY)");
     }
 
     @Test

@@ -7,7 +7,8 @@ dependencies {
     implementation(project(":graphmaquina-core"))
     compileOnly(libs.lombok)
     annotationProcessor(libs.lombok)
-    // Lombok first: the processor reads the accessors Lombok generates on Order and Item.
+    // Lombok first: the processor reads the accessors Lombok generates on Order, Item, Payment, Booking and
+    // Subscription.
     annotationProcessor(project(":graphmaquina-processor"))
     add("graphmaquinaGenerator", project(":graphmaquina-codegen"))
 

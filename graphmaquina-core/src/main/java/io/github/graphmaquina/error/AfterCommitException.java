@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionRecord;
 import java.util.List;
 import java.util.Objects;
@@ -12,27 +13,37 @@ import java.util.Objects;
  * An after-commit hook threw a throwable that is not an Error, a checked exception included; an Error propagates
  * unchanged instead. A hook runs only for committed hops, so it fails after phase 2 had written every state of the
  * call: its phase is HOOK and its states written ALL. Nothing is rolled back: the caller's transaction decides.
- * {@link #hop()} is the committed hop whose hook threw and {@link #records()} every hop the call committed, in log
- * order. The hooks of the hops before {@link #hop()} ran; the later hooks and the watch reactions of the call did not.
+ * {@link #hop()} is the committed hop whose hook threw, {@link #records()} every hop the call committed, in log
+ * order, and {@link #starts()} every sub-machine it started; a start runs no hook. The hooks of the hops before
+ * {@link #hop()} ran; the later hooks and the watch reactions of the call did not.
  */
 public final class AfterCommitException extends CallFailedException {
 
     private final List<ActionRecord> journal;
     private final List<TransitionRecord<?, ?, ?>> records;
+    private final List<SubmachineStart<?, ?, ?>> starts;
     private final TransitionRecord<?, ?, ?> hop;
     private final String hook;
 
     /**
      * The hook {@code hook} of the committed {@code hop} threw {@code cause}; {@code records} are every hop the call
-     * committed.
+     * committed, and {@code starts} every sub-machine it started.
      */
     public AfterCommitException(MachineCall call, List<ActionRecord> journal, List<TransitionRecord<?, ?, ?>> records,
-                                TransitionRecord<?, ?, ?> hop, String hook, Throwable cause) {
+                                List<SubmachineStart<?, ?, ?>> starts, TransitionRecord<?, ?, ?> hop, String hook,
+                                Throwable cause) {
         super(call, describe(call, hook), cause);
         this.journal = List.copyOf(journal);
         this.records = List.copyOf(records);
+        this.starts = List.copyOf(starts);
         this.hop = Objects.requireNonNull(hop, "hop");
         this.hook = hook;
+    }
+
+    /** As the canonical constructor, for a call that started no sub-machine. */
+    public AfterCommitException(MachineCall call, List<ActionRecord> journal, List<TransitionRecord<?, ?, ?>> records,
+                                TransitionRecord<?, ?, ?> hop, String hook, Throwable cause) {
+        this(call, journal, records, List.of(), hop, hook, cause);
     }
 
     /** HOOK. */
@@ -65,6 +76,11 @@ public final class AfterCommitException extends CallFailedException {
     /** Every hop the call committed, in log order, the one whose hook threw included. */
     public List<TransitionRecord<?, ?, ?>> records() {
         return records;
+    }
+
+    /** Every sub-machine the call started, in log order, as {@code Outcome.starts()} would have reported them. */
+    public List<SubmachineStart<?, ?, ?>> starts() {
+        return starts;
     }
 
     private static String describe(MachineCall call, String hook) {

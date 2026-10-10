@@ -7,6 +7,7 @@ import io.github.graphmaquina.graph.StrongComponents;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -15,9 +16,9 @@ import lombok.NonNull;
 
 /**
  * Structural checks over a {@link MachineOutline}: unique keys, policies and their reasons, terminals,
- * reachability, cycles, failure routes and watches. The failure routes of an edge are the identifiers its recovery
- * rules name and the one its {@code onFailure} names. Shared by the DSL and the annotation processor, so both report
- * the same codes for these checks.
+ * reachability, cycles, failure routes, watches and sub-machines. The failure routes of an edge are the identifiers
+ * its recovery rules name and the one its {@code onFailure} names. Shared by the DSL and the annotation processor, so
+ * both report the same codes for these checks.
  */
 public final class MachineOutlineValidator {
 
@@ -45,6 +46,7 @@ public final class MachineOutlineValidator {
         cycles(outline, index, problems);
         failureRoutes(outline, index, byKey, problems);
         watches(outline, index, byKey, problems);
+        submachines(outline, index, byKey, problems);
     }
 
     private static Map<EdgeKey, TransitionOutline> uniqueKeys(MachineOutline outline, OutlineIndex index,
@@ -208,6 +210,112 @@ public final class MachineOutlineValidator {
             if (outline.terminals().contains(watch.state())) {
                 problems.add("SG402", index.stateIndex(watch.state()), -1,
                         watch.state() + " is terminal and cannot watch anything");
+            }
+        }
+    }
+
+    /**
+     * SG803 once per bound state that is terminal or holds more than one binding, then SG801, SG802 and SG804 for
+     * every binding, a second one on the same state included. Each problem is filed under the bound state, and under
+     * the identifier it concerns when it concerns one: an exit's identifier or a claimed one. Problems that share
+     * their code, state and identifier keep the order they are found in: bindings in outline order, then within one
+     * binding the child's terminal states in its declaration order, its exits in declaration order, and its claims in
+     * the order {@code claims} finds them.
+     */
+    private static void submachines(MachineOutline outline, OutlineIndex index,
+            Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
+        Map<String, Integer> bindings = new LinkedHashMap<>();
+        for (SubmachineOutline submachine : outline.submachines()) {
+            bindings.merge(submachine.state(), 1, Integer::sum);
+        }
+        for (Map.Entry<String, Integer> bound : bindings.entrySet()) {
+            String where = outline.name() + "." + bound.getKey();
+            if (outline.terminals().contains(bound.getKey())) {
+                problems.add("SG803", index.stateIndex(bound.getKey()), -1,
+                        where + " is terminal and cannot hold a sub-machine");
+            }
+            if (bound.getValue() > 1) {
+                problems.add("SG803", index.stateIndex(bound.getKey()), -1, where + " holds more than one sub-machine");
+            }
+        }
+        for (SubmachineOutline submachine : outline.submachines()) {
+            exits(outline, submachine, index, byKey, problems);
+            claims(outline, submachine, index, problems);
+        }
+    }
+
+    /**
+     * SG801 for each terminal state of the child without exactly one exit and for each exit on a state that is not
+     * one; SG802 for each exit whose identifier has no edge from the bound state.
+     */
+    private static void exits(MachineOutline outline, SubmachineOutline submachine, OutlineIndex index,
+            Map<EdgeKey, TransitionOutline> byKey, Problems problems) {
+        String where = outline.name() + "." + submachine.state() + ": ";
+        int node = index.stateIndex(submachine.state());
+        Map<String, Integer> declared = new HashMap<>();
+        for (ExitOutline exit : submachine.exits()) {
+            declared.merge(exit.terminal(), 1, Integer::sum);
+        }
+        for (String terminal : submachine.childTerminals()) {
+            int count = declared.getOrDefault(terminal, 0);
+            if (count == 0) {
+                problems.add("SG801", node, -1,
+                        where + "the terminal " + terminal + " of " + submachine.child() + " has no exit");
+            } else if (count > 1) {
+                problems.add("SG801", node, -1,
+                        where + "the terminal " + terminal + " of " + submachine.child() + " has more than one exit");
+            }
+        }
+        Set<String> terminals = new HashSet<>(submachine.childTerminals());
+        for (ExitOutline exit : submachine.exits()) {
+            int identifier = index.transitionIndex(exit.transition());
+            if (!terminals.contains(exit.terminal())) {
+                problems.add("SG801", node, identifier, where + "the exit on " + exit.terminal()
+                        + " names no terminal of " + submachine.child());
+            }
+            if (!byKey.containsKey(new EdgeKey(submachine.state(), exit.transition()))) {
+                problems.add("SG802", node, identifier, where + "the exit on " + exit.terminal() + " names "
+                        + exit.transition() + ", which has no edge from " + submachine.state());
+            }
+        }
+    }
+
+    /**
+     * SG804 for each identifier an exit names that is also claimed from the bound state: by each edge leaving it, in
+     * outline order, first through its recovery rules and then through its onFailure, and last by its watch. A
+     * claim repeated within one edge's recovery rules or within one watch is reported once.
+     */
+    private static void claims(MachineOutline outline, SubmachineOutline submachine, OutlineIndex index,
+            Problems problems) {
+        String state = submachine.state();
+        String where = outline.name() + "." + state + ": ";
+        int node = index.stateIndex(state);
+        Set<String> reserved = new HashSet<>();
+        for (ExitOutline exit : submachine.exits()) {
+            reserved.add(exit.transition());
+        }
+        for (TransitionOutline edge : index.outgoing(state)) {
+            for (String recovery : new LinkedHashSet<>(edge.recoveryTransitions())) {
+                if (reserved.contains(recovery)) {
+                    problems.add("SG804", node, index.transitionIndex(recovery), where + recovery
+                            + " is an exit of its sub-machine and cannot be a recovery of " + edge.transition());
+                }
+            }
+            if (edge.onFailure().isPresent() && reserved.contains(edge.onFailure().get())) {
+                String claimed = edge.onFailure().get();
+                problems.add("SG804", node, index.transitionIndex(claimed), where + claimed
+                        + " is an exit of its sub-machine and cannot be the onFailure of " + edge.transition());
+            }
+        }
+        for (WatchOutline watch : outline.watches()) {
+            if (!watch.state().equals(state)) {
+                continue;
+            }
+            for (String executed : new LinkedHashSet<>(watch.transitions())) {
+                if (reserved.contains(executed)) {
+                    problems.add("SG804", node, index.transitionIndex(executed), where + executed
+                            + " is an exit of its sub-machine and cannot be executed by a watch rule");
+                }
             }
         }
     }

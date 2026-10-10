@@ -5,11 +5,13 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.StatePolicy;
+import io.github.graphmaquina.api.SubmachineSpec;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
 import io.github.graphmaquina.api.WatchSpec;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -20,11 +22,13 @@ import lombok.NonNull;
 
 /**
  * Structural view of a graph by names only, built by {@link #of} from a {@link GraphDefinition}. Every collection it
- * holds keeps the order it was given in, its terminals included, and refuses a null element.
+ * holds keeps the order it was given in, its terminals included, and refuses a null element. Each sub-machine bound
+ * to one of its states carries the child's own view, so a view holds the whole tree of its sub-machines.
  */
 public record GraphView(@NonNull String name, @NonNull String initial, @NonNull Set<String> terminals,
                         @NonNull List<String> states, @NonNull List<TransitionView> transitions,
-                        @NonNull List<PolicyView> policies, @NonNull List<WatchView> watches) {
+                        @NonNull List<PolicyView> policies, @NonNull List<WatchView> watches,
+                        @NonNull List<SubmachineView> submachines) {
 
     public GraphView {
         // Given order, kept as the lists keep theirs: Set.copyOf iterates in an order salted per JVM, so the same
@@ -38,12 +42,20 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
         transitions = List.copyOf(transitions);
         policies = List.copyOf(policies);
         watches = List.copyOf(watches);
+        submachines = List.copyOf(submachines);
+    }
+
+    /** A view of a graph that binds no sub-machine. */
+    public GraphView(String name, String initial, Set<String> terminals, List<String> states,
+                     List<TransitionView> transitions, List<PolicyView> policies, List<WatchView> watches) {
+        this(name, initial, terminals, states, transitions, policies, watches, List.of());
     }
 
     /**
      * Builds the view of {@code definition}: every state in the graph's node order, every declared edge in the
-     * definition's order with its recovery rules in declaration order, each state's policy, the watches, and the
-     * terminals in node order. A rejection is never an edge.
+     * definition's order with its recovery rules in declaration order, each state's policy, the watches, the
+     * sub-machines in node order, each with the view of its child, built the same way, and with its exits in
+     * declaration order, and the terminals in node order. A rejection is never an edge.
      */
     public static <E, S extends Enum<S>, T extends Enum<T>> GraphView of(@NonNull GraphDefinition<E, S, T> definition) {
         List<String> states = new ArrayList<>();
@@ -81,6 +93,13 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
             }
             watches.add(new WatchView(state.name(), watch.get().peer().entity().getSimpleName(), rules));
         }
+        List<SubmachineView> submachines = new ArrayList<>();
+        for (S state : definition.graph().nodes()) {
+            Optional<SubmachineSpec<E, S, T, ?, ?, ?>> submachine = definition.submachine(state);
+            if (submachine.isPresent()) {
+                submachines.add(submachine(submachine.get()));
+            }
+        }
         Set<String> terminals = new LinkedHashSet<>();
         for (S state : definition.graph().nodes()) {
             if (definition.terminals().contains(state)) {
@@ -88,7 +107,15 @@ public record GraphView(@NonNull String name, @NonNull String initial, @NonNull 
             }
         }
         return new GraphView(definition.key().toString(), definition.initial().name(), terminals, states, transitions,
-                policies, watches);
+                policies, watches, submachines);
+    }
+
+    /** The view of one binding: its state, the child's view and the exits by names, in declaration order. */
+    private static <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>> SubmachineView
+            submachine(SubmachineSpec<E, S, T, P, Q, U> spec) {
+        Map<String, String> exits = new LinkedHashMap<>();
+        spec.exits().forEach((Q terminal, T exit) -> exits.put(terminal.name(), exit.name()));
+        return new SubmachineView(spec.state().name(), of(spec.child()), exits);
     }
 
     /**

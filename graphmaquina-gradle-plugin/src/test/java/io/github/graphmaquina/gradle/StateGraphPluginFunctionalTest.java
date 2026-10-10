@@ -653,6 +653,62 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
+     * A parent that binds one child in two states, through the lookups of an instance host, built by the published
+     * plugin from the artifacts of this build: the jar carries the pair vocabulary and the lookup symbols, its index
+     * exports those symbols, the parent's companion binds the child's definition twice and the set builds that
+     * definition once. The program the build then runs sees each payment start when the booking enters its node, the
+     * booking leave each node when its payment is captured, and a payment whose booking is elsewhere refused as
+     * detached. {@code --refresh-dependencies} is deliberate, for the reason {@link #publishedPluginMarkerResolves()}
+     * gives.
+     */
+    @Test
+    void runsTheSubmachinesOfAParentThatBindsOneChildInTwoStates() throws IOException {
+        PluginFixture fixture = PluginFixture.publishedPlugin(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.writeSources(PluginFixture.submachineSources());
+        fixture.appendToBuildScript("""
+                tasks.register<JavaExec>("runBookkeeping") {
+                    classpath = sourceSets.getByName("main").runtimeClasspath
+                    mainClass = "fxs.Bookkeeping"
+                }
+                """);
+
+        BuildResult result = fixture.run("jar", "runBookkeeping", "--refresh-dependencies", "--stacktrace");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        assertEquals(TaskOutcome.SUCCESS, result.task(":runBookkeeping").getOutcome());
+        assertTrue(fixture.jarContains("fxs/BookingsPayments$Submachine.class"));
+        assertTrue(fixture.jarContains("fxs/BookingsPayments$Exit.class"));
+        assertTrue(fixture.jarContains("fxs/LedgerRefs$DepositOf.class"));
+        assertEquals(List.of("fxs.Bookings", "fxs.Payments", "fxs.BookingRefs.Balance", "fxs.BookingRefs.Deposit",
+                "fxs.BookingRefs.Id", "fxs.BookingRefs.Status", "fxs.LedgerRefs.BalanceOf", "fxs.LedgerRefs.DepositOf",
+                "fxs.PaymentRefs.Id", "fxs.PaymentRefs.Status"), fixture.localExports());
+        Path generated = Path.of(fixture.request("main").get("processorSourcesOutput").getAsString());
+        String bookings = Files.readString(generated.resolve("fxs/BookingsRuntime.java"), StandardCharsets.UTF_8);
+        assertTrue(bookings.contains("graph(GraphDefinition<Payment, PaymentStatus, PaymentTransition> paymentsGraph,"
+                + " Ledger ledger)"), bookings);
+        assertTrue(bookings.contains(".submachine(BookingStatus.DEPOSIT, paymentsGraph, (Booking booking) ->"
+                + " booking.deposit(), (Payment payment) -> ledger.depositOf(payment))"), bookings);
+        assertTrue(bookings.contains(".submachine(BookingStatus.BALANCE, paymentsGraph, (Booking booking) ->"
+                + " booking.balance(), (Payment payment) -> ledger.balanceOf(payment))"), bookings);
+        String set = Files.readString(generated.resolve("fxs/BillingRuntime.java"), StandardCharsets.UTF_8);
+        assertTrue(set.contains("GraphDefinition<Payment, PaymentStatus, PaymentTransition> paymentsGraph"
+                + " = PaymentsRuntime.graph();"), set);
+        assertTrue(set.contains("StateMachines.from(BookingsRuntime.graph(paymentsGraph, ledger))"), set);
+        assertTrue(set.contains("StateMachines.from(paymentsGraph)"), set);
+        assertEquals(1, set.split("PaymentsRuntime\\.graph\\(", -1).length - 1, set);
+        assertEquals(List.of(
+                "BILLING book APPLIED REQUESTED-BOOK->DEPOSIT start DEPOSIT:deposit:PENDING",
+                "BILLING deposit APPLIED PENDING-CAPTURE->CAPTURED DEPOSIT-DEPOSIT_PAID->BALANCE"
+                        + " start BALANCE:balance:PENDING",
+                "BILLING balance APPLIED PENDING-CAPTURE->CAPTURED BALANCE-BALANCE_PAID->CONFIRMED",
+                "BILLING early REJECTED DETACHED no parent holds it in DEPOSIT",
+                "BILLING states stay=CONFIRMED deposit=CAPTURED balance=CAPTURED unbooked=REQUESTED early=PENDING"),
+                result.getOutput().lines().filter((String line) -> line.startsWith("BILLING ")).toList(),
+                result::getOutput);
+    }
+
+    /**
      * Another task of the build generates sources into the same source set — the role ANTLR-, protobuf- or
      * OpenAPI-style generators play — and registers its output directory with the task that writes it. The
      * generation parses that directory too, so it runs after that task: Gradle refuses a task that reads another

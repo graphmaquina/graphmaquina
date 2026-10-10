@@ -1,16 +1,19 @@
 package io.github.graphmaquina.runtime;
 
 import java.time.Duration;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * The engine's only waiting primitive. Joins a foreign stage to a future of its own: it never invokes
+ * The engine's only waiting primitive. Reads an already successful plain future directly; otherwise, joins a
+ * foreign stage to a future of its own. The fallback bridge never invokes
  * orTimeout, completeOnTimeout or cancel on anything belonging to the user. The thread blocks on a latch that the
  * stage's completion counts down, never in CompletableFuture's get or join: called on a ForkJoinPool worker, those
  * may first run other queued asynchronous tasks on the waiting thread, which is the transaction's own, so such a task
@@ -29,9 +32,9 @@ import java.util.concurrent.TimeoutException;
  * subclass included, and join wraps in one any throwable but a CompletionException or a CancellationException. The
  * engine takes the throwable exactly as the stage completed with it, and unwraps it as it unwraps a throwable an action
  * throws: only the exact classes CompletionException and ExecutionException, so a subclass of either is classified as
- * itself. The initial handle callback returns normally after copying the value or throwable and releasing the
- * latch; unlike whenComplete, it does not ask the stage to construct an exceptional dependent result, which could
- * read the throwable's message before the engine checks for poison.
+ * itself. The fallback bridge's initial handle callback returns normally after copying the value or throwable and
+ * releasing the latch; unlike whenComplete, it does not ask the stage to construct an exceptional dependent result,
+ * which could read the throwable's message before the engine checks for poison.
  * A deadline of Long.MAX_VALUE means no limit. Any other deadline is only ever subtracted from, so one that wrapped
  * past Long.MAX_VALUE when its budget was added still leaves the exact time remaining. Any exceptional
  * completion surfaces as an ActionFailure that carries that throwable, a library exception and an Error included: the
@@ -76,6 +79,25 @@ final class Await {
      */
     static long budgetNanos(Duration budget) {
         return budget.compareTo(UNBOUNDED) >= 0 ? Long.MAX_VALUE : budget.toNanos();
+    }
+
+    /**
+     * Reads an already successful plain future without constructing a waiting bridge; every other stage keeps the
+     * existing handle and managed wait. Empty means a null callback result, which the engine refuses. A concurrent
+     * exceptional obtrusion between the two reads falls back to the bridge to preserve its original throwable.
+     */
+    static <T> Optional<T> completedOrAwait(CompletionStage<T> stage, long deadlineNanos) {
+        if (stage.getClass() == CompletableFuture.class) {
+            CompletableFuture<T> future = stage.toCompletableFuture();
+            if (future.state() == Future.State.SUCCESS) {
+                try {
+                    return Optional.ofNullable(future.resultNow());
+                } catch (IllegalStateException raced) {
+                    // The successful observation was replaced; the bridge reads the current completion.
+                }
+            }
+        }
+        return Optional.ofNullable(await(stage, deadlineNanos));
     }
 
     static <T> T await(CompletionStage<T> stage, long deadlineNanos) {

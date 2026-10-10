@@ -5,13 +5,19 @@ import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Reaction;
+import io.github.graphmaquina.api.RecoveryRule;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.SubmachineSpec;
+import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.UnknownFacadeException;
 import io.github.graphmaquina.error.UnknownPeerMachineException;
 import java.lang.reflect.UndeclaredThrowableException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,17 +25,36 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 
 /**
- * Resolves peers and cascades. Built from builders and passed to itself into every machine. Its maps are filled
- * once, when it is assembled for {@link Builder#build()} or for a standalone machine, and never touched again.
+ * Resolves peers and cascades, and hands each machine the sub-machine bindings in which it is the child. Built from
+ * builders and passed to itself into every machine. Its maps are filled once, when it is assembled for
+ * {@link Builder#build()} or for a standalone machine, and never touched again. Assembling refuses a binding whose
+ * child machine is not in the registry, or was built from another {@code GraphDefinition} instance than the one the
+ * binding holds, and a machine that declares no asyncTimeout although an edge that its calls can run implicitly is
+ * asynchronous, as below.
  *
  * <p>A cascade runs inside the root's transaction and under the root machine's deadline: a cascaded peer's
  * asynchronous waits are bounded by the asyncTimeout of the machine whose call started the root, not by its own.
  * When that root machine declares no asyncTimeout, those waits are unbounded, whatever the peer's own asyncTimeout;
- * only an edge that declares a timeout of its own still bounds its action's wait.
+ * only an edge that declares a timeout of its own still bounds its action's wait. The exit of a sub-machine runs under
+ * that deadline too, never under its parent's asyncTimeout, and so does every other edge the engine runs implicitly.
+ * A machine must therefore declare asyncTimeout when its own graph has an asynchronous edge, or when an edge that the
+ * engine can run implicitly from one of its calls is asynchronous: its action or one of its guards is. The implicit
+ * edges of a call start with the exit edges of every binding in which the machine is the child, and the exits
+ * selected by terminal initial descendants of bindings that its own edges enter. Then, for each implicit edge:
+ * <ul>
+ *   <li>its failure routes, its onFailure edge and the edge of each recovery rule, from the same origin;</li>
+ *   <li>when it leaves its machine in a terminal state and that machine is the child of a binding, the exit edge that
+ *       the binding maps that state to, up the chain of parents;</li>
+ *   <li>when it leaves its machine in a state that holds a sub-machine in the machine's own graph, every exit edge of
+ *       that binding, since the state the child stands in after the entering action is not known before the call,
+ *       and the exits selected by its terminal initial descendants.</li>
+ * </ul>
+ * A cascade that an action requests is explicit, so neither it nor what its steps run asks anything of the kind.
  * Nothing serializes two roots on one entity. The pre-check of phase 2 refuses a state that changed while a root
  * ran, but it catches only the interleavings that leave a different state behind, so concurrent calls on one entity
  * are the application's to serialize. Its observers see every call of its machines, as
@@ -61,17 +86,22 @@ public final class MachineRegistry implements AutoCloseable {
     /**
      * The one way machines join a registry, standalone ones included. Every check runs before the first machine
      * builder is consumed, so a build that fails leaves every builder as it was, ready to be fixed and built again.
+     * Each machine receives the bindings in which it is the child, in the order of the builders and then of the
+     * parent's states.
      */
     private static MachineRegistry assemble(List<? extends StateMachines.Builder<?, ?, ?>> builders,
                                             int maxCascadeDepth, int maxWatchChain, Observers observers) {
-        Set<MachineKey<?, ?, ?>> keys = new HashSet<>();
+        Map<MachineKey<?, ?, ?>, StateMachines.Builder<?, ?, ?>> byKey = new HashMap<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
-            keys.add(builder.key());
+            byKey.put(builder.key(), builder);
         }
+        Map<MachineKey<?, ?, ?>, List<SubmachineBinding<?, ?, ?, ?, ?, ?>>> bindings = new HashMap<>();
+        Map<MachineKey<?, ?, ?>, List<BoundExits<?, ?, ?>>> exitsByChild = new HashMap<>();
         Set<Class<?>> facadeTypes = new HashSet<>();
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             builder.validate();
-            checkWatches(builder.definition(), keys);
+            checkWatches(builder.definition(), byKey.keySet());
+            indexBindings(builder.definition(), byKey, bindings, exitsByChild);
             // Defensive: as(...) is typed by (E, S) and add(...) already rejects a duplicate key,
             // so a typed caller cannot reach this collision.
             Optional<? extends Class<?>> facade = builder.facade();
@@ -80,9 +110,20 @@ public final class MachineRegistry implements AutoCloseable {
                         "the facade type " + facade.get().getSimpleName() + " is registered twice");
             }
         }
+        for (StateMachines.Builder<?, ?, ?> builder : builders) {
+            if (builder.hasAsyncTimeout()) {
+                continue;
+            }
+            Optional<String> edge = firstAsyncImplicitEdge(builder.definition(), exitsByChild);
+            if (edge.isPresent()) {
+                throw new IllegalStateException("the machine " + builder.key() + " can run the asynchronous edge "
+                        + edge.get() + " implicitly and does not declare asyncTimeout(...)");
+            }
+        }
         MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, observers);
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
-            DefaultStateMachine<?, ?, ?> machine = builder.build(registry);
+            DefaultStateMachine<?, ?, ?> machine =
+                    builder.build(registry, List.copyOf(bindings.getOrDefault(builder.key(), List.of())));
             registry.machines.put(machine.key(), machine);
             Optional<? extends Class<?>> facade = builder.facade();
             if (facade.isPresent()) {
@@ -101,6 +142,179 @@ public final class MachineRegistry implements AutoCloseable {
             if (watch.isPresent() && !keys.contains(watch.get().peer())) {
                 throw new IllegalStateException("the watch of " + definition.key() + "." + state + " points to "
                         + watch.get().peer() + ", which is not in the registry");
+            }
+        }
+    }
+
+    /**
+     * Adds a binding for each sub-machine of {@code definition}, in state order, under the key of its child. The child
+     * must be in the registry and built from the very definition the binding holds. Each binding's exits, with the
+     * graph that resolves them, also go in {@code exitsByChild}, in the same order and under the same key.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void indexBindings(
+            GraphDefinition<E, S, T> definition, Map<MachineKey<?, ?, ?>, StateMachines.Builder<?, ?, ?>> builders,
+            Map<MachineKey<?, ?, ?>, List<SubmachineBinding<?, ?, ?, ?, ?, ?>>> bindings,
+            Map<MachineKey<?, ?, ?>, List<BoundExits<?, ?, ?>>> exitsByChild) {
+        for (S state : definition.key().states().getEnumConstants()) {
+            Optional<SubmachineSpec<E, S, T, ?, ?, ?>> submachine = definition.submachine(state);
+            if (submachine.isEmpty()) {
+                continue;
+            }
+            SubmachineSpec<E, S, T, ?, ?, ?> spec = submachine.get();
+            Optional<StateMachines.Builder<?, ?, ?>> child = Optional.ofNullable(builders.get(spec.childKey()));
+            if (child.isEmpty()) {
+                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state + " is "
+                        + spec.childKey() + ", which is not in the registry");
+            }
+            if (child.get().definition() != spec.child()) {
+                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state
+                        + " was built from another definition of " + spec.childKey() + " than the registered machine");
+            }
+            bindings.computeIfAbsent(spec.childKey(), (MachineKey<?, ?, ?> key) -> new ArrayList<>())
+                    .add(new SubmachineBinding<>(definition.key(), spec));
+            exitsByChild.computeIfAbsent(spec.childKey(), (MachineKey<?, ?, ?> key) -> new ArrayList<>())
+                    .add(new BoundExits<>(definition, spec));
+        }
+    }
+
+    /** The exits of one binding, with the parent's graph that resolves them. */
+    private record BoundExits<E, S extends Enum<S>, T extends Enum<T>>(GraphDefinition<E, S, T> parent,
+                                                                       SubmachineSpec<E, S, T, ?, ?, ?> spec) { }
+
+    /** Structural identity of an implicit edge: diagnostic simple names do not distinguish actual machine types. */
+    private record ImplicitEdgeKey(MachineKey<?, ?, ?> key, Enum<?> from, Enum<?> transition) { }
+
+    /** An edge that the engine can run implicitly, with the graph it belongs to. */
+    private record ImplicitEdge<E, S extends Enum<S>, T extends Enum<T>>(GraphDefinition<E, S, T> graph,
+                                                                         TransitionSpec<E, S, T> edge) {
+
+        /** {@code <Key>.<FROM> -<ID>->}, which names the edge in its graph. */
+        String describe() {
+            return graph.key() + "." + edge.from() + " -" + edge.transition() + "->";
+        }
+    }
+
+    /**
+     * The first asynchronous edge, as {@code <Key>.<FROM> -<ID>->}, that a call of the machine
+     * {@code graph.key()} can run
+     * implicitly, as the type's Javadoc lists them. The breadth-first walk visits each edge once by its actual
+     * machine key, origin and identifier, so it ends even on bindings that hand-written definitions make circular.
+     * It starts from the exit edges of the bindings in which the machine is the child, in the order the registry
+     * indexed those bindings, which is the order of the builders and then of each parent's states. Each binding's
+     * exits follow identifier order. Next come exits selected by terminal initial descendants of its own edge
+     * destinations, in graph transition order
+     * and along each child's initial binding chain. Own edges themselves are not enqueued. The walk then takes the
+     * edges in the order it reached them, and adds after each one: its failure routes, in the order of their
+     * identifiers; for a terminal destination, the exit that each binding of its machine, in index order, maps that
+     * state to; and for a destination that holds a sub-machine, the exits of that binding, in the order of their
+     * identifiers, followed by the exits selected by that binding's terminal initial descendants.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> Optional<String> firstAsyncImplicitEdge(
+            GraphDefinition<E, S, T> graph, Map<MachineKey<?, ?, ?>, List<BoundExits<?, ?, ?>>> exitsByChild) {
+        Deque<ImplicitEdge<?, ?, ?>> queue = new ArrayDeque<>();
+        Set<ImplicitEdgeKey> visited = new HashSet<>();
+        Set<MachineKey<?, ?, ?>> initialized = new HashSet<>();
+        for (BoundExits<?, ?, ?> bound : exitsByChild.getOrDefault(graph.key(), List.of())) {
+            enqueueExits(bound, queue, visited);
+        }
+        for (TransitionSpec<E, S, T> edge : graph.transitions()) {
+            enqueueInitialExits(graph, edge.to(), queue, visited, initialized);
+        }
+        while (!queue.isEmpty()) {
+            ImplicitEdge<?, ?, ?> next = queue.removeFirst();
+            if (next.edge().isAsync()) {
+                return Optional.of(next.describe());
+            }
+            enqueueSuccessors(next, exitsByChild, queue, visited, initialized);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * What {@code implicit} leads the engine to run implicitly in turn, in the order {@link #firstAsyncImplicitEdge}
+     * gives.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void enqueueSuccessors(
+            ImplicitEdge<E, S, T> implicit, Map<MachineKey<?, ?, ?>, List<BoundExits<?, ?, ?>>> exitsByChild,
+            Deque<ImplicitEdge<?, ?, ?>> queue, Set<ImplicitEdgeKey> visited, Set<MachineKey<?, ?, ?>> initialized) {
+        GraphDefinition<E, S, T> graph = implicit.graph();
+        TransitionSpec<E, S, T> edge = implicit.edge();
+        Set<T> routes = new TreeSet<>();
+        edge.onFailure().ifPresent(routes::add);
+        for (RecoveryRule<T> rule : edge.recoveryRules()) {
+            routes.add(rule.transition());
+        }
+        for (T route : routes) {
+            enqueue(graph, edge.from(), route, queue, visited);
+        }
+        S reached = edge.to();
+        if (graph.terminals().contains(reached)) {
+            for (BoundExits<?, ?, ?> bound : exitsByChild.getOrDefault(graph.key(), List.of())) {
+                enqueueExitOf(bound, reached, queue, visited);
+            }
+        }
+        Optional<SubmachineSpec<E, S, T, ?, ?, ?>> held = graph.submachine(reached);
+        if (held.isPresent()) {
+            enqueueExits(new BoundExits<>(graph, held.get()), queue, visited);
+            enqueueInitialExits(graph, reached, queue, visited, initialized);
+        }
+    }
+
+    /** The exits selected by terminal initial descendants when an edge enters {@code state}, without any cascade. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void enqueueInitialExits(
+            GraphDefinition<E, S, T> graph, S state, Deque<ImplicitEdge<?, ?, ?>> queue, Set<ImplicitEdgeKey> visited,
+            Set<MachineKey<?, ?, ?>> initialized) {
+        Optional<SubmachineSpec<E, S, T, ?, ?, ?>> held = graph.submachine(state);
+        if (held.isPresent()) {
+            enqueueStartedBinding(graph, held.get(), queue, visited, initialized);
+        }
+    }
+
+    /**
+     * A started child's terminal initial state selects its binding's mapped exit. Its bound initial descendants may
+     * select their own exits too. Each child's initial binding is expanded once, so foreign definition cycles end;
+     * mapping the terminal precedes that check because different bindings of the same child can map different exits.
+     */
+    private static <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>> void
+            enqueueStartedBinding(GraphDefinition<E, S, T> parent, SubmachineSpec<E, S, T, P, Q, U> spec,
+                                  Deque<ImplicitEdge<?, ?, ?>> queue, Set<ImplicitEdgeKey> visited,
+                                  Set<MachineKey<?, ?, ?>> initialized) {
+        GraphDefinition<P, Q, U> child = spec.child();
+        Q initial = child.initial();
+        if (child.terminals().contains(initial)) {
+            enqueueExitOf(new BoundExits<>(parent, spec), initial, queue, visited);
+        }
+        if (initialized.add(child.key())) {
+            enqueueInitialExits(child, initial, queue, visited, initialized);
+        }
+    }
+
+    /** Every exit edge of {@code bound}, in the order of its identifiers. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void enqueueExits(
+            BoundExits<E, S, T> bound, Deque<ImplicitEdge<?, ?, ?>> queue, Set<ImplicitEdgeKey> visited) {
+        for (T exit : new TreeSet<>(bound.spec().exits().values())) {
+            enqueue(bound.parent(), bound.spec().state(), exit, queue, visited);
+        }
+    }
+
+    /** The exit edge that {@code bound} maps the child's {@code terminal} to, if it maps it to one. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void enqueueExitOf(
+            BoundExits<E, S, T> bound, Enum<?> terminal, Deque<ImplicitEdge<?, ?, ?>> queue, Set<ImplicitEdgeKey> visited) {
+        Optional<T> exit = Optional.ofNullable(bound.spec().exits().get(terminal));
+        if (exit.isPresent()) {
+            enqueue(bound.parent(), bound.spec().state(), exit.get(), queue, visited);
+        }
+    }
+
+    /** The edge {@code id} from {@code from} in {@code graph}, unless it has none or the walk already reached it. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> void enqueue(
+            GraphDefinition<E, S, T> graph, S from, T id, Deque<ImplicitEdge<?, ?, ?>> queue, Set<ImplicitEdgeKey> visited) {
+        Optional<TransitionSpec<E, S, T>> edge = graph.findTransition(from, id);
+        if (edge.isPresent()) {
+            ImplicitEdge<E, S, T> implicit = new ImplicitEdge<>(graph, edge.get());
+            if (visited.add(new ImplicitEdgeKey(graph.key(), implicit.edge().from(),
+                    implicit.edge().transition()))) {
+                queue.addLast(implicit);
             }
         }
     }
@@ -251,8 +465,8 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
-         * Bounds how deep a cascade may go, the root being at depth 0; the default is 10, and a value below 1 is
-         * refused.
+         * Bounds how deep a cascade may go, the root being at depth 0 and the exit of a sub-machine one level deeper
+         * than the step that ended it; the default is 10, and a value below 1 is refused.
          */
         public Builder maxCascadeDepth(int depth) {
             requireUnused();
@@ -288,8 +502,8 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
-         * Checks every machine builder, its identity, accessors, asyncTimeout, watches and facade, before it consumes
-         * any of them; only a build that succeeds marks this builder and its machine builders used.
+         * Checks every machine builder, its identity, accessors, asyncTimeout, watches, sub-machines and facade,
+         * before it consumes any of them; only a build that succeeds marks this builder and its machine builders used.
          */
         public MachineRegistry build() {
             requireUnused();

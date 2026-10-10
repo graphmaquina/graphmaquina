@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.AsyncTransitionAction;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
@@ -45,6 +46,9 @@ import io.github.graphmaquina.fixtures.OrderTransition;
 import io.github.graphmaquina.fixtures.Probe;
 import java.io.IOException;
 import java.time.Duration;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -52,6 +56,8 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -60,6 +66,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
+import java.util.function.BiFunction;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -379,5 +386,235 @@ class AsyncTest {
         CompletableFuture<Outcome<Order, OrderStatus, OrderTransition>> future =
                 m.async().execute(new Order("a", OrderStatus.NEW), OrderTransition.CHARGE, new Object());
         assertInstanceOf(RejectedExecutionException.class, assertThrows(CompletionException.class, future::join).getCause());
+    }
+
+    /** A future whose observable registration must be preserved without querying overridable completion readers. */
+    private static final class ObservedFuture<T> extends CompletableFuture<T> {
+        private int registrations;
+        private Optional<RuntimeException> registrationFailure = Optional.empty();
+
+        @Override
+        public <U> CompletableFuture<U> handle(BiFunction<? super T, Throwable, ? extends U> callback) {
+            registrations++;
+            if (registrationFailure.isPresent()) {
+                throw registrationFailure.orElseThrow();
+            }
+            return super.handle(callback);
+        }
+
+        @Override
+        public Future.State state() { throw new AssertionError("subclass state must not be read"); }
+
+        @Override
+        public T resultNow() { throw new AssertionError("subclass resultNow must not be read"); }
+
+        @Override
+        public CompletableFuture<T> toCompletableFuture() {
+            throw new AssertionError("subclass conversion must not be requested");
+        }
+    }
+
+    /** An arbitrary stage exposing handle while refusing conversion; only its own stage API is intercepted. */
+    private static final class OpaqueStage<T> implements InvocationHandler {
+        private final CompletableFuture<T> delegate;
+        private int registrations;
+
+        private OpaqueStage(T value) { delegate = CompletableFuture.completedFuture(value); }
+
+        @SuppressWarnings("unchecked")
+        private CompletionStage<T> stage() {
+            return (CompletionStage<T>) Proxy.newProxyInstance(CompletionStage.class.getClassLoader(),
+                    new Class<?>[] {CompletionStage.class}, this);
+        }
+
+        @Override
+        @SuppressWarnings("unchecked")
+        public Object invoke(Object proxy, Method method, Object[] arguments) {
+            if (method.getName().equals("toCompletableFuture")) {
+                throw new UnsupportedOperationException("conversion is unsupported");
+            }
+            if (method.getName().equals("handle")) {
+                registrations++;
+                return delegate.handle((BiFunction<? super T, Throwable, ?>) arguments[0]);
+            }
+            throw new AssertionError("unexpected stage method " + method.getName());
+        }
+    }
+
+    /** A doc machine with an async guard and action, so both callback boundaries are exercised end to end. */
+    private static StateMachine<Doc, DocStatus, DocTransition> completedMachine(
+            Function<GuardContext<Doc, DocStatus, DocTransition>, CompletionStage<GuardResult>> guard,
+            CompletionStage<ActionOutcome> action, Duration budget) {
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS)
+                .initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .asyncGuard("CompletedGuard", guard::apply)
+                    .asyncAction("CompletedAction",
+                            (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> action).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition().build();
+        return StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id).asyncTimeout(budget).build();
+    }
+
+    @Test
+    void completedPlainCallbacksApplyOrRefuseTheirNullResults() {
+        for (String scenario : List.of("success", "null action", "null guard")) {
+            CompletionStage<GuardResult> guard = CompletableFuture.completedFuture(
+                    scenario.equals("null guard") ? null : GuardResult.pass());
+            CompletionStage<ActionOutcome> action = CompletableFuture.completedFuture(
+                    scenario.equals("null action") ? null : ActionOutcome.ok());
+            StateMachine<Doc, DocStatus, DocTransition> docs = completedMachine(
+                    (GuardContext<Doc, DocStatus, DocTransition> ctx) -> guard, action, Duration.ofSeconds(5));
+            Doc doc = new Doc("completed", DRAFT);
+            if (scenario.equals("success")) {
+                assertInstanceOf(Outcome.Applied.class, docs.execute(doc, SUBMIT));
+                assertEquals(REVIEW, doc.status());
+            } else {
+                TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                        () -> docs.execute(doc, SUBMIT));
+                boolean isGuard = scenario.equals("null guard");
+                assertEquals(isGuard ? CallPhase.GUARD : CallPhase.ACTION, error.phase());
+                assertEquals("transition aborted in Doc/DocStatus DRAFT -SUBMIT-> REVIEW: the "
+                        + (isGuard ? "guard CompletedGuard" : "action CompletedAction")
+                        + " returned null [route Doc/DocStatus#completed]", error.getMessage());
+                assertEquals(Optional.empty(), Optional.ofNullable(error.getCause()));
+                assertEquals(DRAFT, doc.status());
+            }
+        }
+    }
+
+    @Test
+    void completedSubclassCallbacksKeepTheirHandleSideEffects() {
+        ObservedFuture<GuardResult> guard = new ObservedFuture<>();
+        ObservedFuture<ActionOutcome> action = new ObservedFuture<>();
+        guard.complete(GuardResult.pass());
+        action.complete(ActionOutcome.ok());
+        StateMachine<Doc, DocStatus, DocTransition> docs = completedMachine(
+                (GuardContext<Doc, DocStatus, DocTransition> ctx) -> guard, action, Duration.ofSeconds(5));
+        Doc doc = new Doc("subclass", DRAFT);
+        assertInstanceOf(Outcome.Applied.class, docs.execute(doc, SUBMIT));
+        assertEquals(REVIEW, doc.status());
+        assertEquals(1, guard.registrations);
+        assertEquals(1, action.registrations);
+    }
+
+    @Test
+    void minimalAndOpaqueStagesPreserveHandleWithoutConversion() {
+        OpaqueStage<GuardResult> opaqueGuard = new OpaqueStage<>(GuardResult.pass());
+        OpaqueStage<ActionOutcome> opaqueAction = new OpaqueStage<>(ActionOutcome.ok());
+        for (String scenario : List.of("minimal", "opaque")) {
+            CompletionStage<GuardResult> guard = scenario.equals("minimal")
+                    ? CompletableFuture.completedFuture(GuardResult.pass()).minimalCompletionStage()
+                    : opaqueGuard.stage();
+            CompletionStage<ActionOutcome> action = scenario.equals("minimal")
+                    ? CompletableFuture.completedFuture(ActionOutcome.ok()).minimalCompletionStage()
+                    : opaqueAction.stage();
+            StateMachine<Doc, DocStatus, DocTransition> docs = completedMachine(
+                    (GuardContext<Doc, DocStatus, DocTransition> ctx) -> guard, action, Duration.ofSeconds(5));
+            Doc doc = new Doc(scenario, DRAFT);
+            assertInstanceOf(Outcome.Applied.class, docs.execute(doc, SUBMIT));
+            assertEquals(REVIEW, doc.status());
+        }
+        assertEquals(1, opaqueGuard.registrations);
+        assertEquals(1, opaqueAction.registrations);
+    }
+
+    @Test
+    void initiallyCompletedGuardsWinOverInterruptAndSpentRootBudget() throws Exception {
+        for (boolean interrupted : List.of(false, true)) {
+            StateMachine<Doc, DocStatus, DocTransition> docs = completedMachine(
+                    (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        sleep(10);
+                        if (interrupted) {
+                            Thread.currentThread().interrupt();
+                        }
+                        return CompletableFuture.completedFuture(GuardResult.pass());
+                    }, CompletableFuture.completedFuture(ActionOutcome.ok()), Duration.ofNanos(1));
+            Doc doc = new Doc("precedence", DRAFT);
+            try (ExecutorService thread = Executors.newSingleThreadExecutor()) {
+                Future<Boolean> result = thread.submit(() -> {
+                    try {
+                        assertInstanceOf(Outcome.Applied.class, docs.execute(doc, SUBMIT));
+                        return Thread.currentThread().isInterrupted();
+                    } finally {
+                        Thread.interrupted();
+                    }
+                });
+                assertEquals(interrupted, result.get(10, TimeUnit.SECONDS));
+            }
+            assertEquals(REVIEW, doc.status());
+        }
+    }
+
+    @Test
+    void concurrentPlainFutureObtrusionHasOnlyLegalCompletionOutcomes() throws Exception {
+        try (ExecutorService obtruder = Executors.newSingleThreadExecutor()) {
+            for (int round = 0; round < 64; round++) {
+                CompletableFuture<ActionOutcome> stage = CompletableFuture.completedFuture(ActionOutcome.ok());
+                IllegalArgumentException cause = new IllegalArgumentException("obtruded " + round);
+                CountDownLatch ready = new CountDownLatch(1);
+                Future<?> mutation = obtruder.submit(() -> {
+                    assertTrue(ready.await(10, TimeUnit.SECONDS));
+                    stage.obtrudeException(cause);
+                    return Optional.empty();
+                });
+                StateMachine<Doc, DocStatus, DocTransition> docs = completedMachine(
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ready.countDown();
+                            return CompletableFuture.completedFuture(GuardResult.pass());
+                        }, stage, Duration.ofSeconds(5));
+                Doc doc = new Doc("race", DRAFT);
+                try {
+                    assertInstanceOf(Outcome.Applied.class, docs.execute(doc, SUBMIT));
+                    assertEquals(REVIEW, doc.status());
+                } catch (TransitionAbortedException error) {
+                    assertSame(cause, error.getCause());
+                    assertEquals(CallPhase.ACTION, error.phase());
+                    assertEquals(DRAFT, doc.status());
+                } finally {
+                    ready.countDown();
+                    mutation.get(10, TimeUnit.SECONDS);
+                }
+            }
+        }
+    }
+
+    @Test
+    void failedCancelledAndRegistrationFailingSubclassesKeepOriginalCauses() {
+        ObservedFuture<ActionOutcome> routed = new ObservedFuture<>();
+        IOException down = new IOException("subclass gateway down");
+        routed.completeExceptionally(down);
+        chargeCard.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> routed;
+        Order order = new Order("routed subclass", OrderStatus.NEW);
+        try (MachineRegistry r = registry(Duration.ofSeconds(5))) {
+            Outcome.Failed<Order, OrderStatus, OrderTransition> failed =
+                    r.of(ORDERS).execute(order, OrderTransition.CHARGE).asFailed().orElseThrow();
+            assertSame(down, failed.cause().orElseThrow());
+            assertEquals(OrderTransition.DECLINE, failed.failureTransition());
+            assertEquals(OrderStatus.PAYMENT_DECLINED, order.status());
+            assertEquals(1, routed.registrations);
+        }
+        for (String scenario : List.of("failed", "cancelled", "registration")) {
+            ObservedFuture<ActionOutcome> stage = new ObservedFuture<>();
+            RuntimeException cause = scenario.equals("cancelled") ? new CancellationException("cancelled subclass")
+                    : new IllegalArgumentException(scenario);
+            if (scenario.equals("registration")) {
+                stage.complete(ActionOutcome.ok());
+                stage.registrationFailure = Optional.of(cause);
+            } else {
+                stage.completeExceptionally(cause);
+            }
+            StateMachine<Doc, DocStatus, DocTransition> docs = completedMachine(
+                    (GuardContext<Doc, DocStatus, DocTransition> ctx) ->
+                            CompletableFuture.completedFuture(GuardResult.pass()), stage, Duration.ofSeconds(5));
+            Doc doc = new Doc(scenario, DRAFT);
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> docs.execute(doc, SUBMIT));
+            assertSame(cause, error.getCause());
+            assertEquals(CallPhase.ACTION, error.phase());
+            assertEquals(DRAFT, doc.status());
+            assertEquals(1, stage.registrations);
+        }
     }
 }

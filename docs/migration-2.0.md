@@ -46,7 +46,7 @@ entity and state enum with different transition catalogues: two engines would ot
 | A return to the origin, or a terminal with an ACTION self-loop, in the DSL | A terminal forbids every outgoing edge. A non-terminal self-loop is legal and requires `allowsCycle`. |
 | `Outcome.current()` | `Outcome.recordedState()`: the same value, the state the call recorded, not a read of the entity. |
 | `TransitionListener` and `listener(...)` on a builder | `MachineObserver` and `observer(...)`, any number of them. A throwable an observer throws, unless it is an `Error`, never fails the call: it is logged. An `Error` still propagates. What must fail the call belongs in a hook, or in `Definition.afterCommit` for every edge of a machine. |
-| `AfterCommitException.step()`, `key()`, `entity()`, `from()`, `to()` | `hook()`, and `hop()`: a `TransitionRecord` that also names the identifier. `records()` lists every hop the call committed. |
+| `AfterCommitException.step()`, `key()`, `entity()`, `from()`, `to()` | `hook()`, and `hop()`: a `TransitionRecord` that also names the identifier. `records()` lists every hop the call committed, and `starts()` every sub-machine it started. |
 | `CommitFailedException.pending()` that included the entity whose setter threw | `failedEntity()` names it; `pending()` lists only the entities never tried. |
 
 Preserved, apart from the fixes listed under
@@ -292,11 +292,14 @@ written down as a contract, and it was easy to get backwards.
 |---|---|---|
 | `NO_TRANSITION` | No edge is keyed by `(from, transition)`. Nothing ran. The reason comes from the node's policy. | Always empty |
 | `GUARD` | The edge exists and a guard on it rejected. The reason is the guard's own text. | Always present |
+| `DETACHED` | The machine is bound as a sub-machine, a binding finds the entity's parent, and no parent holds the entity: it is not in the bound state nor leaving it, or its `childOf` answers another child or none. Nothing ran. The reason is the library's fixed text. | Always empty |
+| `RESERVED_EXIT` | The identifier is an exit of the sub-machine bound to `from`, which no request may ask for from there. Nothing ran. The reason is the library's fixed text. | Always empty |
 
-The record enforces the pairing: a `NO_TRANSITION` rejection with a guard, or a `GUARD` rejection without
-one, throws `IllegalArgumentException` at construction. In the testing library, `hasNoTransition()` asserts
-the first and `isRejectedByGuardNamed(name)` asserts the second — and the latter now checks the kind as well
-as the name, which the 1.x `isRejectedByGuardNamed` did not.
+The last two are new in 2.0 and have no 1.x counterpart. The record enforces the pairing: a rejection of any other
+kind with a guard, or a `GUARD` rejection without one, throws `IllegalArgumentException` at construction. In
+the testing library, `hasNoTransition()` asserts `NO_TRANSITION` and `isRejectedByGuardNamed(name)` asserts
+`GUARD` — and the latter now checks the kind as well as the name, which the 1.x `isRejectedByGuardNamed` did not.
+`isDetached()` and `isReservedExit()` assert the two new kinds.
 
 `Rejected` also stopped reporting a `to`. There is no destination to report before an edge is resolved, and
 inventing one was how a caller could end up believing a route existed.
@@ -343,15 +346,15 @@ explicit `statePolicy` overrides it.
 ## Retired types
 
 `EdgeKind`, `EdgeSpec`, `MatrixRenderer`, `GraphOutline`, `CellOutline`, `GraphOutlineValidator`, `GraphValidator`,
-`RowBuilder`, `EdgeStart`, `ActionEdge`, `AsyncActionEdge`, `MoveEdge`, `StayEdge`, `EdgeView` and `Detail` are
-gone from core. The structural model is now `MachineOutline` with `TransitionOutline`, `PolicyOutline` and
-`WatchOutline`, validated by `MachineOutlineValidator`, which the DSL and the annotation processor share.
+`RowBuilder`, `EdgeStart`, `ActionEdge`, `AsyncActionEdge`, `MoveEdge`, `StayEdge`, `EdgeView` and `Detail` are gone
+from core. The structural model is now `MachineOutline` with `TransitionOutline`, `PolicyOutline`, `WatchOutline`,
+`SubmachineOutline` and `ExitOutline`, validated by `MachineOutlineValidator`, which the DSL and the processor share.
 
 The twelve deprecated matrix annotations — `Action`, `Cell`, `Cells`, `Forbid`, `Forbids`, `Move`, `Row`, `Rows`,
 `StateGraph`, `Watch`, `Watches` and `When` — are removed rather than deprecated: a project still using them fails
 to resolve the type instead of compiling against a retired contract. `io.github.graphmaquina.dsl.StateGraph`, the
 DSL entry point, keeps its name. `VocabularyKind` now reads `DEFINITION, STATE_POLICY, STATE_POLICIES, TRANSITION,
-TRANSITIONS, RECOVERY, REJECT, REJECTS, WATCH, WATCHES, WHEN`.
+TRANSITIONS, RECOVERY, REJECT, REJECTS, WATCH, WATCHES, WHEN, SUBMACHINE, SUBMACHINES, EXIT`.
 
 ## Generated vocabulary and build artefacts
 
@@ -702,7 +705,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   called, since `pending()` no longer lists the one that threw.
 - **`AfterCommitAssert` reads the hook and its hop.** `hasHookNamed(name)` replaces `hasStepNamed(name)`,
   `at(key, entity, from, transition, to)` compares the committed hop the failing hook ran for, its identifier
-  included, and `records()` reads every hop the call committed.
+  included, `records()` reads every hop the call committed, and `starts()` every sub-machine it started.
 - **`CallFailureAssert`**, reached through `isCallFailure()`, and every narrowed view of a call failure expect a call
   failure's `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` is available on all of them.
 - **`AbortAssert.atUnreadState(key, entity[, transition])`** is new: it locates an abort raised before the entity's

@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /**
  * Graphs built with the real DSL for the structural snapshot tests. {@link Variant} yields one machine
@@ -30,10 +31,12 @@ import java.util.function.Consumer;
  * {@link #asyncGuardGraph()} is the one shape whose edge is asynchronous while its action is not;
  * {@link #minimalGraph()} is small enough for its serialized form to be pinned character by character; and
  * {@link #publication()} builds the publication machine of the typed-recovery example, whose recovery rules
- * can be replaced or reordered on their own and whose PUBLISH can also leave two more origins.
+ * can be replaced or reordered on their own and whose PUBLISH can also leave two more origins; and
+ * {@link #submachineGraph(Verdict)} binds {@link #branchGraph(boolean)} to a state of a parent, whose exit of one
+ * terminal state can change on its own.
  *
- * <p>Every action, guard, hook and watch condition here throws when it runs: capturing a snapshot reads
- * the definition only, and a fixture that was executed fails the test that executed it.
+ * <p>Every action, guard, hook, watch condition and sub-machine lookup here throws when it runs: capturing a
+ * snapshot reads the definition only, and a fixture that was executed fails the test that executed it.
  */
 public final class SnapshotGraphs {
 
@@ -63,6 +66,12 @@ public final class SnapshotGraphs {
 
     /** Transition identifiers of the publication machine. */
     public enum TicketChange { PUBLISH, SCHEDULE_RETRY, RECORD_REJECTION, MARK_INTEGRATION_FAILED, RETRY, CLOSE }
+
+    /** States of the parent machine {@link #submachineGraph(Verdict)} builds; REVIEW holds the sub-machine. */
+    public enum Stage { DRAFT, REVIEW, ACCEPTED, DROPPED }
+
+    /** Transition identifiers of the parent machine; ACCEPT and DROP leave REVIEW, so either can be an exit. */
+    public enum Verdict { SUBMIT, ACCEPT, DROP }
 
     /** The failure kinds of the publication rules; {@code Throttled} lets a rule change its kind alone. */
     public static final class PublicationFailures {
@@ -106,6 +115,8 @@ public final class SnapshotGraphs {
             MachineKey.of(String.class, Flow.class, Gate.class);
     private static final MachineKey<String, TicketState, TicketChange> TICKET_KEY =
             MachineKey.of(String.class, TicketState.class, TicketChange.class);
+    private static final MachineKey<String, Stage, Verdict> STAGE_KEY =
+            MachineKey.of(String.class, Stage.class, Verdict.class);
 
     private static final AsyncTransitionAction<String, State, Id> ACTION =
             ctx -> { throw new AssertionError("the action ran during a capture"); };
@@ -127,6 +138,10 @@ public final class SnapshotGraphs {
             ctx -> { throw new AssertionError("the asynchronous guard ran during a capture"); };
     private static final Consumer<String> HOOK =
             entity -> { throw new AssertionError("the after-commit hook ran during a capture"); };
+    private static final Function<String, Optional<String>> CHILD_OF =
+            (String parent) -> { throw new AssertionError("a sub-machine's childOf ran during a capture"); };
+    private static final Function<String, Optional<String>> PARENT_OF =
+            (String child) -> { throw new AssertionError("a sub-machine's parentOf ran during a capture"); };
 
     private SnapshotGraphs() { }
 
@@ -199,6 +214,22 @@ public final class SnapshotGraphs {
         return StateGraph.define(FLOW_KEY).initial(Flow.OPEN).terminal(Flow.CLOSED)
                 .statePolicy(Flow.OPEN, "stay put")
                 .transition(transition, Flow.OPEN, Flow.CLOSED).action("close", FLOW_ACTION).endTransition()
+                .build();
+    }
+
+    /**
+     * A parent whose REVIEW holds {@link #branchGraph(boolean) branchGraph(true)} as its sub-machine: the child's
+     * terminal state B exits through ACCEPT and C through {@code exitOfC}, ACCEPT or DROP, so two of these differ in
+     * that one exit and nothing else.
+     */
+    public static GraphDefinition<String, Stage, Verdict> submachineGraph(Verdict exitOfC) {
+        return StateGraph.define(STAGE_KEY).initial(Stage.DRAFT).terminal(Stage.ACCEPTED).terminal(Stage.DROPPED)
+                .statePolicy(Stage.DRAFT, "submit the draft").statePolicy(Stage.REVIEW, "the review decides")
+                .transition(Verdict.SUBMIT, Stage.DRAFT, Stage.REVIEW).endTransition()
+                .transition(Verdict.ACCEPT, Stage.REVIEW, Stage.ACCEPTED).endTransition()
+                .transition(Verdict.DROP, Stage.REVIEW, Stage.DROPPED).endTransition()
+                .submachine(Stage.REVIEW, branchGraph(true), CHILD_OF, PARENT_OF)
+                    .exit(Step.B, Verdict.ACCEPT).exit(Step.C, exitOfC).endSubmachine()
                 .build();
     }
 

@@ -20,7 +20,7 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final E entity;
     private final TransitionSpec<E, S, T> spec;
     private final int depth;
-    private final Object operationInput;
+    private final Optional<Object> operationInput;
     private final Thread owner = Thread.currentThread();
     private boolean stale;
 
@@ -34,7 +34,7 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public Optional<?> input() {
-        return Optional.ofNullable(operationInput);
+        return operationInput;
     }
 
     @Override

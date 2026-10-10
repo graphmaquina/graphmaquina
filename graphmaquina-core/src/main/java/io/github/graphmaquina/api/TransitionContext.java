@@ -53,7 +53,10 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 
     S to();
 
-    /** 0 at the root transition; n at the n-th level of cascade. */
+    /**
+     * 0 at the root transition; n at the n-th level of cascade, where the exit of a sub-machine is one level deeper
+     * than the step that ended it.
+     */
     int depth();
 
     <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(MachineKey<P, Q, U> key);
@@ -78,8 +81,8 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * The value passed as this operation's second argument, if any; empty when called with one argument or an
-     * explicit {@code null}, and always empty in a cascaded step or a reevaluation, which carry none. Scoped to this
-     * invocation only, never a value left over from an earlier call.
+     * explicit {@code null}, and always empty in a cascaded step, the exit of a sub-machine or a reevaluation, which
+     * carry none. Scoped to this invocation only, never a value left over from an earlier call.
      */
     default Optional<?> input() {
         return Optional.empty();

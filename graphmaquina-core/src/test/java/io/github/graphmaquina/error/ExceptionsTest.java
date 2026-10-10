@@ -11,10 +11,12 @@ import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionRecord;
 import java.time.DayOfWeek;
 import java.time.Month;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -170,5 +172,37 @@ class ExceptionsTest {
         assertEquals(List.of(RAN), error.journal());
         assertEquals("the states of String/DayOfWeek JANUARY are already written, but the hook 'bookHold' failed",
                 error.getMessage());
+        assertEquals(List.of(), error.starts());
+    }
+
+    @Test
+    void afterCommitCarriesTheStartsOfTheCall() {
+        TransitionRecord<String, DayOfWeek, Month> hop = new TransitionRecord<>(KEY, "e", DayOfWeek.MONDAY,
+                Month.JANUARY, DayOfWeek.TUESDAY, TransitionKind.MOVE, Optional.empty(), 0);
+        MachineKey<Integer, Month, DayOfWeek> child = MachineKey.of(Integer.class, Month.class, DayOfWeek.class);
+        SubmachineStart<Integer, Month, DayOfWeek> start = new SubmachineStart<>(child, 7, Month.MAY, Month.JANUARY,
+                KEY, "e", DayOfWeek.TUESDAY, 0);
+        List<SubmachineStart<?, ?, ?>> starts = new ArrayList<>(List.of(start));
+        AfterCommitException error = new AfterCommitException(CALL, List.of(), List.of(hop), starts, hop, "audit",
+                new IllegalStateException("down"));
+        starts.clear();
+        assertEquals(List.of(start), error.starts());
+        assertThrows(UnsupportedOperationException.class, () -> error.starts().clear());
+        assertEquals(List.of(hop), error.records());
+    }
+
+    /** It names the child machine and both bindings, never an entity. */
+    @Test
+    void ambiguousParentNamesTheChildAndBothBindings() {
+        MachineKey<Integer, Month, DayOfWeek> parent = MachineKey.of(Integer.class, Month.class, DayOfWeek.class);
+        AmbiguousParentException error = new AmbiguousParentException(KEY, parent, Month.MARCH, parent, Month.MAY);
+        assertEquals(KEY, error.child());
+        assertEquals(List.of(parent, parent), error.parents());
+        assertEquals(List.of(Month.MARCH, Month.MAY), error.nodes());
+        assertEquals("String/DayOfWeek is bound to two active parents: Integer/Month in MARCH and Integer/Month in MAY",
+                error.getMessage());
+        assertThrows(UnsupportedOperationException.class, () -> error.parents().clear());
+        assertThrows(NullPointerException.class,
+                () -> new AmbiguousParentException(KEY, parent, Month.MARCH, parent, null));
     }
 }

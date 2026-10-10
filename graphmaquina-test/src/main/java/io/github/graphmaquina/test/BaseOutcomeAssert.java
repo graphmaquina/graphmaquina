@@ -116,7 +116,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
 
     /**
      * The reason given for this outcome, compared by value: the graph author's, or the library's fixed text for a
-     * terminal state that declares no policy.
+     * terminal state that declares no policy and for a detached sub-machine or a reserved exit.
      */
     public SELF hasExplanation(String expected) {
         Objects.requireNonNull(expected, "expected");
@@ -149,5 +149,18 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
      */
     public ReactionsAssert reactions() {
         return new ReactionsAssert(context + ".reactions", actual == null ? null : actual.reactions());
+    }
+
+    /**
+     * The sub-machines the outcome's root call started, in log order, cascaded steps included; empty for an outcome
+     * that committed nothing and for one a cascade returned.
+     */
+    public StartsAssert starts() {
+        return new StartsAssert(context + ".starts", outcome().map(Outcome::starts));
+    }
+
+    /** The outcome under test, wrapped once: the field is null only for a view built from a null subject. */
+    private Optional<Outcome<E, S, T>> outcome() {
+        return Optional.ofNullable(actual);
     }
 }

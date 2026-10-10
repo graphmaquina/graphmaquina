@@ -1,0 +1,24 @@
+digraph "String/Stage" {
+    rankdir=LR;
+    compound=true;
+    initial [shape=point, label=""];
+    n0 [label="DRAFT", shape=ellipse, tooltip="otherwise: submit the draft"];
+    n2 [label="ACCEPTED", shape=doublecircle, tooltip="otherwise: terminal state ACCEPTED accepts no transitions"];
+    n3 [label="DROPPED", shape=doublecircle, tooltip="otherwise: terminal state DROPPED accepts no transitions"];
+    subgraph cluster_s0 {
+        label="REVIEW: String/Step";
+        tooltip="otherwise: the review decides";
+        s0_anchor [shape=point, style=invis, label=""];
+        s0_initial [shape=point, label=""];
+        s0_n0 [label="A", shape=ellipse, tooltip="otherwise: a branches"];
+        s0_n1 [label="B", shape=doublecircle, tooltip="otherwise: terminal state B accepts no transitions"];
+        s0_n2 [label="C", shape=doublecircle, tooltip="otherwise: terminal state C accepts no transitions"];
+        s0_initial -> s0_n0;
+        s0_n0 -> s0_n1 [label="ADVANCE"];
+        s0_n0 -> s0_n2 [label="SKIP"];
+    }
+    initial -> n0;
+    n0 -> s0_n0 [label="SUBMIT", lhead=cluster_s0];
+    s0_n1 -> n2 [label="ACCEPT"];
+    s0_n2 -> n3 [label="DROP"];
+}

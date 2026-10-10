@@ -89,6 +89,22 @@ final class PropertyResolver {
                 "Optional<" + machine.entityName() + "> or " + machine.entityName(), anchor));
     }
 
+    /** The reader of {@code parent} that returns the entity of its sub-machine {@code child} as an Optional. */
+    Optional<Property> child(TypeMirror symbol, MachineTypes parent, MachineTypes child, DiagnosticAnchor anchor) {
+        TypeMirror expected = signatures.declared(OPTIONAL, child.entity());
+        return declaration(symbol, parent, anchor).flatMap((PropertyDescriptor property) -> read(property, parent,
+                (TypeMirror returned) -> signatures.same(returned, expected), "Optional<" + child.entityName() + ">",
+                anchor));
+    }
+
+    /** The reader of the sub-machine {@code child} that returns the entity of its {@code parent} as an Optional. */
+    Optional<Property> parent(TypeMirror symbol, MachineTypes parent, MachineTypes child, DiagnosticAnchor anchor) {
+        TypeMirror expected = signatures.declared(OPTIONAL, parent.entity());
+        return declaration(symbol, child, anchor).flatMap((PropertyDescriptor property) -> read(property, child,
+                (TypeMirror returned) -> signatures.same(returned, expected), "Optional<" + parent.entityName() + ">",
+                anchor));
+    }
+
     /**
      * The property {@code symbol} names on the entity of {@code host}, or empty after reporting {@code SG605}
      * when it is not a property symbol of this compilation or names another entity.

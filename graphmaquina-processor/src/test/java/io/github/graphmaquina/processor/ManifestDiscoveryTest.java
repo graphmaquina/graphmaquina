@@ -37,6 +37,7 @@ class ManifestDiscoveryTest {
             "io.github.graphmaquina.annotation.GraphGuard",
             "io.github.graphmaquina.annotation.GraphHook",
             "io.github.graphmaquina.annotation.GraphCondition",
+            "io.github.graphmaquina.annotation.GraphLookup",
             "io.github.graphmaquina.annotation.GraphProperty",
             "io.github.graphmaquina.annotation.GraphBindings",
             "io.github.graphmaquina.annotation.Timeout",

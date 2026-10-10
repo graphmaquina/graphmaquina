@@ -1,0 +1,83 @@
+digraph "Booking/BookingStatus" {
+    rankdir=LR;
+    compound=true;
+    initial [shape=point, label=""];
+    n0 [label="REQUESTED", shape=ellipse, tooltip="otherwise: a request is booked, paid in full or cancelled"];
+    n3 [label="CONFIRMED", shape=doublecircle, tooltip="otherwise: terminal state CONFIRMED accepts no transitions"];
+    n4 [label="CANCELLED", shape=doublecircle, tooltip="otherwise: terminal state CANCELLED accepts no transitions"];
+    subgraph cluster_s0 {
+        label="DEPOSIT: Payment/PaymentStatus";
+        tooltip="otherwise: a deposit is paid, restarted or cancelled";
+        s0_anchor [shape=point, style=invis, label=""];
+        s0_initial [shape=point, label=""];
+        s0_n1 [label="HELD", shape=ellipse, tooltip="otherwise: a hold is captured, declined or voided"];
+        s0_n2 [label="CAPTURED", shape=doublecircle, tooltip="otherwise: terminal state CAPTURED accepts no transitions"];
+        s0_n3 [label="DECLINED", shape=doublecircle, tooltip="otherwise: terminal state DECLINED accepts no transitions"];
+        s0_n4 [label="VOIDED", shape=doublecircle, tooltip="otherwise: terminal state VOIDED accepts no transitions"];
+        subgraph cluster_s0_s0 {
+            label="AUTHORIZING: Payment/RiskStatus";
+            tooltip="otherwise: an authorization is held, captured, declined or voided";
+            s0_s0_anchor [shape=point, style=invis, label=""];
+            s0_s0_initial [shape=point, label=""];
+            s0_s0_n0 [label="SCORING", shape=ellipse, tooltip="otherwise: a risk score clears or flags the payment"];
+            s0_s0_n1 [label="CLEARED", shape=doublecircle, tooltip="otherwise: terminal state CLEARED accepts no transitions"];
+            s0_s0_n2 [label="FLAGGED", shape=doublecircle, tooltip="otherwise: terminal state FLAGGED accepts no transitions"];
+            s0_s0_initial -> s0_s0_n0;
+            s0_s0_n0 -> s0_s0_n1 [label="CLEAR"];
+            s0_s0_n0 -> s0_s0_n2 [label="FLAG"];
+        }
+        s0_initial -> s0_s0_n0 [lhead=cluster_s0_s0];
+        s0_s0_n1 -> s0_n1 [label="HOLD"];
+        s0_s0_anchor -> s0_n2 [label="CAPTURE Capture", ltail=cluster_s0_s0];
+        s0_s0_n2 -> s0_n3 [label="DECLINE"];
+        s0_s0_anchor -> s0_n4 [label="VOID", ltail=cluster_s0_s0];
+        s0_n1 -> s0_n2 [label="CAPTURE Capture [onFailure DECLINE]"];
+        s0_n1 -> s0_n3 [label="DECLINE"];
+        s0_n1 -> s0_n4 [label="VOID"];
+    }
+    subgraph cluster_s1 {
+        label="BALANCE: Payment/PaymentStatus";
+        tooltip="otherwise: a balance is paid or cancelled";
+        s1_anchor [shape=point, style=invis, label=""];
+        s1_initial [shape=point, label=""];
+        s1_n1 [label="HELD", shape=ellipse, tooltip="otherwise: a hold is captured, declined or voided"];
+        s1_n2 [label="CAPTURED", shape=doublecircle, tooltip="otherwise: terminal state CAPTURED accepts no transitions"];
+        s1_n3 [label="DECLINED", shape=doublecircle, tooltip="otherwise: terminal state DECLINED accepts no transitions"];
+        s1_n4 [label="VOIDED", shape=doublecircle, tooltip="otherwise: terminal state VOIDED accepts no transitions"];
+        subgraph cluster_s1_s0 {
+            label="AUTHORIZING: Payment/RiskStatus";
+            tooltip="otherwise: an authorization is held, captured, declined or voided";
+            s1_s0_anchor [shape=point, style=invis, label=""];
+            s1_s0_initial [shape=point, label=""];
+            s1_s0_n0 [label="SCORING", shape=ellipse, tooltip="otherwise: a risk score clears or flags the payment"];
+            s1_s0_n1 [label="CLEARED", shape=doublecircle, tooltip="otherwise: terminal state CLEARED accepts no transitions"];
+            s1_s0_n2 [label="FLAGGED", shape=doublecircle, tooltip="otherwise: terminal state FLAGGED accepts no transitions"];
+            s1_s0_initial -> s1_s0_n0;
+            s1_s0_n0 -> s1_s0_n1 [label="CLEAR"];
+            s1_s0_n0 -> s1_s0_n2 [label="FLAG"];
+        }
+        s1_initial -> s1_s0_n0 [lhead=cluster_s1_s0];
+        s1_s0_n1 -> s1_n1 [label="HOLD"];
+        s1_s0_anchor -> s1_n2 [label="CAPTURE Capture", ltail=cluster_s1_s0];
+        s1_s0_n2 -> s1_n3 [label="DECLINE"];
+        s1_s0_anchor -> s1_n4 [label="VOID", ltail=cluster_s1_s0];
+        s1_n1 -> s1_n2 [label="CAPTURE Capture [onFailure DECLINE]"];
+        s1_n1 -> s1_n3 [label="DECLINE"];
+        s1_n1 -> s1_n4 [label="VOID"];
+    }
+    initial -> n0;
+    n0 -> s0_s0_n0 [label="BOOK TakeDeposit [watches Payment: anyIn AUTHORIZING]", lhead=cluster_s0];
+    n0 -> s1_s0_n0 [label="PAY_IN_FULL ChargeInFull [onFailure BOOK]", lhead=cluster_s1];
+    n0 -> n4 [label="CANCEL CancelBooking"];
+    s0_anchor -> s0_s0_n0 [label="RESTART"];
+    s0_n2 -> s1_s0_n0 [label="DEPOSIT_PAID Settle [if Settled] [onFailure CANCEL]", lhead=cluster_s1];
+    s0_n3 -> n4 [label="PAYMENT_FAILED"];
+    s0_n4 -> n4 [label="PAYMENT_FAILED"];
+    s0_anchor -> n4 [label="CANCEL CancelBooking", ltail=cluster_s0];
+    s1_n2 -> n3 [label="BALANCE_PAID Confirm"];
+    s1_n3 -> n4 [label="PAYMENT_FAILED"];
+    s1_n4 -> n4 [label="PAYMENT_FAILED"];
+    s1_anchor -> n4 [label="CANCEL CancelBooking", ltail=cluster_s1];
+    watch0 [shape=note, label="watches Payment"];
+    n0 -> watch0 [style=dashed, arrowhead=none];
+}

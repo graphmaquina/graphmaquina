@@ -14,6 +14,7 @@ import io.github.graphmaquina.test.fixtures.SnapshotGraphs.ServiceUnavailableExc
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs.Step;
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs.TicketChange;
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs.TicketState;
+import io.github.graphmaquina.test.fixtures.SnapshotGraphs.Verdict;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.snapshot.GraphDiff;
 import io.github.graphmaquina.test.snapshot.GraphSnapshot;
@@ -32,7 +33,8 @@ import org.junit.jupiter.api.Test;
  *
  * <p>Version 2 records the declared edges under {@code /transitions/<from>/<id>} and the rejection policies
  * under {@code /policies/<state>}; there is no path for an edge that was never declared. An edge's recovery
- * rules are recorded under its {@code recoveries} path, indexed in declaration order, only when it declares some.
+ * rules are recorded under its {@code recoveries} path, indexed in declaration order, only when it declares some,
+ * and the sub-machine bound to a state under {@code /submachines/<state>}.
  */
 class GraphSnapshotTest {
 
@@ -407,6 +409,32 @@ class GraphSnapshotTest {
                 withoutRules.serialize());
     }
 
+    // --- sub-machines ------------------------------------------------------------------------------------
+
+    /**
+     * A sub-machine records its child machine as a watch records its peer, and the identifier each terminal state of
+     * the child exits through. Its lookups never run, and a graph without a sub-machine has no such path at all.
+     */
+    @Test
+    void aSubmachineCarriesItsChildMachineAndTheExitOfEachTerminalState() {
+        GraphSnapshot snapshot = GraphSnapshot.capture(SnapshotGraphs.submachineGraph(Verdict.DROP));
+        Map<String, String> expected = new LinkedHashMap<>();
+        expected.put("/submachines/REVIEW/child/entity", "java.lang.String");
+        expected.put("/submachines/REVIEW/child/states", FIXTURE + "Step");
+        expected.put("/submachines/REVIEW/child/transitions", FIXTURE + "Move");
+        expected.put("/submachines/REVIEW/exits/B", "ACCEPT");
+        expected.put("/submachines/REVIEW/exits/C", "DROP");
+        assertEquals(expected, under(snapshot, "/submachines/"));
+        assertEquals(Map.of(), under(GraphSnapshot.capture(SnapshotGraphs.variant().build()), "/submachines/"));
+    }
+
+    /** Mapping one terminal state to another identifier differs at that exit's path and nowhere else. */
+    @Test
+    void theExitOfOneTerminalStateIsOneChange() {
+        assertEquals(List.of(change("/submachines/REVIEW/exits/C", "DROP", "ACCEPT")),
+                diff(SnapshotGraphs.submachineGraph(Verdict.DROP), SnapshotGraphs.submachineGraph(Verdict.ACCEPT)));
+    }
+
     // --- the line format ----------------------------------------------------------------------------
 
     @Test
@@ -511,7 +539,8 @@ class GraphSnapshotTest {
                 GraphSnapshot.capture(SnapshotGraphs.cycleGraph(Step.B)),
                 GraphSnapshot.capture(TestDomain.graph(Duration.ofSeconds(30))),
                 GraphSnapshot.capture(SnapshotGraphs.publication().build()),
-                GraphSnapshot.capture(SnapshotGraphs.publication().republished(true).build()))) {
+                GraphSnapshot.capture(SnapshotGraphs.publication().republished(true).build()),
+                GraphSnapshot.capture(SnapshotGraphs.submachineGraph(Verdict.DROP)))) {
             assertEquals(snapshot.fields(), GraphSnapshot.parse(snapshot.serialize()).fields());
             assertEquals(snapshot.serialize(), GraphSnapshot.parse(snapshot.serialize()).serialize());
         }

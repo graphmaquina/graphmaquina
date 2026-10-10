@@ -5,12 +5,13 @@ import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.test.internal.Checks;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Chainable assertion over an {@link AfterCommitException}: an after-commit hook threw, and nothing is rolled back:
  * every state of the call was written. A hook runs only for a committed hop, so
- * {@link #at(MachineKey, Object, Enum, Enum, Enum)} names a hop that really happened, and {@link #records()} every
- * hop the call committed.
+ * {@link #at(MachineKey, Object, Enum, Enum, Enum)} names a hop that really happened, {@link #records()} every
+ * hop the call committed, and {@link #starts()} every sub-machine it started.
  */
 public final class AfterCommitAssert extends BaseCallFailureAssert<AfterCommitAssert> {
 
@@ -52,5 +53,10 @@ public final class AfterCommitAssert extends BaseCallFailureAssert<AfterCommitAs
     /** Every hop the call committed, in log order. */
     public TransitionRecordsAssert records() {
         return new TransitionRecordsAssert(context + ".records", failure.records());
+    }
+
+    /** Every sub-machine the call started, in log order; a start runs no hook. */
+    public StartsAssert starts() {
+        return new StartsAssert(context + ".starts", Optional.of(failure.starts()));
     }
 }

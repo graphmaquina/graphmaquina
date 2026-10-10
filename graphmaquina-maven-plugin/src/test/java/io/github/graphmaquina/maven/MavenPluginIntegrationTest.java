@@ -2431,6 +2431,53 @@ class MavenPluginIntegrationTest {
                 output.lines().filter((String line) -> line.startsWith("ROUTED ")).toList(), output);
     }
 
+    /**
+     * A parent that binds one child in two states, through the lookups of an instance host, built by the published
+     * plugin from the artifacts of this build: the jar carries the pair vocabulary and the lookup symbols, its index
+     * exports those symbols, the parent's companion binds the child's definition twice and the set builds that
+     * definition once. The program compiled with them sees each payment start when the booking enters its node, the
+     * booking leave each node when its payment is captured, and a payment whose booking is elsewhere refused as
+     * detached.
+     */
+    @Test
+    void runsTheSubmachinesOfAParentThatBindsOneChildInTwoStates() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.writeSources(MavenFixture.submachineSources());
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.jarContains("fxs/BookingsPayments$Submachine.class"), result.output());
+        assertTrue(fixture.jarContains("fxs/BookingsPayments$Exit.class"), result.output());
+        assertTrue(fixture.jarContains("fxs/LedgerRefs$DepositOf.class"), result.output());
+        assertEquals(List.of("fxs.Bookings", "fxs.Payments", "fxs.BookingRefs.Balance", "fxs.BookingRefs.Deposit",
+                "fxs.BookingRefs.Id", "fxs.BookingRefs.Status", "fxs.LedgerRefs.BalanceOf", "fxs.LedgerRefs.DepositOf",
+                "fxs.PaymentRefs.Id", "fxs.PaymentRefs.Status"), fixture.localExports());
+        Path generated = fixture.projectDirectory().resolve("target/generated-sources/annotations");
+        String bookings = Files.readString(generated.resolve("fxs/BookingsRuntime.java"), StandardCharsets.UTF_8);
+        assertTrue(bookings.contains("graph(GraphDefinition<Payment, PaymentStatus, PaymentTransition> paymentsGraph,"
+                + " Ledger ledger)"), bookings);
+        assertTrue(bookings.contains(".submachine(BookingStatus.DEPOSIT, paymentsGraph, (Booking booking) ->"
+                + " booking.deposit(), (Payment payment) -> ledger.depositOf(payment))"), bookings);
+        assertTrue(bookings.contains(".submachine(BookingStatus.BALANCE, paymentsGraph, (Booking booking) ->"
+                + " booking.balance(), (Payment payment) -> ledger.balanceOf(payment))"), bookings);
+        String set = Files.readString(generated.resolve("fxs/BillingRuntime.java"), StandardCharsets.UTF_8);
+        assertTrue(set.contains("GraphDefinition<Payment, PaymentStatus, PaymentTransition> paymentsGraph"
+                + " = PaymentsRuntime.graph();"), set);
+        assertTrue(set.contains("StateMachines.from(BookingsRuntime.graph(paymentsGraph, ledger))"), set);
+        assertTrue(set.contains("StateMachines.from(paymentsGraph)"), set);
+        assertEquals(1, set.split("PaymentsRuntime\\.graph\\(", -1).length - 1, set);
+        String output = fixture.runMain("fxs.Bookkeeping");
+        assertEquals(List.of(
+                "BILLING book APPLIED REQUESTED-BOOK->DEPOSIT start DEPOSIT:deposit:PENDING",
+                "BILLING deposit APPLIED PENDING-CAPTURE->CAPTURED DEPOSIT-DEPOSIT_PAID->BALANCE"
+                        + " start BALANCE:balance:PENDING",
+                "BILLING balance APPLIED PENDING-CAPTURE->CAPTURED BALANCE-BALANCE_PAID->CONFIRMED",
+                "BILLING early REJECTED DETACHED no parent holds it in DEPOSIT",
+                "BILLING states stay=CONFIRMED deposit=CAPTURED balance=CAPTURED unbooked=REQUESTED early=PENDING"),
+                output.lines().filter((String line) -> line.startsWith("BILLING ")).toList(), output);
+    }
+
     /** An interrupted fixture runner must stop and reap the exact child JVM it launched. */
     @Test
     void interruptedPublicationProgramDoesNotLeaveItsChildRunning() throws Exception {

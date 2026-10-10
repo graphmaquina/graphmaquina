@@ -10,6 +10,7 @@ import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.test.GraphAssertionError;
 import io.github.graphmaquina.test.GraphGoldens;
 import io.github.graphmaquina.test.fixtures.SnapshotGraphs;
+import io.github.graphmaquina.test.fixtures.SnapshotGraphs.Verdict;
 import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
@@ -33,7 +34,8 @@ import org.junit.jupiter.api.parallel.Resources;
  * through the class loader, and a second update over matching content writes nothing. The checked-in
  * {@code golden/simple.dot} pins the rendering of the fixture — every declared edge and no other — and a
  * mismatch reports the lines that moved. The checked-in {@code golden/typed-recovery.dot} pins how the recovery
- * rules of an edge are drawn.
+ * rules of an edge are drawn, and {@code golden/submachine.dot} how a sub-machine is drawn inside the state it is
+ * bound to.
  */
 class GraphGoldensTest {
 
@@ -134,6 +136,17 @@ class GraphGoldensTest {
     @Test
     void theCheckedInRecoveryDiagramIsTheRenderingOfThePublicationMachine() {
         GraphGoldens.assertMatches(SnapshotGraphs.publication().build(), "golden/typed-recovery.dot", READ_ONLY);
+    }
+
+    /**
+     * The snapshot fixture's parent, whose REVIEW holds the branch graph: REVIEW is a cluster labelled with the child
+     * machine and holding its graph, SUBMIT points at the child's initial state, and the exits ACCEPT and DROP leave
+     * from the terminal states B and C that select them. The options are read-only, so a regeneration run cannot
+     * rewrite this golden.
+     */
+    @Test
+    void theCheckedInSubmachineDiagramIsTheRenderingOfTheBoundGraph() {
+        GraphGoldens.assertMatches(SnapshotGraphs.submachineGraph(Verdict.DROP), "golden/submachine.dot", READ_ONLY);
     }
 
     @Test

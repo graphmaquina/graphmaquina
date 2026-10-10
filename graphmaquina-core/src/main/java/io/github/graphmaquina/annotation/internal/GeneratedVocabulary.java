@@ -18,7 +18,7 @@ public @interface GeneratedVocabulary {
     /** Machine for which the vocabulary was generated. */
     Class<? extends Machine<?, ?, ?>> machine();
 
-    /** Peer machines associated with pair-specific watch vocabulary. */
+    /** Peer machines associated with the vocabulary of a pair: its watch and sub-machine annotations. */
     Class<? extends Machine<?, ?, ?>>[] peer() default {};
 
     /** Generated vocabulary role. */

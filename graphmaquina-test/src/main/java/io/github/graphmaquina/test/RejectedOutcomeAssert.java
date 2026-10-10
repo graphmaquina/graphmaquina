@@ -10,8 +10,9 @@ import java.util.Optional;
  * Chainable, typed assertion over an {@link Outcome.Rejected}, obtained from {@link
  * OutcomeAssert#isRejected()}. No action ran and nothing was committed, so the entity stays where it was
  * and there is no destination to read: the same identifier may reach different states from different
- * origins. The two rejections the engine produces are told apart by their {@link RejectionKind} — no edge
- * leaves the origin under that identifier, or a guard said no and named itself.
+ * origins. The rejections the engine produces are told apart by their {@link RejectionKind} — no edge
+ * leaves the origin under that identifier, a guard said no and named itself, the entity is a sub-machine whose
+ * parent does not hold it, or the identifier is an exit of the sub-machine bound to the origin.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine
@@ -43,6 +44,21 @@ public final class RejectedOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>
         Objects.requireNonNull(expected, "expected");
         Checks.equal(context, "kind", RejectionKind.GUARD, rejected.kind());
         Checks.equal(context, "guard", Optional.of(expected), rejected.guard());
+        return this;
+    }
+
+    /**
+     * The entity is a sub-machine whose parent does not hold it, so the request was refused before any edge was
+     * resolved.
+     */
+    public RejectedOutcomeAssert<E, S, T> isDetached() {
+        Checks.equal(context, "kind", RejectionKind.DETACHED, rejected.kind());
+        return this;
+    }
+
+    /** The identifier is an exit of the sub-machine bound to the origin, which only the end of that child runs. */
+    public RejectedOutcomeAssert<E, S, T> isReservedExit() {
+        Checks.equal(context, "kind", RejectionKind.RESERVED_EXIT, rejected.kind());
         return this;
     }
 

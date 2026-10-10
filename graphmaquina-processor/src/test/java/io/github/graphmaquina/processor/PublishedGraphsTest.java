@@ -14,6 +14,8 @@ import io.github.graphmaquina.codegen.model.SymbolDescriptor;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -208,6 +210,91 @@ class PublishedGraphsTest {
 
         assertTrue(result.success(), result.describe());
         assertTrue(result.hasGenerated("cons.ShelfRuntime"), result::describe);
+    }
+
+    /**
+     * A consumer's set holds a published parent and its published child. The model of the parent, built from the
+     * classpath, reads its sub-machines as the producer's own compilation does, so the set builds the child's
+     * definition once, hands it to the parent's published {@code graph(...)}, and runs the binding.
+     */
+    @Test
+    void aConsumerSetBindsTheSubmachinesOfAPublishedParent() throws Exception {
+        Path jar = publish(SubmachineGenerationTest.billing(), directory.resolve("billing.jar"),
+                UnaryOperator.identity());
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("cons.Shop", """
+                package cons;
+                import fx.Bookings;
+                import fx.Payments;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                /** Consumer set of the published binding fixture. */
+                @StateGraphs
+                public interface Shop extends Machines {
+                    Bookings bookings();
+                    Payments payments();
+                }
+                """);
+        sources.put("cons.Scenario", """
+                package cons;
+                import fx.Booking;
+                import fx.BookingLookups;
+                import fx.Ledger;
+                import fx.Payment;
+                /** Executes the published binding fixture. */
+                public final class Scenario {
+                    public static Object run() {
+                        Ledger ledger = new Ledger();
+                        try (Shop shop = ShopRuntime.builder(ledger).build()) {
+                            Payment deposit = new Payment("deposit");
+                            Booking booking = new Booking("booking", deposit, new Payment("balance"));
+                            BookingLookups.register(booking);
+                            ledger.register(booking);
+                            shop.bookings().book(booking);
+                            shop.payments().capture(deposit);
+                            return booking.status() + " " + deposit.status();
+                        }
+                    }
+                }
+                """);
+        Compilation.Prepared prepared = Compilation.prepare(sources, List.of(jar));
+
+        Compilation.Result result = Compilation.compilePrepared(prepared);
+
+        assertTrue(result.success(), result.describe());
+        assertTrue(result.generated("cons.ShopRuntime").contains(
+                "this.bookingsBuilder = StateMachines.from(BookingsRuntime.graph(paymentsGraph, ledger))"),
+                () -> result.generated("cons.ShopRuntime"));
+        URL[] classes = {prepared.request().classesOutput().toUri().toURL(), jar.toUri().toURL()};
+        try (URLClassLoader loader = new URLClassLoader(classes, PublishedGraphsTest.class.getClassLoader())) {
+            assertEquals("BALANCE CAPTURED", loader.loadClass("cons.Scenario").getMethod("run").invoke(null));
+        }
+    }
+
+    /** The same set without the child is refused, as a set of the producer's own compilation would be. */
+    @Test
+    void aConsumerSetWithoutTheChildOfAPublishedParentIsRefused() throws IOException {
+        Path jar = publish(SubmachineGenerationTest.billing(), directory.resolve("parent.jar"),
+                UnaryOperator.identity());
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("cons.Shop", """
+                package cons;
+                import fx.Bookings;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                /** Consumer set of the published binding fixture. */
+                @StateGraphs
+                public interface Shop extends Machines {
+                    Bookings bookings();
+                }
+                """);
+
+        Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(sources, List.of(jar)));
+
+        String missing = "[SG806] the sub-machine of Bookings.%s is Payments, which is not in Shop";
+        assertEquals(List.of(missing.formatted("DEPOSIT"), missing.formatted("BALANCE")), result.errors(),
+                result.describe());
+        assertFalse(result.hasGenerated("cons.ShopRuntime"), result.describe());
     }
 
     @Test

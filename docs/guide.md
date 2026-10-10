@@ -20,7 +20,8 @@ the property to the version you installed. `mavenCentral()` stays in both builds
 dependencies, JUnit among them, not for GraphMaquina itself.
 
 This README is the developer guide for the current implementation. The quickstart has complete, runnable
-files. Later examples are extensions or fragments of the repository's shop example.
+files. Most later examples are extensions or fragments of the quickstart or of the repository's example module, whose
+shop and billing domains the guide quotes.
 
 ## Contents
 
@@ -40,6 +41,7 @@ files. Later examples are extensions or fragments of the repository's shop examp
 - [Build and manage machine sets](#build-and-manage-machine-sets)
 - [Read peers and cascade transitions](#read-peers-and-cascade-transitions)
 - [Watch other machines](#watch-other-machines)
+- [Compose machines](#compose-machines)
 - [Commit, hooks and observers](#commit-hooks-and-observers)
 - [Concurrency, identity and persistence](#concurrency-identity-and-persistence)
 - [Inspect graphs and export diagrams](#inspect-graphs-and-export-diagrams)
@@ -61,15 +63,16 @@ files. Later examples are extensions or fragments of the repository's shop examp
 | Capability | How it works |
 | --- | --- |
 | A graph of identified transitions | You declare edges `(from, transition, to)`. An identifier selects the edge, so parallel edges and self-loops are ordinary declarations. |
-| Compile-time structural validation | Checks include reachability, terminal states, intentional cycles, duplicate `(from, id)` keys, failure routes and watch rules. |
+| Compile-time structural validation | Checks include reachability, terminal states, intentional cycles, duplicate `(from, id)` keys, failure routes, watch rules and sub-machine bindings. |
 | Typed operations | A machine interface exposes domain operations such as `submit(ticket)` or `pay(order)`, returning `Outcome<E, S, T>`. |
 | Explicit bindings | Generated `Refs` classes identify marked methods and properties; the processor checks their roles and signatures. |
 | Synchronous and asynchronous actions | Actions and guards may return values or `CompletionStage` results. The runtime waits under configured deadlines. |
 | Coordinated state changes | Cascades share a unit of work; entity state setters run after the root transition succeeds or selects a handled failure route. |
 | Declared watches | After a peer commits, a matching owner can be reevaluated and execute the identifier the first matching rule names. |
+| Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child whose parent does not hold it there is rejected, and the step that ends the child runs the parent's exit in the same unit of work. See [compose machines](#compose-machines). |
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
-| Inspectable execution | Outcomes carry transition records and watch reactions; technical aborts carry diagnostic details where applicable. |
-| Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram. |
+| Inspectable execution | Outcomes carry transition records, watch reactions and the sub-machines a call started; technical aborts carry diagnostic details where applicable. |
+| Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram, which draws each sub-machine inside the state it is bound to. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
 a durable job queue, HTTP endpoints or distributed transactions. See
@@ -96,6 +99,7 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 | What can I safely use in a callback? | [Context and thread boundary](images/async-context-boundary.svg) | [Context ownership](#contexts-and-completion-callbacks) |
 | Does a completed future mean the operation succeeded? | [Future result branches](images/async-future-results.svg) | [Result handling](#read-the-future-and-domain-result) |
 | Do both machines commit together? | [Cascade versus watch](images/cascade-vs-watch.svg) | [Machine coordination](#read-peers-and-cascade-transitions) |
+| How does a state hold a whole machine? | [Sub-machine binding](images/submachine-binding.svg) | [Compose machines](#compose-machines) |
 | When do hooks and reactions run? | [Commit lifecycle](images/commit-lifecycle.svg) | [Commit and hooks](#commit-hooks-and-observers) |
 
 ## Requirements and artifacts
@@ -957,7 +961,7 @@ observable result.
 
 | Situation | What the engine does | Outcome |
 | --- | --- | --- |
-| No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION` |
+| No edge is keyed by `(current, requested)` | Nothing runs. No guard, no action, no state write. | `Rejected` with `RejectionKind.NO_TRANSITION`; a sub-machine whose parent does not hold it is `DETACHED` first |
 | An explicit self-loop `A --T--> A` is requested | The edge runs like any other: guards, action, commit, hook. | `Applied`, with `recordedState() == A` |
 | `reevaluate(entity)` finds no watch, or no rule that holds | Nothing runs. | `Ignored`, with `IgnoreReason.NO_WATCH` or `NO_RULE_MATCHED` |
 
@@ -1021,6 +1025,10 @@ You declare what it can do, and the policy words the answer for everything else.
   exists from the failing edge's own origin. Such an edge may legitimately reach the same destination as the edge
   it recovers, because identity, not destination, tells them apart.
 - Every watch rule must name an identifier with an edge from the watched state. A terminal cannot watch.
+- A state that holds a sub-machine maps each terminal state of the child, and no other state, to exactly one exit:
+  an identifier with an edge from that state that no `onFailure`, recovery rule or watch rule of that state names,
+  and, with annotations, that no operation of the facade executes. A terminal state holds no sub-machine, another
+  state holds at most one, and a machine's sub-machines never contain the machine again.
 
 Unauthorised cycles are reported as one witness per cyclic strongly connected component rather than one
 message per elementary cycle. The rule about what is accepted is unchanged; the number of messages is
@@ -1105,8 +1113,9 @@ Import these from `io.github.graphmaquina.annotation`:
 | `@GraphGuard` | Guard method | Export a guard binding |
 | `@GraphHook` | Hook method | Export an after-commit binding |
 | `@GraphCondition` | Watch-condition method | Export a custom watch predicate |
+| `@GraphLookup` | Parent-lookup method | Export the lookup that finds the parent of a sub-machine's entity |
 | `@GraphBindings` | Concrete binding host | Export inherited marked members through this concrete host |
-| `@GraphPeers` | Watching machine interface | Request typed vocabulary for its declared owner/peer pairs |
+| `@GraphPeers` | Machine interface that watches or binds other machines | Request typed vocabulary for its declared owner/peer pairs |
 | `@Timeout` | Nested annotation element | Express seconds and nanoseconds for an asynchronous action timeout |
 
 Markers identify exports; marking a method alone does not attach it to a transition. Reference its generated
@@ -1119,7 +1128,7 @@ symbol from the graph declaration.
 | `Tickets extends Machine<Ticket, TicketState, TicketTransition>` | `TicketsGraph.Definition`, `.StatePolicy`, `.StatePolicies`, `.Transition`, `.Transitions`, `.Recovery`, `.Reject`, `.Rejects` |
 | Property `Ticket.state` | `TicketRefs.State.class` |
 | Marked method `TicketActions.hasTitle` | `TicketActionsRefs.HasTitle.class` |
-| `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches` and `.When`, in the owner's package |
+| `@GraphPeers(Items.class)` on `Orders` | `OrdersItems.Watch`, `.Watches`, `.When`, `.Submachine`, `.Submachines` and `.Exit`, in the owner's package |
 | Machine `Tickets` | `TicketsRuntime`, including `KEY`, graph construction and facade implementation |
 | Set `TicketMachines` | `TicketMachinesRuntime`, including the generated builder |
 
@@ -1160,9 +1169,9 @@ transitions. Generated companions emit one typed `recover(...)` call per rule in
 facades route failures through those rules just as graphs built directly with the DSL do.
 
 Java annotations do not have nullable elements, so the API represents optional single values as arrays.
-`onFailure`, `timeout`, `afterCommit`, `Transition.action` and custom `When.condition` accept zero or one value.
-Use the single-value syntax, for example `onFailure = TicketTransition.DECLINE`, or omit the element. Multiple
-values are `SG607`.
+`onFailure`, `timeout`, `afterCommit`, `Transition.action`, custom `When.condition`, and the `child`, `parent` and
+`parentLookup` of a `Submachine` accept zero or one value. Use the single-value syntax, for example
+`onFailure = TicketTransition.DECLINE`, or omit the element. Multiple values are `SG607`.
 
 ### Properties and accessors
 
@@ -1179,6 +1188,8 @@ normalization: `getState()` exports `state`, `items()` exports `items`, and `get
 | `Definition.id` | Public instance reader returning an identity value; values must be non-null at runtime |
 | `Watch.peers` | Owner reader returning `Collection<? extends PeerEntity>` |
 | `Watch.owner` | Peer reader returning `Optional<OwnerEntity>` or an owner entity |
+| `Submachine.child` | Parent reader returning `Optional<ChildEntity>` |
+| `Submachine.parent` | Child reader returning `Optional<ParentEntity>` |
 
 Use `Optional.empty()` for a peer with no owner. Keep relationship accessors consistent and return non-null
 collections. If the setter overloads are ambiguous, the processor reports the ambiguity instead of choosing
@@ -1187,7 +1198,7 @@ based on declaration order.
 ### Method signatures
 
 Public methods must match the role where the graph uses them. `E/S/T` refer to the owner entity, state and
-transition types; `P/Q/U` refer to the peer's.
+transition types; `P/Q/U` refer to the peer's: the watched machine's for a condition, the sub-machine's for a lookup.
 
 | Marker | Supported signature |
 | --- | --- |
@@ -1197,6 +1208,7 @@ transition types; `P/Q/U` refer to the peer's.
 | `@GraphGuard`, async | `CompletionStage<GuardResult> method(GuardContext<E, S, T> ctx)` |
 | `@GraphHook` | `void method(E entity)` or `void method(E entity, CommitContext<S, T> context)` |
 | `@GraphCondition` | `boolean method(E owner, Collection<? extends P> peers, PeerView<P, Q, U> view)` |
+| `@GraphLookup` | `Optional<E> method(P child)` |
 
 Static bindings are called statically. Instance bindings become constructor/builder dependencies. For example,
 using three instance members of `OrderActions` adds one `OrderActions` dependency, not three instances. A class
@@ -1232,9 +1244,9 @@ throws `ClassCastException`; absence and a wrong type are different conditions. 
 arguments are boxed; read them with wrapper tokens such as `Integer.class`. Class tokens cannot validate
 erased generic arguments. Input operations do not support method type parameters or varargs.
 
-The same input reaches the transition's guards, action and handled failure action. Cascades, watch reactions
-and reevaluation have no input of their own and receive an empty optional. A shared guard must handle that
-absence. Hooks, observers and transition records retain their existing contracts.
+The same input reaches the transition's guards, action and handled failure action. Cascades, the exits of
+sub-machines, watch reactions and reevaluation have no input of their own and receive an empty optional. A shared
+guard must handle that absence. Hooks, observers and transition records retain their existing contracts.
 
 ### Domain failures
 
@@ -1291,16 +1303,16 @@ The corresponding async action calls a gateway and returns a stage. An exception
 an exception of a subclass of either is classified as itself, not through its cause. It also classifies a
 checked exception that an action throws like any other, whether the method declares it, so that an action
 declared `throws IOException` with `failsOn = IOException.class` takes the failure route, or throws it without
-declaring it, as Kotlin or `@SneakyThrows` code can. A guard, a hook, a watch condition, a state or identity
-accessor, or a watch's peers or owner reader may declare a checked exception too: the generated companion
-compiles, and the exception is handled as the same exception thrown undeclared would be. `failsOn` applies to
-action failures; a guard exception is a technical abort. A library exception, a `StateMachineException`, that a guard
-or action throws or completes its stage with, bare or wrapped in one of those two classes, is never matched against
-`failsOn`, whatever the edge lists: it aborts the call and becomes its cause, so a failure of another call never
-passes for a failure of this one. A failure of the call itself, such as the abort a failed cascade throws into the
-action, is the exception: the engine throws it as itself or, when the transaction is poisoned, the failure that poisoned
-the transaction. An `Error` is never routed either: thrown as itself it propagates unchanged, and one that completes a
-stage, or that one of those two classes carries, aborts.
+declaring it, as Kotlin or `@SneakyThrows` code can. A guard, a hook, a watch condition, a lookup, a state or identity
+accessor, a watch's peers or owner reader, or a sub-machine's child or parent reader may declare a checked exception
+too: the generated companion compiles, and the exception is handled as the same exception thrown undeclared would be.
+`failsOn` applies to action failures; a guard exception is a technical abort. A library exception, a
+`StateMachineException`, that a guard or action throws or completes its stage with, bare or wrapped in one of those two
+classes, is never matched against `failsOn`, whatever the edge lists: it aborts the call and becomes its cause, so a
+failure of another call never passes for a failure of this one. A failure of the call itself, such as the abort a failed
+cascade throws into the action, is the exception: the engine throws it as itself or, when the transaction is poisoned,
+the failure that poisoned the transaction. An `Error` is never routed either: thrown as itself it propagates unchanged,
+and one that completes a stage, or that one of those two classes carries, aborts.
 
 `failsOn` cannot be a blanket `Throwable`, `Exception` or `RuntimeException`, an `Error`, a library engine exception, or
 a `CancellationException` or one of its subtypes, which are never domain failures; nor `CompletionException` or
@@ -1555,7 +1567,7 @@ entity, to the application's transaction or to external systems. To assert kinds
 
 ## Handle transition outcomes
 
-![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception.](images/operation-decisions.svg)
+![An operation resolves one edge by identity. With no edge the node's policy answers; otherwise guards run, then the action, and the outcome is applied, the declared failure route, or a technical exception. A sub-machine whose parent does not hold it is rejected before the edge is resolved, and an exit reserved to the sub-machine bound to the origin once it is resolved. A step that ends a held sub-machine also commits the parent's exit, unless the parent is in flight or the step moved it.](images/operation-decisions.svg)
 
 `Outcome<E, S, T>` is a sealed interface with four variants. Every outcome classifies itself, so a caller that
 only needs to know what happened and why reads it without narrowing:
@@ -1563,17 +1575,17 @@ only needs to know what happened and why reads it without narrowing:
 | Variant | `status()` | `code()` | `explanation()` | State written? |
 | --- | --- | --- | --- | --- |
 | `Applied` | `APPLIED` | `APPLIED` | empty | Yes, the resolved edge committed |
-| `Rejected` | `REJECTED` | `NO_TRANSITION`, or `GUARD_REJECTED` | the policy's reason, or the guard's | No |
+| `Rejected` | `REJECTED` | `NO_TRANSITION`, `GUARD_REJECTED`, `DETACHED` or `RESERVED_EXIT` | the policy's reason, the guard's, or the library's fixed text for the last two | No |
 | `Failed` | `FAILED` | `FAILURE_ROUTED` | the reason the action returned; empty when `failsOn` or a recovery rule routed a throwable | Yes, the failure route committed |
 | `Ignored` | `IGNORED` | `NO_WATCH`, or `NO_RULE_MATCHED` | empty | No |
 
 A cascade returns `Applied` or `Failed` to the action that called `cascade(...)`; a rejection inside it aborts the
 root instead. Both are provisional there: their hops are written only if the root commits.
 
-Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransition()`, `records()` and
-`reactions()`. `recordedState()` is `to` for `Applied`, `movedTo` for `Failed` and `from` for the other two.
-`requestedTransition()` is empty only for `Ignored`, which selected no edge at all. [Records, journals and
-reactions](#records-journals-and-reactions) describes what `records()` and `reactions()` return.
+Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransition()`, `records()`,
+`reactions()` and `starts()`. `recordedState()` is `to` for `Applied`, `movedTo` for `Failed` and `from` for the
+other two. `requestedTransition()` is empty only for `Ignored`, which selected no edge at all. [Records, journals and
+reactions](#records-journals-and-reactions) describes what `records()`, `reactions()` and `starts()` return.
 
 Read the classification with its limits in mind:
 
@@ -1581,8 +1593,10 @@ Read the classification with its limits in mind:
   or a later call can move the entity again; read the entity when you need its live state.
 - `FAILED` does not mean that nothing happened: the failure route committed and the entity is at `movedTo`.
 - `explanation()` holds the reasons the graph declares: a policy's reason, a guard's, or the reason an action
-  returned with `ActionOutcome.failed(...)`. The only text the library writes there is the fixed reason of a
-  terminal state that declares no policy, such as `terminal state DONE accepts no transitions`. When `failsOn` or a
+  returned with `ActionOutcome.failed(...)`. The only texts the library writes there are the fixed reason of a
+  terminal state that declares no policy, such as `terminal state DONE accepts no transitions`, and the fixed reasons
+  of the two refusals of a sub-machine: `DETACHED`, such as `no parent holds it in DEPOSIT`, and `RESERVED_EXIT`, such
+  as `DEPOSIT_PAID leaves DEPOSIT only when its sub-machine ends`. When `failsOn` or a
   recovery rule routes an exception, the failure's reason is composed from that exception and may carry internal
   details; it stays in `Failed.reason()` and `Failed.cause()`.
 - A commit here is GraphMaquina writing states through the setters. A JPA or other transaction around the call
@@ -1618,7 +1632,7 @@ record TransitionResponse(String id, OutcomeStatus status, OutcomeCode code, Tic
 static int httpStatus(OutcomeCode code) {
     return switch (code) {
         case APPLIED, FAILURE_ROUTED, NO_WATCH, NO_RULE_MATCHED -> 200;
-        case NO_TRANSITION -> 409;
+        case NO_TRANSITION, DETACHED, RESERVED_EXIT -> 409;
         case GUARD_REJECTED -> 422;
     };
 }
@@ -1670,6 +1684,11 @@ written. [Handle a failed call](#handle-a-failed-call) shows how to read them.
 - `records()` and `reactions()` answer on every outcome. A root `Applied` or `Failed` returns the
   transaction's records and the reactions of its commit; `Rejected`, `Ignored` and a nested `cascade` result
   return empty lists, the last because it is provisional and has no independent root commit or reaction list.
+- `starts()` answers on every outcome too, and is empty in the same cases. When an edge enters a state that holds a
+  sub-machine, the child moves to the initial state of its graph in the same unit of work, and a root `Applied` or
+  `Failed` returns a `SubmachineStart` for each such start, in log order: the child's machine and entity, the state
+  it had and the one it started in, the parent's machine, entity and bound state, and the depth of the step. A start
+  is no hop, so it is not in `records()` and runs no hook.
 - A failed call's journal uses `ActionRecord` and `ActionStatus` (`OK`, `FAILED`, `THREW`; never `RUNNING` once the
   call failed) to report actions that actually ran. A journal is execution evidence, not an undo log for external
   side effects.
@@ -1741,7 +1760,9 @@ Read the subsections in this order:
 | Either kind of binding | `tickets.async(() -> tickets.complete(ticket))` | Submits the whole operation to the configured executor and returns `CompletableFuture<Outcome<...>>` |
 
 With the default executor, the last form runs the operation on a virtual thread, allowing the calling thread
-to continue. A custom executor determines its own scheduling; a direct executor can execute inline.
+to continue. A custom executor determines its own scheduling; a direct executor can execute inline. The whole
+operation runs on the executor of the machine you called, the exit of a sub-machine it ends included, and the
+binding of a sub-machine is checked when the operation starts running, not when it is submitted.
 
 ![Direct invocation waits on the caller thread; machine.async uses the default virtual-thread executor to run the operation while the caller receives a future. Both paths wait for the action stage before committing.](images/async-execution.svg)
 
@@ -2025,7 +2046,7 @@ machine's budget and for an action's `@Timeout` alike.
 
 | Setting | When its clock starts | What it bounds |
 | --- | --- | --- |
-| Set default or per-machine `asyncTimeout` | When a root operation begins execution, after executor queueing | Pending async waits in that root and its nested cascades |
+| Set default or per-machine `asyncTimeout` | When a root operation begins execution, after executor queueing | Pending async waits in that root, its nested cascades and the sub-machine exits it runs |
 | Action `@Timeout` | After the action method returns its stage | That action's pending wait, capped by the root's remaining deadline |
 | Async guard | Uses the existing root deadline | That guard's pending wait; an action's `@Timeout` does not cover its guards |
 | Service/client timeout | Defined by your service client | The service request according to that client's cancellation/timeout contract |
@@ -2043,10 +2064,24 @@ calculated after that return. A stage already completed when inspected can succe
 wait time. There is no deadline check that interrupts setters, after-commit hooks or observers.
 
 Cascades share the root's unit of work and deadline; entering a peer does not restart its machine-level
-budget. Set defaults are installed only on machines with declared async bindings. A synchronous-only root
-that cascades to an async peer therefore has no root deadline supplied just by the set default. A timeout on
+budget. Set defaults are installed only on asynchronous machines: those with declared async bindings, and those
+whose calls can run an async edge implicitly, as the next paragraph explains. A synchronous-only root that cascades
+to an async peer therefore has no root deadline supplied just by the set default. A timeout on
 the peer action can still bound its wait, but an async guard on that path has no finite root budget. Choose
 the entry point and timeout configuration deliberately when mixing synchronous and asynchronous machines.
+
+The exit of a sub-machine shares the root's deadline too: it waits under the budget of the call's root, which is
+the child machine's own when you called the child, and the exit edge's timeout can only shorten it. An exit runs
+without any action of yours requesting it, and so do the edges it leads to: its failure routes, the exit that a
+parent's terminal state selects one level up, and the exits of a sub-machine that the parent enters on the way.
+Entering a bound state through the caller's own edge also starts its child's initial binding chain: a terminal
+initial descendant selects its exit without an explicit cascade. The same rule covers those descendant exits,
+including descendants started by an implicit edge. A registry therefore refuses a machine that declares no
+`asyncTimeout` when any edge that its calls can run this way has an async action or guard:
+`MachineRegistry.Builder.build()` throws `IllegalStateException` and names the edge.
+A generated set installs its default on each such machine, and its `asyncTimeout(Machine.class, Duration)` accepts
+one, so the set never builds a machine that the registry refuses. A cascade your action requests is explicit and
+asks nothing of the kind.
 
 Watch reactions are different: they execute after the triggering commit and start separate root
 transactions with their own deadlines. The original operation waits for synchronous watch dispatch before
@@ -2201,7 +2236,7 @@ not instantiate service classes or discover dependency-injection beans.
 | --- | --- |
 | `asyncTimeout(Machine.class, Duration)` | Override timeout for one asynchronous machine |
 | `asyncExecutor(Executor)` | Supply the executor used by `async` calls; otherwise each machine owns a virtual-thread executor |
-| `maxCascadeDepth(int)` | Bound nested cascades; default `10`, minimum `1`, root depth is `0` |
+| `maxCascadeDepth(int)` | Bound nested cascades and sub-machine exits; default `10`, minimum `1`, root depth is `0` |
 | `maxWatchChain(int)` | Bound successive watch reactions; default `10`, minimum `1` |
 | `observer(MachineObserver)` | Observe every call of the set; observers add up, notified in the order given |
 | `build()` | Construct the registry and facades |
@@ -2275,8 +2310,9 @@ from its pending state like any other.
 | `FAIL_FAST` | Stop when a cascade fails. |
 | `COLLECT` | Try peers under savepoints and collect the transition aborts of the call; if any were collected, poison the transaction with a `CascadeException` that aggregates them and throw it into the action that cascaded. Any other failure stops it at once, and so does an element whose step a nested cascade poisoned with a failure that is no failure of the call. |
 
-`COLLECT` is not partial commit. A nested transition that no edge carries, or that a guard rejected, is an abort rather
-than an ordinary root-level `Rejected` result. A handled domain failure can select the child's declared failure route.
+`COLLECT` is not partial commit. A nested transition that is rejected, because no edge carries it, a guard rejected it
+or a sub-machine refused it, is an abort rather than an ordinary root-level `Rejected` result. A handled domain
+failure can select the child's declared failure route.
 Any failure that leaves a cascade poisons the unit of work. A failure of the call itself, such as an abort in the peer's
 step, a cycle or the depth limit, reaches your action as it is. The `TransitionAbortedException` Javadoc says where the
 abort of a nested step goes. Anything else reaches your action as a `TransitionAbortedException` that names the cascade
@@ -2315,8 +2351,9 @@ poisoned the transaction; and on any other throwable the engine aborts the call 
 recovery action's name and the original failure's reason, never from that throwable's string, whether or not the
 transaction is poisoned.
 
-`@GraphPeers` is for generating watch vocabulary. A runtime peer read or cascade alone does not require an
-unused watch-pair declaration.
+`@GraphPeers` is for generating the vocabulary of a pair: the annotations that declare the owner's watches and
+sub-machines over the peer. A runtime peer read or cascade alone does not require a pair that no watch or
+sub-machine uses.
 
 ## Watch other machines
 
@@ -2394,7 +2431,7 @@ Close this set as described in [machine lifecycle](#build-and-manage-machine-set
 the generated builder's parameter list and order; regenerate before updating the application's wiring.
 
 A machine can have at most one watch per owner state. Multiple rules belong inside that watch. Declare only
-pairs that are actually watched; duplicate or unused `@GraphPeers` entries are errors.
+pairs that a watch or a sub-machine uses; duplicate or unused `@GraphPeers` entries are errors.
 
 ### Triggering and observing watches
 
@@ -2421,17 +2458,343 @@ Outcome<Order, OrderStatus, OrderTransition> outcome = shop.orders().reevaluate(
 
 No watch produces `Outcome.Ignored` with `IgnoreReason.NO_WATCH`, and a watch whose rules all fail produces
 `IgnoreReason.NO_RULE_MATCHED`. These are the only two ways an `Ignored` is produced. A matching rule can still be
-rejected by the named edge's guards. Rules are not polled on a timer, and creating or paying an owner does not
+rejected by the named edge's guards, or as `DETACHED` when the owner is a sub-machine whose parent does not hold it. Rules
+are not polled on a timer, and creating or paying an owner does not
 automatically mean all of its existing peers changed state.
 
 Cross-JAR watches are not supported yet. The owner and peer APIs must be generated in the same compilation.
 A peer in another module or dependency JAR is rejected with `SG608`. Track the enhancement in
 [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1).
 
+## Compose machines
+
+![The booking machine binds the same payment machine in DEPOSIT and in BALANCE. BOOK enters DEPOSIT and starts the
+deposit at AUTHORIZING; a captured deposit exits through DEPOSIT_PAID to BALANCE, which starts the balance; a captured
+balance exits through BALANCE_PAID to CONFIRMED; DECLINED and VOIDED exit to CANCELLED. CANCEL leaves either state from
+its border and runs no exit. The payment machine knows no parent, and the subscription machine binds it
+too.](images/submachine-binding.svg)
+
+A state can hold a whole machine of its own: its sub-machine, or child. The repository's billing example, in the
+package `io.github.graphmaquina.example.billing`, binds one payment machine three times. A booking pays a deposit in
+`DEPOSIT` and then a balance in `BALANCE`, and a subscription pays each renewal in `RENEWAL`. The payment machine knows
+no parent: every binding is declared on the parent's side, so one machine can be bound in several states of several
+machines. Three rules make the contract:
+
+- An edge that enters a bound state starts the child at the initial state of the child's graph, in the same unit of
+  work as that edge.
+- A parent holds its child while it is in the bound state, or leaving it, and its `childOf` answers that very child.
+  A call to a child is refused as `DETACHED` when a binding finds its parent but no parent holds it: the parent has
+  left the state, or holds another child or none there. A child for which no binding finds a parent is a free machine
+  and runs as usual.
+- When a step of a bound child ends in one of its terminal states, that state selects the parent's exit. The exit runs
+  in the same unit of work, one level deeper, and commits with the child. The binding is judged when the child's step
+  begins: when the step ends, the exit runs unless the parent is in flight, or the step itself, through its action,
+  moved the parent out of the bound state or entered it again. The parent's state and `childOf` are not read again,
+  so replacing the parent's child during the child's own action does not cancel the exit; to keep it from running,
+  move the parent out of the state, or restart it there, from that action.
+
+### Declare a sub-machine
+
+The child is an ordinary machine. `Payments` declares `AUTHORIZING` and three terminal states, `CAPTURED`, `DECLINED`
+and `VOIDED`, and nothing in it names a booking or a subscription. The parent declares the pair with `@GraphPeers`, as
+for a watch, and binds the child with the pair's generated `Submachine`. This is the whole `Bookings` interface, which
+imports the `BookingStatus` constants statically:
+
+```java
+/**
+ * The booking machine: {@code DEPOSIT} and {@code BALANCE} each hold a payment of {@link Payments}, the same machine
+ * bound twice. The terminal state each payment reaches selects the exit of its state, and {@code CANCEL} interrupts
+ * either one. The processor generates BookingsRuntime.
+ *
+ * <p>Exits are declared on the interface, not on operations: an exit runs only when its payment ends, so no
+ * operation may declare one.</p>
+ */
+@GenerateGraphApi
+@GraphPeers(Payments.class)
+@BookingsGraph.Definition(initial = REQUESTED, terminals = {CONFIRMED, CANCELLED},
+        state = BookingRefs.Status.class, id = BookingRefs.Id.class)
+@BookingsGraph.StatePolicy(state = REQUESTED, otherwise = "a booking is booked first")
+@BookingsGraph.StatePolicy(state = DEPOSIT,   otherwise = "the deposit payment decides")
+@BookingsGraph.StatePolicy(state = BALANCE,   otherwise = "the balance payment decides")
+@BookingsGraph.Transition(id = BookingTransition.DEPOSIT_PAID, from = DEPOSIT, to = BALANCE,
+        action = BookingActionsRefs.HoldRoom.class, onFailure = BookingTransition.NO_ROOM)
+@BookingsGraph.Transition(id = BookingTransition.NO_ROOM, from = DEPOSIT, to = CANCELLED)
+@BookingsGraph.Transition(id = BookingTransition.DEPOSIT_DECLINED, from = DEPOSIT, to = CANCELLED)
+@BookingsGraph.Transition(id = BookingTransition.BALANCE_PAID, from = BALANCE, to = CONFIRMED)
+@BookingsGraph.Transition(id = BookingTransition.BALANCE_DECLINED, from = BALANCE, to = CANCELLED)
+@BookingsGraph.Transition(id = BookingTransition.PAYMENT_VOIDED, from = {DEPOSIT, BALANCE}, to = CANCELLED)
+@BookingsPayments.Submachine(state = DEPOSIT, child = BookingRefs.Deposit.class,
+        parentLookup = BillingLookupsRefs.BookingOf.class,
+        exits = {@BookingsPayments.Exit(on = PaymentStatus.CAPTURED, transition = BookingTransition.DEPOSIT_PAID),
+                 @BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = BookingTransition.DEPOSIT_DECLINED),
+                 @BookingsPayments.Exit(on = PaymentStatus.VOIDED, transition = BookingTransition.PAYMENT_VOIDED)})
+@BookingsPayments.Submachine(state = BALANCE, child = BookingRefs.Balance.class,
+        parentLookup = BillingLookupsRefs.BookingOf.class,
+        exits = {@BookingsPayments.Exit(on = PaymentStatus.CAPTURED, transition = BookingTransition.BALANCE_PAID),
+                 @BookingsPayments.Exit(on = PaymentStatus.DECLINED, transition = BookingTransition.BALANCE_DECLINED),
+                 @BookingsPayments.Exit(on = PaymentStatus.VOIDED, transition = BookingTransition.PAYMENT_VOIDED)})
+public interface Bookings extends Machine<Booking, BookingStatus, BookingTransition> {
+
+    @BookingsGraph.Transition(id = BookingTransition.BOOK, from = REQUESTED, to = DEPOSIT)
+    Outcome<Booking, BookingStatus, BookingTransition> book(Booking booking);
+
+    @BookingsGraph.Transition(id = BookingTransition.CANCEL, from = {DEPOSIT, BALANCE}, to = CANCELLED,
+            action = BookingActionsRefs.Cancel.class)
+    Outcome<Booking, BookingStatus, BookingTransition> cancel(Booking booking);
+}
+```
+
+`Submachine` is repeatable, so one machine can bind the same child in several states, each binding with its own way to
+the child and its own exits. Its elements, and those of `Exit`, take the enums of their side of the pair, so a state or
+an identifier of the wrong machine is a javac error:
+
+| Element | Meaning |
+| --- | --- |
+| `state` | The bound state of the parent. A terminal state holds no sub-machine, and another state holds at most one (`SG803`). |
+| `child` | A property of the parent that returns `Optional` of the child's entity: `Booking.deposit()` and `Booking.balance()` return `Optional<Payment>`. |
+| `parentLookup` | A `@GraphLookup` method that finds the parent of a child entity, described below. |
+| `parent` | Instead of `parentLookup`, a property of the child that returns `Optional` of the parent's entity. A child over another entity than the parent's needs `child` and exactly one of `parent` or `parentLookup` (`SG806`). |
+| `exits` | One `Exit(on, transition)` per terminal state of the child: the identifier of the parent that the terminal state selects, which needs an edge from the bound state (`SG801`, `SG802`). Two terminal states may select the same identifier, as `DECLINED` and `VOIDED` do in `Subscriptions` below. |
+
+An identifier that an exit names runs from the bound state only when the child ends. No `onFailure`, recovery rule or
+rule of that state's watch may name it from there, and no operation of the facade may execute it at all, since an
+operation requests its identifier from whichever state the machine is in (`SG804`). The exits of `Bookings` are
+therefore declared on the interface, and `book` and `cancel` are its only operations. From any other state, the same
+identifier is an ordinary edge, unless a binding of that state maps it too. A machine's sub-machines never contain the
+machine again (`SG805`). [Structural rules](#structural-rules) and
+[graph and declaration diagnostics](#graph-and-declaration-diagnostics) list every check.
+
+### Find the parent with a lookup
+
+A call to a payment has to know whether a parent holds it, so each binding needs the way back from the child.
+`@GraphLookup` marks a method of signature `Optional<E> name(P child)`, static or instance, on any class. The
+generator exports it as a symbol of that class's `Refs`, such as `BillingLookupsRefs.BookingOf`, which `parentLookup`
+names. These are the two lookups of `BillingLookups`, which keeps the bookings and subscriptions it registered in two
+maps by payment id, where an application would ask its repository:
+
+```java
+@GraphLookup
+public Optional<Booking> bookingOf(Payment payment) {
+    return Optional.ofNullable(bookings.get(payment.id()));
+}
+
+@GraphLookup
+public Optional<Subscription> subscriptionOf(Payment payment) {
+    return Optional.ofNullable(subscriptions.get(payment.id()));
+}
+```
+
+An empty `Optional` means that this binding finds no parent. Lookups and the `child` and `parent` properties are
+synchronous and run inside the call. One that returns `null` instead of an `Optional` aborts the call, and `execute`
+or `reevaluate` called from one of them throws `ReentrantTransitionException`, which aborts the call too.
+
+### Build the set
+
+`BillingMachines` lists `Bookings`, `Subscriptions` and `Payments`, as `ShopMachines` lists the shop's machines. Its
+generated builder takes the instance hosts of every machine, here the booking actions and the lookups:
+
+```java
+BillingLookups lookups = new BillingLookups();
+BillingMachines billing = BillingMachinesRuntime.builder(Duration.ofSeconds(10), new BookingActions(desk), lookups)
+        .build();
+```
+
+`desk` is the application's `RoomDesk`, the port that `holdRoom`, the action of `DEPOSIT_PAID`, asks for a room. The
+first argument is the shared timeout of the set's asynchronous machines, which
+[asynchronous exits](#asynchronous-exits) explains. The set builds the payment definition once and passes that one
+instance to the payment machine and to the companions of both parents: `BookingsRuntime.graph(...)` and
+`SubscriptionsRuntime.graph(...)` take the definition of each machine they bind before their hosts. A registry refuses
+a parent whose child machine it does not hold, or holds built from another definition:
+`MachineRegistry.Builder.build()` throws `IllegalStateException`. A generated set always registers the child with the
+very definition its parents bind; the check matters when you assemble machines yourself, as with the
+[programmatic DSL](#programmatic-dsl).
+
+### Enter and exit
+
+A booking holds its two payments, and `lookups.register(booking)` lets `bookingOf` find it from either one:
+
+```java
+Booking booking = new Booking("b1", new Payment("b1-deposit"), new Payment("b1-balance"));
+lookups.register(booking);
+Payment deposit = booking.deposit().orElseThrow();
+
+Outcome<Booking, BookingStatus, BookingTransition> booked = billing.bookings().book(booking);
+Outcome<Payment, PaymentStatus, PaymentTransition> depositPaid = billing.payments().capture(deposit);
+```
+
+`book` enters `DEPOSIT`, so its call also starts the deposit at `AUTHORIZING`. `booked.starts()` holds one
+`SubmachineStart`: the payment machine and the deposit, the state the deposit had and the one it started in, and the
+booking with its bound state `DEPOSIT`. The start is logged right after the edge that enters, before that edge's action
+runs, so an action that cascades into the child finds it at its initial state. A start is no hop: it is not in
+`records()`, and it runs no hook. A child whose initial state is terminal enters and exits in that same call.
+
+`capture` is a call of the payment machine. Its step ends in `CAPTURED`, a terminal state, so the call runs the
+booking's exit `DEPOSIT_PAID` from `DEPOSIT`, one level deeper, with the exit's guards and action. `depositPaid` is the
+payment's own outcome, an `Applied` that moved the payment to `CAPTURED`. Its `records()` hold the capture at depth 0
+and `DEPOSIT_PAID` at depth 1, in log order, and its `starts()` hold the balance, because the exit entered `BALANCE`,
+which binds a payment too. Capturing the balance then exits through `BALANCE_PAID` to `CONFIRMED`. The exits belong to
+the calls that ran them: an observer sees three calls in all, the booking's `book` and the two captures. When an exit
+leaves a parent in a terminal state that a binding of its own parent maps, the next exit runs one more level up. Each
+level counts for `maxCascadeDepth`. A child that ends while its parent is still running the edge that entered the
+state, as when that edge's action captures the payment, exits once that edge's step is over.
+
+An exit is an ordinary edge of the parent, so its failure routes apply as on any edge. When the desk answers that no
+room is left, `holdRoom` fails: the booking takes the route `NO_ROOM` to `CANCELLED`, the whole call commits, and the
+capture's outcome is still `Applied`. The payment stays `CAPTURED`, since the route moves the booking and not the
+payment, and the balance is not started: the edge that would have entered `BALANCE` was rolled back with its start. An
+exit that a guard rejects aborts the call with a `TransitionAbortedException` whose message includes
+`rejected inside the exit of DEPOSIT by guard ...`, and one that fails with no route ends it in an
+`UnhandledFailureException`. Either way nothing is written, the capture included. As with a cascade, what an action did
+outside the machines, such as asking the desk for a room, is not undone.
+
+### Interrupt, detach and reserve
+
+A parent can leave a bound state by an edge of its own while the child is still running. `cancel` leaves `DEPOSIT` or
+`BALANCE` for `CANCELLED`, and its action voids the payment of the state the booking leaves:
+
+```java
+@GraphAction
+public ActionOutcome cancel(TransitionContext<Booking, BookingStatus, BookingTransition> ctx) {
+    Booking booking = ctx.entity();
+    Payment payment = ctx.from() == BookingStatus.DEPOSIT ? booking.deposit().orElseThrow()
+            : booking.balance().orElseThrow();
+    ctx.cascade(Payments.class, payment, PaymentTransition.VOID);
+    return ActionOutcome.ok();
+}
+```
+
+While the booking leaves the state, the binding still holds the payment, so the cascade runs. The booking is in flight,
+so the voided payment runs no exit: `PAYMENT_VOIDED` does not run, and the booking ends in `CANCELLED` by its own edge.
+An interruption whose action leaves the child alone leaves it in the state it had reached.
+
+Once the booking is cancelled, its payments are detached. `billing.payments().capture(deposit)` then returns a
+`Rejected` outcome with the code `DETACHED` and the reason `no parent holds it in DEPOSIT or BALANCE`, which names the
+bound state of every binding that found the booking. No guard and no action runs, and the check comes before the edge is
+looked up, so a detached child is refused as `DETACHED` even for an identifier it has no edge for. Inside a cascade the
+refusal aborts the call, like any nested rejection. Entering a bound state again restarts its child at the initial
+state, whatever state the child had reached: a subscription charges the same renewal payment in every period.
+
+The exits are reserved. In the bound state, only the end of the child runs an identifier that an exit names: a request
+for `DEPOSIT_PAID` from `DEPOSIT` by any other path, such as a cascade or `StateMachine.execute` on a registry you
+assembled, is refused as `RESERVED_EXIT`, with the reason `DEPOSIT_PAID leaves DEPOSIT only when its sub-machine ends`,
+and aborts the call inside a cascade. Inspection still lists the edge: `transitionsFrom(BookingStatus.DEPOSIT)` includes
+`DEPOSIT_PAID`.
+
+A child entity has one active parent at a time. When two bindings each find a parent that holds the child in its bound
+state, or while leaving it, a call to the child aborts with an `AmbiguousParentException` as its cause. A parent that
+leaves one bound state for another that binds the same child holds it only in the state it enters, whose entry has just
+restarted the child, so the action of that edge can cascade into the child.
+
+### Reuse a machine
+
+Each binding of `Bookings` reaches its own payment, so the booking holds its deposit only in `DEPOSIT` and its balance
+only in `BALANCE`. `Subscriptions` binds the same machine once more, with exits of its own:
+
+```java
+@GraphPeers(Payments.class)
+@SubscriptionsPayments.Submachine(state = RENEWAL, child = SubscriptionRefs.Renewal.class,
+        parentLookup = BillingLookupsRefs.SubscriptionOf.class,
+        exits = {@SubscriptionsPayments.Exit(on = PaymentStatus.CAPTURED, transition = SubscriptionTransition.RENEWED),
+                 @SubscriptionsPayments.Exit(on = PaymentStatus.DECLINED, transition = SubscriptionTransition.LAPSE),
+                 @SubscriptionsPayments.Exit(on = PaymentStatus.VOIDED, transition = SubscriptionTransition.LAPSE)})
+```
+
+`DECLINED` and `VOIDED` both select `LAPSE`. The payment machine keeps one definition for all three bindings, and its
+definition does not change by being bound.
+
+### Sub-machines over the same entity
+
+A child can also govern a second state of the parent's own entity. With annotations, such a `Submachine` names none of
+`child`, `parent` or `parentLookup`. In the DSL, `submachine(state, child)` takes no lookup, since the child entity is
+the parent itself. In `SameEntitySubmachineTest`, one of the billing tests, a stay keeps its own status and its payment
+status in two fields, and a payment graph over `Stay` governs the second one:
+
+```java
+/** Built once: the payment machine must be built from the very definition the stay binds. */
+static final GraphDefinition<Stay, PaymentStatus, PaymentTransition> PAYMENT_GRAPH = StateGraph.define(STAY_PAYMENTS)
+        .initial(PaymentStatus.AUTHORIZING)
+        .terminal(PaymentStatus.CAPTURED)
+        .terminal(PaymentStatus.DECLINED)
+        .terminal(PaymentStatus.VOIDED)
+        .statePolicy(PaymentStatus.AUTHORIZING, "an authorization is captured, declined or voided")
+        .transition(PaymentTransition.CAPTURE, PaymentStatus.AUTHORIZING, PaymentStatus.CAPTURED).endTransition()
+        .transition(PaymentTransition.DECLINE, PaymentStatus.AUTHORIZING, PaymentStatus.DECLINED).endTransition()
+        .transition(PaymentTransition.VOID, PaymentStatus.AUTHORIZING, PaymentStatus.VOIDED).endTransition()
+        .build();
+
+static final GraphDefinition<Stay, StayStatus, StayTransition> STAY_GRAPH = StateGraph.define(STAYS)
+        .initial(StayStatus.REQUESTED)
+        .terminal(StayStatus.CONFIRMED)
+        .terminal(StayStatus.CANCELLED)
+        .statePolicy(StayStatus.REQUESTED, "a stay is booked first")
+        .statePolicy(StayStatus.PAYING, "the payment decides")
+        .transition(StayTransition.BOOK, StayStatus.REQUESTED, StayStatus.PAYING).endTransition()
+        .transition(StayTransition.CONFIRM, StayStatus.PAYING, StayStatus.CONFIRMED).endTransition()
+        .transition(StayTransition.CANCEL, StayStatus.PAYING, StayStatus.CANCELLED).endTransition()
+        .submachine(StayStatus.PAYING, PAYMENT_GRAPH)
+        .exit(PaymentStatus.CAPTURED, StayTransition.CONFIRM)
+        .exit(PaymentStatus.DECLINED, StayTransition.CANCEL)
+        .exit(PaymentStatus.VOIDED, StayTransition.CANCEL)
+        .endSubmachine()
+        .build();
+```
+
+`STAYS` and `STAY_PAYMENTS` are two keys over `Stay`, with different state enums, so one registry holds both machines,
+each with the state accessors of its own field:
+
+```java
+private static MachineRegistry registry() {
+    return MachineRegistry.builder()
+            .add(StateMachines.from(STAY_GRAPH)
+                    .state((Stay stay) -> stay.status, (Stay stay, StayStatus status) -> stay.status = status)
+                    .identity((Stay stay) -> stay.id))
+            .add(StateMachines.from(PAYMENT_GRAPH)
+                    .state((Stay stay) -> stay.paymentStatus,
+                            (Stay stay, PaymentStatus status) -> stay.paymentStatus = status)
+                    .identity((Stay stay) -> stay.id))
+            .build();
+}
+```
+
+A capture through `registry.of(STAY_PAYMENTS)` moves the stay's payment status to `CAPTURED` and its own status to
+`CONFIRMED` in one commit.
+
+### Asynchronous exits
+
+An exit waits under the deadline of the call that runs it: the budget of the machine whose call started the root, which
+the exit edge's own timeout can only shorten. A machine whose calls can run an asynchronous edge implicitly, as an exit
+or as an edge an exit leads to, therefore needs an `asyncTimeout` even when its own graph is synchronous. `holdRoom` is
+asynchronous, so `Bookings` is an asynchronous machine, and so is `Payments`, since its `capture` runs `DEPOSIT_PAID`.
+`Subscriptions` runs no asynchronous edge, directly or implicitly. The generated builder therefore takes the shared
+timeout first and installs it on `Bookings` and `Payments` only. `asyncTimeout(Payments.class, Duration)` overrides the
+payment machine's budget, and `asyncTimeout(Subscriptions.class, Duration)` throws `IllegalArgumentException`. Through
+`billing.payments().async(...)`, the whole call runs on the payment machine's executor, the exit included, and the
+binding is checked when the call starts running. [Deadline rules](#deadline-rules) has the whole rule, and the billing
+test `AsyncExitTest` holds the exit open with a `ControlledAsyncAction`.
+
+### Diagrams, concurrency and tests
+
+`GraphvizExporter` draws each bound state as a cluster labelled with the state and the child machine, such as
+`DEPOSIT: Payment/PaymentStatus`, which holds the child's own diagram.
+[Inspect graphs and export diagrams](#inspect-graphs-and-export-diagrams) says how each edge is drawn, and the core
+tests pin a booking with one payment machine bound in two states in
+[submachine-shared-child.dot](../graphmaquina-core/src/test/resources/golden/submachine-shared-child.dot).
+
+A call that ends a child its parent held commits the parent's exit, or moved the parent itself, so the commit's check
+of the original states covers the parent. A call that moves a child to a state that is not terminal leaves the parent
+out of the commit, so serialize the calls of a parent and its sub-machines as those of one aggregate, as
+[initialize and protect state](#initialize-and-protect-state) explains.
+
+Assert bindings, starts and both refusals with the typed views of the testing guide's
+[sub-machines](testing.md#sub-machines) section. The
+[billing tests](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/billing) run the flows of this
+section: the starts and exits of a booking, the detached deposit of a cancelled booking, the `NO_ROOM` route, a renewal
+that restarts its payment, the stay and the asynchronous exit.
+
 ## Commit, hooks and observers
 
-![Root actions and cascades stage changes in a shared unit of work. Commit checks original states and writes
-final states; hooks and independent watch reactions follow, then the observers learn how the call
+![Root actions, cascades and sub-machines stage changes in a shared unit of work. Commit checks original states and
+writes final states; hooks and independent watch reactions follow, then the observers learn how the call
 ended.](images/commit-lifecycle.svg)
 
 Observers are told that the call starts before step 1. A call that completes tells them in step 8; one that throws tells
@@ -2440,7 +2803,8 @@ them before the exception leaves the call.
 The runtime's normal root execution follows this sequence:
 
 1. Read the effective entity state and resolve the single edge keyed by `(state, requested identifier)`.
-2. Evaluate guards and run actions, including any nested cascades, against a shared unit of work.
+2. Evaluate guards and run actions, including any nested cascades, the starts of the sub-machines whose state an
+   edge enters and the exits of those that end, against a shared unit of work.
 3. Before commit, verify that participating entities still have their expected original states.
 4. Write each participating entity's final state through its setter.
 5. Invalidate transition contexts and release the root reentrancy marker.
@@ -2459,7 +2823,8 @@ committed hop from such a hook. The shop notifies its carrier after the shipping
 
 Hooks run synchronously on the operation's thread. Any throwable a hook throws that is not an `Error`, checked ones
 included, becomes `AfterCommitException`: the state is already committed. Its `hook()` names the hook, `hop()` the
-committed hop it ran for, and `records()` every hop the call committed. An `Error` propagates unchanged instead. Either
+committed hop it ran for, `records()` every hop the call committed, and `starts()` every sub-machine the call started;
+a start runs no hook. An `Error` propagates unchanged instead. Either
 stops the remaining normal post-commit sequence, so do not assume later hooks or watch dispatch ran; the observers are
 told the call failed. Make externally visible notifications idempotent and choose durable delivery separately if your
 application needs it.
@@ -2500,11 +2865,11 @@ not composed, and there is no sentinel that switches the default off for one edg
 or setting it to `{}`, inherits the default. `Definition.afterCommit` also accepts zero or one value;
 multiple values are `SG607`.
 
-The default applies to every committed hop, including explicit self-loops, failure routes and transitions
-triggered by watches — they are all real edges. It never runs for a request with no edge, a guard rejection,
-an `Ignored`, an abort or a rollback. A failure route uses its own effective hook, not the hook of the edge
-that failed. Hooks still run per committed hop, so one entity can reach the default more than once in a
-cascade.
+The default applies to every committed hop, including explicit self-loops, failure routes, transitions
+triggered by watches and the exits of sub-machines — they are all real edges. It never runs for a rejected
+request, whatever its kind, an `Ignored`, an abort or a rollback. A failure route uses its own effective hook,
+not the hook of the edge that failed. Hooks still run per committed hop, so one entity can reach the default
+more than once in a cascade.
 
 ### Observers
 
@@ -2551,12 +2916,19 @@ are notified in the order they were added.
 
 The entity owns its state. Initialize it in the constructor or field declaration, and persist it with your normal entity
 mapping. A null root state ends the call in a `TransitionAbortedException` of phase `RESOLVE` whose cause is an
-`UninitializedStateException`, and a cascaded peer's in one of phase `ACTION`; the runtime does not silently replace it
-with the graph's initial state.
+`UninitializedStateException`, and a cascaded peer's in one of phase `ACTION`, as does a sub-machine's, read when its
+parent enters the bound state. A parent's, read to check the binding of a sub-machine, ends the call in one of phase
+`RESOLVE` when the sub-machine is the root, and in one of phase `ACTION` inside a cascade or an exit. The runtime does not
+silently replace a null state with the graph's initial state.
 
 During a transition, only the runtime should call the state setter. It checks state again before commit to
 catch action code or outside code that changed it unexpectedly. This check is not a lock: your application
 must serialize conflicting operations, or provide an appropriate database locking/versioning strategy.
+A sub-machine shows where the check stops. A call that ends a child its parent held commits the parent's exit, or
+moved the parent itself, so the parent is in the commit, and the check catches a parent that another call moved
+meanwhile. A call that moves the child to a
+state that is not terminal leaves the parent out of the commit, and nothing notices that the parent moved.
+Serialize the calls of a parent and its sub-machines as those of one aggregate.
 
 The runtime does not roll back a setter that already ran if a subsequent setter throws.
 `CommitFailedException` reports the entities whose setter returned (`applied()`), the one whose setter threw
@@ -2650,8 +3022,8 @@ System.out.println(graph.policy(TicketState.OPEN).reasonFor(TicketTransition.APP
 themselves, and `findTransition` the single spec keyed by `(from, id)`, as an `Optional` that is empty when
 no edge is declared. `graph()` returns the `DirectedGraph<S, T>`, which keeps parallel edges and offers
 `nodes()`, `edges()`, `outgoing`, `incoming` and a `topology()` projection. `initial()`, `terminals()`,
-`policy(state)`, `watch(state)` and `hasAsync()` are also available. None of these runs a guard, an action or
-a hook.
+`policy(state)`, `watch(state)`, `submachine(state)` and `hasAsync()` are also available. None of these runs a
+guard, an action, a hook or a sub-machine's lookup.
 
 To export [Graphviz DOT](https://graphviz.org/doc/info/lang.html) from an existing ticket facade:
 
@@ -2664,8 +3036,8 @@ System.out.println(diagram);
 ```
 
 This is a fragment: put the imports at file scope and the statements inside a method. Export does not run
-transitions or evaluate guards, and there is no detail mode: the exporter draws the declared edges and
-nothing else, because an edge nobody declared does not exist.
+transitions or evaluate guards, and there is no detail mode: the exporter draws the declared edges and no
+other, because an edge nobody declared does not exist.
 
 The export is deterministic DOT text with LF line endings. Each edge label begins with its identifier,
 followed by the action name, `[async]`, `[if guard, …]`, one `[recover Kind -> ID]` per recovery rule in
@@ -2677,6 +3049,13 @@ states have double outlines, and watches appear as notes connected by dashed lin
 is rendered as that node's `tooltip` — never as an arrow, because a refusal is an answer the node gives and
 not a transition. State names and labels are escaped, and every declared state remains visible even when no
 edge touches it.
+
+A state that holds a sub-machine is drawn as a cluster labelled with the state and the child machine, such as
+`DEPOSIT: Payment/PaymentStatus`, which holds the child's own diagram and has the state's policy as its tooltip.
+An edge into the state points at the child's initial state, or, when that state holds a sub-machine too, at that
+one's initial state, and so on down. An exit is drawn once from each terminal state of the child that selects it, and
+any other edge leaving the state, like the state's watch note, starts at the cluster's border. The DOT then sets `compound=true` and clips those arrows with `lhead` and `ltail`. A graph that binds no
+sub-machine has no cluster.
 
 The shop's order machine exports as:
 
@@ -2795,9 +3174,9 @@ entry. Preserve the graph generation lifecycle for any test graphs.
 ### Typed assertions, probes and graph snapshots
 
 `graphmaquina-test` is a test-scoped module that asserts over the runtime's own values — definitions, edges,
-policies, outcomes, transition records, reactions and engine exceptions — and reports every unmet expectation as a
-`GraphAssertionError` carrying the context, the property, the expected value and the actual one. It imposes
-no test framework: nothing in its API mentions JUnit or AssertJ, so it works under the runner your project
+policies, outcomes, transition records, reactions, sub-machine starts and engine exceptions — and reports every unmet
+expectation as a `GraphAssertionError` carrying the context, the property, the expected value and the actual one. It
+imposes no test framework: nothing in its API mentions JUnit or AssertJ, so it works under the runner your project
 already uses.
 
 The [install command](#configure-gradle) writes it with the other modules, and its POM pins
@@ -2839,7 +3218,7 @@ let a test decide when an asynchronous callback answers, a recorder of completed
 golden comparison for both the rendered diagram and the complete structure of a graph. The
 [testing guide](testing.md) covers installation, what each entry point checks, what each check does not
 prove, and the golden update procedure for Gradle and Maven. Every sample in it runs in this repository: most
-are copied from a test, and the recovery samples are cut out of the page and run by one.
+are copied from a test, and the samples of recovery rules and of sub-machines are cut out of the page and run by one.
 
 Useful behavior to cover in your own domain:
 
@@ -3016,8 +3395,21 @@ The DSL exposes runtime functions directly, so this alternative does not need ge
 deliberately omits the quickstart's self-loop, auto-approval and commit hook; add them through the DSL when
 that behavior is required.
 
+`submachine(state, child, childOf, parentOf)` binds another machine to a state: `child` is that machine's own
+`GraphDefinition`, `childOf` returns the child entity of a parent and `parentOf` the parent of a child, both as an
+`Optional`. `submachine(state, child)` binds a machine over the same entity, whose lookups return the entity itself.
+`exit(terminal, id)` maps a terminal state of the child to an identifier of the parent, its exit, and
+`endSubmachine()` returns to the graph. `build()` checks the bindings (`SG801` to `SG805`), and the definition's
+`submachine(state)` returns the binding of a state. A registry that holds the parent must hold the child's machine
+too, built from that very definition: otherwise `MachineRegistry.Builder.build()` throws `IllegalStateException`, and
+so does a standalone `build()`, whose registry holds no other machine. Every machine whose calls can run an edge
+implicitly must also declare `asyncTimeout(...)` when that edge is asynchronous, including a child's binding exit
+and a terminal initial descendant's exit started by the caller's own entry, as
+[Deadline rules](#deadline-rules) explains. [Compose machines](#compose-machines) describes the whole contract with an
+annotated example.
+
 Other stages support named guards, async guards, async actions, `failsOn`, `recover`, `timeout`, `afterCommit`,
-`afterCommitWith`, watches and cycle allowances. A low-level `StateMachine` exposes
+`afterCommitWith`, watches, sub-machines and cycle allowances. A low-level `StateMachine` exposes
 `execute(entity, id)`, `execute(entity, id, input)` and `async().execute(...)`; a generated application
 facade intentionally presents the domain operations instead. Keep registry lifetime explicit to close owned
 executors.
@@ -3053,16 +3445,22 @@ code runs.
 | `SG404` | A watch has no rules. In the DSL, also a `when(...)` that no `execute(...)` follows, and an `execute(...)` with no pending `when(...)`. |
 | `SG502` | Invalid machine or set declaration, such as an unsupported nested interface or incorrect base type. |
 | `SG503` | Missing or incompatible public property accessor. |
-| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes one parameter per class with instance members the machine binds, or none. That last refusal is reported once the machine's declarations have no other error and none of its vocabulary is misplaced, since fixing one can change what `graph(...)` takes; an error of its graph as a whole, such as `SG202`, `SG203` or `SG701`, and a refused companion name (`SG603`, or `SG602` when a previous compilation left its companion) are reported beside it. |
-| `SG505` | Exported method does not uniquely fit the action, guard, hook or condition role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
+| `SG504` | Invalid operation annotation or signature. An operation is `Outcome<E, S, T> operation(E)` or `operation(E, I)` and carries at least one `Transition` of its own vocabulary. Zero, three or more parameters and a wrong entity or return type are rejected; operations with input also reject varargs and method type parameters. Also refused: a `Transition` on a default, static or private method of the facade; an abstract method the facade inherits from another interface, which its companion would not implement; a method that redeclares a `Machine` method with vocabulary of its own, or with a result the companion cannot return; and an instance method of the facade, declared or inherited, abstract or default, with the signature of the companion's static `graph(...)`, which takes the definition of each machine it binds as a sub-machine, then one parameter per class with instance members the machine binds, or none. That last refusal is reported once the machine's declarations have no other error and none of its vocabulary is misplaced, since fixing one can change what `graph(...)` takes; an error of its graph as a whole, such as `SG202`, `SG203` or `SG701`, and a refused companion name (`SG603`, or `SG602` when a previous compilation left its companion) are reported beside it. |
+| `SG505` | Exported method does not uniquely fit the action, guard, hook, condition or lookup role, including the default `afterCommit` binding on `Definition`. Also an instance member of a generic host, which generated code could only call raw (export it from a non-generic subclass marked `@GraphBindings`, or make it static), and a binding whose host or parameter types the companion's package cannot access. |
 | `SG507` | Invalid transition elements: empty `from`, `onFailure`, `failsOn` or recovery rules without an action, or a timeout without an asynchronous action. In the DSL, also an edge never closed with `endTransition()`, and an edge that declares more than one action, `onFailure` or `timeout`. |
 | `SG508` | Watch rule must choose exactly one supported predicate alternative. |
-| `SG509` | Invalid peer-machine type, a peer whose entity is a parameterized type, or a watched peer whose types the watcher's package cannot access. |
+| `SG509` | Invalid peer-machine type, a peer whose entity is a parameterized type, a watched peer whose types the watcher's package cannot access, or a sub-machine whose entity, states or transitions its parent's package cannot access. |
 | `SG510` | Invalid set accessor, duplicate/missing machine or missing watched peer in the set. Also an accessor the set inherits from another interface, two machines that write the same entity and state enum, a machine whose types the set's package cannot access, and an instance method of the set, declared or inherited, abstract or default, with the signature of the companion's static `builder(...)`, which takes the timeout shared by the set's asynchronous machines, when it has any, then every class with instance members its machines use. That last refusal is reported only once the set's accessors and machines have no other error, since fixing one can change what `builder(...)` takes. |
 | `SG511` | Invalid timeout duration: it must be positive. |
 | `SG701` | A state declares no rejection policy. |
 | `SG702` | One `(from, transition)` key both declares an edge and rejects the identifier. |
 | `SG703` | Two annotations of one method name different identifiers, or two methods claim the same identifier. A type-level `Transition` may add branches of an identifier a method owns while their keys stay disjoint. |
+| `SG801` | A sub-machine's exits do not match the terminal states of its child: a terminal state of the child has no exit or more than one, or an exit is declared on a state that is not terminal in the child. Two terminal states may map to the same identifier. |
+| `SG802` | A sub-machine's exit names an identifier with no edge from the state the sub-machine is bound to. |
+| `SG803` | A terminal state holds a sub-machine, or one state holds more than one. |
+| `SG804` | An identifier that a sub-machine's exit names is also named, from the state the sub-machine is bound to, by an edge's `onFailure` or recovery rule, or by a rule of that state's watch. The same identifier from another state is not an exit. With annotations, an operation of the facade may not execute an exit either: it requests its identifier from whichever state the machine is in, the bound state included. |
+| `SG805` | A machine's sub-machines contain the machine again, directly or through their own sub-machines. The DSL compares machine keys along the chain of child definitions, so it takes a second definition of the machine's own key, and prints one shortest path. The processor follows the sub-machines each child declares in turn, and reports one shortest path at the binding it starts with, on every machine of the cycle. |
+| `SG806` | A sub-machine declared with annotations does not declare the ways between its entities that it needs: a child over another entity than the parent's needs `child` and exactly one of `parent` or `parentLookup`, and a child over the parent's own entity takes none of the three. Also a set that holds a machine but not the machine bound to one of its states, which the set could not build, whether the parent was generated by this compilation or comes from a dependency jar. |
 
 ### Generation and typed binding diagnostics
 
@@ -3074,30 +3472,31 @@ code runs.
 | `SG603` | Generated output or export collision, a name generated code cannot write, or an output path the generator may not use. Two names normalize to the same PascalCase spelling; a generated type already exists as an original source, in the file it would overwrite or in another one, as a class of the classpath, or as a file of the generated directory the previous generation did not own; an original file or type differs from a generated one only in case where the volume does not tell names apart; an existing type takes a companion's name; a type, member type or constant in the scope of a generated file takes over a name that file writes, such as a type of its package named `io`, `java` or like a `java.lang` type; or one canonical name names two types, because a class of the unnamed package is named like a package: two machines, one of the package and one nested in the class, which a manifest names by that name alone, or two types in a class file of the unnamed package that the generator has to tell apart, such as two of its supertypes, which it cannot do by their canonical name. The diagnostic names both sides; rename one of them and its references. The generator's steps also refuse an inventory entry that is not a file under its output root, such as a blank one, one that no path can spell, as with a NUL character, or one that is absolute, has a root, names the root itself or leads out of it; an inventory entry whose file they would remove through a symbolic link inside its output root that leads out of it; and a generated source that would be written through such a link. Remove the link; clean a build whose inventory holds such an entry. |
 | `SG604` | Invalid or contradictory export/role, or a host its generated references container cannot access, such as a private nested class. Check markers and exported signatures. |
 | `SG605` | Symbol has no valid original member, or belongs to the wrong host/role. Use the correct generated reference. |
-| `SG606` | Graph or watch vocabulary belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract operations. On a default, static or private method of its own facade it is `SG504`. |
-| `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit` or `When.condition`. `recoveries` is no such element: it holds any number of rules, and several rules are never several fallbacks. |
-| `SG608` | Invalid, duplicated or unused peer, a watched peer outside this compilation, or a peer whose types the owner's package cannot name. |
+| `SG606` | Graph vocabulary or the vocabulary of a pair belongs to another machine or pair, or sits where no machine reads it: on anything but a `@GenerateGraphApi` interface and its abstract operations. On a default, static or private method of its own facade it is `SG504`. |
+| `SG607` | Too many values in an optional singleton element such as `action`, `onFailure`, `timeout`, `afterCommit`, `When.condition`, or the `child`, `parent` or `parentLookup` of a `Submachine`. `recoveries` is no such element: it holds any number of rules, and several rules are never several fallbacks. |
+| `SG608` | Invalid or duplicated peer, a peer that no watch or sub-machine of the machine uses, a watch or a sub-machine of a peer the machine does not declare, a peer outside this compilation, or a peer whose types the owner's package cannot name. |
 | `SG609` | A retired 1.x graph annotation is still on the class path and still used. Replace it as [migrating to 2.0](migration-2.0.md) describes. |
 
 ### Runtime exceptions
 
 | Exception | What to investigate |
 | --- | --- |
-| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`. |
+| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`, and so does a sub-machine's, read when its parent enters the bound state. A parent's, read to check the binding of a sub-machine, arrives as the cause of an abort in `RESOLVE` when the sub-machine is the root and in `ACTION` inside a cascade or an exit. |
 | `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `from()`, `transition()` and `to()` are `Optional`. An abort raised before the entity's state was read, because its identity or its state could not be read, reports no state and no destination. One raised before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither identifier nor destination. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
 | `UnhandledFailureException` | An action failed, no recovery rule took the failure, and its edge has no `onFailure` route. |
 | `CascadeException` | Collected nested transition errors; inspect `errors()` and the journal. |
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
-| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, it arrives as the cause of that call's abort. |
-| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
+| `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, or by the start of a sub-machine whose `childOf` answers an instance with the identity of another one already in the call, it arrives as the cause of that call's abort. A sub-machine whose `childOf` answers another instance with the identity of the child being called raises it too, and so does one whose `parentOf` answers another instance with the identity of a parent already in the call. |
+| `AmbiguousParentException` | A sub-machine's entity was held by two bindings at once: two parents, each in its bound node or leaving it. A parent that leaves one bound node for another that binds the same child is not two: it holds the child only in the node it enters. It names the child machine and both parent machines and nodes. It arrives as the cause of the call's abort, of phase `RESOLVE` for the root's own step and `ACTION` inside a cascade or an exit. |
+| `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, a sub-machine's `childOf` or `parentOf`, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, a sub-machine's `childOf` or `parentOf`, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
 | `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. When the action lets this exception through, or the engine has the action's outcome, while the transaction is poisoned, the engine throws the failure that poisoned the transaction; the `PoisonedUnitOfWorkException` Javadoc says what else can end the call. |
 | `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
 | `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
 | `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Thrown by a guard or an action, it arrives as the cause of that call's abort. |
 | `CommitFailedException` | Phase `COMMIT`: the commit stopped before its first setter, because the pre-commit check failed or reading the states or grouping the log by entity threw (`NONE` written), or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
-| `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()` and `records()` say what. |
+| `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()`, `records()` and `starts()` say what. |
 | `InvalidGraphException` | Programmatic DSL definition failed validation; inspect its problem list. |
 
 A refused request is not an exception. `Rejected` with `RejectionKind.NO_TRANSITION` is the ordinary answer
@@ -3132,9 +3531,9 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 | Area | Current status |
 | --- | --- |
 | Upgrade from 1.x | Deliberately incompatible. There is no alias of the retired API, no compatibility mode and no conversion of stored snapshots; [migrating to 2.0](migration-2.0.md) maps every contract. |
-| Watches between JARs/modules | Unsupported: both machines must be generated in one compilation. External peers fail with `SG608`; [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1). |
-| State hierarchy and parallel regions | Not modelled. A machine is one flat graph of states with identified edges; there are no nested or orthogonal regions. |
-| Event scheduling and automatic path execution | Absent. Each operation resolves and executes one edge; nothing walks a path or fires on a timer. |
+| Watches and sub-machines between JARs/modules | Unsupported with annotations: both machines must be generated in one compilation. External peers fail with `SG608`; [issue #1](https://github.com/graphmaquina/graphmaquina/issues/1). |
+| State hierarchy and parallel regions | A state can hold a [sub-machine](#compose-machines): another machine bound to it, which entering the state starts and whose terminal state selects the parent's exit. Parallel or orthogonal regions, a state that holds two machines at once, are not modelled. |
+| Event scheduling and automatic path execution | Absent. Each operation resolves and executes one edge, plus the cascades its actions request and the exits of the sub-machines it ends; nothing walks a path or fires on a timer. |
 | Unauthorised-cycle reporting | One witness per cyclic strongly connected component, not one message per elementary cycle. `Graph.cycles()` itself is unchanged. |
 | IDE acceptance | Generated-root build integration is automated; manual IntelliJ navigation, editor completion and rename/regeneration checks remain pending. |
 | External payments demo | Its strict-lint acceptance is still partial; it is outside this repository's library test totals. |
@@ -3233,6 +3632,8 @@ Do not publish a bundle signed with a temporary test key. See the
 | [Build integration guide](typed-annotations-build.md) | Adapter lifecycle, toolchain checks, paths and repository configuration |
 | [Shop source](../graphmaquina-example/src/main/java/io/github/graphmaquina/example) | Complete two-machine domain with async payment, guards, cascades and watches |
 | [Shop tests](../graphmaquina-example/src/test/java/io/github/graphmaquina/example) | Executable behavior and expected diagrams |
+| [Billing source](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/billing) | One payment machine reused as a sub-machine, in two states of a booking and in one of a subscription |
+| [Billing tests](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/billing) | Starts and exits, a detached payment, an exit's failure route, an asynchronous exit and a sub-machine over its parent's own entity |
 | [Public API source](../graphmaquina-core/src/main/java/io/github/graphmaquina/api) | Exact signatures and outcome types |
 | [Programmatic DSL source](../graphmaquina-core/src/main/java/io/github/graphmaquina/dsl) | Lower-level builder stages |
 

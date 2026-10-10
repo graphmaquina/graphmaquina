@@ -14,6 +14,7 @@ import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchRule;
@@ -24,6 +25,7 @@ import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.WatchChainExceededException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
@@ -58,11 +60,22 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final boolean ownsExecutor;
     private final MachineRegistry registry;
     private final DefaultAsyncStateMachine<E, S, T> async;
+    /**
+     * {@code Optional.of(id)} for each identifier of the catalogue, by ordinal: execute hands its root the identifier
+     * it was asked for without allocating an Optional.
+     */
+    private final List<Optional<Enum<?>>> presentTransitions;
+    /** See {@link #bindingsAsChild()}. */
+    private final List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild;
+    /** See {@link #bindsSubmachines()}. */
+    private final boolean bindsSubmachines;
+    /** See {@link #hasBindings()}. */
+    private final boolean hasBindings;
 
     DefaultStateMachine(GraphDefinition<E, S, T> definition, Function<? super E, ? extends S> getter,
                         BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
                         Optional<Duration> asyncTimeout, Executor executor, boolean ownsExecutor,
-                        MachineRegistry registry) {
+                        MachineRegistry registry, List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild) {
         this.definition = definition;
         this.getter = getter;
         this.setter = setter;
@@ -72,6 +85,45 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.ownsExecutor = ownsExecutor;
         this.registry = registry;
         this.async = new DefaultAsyncStateMachine<>(this);
+        this.presentTransitions = present(definition.key().transitions());
+        this.bindingsAsChild = bindingsAsChild;
+        this.bindsSubmachines = bindsSubmachines(definition);
+        this.hasBindings = bindsSubmachines || !bindingsAsChild.isEmpty();
+    }
+
+    /** Whether some state of {@code definition} holds a sub-machine. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> boolean bindsSubmachines(
+            GraphDefinition<E, S, T> definition) {
+        for (S state : definition.key().states().getEnumConstants()) {
+            if (definition.submachine(state).isPresent()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The bindings in which this machine is the child, in the order the registry indexed them: the order of its
+     * builders, then of each parent's states. Immutable, and empty for a machine that no definition binds.
+     */
+    List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild() { return bindingsAsChild; }
+
+    /** Whether some state of this machine's own definition holds a sub-machine; computed once, at construction. */
+    boolean bindsSubmachines() { return bindsSubmachines; }
+
+    /**
+     * Whether this machine takes part in a binding: its own definition binds a sub-machine, or some definition binds
+     * it as one. Computed once, at construction.
+     */
+    boolean hasBindings() { return hasBindings; }
+
+    /** {@code Optional.of(constant)} for each constant of {@code type}, in ordinal order. */
+    private static List<Optional<Enum<?>>> present(Class<? extends Enum<?>> type) {
+        List<Optional<Enum<?>>> present = new ArrayList<>();
+        for (Enum<?> constant : type.getEnumConstants()) {
+            present.add(Optional.of(constant));
+        }
+        return List.copyOf(present);
     }
 
     @Override
@@ -98,9 +150,11 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         Objects.requireNonNull(transition, "transition");
         requireTransition(transition);
         Reentrancy.check(key(), entity);
-        Optional<Observed> observed = observe(entity, transition, false);
-        return runRoot(entity, transition, false, observed,
-                (Transaction tx) -> tx.transition(this, entity, transition, 0, input), 0);
+        Optional<Enum<?>> requested = presentTransitions.get(transition.ordinal());
+        Optional<Object> operationInput = Optional.ofNullable(input);
+        Optional<Observed> observed = observe(entity, requested, false);
+        return runRoot(entity, requested, false, observed,
+                (Transaction tx) -> tx.transition(this, entity, transition, 0, operationInput), 0);
     }
 
     void requireTransition(T transition) {
@@ -127,7 +181,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     Outcome<E, S, T> reevaluate(E entity, int chain) {
         Reentrancy.check(key(), entity);
         boolean reaction = chain > 0;
-        Optional<Observed> observed = observe(entity, null, reaction);
+        Optional<Observed> observed = observe(entity, Optional.empty(), reaction);
         S state;
         Optional<WatchSpec<E, S, T, ?, ?, ?>> watch;
         Optional<T> selected = Optional.empty();
@@ -171,8 +225,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             return completed(observed, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
         T resolved = selected.orElseThrow();
-        return runRoot(entity, null, reaction, observed, (Transaction tx) -> tx.transition(this, entity, resolved, 0),
-                chain);
+        return runRoot(entity, Optional.empty(), reaction, observed,
+                (Transaction tx) -> tx.transition(this, entity, resolved, 0), chain);
     }
 
     /**
@@ -223,8 +277,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * the step throws. The transaction keeps the phase of the call, which the observers are told when it throws.
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
+     * {@code requested} is the identifier execute was asked for, and empty for a reevaluation.
      */
-    Outcome<E, S, T> runRoot(E entity, T requested, boolean reaction, Optional<Observed> observed,
+    Outcome<E, S, T> runRoot(E entity, Optional<Enum<?>> requested, boolean reaction, Optional<Observed> observed,
                              Function<Transaction, StepResult<S, T>> body, int chain) {
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), deadlineNanos());
         Transaction tx = new Transaction(registry, uow, key(), entity, requested, reaction,
@@ -233,6 +288,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         try {
             StepResult<S, T> step;
             List<TransitionRecord<?, ?, ?>> records;
+            List<SubmachineStart<?, ?, ?>> starts;
             List<LogEntry> committed;
             CommitSummary summary;
             Reentrancy.enter(key(), entity);
@@ -243,10 +299,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                     tx.enter(CallPhase.COMMIT);
                     summary = Commit.apply(registry, tx);
                     records = uow.records();
+                    starts = uow.starts();
                     committed = uow.entries();
                 } else {
                     summary = CommitSummary.EMPTY;
                     records = List.of();
+                    starts = List.of();
                     committed = List.of();
                 }
             } finally {
@@ -263,7 +321,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             outcome = switch (step) {
                 case StepResult.Applied<S, T> applied ->
                         new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(),
-                                records, reactions);
+                                records, reactions, starts);
                 case StepResult.Ignored<S, T> ignored ->
                         new Outcome.Ignored<>(entity, ignored.from(), ignored.reason());
                 case StepResult.Rejected<S, T> rejected ->
@@ -272,7 +330,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 case StepResult.Failed<S, T> failed ->
                         new Outcome.Failed<>(entity, failed.from(), failed.transition(), failed.to(),
                                 failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
-                                records, reactions, failed.failureKind());
+                                records, reactions, failed.failureKind(), starts);
             };
         } catch (Throwable thrown) {
             if (thrown instanceof Error fatal) {
@@ -284,12 +342,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     /** Tells the registry's observers that a call starts; reads no clock and allocates nothing when it has none. */
-    private Optional<Observed> observe(E entity, T requested, boolean reaction) {
+    private Optional<Observed> observe(E entity, Optional<Enum<?>> requested, boolean reaction) {
         Observers observers = registry.observers();
         if (observers.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(observers.started(new MachineCall(key(), entity, Optional.ofNullable(requested), reaction)));
+        return Optional.of(observers.started(new MachineCall(key(), entity, requested, reaction)));
     }
 
     /** The call a reevaluation's own failure carries: the observed one, or a new one when nobody observes it. */
@@ -321,19 +379,23 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     }
 
     /**
-     * Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected. Any
-     * throwable a hook throws that is not an Error, checked ones included, becomes an AfterCommitException of the call,
-     * naming the hop and carrying every hop the call committed; an Error propagates unchanged.
+     * Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected; a
+     * sub-machine's start runs no hook. Any throwable a hook throws that is not an Error, checked ones included,
+     * becomes an AfterCommitException of the call, naming the hop and carrying every hop and every start the call
+     * committed; an Error propagates unchanged.
      */
     private void runHooks(Transaction tx, List<TransitionRecord<?, ?, ?>> records, List<LogEntry> committed) {
-        for (LogEntry entry : committed) {
-            runHook(tx, records, registry.anyMachineFor(entry.ref().key()), entry);
+        for (int index = 0; index < committed.size(); index++) {
+            LogEntry entry = committed.get(index);
+            if (entry instanceof LogEntry.Hop hop) {
+                runHook(tx, records, registry.anyMachineFor(hop.ref().key()), hop);
+            }
         }
     }
 
     private <P, Q extends Enum<Q>, U extends Enum<U>> void runHook(
             Transaction tx, List<TransitionRecord<?, ?, ?>> records, DefaultStateMachine<P, Q, U> owner,
-            LogEntry entry) {
+            LogEntry.Hop entry) {
         TransitionSpec<P, Q, U> spec = Typed.spec(owner.key(), entry);
         if (spec.afterCommit().isEmpty()) {
             return;
@@ -347,8 +409,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw new AfterCommitException(tx.call(), tx.uow().journal(), records, Typed.record(owner.key(), entry),
-                    hook.name(), e);
+            throw new AfterCommitException(tx.call(), tx.uow().journal(), records, tx.uow().starts(),
+                    Typed.record(owner.key(), entry), hook.name(), e);
         }
     }
 

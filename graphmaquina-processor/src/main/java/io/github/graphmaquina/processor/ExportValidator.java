@@ -50,6 +50,7 @@ final class ExportValidator {
     private static final String PEER_VIEW = "io.github.graphmaquina.api.PeerView";
     private static final String COLLECTION = "java.util.Collection";
     private static final String COMPLETION_STAGE = "java.util.concurrent.CompletionStage";
+    private static final String OPTIONAL = "java.util.Optional";
 
     private final Signatures signatures;
     private final EffectiveMethods effective;
@@ -219,6 +220,7 @@ final class ExportValidator {
                     && signatures.erasureAssignable(signatures.declared(COLLECTION), parameters.get(1).asType())
                     && signatures.erasureIs(parameters.get(2).asType(), PEER_VIEW);
             case PROPERTY -> false;
+            case LOOKUP -> parameters.size() == 1 && signatures.erasureIs(returned, OPTIONAL);
         };
     }
 
@@ -260,6 +262,7 @@ final class ExportValidator {
             case HOOK -> "void from the entity alone or the entity and a CommitContext";
             case CONDITION -> "boolean from the entity, a supertype of Collection and a PeerView";
             case PROPERTY -> "a field or a getter";
+            case LOOKUP -> "Optional of the parent entity from the child entity alone";
         };
     }
 
