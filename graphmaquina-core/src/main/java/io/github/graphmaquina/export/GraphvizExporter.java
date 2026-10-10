@@ -24,12 +24,13 @@ import lombok.NonNull;
  * the child's view name, with the state's policy as its tooltip. The cluster holds an invisible anchor and the child's
  * own graph, its initial arrow, edges, watches and sub-machines included, whose IDs carry the prefix {@code s<j>_},
  * where {@code j} counts the bound states of the view in node order, and one more such prefix per level of nesting.
- * An edge into the state points at the child's initial state; an exit, an edge whose identifier the binding maps a
- * terminal state of the child to, is drawn once from each such terminal state; any other edge leaving the state, and
- * the state's watch note, start at the anchor. Arrows entering a cluster use {@code lhead}; edges leaving an anchor
- * and its watch connections use {@code ltail}. An exit starts at the selected terminal without clipping at its source
- * cluster. Arrows whose ends lie in the same cluster omit clipping. The {@code compound=true} attribute enables
- * cluster clipping; a view without sub-machines has no cluster and no {@code compound} attribute.
+ * An edge into the state points at the child's initial state, or, when that state holds a sub-machine too, at that
+ * one's initial state, and so on down; an exit, an edge whose identifier the binding maps a terminal state of the
+ * child to, is drawn once from each such terminal state; any other edge leaving the state, and the state's watch
+ * note, start at the anchor. Arrows entering a cluster use {@code lhead}; edges leaving an anchor and its watch
+ * connections use {@code ltail}. An exit starts at the selected terminal without clipping at its source cluster.
+ * Arrows whose ends lie in the same cluster omit clipping. The {@code compound=true} attribute enables cluster
+ * clipping; a view without sub-machines has no cluster and no {@code compound} attribute.
  */
 public final class GraphvizExporter {
 

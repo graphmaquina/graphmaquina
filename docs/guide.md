@@ -3043,9 +3043,9 @@ edge touches it.
 
 A state that holds a sub-machine is drawn as a cluster labelled with the state and the child machine, such as
 `DEPOSIT: Payment/PaymentStatus`, which holds the child's own diagram and has the state's policy as its tooltip.
-An edge into the state points at the child's initial state, an exit is drawn once from each terminal state of the
-child that selects it, and any other edge leaving the state, like the state's watch note, starts at the cluster's
-border. The DOT then sets `compound=true` and clips those arrows with `lhead` and `ltail`. A graph that binds no
+An edge into the state points at the child's initial state, or, when that state holds a sub-machine too, at that
+one's initial state, and so on down. An exit is drawn once from each terminal state of the child that selects it, and
+any other edge leaving the state, like the state's watch note, starts at the cluster's border. The DOT then sets `compound=true` and clips those arrows with `lhead` and `ltail`. A graph that binds no
 sub-machine has no cluster.
 
 The shop's order machine exports as:
