@@ -238,6 +238,30 @@ class SubmachineGenerationTest {
                         """));
     }
 
+    /**
+     * A lookup that returns null instead of an Optional breaks its contract: the binding check of the payment aborts
+     * with the same text as a parentOf of the DSL, naming the binding, and nothing is written.
+     */
+    @Test
+    void aLookupThatReturnsNullAbortsTheCallNamingTheBinding() throws Exception {
+        Map<String, String> sources = billing();
+        sources.put("fx.BookingLookups", sources.get("fx.BookingLookups").replace(
+                "        return Optional.ofNullable(DEPOSITS.get(payment.id()));",
+                "        return null;"));
+
+        assertEquals("transition aborted in Payment/PaymentStatus PENDING -CAPTURE-> ?: the parentOf of"
+                        + " Booking/BookingStatus.DEPOSIT returned null | PENDING",
+                run(sources, "builder(ledger)", """
+                        Payment payment = new Payment("payment");
+                        try {
+                            billing.payments().capture(payment);
+                            return "applied";
+                        } catch (TransitionAbortedException aborted) {
+                            return aborted.getMessage() + " | " + payment.status();
+                        }
+                        """));
+    }
+
     /** A graph method of the facade with the parameters of the companion's own is refused as SG504. */
     @Test
     void sg504AGraphMethodWithTheDefinitionsTheCompanionTakes() {
