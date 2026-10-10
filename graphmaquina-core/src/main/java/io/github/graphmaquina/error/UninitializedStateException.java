@@ -9,8 +9,8 @@ import lombok.NonNull;
  * The state getter returned null when the machine read the entity's state. Inside a call, a null root state is the
  * cause of an abort in RESOLVE, and a cascaded peer's of one in ACTION, as is a sub-machine's, read when its parent
  * enters the bound state. A parent's, read to check the binding of a sub-machine, is the cause of an abort in RESOLVE
- * when the sub-machine is the root and in ACTION inside a cascade. A watch's owner lookup reports it as it is, in its
- * {@code Reaction.Aborted}.
+ * when the sub-machine is the root and in ACTION inside a cascade or an exit. A watch's owner lookup reports it as it
+ * is, in its {@code Reaction.Aborted}.
  */
 @Getter
 public final class UninitializedStateException extends StateMachineException {

@@ -5,10 +5,12 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A sub-machine's entity was found active under two bindings at once: two parents claim it in their bound nodes. The
- * engine raises it while it checks the bindings of a child's step, and the call's abort carries it as cause: in
- * RESOLVE for the root's own step, in ACTION for a cascaded one, which also poisons the transaction. The message
- * names the child machine and both bindings by their parent machine and node; it never prints an entity.
+ * A sub-machine's entity was found active under two bindings at once: two parents hold it, each in its bound node or
+ * leaving it. A parent that leaves one bound node for another that binds the same child is not two: it holds the
+ * child only in the node it enters. The engine raises it while it checks the bindings of a child's step, and the
+ * call's abort carries it as cause: in RESOLVE for the root's own step, in ACTION for a cascaded step or an exit, which
+ * also poisons the transaction. The message names the child machine and both bindings by their parent machine and
+ * node; it never prints an entity.
  */
 public final class AmbiguousParentException extends StateMachineException {
 

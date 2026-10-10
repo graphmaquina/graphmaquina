@@ -2675,7 +2675,9 @@ and aborts the call inside a cascade. Inspection still lists the edge: `transiti
 `DEPOSIT_PAID`.
 
 A child entity has one active parent at a time. When two bindings each find a parent that holds the child in its bound
-state, or while leaving it, a call to the child aborts with an `AmbiguousParentException` as its cause.
+state, or while leaving it, a call to the child aborts with an `AmbiguousParentException` as its cause. A parent that
+leaves one bound state for another that binds the same child holds it only in the state it enters, whose entry has just
+restarted the child, so the action of that edge can cascade into the child.
 
 ### Reuse a machine
 
@@ -2910,7 +2912,7 @@ The entity owns its state. Initialize it in the constructor or field declaration
 mapping. A null root state ends the call in a `TransitionAbortedException` of phase `RESOLVE` whose cause is an
 `UninitializedStateException`, and a cascaded peer's in one of phase `ACTION`, as does a sub-machine's, read when its
 parent enters the bound state. A parent's, read to check the binding of a sub-machine, ends the call in one of phase
-`RESOLVE` when the sub-machine is the root, and in one of phase `ACTION` inside a cascade. The runtime does not
+`RESOLVE` when the sub-machine is the root, and in one of phase `ACTION` inside a cascade or an exit. The runtime does not
 silently replace a null state with the graph's initial state.
 
 During a transition, only the runtime should call the state setter. It checks state again before commit to
@@ -3472,7 +3474,7 @@ code runs.
 
 | Exception | What to investigate |
 | --- | --- |
-| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`, and so does a sub-machine's, read when its parent enters the bound state. A parent's, read to check the binding of a sub-machine, arrives as the cause of an abort in `RESOLVE` when the sub-machine is the root and in `ACTION` inside a cascade. |
+| `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`, and so does a sub-machine's, read when its parent enters the bound state. A parent's, read to check the binding of a sub-machine, arrives as the cause of an abort in `RESOLVE` when the sub-machine is the root and in `ACTION` inside a cascade or an exit. |
 | `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `from()`, `transition()` and `to()` are `Optional`. An abort raised before the entity's state was read, because its identity or its state could not be read, reports no state and no destination. One raised before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither identifier nor destination. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
 | `UnhandledFailureException` | An action failed, no recovery rule took the failure, and its edge has no `onFailure` route. |
 | `CascadeException` | Collected nested transition errors; inspect `errors()` and the journal. |
@@ -3480,7 +3482,7 @@ code runs.
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |
 | `WatchChainExceededException` | A watch chain exceeded its limit; inspect reaction cycles. |
 | `AmbiguousIdentityException` | Different instances represented one machine identity in the same unit of work. Raised by an action's cascade, or by the start of a sub-machine whose `childOf` answers an instance with the identity of another one already in the call, it arrives as the cause of that call's abort. A sub-machine whose `childOf` answers another instance with the identity of the child being called raises it too, and so does one whose `parentOf` answers another instance with the identity of a parent already in the call. |
-| `AmbiguousParentException` | A sub-machine's entity was held by two bindings at once: two parents, each in its bound node or leaving it. It names the child machine and both parent machines and nodes. It arrives as the cause of the call's abort, of phase `RESOLVE` for the root's own step and `ACTION` inside a cascade. |
+| `AmbiguousParentException` | A sub-machine's entity was held by two bindings at once: two parents, each in its bound node or leaving it. A parent that leaves one bound node for another that binds the same child is not two: it holds the child only in the node it enters. It names the child machine and both parent machines and nodes. It arrives as the cause of the call's abort, of phase `RESOLVE` for the root's own step and `ACTION` inside a cascade or an exit. |
 | `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, a sub-machine's `childOf` or `parentOf`, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, a sub-machine's `childOf` or `parentOf`, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
 | `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. When the action lets this exception through, or the engine has the action's outcome, while the transaction is poisoned, the engine throws the failure that poisoned the transaction; the `PoisonedUnitOfWorkException` Javadoc says what else can end the call. |
 | `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |

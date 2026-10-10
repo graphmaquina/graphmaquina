@@ -696,7 +696,8 @@ try (MachineRegistry registry = registryWithInvoices(orders())) {
 assertThat(payment, (Payment value) -> value.state).isIn(PaymentState.AUTHORIZING);
 ```
 
-The abort's phase is `RESOLVE` because the payment's call is the root; inside a cascade it would be `ACTION`.
+The abort's phase is `RESOLVE` because the payment's call is the root; inside a cascade or an exit it would be
+`ACTION`.
 
 An exit is an edge of the parent, so the probes stand on it as on any edge. `orders(pay)` declares the order graph with
 `pay` applied to the declaration of the exit `PAY`, and `registry(orders, observer)` adds an observer to the registry.

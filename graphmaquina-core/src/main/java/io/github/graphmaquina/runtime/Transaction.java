@@ -465,13 +465,16 @@ final class Transaction {
      * node or leaving it, as {@link #holds} says. Returns the active binding with its parent, or, when some binding
      * found a parent and none is active, the reason of the DETACHED rejection, naming the node of each binding that
      * found one, in order. Both are empty for a free child, which no binding found a parent for. Two active bindings
-     * abort the step with an {@link AmbiguousParentException} as cause. A lookup that returns null or throws, and a
-     * parent or child that cannot be read, abort it too, as {@link #bindingAbort} says. Every lookup runs inside the
-     * root, under its reentrancy marker.
+     * abort the step with an {@link AmbiguousParentException} as cause, except one parent that holds the child both
+     * in the node its pending state names and leaving another node, on an edge between two nodes that bind the same
+     * child: the node it enters, whose entry has just restarted the child, holds it. A lookup that returns null or
+     * throws, and a parent or child that cannot be read, abort it too, as {@link #bindingAbort} says. Every lookup runs
+     * inside the root, under its reentrancy marker.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> BindingCheck checkBindings(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from, T id, int depth) {
         Optional<Holder> active = Optional.empty();
+        Optional<Hold> activeHold = Optional.empty();
         List<Enum<?>> found = new ArrayList<>();
         for (SubmachineBinding<?, ?, ?, ?, ?, ?> binding : machine.bindingsAsChild()) {
             Optional<EntityRef> parent = findParent(machine, ref, entity, from, id, depth, binding);
@@ -479,16 +482,25 @@ final class Transaction {
                 continue;
             }
             found.add(binding.spec().state());
-            if (!holds(machine, ref, from, id, depth, binding, parent.get())) {
+            Optional<Hold> hold = holds(machine, ref, from, id, depth, binding, parent.get());
+            if (hold.isEmpty()) {
                 continue;
             }
             if (active.isPresent()) {
+                if (active.get().parent().equals(parent.get()) && activeHold.get() != hold.get()) {
+                    if (hold.get() == Hold.IN_NODE) {
+                        active = Optional.of(new Holder(binding, parent.get()));
+                        activeHold = hold;
+                    }
+                    continue;
+                }
                 SubmachineBinding<?, ?, ?, ?, ?, ?> first = active.get().binding();
                 AmbiguousParentException ambiguous = new AmbiguousParentException(machine.key(), first.parentKey(),
                         first.spec().state(), binding.parentKey(), binding.spec().state());
                 throw bindingAbort(machine, ref, from, id, depth, ambiguous.getMessage(), Optional.of(ambiguous));
             }
             active = Optional.of(new Holder(binding, parent.get()));
+            activeHold = hold;
         }
         if (active.isPresent() || found.isEmpty()) {
             return new BindingCheck(active, Optional.empty());
@@ -508,6 +520,9 @@ final class Transaction {
 
     /** The binding that holds a child for one step, and the parent it found, registered in the unit of work. */
     private record Holder(SubmachineBinding<?, ?, ?, ?, ?, ?> binding, EntityRef parent) { }
+
+    /** How a binding holds a child: its parent is in the bound node, or in flight on an edge that leaves it. */
+    private enum Hold { IN_NODE, LEAVING }
 
     /**
      * The parent that {@code binding}'s parentOf answers for {@code entity}, the child, registered in the unit of
@@ -546,14 +561,14 @@ final class Transaction {
     }
 
     /**
-     * Whether {@code binding} holds the child {@code ref}: the childOf of the parent {@code parentRef} answers an
-     * entity with the child's identity, which must be the child's own instance, and the parent's state, its pending
-     * one first, is the bound node, or the parent is in flight on an edge that leaves the node. Another child, or
-     * none, is no hold; another instance with the child's identity aborts the step with an
-     * {@link AmbiguousIdentityException} as cause, and so does a parent whose state is null, with an
+     * How {@code binding} holds the child {@code ref}, if it does: the childOf of the parent {@code parentRef} answers
+     * an entity with the child's identity, which must be the child's own instance, and the parent's state, its pending
+     * one first, is the bound node ({@link Hold#IN_NODE}), or the parent is in flight on an edge that leaves the node
+     * ({@link Hold#LEAVING}). Another child, or none, is no hold; another instance with the child's identity aborts the
+     * step with an {@link AmbiguousIdentityException} as cause, and so does a parent whose state is null, with an
      * {@code UninitializedStateException}.
      */
-    private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> boolean holds(
+    private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> Optional<Hold> holds(
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> id, int depth,
             SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef) {
         SubmachineSpec<A, B, C, P, Q, U> spec = binding.spec();
@@ -574,13 +589,13 @@ final class Transaction {
                     Optional.empty());
         }
         if (child.isEmpty()) {
-            return false;
+            return Optional.empty();
         }
         B state;
         try {
             EntityRef answered = registry.machineFor(spec.childKey()).refOf(child.get());
             if (!answered.equals(ref)) {
-                return false;
+                return Optional.empty();
             }
             if (answered.instance() != ref.instance()) {
                 throw new AmbiguousIdentityException(ref.key(), ref.id(), ref.instance(), answered.instance());
@@ -593,11 +608,14 @@ final class Transaction {
                     Optional.of(e));
         }
         if (state == spec.state()) {
-            return true;
+            return Optional.of(Hold.IN_NODE);
         }
         Optional<InFlight> flight = uow.inFlight(parentRef);
-        return flight.isPresent() && flight.get().spec().from() == spec.state()
-                && flight.get().spec().to() != spec.state();
+        if (flight.isPresent() && flight.get().spec().from() == spec.state()
+                && flight.get().spec().to() != spec.state()) {
+            return Optional.of(Hold.LEAVING);
+        }
+        return Optional.empty();
     }
 
     /**

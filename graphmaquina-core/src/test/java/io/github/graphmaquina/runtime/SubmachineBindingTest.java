@@ -2,6 +2,7 @@ package io.github.graphmaquina.runtime;
 
 import static io.github.graphmaquina.fixtures.Billing.BOOKINGS;
 import static io.github.graphmaquina.fixtures.Billing.PAYMENTS;
+import static io.github.graphmaquina.fixtures.Billing.RISKS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -31,6 +32,8 @@ import io.github.graphmaquina.fixtures.Billing.BookingTransition;
 import io.github.graphmaquina.fixtures.Billing.Payment;
 import io.github.graphmaquina.fixtures.Billing.PaymentStatus;
 import io.github.graphmaquina.fixtures.Billing.PaymentTransition;
+import io.github.graphmaquina.fixtures.Billing.RiskStatus;
+import io.github.graphmaquina.fixtures.Billing.RiskTransition;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -41,7 +44,8 @@ import org.junit.jupiter.api.Test;
  * The binding check that runs before a child's edge is looked up, and the exits reserved to a binding. A child whose
  * parent is in the bound node, or leaving it, steps as usual; one whose parent is elsewhere is rejected as DETACHED,
  * and one with no parent is a free machine. Two active parents, a lookup that breaks its contract or throws, and a
- * parent that cannot be read abort the call: in RESOLVE at the root, in ACTION and poisoning inside a cascade. An
+ * parent that cannot be read abort the call: in RESOLVE at the root, in ACTION and poisoning inside a cascade or an
+ * exit. A parent that leaves one bound node for another that binds the same child holds it in the node it enters. An
  * identifier that a binding maps as an exit is refused from the bound node as RESERVED_EXIT.
  */
 class SubmachineBindingTest {
@@ -76,6 +80,46 @@ class SubmachineBindingTest {
 
         @Override
         public String toString() { return "Ledger#" + id; }
+    }
+
+    /** Stages of a claim: two reviews, each holding the claim's check, then a decision. */
+    enum ClaimStage { FIRST_REVIEW, SECOND_REVIEW, DECIDED }
+
+    /** Identifiers of the claim machine; each decision is the exit of a review. */
+    enum ClaimStep { ESCALATE, FIRST_DECIDED, SECOND_DECIDED }
+
+    /** States of the check a review holds, a second state of the claim itself. */
+    enum ReviewCheck { PENDING, READING, SIGNED }
+
+    /** Identifiers of the check machine. */
+    enum CheckStep { READ, SIGN }
+
+    static final MachineKey<Claim, ClaimStage, ClaimStep> CLAIMS =
+            MachineKey.of(Claim.class, ClaimStage.class, ClaimStep.class);
+    static final MachineKey<Claim, ReviewCheck, CheckStep> CHECKS =
+            MachineKey.of(Claim.class, ReviewCheck.class, CheckStep.class);
+
+    /** A claim governed by two machines: its stage, and the check of its current review. */
+    static final class Claim {
+
+        private ClaimStage stage;
+        private ReviewCheck check;
+
+        Claim(ClaimStage stage, ReviewCheck check) {
+            this.stage = stage;
+            this.check = check;
+        }
+
+        ClaimStage stage() { return stage; }
+
+        void setStage(ClaimStage stage) { this.stage = stage; }
+
+        ReviewCheck check() { return check; }
+
+        void setCheck(ReviewCheck check) { this.check = check; }
+
+        @Override
+        public String toString() { return "Claim"; }
     }
 
     private final Billing billing = new Billing();
@@ -151,6 +195,101 @@ class SubmachineBindingTest {
                     registry.of(PAYMENTS).execute(payment, PaymentTransition.HOLD);
             assertEquals(OutcomeCode.APPLIED, outcome.code());
             assertEquals(PaymentStatus.HELD, payment.status());
+        }
+    }
+
+    /**
+     * One payment is both deposit and balance, and capturing it runs the exit DEPOSIT_PAID into BALANCE. Entering
+     * BALANCE restarts the payment, and the exit's action authorizes it again: while the booking leaves DEPOSIT for
+     * BALANCE, the binding of BALANCE, the node it enters, holds the payment, not both.
+     */
+    @Test
+    void anExitIntoANodeBindingTheSameChildHoldsItInTheNodeItEnters() {
+        Payment payment = new Payment("p1", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(payment).attachBalance(payment);
+        billing.bookingActions.behaviour = (TransitionContext<Booking, BookingStatus, BookingTransition> ctx) -> {
+            ctx.cascade(PAYMENTS, payment, PaymentTransition.HOLD);
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry registry = billing.registry()) {
+            Outcome<Payment, PaymentStatus, PaymentTransition> outcome =
+                    registry.of(PAYMENTS).execute(payment, PaymentTransition.CAPTURE);
+            assertEquals(OutcomeCode.APPLIED, outcome.code());
+            assertEquals(List.of("Payment#p1:AUTHORIZING-CAPTURE>CAPTURED@0",
+                    "Booking#b1:DEPOSIT-DEPOSIT_PAID>BALANCE@1", "Payment#p1:AUTHORIZING-HOLD>HELD@2"),
+                    described(outcome.records()));
+            assertEquals(BookingStatus.BALANCE, booking.status());
+            assertEquals(PaymentStatus.HELD, payment.status());
+        }
+    }
+
+    /**
+     * A claim's two reviews bind the same check of the claim itself. Escalating from the first review to the second
+     * restarts the check, and the escalation's action reads it again: the binding of the second review holds it.
+     */
+    @Test
+    void anOwnEdgeBetweenTwoNodesBindingTheSameChildHoldsItInTheNodeItEnters() {
+        Claim claim = new Claim(ClaimStage.FIRST_REVIEW, ReviewCheck.READING);
+        GraphDefinition<Claim, ReviewCheck, CheckStep> checks = StateGraph.define(CHECKS)
+                .initial(ReviewCheck.PENDING).terminal(ReviewCheck.SIGNED)
+                .statePolicy(ReviewCheck.PENDING, "a check is read")
+                .statePolicy(ReviewCheck.READING, "a check is signed")
+                .transition(CheckStep.READ, ReviewCheck.PENDING, ReviewCheck.READING).endTransition()
+                .transition(CheckStep.SIGN, ReviewCheck.READING, ReviewCheck.SIGNED).endTransition()
+                .build();
+        GraphDefinition<Claim, ClaimStage, ClaimStep> claims = StateGraph.define(CLAIMS)
+                .initial(ClaimStage.FIRST_REVIEW).terminal(ClaimStage.DECIDED)
+                .statePolicy(ClaimStage.FIRST_REVIEW, "a first review is escalated or decided")
+                .statePolicy(ClaimStage.SECOND_REVIEW, "a second review is decided")
+                .transition(ClaimStep.ESCALATE, ClaimStage.FIRST_REVIEW, ClaimStage.SECOND_REVIEW)
+                    .action("Escalate", (TransitionContext<Claim, ClaimStage, ClaimStep> ctx) -> {
+                        ctx.cascade(CHECKS, ctx.entity(), CheckStep.READ);
+                        return ActionOutcome.ok();
+                    }).endTransition()
+                .transition(ClaimStep.FIRST_DECIDED, ClaimStage.FIRST_REVIEW, ClaimStage.DECIDED).endTransition()
+                .transition(ClaimStep.SECOND_DECIDED, ClaimStage.SECOND_REVIEW, ClaimStage.DECIDED).endTransition()
+                .submachine(ClaimStage.FIRST_REVIEW, checks).exit(ReviewCheck.SIGNED, ClaimStep.FIRST_DECIDED)
+                    .endSubmachine()
+                .submachine(ClaimStage.SECOND_REVIEW, checks).exit(ReviewCheck.SIGNED, ClaimStep.SECOND_DECIDED)
+                    .endSubmachine()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(claims).state(Claim::stage, Claim::setStage).identity((Claim value) -> "c1"))
+                .add(StateMachines.from(checks).state(Claim::check, Claim::setCheck).identity((Claim value) -> "c1"))
+                .build()) {
+            Outcome<Claim, ClaimStage, ClaimStep> outcome = registry.of(CLAIMS).execute(claim, ClaimStep.ESCALATE);
+            assertEquals(OutcomeCode.APPLIED, outcome.code());
+            assertEquals(List.of("Claim:FIRST_REVIEW-ESCALATE>SECOND_REVIEW@0", "Claim:PENDING-READ>READING@1"),
+                    described(outcome.records()));
+            assertEquals(ClaimStage.SECOND_REVIEW, claim.stage());
+            assertEquals(ReviewCheck.READING, claim.check());
+        }
+    }
+
+    /**
+     * Leaving still holds for another parent: the booking leaves DEPOSIT by CANCEL while the ledger settles the same
+     * payment in SETTLING, and the action that cascades into the payment finds two parents.
+     */
+    @Test
+    void aParentLeavingItsNodeAndAnotherParentInItsNodeAreAmbiguous() {
+        Payment payment = new Payment("p1", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(payment);
+        Ledger ledger = new Ledger("l1", LedgerStatus.SETTLING);
+        ledger.settlement = Optional.of(payment);
+        ledgers.add(ledger);
+        billing.bookingActions.behaviour = (TransitionContext<Booking, BookingStatus, BookingTransition> ctx) -> {
+            ctx.cascade(PAYMENTS, payment, PaymentTransition.HOLD);
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry registry = registryWithLedgers()) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(BOOKINGS).execute(booking, BookingTransition.CANCEL));
+            assertEquals(CallPhase.ACTION, error.phase());
+            AmbiguousParentException cause = assertInstanceOf(AmbiguousParentException.class, error.getCause());
+            assertEquals(List.of(BOOKINGS, LEDGERS), cause.parents());
+            assertEquals(List.of(BookingStatus.DEPOSIT, LedgerStatus.SETTLING), cause.nodes());
+            assertEquals(BookingStatus.DEPOSIT, booking.status());
+            assertEquals(PaymentStatus.AUTHORIZING, payment.status());
         }
     }
 
@@ -597,6 +736,29 @@ class SubmachineBindingTest {
             assertEquals(CallPhase.ACTION, error.phase());
             assertSame(failure, error.getCause());
             assertEquals(BookingStatus.REQUESTED, booking.status());
+        }
+    }
+
+    /**
+     * The binding check of an exit step is nested too: the cleared risk check runs the payment's exit HOLD, whose own
+     * binding check asks the booking's lookup, which throws. The call aborts in ACTION and nothing is written.
+     */
+    @Test
+    void aFailedCheckOfAnExitStepAbortsInAction() {
+        Billing risky = Billing.withRiskCheck();
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
+        IllegalStateException failure = new IllegalStateException("the ledger is down");
+        risky.bookingOf = (Payment payment) -> {
+            throw failure;
+        };
+        try (MachineRegistry registry = risky.registry()) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(RISKS).execute(deposit, RiskTransition.CLEAR));
+            assertEquals(CallPhase.ACTION, error.phase());
+            assertSame(failure, error.getCause());
+            assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
+            assertEquals(RiskStatus.SCORING, deposit.risk());
         }
     }
 
