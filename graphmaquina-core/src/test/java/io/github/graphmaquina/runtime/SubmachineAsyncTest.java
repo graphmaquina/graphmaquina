@@ -517,8 +517,8 @@ class SubmachineAsyncTest {
                         -> edge.asyncAction("Settle", settle))).asyncTimeout(HOUR))
                 .add(payment);
         IllegalStateException error = assertThrows(IllegalStateException.class, builder::build);
-        assertEquals("the machine Payment/PaymentStatus can run the asynchronous exit Booking/BookingStatus.DEPOSIT"
-                + " -DEPOSIT_PAID-> and does not declare asyncTimeout(...)", error.getMessage());
+        assertEquals("the machine Payment/PaymentStatus can run the asynchronous edge Booking/BookingStatus.DEPOSIT"
+                + " -DEPOSIT_PAID-> implicitly and does not declare asyncTimeout(...)", error.getMessage());
         payment.asyncTimeout(HOUR);
         try (MachineRegistry registry = builder.build()) {
             assertEquals(Set.of(BOOKINGS, PAYMENTS), registry.keys());
@@ -535,8 +535,8 @@ class SubmachineAsyncTest {
                                 -> CompletableFuture.completedFuture(GuardResult.pass())))).asyncTimeout(HOUR))
                 .add(paymentMachine(plain));
         IllegalStateException error = assertThrows(IllegalStateException.class, builder::build);
-        assertEquals("the machine Payment/PaymentStatus can run the asynchronous exit Booking/BookingStatus.DEPOSIT"
-                + " -DEPOSIT_PAID-> and does not declare asyncTimeout(...)", error.getMessage());
+        assertEquals("the machine Payment/PaymentStatus can run the asynchronous edge Booking/BookingStatus.DEPOSIT"
+                + " -DEPOSIT_PAID-> implicitly and does not declare asyncTimeout(...)", error.getMessage());
     }
 
     /**
@@ -554,8 +554,8 @@ class SubmachineAsyncTest {
                 .add(paymentMachine(checked).asyncTimeout(HOUR))
                 .add(StateMachines.from(risks).state(Payment::risk, Payment::setRisk).identity(Payment::id));
         IllegalStateException error = assertThrows(IllegalStateException.class, builder::build);
-        assertEquals("the machine Payment/RiskStatus can run the asynchronous exit Booking/BookingStatus.DEPOSIT"
-                + " -DEPOSIT_PAID-> and does not declare asyncTimeout(...)", error.getMessage());
+        assertEquals("the machine Payment/RiskStatus can run the asynchronous edge Booking/BookingStatus.DEPOSIT"
+                + " -DEPOSIT_PAID-> implicitly and does not declare asyncTimeout(...)", error.getMessage());
     }
 
     /**
@@ -575,8 +575,8 @@ class SubmachineAsyncTest {
                         UnaryOperator.identity(), Optional.empty())).asyncTimeout(HOUR))
                 .add(paymentMachine(plain));
         IllegalStateException error = assertThrows(IllegalStateException.class, builder::build);
-        assertEquals("the machine Payment/PaymentStatus can run the asynchronous exit Booking/BookingStatus.DEPOSIT"
-                + " -CANCEL-> and does not declare asyncTimeout(...)", error.getMessage());
+        assertEquals("the machine Payment/PaymentStatus can run the asynchronous edge Booking/BookingStatus.DEPOSIT"
+                + " -CANCEL-> implicitly and does not declare asyncTimeout(...)", error.getMessage());
     }
 
     /**
@@ -598,8 +598,8 @@ class SubmachineAsyncTest {
                 .add(StateMachines.from(risks).state(Payment::risk, Payment::setRisk).identity(Payment::id)
                         .asyncTimeout(HOUR));
         IllegalStateException error = assertThrows(IllegalStateException.class, builder::build);
-        assertEquals("the machine Payment/PaymentStatus can run the asynchronous exit Booking/BookingStatus.BALANCE"
-                + " -BALANCE_PAID-> and does not declare asyncTimeout(...)", error.getMessage());
+        assertEquals("the machine Payment/PaymentStatus can run the asynchronous edge Booking/BookingStatus.BALANCE"
+                + " -BALANCE_PAID-> implicitly and does not declare asyncTimeout(...)", error.getMessage());
     }
 
     /**
@@ -708,8 +708,8 @@ class SubmachineAsyncTest {
         InitialCompletion completion = initialCompletion();
         IllegalStateException error = assertTimeoutPreemptively(GENEROUS,
                 () -> assertThrows(IllegalStateException.class, completion.registry()::build));
-        assertEquals("the machine Nested/ParentState can run the asynchronous exit Nested/ChildState.WAIT"
-                + " -FINISH-> and does not declare asyncTimeout(...)", error.getMessage());
+        assertEquals("the machine Nested/ParentState can run the asynchronous edge Nested/ChildState.WAIT"
+                + " -FINISH-> implicitly and does not declare asyncTimeout(...)", error.getMessage());
         completion.root().asyncTimeout(SHORT);
         try (MachineRegistry registry = completion.registry().build()) {
             assertEquals(Set.of(PARENTS, CHILDREN, LEAVES), registry.keys());
@@ -820,8 +820,8 @@ class SubmachineAsyncTest {
                 .add(childMachine);
         IllegalStateException error = assertTimeoutPreemptively(GENEROUS,
                 () -> assertThrows(IllegalStateException.class, builder::build));
-        assertEquals("the machine Child/ChildState can run the asynchronous exit Entity/State.BOUND -FINISH->"
-                + " and does not declare asyncTimeout(...)", error.getMessage());
+        assertEquals("the machine Child/ChildState can run the asynchronous edge Entity/State.BOUND -FINISH->"
+                + " implicitly and does not declare asyncTimeout(...)", error.getMessage());
         childMachine.asyncTimeout(HOUR);
         try (MachineRegistry registry = builder.build()) {
             assertEquals(Set.of(firstKey, secondKey, childKey), registry.keys());

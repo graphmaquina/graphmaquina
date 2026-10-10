@@ -114,10 +114,10 @@ public final class MachineRegistry implements AutoCloseable {
             if (builder.hasAsyncTimeout()) {
                 continue;
             }
-            Optional<String> exit = firstAsyncImplicitEdge(builder.definition(), exitsByChild);
-            if (exit.isPresent()) {
-                throw new IllegalStateException("the machine " + builder.key() + " can run the asynchronous exit "
-                        + exit.get() + " and does not declare asyncTimeout(...)");
+            Optional<String> edge = firstAsyncImplicitEdge(builder.definition(), exitsByChild);
+            if (edge.isPresent()) {
+                throw new IllegalStateException("the machine " + builder.key() + " can run the asynchronous edge "
+                        + edge.get() + " implicitly and does not declare asyncTimeout(...)");
             }
         }
         MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, observers);
