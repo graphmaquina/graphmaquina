@@ -639,6 +639,45 @@ class SubmachineExitTest {
     }
 
     /**
+     * A free payment restarts the booking in DEPOSIT through another free payment, starting its deposit d1 at depth 2,
+     * then makes d3 the deposit and captures it. d3's own action makes d1 the deposit again and restarts the booking,
+     * which logs a start of d1 equal in every field to the earlier one. That start is still a later entry of the node
+     * with another child, so d3's end runs no exit.
+     */
+    @Test
+    void aReentryLoggingAStartEqualToAnEarlierOneStillCancelsTheExit() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Payment replacement = new Payment("d3", PaymentStatus.AUTHORIZING);
+        Payment first = new Payment("f1", PaymentStatus.AUTHORIZING);
+        Payment second = new Payment("f2", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit)
+                .attachBalance(new Payment("d2", PaymentStatus.AUTHORIZING));
+        billing.paymentActions.behaviour = (TransitionContext<Payment, PaymentStatus, PaymentTransition> ctx) -> {
+            if (ctx.entity() == first) {
+                ctx.cascade(PAYMENTS, second, PaymentTransition.CAPTURE);
+                booking.attachDeposit(replacement);
+                ctx.cascade(PAYMENTS, replacement, PaymentTransition.CAPTURE);
+            } else if (ctx.entity() == second) {
+                ctx.cascade(BOOKINGS, booking, BookingTransition.RESTART);
+            } else if (ctx.entity() == replacement) {
+                booking.attachDeposit(deposit);
+                ctx.cascade(BOOKINGS, booking, BookingTransition.RESTART);
+            }
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry registry = billing.registry()) {
+            Outcome<Payment, PaymentStatus, PaymentTransition> outcome =
+                    registry.of(PAYMENTS).execute(first, PaymentTransition.CAPTURE);
+            assertEquals(List.of("Payment#f1:AUTHORIZING-CAPTURE>CAPTURED@0",
+                    "Payment#f2:AUTHORIZING-CAPTURE>CAPTURED@1", "Booking#b1:DEPOSIT-RESTART>DEPOSIT@2",
+                    "Payment#d3:AUTHORIZING-CAPTURE>CAPTURED@1", "Booking#b1:DEPOSIT-RESTART>DEPOSIT@2"),
+                    described(outcome.records()));
+            assertEquals(BookingStatus.DEPOSIT, booking.status());
+            assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
+        }
+    }
+
+    /**
      * BOOK starts the deposit and its action captures it; the capture's own action makes another payment the deposit.
      * The booking is in flight, so the exit runs at the end of BOOK's step, for the payment that BOOK started: the
      * engine takes it from its own log, not from the booking's childOf.

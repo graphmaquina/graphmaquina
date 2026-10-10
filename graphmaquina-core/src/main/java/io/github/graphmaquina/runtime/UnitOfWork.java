@@ -180,7 +180,15 @@ final class UnitOfWork {
      * the start of the sub-machine that hop started.
      */
     Optional<LogEntry.Start> lastStartUnder(EntityRef parent) {
-        for (int index = log.size() - 1; index >= 0; index--) {
+        return lastStartUnderSince(parent, 0);
+    }
+
+    /**
+     * The last start whose parent is {@code parent} among the entries logged at {@code position} or later, a size the
+     * log had earlier: a start that an entry of the parent made since then. Only those entries are read.
+     */
+    Optional<LogEntry.Start> lastStartUnderSince(EntityRef parent, int position) {
+        for (int index = log.size() - 1; index >= position; index--) {
             if (log.get(index) instanceof LogEntry.Start start && start.parent().equals(parent)) {
                 return Optional.of(start);
             }
