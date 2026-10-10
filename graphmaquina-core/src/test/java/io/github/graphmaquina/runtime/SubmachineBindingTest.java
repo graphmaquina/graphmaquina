@@ -542,6 +542,33 @@ class SubmachineBindingTest {
     }
 
     /**
+     * The booking's own action cascades into its deposit, whose parentOf answers a copy of the booking: another
+     * instance with the identity of a parent already in the call. The cascade aborts in ACTION with
+     * AmbiguousIdentityException as its cause, and nothing is written.
+     */
+    @Test
+    void aParentOfThatAnswersAnotherInstanceOfAParentInTheCallIsAmbiguous() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
+        Booking copy = new Booking("b1", BookingStatus.DEPOSIT);
+        billing.bookingOf = (Payment payment) -> Optional.of(copy);
+        billing.bookingActions.behaviour = (TransitionContext<Booking, BookingStatus, BookingTransition> ctx) -> {
+            ctx.cascade(PAYMENTS, deposit, PaymentTransition.HOLD);
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry registry = billing.registry()) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(BOOKINGS).execute(booking, BookingTransition.CANCEL));
+            assertEquals(CallPhase.ACTION, error.phase());
+            AmbiguousIdentityException cause = assertInstanceOf(AmbiguousIdentityException.class, error.getCause());
+            assertSame(booking, cause.first());
+            assertSame(copy, cause.second());
+            assertEquals(BookingStatus.DEPOSIT, booking.status());
+            assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
+        }
+    }
+
+    /**
      * Inside a cascade a failed check aborts in ACTION and poisons the transaction: the action that cascaded catches
      * the abort and returns ok, and the root still throws that very abort.
      */
