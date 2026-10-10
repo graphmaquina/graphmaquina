@@ -679,6 +679,68 @@ class SubmachineExitTest {
     }
 
     /**
+     * Entering BOUND starts the first member, whose leaf is already done, so the holding's step defers the member's
+     * exit SETTLE to its end. That exit's action makes the second member the holding's and renews BOUND, which starts
+     * it; the second member's exit fails into PARKED, so the holding stays in BOUND. The first member then ends
+     * SETTLED, but the holding entered BOUND again with another member since the first one was started: no CLOSE runs.
+     */
+    @Test
+    void aDescendantExitThatReentersTheNodeWithAnotherChildCancelsTheDeferredExit() {
+        Member first = new Member("m1");
+        Member second = new Member("m2");
+        Holding holding = new Holding(first);
+        second.holding = Optional.of(holding);
+        GraphDefinition<Member, MemberLeafState, MemberLeafId> leaves = StateGraph.define(MEMBER_LEAVES)
+                .initial(MemberLeafState.DONE).terminal(MemberLeafState.DONE).build();
+        GraphDefinition<Member, MemberState, MemberId> members = StateGraph.define(MEMBERS)
+                .initial(MemberState.READY).terminal(MemberState.SETTLED)
+                .statePolicy(MemberState.READY, "wait for the leaf")
+                .statePolicy(MemberState.PARKED, "settle later")
+                .transition(MemberId.SETTLE, MemberState.READY, MemberState.SETTLED)
+                    .action("Settle", (TransitionContext<Member, MemberState, MemberId> ctx) -> {
+                        if (ctx.entity() != first) {
+                            return ActionOutcome.failed("the second settlement waits");
+                        }
+                        holding.member = second;
+                        ctx.cascade(HOLDINGS, holding, HoldingId.RENEW);
+                        return ActionOutcome.ok();
+                    }).onFailure(MemberId.PARK).endTransition()
+                .transition(MemberId.PARK, MemberState.READY, MemberState.PARKED).endTransition()
+                .transition(MemberId.LATER, MemberState.PARKED, MemberState.SETTLED).endTransition()
+                .submachine(MemberState.READY, leaves).exit(MemberLeafState.DONE, MemberId.SETTLE).endSubmachine()
+                .build();
+        GraphDefinition<Holding, HoldingState, HoldingId> holdings = StateGraph.define(HOLDINGS)
+                .initial(HoldingState.OPEN).terminal(HoldingState.DONE).allowsCycle(HoldingState.BOUND)
+                .statePolicy(HoldingState.OPEN, "enter the member")
+                .statePolicy(HoldingState.BOUND, "renew or wait for the member")
+                .transition(HoldingId.ENTER, HoldingState.OPEN, HoldingState.BOUND).endTransition()
+                .transition(HoldingId.RENEW, HoldingState.BOUND, HoldingState.BOUND).endTransition()
+                .transition(HoldingId.CLOSE, HoldingState.BOUND, HoldingState.DONE).endTransition()
+                .submachine(HoldingState.BOUND, members, (Holding value) -> Optional.of(value.member),
+                        (Member value) -> value.holding)
+                    .exit(MemberState.SETTLED, HoldingId.CLOSE).endSubmachine()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(holdings).state((Holding value) -> value.state,
+                        (Holding value, HoldingState state) -> value.state = state).identity((Holding value) -> "h"))
+                .add(StateMachines.from(members).state((Member value) -> value.state,
+                        (Member value, MemberState state) -> value.state = state)
+                        .identity((Member value) -> value.id))
+                .add(StateMachines.from(leaves).state((Member value) -> value.leaf,
+                        (Member value, MemberLeafState state) -> value.leaf = state)
+                        .identity((Member value) -> value.id))
+                .build()) {
+            Outcome<Holding, HoldingState, HoldingId> outcome = registry.of(HOLDINGS).execute(holding, HoldingId.ENTER);
+            assertEquals(OutcomeCode.APPLIED, outcome.code());
+            assertEquals(List.of("Holding:OPEN-ENTER>BOUND@0", "Member#m1:READY-SETTLE>SETTLED@1",
+                    "Holding:BOUND-RENEW>BOUND@2", "Member#m2:READY-PARK>PARKED@3"), described(outcome.records()));
+            assertEquals(HoldingState.BOUND, holding.state);
+            assertEquals(MemberState.SETTLED, first.state);
+            assertEquals(MemberState.PARKED, second.state);
+        }
+    }
+
+    /**
      * BOOK starts the deposit and its action captures it; the capture's own action makes another payment the deposit.
      * The booking is in flight, so the exit runs at the end of BOOK's step, for the payment that BOOK started: the
      * engine takes it from its own log, not from the booking's childOf.
@@ -881,6 +943,60 @@ class SubmachineExitTest {
             assertEquals(List.of(new SubmachineStart<>(PAYMENTS, deposit, PaymentStatus.CAPTURED,
                     PaymentStatus.AUTHORIZING, BOOKINGS, booking, BookingStatus.DEPOSIT, 1)), outcome.starts());
         }
+    }
+
+    /** The states of a holding whose bound state holds its current member. */
+    enum HoldingState { OPEN, BOUND, DONE }
+
+    /** Identifiers of the holding machine: CLOSE is the exit a settled member selects. */
+    enum HoldingId { ENTER, RENEW, CLOSE }
+
+    /** The states of a member: READY holds its leaf, PARKED is where a failed settlement goes. */
+    enum MemberState { READY, SETTLED, PARKED }
+
+    /** Identifiers of the member machine: SETTLE is the exit its completed leaf selects. */
+    enum MemberId { SETTLE, PARK, LATER }
+
+    /** The leaf of a member starts in its only state, which is terminal. */
+    enum MemberLeafState { DONE }
+
+    /** The leaf declares no outgoing edge. */
+    enum MemberLeafId { UNUSED }
+
+    static final MachineKey<Holding, HoldingState, HoldingId> HOLDINGS =
+            MachineKey.of(Holding.class, HoldingState.class, HoldingId.class);
+    static final MachineKey<Member, MemberState, MemberId> MEMBERS =
+            MachineKey.of(Member.class, MemberState.class, MemberId.class);
+    static final MachineKey<Member, MemberLeafState, MemberLeafId> MEMBER_LEAVES =
+            MachineKey.of(Member.class, MemberLeafState.class, MemberLeafId.class);
+
+    /** A holding and the member it currently holds. */
+    static final class Holding {
+        private HoldingState state = HoldingState.OPEN;
+        private Member member;
+
+        Holding(Member member) {
+            this.member = member;
+            member.holding = Optional.of(this);
+        }
+
+        @Override
+        public String toString() { return "Holding"; }
+    }
+
+    /** A member with its own state and its leaf's, and the holding it belongs to. */
+    static final class Member {
+        private final String id;
+        private MemberState state = MemberState.READY;
+        private MemberLeafState leaf = MemberLeafState.DONE;
+        private Optional<Holding> holding = Optional.empty();
+
+        Member(String id) {
+            this.id = id;
+        }
+
+        @Override
+        public String toString() { return "Member#" + id; }
     }
 
     /** The states of the outer machine in the recursive terminal-initial regression. */
