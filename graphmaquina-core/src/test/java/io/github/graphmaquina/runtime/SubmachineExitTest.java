@@ -582,7 +582,8 @@ class SubmachineExitTest {
 
     /**
      * A free payment's action restarts the booking in DEPOSIT, which starts its deposit again, and then captures that
-     * deposit. The latest start under the booking names the captured deposit, so its exit runs.
+     * deposit. The restart came before the capture's binding check, so the capture's step entered the node again with
+     * no other child, and its exit runs.
      */
     @Test
     void aChildStartedByTheLatestEntryOfItsNodeExitsIt() {
