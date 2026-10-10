@@ -374,7 +374,9 @@ final class Transaction {
      * containing node and actual child reference comes from the current pending state and its last surviving start,
      * never another lookup. A start has no transition: until a real exit runs, failures describe the original entering
      * step, which {@code origin}, {@code originRef}, {@code from}, {@code last} and {@code reached} retain. Descendant
-     * starts share that step's depth; every actual exit increases depth and processes its own exits normally.
+     * starts share that step's depth; every actual exit increases depth and processes its own exits normally. A start
+     * under the parent logged once its start was selected, an entry of the node made by a descendant's exit, cancels
+     * the node's exit: the position of the log at the selection marks what came after, as in {@link #exitParent}.
      * Returns whether any exit ran, including an exit that already completed the containing machine.
      */
     private <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>> boolean exitEntered(
@@ -387,6 +389,7 @@ final class Transaction {
             return false;
         }
         LogEntry.Start start = selected.get();
+        int selectedAt = uow.savepoint();
         DefaultStateMachine<P, Q, U> childMachine = registry.machineFor(spec.childKey());
         Q state = spec.childKey().states().cast(uow.pendingState(start.ref()).orElseThrow());
         boolean exited = false;
@@ -398,7 +401,7 @@ final class Transaction {
             }
         }
         if (uow.inFlight(ref).isPresent() || uow.pendingState(ref).orElseThrow() != spec.state()
-                || !uow.lastStartUnder(ref).equals(selected)) {
+                || uow.lastStartUnderSince(ref, selectedAt).isPresent()) {
             return exited;
         }
         state = spec.childKey().states().cast(uow.pendingState(start.ref()).orElseThrow());
