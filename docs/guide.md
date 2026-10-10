@@ -2495,7 +2495,14 @@ for a watch, and binds the child with the pair's generated `Submachine`. This is
 imports the `BookingStatus` constants statically:
 
 ```java
-/** A booking binds the same payment machine in its deposit and balance states. */
+/**
+ * The booking machine: {@code DEPOSIT} and {@code BALANCE} each hold a payment of {@link Payments}, the same machine
+ * bound twice. The terminal state each payment reaches selects the exit of its state, and {@code CANCEL} interrupts
+ * either one. The processor generates BookingsRuntime.
+ *
+ * <p>Exits are declared on the interface, not on operations: an exit runs only when its payment ends, so no
+ * operation may declare one.</p>
+ */
 @GenerateGraphApi
 @GraphPeers(Payments.class)
 @BookingsGraph.Definition(initial = REQUESTED, terminals = {CONFIRMED, CANCELLED},
