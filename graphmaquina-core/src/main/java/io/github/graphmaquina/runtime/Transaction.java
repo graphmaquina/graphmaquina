@@ -176,14 +176,16 @@ final class Transaction {
     /**
      * Ends {@code trail} with the {@code Failed} entry of {@code failure}, at the instant {@code clock} reads now. A
      * clock that throws a RuntimeException, or answers null as {@link CallFlow#now} refuses, leaves the entry out, and
-     * the exception of {@code failure}, which the call throws, carries that exception as suppressed; an Error
-     * propagates.
+     * the exception of {@code failure}, which the call throws, carries that exception as suppressed, unless the clock
+     * threw that very exception, which cannot suppress itself; an Error propagates.
      */
     static void endWith(List<FlowEntry> trail, CallFailure failure, InstantSource clock) {
         try {
             trail.add(new FlowEntry.Failed(failure, CallFlow.now(clock)));
         } catch (RuntimeException thrown) {
-            failure.error().addSuppressed(thrown);
+            if (thrown != failure.error()) {
+                failure.error().addSuppressed(thrown);
+            }
         }
     }
 

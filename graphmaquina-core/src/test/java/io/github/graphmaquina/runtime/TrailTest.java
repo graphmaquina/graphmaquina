@@ -907,6 +907,44 @@ class TrailTest {
     }
 
     /**
+     * A clock that throws, for the final {@code Failed} entry, the very failure the call throws cannot leave it on
+     * that failure as suppressed, since an exception cannot suppress itself: the call still throws its own failure,
+     * with its flow, and the trail ends without the entry. Here an action catches the abort of its cascade, which
+     * poisoned the call, and the clock throws that abort back once it has it.
+     */
+    @Test
+    void aClockThatThrowsTheCallsOwnFailureLeavesTheFailedEntryOut() {
+        Doc child = new Doc("2", DRAFT);
+        List<TransitionAbortedException> caught = new ArrayList<>();
+        TickingClock rethrowing = new TickingClock();
+        rethrowing.onRead = () -> {
+            if (!caught.isEmpty()) {
+                throw caught.get(0);
+            }
+        };
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("Ready",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> GuardResult.reject("nothing to review")),
+                (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard
+                        .action("Collect", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            try {
+                                ctx.cascade(DOCS, child, SUBMIT);
+                            } catch (TransitionAbortedException abort) {
+                                caught.add(abort);
+                            }
+                            return ActionOutcome.ok();
+                        }));
+        Doc parent = new Doc("1", DRAFT);
+        TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
+                () -> recording(graph, rethrowing).build().execute(parent, DISCARD));
+        assertSame(caught.get(0), thrown);
+        assertEquals(0, thrown.getSuppressed().length);
+        List<FlowEntry> trail = thrown.flow().trail();
+        assertEquals(1, trail.size());
+        assertSame(parent, hopOf(trail.get(0)).entity());
+    }
+
+    /**
      * A clock that answers null fails the call as one that throws does, with a NullPointerException that says so: the
      * hop it could not mark aborts the root's step before anything is written, and the rejection whose instant it
      * could not read fails the call. The trail ends without the entries the clock could not mark.
