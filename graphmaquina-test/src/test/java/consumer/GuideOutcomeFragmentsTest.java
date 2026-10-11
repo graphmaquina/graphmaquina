@@ -683,7 +683,7 @@ class GuideOutcomeFragmentsTest {
 
     /**
      * Returns the {@code n}th java block after {@code heading} and before the next level-two heading. Headings
-     * are matched outside code fences only. Fails when the block is missing or empty.
+     * are matched outside code fences only. Fails when the block is missing or blank.
      */
     private static String blockAfter(List<String> guide, String heading, int n) {
         boolean inside = false;
@@ -715,7 +715,7 @@ class GuideOutcomeFragmentsTest {
                 break;
             }
         }
-        assertFalse(block.isEmpty(), "no non-empty java block number " + n + " after the heading '"
+        assertFalse(block.toString().isBlank(), "no non-blank java block number " + n + " after the heading '"
                 + heading + "' of the guide");
         return block.toString();
     }

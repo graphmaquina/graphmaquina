@@ -17,10 +17,14 @@ import org.junit.jupiter.api.Test;
 /**
  * The guides quote the shop as it is: every Java block of the testing guide that a link to one of the shop's tests
  * introduces appears verbatim in that test, and the four Java blocks of the guide's section on the call's flow are the
- * shop's code, verbatim once the source's Javadoc comments are left out. A block may sit deeper in the source than in
- * the guide, by whole levels of four spaces.
+ * shop's code, verbatim once the source's Javadoc comments are left out, each with the declaration it quotes. A block
+ * may sit deeper in the source than in the guide, by whole levels of four spaces. A blank block quotes nothing, so it
+ * fails.
  */
 class GuideCopiesTest {
+
+    /** A Java block of the guide's section on the call's flow: the shop's source it quotes, and its declaration. */
+    private record Quote(String source, String declaration) { }
 
     private static final List<String> SHOP_TESTS =
             List.of("OrderFlowTest", "TestingApiTest", "DiagramsTest", "GraphContractsTest");
@@ -87,8 +91,9 @@ class GuideCopiesTest {
                 inBlock = false;
                 if (isJava && current.isPresent()) {
                     String source = read(path("graphmaquina.example.tests", current.get() + ".java"));
+                    String quoted = String.join("\n", block);
                     checked++;
-                    if (!holds(source, String.join("\n", block), 0, 4, 8, 12)) {
+                    if (quoted.isBlank() || !holds(source, quoted, 0, 4, 8, 12)) {
                         missing.add("docs/testing.md:" + start + " " + current.get());
                     }
                 }
@@ -107,14 +112,17 @@ class GuideCopiesTest {
         String guide = read(path("graphmaquina.docs", "guide.md"));
         String section = guide.substring(guide.indexOf("\n### The call's flow\n"));
         Matcher blocks = JAVA_BLOCK.matcher(section);
-        List<String> sources = List.of("ShopFlow.java", "order/OrderActions.java", "item/ItemActions.java",
-                "item/ItemActions.java");
+        List<Quote> quotes = List.of(new Quote("ShopFlow.java", "public final class ShopFlow {"),
+                new Quote("order/OrderActions.java", "public ActionOutcome cancel("),
+                new Quote("item/ItemActions.java", "public ActionOutcome restock("),
+                new Quote("item/ItemActions.java", "public void applyRestock("));
         List<String> missing = new ArrayList<>();
-        for (String source : sources) {
+        for (Quote quote : quotes) {
             assertTrue(blocks.find(), "the section holds fewer than four Java blocks");
-            String code = JAVADOC.matcher(read(path("graphmaquina.example.sources", source))).replaceAll("");
-            if (!holds(code, blocks.group(1), 0, 4)) {
-                missing.add(source);
+            String code = JAVADOC.matcher(read(path("graphmaquina.example.sources", quote.source()))).replaceAll("");
+            String block = blocks.group(1);
+            if (!block.contains(quote.declaration()) || !holds(code, block, 0, 4)) {
+                missing.add(quote.source() + " " + quote.declaration());
             }
         }
         assertEquals(List.of(), missing);
