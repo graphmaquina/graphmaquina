@@ -248,17 +248,22 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 }
                 CallFailureFlows.attach(own, new FrozenFlow(Optional.of(entity), Map.of(), entries));
             }
-            failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, thrown);
             if (log.debug() && !(thrown instanceof Error)) {
-                log.failed(new CallFailure(CallPhase.RESOLVE, StatesWritten.NONE, thrown));
+                try {
+                    log.failed(new CallFailure(CallPhase.RESOLVE, StatesWritten.NONE, thrown));
+                } catch (Error fatal) {
+                    failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, fatal);
+                    throw fatal;
+                }
             }
+            failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, thrown);
             throw thrown;
         }
         if (watch.isEmpty()) {
-            return completed(observed, log, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_WATCH));
+            return ignored(observed, log, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_WATCH));
         }
         if (selected.isEmpty()) {
-            return completed(observed, log, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
+            return ignored(observed, log, new Outcome.Ignored<>(entity, state, IgnoreReason.NO_RULE_MATCHED));
         }
         T resolved = selected.orElseThrow();
         return runRoot(entity, Optional.empty(), reaction, observed, log,
@@ -321,10 +326,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * it, its trail ending with the failure, attached before the observers hear of the failure; an Error gets none,
      * and propagates as itself. An Error the trail's clock throws while the failure's flow is frozen propagates in
      * place of the failure, and the observers hear of that Error, in the phase the call reached.
-     * The observers hear of the call before its log does: the start line follows onStarted, inside the try that tells
-     * them of an Error, and the end or failed line follows their end event. An execute logs its start line here; a
-     * reevaluation logged its own before it read the state. The committed hops and starts are logged once phase 2
-     * wrote them, before the hooks, and an Error gets no failed line. At TRACE, phase 2 logs its check and its
+     * The observers hear of the call's start before its log does, and of its end after it: the start line follows
+     * onStarted, and the end or failed line comes just before their end event, each inside a try that tells them of
+     * an Error, so a backend Error on any of these lines ends the call and is the end event they hear. An execute logs
+     * its start line here; a reevaluation logged its own before it read the state. The committed hops and starts are
+     * logged once phase 2 wrote them, in HOOK before the hooks run, so an Error on those lines reports every state
+     * written; an Error gets no failed line. At TRACE, phase 2 logs its check and its
      * setters, each hook is logged before it runs and each of its writes to the call's flow as it makes it, and the
      * watch dispatch logs each owner lookup.
      */
@@ -356,9 +363,6 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                     records = uow.records();
                     starts = uow.starts();
                     committed = uow.entries();
-                    if (log.debug()) {
-                        log.committed(committed);
-                    }
                 } else {
                     summary = CommitSummary.EMPTY;
                     records = List.of();
@@ -372,6 +376,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             List<Reaction> reactions = List.of();
             if (!committed.isEmpty()) {
                 tx.enter(CallPhase.HOOK);
+                if (log.debug()) {
+                    log.committed(committed);
+                }
                 runHooks(tx, records, starts, committed);
                 tx.enter(CallPhase.REACTIONS);
                 reactions = registry.dispatchWatches(summary, chain, log);
@@ -402,13 +409,23 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 throw failed(observed, tx, fatal);
             }
             CallFailureFlows.attach(own, flow);
-            CallFailedException failure = failed(observed, tx, own);
             if (log.debug()) {
-                log.failed(tx.failureOf(failure));
+                try {
+                    log.failed(tx.failureOf(own));
+                } catch (Error fatal) {
+                    throw failed(observed, tx, fatal);
+                }
             }
-            throw failure;
+            throw failed(observed, tx, own);
         }
-        return completed(observed, log, outcome);
+        if (log.debug()) {
+            try {
+                log.end(outcome);
+            } catch (Error fatal) {
+                throw failed(observed, tx, fatal);
+            }
+        }
+        return completed(observed, outcome);
     }
 
     /**
@@ -433,15 +450,29 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 : new MachineCall(key(), entity, Optional.empty(), reaction);
     }
 
-    /** Tells the observers, if any, that the call returned {@code outcome}, then logs its end line. */
-    private static <O extends Outcome<?, ?, ?>> O completed(Optional<Observed> observed, CallLog log, O outcome) {
+    /** Tells the observers, if any, that the call returned {@code outcome}. */
+    private static <O extends Outcome<?, ?, ?>> O completed(Optional<Observed> observed, O outcome) {
         if (observed.isPresent()) {
             observed.get().completed(outcome);
         }
-        if (log.debug()) {
-            log.end(outcome);
-        }
         return outcome;
+    }
+
+    /**
+     * Ends a reevaluation that ran no edge with {@code outcome}: logs its end line, then tells the observers, if any.
+     * An Error the end line throws ends the call instead, in RESOLVE with nothing written: the observers hear of that
+     * Error, and it propagates.
+     */
+    private static <O extends Outcome<?, ?, ?>> O ignored(Optional<Observed> observed, CallLog log, O outcome) {
+        if (log.debug()) {
+            try {
+                log.end(outcome);
+            } catch (Error fatal) {
+                failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, fatal);
+                throw fatal;
+            }
+        }
+        return completed(observed, outcome);
     }
 
     /** Tells the observers, if any, that the call ended in {@code thrown}, as its transaction classifies it. */

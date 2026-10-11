@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.CallFailure;
@@ -71,6 +72,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -695,6 +697,107 @@ class RuntimeLogDebugTest {
     }
 
     /**
+     * A backend Error on a line the call logs once it ran, its committed line or its end or failed line, ends the
+     * call: the caller receives that very Error, and so do the observers, as their one end event, never the outcome or
+     * the failure the call would have returned or thrown, with the phase the call reached and what it wrote. The
+     * committed line comes once every setter returned, so an Error on it reports every state written.
+     */
+    @Test
+    void anErrorOfTheBackendOnALaterLineReachesTheObservers() {
+        GraphDefinition<Doc, DocStatus, DocTransition> rejecting = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("Ready",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> GuardResult.reject("not ready")));
+        GraphDefinition<Doc, DocStatus, DocTransition> throwing = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Review",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw new IllegalStateException("reviewer unavailable");
+                        }));
+        Doc committed = new Doc("1", DRAFT);
+        assertEquals(List.of("failed with the backend's Error in HOOK, ALL"), terminalEvents(" committed ",
+                readable(plain()), (StateMachine<Doc, DocStatus, DocTransition> machine) ->
+                        machine.execute(committed, SUBMIT)));
+        assertEquals(REVIEW, committed.status());
+        Doc applied = new Doc("2", DRAFT);
+        assertEquals(List.of("failed with the backend's Error in REACTIONS, ALL"), terminalEvents(" end code=",
+                readable(plain()), (StateMachine<Doc, DocStatus, DocTransition> machine) ->
+                        machine.execute(applied, SUBMIT)));
+        assertEquals(REVIEW, applied.status());
+        assertEquals(List.of("failed with the backend's Error in GUARD, NONE"), terminalEvents(" end code=",
+                readable(rejecting), (StateMachine<Doc, DocStatus, DocTransition> machine) ->
+                        machine.execute(new Doc("3", DRAFT), SUBMIT)));
+        assertEquals(List.of("failed with the backend's Error in RESOLVE, NONE"), terminalEvents(" end code=",
+                readable(plain()), (StateMachine<Doc, DocStatus, DocTransition> machine) ->
+                        machine.reevaluate(new Doc("4", DRAFT))));
+        assertEquals(List.of("failed with the backend's Error in ACTION, NONE"), terminalEvents(" failed phase=",
+                readable(throwing), (StateMachine<Doc, DocStatus, DocTransition> machine) ->
+                        machine.execute(new Doc("5", DRAFT), SUBMIT)));
+        assertEquals(List.of("failed with the backend's Error in RESOLVE, NONE"), terminalEvents(" failed phase=",
+                StateMachines.from(plain())
+                        .state((Doc doc) -> {
+                            throw new IllegalStateException("unreadable");
+                        }, Doc::setStatus)
+                        .identity(Doc::id),
+                (StateMachine<Doc, DocStatus, DocTransition> machine) -> machine.reevaluate(new Doc("6", DRAFT))));
+    }
+
+    /** A new builder of the documents machine over {@code graph}, which reads and writes the status. */
+    private static StateMachines.Builder<Doc, DocStatus, DocTransition> readable(
+            GraphDefinition<Doc, DocStatus, DocTransition> graph) {
+        return StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id);
+    }
+
+    /**
+     * Runs {@code call} on {@code machine}, in a registry with an observer, while the backend throws an Error on every
+     * line that contains {@code event}; asserts that the call throws that Error, and returns the end events the
+     * observer heard.
+     */
+    private static List<String> terminalEvents(String event,
+                                               StateMachines.Builder<Doc, DocStatus, DocTransition> machine,
+                                               Function<StateMachine<Doc, DocStatus, DocTransition>, Object> call) {
+        Fatal broken = new Fatal("handler invariant");
+        Handler failing = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                if (record.getMessage().contains(event)) {
+                    throw broken;
+                }
+            }
+
+            @Override
+            public void flush() { }
+
+            @Override
+            public void close() { }
+        };
+        List<String> heard = new ArrayList<>();
+        MachineObserver observer = new MachineObserver() {
+            @Override
+            public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                heard.add("completed");
+            }
+
+            @Override
+            public void onFailed(MachineCall call, CallFailure failure, Duration elapsed) {
+                String with = failure.error() == broken ? "the backend's Error" : "another";
+                heard.add("failed with " + with + " in " + failure.phase() + ", " + failure.statesWritten());
+            }
+        };
+        Logger runtime = Logger.getLogger(CallLog.LOGGER_NAME);
+        try (MachineRegistry registry = MachineRegistry.builder().add(machine).observer(observer).build();
+             LibraryLog log = LibraryLog.runtime(Level.FINE)) {
+            runtime.addHandler(failing);
+            try {
+                assertSame(broken, assertThrows(Fatal.class, () -> call.apply(registry.of(DOCS))));
+            } finally {
+                runtime.removeHandler(failing);
+            }
+            List<LogRecord> records = log.records();
+            assertTrue(records.get(records.size() - 1).getMessage().contains(event), records.toString());
+        }
+        return heard;
+    }
+
+    /**
      * A reaction names its trigger only when the call whose commit triggered it logged: a level raised while that
      * call runs reaches the reaction, a call of its own, whose start line names no trigger.
      */
@@ -796,11 +899,12 @@ class RuntimeLogDebugTest {
     }
 
     /**
-     * The observers hear of a call inside its first and last lines: onStarted before the start line, and the end
-     * event before the end or failed line, so the clock the observers measure from is read just before onStarted.
+     * The observers hear of a call before its first line and after its last: onStarted before the start line, so the
+     * clock the observers measure from is read just before onStarted, and the end event after the end or failed line,
+     * so a backend Error on that line is the end event they hear.
      */
     @Test
-    void theObserversAreToldInsideTheFirstAndLastLinesOfTheCall() {
+    void theObserversHearOfACallBeforeItsFirstLineAndAfterItsLast() {
         Doc applied = new Doc("1", DRAFT);
         Doc failing = new Doc("2", DRAFT);
         BiConsumer<Doc, DocStatus> setter = (Doc target, DocStatus status) -> {
@@ -834,7 +938,7 @@ class RuntimeLogDebugTest {
                 registry.of(DOCS).execute(applied, SUBMIT);
                 assertThrows(CommitFailedException.class, () -> registry.of(DOCS).execute(failing, SUBMIT));
             }
-            assertEquals(List.of(0, 2, 3, 4), seen);
+            assertEquals(List.of(0, 3, 3, 5), seen);
             assertEquals(5, log.records().size());
         }
     }

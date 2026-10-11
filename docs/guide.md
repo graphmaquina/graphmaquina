@@ -2874,9 +2874,9 @@ External side effects performed by actions, and mutations to other entity fields
 when the unit of work aborts. To set a field only once the call commits, an action can leave the value in the call's
 flow and a hook can assign it, as [set a field only when the call commits](#set-a-field-only-when-the-call-commits)
 shows. A call that [logs](#debug-a-call-logs-and-the-calls-flow) at `DEBUG` writes its `committed` and `started` lines
-after step 4, and its `end` or `failed` line after the observers learn how it ended. At `TRACE`, it also logs the check
-of step 3, each setter of step 4 before it is called, each hook of step 6 before it runs and each write that hook makes
-to the call's flow, and each owner lookup of step 7.
+after step 5, and its `end` or `failed` line just before the observers learn how it ended. At `TRACE`, it also logs
+the check of step 3, each setter of step 4 before it is called, each hook of step 6 before it runs and each write that
+hook makes to the call's flow, and each owner lookup of step 7.
 
 ### After-commit hooks
 
@@ -3126,8 +3126,10 @@ of an exception or of a visible flow value throws a `RuntimeException`, the line
 The runtime asks the logger for its two levels once, when a call starts, and builds no line of a level that is off: a
 level raised while a call runs applies from the next call, a call logged at `DEBUG` alone builds no `TRACE` line, and
 a call that logs nothing pays for no line. A `RuntimeException` from the logging backend loses the line and changes
-nothing in the call; an `Error` propagates. An `Error` that ends a call is not a `CallFailedException` and gets no
-`failed` line: the lines logged before it stay, and none follows them.
+nothing in the call; an `Error` propagates. An `Error` on a `committed`, `started`, `end` or `failed` line ends the
+call with that `Error`, which the [observers](#observers) receive as the call's end event, in the phase the call
+reached: the `committed` and `started` lines come once every setter returned, in `HOOK`. An `Error` that ends a call
+is not a `CallFailedException` and gets no `failed` line: the lines logged before it stay, and none follows them.
 
 ### The call's flow
 

@@ -29,7 +29,10 @@ public enum CallPhase {
      */
     COMMIT,
 
-    /** The after-commit hooks. The states are written. */
+    /**
+     * The after-commit hooks, and before them the DEBUG lines of the hops and starts the call committed. The states
+     * are written.
+     */
     HOOK,
 
     /**
