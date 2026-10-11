@@ -36,10 +36,11 @@ public sealed interface FlowEntry permits FlowEntry.Hop, FlowEntry.Start, FlowEn
      * as the outcome reports it. The trail has no entry for the failed hop itself, which the route dropped.
      *
      * @param failed the identifier of the transition whose step failed
-     * @param reason the reason of the failure: the one the action returned, or, for a routed throwable, its simple
-     *     class name and its message
+     * @param reason the reason of the failure, as {@link Outcome.Failed#reason()} reports it: the one the action
+     *     returned, or the one composed from a routed throwable
      * @param cause the throwable the route took, if a throwable failed the step
-     * @param kind the failure kind of a returned failure that named one
+     * @param kind the failure kind, as {@link Outcome.Failed#failureKind()} reports it: the one a returned failure
+     *     named, or the one of the recovery rule whose type routed the throwable; empty otherwise
      */
     record Recovery(@NonNull Enum<?> failed, @NonNull String reason, @NonNull Optional<Throwable> cause,
                     @NonNull Optional<Class<? extends FailureKind>> kind) { }

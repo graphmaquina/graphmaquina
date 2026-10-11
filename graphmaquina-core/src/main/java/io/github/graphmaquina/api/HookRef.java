@@ -9,7 +9,8 @@ import lombok.NonNull;
  * transaction and before the watch reactions. If it throws a throwable that is not an Error, a checked exception
  * included, the states stay written in memory and the transaction surfaces {@code AfterCommitException}, which carries
  * the hook's name ({@code hook()}), the committed hop it ran for ({@code hop()}), every hop the call committed
- * ({@code records()}) and every sub-machine it started ({@code starts()}): the application's own transaction decides
+ * ({@code records()}), every sub-machine it started ({@code starts()}) and the call's flow, with what the hooks
+ * wrote, this hook's writes before it threw included ({@code flow()}): the application's own transaction decides
  * what to do. An Error propagates unchanged. Either way, the later hooks and the watch reactions of that call do not
  * run.
  *

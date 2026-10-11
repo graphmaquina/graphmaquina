@@ -74,7 +74,7 @@ shop and billing domains the guide quotes.
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
 | Inspectable execution | Outcomes carry transition records, watch reactions, the sub-machines a call started and the call's flow; technical aborts carry diagnostic details where applicable. |
 | Call logs | Each call can log its start, the hops and sub-machine starts it committed, and how it ended, at `DEBUG`, and each step it took, at `TRACE`, through `System.Logger`; off by default. See [debug a call](#debug-a-call-logs-and-the-calls-flow). |
-| The call's flow | Actions put typed values in a flow that every step of the same call reads, guards, cascaded steps and the exits of sub-machines included, along with the entity the call was made for. A failure route drops the writes of the step that failed. Post-commit hooks read and write it too, so a value can reach the entity only once the call commits. With `recordTrail`, the flow also lists the hops and sub-machine starts the call took, each with the instant it took it, and how the call ended. The caller receives it frozen, in the outcome or in the call's failure. See [the call's flow](#the-calls-flow). |
+| The call's flow | Actions put typed values in a flow that every step of the same call reads, guards, cascaded steps and the exits of sub-machines included, along with the entity the call was made for. A failure route drops the writes of the step that failed. Post-commit hooks that take a `CommitContext` read and write it too, so a value can reach the entity only once the call commits. With `recordTrail`, the flow also lists the hops and sub-machine starts the call took, each with the instant it took it, and, when the call is rejected or throws, how it ended. The caller receives it frozen, in the outcome or in the call's failure. See [the call's flow](#the-calls-flow). |
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram, which draws each sub-machine inside the state it is bound to. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
@@ -1506,9 +1506,9 @@ The engine keeps the boundary between domain failures and technical ones:
 - The engine throws a few JDK exceptions from an action's context and its flow: `NullPointerException` for a null
   argument, `IllegalArgumentException` for a primitive class token in `input(Class)` or `flow().entity(Class)` or an
   identifier of another catalogue, `ClassCastException` when `input(Class)` reads an input of another type, when
-  `flow().put` receives a value of another class than its key's or when `flow().entity(Class)` names a class the
-  root entity is not an instance of, and `WrongThreadException` when the context or its flow is used from another
-  thread than the one running the action. They are not library exceptions: if the action lets one through and a
+  `flow().put` receives a value that is not an instance of its key's type or when `flow().entity(Class)` names a
+  class the root entity is not an instance of, and `WrongThreadException` when the context or its flow is used from
+  another thread than the one running the action. They are not library exceptions: if the action lets one through and a
   declared type accepts it, a rule or `failsOn` routes it like the adapter's own exceptions. None of them is an
   `IllegalStateException`. Declare the narrowest types the adapter throws.
 - Checked exceptions are classified like the others, however they arrive: thrown by a synchronous action without
@@ -1654,7 +1654,7 @@ static int httpStatus(OutcomeCode code) {
 
 The `switch` has no `default`: it is exhaustive, so a code added by a future release fails the build instead of
 falling through. Do not serialize the `Outcome` itself: it holds the entity, a `Throwable`, reactions with their own
-entities, and the call's flow, whose values are whatever the steps put.
+entities, and the call's flow, whose values are whatever the steps and hooks put.
 
 ### Read what only one variant carries
 
@@ -1751,11 +1751,12 @@ call wrote up to the failure:
 - A `CommitFailedException` holds everything the steps wrote.
 - An `AfterCommitException` also holds what the hooks wrote, the failing hook's writes before it threw included.
 - When the call records its trail, its flow also lists the hops and starts the call took up to the failure, except
-  those a rollback removed, then a `FlowEntry.Failed` entry with the failure, as
-  [record the call's trail](#record-the-calls-trail) shows.
+  those a rollback removed, then a `FlowEntry.Failed` entry with the failure, unless the trail's clock threw when
+  the call read that entry's instant, as [record the call's trail](#record-the-calls-trail) shows.
 - A `reevaluate` that fails before it runs an edge, while it reads the state, evaluates its watch or exceeds the
   limit of a watch chain, hands out `FlowView.empty()`, unless its machine records its trail: its flow then holds the
-  entity, no value, and the `Failed` entry alone. A call that records no trail and whose steps and hooks wrote
+  entity, no value, and the `Failed` entry alone, or no entry when the clock threw while it read the entry's instant.
+  A call that records no trail and whose steps and hooks wrote
   nothing to its flow hands out `FlowView.empty()` too.
 - An `Error` carries no flow: it propagates as itself.
 
@@ -2885,8 +2886,9 @@ item it cancels back in stock once the item's `CANCEL` hop commits.
 
 Hooks run synchronously on the operation's thread. Any throwable a hook throws that is not an `Error`, checked ones
 included, becomes `AfterCommitException`: the state is already committed. Its `hook()` names the hook, `hop()` the
-committed hop it ran for, `records()` every hop the call committed, and `starts()` every sub-machine the call started;
-a start runs no hook. An `Error` propagates unchanged instead. Either
+committed hop it ran for, `records()` every hop the call committed, `starts()` every sub-machine the call started,
+and `flow()` the call's flow, with what the hooks wrote, the failing hook's writes before it threw included; a start
+runs no hook. An `Error` propagates unchanged instead. Either
 stops the remaining normal post-commit sequence, so do not assume later hooks or watch dispatch ran; the observers are
 told the call failed. Make externally visible notifications idempotent and choose durable delivery separately if your
 application needs it.
@@ -3014,8 +3016,8 @@ prints each record on one line. As a child of `io.github.graphmaquina`, the runt
 when it has none of its own. For the `TRACE` lines too, write `FINER` in place of `FINE` on both levels: a handler left
 at `FINE` drops them.
 
-With this file, a ticket machine like the quickstart's, called as its `App` begins (submit and approve `T-1`, then
-submit `T-2` and `T-3`), logs these lines; the elapsed times vary from run to run:
+With this file, a ticket machine like the quickstart's, without its `committed` hook, called as its `App` begins
+(submit and approve `T-1`, then submit `T-2` and `T-3`), logs these lines; the elapsed times vary from run to run:
 
 ```text
 FINE: call=1 start Ticket/TicketState SUBMIT
@@ -3046,6 +3048,9 @@ FINE: call=4 committed Ticket/TicketState#T-3 OPEN -DECLINE-> FAILED depth=0
 FINE: call=4 end code=FAILURE_ROUTED state=FAILED entity=Ticket/TicketState#T-3 records=1 starts=0 reactions=0 aborted=0 reason="the review board declined the ticket" elapsed=2644us
 ```
 
+The quickstart's own machine also runs its `committed` hook for the `DECLINE` hop, so at `TRACE` it also logs a `hook`
+line after its `committed` line.
+
 SLF4J and Log4j receive the same lines through their `System.LoggerFinder` bridges on the class path, which map
 `DEBUG` and `TRACE` to their own levels of the same name. Set the logger `io.github.graphmaquina.runtime` to `debug` or
 `trace` there:
@@ -3072,13 +3077,13 @@ Square brackets below mark the parts a line may leave out.
 | `TRACE` | `call=<id> depth=<d> resolved <ref> <from> -<T>-> <to> kind=<kind>[ exit-of=<ref>]` | A step resolved the single edge keyed by its entity's state and the requested identifier, before its guards run. `<kind>` is the edge's `kind()`, `ACTION` or `MOVE`. The step of a sub-machine's exit adds `exit-of=` and the child whose terminal state selected the exit. |
 | `TRACE` | `call=<id> depth=<d> no-edge <ref> <from> <T>` | A step found no edge for its entity's state and the requested identifier: the request is rejected, or, inside a cascade or an exit, the call aborts. |
 | `TRACE` | `call=<id> depth=<d> binding <ref> parent=<ref> node=<node>` | The step of a sub-machine's child found the parent that holds it in `<node>`, before it looked up its edge. |
-| `TRACE` | `call=<id> depth=<d> detached <ref> reason="<reason>"` | The step of a sub-machine's child found parents, but none that holds it: the request is rejected as `DETACHED`, for `<reason>`. |
+| `TRACE` | `call=<id> depth=<d> detached <ref> reason="<reason>"` | The step of a sub-machine's child found parents, but none that holds it: the request is rejected as `DETACHED`, for `<reason>`, or, inside a cascade or an exit, the call aborts. |
 | `TRACE` | `call=<id> depth=<d> guard <name> PASS elapsed=<us>` / `call=<id> depth=<d> guard <name> REJECT reason="<reason>" elapsed=<us>` | A guard passed, or rejected the request for `<reason>`, as given and unescaped, with the time it took. A guard that throws logs neither. |
 | `TRACE` | `call=<id> depth=<d> action <name> start mode=<sync\|async>` | An action starts, synchronous or asynchronous: the edge's own action, or the recovery action of a failure route. |
 | `TRACE` | `call=<id> depth=<d> action <name> awaiting budget=<us\|none>` | An asynchronous action returned its stage, and the step waits for it at most `<us>`: what is left of the edge's `timeout` or of the call's `asyncTimeout`, whichever ends first. `none` when neither sets a limit. |
 | `TRACE` | `call=<id> depth=<d> action <name> OK elapsed=<us>` / `call=<id> depth=<d> action <name> FAILED[ kind=<kind>] reason="<reason>" elapsed=<us>` / `call=<id> depth=<d> action <name> THREW error=<class> elapsed=<us>` | The action ended, after the time since its `start` line. `OK`: it returned `ActionOutcome.ok()`. `FAILED`: it returned a failure, with the simple name of its failure kind when it has one, and its reason. `THREW`: it threw or completed its stage exceptionally, or the step gave up on it, for a null result or a wait that timed out, was interrupted or was refused. The line names the class of that throwable, never its message. An `Error` the action throws logs no end. |
-| `TRACE` | `call=<id> depth=<d> route <failed T> -> <recovery T> rollback-to=<savepoint>[ kind=<kind>] reason="<reason>"` | The failure of `<failed T>` took its route: the step dropped what the call had logged after the first `<savepoint>` hops and starts, with the writes to the call's flow made since, and takes `<recovery T>`. The line names the failure kind the route reports, if any, and the failure's reason; for a routed throwable, that is its simple class name and message, which the outcome's `explanation()` leaves out. |
-| `TRACE` | `call=<id> depth=<d> unhandled <failed T> reason="<reason>"` | The failure of `<failed T>` has no route: the step dropped what it had logged and written to the call's flow, and the call throws `UnhandledFailureException`, or, inside a cascade or an exit, aborts. |
+| `TRACE` | `call=<id> depth=<d> route <failed T> -> <recovery T> rollback-to=<savepoint>[ kind=<kind>] reason="<reason>"` | The failure of `<failed T>` took its route: the step dropped the hops and starts the call took after the first `<savepoint>` of them, with the writes to the call's flow made since, and takes `<recovery T>`. The line names the failure kind the route reports, if any, and the failure's reason; for a routed throwable, that is the reason composed from it, as [recover by failure kind and exception type](#recover-by-failure-kind-and-exception-type) says, which the outcome's `explanation()` leaves out. |
+| `TRACE` | `call=<id> depth=<d> unhandled <failed T> reason="<reason>"` | The failure of `<failed T>` has no route: the step dropped the hops and starts it took and its writes to the call's flow, and the call throws `UnhandledFailureException`, or, inside a cascade or an exit, aborts. |
 | `TRACE` | `call=<id> depth=<d> cascade <ref> <T>[ policy=<policy>]` | An action cascades `<T>` to the peer `<ref>`, at the action's depth; each element of `cascadeAll` adds its `CascadePolicy`. The lines of the cascaded step follow, one depth deeper. |
 | `TRACE` | `call=<id> depth=<d> cascade-result <ref> <T> code=<code>` | The cascaded step returned its outcome, with its `code()`. |
 | `TRACE` | `call=<id> depth=<d> collect-rollback <ref> <T> error=<error>` | Under `COLLECT`, the step of the element `<ref>` aborted with `<error>`: the element was rolled back, the poison it left was cleared, and the next element runs. |
@@ -3087,8 +3092,8 @@ Square brackets below mark the parts a line may leave out.
 | `TRACE` | `call=<id> depth=<d> poison error=<error>` | A failure poisoned the call, which then commits nothing: the abort of a step at a depth above 0, a cascade that failed before its step could run, such as a cycle or a machine the registry does not hold, or the aggregate of a `COLLECT`. The call keeps its first poison, and only that one is logged. |
 | `TRACE` | `call=<id> depth=<d> flow-put <key>[=<value>]` | An action put a value in [the call's flow](#the-calls-flow), at the depth of its step. `<key>` is the key as `name:Type`, with the simple name of its class; a key made with `FlowKey.visible` adds `=` and the value's `toString()`. |
 | `TRACE` | `call=<id> depth=<d> flow-remove <key>` | An action removed the value of `<key>` from the call's flow. |
-| `TRACE` | `call=<id> commit-check entities=<n> hops=<n>` / `call=<id> commit-conflict reason="<conflict>"` | The commit checks the original state of each entity in the call's log: `entities=` counts them, and `hops=` the hops of the log, starts not counted. A state that changed while the call ran is a conflict: the commit writes nothing and throws `CommitFailedException`. |
-| `TRACE` | `call=<id> setter <ref> <from> -> <to> entries=<n>` | The commit is about to call the setter of `<ref>`, which moves it from its first state to its last, through `<n>` hops and starts of the log. |
+| `TRACE` | `call=<id> commit-check entities=<n> hops=<n>` / `call=<id> commit-conflict reason="<conflict>"` | The commit checks the original state of each entity the call's hops and starts moved: `entities=` counts them, and `hops=` the hops the call took, starts not counted. A state that changed while the call ran is a conflict: the commit writes nothing and throws `CommitFailedException`. |
+| `TRACE` | `call=<id> setter <ref> <from> -> <to> entries=<n>` | The commit is about to call the setter of `<ref>`, which moves it from its first state to its last, through `<n>` hops and starts the call took. |
 | `TRACE` | `call=<id> hook <hook> <ref> <T>` | The hook `<hook>` is about to run for the committed hop `<T>` of `<ref>`. |
 | `TRACE` | `call=<id> hook-flow-put <hook> <key>[=<value>]` | The hook `<hook>` put a value in [the call's flow](#the-calls-flow). `<key>` and `<value>` print as in `flow-put`. |
 | `TRACE` | `call=<id> hook-flow-remove <hook> <key>` | The hook `<hook>` removed the value of `<key>` from the call's flow. |
@@ -3232,9 +3237,9 @@ aborts with it as its cause, unless a type the edge declares accepts it. The flo
 thread running the hook and only while it runs, as [after-commit hooks](#after-commit-hooks) describes.
 
 Each write of an action is logged at `TRACE` as a `flow-put` or `flow-remove` line, and each write of a hook as a
-`hook-flow-put` or `hook-flow-remove` line, which names the hook. Each prints the key as `name:Type`. A key made with
-`FlowKey.visible` also prints `=` and the value's `toString()`, whatever object it is: make a key visible only for
-values you accept to see in your logs.
+`hook-flow-put` or `hook-flow-remove` line, which names the hook. Each prints the key as `name:Type`. A put with a
+key made with `FlowKey.visible` also prints `=` and the value's `toString()`, whatever object it is: make a key visible
+only for values you accept to see in your logs. A remove prints no value.
 
 #### Set a field only when the call commits
 
@@ -3340,12 +3345,12 @@ and sub-machine starts included:
 
 | Entry | When | What it holds |
 | --- | --- | --- |
-| `FlowEntry.Hop` | Each hop the call took | `hop()`, the hop's `TransitionRecord`, which in an outcome is the very instance `records()` lists. On the hop of a failure route, `recovery()` holds what failed: the identifier of the transition whose step failed, the reason, the throwable if one failed the step, and the failure kind if the failure named one. |
+| `FlowEntry.Hop` | Each hop the call took | `hop()`, the hop's `TransitionRecord`, which in an outcome is the very instance `records()` lists. On the hop of a failure route, `recovery()` holds what failed: the identifier of the transition whose step failed, the reason, the throwable if one failed the step, and the failure kind the outcome reports, if any: the one a returned failure named, or the one of the recovery rule whose type routed the throwable. |
 | `FlowEntry.Start` | Each sub-machine the call started | `start()`, the start's `SubmachineStart`, which in an outcome is the very instance `starts()` lists. |
 | `FlowEntry.Rejected` | Last, when the call returns `Outcome.Rejected` | The root call's machine key and entity, the state, the requested identifier, the `RejectionKind`, the reason and the guard that rejected, if one did. |
 | `FlowEntry.Failed` | Last, when the call throws a `CallFailedException` | `failure()`, a `CallFailure` equal to the one the observers receive: the phase, `statesWritten()`, which says what the call wrote, and the exception. |
 
-Each entry's `at()` is read on the root machine's clock. A hop's or a start's is read right after the call logged
+Each entry's `at()` is read on the root machine's clock. A hop's or a start's is read right after the call took
 it, after the guards of its step and before its action runs, so an action reads its own hop in the trail. A
 `Rejected` or `Failed` entry's is read when the call ended. For instance, a handler can turn the trail into lines for
 its log or its response:
@@ -3384,15 +3389,16 @@ A step reads `ctx.flow().trail()` and a hook `commit.flow().trail()`, under the 
 rest of the flow: a step reads what the call took so far, and a hook every hop and start the call committed. Each read
 builds a new list, which does not follow later entries.
 
-A call that records its trail creates its flow when it starts, so it hands out a flow with the root entity and the
-trail even when no step or hook wrote to it, a rejected call included. Two such outcomes are equal only when their
+A call that records its trail creates its flow when its step starts, so it hands out a flow with the root entity and
+the trail even when no step or hook wrote to it, a rejected call included. Two such outcomes are equal only when their
 trails are, `at()` included.
 
 `recordTrail()` reads `InstantSource.system()`. `recordTrail(InstantSource clock)` reads `clock` instead, on the
 thread running the call, once per entry: a test can pass `InstantSource.fixed(...)`, a `Clock`, or a clock of its own
 that advances on each read. A clock that throws a `RuntimeException` fails the call, as an identity function that
-throws does: the entry it could not mark stays out of the trail, and when it throws again for the call's last entry,
-the call's `CallFailedException` carries what it threw as suppressed and its trail ends without that entry. A call
+throws does: the entry it could not mark stays out of the trail. When it throws while the call reads the instant of
+the `Failed` entry that ends a failed call, whatever failed the call, the call's `CallFailedException` carries what
+it threw as suppressed and its trail ends without that entry. A call
 whose root machine was built without `recordTrail` reads no clock and stores no time.
 
 The trail records what the call took and how it ended; the [`TRACE` lines](#logs) show each step on the way, its

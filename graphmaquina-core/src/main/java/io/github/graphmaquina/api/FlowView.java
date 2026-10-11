@@ -55,9 +55,9 @@ public interface FlowView {
      * which its context's {@code entity()} gives, and so does the hook of any hop of the call, whose own entity is
      * its first argument. A change made to it is immediate and never undone, not even when the call fails. Present in
      * the flow every step and every hook of a call receives, and in the flow a call hands out once a step or a hook
-     * wrote to it or when the call records its trail; empty in {@link #empty()}, which a call that records no trail
-     * and wrote nothing to its flow hands out, and in a flow that belongs to no call, such as the one the five-argument
-     * constructor of {@link CommitContext} gives.
+     * wrote to it or when the call records its trail and runs a step; empty in {@link #empty()}, which a call that
+     * records no trail and wrote nothing to its flow hands out, and so does an ignored reevaluation, and in a flow that
+     * belongs to no call, such as the one the five-argument constructor of {@link CommitContext} gives.
      */
     Optional<Object> entity();
 

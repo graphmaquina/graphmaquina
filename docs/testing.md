@@ -888,8 +888,9 @@ assertThat(traced.execute(article, PublicationChange.PUBLISH)).isRejected().flow
         .endsWithRejection(RejectionKind.NO_TRANSITION);
 ```
 
-A call that throws hands its flow out on its failure. An abort undoes no write, so the flow keeps the receipt the
-action put before it threw, and the trail ends with the failure. Its hop, read through `hops()`, says where the
+A call that throws hands its flow out on its failure. The action throws a type its edge does not declare, so its
+step aborts and nothing rolls it back: the flow keeps the receipt the action put before it threw, and the trail ends
+with the failure. Its hop, read through `hops()`, says where the
 aborted step was going:
 
 ```java
@@ -922,8 +923,9 @@ announce.run(new Publication("p7"), commit);
 assertThat(commit.flow()).hasValue(receipt, "announced p7").hasKeysExactly(receipt).trail().isEmpty();
 ```
 
-A watch reaction is a call of its own: `isDone().outcome().flow()` reads the reaction's flow, and an aborted
-reaction's cause, a `CallFailedException`, hands out its own, which `assertThat(cause).isCallFailure().flow()` reads.
+A watch reaction is a call of its own: `isDone().outcome().flow()` reads the reaction's flow. A reaction whose
+reevaluation threw has that reevaluation's `CallFailedException` as its cause, which hands out the reaction's own
+flow and which `assertThat(cause).isCallFailure().flow()` reads; a reaction whose owner lookup threw ran no call.
 
 A trail held as a list, such as the one `trail()` of a flow returns, has its own factory:
 

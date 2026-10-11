@@ -340,6 +340,26 @@ class FlowHookTest {
     }
 
     /**
+     * A hook's flow checks its lifetime before its thread: used on another thread once its hook returned, every
+     * operation throws StaleContextException, not WrongThreadException.
+     */
+    @Test
+    void theFlowOfAHookChecksItsLifetimeBeforeItsThread() {
+        AtomicReference<FlowContext> retained = new AtomicReference<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.afterCommitWith("Persist",
+                        (Doc committed, CommitContext<DocStatus, DocTransition> commit) ->
+                                retained.set(commit.flow())));
+        try (MachineRegistry registry = registry(graph)) {
+            assertInstanceOf(Outcome.Applied.class, registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT));
+        }
+        Map<String, String> offThread = new LinkedHashMap<>();
+        operations(retained.get()).forEach((String name, Runnable operation) ->
+                offThread.put(name, describe(thrownOnAnotherThread(operation))));
+        assertEquals(each(STALE), offThread);
+    }
+
+    /**
      * While the hook runs, every operation of its flow works only on the thread running it: on another thread each
      * throws WrongThreadException, which names the hook and that thread, and a write refused there stores nothing.
      */
@@ -450,6 +470,40 @@ class FlowHookTest {
                 "outer hook wrote: Optional[after] [batch:String, note:String]"), seen);
         assertEquals(REVIEW, outer.status());
         assertEquals(ARCHIVED, inner.status());
+    }
+
+    /**
+     * A hook does not run when an earlier hook of its call throws: the parent's hop runs its hook first, which throws,
+     * so the hook of the cascaded child's hop, which would read the flow, never runs, although the child's state was
+     * written.
+     */
+    @Test
+    void aHookDoesNotRunWhenAnEarlierHookOfItsCallThrows() {
+        Doc parent = new Doc("1", DRAFT);
+        Doc child = new Doc("2", DRAFT);
+        IllegalStateException boom = new IllegalStateException("persistence unavailable");
+        List<String> ran = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.afterCommitWith("Second",
+                        (Doc committed, CommitContext<DocStatus, DocTransition> commit) ->
+                                ran.add(committed.id() + " " + commit.flow().keys())),
+                (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard
+                        .action("Collect", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.flow().put(BATCH, "b-1");
+                            ctx.cascade(DOCS, child, SUBMIT);
+                            return ActionOutcome.ok();
+                        })
+                        .afterCommitWith("First", (Doc committed, CommitContext<DocStatus, DocTransition> commit) -> {
+                            throw boom;
+                        }));
+        AfterCommitException error;
+        try (MachineRegistry registry = registry(graph)) {
+            error = assertThrows(AfterCommitException.class, () -> registry.of(DOCS).execute(parent, DISCARD));
+        }
+        assertSame(boom, error.getCause());
+        assertEquals("First", error.hook());
+        assertEquals(List.of(), ran);
+        assertEquals(REVIEW, child.status());
     }
 
     /**

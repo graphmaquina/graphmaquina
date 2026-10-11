@@ -518,6 +518,38 @@ class FlowDeliveryTest {
     }
 
     /**
+     * The rollback of an unhandled failure reaches the steps its step cascaded to: an action that cascades, then
+     * returns a failure its edge has no route for, leaves neither its own write nor the cascaded step's in the
+     * UnhandledFailureException the call throws, although the cascaded step ran.
+     */
+    @Test
+    void anUnhandledFailureLacksTheWritesOfTheStepsItsStepCascadedTo() {
+        Doc parent = new Doc("1", DRAFT);
+        Doc child = new Doc("2", DRAFT);
+        List<String> ran = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.flow().put(CHILD, "c");
+                            ran.add(ctx.entity().id());
+                            return ActionOutcome.ok();
+                        }),
+                (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard
+                        .action("Collect", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.flow().put(PARENT, "p");
+                            ctx.cascade(DOCS, child, SUBMIT);
+                            return ActionOutcome.failed("nothing to collect");
+                        }));
+        UnhandledFailureException error;
+        try (MachineRegistry registry = registry(graph)) {
+            error = assertThrows(UnhandledFailureException.class, () -> registry.of(DOCS).execute(parent, DISCARD));
+        }
+        assertEquals(List.of("2"), ran);
+        assertSame(parent, error.entity());
+        assertEquals(frozen(parent), error.flow());
+    }
+
+    /**
      * A COLLECT element that aborts is rolled back with its writes before the next element runs; the aggregate the
      * call throws holds the parent's write and the passing element's.
      */

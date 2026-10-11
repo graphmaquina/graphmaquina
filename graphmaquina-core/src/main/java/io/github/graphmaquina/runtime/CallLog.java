@@ -22,8 +22,10 @@ import java.util.concurrent.atomic.AtomicLong;
  *       logs, at DEBUG, at TRACE or at both; it is 0 only for {@link #OFF}, which logs nothing. A TRACE line of a
  *       step carries its depth next; the TRACE lines of the commit, the hooks and the watch dispatch carry none.</li>
  *   <li>An entity is printed only as an {@link EntityRef} the engine already holds, through {@link #show}: a line
- *       never calls an identity function, a getter or an entity's own {@code toString()}. Enum constants are printed
- *       by {@code name()}.</li>
+ *       never calls an identity function, a getter or an entity's own {@code toString()}, unless the application put
+ *       the entity in the flow under a visible key, whose {@code flow-put} and {@code hook-flow-put} lines print the
+ *       value's {@code toString()}. The enum constants a line names are printed by {@code name()}; a reason or an
+ *       error is printed as it was given.</li>
  *   <li>A RuntimeException that the backend throws never reaches the call: a level it was asked about counts as off,
  *       and a line it was given is dropped. An Error propagates.</li>
  * </ul>

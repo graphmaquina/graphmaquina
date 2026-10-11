@@ -163,6 +163,8 @@ public final class Billing {
     public final List<String> hooks = new ArrayList<>();
     /** Runs after the hook recorded its hop; a test replaces it to make the hook throw. */
     public Consumer<String> afterHook = (String hop) -> { };
+    /** Receives the context of each hop whose hook ran, once {@link #afterHook} returned; a test reads it. */
+    public Consumer<CommitContext<?, ?>> onCommit = (CommitContext<?, ?> context) -> { };
 
     public final GraphDefinition<Payment, RiskStatus, RiskTransition> risks;
     public final GraphDefinition<Payment, PaymentStatus, PaymentTransition> payments;
@@ -213,6 +215,7 @@ public final class Billing {
             String hop = entity + ":" + context.from() + "-" + context.transition() + ">" + context.to();
             hooks.add(hop);
             afterHook.accept(hop);
+            onCommit.accept(context);
         };
     }
 

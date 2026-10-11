@@ -642,6 +642,89 @@ class RuntimeLogDebugTest {
         }
     }
 
+    /**
+     * The start line is written inside the try that tells the observers of an Error: a backend that throws an Error
+     * on that line ends the call, of execute as of reevaluate, and the observers, told the call started, are told it
+     * failed with that very Error.
+     */
+    @Test
+    void anErrorOfTheBackendOnTheStartLineReachesTheObservers() {
+        Fatal broken = new Fatal("handler invariant");
+        Handler failing = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                throw broken;
+            }
+
+            @Override
+            public void flush() { }
+
+            @Override
+            public void close() { }
+        };
+        List<String> heard = new ArrayList<>();
+        MachineObserver observer = new MachineObserver() {
+            @Override
+            public void onStarted(MachineCall call) {
+                heard.add("started");
+            }
+
+            @Override
+            public void onFailed(MachineCall call, CallFailure failure, Duration elapsed) {
+                heard.add(failure.error() == broken ? "failed with the backend's Error" : "failed with another");
+            }
+        };
+        Logger runtime = Logger.getLogger(CallLog.LOGGER_NAME);
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(plain()).state(Doc::status, Doc::setStatus).identity(Doc::id))
+                .observer(observer)
+                .build(); LibraryLog log = LibraryLog.runtime(Level.FINE)) {
+            runtime.addHandler(failing);
+            try {
+                assertSame(broken, assertThrows(Fatal.class,
+                        () -> registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT)));
+                assertSame(broken, assertThrows(Fatal.class, () -> registry.of(DOCS).reevaluate(new Doc("2", DRAFT))));
+            } finally {
+                runtime.removeHandler(failing);
+            }
+            assertEquals(List.of("FINE call=A start Doc/DocStatus SUBMIT",
+                    "FINE call=B start Doc/DocStatus reevaluate"), lines(log));
+        }
+        assertEquals(List.of("started", "failed with the backend's Error", "started",
+                "failed with the backend's Error"), heard);
+    }
+
+    /**
+     * A reaction names its trigger only when the call whose commit triggered it logged: a level raised while that
+     * call runs reaches the reaction, a call of its own, whose start line names no trigger.
+     */
+    @Test
+    void aReactionOfACallThatLoggedNothingNamesNoTrigger() {
+        Order order = new Order("o1", OrderStatus.PAID);
+        new Item("i1", ItemStatus.PACKED, Optional.of(order));
+        Item last = new Item("i2", ItemStatus.PACKING, Optional.of(order));
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(OrderGraphs.order(
+                                (TransitionContext<Order, OrderStatus, OrderTransition> ctx) ->
+                                        CompletableFuture.completedFuture(ActionOutcome.ok()),
+                                new Probe<>(), new Probe<>(),
+                                (GuardContext<Order, OrderStatus, OrderTransition> ctx) -> GuardResult.pass(),
+                                (GuardContext<Order, OrderStatus, OrderTransition> ctx) -> GuardResult.pass()))
+                        .state(Order::status, Order::setStatus).identity(Order::id).asyncTimeout(Duration.ofSeconds(5)))
+                .add(StateMachines.from(OrderGraphs.item((TransitionContext<Item, ItemStatus, ItemTransition> ctx) -> {
+                    Logger.getLogger(CallLog.LOGGER_NAME).setLevel(Level.FINE);
+                    return ActionOutcome.ok();
+                })).state(Item::status, Item::setStatus).identity(Item::id))
+                .build(); LibraryLog log = LibraryLog.runtime(Level.INFO)) {
+            registry.of(ITEMS).execute(last, ItemTransition.PACK);
+            assertEquals(List.of(
+                    "FINE call=A start Order/OrderStatus reevaluate",
+                    "FINE call=A committed Order/OrderStatus#o1 PAID -SHIP-> SHIPPED depth=0",
+                    "FINE call=A end code=APPLIED state=SHIPPED entity=Order/OrderStatus#o1 records=1 starts=0"
+                            + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
+        }
+    }
+
     /** The cost pin: with the logger off, no line is built, so the identity is never printed. */
     @Test
     void withTheLoggerOffNothingIsPrinted() {

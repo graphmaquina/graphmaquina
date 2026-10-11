@@ -42,6 +42,7 @@ import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.Item;
 import io.github.graphmaquina.fixtures.LibraryLog;
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -311,6 +312,52 @@ class FlowBagTest {
                 "Optional.empty"), seen);
     }
 
+    /**
+     * A value is refused only when it is not an instance of its key's type: a key of an abstract type takes a value
+     * of any subclass, and a read answers that very object.
+     */
+    @Test
+    void aValueOfASubclassOfTheKeysTypeIsAccepted() {
+        FlowKey<Number> amount = FlowKey.of("amount", Number.class);
+        BigDecimal price = new BigDecimal("3.50");
+        List<Optional<Number>> read = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Review",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.flow().put(amount, price);
+                            read.add(ctx.flow().get(amount));
+                            return ActionOutcome.ok();
+                        }));
+        try (MachineRegistry registry = registry(graph)) {
+            assertEquals(OutcomeCode.APPLIED, registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT).code());
+        }
+        assertSame(price, read.get(0).orElseThrow());
+    }
+
+    /**
+     * The keys a read returns do not follow later writes: the set an action read before its next put and remove
+     * stays as it was, and a new read answers the keys as they are now.
+     */
+    @Test
+    void theKeysAReadReturnsDoNotFollowLaterWrites() {
+        List<Set<FlowKey<?>>> read = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Review",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.flow().put(BATCH, "b-1");
+                            Set<FlowKey<?>> before = ctx.flow().keys();
+                            ctx.flow().put(COUNT, 1);
+                            ctx.flow().remove(BATCH);
+                            read.add(before);
+                            read.add(ctx.flow().keys());
+                            return ActionOutcome.ok();
+                        }));
+        try (MachineRegistry registry = registry(graph)) {
+            registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT);
+        }
+        assertEquals(List.of(Set.of(BATCH), Set.of(COUNT)), read);
+    }
+
     @Test
     void theRootStepsGuardAndActionReachTheRootEntity() {
         Doc doc = new Doc("1", DRAFT);
@@ -442,6 +489,26 @@ class FlowBagTest {
     }
 
     /**
+     * A change made to the root entity through the flow is immediate and never undone, not even when the call fails:
+     * an action that changes the entity {@code flow().entity(Class)} answers and then throws leaves the change on the
+     * entity after the abort.
+     */
+    @Test
+    void aChangeMadeThroughTheFlowsEntityStaysWhenTheCallFails() {
+        Doc doc = new Doc("1", DRAFT);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Review",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.flow().entity(Doc.class).orElseThrow().setStatus(PUBLISHED);
+                            throw new IllegalStateException("reviewer unavailable");
+                        }));
+        try (MachineRegistry registry = registry(graph)) {
+            assertThrows(TransitionAbortedException.class, () -> registry.of(DOCS).execute(doc, SUBMIT));
+        }
+        assertEquals(PUBLISHED, doc.status());
+    }
+
+    /**
      * Spec R13.1: the flow of an action, and every operation of it, runs the action context's own check first: off the
      * thread running process() each throws its WrongThreadException, and once the call ended its
      * StaleContextException. A write refused off the thread stores nothing.
@@ -534,6 +601,71 @@ class FlowBagTest {
         FlowView view = captured.get();
         assertFalse(view instanceof FlowContext);
         assertThrows(ClassCastException.class, () -> ((FlowContext) view).put(BATCH, "b-1"));
+    }
+
+    /**
+     * The flow of a context is a handle of its own, equal only to itself: two calls of {@code ctx.flow()} answer two
+     * handles over the same flow, and neither equals the other, in a guard as in an action.
+     */
+    @Test
+    void theFlowOfAContextIsEqualOnlyToItself() {
+        List<Boolean> equalities = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .guard("Reads", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            FlowView view = ctx.flow();
+                            equalities.add(view.equals(view));
+                            equalities.add(view.equals(ctx.flow()));
+                            return GuardResult.pass();
+                        })
+                        .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            FlowContext flow = ctx.flow();
+                            equalities.add(flow.equals(flow));
+                            equalities.add(flow.equals(ctx.flow()));
+                            return ActionOutcome.ok();
+                        }));
+        try (MachineRegistry registry = registry(graph)) {
+            registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT);
+        }
+        assertEquals(List.of(true, false, true, false), equalities);
+    }
+
+    /**
+     * Every operation runs its context's check before its own argument checks: off the thread, a guard's read with a
+     * null key and an action's put of a null key and value throw the context's WrongThreadException, not
+     * NullPointerException, and once the call ended, its StaleContextException.
+     */
+    @Test
+    void theContextsCheckRunsBeforeTheArgumentChecks() {
+        AtomicReference<FlowView> guard = new AtomicReference<>();
+        AtomicReference<FlowContext> action = new AtomicReference<>();
+        AtomicReference<String> owner = new AtomicReference<>();
+        List<String> refused = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .guard("Reads", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            owner.set(Thread.currentThread().getName());
+                            guard.set(ctx.flow());
+                            refused.add(describe(thrownOnAnotherThread(() -> guard.get().get(null))));
+                            return GuardResult.pass();
+                        })
+                        .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            action.set(ctx.flow());
+                            refused.add(describe(thrownOnAnotherThread(() -> action.get().put(null, null))));
+                            return ActionOutcome.ok();
+                        }));
+        try (MachineRegistry registry = registry(graph)) {
+            registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT);
+        }
+        refused.add(describe(thrownBy(() -> guard.get().get(null))));
+        refused.add(describe(thrownBy(() -> action.get().put(null, null))));
+        String stale = "StaleContextException: the context of Doc/DocStatus is no longer valid: the transaction ended";
+        assertEquals(List.of(
+                "WrongThreadException: the context of Doc/DocStatus can only be used from the thread running test(): "
+                        + owner.get(),
+                "WrongThreadException: the context of Doc/DocStatus can only be used from the thread running"
+                        + " process(): " + owner.get(),
+                stale, stale), refused);
     }
 
     /**

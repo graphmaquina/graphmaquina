@@ -24,6 +24,7 @@ import io.github.graphmaquina.api.FailureKind;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
+import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.PeerView;
@@ -124,6 +125,39 @@ class RuntimeLogTraceTest {
         public String toString() {
             printed.incrementAndGet();
             return id;
+        }
+    }
+
+    /** States of {@link Lamp}, each printed by its {@code toString()} as something other than its name. */
+    enum Shade {
+        DARK, LIT;
+
+        @Override
+        public String toString() {
+            return "shade " + ordinal();
+        }
+    }
+
+    /** The one transition of {@link Lamp}, printed by its {@code toString()} as something other than its name. */
+    enum Switch {
+        LIGHT;
+
+        @Override
+        public String toString() {
+            return "switch " + ordinal();
+        }
+    }
+
+    /** An entity whose state and transition enums print otherwise than their names. */
+    static final class Lamp {
+        private Shade shade = Shade.DARK;
+
+        Shade shade() {
+            return shade;
+        }
+
+        void setShade(Shade shade) {
+            this.shade = shade;
         }
     }
 
@@ -722,6 +756,102 @@ class RuntimeLogTraceTest {
         }
     }
 
+    /**
+     * A line prints the identity the engine already computed: a call logged at TRACE runs the identity function and
+     * the state getter exactly as often as the same call with the logger off.
+     */
+    @Test
+    void aLineRunsNeitherTheIdentityFunctionNorTheStateGetter() {
+        AtomicInteger identities = new AtomicInteger();
+        AtomicInteger reads = new AtomicInteger();
+        GraphDefinition<Doc, DocStatus, DocTransition> reviewed = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .guard("Ready", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> GuardResult.pass())
+                        .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                ActionOutcome.ok()));
+        List<Integer> counts = new ArrayList<>();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(reviewed)
+                        .state((Doc target) -> {
+                            reads.incrementAndGet();
+                            return target.status();
+                        }, Doc::setStatus)
+                        .identity((Doc target) -> {
+                            identities.incrementAndGet();
+                            return target.id();
+                        }))
+                .build()) {
+            registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT);
+            counts.add(identities.getAndSet(0));
+            counts.add(reads.getAndSet(0));
+            try (LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+                registry.of(DOCS).execute(new Doc("2", DRAFT), SUBMIT);
+                assertEquals(9, log.records().size());
+            }
+            counts.add(identities.get());
+            counts.add(reads.get());
+        }
+        assertTrue(counts.get(0) > 0 && counts.get(1) > 0, counts.toString());
+        assertEquals(counts.subList(0, 2), counts.subList(2, 4));
+    }
+
+    /** The setter line is logged before the setter runs: a setter that throws leaves it, then the failed line. */
+    @Test
+    void theSetterLineIsLoggedBeforeTheSetterRuns() {
+        Doc doc = new Doc("1", DRAFT);
+        IllegalStateException locked = new IllegalStateException("the row is locked");
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(plain()).state(Doc::status, (Doc target, DocStatus status) -> {
+                    throw locked;
+                }).identity(Doc::id))
+                .build(); LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            CommitFailedException error = assertThrows(CommitFailedException.class,
+                    () -> registry.of(DOCS).execute(doc, SUBMIT));
+            assertEquals(List.of(
+                    "FINE call=A start Doc/DocStatus SUBMIT",
+                    "FINER call=A depth=0 resolved Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW kind=MOVE",
+                    "FINER call=A commit-check entities=1 hops=1",
+                    "FINER call=A setter Doc/DocStatus#1 DRAFT -> REVIEW entries=1",
+                    "FINE call=A failed phase=COMMIT written=PARTIAL entity=Doc/DocStatus#1 error=" + error
+                            + " elapsed=<us>"), lines(log));
+        }
+    }
+
+    /**
+     * A guard that throws logs no verdict, and an action that throws an Error logs no end line: the lines of a call
+     * stop where it threw, before its failed line, and the Error gets none.
+     */
+    @Test
+    void aGuardThatThrowsAndAnActionsErrorLogNoVerdict() {
+        Doc guarded = new Doc("1", DRAFT);
+        Doc fatal = new Doc("2", DRAFT);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .guard("Ready", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            if (ctx.entity() == guarded) {
+                                throw new IllegalStateException("no reviewer list");
+                            }
+                            return GuardResult.pass();
+                        })
+                        .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw new RuntimeLogDebugTest.Fatal("out of reviewers");
+                        }));
+        try (MachineRegistry registry = registry(graph); LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(guarded, SUBMIT));
+            assertThrows(RuntimeLogDebugTest.Fatal.class, () -> registry.of(DOCS).execute(fatal, SUBMIT));
+            assertEquals(List.of(
+                    "FINE call=A start Doc/DocStatus SUBMIT",
+                    "FINER call=A depth=0 resolved Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW kind=ACTION",
+                    "FINE call=A failed phase=GUARD written=NONE entity=Doc/DocStatus#1 error=" + error
+                            + " elapsed=<us>",
+                    "FINE call=B start Doc/DocStatus SUBMIT",
+                    "FINER call=B depth=0 resolved Doc/DocStatus#2 DRAFT -SUBMIT-> REVIEW kind=ACTION",
+                    "FINER call=B depth=0 guard Ready PASS elapsed=<us>",
+                    "FINER call=B depth=0 action Review start mode=sync"), lines(log));
+        }
+    }
+
     /** The watch names the owner its lookup found, and the reaction it runs is a call of its own. */
     @Test
     void aWatchTracesTheOwnerItFound() {
@@ -821,6 +951,32 @@ class RuntimeLogTraceTest {
                 assertEquals(9, log.records().size());
             }
             assertEquals(6, printed.get());
+        }
+    }
+
+    /**
+     * A line names the constants of the state and transition enums by {@code name()}, whatever their
+     * {@code toString()} prints.
+     */
+    @Test
+    void aLineNamesEnumConstantsByTheirNames() {
+        MachineKey<Lamp, Shade, Switch> lamps = MachineKey.of(Lamp.class, Shade.class, Switch.class);
+        GraphDefinition<Lamp, Shade, Switch> graph = StateGraph.define(lamps).initial(Shade.DARK).terminal(Shade.LIT)
+                .statePolicy(Shade.DARK, "a dark lamp is lit")
+                .transition(Switch.LIGHT, Shade.DARK, Shade.LIT).endTransition()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(graph).state(Lamp::shade, Lamp::setShade).identity((Lamp lamp) -> "l1"))
+                .build(); LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            registry.of(lamps).execute(new Lamp(), Switch.LIGHT);
+            assertEquals(List.of(
+                    "FINE call=A start Lamp/Shade LIGHT",
+                    "FINER call=A depth=0 resolved Lamp/Shade#l1 DARK -LIGHT-> LIT kind=MOVE",
+                    "FINER call=A commit-check entities=1 hops=1",
+                    "FINER call=A setter Lamp/Shade#l1 DARK -> LIT entries=1",
+                    "FINE call=A committed Lamp/Shade#l1 DARK -LIGHT-> LIT depth=0",
+                    "FINE call=A end code=APPLIED state=LIT entity=Lamp/Shade#l1 records=1 starts=0 reactions=0"
+                            + " aborted=0 elapsed=<us>"), lines(log));
         }
     }
 

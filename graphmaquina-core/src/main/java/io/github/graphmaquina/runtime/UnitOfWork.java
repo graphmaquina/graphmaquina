@@ -437,7 +437,8 @@ final class UnitOfWork {
      * entry wraps the next of {@code records}, a start entry the next of {@code starts}, which are the
      * {@link #records()} and {@link #starts()} of the log as it stands; each is at the instant of its entry's mark, and
      * a hop carries the recovery its mark holds. The entries stop at the first entry of the log without a mark: only
-     * the last entry can lack one, when the clock threw instead of marking it, and the call fails with what it threw.
+     * the last entry can lack one, when the clock threw instead of marking it, and the call aborts with what the
+     * clock threw as its cause.
      */
     List<FlowEntry> trailOf(List<TransitionRecord<?, ?, ?>> records, List<SubmachineStart<?, ?, ?>> starts) {
         CallFlow marks = flow.orElseThrow();

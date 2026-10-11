@@ -47,8 +47,10 @@ import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
 import io.github.graphmaquina.error.AfterCommitException;
+import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.CascadeException;
 import io.github.graphmaquina.error.TransitionAbortedException;
+import io.github.graphmaquina.error.UnhandledFailureException;
 import io.github.graphmaquina.error.WatchChainExceededException;
 import io.github.graphmaquina.fixtures.Billing;
 import io.github.graphmaquina.fixtures.Billing.Booking;
@@ -308,6 +310,67 @@ class TrailTest {
     }
 
     /**
+     * A throwable that a recovery rule's type routes leaves that rule's failure kind on the recovery hop, as the
+     * outcome reports it, with the throwable as cause.
+     */
+    @Test
+    void aThrowableARecoveryRuleRoutesLeavesTheRulesKindOnTheRecoveryHop() {
+        Doc doc = new Doc("1", DRAFT);
+        IllegalArgumentException refused = new IllegalArgumentException("no reviewer");
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw refused;
+                        })
+                        .recover(Declined.class, DISCARD, IllegalArgumentException.class));
+        Outcome<Doc, DocStatus, DocTransition> outcome = recording(graph, new TickingClock()).build()
+                .execute(doc, SUBMIT);
+        Outcome.Failed<Doc, DocStatus, DocTransition> failed = outcome.asFailed().orElseThrow();
+        assertEquals(Optional.of(Declined.class), failed.failureKind());
+        FlowEntry.Recovery recovery = new FlowEntry.Recovery(SUBMIT, failed.reason(), Optional.of(refused),
+                Optional.of(Declined.class));
+        assertEquals(List.of(new FlowEntry.Hop(outcome.records().get(0), Optional.of(recovery), TickingClock.at(2))),
+                outcome.flow().trail());
+    }
+
+    /**
+     * The engine rolls the step of an UnhandledFailureException back before it finds that no route takes the failure,
+     * so the trail lacks the entries of that step: at the root, the trail is the {@code Failed} entry alone; for a
+     * cascaded step, the parent's hop, then {@code Failed}.
+     */
+    @Test
+    void anUnhandledFailureLeavesTheEntriesOfItsStepOutOfTheTrail() {
+        Doc root = new Doc("1", DRAFT);
+        Doc parent = new Doc("2", DRAFT);
+        Doc child = new Doc("3", DRAFT);
+        TickingClock clock = new TickingClock();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                ActionOutcome.failed("no reviewer")),
+                (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard
+                        .action("Collect", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.cascade(DOCS, child, SUBMIT);
+                            return ActionOutcome.ok();
+                        }));
+        UnhandledFailureException alone;
+        UnhandledFailureException nested;
+        try (MachineRegistry registry = MachineRegistry.builder().add(recording(graph, clock)).build()) {
+            alone = assertThrows(UnhandledFailureException.class, () -> registry.of(DOCS).execute(root, SUBMIT));
+            nested = assertThrows(UnhandledFailureException.class, () -> registry.of(DOCS).execute(parent, DISCARD));
+        }
+        assertEquals(List.of(new FlowEntry.Failed(new CallFailure(CallPhase.ACTION, StatesWritten.NONE, alone),
+                TickingClock.at(2))), alone.flow().trail());
+        List<FlowEntry> trail = nested.flow().trail();
+        assertEquals(2, trail.size());
+        assertSame(parent, hopOf(trail.get(0)).entity());
+        assertEquals(DISCARD, hopOf(trail.get(0)).transition());
+        assertEquals(TickingClock.at(3), trail.get(0).at());
+        assertEquals(new FlowEntry.Failed(new CallFailure(CallPhase.ACTION, StatesWritten.NONE, nested),
+                TickingClock.at(5)), trail.get(1));
+    }
+
+    /**
      * Spec R16.2: a {@code COLLECT} element whose step aborts is rolled back with its entry and its mark, so the next
      * element's hop takes its place. The aggregate then aborts the call, whose failure keeps the hops taken and ends
      * with {@code Failed}.
@@ -454,6 +517,64 @@ class TrailTest {
     }
 
     /**
+     * Spec D11 for a watch that throws: a reevaluation whose watch condition throws fails before it runs an edge, and
+     * its machine records its trail, so its failure hands out the root entity, no value, and a single {@code Failed}
+     * entry equal to the observers' {@code CallFailure}, attached before the observers hear of the failure.
+     */
+    @Test
+    void aReevaluationWhoseWatchThrowsEndsWithFailedBeforeTheObserversHear() {
+        Doc doc = new Doc("1", DRAFT);
+        TickingClock clock = new TickingClock();
+        List<CallFailure> failures = new ArrayList<>();
+        List<FlowView> heard = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> broken = StateGraph.define(DOCS)
+                .initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "x").statePolicy(REVIEW, "x").statePolicy(PUBLISHED, "x")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .watch(DRAFT, DOCS, (Doc owner) -> List.of(owner), (Doc moved) -> Optional.of(moved))
+                    .when("broken", (Doc owner, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> {
+                        throw new IllegalStateException("broken condition");
+                    }).execute(SUBMIT)
+                    .endWatch()
+                .build();
+        MachineObserver reading = new MachineObserver() {
+            @Override
+            public void onFailed(MachineCall call, CallFailure failure, Duration elapsed) {
+                failures.add(failure);
+                heard.add(((CallFailedException) failure.error()).flow());
+            }
+        };
+        TransitionAbortedException watch;
+        try (MachineRegistry registry = MachineRegistry.builder().add(recording(broken, clock)).observer(reading)
+                .build()) {
+            watch = assertThrows(TransitionAbortedException.class, () -> registry.of(DOCS).reevaluate(doc));
+        }
+        assertEquals(CallPhase.RESOLVE, watch.phase());
+        assertEquals(new FrozenFlow(Optional.of(doc), Map.of(),
+                List.of(new FlowEntry.Failed(failures.get(0), TickingClock.at(1)))), watch.flow());
+        assertSame(watch, failures.get(0).error());
+        assertEquals(List.of(watch.flow()), heard);
+    }
+
+    /**
+     * A reevaluation that selects no edge runs no step, so a machine that records its trail creates no flow for it:
+     * its ignored outcome hands out the empty view, and the clock is never read.
+     */
+    @Test
+    void anIgnoredReevaluationOfARecordingMachineHandsOutTheEmptyFlow() {
+        TickingClock clock = new TickingClock();
+        Outcome<Doc, DocStatus, DocTransition> ignored = recording(docs(UnaryOperator.identity()), clock).build()
+                .reevaluate(new Doc("1", DRAFT));
+        assertInstanceOf(Outcome.Ignored.class, ignored);
+        assertSame(FlowView.empty(), ignored.flow());
+        assertEquals(0, clock.reads());
+    }
+
+    /**
      * Spec R16.3: each watch reaction is a root call with a trail of its own, absent from the trail of the call that
      * triggered it. A reaction aborted past the limit of a watch chain fails before it runs an edge, and its failure
      * ends with {@code Failed} (spec D11).
@@ -584,6 +705,31 @@ class TrailTest {
         assertEquals(List.of(parentHop, childHop), outcome.flow().trail());
         assertEquals(1, seen.get(1).size());
         assertThrows(UnsupportedOperationException.class, () -> seen.get(1).add(childHop));
+    }
+
+    /**
+     * Each hook reads the whole trail of its call, every hop and every start the call committed, whichever hop it runs
+     * for: both hooks of a payment captured in its booking's DEPOSIT, the payment's and the exit's, read the payment's
+     * hop, the booking's exit and the start of the balance.
+     */
+    @Test
+    void everyHookReadsEveryHopAndStartTheCallCommitted() {
+        Billing billing = new Billing();
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Payment balance = new Payment("p2", PaymentStatus.AUTHORIZING);
+        new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit).attachBalance(balance);
+        List<List<FlowEntry>> read = new ArrayList<>();
+        billing.onCommit = (CommitContext<?, ?> context) -> read.add(context.flow().trail());
+        Outcome<Payment, PaymentStatus, PaymentTransition> outcome;
+        try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine())
+                .add(billing.paymentMachine().recordTrail(new TickingClock())).build()) {
+            outcome = registry.of(PAYMENTS).execute(deposit, PaymentTransition.CAPTURE);
+        }
+        List<FlowEntry> trail = outcome.flow().trail();
+        assertEquals(3, trail.size());
+        assertSame(outcome.starts().get(0), assertInstanceOf(FlowEntry.Start.class, trail.get(2)).start());
+        assertEquals(2, billing.hooks.size());
+        assertEquals(List.of(trail, trail), read);
     }
 
     /**
