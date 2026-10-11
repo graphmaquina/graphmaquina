@@ -500,25 +500,28 @@ class FlowHookTest {
     }
 
     /**
-     * A hook's handle creates no flow by itself: its entity needs none, and an operation it refuses creates none. The
-     * first read or write of a value that passes its checks creates the call's flow, with the root entity, if no step
-     * of the call did. Once invalidated, the handle throws StaleContextException with the key and the entity of the
-     * hop, here a peer of the root.
+     * A hook's handle creates no flow by itself, and no read creates one: its entity needs none, a read before the
+     * call's first write answers empty, and an operation it refuses creates none. Its first write that passes its
+     * checks creates the call's flow, with the root entity, if no step of the call wrote. Once invalidated, the handle
+     * throws StaleContextException with the key and the entity of the hop, here a peer of the root.
      */
     @Test
-    void aHooksHandleCreatesTheCallsFlowOnlyWhenAnOperationNeedsIt() {
+    void aHooksHandleCreatesTheCallsFlowOnlyOnItsFirstWrite() {
         Doc root = new Doc("1", DRAFT);
         Doc peer = new Doc("2", DRAFT);
         UnitOfWork uow = new UnitOfWork(8, Long.MAX_VALUE);
         FlowHandle.Hook flow = FlowHandle.hook(uow, root, CallLog.OFF, "Persist", new EntityRef(DOCS, "2", peer));
         assertSame(root, flow.entity().orElseThrow());
         assertSame(root, flow.entity(Doc.class).orElseThrow());
+        assertEquals(Optional.empty(), flow.get(BATCH));
+        assertEquals(Set.of(), flow.keys());
         assertThrows(NullPointerException.class, () -> flow.get(null));
         assertThrows(NullPointerException.class, () -> flow.put(BATCH, null));
         assertFalse(uow.hasFlow());
-        assertEquals(Optional.empty(), flow.get(BATCH));
+        flow.put(BATCH, "b-1");
         assertTrue(uow.hasFlow());
-        assertSame(root, uow.flow(peer).rootEntity());
+        assertSame(root, uow.flow().orElseThrow().rootEntity());
+        assertEquals(Optional.of("b-1"), flow.get(BATCH));
         flow.invalidate();
         StaleContextException stale = assertThrows(StaleContextException.class, flow::keys);
         assertSame(DOCS, stale.key());

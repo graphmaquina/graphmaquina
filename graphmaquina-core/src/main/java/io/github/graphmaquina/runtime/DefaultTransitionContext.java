@@ -97,7 +97,10 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
         return tx.cascadeAll(this, peer, peers, transition, policy);
     }
 
-    /** Checks this context, then hands out a writable handle on the call's flow that runs the same check first. */
+    /**
+     * Checks this context, then hands out a writable handle on the call's flow that runs the same check first. It
+     * does not create the flow: the handle's first write does.
+     */
     @Override
     public FlowContext flow() {
         check();

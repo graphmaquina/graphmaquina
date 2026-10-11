@@ -57,7 +57,10 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>> impleme
         return tx.peer(this, this::check, tx.peerKeyFor(this, peer));
     }
 
-    /** Checks this context, then hands out a read-only view of the call's flow that runs the same check first. */
+    /**
+     * Checks this context, then hands out a read-only view of the call's flow that runs the same check first. A guard
+     * never creates the flow: it cannot write.
+     */
     @Override
     public FlowView flow() {
         check();

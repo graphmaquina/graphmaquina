@@ -15,6 +15,9 @@ import java.util.Set;
  *   <li>{@code guard} is the check of the context that made the handle: every operation, a read as well as a write,
  *       runs it first, as {@link DefaultPeerView} does, so a handle used off its thread throws that context's
  *       WrongThreadException and one used after the transaction its StaleContextException.</li>
+ *   <li>A handle does not create the call's flow, and neither does a read: before the call's first write,
+ *       {@link #get} answers empty and {@link #keys} an empty set, and the entity needs no flow. The first write, a
+ *       put or a remove, creates the flow with the root call's entity.</li>
  *   <li>A write is staged at the size the log has when it is made, so {@link UnitOfWork#rollbackTo} drops it with
  *       the step that made it.</li>
  *   <li>A call that logs at TRACE logs each write at the depth of the context that made the handle, the value only
@@ -26,23 +29,26 @@ import java.util.Set;
  */
 final class FlowHandle implements FlowContext {
 
-    private final CallFlow flow;
     private final UnitOfWork uow;
+    private final Object rootEntity;
     private final Runnable guard;
     private final CallLog log;
     private final int depth;
 
-    private FlowHandle(CallFlow flow, UnitOfWork uow, Runnable guard, CallLog log, int depth) {
-        this.flow = flow;
+    private FlowHandle(UnitOfWork uow, Object rootEntity, Runnable guard, CallLog log, int depth) {
         this.uow = uow;
+        this.rootEntity = rootEntity;
         this.guard = guard;
         this.log = log;
         this.depth = depth;
     }
 
-    /** A writable handle on {@code flow}, checked by {@code guard}, whose writes the log prints at {@code depth}. */
-    static FlowHandle of(CallFlow flow, UnitOfWork uow, Runnable guard, CallLog log, int depth) {
-        return new FlowHandle(flow, uow, guard, log, depth);
+    /**
+     * A writable handle on the flow of the call whose unit of work is {@code uow} and whose root entity is
+     * {@code rootEntity}, checked by {@code guard}, whose writes the log prints at {@code depth}.
+     */
+    static FlowHandle of(UnitOfWork uow, Object rootEntity, Runnable guard, CallLog log, int depth) {
+        return new FlowHandle(uow, rootEntity, guard, log, depth);
     }
 
     /** The reads of this handle alone, checked by the same guard. */
@@ -58,23 +64,35 @@ final class FlowHandle implements FlowContext {
         return new Hook(uow, rootEntity, log, hook, hop);
     }
 
+    /** The value of {@code key} in the call's flow; empty when no write created the flow. */
+    private static <V> Optional<V> read(UnitOfWork uow, FlowKey<V> key) {
+        Optional<CallFlow> flow = uow.flow();
+        return flow.isPresent() ? flow.get().get(key) : Optional.empty();
+    }
+
+    /** The keys of the call's flow; an empty set when no write created the flow. */
+    private static Set<FlowKey<?>> keysOf(UnitOfWork uow) {
+        Optional<CallFlow> flow = uow.flow();
+        return flow.isPresent() ? flow.get().keys() : Set.of();
+    }
+
     @Override
     public <V> Optional<V> get(FlowKey<V> key) {
         guard.run();
         Objects.requireNonNull(key, "key");
-        return flow.get(key);
+        return read(uow, key);
     }
 
     @Override
     public Set<FlowKey<?>> keys() {
         guard.run();
-        return flow.keys();
+        return keysOf(uow);
     }
 
     @Override
     public Optional<Object> entity() {
         guard.run();
-        return Optional.of(flow.rootEntity());
+        return Optional.of(rootEntity);
     }
 
     @Override
@@ -84,7 +102,7 @@ final class FlowHandle implements FlowContext {
         if (type.isPrimitive()) {
             throw new IllegalArgumentException("entity type must be a reference type; use its wrapper class");
         }
-        return Optional.of(type.cast(flow.rootEntity()));
+        return Optional.of(type.cast(rootEntity));
     }
 
     @Override
@@ -93,7 +111,7 @@ final class FlowHandle implements FlowContext {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(value, "value");
         V checked = key.type().cast(value);
-        flow.put(key, checked, uow.savepoint());
+        uow.flow(rootEntity).put(key, checked, uow.savepoint());
         if (log.trace()) {
             log.trace(depth, "flow-put " + key + (key.visible() ? "=" + CallLog.show(checked) : ""));
         }
@@ -103,7 +121,7 @@ final class FlowHandle implements FlowContext {
     public void remove(FlowKey<?> key) {
         guard.run();
         Objects.requireNonNull(key, "key");
-        flow.remove(key, uow.savepoint());
+        uow.flow(rootEntity).remove(key, uow.savepoint());
         if (log.trace()) {
             log.trace(depth, "flow-remove " + key);
         }
@@ -116,8 +134,9 @@ final class FlowHandle implements FlowContext {
      *   <li>Every operation checks the handle's own lifetime, then its owner thread, the thread that made it, which
      *       runs the hook. {@link #invalidate()} ends the lifetime once the hook returned or threw: from then on every
      *       operation throws StaleContextException with the machine key and the entity of the hop.</li>
-     *   <li>It does not create the call's flow: the first read or write of a value that passes its checks does, if
-     *       no step of the call did, and the entity needs none. A hook that never uses it costs this object alone.</li>
+     *   <li>It does not create the call's flow, and neither does a read: before the call's first write, a read
+     *       answers empty, and the entity needs no flow. Its first write that passes its checks creates the flow, if
+     *       no step of the call wrote. A hook that never writes costs this object alone.</li>
      *   <li>A write applies at once, so the later hooks of the call read it. It keeps the size of the committed log,
      *       and no rollback follows the commit, so nothing undoes it.</li>
      *   <li>A call that logs at TRACE logs each write with the hook's name and without a depth, the value only for a
@@ -163,13 +182,13 @@ final class FlowHandle implements FlowContext {
         public <V> Optional<V> get(FlowKey<V> key) {
             check();
             Objects.requireNonNull(key, "key");
-            return uow.flow(rootEntity).get(key);
+            return read(uow, key);
         }
 
         @Override
         public Set<FlowKey<?>> keys() {
             check();
-            return uow.flow(rootEntity).keys();
+            return keysOf(uow);
         }
 
         @Override

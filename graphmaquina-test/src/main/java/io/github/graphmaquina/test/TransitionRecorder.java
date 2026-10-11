@@ -24,6 +24,10 @@ import java.util.function.BiFunction;
  * typically a state or an id. Returning the live entity stores a reference that keeps changing; no deep
  * immutability is promised for an arbitrary object.
  *
+ * <p>An outcome carries the call's flow, {@link Outcome#flow()}, so the recorder also retains every flow it records:
+ * the root entity and the values the call's steps and hooks left there, by reference, for as long as the recorder is
+ * kept. It stores the outcome beside a projection too, so projecting releases neither.
+ *
  * <p>A registry accepts any number of observers, so the recorder sits beside the test's own.
  */
 public final class TransitionRecorder implements MachineObserver {

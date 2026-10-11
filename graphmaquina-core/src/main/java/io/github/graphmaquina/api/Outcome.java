@@ -85,6 +85,20 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         return List.of();
     }
 
+    /**
+     * The flow of the root call that returned this outcome, frozen once its hooks and its watch reactions ran: the
+     * root call's entity and the values present then, each under the key that put it, in the order of
+     * {@link FlowView#keys()}. They are what the call's steps and hooks put and no failure route dropped, so a failed
+     * outcome holds the recovery action's writes and none of the failed action's. The view is a copy that the caller
+     * may keep and read from any thread, and it compares by value, so equal outcomes need equal flows; its values are
+     * the very objects that were put, never copies. Reading never creates the flow; only a write does, a put or a
+     * remove that a step or a hook makes. So the flow is {@link FlowView#empty()}, without an entity, for a root call
+     * none of whose steps or hooks wrote to it, a rejected outcome included, since only its guards ran and a guard
+     * cannot write; for an ignored outcome; and for any outcome a cascade returned, whose flow belongs to its root. A
+     * watch reaction is a call of its own: the outcome in {@link Reaction.Done} hands out the reaction's own flow.
+     */
+    FlowView flow();
+
     default Optional<Applied<E, S, T>> asApplied() {
         return Optional.empty();
     }
@@ -103,25 +117,34 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * The selected edge ran. Returned by a root call, it committed: {@code records} holds every hop the root
-     * committed, cascaded ones included, in log order, {@code reactions} the watch reactions of that commit, and
-     * {@code starts} the sub-machines it started. Returned by a cascade, it is written only if its root commits, and
-     * the three lists are empty. The constructor without {@code starts} reports none.
+     * committed, cascaded ones included, in log order, {@code reactions} the watch reactions of that commit,
+     * {@code starts} the sub-machines it started, and {@code flow} the call's flow, as {@link Outcome#flow()} says.
+     * Returned by a cascade, it is written only if its root commits, the three lists are empty and the flow is
+     * {@link FlowView#empty()}. The constructor without {@code starts} reports none, and the constructors without
+     * {@code flow} give {@link FlowView#empty()}.
      */
     record Applied<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull S to,
             @NonNull List<TransitionRecord<?, ?, ?>> records,
             @NonNull List<Reaction> reactions,
-            @NonNull List<SubmachineStart<?, ?, ?>> starts) implements Outcome<E, S, T> {
+            @NonNull List<SubmachineStart<?, ?, ?>> starts,
+            @NonNull FlowView flow) implements Outcome<E, S, T> {
         public Applied {
             records = List.copyOf(records);
             reactions = List.copyOf(reactions);
             starts = List.copyOf(starts);
         }
 
-        /** Builds an applied outcome that started no sub-machine. */
+        /** Builds an applied outcome whose flow is {@link FlowView#empty()}. */
+        public Applied(E entity, S from, T transition, S to, List<TransitionRecord<?, ?, ?>> records,
+                       List<Reaction> reactions, List<SubmachineStart<?, ?, ?>> starts) {
+            this(entity, from, transition, to, records, reactions, starts, FlowView.empty());
+        }
+
+        /** Builds an applied outcome that started no sub-machine and whose flow is {@link FlowView#empty()}. */
         public Applied(E entity, S from, T transition, S to, List<TransitionRecord<?, ?, ?>> records,
                        List<Reaction> reactions) {
-            this(entity, from, transition, to, records, reactions, List.of());
+            this(entity, from, transition, to, records, reactions, List.of(), FlowView.empty());
         }
 
         @Override
@@ -150,12 +173,20 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
         }
     }
 
-    /** A reevaluation that selected no edge: no watch on the state, or no rule of its watch held. */
+    /**
+     * A reevaluation that selected no edge: no watch on the state, or no rule of its watch held. No step ran, so its
+     * flow is {@link FlowView#empty()}.
+     */
     record Ignored<E, S extends Enum<S>, T extends Enum<T>>(@NonNull E entity, @NonNull S from,
                                                             @NonNull IgnoreReason reason) implements Outcome<E, S, T> {
         @Override
         public S recordedState() {
             return from;
+        }
+
+        @Override
+        public FlowView flow() {
+            return FlowView.empty();
         }
 
         @Override
@@ -188,12 +219,14 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * sub-machine bound to {@code from}, which no request may ask for from there. No action ran and nothing was
      * written, though on a guard rejection the guards up to the rejecting one ran. {@code guard} names that guard, and
      * is empty for every other kind. It reports no destination. Only a root call returns it: inside a cascade, a
-     * rejection aborts the root instead. The reason is never blank.
+     * rejection aborts the root instead. The reason is never blank. {@code flow} is the call's flow, as
+     * {@link Outcome#flow()} says, and the constructor without it gives {@link FlowView#empty()}.
      */
     record Rejected<E, S extends Enum<S>, T extends Enum<T>>(
             @NonNull E entity, @NonNull S from, @NonNull T transition, @NonNull String reason,
             @NonNull RejectionKind kind,
-            @NonNull Optional<String> guard) implements Outcome<E, S, T> {
+            @NonNull Optional<String> guard,
+            @NonNull FlowView flow) implements Outcome<E, S, T> {
         public Rejected {
             if (reason.isBlank()) {
                 throw new IllegalArgumentException("reason must not be blank");
@@ -204,6 +237,11 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             if (kind == RejectionKind.GUARD && guard.isEmpty()) {
                 throw new IllegalArgumentException("a GUARD rejection names the guard that rejected");
             }
+        }
+
+        /** Builds a rejection whose flow is {@link FlowView#empty()}. */
+        public Rejected(E entity, S from, T transition, String reason, RejectionKind kind, Optional<String> guard) {
+            this(entity, from, transition, reason, kind, guard, FlowView.empty());
         }
 
         @Override
@@ -247,10 +285,12 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * onFailure for a failsOn type. {@code failureKind} is the kind the action returned with its failure, whichever
      * route took it, or the kind of the rule whose type routed the throwable; it is empty for a failure returned
      * without one and for a throwable a failsOn type routed. The entity moves to {@code movedTo}. Returned by a root
-     * call, it committed, with {@code records}, {@code reactions} and {@code starts} as in {@link Applied}; returned
-     * by a cascade, it is written only if its root commits, and the three lists are empty. The constructor refuses a
-     * blank reason, and a present failure kind that {@link ActionOutcome#failed(Class, String)} would refuse; the
-     * constructors without {@code failureKind} report none, and those without {@code starts} report none either.
+     * call, it committed, with {@code records}, {@code reactions}, {@code starts} and {@code flow} as in
+     * {@link Applied}; returned by a cascade, it is written only if its root commits, the three lists are empty and the
+     * flow is {@link FlowView#empty()}. The constructor refuses a blank reason, and a present failure kind that
+     * {@link ActionOutcome#failed(Class, String)} would refuse; the constructors without {@code failureKind} report
+     * none, those without {@code starts} report none either, and those without {@code flow} give
+     * {@link FlowView#empty()}.
      * When a throwable was routed, it carries it as {@code cause} and a reason composed from it, so
      * {@link #explanation()} leaves that reason out.
      */
@@ -261,7 +301,8 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             @NonNull List<TransitionRecord<?, ?, ?>> records,
             @NonNull List<Reaction> reactions,
             @NonNull Optional<Class<? extends FailureKind>> failureKind,
-            @NonNull List<SubmachineStart<?, ?, ?>> starts) implements Outcome<E, S, T> {
+            @NonNull List<SubmachineStart<?, ?, ?>> starts,
+            @NonNull FlowView flow) implements Outcome<E, S, T> {
         /** Validates the reason and failure kind, and copies the committed records, reactions and starts. */
         public Failed {
             if (reason.isBlank()) {
@@ -273,19 +314,30 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
             starts = List.copyOf(starts);
         }
 
-        /** Builds a routed failure that started no sub-machine. */
+        /** Builds a routed failure whose flow is {@link FlowView#empty()}. */
+        public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
+                      Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions,
+                      Optional<Class<? extends FailureKind>> failureKind, List<SubmachineStart<?, ?, ?>> starts) {
+            this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
+                    failureKind, starts, FlowView.empty());
+        }
+
+        /** Builds a routed failure that started no sub-machine and whose flow is {@link FlowView#empty()}. */
         public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
                       Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions,
                       Optional<Class<? extends FailureKind>> failureKind) {
             this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
-                    failureKind, List.of());
+                    failureKind, List.of(), FlowView.empty());
         }
 
-        /** Builds a routed failure without a failure kind that started no sub-machine. */
+        /**
+         * Builds a routed failure without a failure kind that started no sub-machine and whose flow is
+         * {@link FlowView#empty()}.
+         */
         public Failed(E entity, S from, T transition, S to, T failureTransition, S movedTo, String reason,
                       Optional<Throwable> cause, List<TransitionRecord<?, ?, ?>> records, List<Reaction> reactions) {
             this(entity, from, transition, to, failureTransition, movedTo, reason, cause, records, reactions,
-                    Optional.empty(), List.of());
+                    Optional.empty(), List.of(), FlowView.empty());
         }
 
         @Override

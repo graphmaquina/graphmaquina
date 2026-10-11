@@ -11,9 +11,10 @@ import java.util.Optional;
 import lombok.Getter;
 
 /**
- * ABORT: nothing moved. When this exception ends the call, the unit of work, if one was started, was discarded; the
- * abort of a nested step first reaches the action that cascaded it, or is collected under COLLECT, as the last
- * paragraph says. Its phase is RESOLVE, GUARD or ACTION, and it never wrote a state.
+ * ABORT: nothing moved. When this exception ends the call, the unit of work, if one was started, was discarded, and
+ * {@link #flow()} hands out the call's flow as the abort left it; the abort of a nested step first reaches the action
+ * that cascaded it, or is collected under COLLECT, as the last paragraph says. Its phase is RESOLVE, GUARD or ACTION,
+ * and it never wrote a state.
  *
  * <p>When a guard or an action failed, the cause is what it threw, checked exceptions and library exceptions of other
  * calls included, once unwrapped from CompletionException and ExecutionException. A failure of this same call that a

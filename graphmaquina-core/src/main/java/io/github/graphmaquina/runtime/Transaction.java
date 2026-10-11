@@ -8,6 +8,7 @@ import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.FailureKind;
+import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.Machine;
@@ -30,6 +31,7 @@ import io.github.graphmaquina.error.PoisonedUnitOfWorkException;
 import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UnhandledFailureException;
+import io.github.graphmaquina.internal.FrozenFlow;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -108,18 +110,31 @@ final class Transaction {
 
     /**
      * A handle on the call's flow for a context of this call at {@code depth}, checked by {@code guard}, that
-     * context's own check. The first context that asks creates the flow, with the entity of the root call.
+     * context's own check. It does not create the flow: the first write of the call does, with the entity of the
+     * root call.
      */
     FlowHandle flow(Runnable guard, int depth) {
-        return FlowHandle.of(uow.flow(callEntity), uow, guard, log, depth);
+        return FlowHandle.of(uow, callEntity, guard, log, depth);
     }
 
     /**
      * A handle on the call's flow for the post-commit hook named {@code hook}, which runs for the committed hop
-     * {@code hop}. It creates the flow, with the entity of the root call, only once an operation needs it.
+     * {@code hop}. It does not create the flow either: its first write does, if no step of the call wrote.
      */
     FlowHandle.Hook hookFlow(String hook, EntityRef hop) {
         return FlowHandle.hook(uow, callEntity, log, hook, hop);
+    }
+
+    /**
+     * The call's flow as the call hands it out: frozen, with the root call's entity and the values present now, or
+     * {@link FlowView#empty()} when no write of the call created the flow. It never creates the flow.
+     */
+    FlowView frozenFlow() {
+        Optional<CallFlow> flow = uow.flow();
+        if (flow.isEmpty()) {
+            return FlowView.empty();
+        }
+        return new FrozenFlow(Optional.of(flow.get().rootEntity()), flow.get().values());
     }
 
     void enter(CallPhase next) { phase = next; }
@@ -1463,7 +1478,8 @@ final class Transaction {
     }
 
     /**
-     * Adapts a nested step to an outcome: records, reactions and starts belong to the root, so they stay empty here.
+     * Adapts a nested step to an outcome: records, reactions, starts and the flow belong to the root, so the lists stay
+     * empty here and the flow is {@link FlowView#empty()}, which the constructors without it give.
      */
     private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> outcomeOf(P peer, StepResult<Q, U> step) {
         return switch (step) {

@@ -24,9 +24,9 @@ import java.util.Optional;
  * pendingStates and undo are built from the log by the first lookup that finds it non-empty, and append
  * maintains them from then on, so a root that never reads a pending state after its first append allocates
  * neither. journal answers which actions actually ran and is never reverted. flow is the call's flow, created by the
- * first context that asks for it, or by the first operation of a hook's flow that needs it: a call where neither
- * happens pays one empty field, and every rollback reverts the flow's writes with the log. No rollback follows the
- * commit, so nothing reverts what a hook writes.
+ * first write, a put or a remove, that a step or a hook of the call makes; a read never creates it. A call that
+ * writes nothing pays one empty field, and every rollback reverts the flow's writes with the log. No rollback follows
+ * the commit, so nothing reverts what a hook writes.
  */
 final class UnitOfWork {
 
@@ -52,7 +52,7 @@ final class UnitOfWork {
     private boolean poisonWrapsAForeignFailure;
     /** Whether a start was ever appended: until one is, every entry of the log is a hop. */
     private boolean started;
-    /** The call's flow; empty until a context of the call, or a hook's flow, first asks for it. */
+    /** The call's flow; empty until a step or a hook of the call first writes to it. */
     private Optional<CallFlow> flow = Optional.empty();
 
     UnitOfWork(int maxDepth, long deadlineNanos) {
@@ -96,7 +96,10 @@ final class UnitOfWork {
 
     int savepoint() { return log.size(); }
 
-    /** The call's flow, created with {@code rootEntity}, the root call's entity, the first time it is asked for. */
+    /**
+     * The call's flow, created with {@code rootEntity}, the root call's entity, the first time it is asked for. Only a
+     * write asks for it this way; a read uses {@link #flow()}, which never creates it.
+     */
     CallFlow flow(Object rootEntity) {
         if (flow.isEmpty()) {
             flow = Optional.of(new CallFlow(rootEntity));
@@ -104,7 +107,10 @@ final class UnitOfWork {
         return flow.get();
     }
 
-    /** Whether a context of the call, or a hook's flow, asked for its flow. */
+    /** The call's flow, if a write of the call created it; empty otherwise. It never creates the flow. */
+    Optional<CallFlow> flow() { return flow; }
+
+    /** Whether a write of the call, a step's or a hook's, created its flow. */
     boolean hasFlow() { return flow.isPresent(); }
 
     /**

@@ -72,9 +72,9 @@ shop and billing domains the guide quotes.
 | Declared watches | After a peer commits, a matching owner can be reevaluated and execute the identifier the first matching rule names. |
 | Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child whose parent does not hold it there is rejected, and the step that ends the child runs the parent's exit in the same unit of work. See [compose machines](#compose-machines). |
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
-| Inspectable execution | Outcomes carry transition records, watch reactions and the sub-machines a call started; technical aborts carry diagnostic details where applicable. |
+| Inspectable execution | Outcomes carry transition records, watch reactions, the sub-machines a call started and the call's flow; technical aborts carry diagnostic details where applicable. |
 | Call logs | Each call can log its start, the hops and sub-machine starts it committed, and how it ended, at `DEBUG`, and each step it took, at `TRACE`, through `System.Logger`; off by default. See [debug a call](#debug-a-call-logs-and-the-calls-flow). |
-| The call's flow | Actions put typed values in a flow that every step of the same call reads, guards, cascaded steps and the exits of sub-machines included, along with the entity the call was made for. A failure route drops the writes of the step that failed. Post-commit hooks read and write it too, so a value can reach the entity only once the call commits. See [the call's flow](#the-calls-flow). |
+| The call's flow | Actions put typed values in a flow that every step of the same call reads, guards, cascaded steps and the exits of sub-machines included, along with the entity the call was made for. A failure route drops the writes of the step that failed. Post-commit hooks read and write it too, so a value can reach the entity only once the call commits. The caller receives it frozen, in the outcome or in the call's failure. See [the call's flow](#the-calls-flow). |
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram, which draws each sub-machine inside the state it is bound to. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
@@ -1592,9 +1592,10 @@ A cascade returns `Applied` or `Failed` to the action that called `cascade(...)`
 root instead. Both are provisional there: their hops are written only if the root commits.
 
 Every outcome also has `entity()`, `from()`, `recordedState()`, `requestedTransition()`, `records()`,
-`reactions()` and `starts()`. `recordedState()` is `to` for `Applied`, `movedTo` for `Failed` and `from` for the
-other two. `requestedTransition()` is empty only for `Ignored`, which selected no edge at all. [Records, journals and
-reactions](#records-journals-and-reactions) describes what `records()`, `reactions()` and `starts()` return.
+`reactions()`, `starts()` and `flow()`. `recordedState()` is `to` for `Applied`, `movedTo` for `Failed` and `from` for
+the other two. `requestedTransition()` is empty only for `Ignored`, which selected no edge at all. [Records, journals
+and reactions](#records-journals-and-reactions) describes what `records()`, `reactions()`, `starts()` and `flow()`
+return.
 
 Read the classification with its limits in mind:
 
@@ -1648,8 +1649,8 @@ static int httpStatus(OutcomeCode code) {
 ```
 
 The `switch` has no `default`: it is exhaustive, so a code added by a future release fails the build instead of
-falling through. Do not serialize the `Outcome` itself: it holds the entity, a `Throwable` and reactions with
-their own entities.
+falling through. Do not serialize the `Outcome` itself: it holds the entity, a `Throwable`, reactions with their own
+entities, and the call's flow, whose values are whatever the steps put.
 
 ### Read what only one variant carries
 
@@ -1682,8 +1683,9 @@ static String detail(Outcome<Ticket, TicketState, TicketTransition> outcome) {
 Technical failures throw instead of becoming a fifth outcome. An abort (`TransitionAbortedException`), a commit
 failure (`CommitFailedException`) and a failing hook (`AfterCommitException`) share the supertype
 `CallFailedException`. It says as values which call failed (`call()`), where it was (`phase()`), how far it got
-in writing states (`statesWritten()`) and which actions ran (`journal()`). A hook fails after state was already
-written. [Handle a failed call](#handle-a-failed-call) shows how to read them.
+in writing states (`statesWritten()`) and which actions ran (`journal()`), and it hands out the call's flow
+(`flow()`). A hook fails after state was already written. [Handle a failed call](#handle-a-failed-call) shows how to
+read them.
 
 ### Records, journals and reactions
 
@@ -1698,10 +1700,15 @@ written. [Handle a failed call](#handle-a-failed-call) shows how to read them.
   `Failed` returns a `SubmachineStart` for each such start, in log order: the child's machine and entity, the state
   it had and the one it started in, the parent's machine, entity and bound state, and the depth of the step. A start
   is no hop, so it is not in `records()` and runs no hook.
+- `flow()` answers on every outcome as well. A root `Applied` or `Failed` hands out the call's flow, frozen once its
+  hooks and reactions ran; `Rejected`, `Ignored`, a nested `cascade` result and a call whose steps and hooks wrote
+  nothing to its flow return `FlowView.empty()`. [Read the flow after the call](#read-the-flow-after-the-call) says
+  what it holds.
 - A failed call's journal uses `ActionRecord` and `ActionStatus` (`OK`, `FAILED`, `THREW`; never `RUNNING` once the
   call failed) to report actions that actually ran. A journal is execution evidence, not an undo log for external
   side effects.
-- A watch produces `Reaction.Done`, carrying its own outcome, or `Reaction.Aborted`, carrying its exception. Inspect
+- A watch produces `Reaction.Done`, carrying its own outcome, with the reaction's own flow, or `Reaction.Aborted`,
+  carrying its exception. Inspect
   reactions even when the root operation succeeded. `Reaction.Aborted` can also report a hook failure after the reaction
   itself committed; it is not proof that the reaction left state unchanged. A reevaluation that failed carries its
   `CallFailedException`, whose `statesWritten()` says whether the reaction wrote anything. An owner lookup fails before
@@ -1723,7 +1730,26 @@ no call may start `ReentrantTransitionException`. Read what happened from its va
 | `AfterCommitException` | `HOOK` | `ALL` |
 
 `call()` is the call that failed, the same `MachineCall` an observer received, and `journal()` lists the actions that
-ran. Any other exception involved is the cause, a failure of another call included. With
+ran. Any other exception involved is the cause, a failure of another call included, which keeps the flow of its own
+call.
+
+`flow()` is the call's flow, frozen when the call failed and attached before the observers hear of the failure. It
+reads like an outcome's, as [read the flow after the call](#read-the-flow-after-the-call) shows, and holds what the
+call wrote up to the failure:
+
+- An abort undoes no write itself, so the failure keeps what the step that aborted and the steps before it wrote,
+  except what a rollback removed earlier. A step whose failure its edge expects, a failure its action returned or a
+  throwable of a type the edge declares, is rolled back whether a route takes the failure or not: an
+  `UnhandledFailureException` therefore lacks the writes of its step and of the steps that step cascaded to. Each
+  `COLLECT` element that aborted is rolled back too, so a `CascadeException` lacks their writes.
+- A `CommitFailedException` holds everything the steps wrote.
+- An `AfterCommitException` also holds what the hooks wrote, the failing hook's writes before it threw included.
+- A `reevaluate` that fails before it runs an edge, while it reads the state, evaluates its watch or exceeds the
+  limit of a watch chain, hands out `FlowView.empty()`, and so does a call whose steps and hooks wrote nothing to its
+  flow.
+- An `Error` carries no flow: it propagates as itself.
+
+With
 `import io.github.graphmaquina.error.CallFailedException;`, this method can be added to the quickstart's `App`:
 
 ```java
@@ -2140,7 +2166,8 @@ operation of a context's flow, `get`, `keys`, `entity`, `put` and `remove`, requ
 thread and a live transaction. A wrong thread produces `WrongThreadException`; use after invalidation produces
 `StaleContextException`. After the root commits or aborts, its transaction-aware context is invalidated before
 post-commit hooks run. The flow a hook receives from its `CommitContext` is checked the same way, against the thread
-running the hook and the hook's own run: it goes stale once the hook returns or throws.
+running the hook and the hook's own run: it goes stale once the hook returns or throws. The flow the caller receives
+once the call ended, in its outcome or its failure, is a frozen copy without these checks.
 
 Neither `thenApply` nor `thenApplyAsync` promises to run on that original operation thread. Even a callback
 without the `Async` suffix may run on the service's completion thread. Do not hide a cascade or a write to the flow
@@ -2824,7 +2851,8 @@ The runtime's normal root execution follows this sequence:
 5. Invalidate transition contexts and release the root reentrancy marker.
 6. Run hooks for the committed hops, in log order.
 7. Dispatch watch reactions for moved peers.
-8. Notify the observers that the call completed, and return its outcome.
+8. Freeze the call's flow, notify the observers that the call completed, and return its outcome, which carries the
+   frozen flow.
 
 A rejected or ignored root does not commit state changes. A handled failure does commit its failure route.
 External side effects performed by actions, and mutations to other entity fields, are not automatically undone
@@ -2931,7 +2959,9 @@ before the operation returns or throws. `MachineCall` names the machine, the ent
 `reevaluate`) and whether a watch reaction made the call. Its `toString()` never prints the entity, and the same
 instance reaches every event of the call. A reaction starts and ends inside the call that triggered it, so events nest
 like a stack on their thread. `onFailed` receives the very throwable the caller gets, with the phase the call was in and
-how far it got in writing states; an `Error` is reported too, then propagates.
+how far it got in writing states; an `Error` is reported too, then propagates. So an observer reads the call's flow as
+the caller does: `outcome.flow()` in `onCompleted`, and the `flow()` of the `CallFailedException` in `onFailed`, which
+the call attached before it told the observers.
 
 An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
 `System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
@@ -3083,9 +3113,11 @@ nothing in the call; an `Error` propagates. An `Error` that ends a call is not a
 
 Each call carries one flow: typed values that its steps and its post-commit hooks share, and the entity the call was
 made for. It lives in memory for that call alone: nothing of it is persisted, and the next call starts with an empty
-one. Every step of the call reaches the same flow, whatever entity the step moves: the root's own step, each cascaded
-step and the exit of each sub-machine, and so does the hook of every hop the call commits. A watch reaction is a call
-of its own, with its own flow, and so is a call that a hook starts.
+one. When the call ends, its caller receives a frozen copy, as
+[read the flow after the call](#read-the-flow-after-the-call) shows. Every step of the call reaches the same flow,
+whatever entity the step moves: the root's own step, each cascaded step and the exit of each sub-machine, and so does
+the hook of every hop the call commits. A watch reaction is a call of its own, with its own flow, and so is a call that
+a hook starts.
 
 An action reads and writes the flow through `ctx.flow()`, a `FlowContext`. A guard reads it through `ctx.flow()` too,
 and gets a `FlowView`, without `put` or `remove`. A hook that takes a `CommitContext` reads and writes it through
@@ -3142,11 +3174,13 @@ public ActionOutcome restock(TransitionContext<Item, ItemStatus, ItemTransition>
 }
 ```
 
-An action's write is undone with the step that made it. When a step's failure takes its route, the call drops every
-write made since that step took its hop, its action's and those of the steps it cascaded to, and keeps what earlier
-steps wrote; the recovery action then writes anew. A `COLLECT` element whose step aborts is dropped the same way, its
-writes with it, before the next element runs. A call that aborts commits nothing, and its writes end with it. A
-hook writes after the commit, and nothing undoes its writes.
+An action's write is undone with the step that made it. When a step fails with a failure its edge expects, one its
+action returns or a throwable of a type the edge declares, the call drops every write made since that step took its
+hop, its action's and those of the steps it cascaded to, and keeps what earlier steps wrote: the recovery action of
+its route then writes anew, and without a route the step aborts with `UnhandledFailureException`. A `COLLECT` element
+whose step aborts is dropped the same way, its writes with it, before the next element runs. No other abort undoes a
+write: a call that aborts commits nothing, and the flow its failure hands out keeps what its steps wrote. A hook
+writes after the commit, and nothing undoes its writes.
 
 Values are stored by reference, never copied, and a rollback drops the write, not what was done to the object. An
 action that puts a list, adds an element to it and then fails into its route leaves the recovery action without a
@@ -3204,6 +3238,41 @@ with `afterCommitWith`. An edge that declares its own hook replaces the default,
 when an earlier hook of the call throws. The flow belongs to the call, not to the hop, so every hook of the call reads
 the same values: when one call can ship several orders, give each order a key of its own, such as one named after its
 identifier.
+
+#### Read the flow after the call
+
+Once its hooks and its watch reactions ran, the call freezes its flow and hands it to its caller: `flow()` on the
+outcome it returns, and `flow()` on the `CallFailedException` it throws. Both are a `FlowView`, read with `get`,
+`keys()` and `entity()` as a guard reads it. For instance, a REST handler that cancels an order can answer with the
+cancellation the call recorded, whether the call returned or failed:
+
+```java
+static Optional<String> cancellation(Orders orders, Order order, String cancellationId) {
+    try {
+        return orders.cancel(order, cancellationId).flow().get(ShopFlow.CANCELLATION);
+    } catch (CallFailedException failure) {
+        return failure.flow().get(ShopFlow.CANCELLATION);
+    }
+}
+```
+
+The frozen flow is a copy that the caller may keep. It never changes and has no owner thread, so any thread can read
+it, such as a JSON serializer's after the handler returned. It compares by value: two outcomes are equal only when
+their flows hold equal values and an equal entity. Its values are the very objects the steps put, never copies, and
+its entity is the live one, so a change made to them later shows through it: treat stored values as immutable.
+Nothing reaches the call's flow any more: the handles of its steps and hooks are stale once the call ended.
+
+- An applied or failed outcome holds the values present once the hooks ran. After a failure route, they lack what the
+  failed step wrote and hold what its recovery action wrote.
+- Reading never creates the flow; only a write does, a `put` or a `remove` of a step or a hook. Until the call's
+  first write, `get` answers empty and `keys()` an empty set, while `entity()` already answers the root entity. A call
+  whose steps and hooks wrote nothing hands out `FlowView.empty()`, without values and without the entity, which
+  `entity()` of the outcome holds, so two such calls hand out equal flows. A rejected outcome is always
+  `FlowView.empty()`: only its guards ran, and a guard cannot write. An `Ignored` outcome and the outcome a cascade
+  returns to the action that ran it answer `FlowView.empty()` too: a cascade's flow belongs to its root call.
+- A watch reaction is a call of its own: the outcome in `Reaction.Done` hands out the reaction's flow, and the
+  failure of an aborted reaction its own.
+- A failure holds what the call wrote up to it, as [handle a failed call](#handle-a-failed-call) details.
 
 ## Concurrency, identity and persistence
 
@@ -3778,7 +3847,7 @@ code runs.
 | --- | --- |
 | `UninitializedStateException` | Entity state was null. Initialize or correctly hydrate it before calling the machine. A null root state arrives as the cause of an abort in `RESOLVE`; a peer's, reached by a cascade, as the cause of an abort in `ACTION`, and so does a sub-machine's, read when its parent enters the bound state. A parent's, read to check the binding of a sub-machine, arrives as the cause of an abort in `RESOLVE` when the sub-machine is the root and in `ACTION` inside a cascade or an exit. |
 | `TransitionAbortedException` | A technical failure aborted execution; inspect cause, path and action journal. Its `from()`, `transition()` and `to()` are `Optional`. An abort raised before the entity's state was read, because its identity or its state could not be read, reports no state and no destination. One raised before any edge was resolved reports no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither identifier nor destination. Its `phase()` is `RESOLVE`, `GUARD` or `ACTION`, and its `statesWritten()` is `NONE`. |
-| `UnhandledFailureException` | An action failed, no recovery rule took the failure, and its edge has no `onFailure` route. |
+| `UnhandledFailureException` | An action failed, no recovery rule took the failure, and its edge has no `onFailure` route. The step was rolled back first, so its `flow()` lacks what that step and the steps it cascaded to wrote. |
 | `CascadeException` | Collected nested transition errors; inspect `errors()` and the journal. |
 | `CascadeCycleException` | A nested request reached an entity that is already in flight. It reports the in-flight and requested identifiers. |
 | `CascadeDepthExceededException` | Nested work exceeded the configured cascade depth. |

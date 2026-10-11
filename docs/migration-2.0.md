@@ -513,7 +513,8 @@ observe. Most items refuse up front what used to fail later, in generated code o
   hook failed.
 - **Call failures share `CallFailedException`.** `TransitionAbortedException`, `CommitFailedException` and
   `AfterCommitException` extend it and report, as values, the call that failed, its phase, how far it got in
-  writing states and the actions that ran. Their constructors take the `MachineCall`.
+  writing states and the actions that ran, and they hand out the call's flow, `flow()`
+  ([the call's flow](guide.md#the-calls-flow)). Their constructors take the `MachineCall`.
 - **Unbounded timeouts.** An `asyncTimeout` or edge timeout of `Duration.ofNanos(Long.MAX_VALUE)` or more means
   no limit, and the other limit stays in charge. Such budgets used to overflow, into `ArithmeticException` or a
   deadline silently switched off, and an `asyncTimeout` above that left its thread refusing every later

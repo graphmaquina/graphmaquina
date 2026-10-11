@@ -14,7 +14,10 @@ public sealed interface Reaction permits Reaction.Done, Reaction.Aborted {
 
     Object entity();
 
-    /** A watch re-evaluation that ran to completion, carrying its outcome. */
+    /**
+     * A watch re-evaluation that ran to completion, carrying its outcome. The reaction is a call of its own, so the
+     * outcome's {@link Outcome#flow()} is the reaction's flow, not the flow of the call that triggered it.
+     */
     record Done(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity,
                 @NonNull Outcome<?, ?, ?> outcome) implements Reaction {
     }
@@ -22,9 +25,10 @@ public sealed interface Reaction permits Reaction.Done, Reaction.Aborted {
     /**
      * A re-evaluation that threw, naming the owner it re-evaluated, or an owner lookup that threw, naming the peer that
      * moved. {@code cause} is RuntimeException, not StateMachineException, so that api does not depend on error. A
-     * re-evaluation's cause is its {@code CallFailedException}, which says how far the reaction got in writing states;
-     * a checked exception an owner lookup throws without declaring it, or any other throwable that is neither a
-     * RuntimeException nor an Error, arrives wrapped in {@link java.lang.reflect.UndeclaredThrowableException}.
+     * re-evaluation's cause is its {@code CallFailedException}, which says how far the reaction got in writing states
+     * and hands out the reaction's own flow; a checked exception an owner lookup throws without declaring it, or any
+     * other throwable that is neither a RuntimeException nor an Error, arrives wrapped in
+     * {@link java.lang.reflect.UndeclaredThrowableException}.
      */
     record Aborted(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity,
                    @NonNull RuntimeException cause) implements Reaction {

@@ -34,7 +34,8 @@ public interface MachineObserver {
     default void onStarted(MachineCall call) { }
 
     /**
-     * The call returned {@code outcome}, the very instance its caller receives, whatever its status.
+     * The call returned {@code outcome}, the very instance its caller receives, whatever its status, with the call's
+     * frozen {@link Outcome#flow()}.
      *
      * @param elapsed from just before {@link #onStarted} was notified until just before this event
      */
@@ -42,8 +43,8 @@ public interface MachineObserver {
 
     /**
      * The call threw {@code failure.error()}, the very throwable its caller receives: a {@code CallFailedException} of
-     * this call, whose phase and states written {@code failure} repeats, or an Error, with the phase the call was in
-     * and how far it got in writing states.
+     * this call, whose phase and states written {@code failure} repeats and whose {@code flow()} already holds the
+     * call's frozen flow, or an Error, with the phase the call was in and how far it got in writing states.
      *
      * @param elapsed from just before {@link #onStarted} was notified until just before this event
      */

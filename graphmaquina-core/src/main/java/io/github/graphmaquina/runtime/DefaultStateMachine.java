@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.AsyncStateMachine;
 import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CommitContext;
+import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.HookRef;
 import io.github.graphmaquina.api.IgnoreReason;
@@ -25,6 +26,7 @@ import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.WatchChainExceededException;
+import io.github.graphmaquina.internal.CallFailureFlows;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -179,8 +181,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * reentrancy marker set, so none of them can start a transition on this thread: a nested root would begin a chain
      * of its own that maxWatchChain never counts. The marker is released before the selected edge runs as a root.
      * Observers see the whole of it as one call, which ends in RESOLVE if it throws before an edge runs, and so does
-     * its log. The log's start line names {@code trigger}: the id of the call whose commit triggered this watch
-     * reaction, when that call logged, and empty for a reevaluation the application made.
+     * its log. Such a failure has no transaction, so it carries the empty flow. The log's start line names
+     * {@code trigger}: the id of the call whose commit triggered this watch reaction, when that call logged, and empty
+     * for a reevaluation the application made.
      */
     Outcome<E, S, T> reevaluate(E entity, int chain, Optional<Long> trigger) {
         Reentrancy.check(key(), entity);
@@ -289,6 +292,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      * {@code requested} is the identifier execute was asked for, and empty for a reevaluation.
+     * Once the reactions ran, the call's flow is frozen into the outcome, or into the empty view when no write of the
+     * call created it. A failure of the call gets the flow frozen as the call left it, attached before the observers
+     * hear of the failure; an Error gets none, and propagates as itself.
      * The observers hear of the call before its log does: the start line follows onStarted, inside the try that tells
      * them of an Error, and the end or failed line follows their end event. An execute logs its start line here; a
      * reevaluation logged its own before it read the state. The committed hops and starts are logged once phase 2
@@ -341,25 +347,28 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 tx.enter(CallPhase.REACTIONS);
                 reactions = registry.dispatchWatches(summary, chain, log);
             }
+            FlowView flow = tx.frozenFlow();
             outcome = switch (step) {
                 case StepResult.Applied<S, T> applied ->
                         new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(),
-                                records, reactions, starts);
+                                records, reactions, starts, flow);
                 case StepResult.Ignored<S, T> ignored ->
                         new Outcome.Ignored<>(entity, ignored.from(), ignored.reason());
                 case StepResult.Rejected<S, T> rejected ->
                         new Outcome.Rejected<>(entity, rejected.from(), rejected.transition(), rejected.reason(),
-                                rejected.kind(), rejected.guard());
+                                rejected.kind(), rejected.guard(), flow);
                 case StepResult.Failed<S, T> failed ->
                         new Outcome.Failed<>(entity, failed.from(), failed.transition(), failed.to(),
                                 failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
-                                records, reactions, failed.failureKind(), starts);
+                                records, reactions, failed.failureKind(), starts, flow);
             };
         } catch (Throwable thrown) {
             if (thrown instanceof Error fatal) {
                 throw failed(observed, tx, fatal);
             }
-            CallFailedException failure = failed(observed, tx, tx.classify(thrown));
+            CallFailedException own = tx.classify(thrown);
+            CallFailureFlows.attach(own, tx.frozenFlow());
+            CallFailedException failure = failed(observed, tx, own);
             if (log.debug()) {
                 log.failed(tx.failureOf(failure));
             }

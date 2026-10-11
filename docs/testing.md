@@ -318,6 +318,10 @@ A registry accepts any number of observers, so a test adds its own beside the re
 moving after its call completes, so if the assertion must see the entity as it was, record a projection with
 `TransitionRecorder.projecting(...)` instead of the live outcome.
 
+Each outcome carries the call's flow, `outcome.flow()`, so the recorder also retains every flow it records: the
+root entity and the values the call's steps and hooks left there, by reference, for as long as the recorder is
+kept. It stores the outcome beside a projection too, so projecting releases neither.
+
 ### Tracked entity state
 
 A `StateSnapshot` reports only the entities it was given, so an entity the test does not name may move

@@ -168,16 +168,20 @@ class CallFlowTest {
         assertEquals(Optional.of(2), flow.get(COUNT));
     }
 
+    /** A unit of work creates its flow only when a write asks for it; reading it through flow() creates none. */
     @Test
-    void aUnitOfWorkHasNoFlowUntilTheFirstUse() {
+    void aUnitOfWorkHasNoFlowUntilAWriteAsksForIt() {
         UnitOfWork uow = new UnitOfWork(100, Long.MAX_VALUE);
         assertFalse(uow.hasFlow());
+        assertEquals(Optional.empty(), uow.flow());
         uow.append(hop(ref(1)));
         uow.rollbackTo(0);
         assertFalse(uow.hasFlow());
+        assertEquals(Optional.empty(), uow.flow());
         Object entity = new Object();
         CallFlow flow = uow.flow(entity);
         assertTrue(uow.hasFlow());
+        assertSame(flow, uow.flow().orElseThrow());
         assertSame(entity, flow.rootEntity());
         assertSame(flow, uow.flow(new Object()));
     }
