@@ -23,13 +23,13 @@ import java.util.Optional;
 /**
  * State of a root transaction. Local to the thread running the transition; no other thread touches it.
  * log holds the hops and the sub-machine starts of the transaction, in order; it answers what state each entity ends
- * up in, whichever kind of entry moved it, and is reverted by savepoint; pendingStates indexes that
- * answer by entity and undo puts it back entry by entry, so a rollback never rebuilds the index.
- * pendingStates and undo are built from the log by the first lookup that finds it non-empty, and append
- * maintains them from then on, so a root that never reads a pending state after its first append allocates
- * neither. journal answers which actions actually ran and is never reverted. flow is the call's flow, created at
- * the start of the call when its root machine records its trail, and otherwise by the first write, a put or a remove,
- * that a step or a hook of the call makes; a read never creates it. A call that writes nothing and records no trail
+ * up in, whichever kind of entry moved it, and is reverted by savepoint; pending, the pending index, answers that by
+ * entity with its states and puts it back entry by entry with its undo, so a rollback never rebuilds it. pending is
+ * built from the log by the first lookup that finds it non-empty, and append maintains it from then on, so a root
+ * that never reads a pending state after its first append allocates none of it. journal answers which actions
+ * actually ran and is never reverted. flow is the call's flow, created at the start of the call when its root machine
+ * records its trail, and otherwise by the first write, a put or a remove, that a step or a hook of the call makes; a
+ * read never creates it. A call that writes nothing and records no trail
  * pays two empty fields, and every rollback reverts the flow's writes with the log. No rollback follows the commit,
  * so nothing reverts what a hook writes. A call that records its trail marks each entry of the log on its clock,
  * right after the entry is in the log, and every rollback truncates the marks with the log; a call that does not
@@ -42,8 +42,7 @@ final class UnitOfWork {
      * Created from the log by the first lookup that finds it non-empty: a root that appends and never reads a
      * pending state back must not pay for the index.
      */
-    private Map<EntityRef, Enum<?>> pendingStates;
-    private List<PendingUndo> undo;
+    private Optional<PendingIndex> pending = Optional.empty();
     private final List<ActionRecord> journal = new ArrayList<>();
     // Sized for a root and two nested cascades: a default-sized deque costs every call 56 more bytes.
     private final Deque<InFlight> inFlight = new ArrayDeque<>(3);
@@ -152,7 +151,6 @@ final class UnitOfWork {
      * savepoint and the marks of the entries it dropped, if the call has a flow.
      */
     void rollbackTo(int savepoint) {
-        Optional<Map<EntityRef, Enum<?>>> pending = pendingStates();
         if (savepoint == 0 && pending.isEmpty()) {
             log.clear();
             rollbackFlow(savepoint);
@@ -164,7 +162,8 @@ final class UnitOfWork {
             rollbackFlow(savepoint);
             return;
         }
-        Map<EntityRef, Enum<?>> states = pending.orElseThrow();
+        Map<EntityRef, Enum<?>> states = pending.get().states();
+        List<PendingUndo> undo = pending.get().undo();
         while (log.size() > savepoint) {
             PendingUndo old = undo.get(undo.size() - 1);
             if (old.present()) {
@@ -185,10 +184,6 @@ final class UnitOfWork {
         }
     }
 
-    private Optional<Map<EntityRef, Enum<?>>> pendingStates() {
-        return Optional.ofNullable(pendingStates);
-    }
-
     /**
      * When the index exists it is updated before the log, so an identity whose equals or hashCode throws leaves the
      * log, the index and undo as they were. A call that records its trail then marks the entry, as {@link #mark()}
@@ -200,8 +195,8 @@ final class UnitOfWork {
     }
 
     private void add(LogEntry entry) {
-        if (pendingStates != null) {
-            index(pendingStates, undo, entry);
+        if (pending.isPresent()) {
+            index(pending.get().states(), pending.get().undo(), entry);
         }
         log.add(entry);
     }
@@ -226,16 +221,15 @@ final class UnitOfWork {
      * benchmark.
      */
     private Map<EntityRef, Enum<?>> index() {
-        if (pendingStates == null) {
+        if (pending.isEmpty()) {
             Map<EntityRef, Enum<?>> states = new HashMap<>();
             List<PendingUndo> undoEntries = new ArrayList<>();
             for (int i = 0; i < log.size(); i++) {
                 index(states, undoEntries, log.get(i));
             }
-            pendingStates = states;
-            undo = undoEntries;
+            pending = Optional.of(new PendingIndex(states, undoEntries));
         }
-        return pendingStates;
+        return pending.get().states();
     }
 
     /**
@@ -466,4 +460,10 @@ final class UnitOfWork {
      * different answers, and the origin of the entry proves neither.
      */
     private record PendingUndo(EntityRef ref, boolean present, Enum<?> previous) { }
+
+    /**
+     * The pending index: {@code states}, the pending state of each entity the log moved, and {@code undo}, one
+     * {@link PendingUndo} per entry of the log, in order. Both are built together and kept in step.
+     */
+    private record PendingIndex(Map<EntityRef, Enum<?>> states, List<PendingUndo> undo) { }
 }
