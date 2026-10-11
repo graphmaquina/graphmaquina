@@ -729,8 +729,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   the system properties are read.
 - **Failure reports.** A view opened from another one names the path it came from; a value whose `toString()`
   throws a runtime exception or returns null is still reported; a throwable reported as the actual value is the
-  error's cause; and a null element of a list no longer raises `NullPointerException`: an exact comparison reports
-  it, and a search skips it.
+  error's cause; and a null element of a journal or of a list of reactions no longer raises `NullPointerException`:
+  an exact comparison of a journal reports it, and a search skips it. A list of transition records, of sub-machine
+  starts or of trail entries refuses one with that exception when its view is built.
 - **Other fixes.** `GraphDiff.render` escapes a quote inside a value; `AsyncAssertions` waits on a stage that
   cannot be converted to a `CompletableFuture`, without converting or cancelling it; and the outcome of a done
   reaction or of a recorded callback is refused with `IllegalArgumentException` when its recovery identifier

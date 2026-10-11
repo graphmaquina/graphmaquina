@@ -4,8 +4,6 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.test.internal.CheckedTypes;
 import io.github.graphmaquina.test.internal.Checks;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -17,9 +15,8 @@ import java.util.Optional;
  * several machines, so the list is untyped as a whole and {@link #forEntity(MachineKey, Object)} is what narrows it:
  * it selects by machine key and by entity IDENTITY, never by entity equality, so two entities that carry the same
  * business id stay distinct subjects. Order and multiplicity are part of the contract, and the list is copied when the
- * view is built, so later edits to the caller's collection are not seen. A null element, which only a subject built by
- * hand can hold, is selected by no entity and is reported by position when {@link #containsExactly(java.util.List)}
- * compares it.
+ * view is built, so later edits to the caller's collection are not seen, and a null element, which only a list built
+ * by hand can hold, is refused then with a {@link NullPointerException}.
  *
  * <p>{@link #containsExactly(java.util.List)} compares the identifier of every hop as well as its endpoints,
  * so two edges that connect the same pair of states under different identifiers never satisfy each other.
@@ -64,7 +61,7 @@ public final class TransitionRecordsAssert {
         Checks.equal(context, "size", wanted.size(), records.size());
         for (int index = 0; index < wanted.size(); index++) {
             String where = context + "[" + index + "]";
-            compare(where, wanted.get(index), Checks.subject(where, "record", wanted.get(index), records.get(index)));
+            compare(where, wanted.get(index), records.get(index));
         }
         return this;
     }
@@ -77,15 +74,14 @@ public final class TransitionRecordsAssert {
         List<TransitionRecord<?, ?, ?>> records = Checks.present(context, "entity records", entity, actual);
         List<TransitionRecord<E, S, T>> selected = records.stream()
                 .filter((TransitionRecord<?, ?, ?> record) ->
-                        record != null && record.key().equals(key) && record.entity() == entity)
+                        record.key().equals(key) && record.entity() == entity)
                 .map(record -> CheckedTypes.record(key, record))
                 .toList();
         return new TypedRecordsAssert<>(context + " for " + key, selected);
     }
 
-    /** A copy that keeps a null element, which only a list built by hand can hold, for the comparisons to report. */
     private static List<TransitionRecord<?, ?, ?>> copy(List<? extends TransitionRecord<?, ?, ?>> records) {
-        return Collections.unmodifiableList(new ArrayList<>(records));
+        return List.copyOf(records);
     }
 
     private static void compare(String where, TransitionRecord<?, ?, ?> expected,
