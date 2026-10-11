@@ -146,7 +146,8 @@ final class Transaction {
     /**
      * The call's flow as a rejected outcome hands it out: as {@link #frozenFlow(List, List)} says, the trail built
      * from the log and ended by the {@code Rejected} entry of {@code rejected}, at the instant the clock reads now. A
-     * clock that throws fails the call, which classifies what it threw.
+     * clock that throws, or answers null as {@link CallFlow#now} refuses, fails the call, which classifies the
+     * exception.
      */
     FlowView frozenFlow(StepResult.Rejected<?, ?> rejected) {
         if (!uow.recordsTrail()) {
@@ -154,7 +155,7 @@ final class Transaction {
         }
         List<FlowEntry> trail = uow.trailOf(uow.records(), uow.starts());
         trail.add(new FlowEntry.Rejected(callKey, callEntity, rejected.from(), rejected.transition(), rejected.kind(),
-                rejected.reason(), rejected.guard(), uow.clock().instant()));
+                rejected.reason(), rejected.guard(), CallFlow.now(uow.clock())));
         return frozen(trail);
     }
 
@@ -174,12 +175,13 @@ final class Transaction {
 
     /**
      * Ends {@code trail} with the {@code Failed} entry of {@code failure}, at the instant {@code clock} reads now. A
-     * clock that throws a RuntimeException leaves the entry out, and the exception of {@code failure}, which the call
-     * throws, carries what the clock threw as suppressed; an Error propagates.
+     * clock that throws a RuntimeException, or answers null as {@link CallFlow#now} refuses, leaves the entry out, and
+     * the exception of {@code failure}, which the call throws, carries that exception as suppressed; an Error
+     * propagates.
      */
     static void endWith(List<FlowEntry> trail, CallFailure failure, InstantSource clock) {
         try {
-            trail.add(new FlowEntry.Failed(failure, clock.instant()));
+            trail.add(new FlowEntry.Failed(failure, CallFlow.now(clock)));
         } catch (RuntimeException thrown) {
             failure.error().addSuppressed(thrown);
         }

@@ -861,6 +861,39 @@ class TrailTest {
                 () -> recording(graph, broken).build().execute(new Doc("6", DRAFT), SUBMIT)));
     }
 
+    /**
+     * A clock that answers null fails the call as one that throws does, with a NullPointerException that says so: the
+     * hop it could not mark aborts the root's step before anything is written, and the rejection whose instant it
+     * could not read fails the call. The trail ends without the entries the clock could not mark.
+     */
+    @Test
+    void aClockThatAnswersNullFailsTheCallAsOneThatThrows() {
+        InstantSource silent = () -> null;
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("Ready",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> ctx.entity().id().equals("2")
+                                ? GuardResult.reject("nothing to review") : GuardResult.pass()));
+        StateMachine<Doc, DocStatus, DocTransition> machine = recording(graph, silent).build();
+
+        Doc doc = new Doc("1", DRAFT);
+        TransitionAbortedException hop = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(doc, SUBMIT));
+        assertEquals(DRAFT, doc.status());
+        assertEquals(CallPhase.ACTION, hop.phase());
+        assertEquals("the clock of the trail answered null",
+                assertInstanceOf(NullPointerException.class, hop.getCause()).getMessage());
+        assertEquals(new FrozenFlow(Optional.of(doc), Map.of(), List.of()), hop.flow());
+        assertEquals("the clock of the trail answered null",
+                assertInstanceOf(NullPointerException.class, hop.getSuppressed()[0]).getMessage());
+
+        Doc rejected = new Doc("2", DRAFT);
+        TransitionAbortedException refused = assertThrows(TransitionAbortedException.class,
+                () -> machine.execute(rejected, SUBMIT));
+        assertEquals(CallPhase.GUARD, refused.phase());
+        assertInstanceOf(NullPointerException.class, refused.getCause());
+        assertEquals(new FrozenFlow(Optional.of(rejected), Map.of(), List.of()), refused.flow());
+    }
+
     /** {@code recordTrail()} reads the system clock: the instant of each entry lies within the call. */
     @Test
     void recordTrailWithoutAClockReadsTheSystemClock() {

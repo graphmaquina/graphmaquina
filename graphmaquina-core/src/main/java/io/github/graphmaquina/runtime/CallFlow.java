@@ -3,11 +3,13 @@ package io.github.graphmaquina.runtime;
 import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.FlowKey;
 import java.time.Instant;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -99,6 +101,14 @@ final class CallFlow {
             }
         }
         return Collections.unmodifiableMap(present);
+    }
+
+    /**
+     * What {@code clock}, the clock of a call's trail, reads now. A clock that answers null is refused here with a
+     * NullPointerException, so the call fails as it does when the clock throws.
+     */
+    static Instant now(InstantSource clock) {
+        return Objects.requireNonNull(clock.instant(), "the clock of the trail answered null");
     }
 
     /**

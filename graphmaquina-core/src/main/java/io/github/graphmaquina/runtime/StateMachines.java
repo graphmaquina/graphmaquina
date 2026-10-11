@@ -124,8 +124,8 @@ public final class StateMachines {
          * throws does: the entry it could not mark is left out of the trail. When it throws while the call reads the
          * instant of the Failed entry that ends a failed call, whatever failed the call, the call's
          * {@code CallFailedException} carries what it threw as suppressed and its trail ends without that entry; an
-         * Error propagates. A machine that does not call this reads no clock and keeps no
-         * mark.
+         * Error propagates. A clock that answers null counts as one that throws a NullPointerException. A machine
+         * that does not call this reads no clock and keeps no mark.
          */
         public Builder<E, S, T> recordTrail(InstantSource clock) {
             requireUnused();

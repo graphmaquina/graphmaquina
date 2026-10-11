@@ -208,12 +208,13 @@ final class UnitOfWork {
 
     /**
      * Marks the entry just appended, when the call records its trail: the clock is read now, once the entry is in the
-     * log, never before, so a mark never sits at the savepoint its own step took. A call that does not record its
-     * trail reads no clock.
+     * log, never before, so a mark never sits at the savepoint its own step took. A clock that answers null is refused
+     * as {@link CallFlow#now} says, and the entry stays without a mark. A call that does not record its trail reads no
+     * clock.
      */
     private void mark() {
         if (clock.isPresent()) {
-            flow.orElseThrow().mark(log.size() - 1, clock.get().instant());
+            flow.orElseThrow().mark(log.size() - 1, CallFlow.now(clock.get()));
         }
     }
 
@@ -437,8 +438,8 @@ final class UnitOfWork {
      * entry wraps the next of {@code records}, a start entry the next of {@code starts}, which are the
      * {@link #records()} and {@link #starts()} of the log as it stands; each is at the instant of its entry's mark, and
      * a hop carries the recovery its mark holds. The entries stop at the first entry of the log without a mark: only
-     * the last entry can lack one, when the clock threw instead of marking it, and the call aborts with what the
-     * clock threw as its cause.
+     * the last entry can lack one, when the clock threw or answered null instead of marking it, and the call aborts
+     * with that exception as its cause.
      */
     List<FlowEntry> trailOf(List<TransitionRecord<?, ?, ?>> records, List<SubmachineStart<?, ?, ?>> starts) {
         CallFlow marks = flow.orElseThrow();

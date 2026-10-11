@@ -3398,8 +3398,8 @@ thread running the call, once per entry: a test can pass `InstantSource.fixed(..
 that advances on each read. A clock that throws a `RuntimeException` fails the call, as an identity function that
 throws does: the entry it could not mark stays out of the trail. When it throws while the call reads the instant of
 the `Failed` entry that ends a failed call, whatever failed the call, the call's `CallFailedException` carries what
-it threw as suppressed and its trail ends without that entry. A call
-whose root machine was built without `recordTrail` reads no clock and stores no time.
+it threw as suppressed and its trail ends without that entry. A clock that answers `null` counts as one that throws a
+`NullPointerException`. A call whose root machine was built without `recordTrail` reads no clock and stores no time.
 
 The trail records what the call took and how it ended; the [`TRACE` lines](#logs) show each step on the way, its
 guards and its action included. To assert the flow and its trail in a test, see
