@@ -54,8 +54,8 @@ shop and billing domains the guide quotes.
 - [Known limitations](#known-limitations)
 - [Build, verify and release this repository](#build-verify-and-release-this-repository)
 - [Migrating from 1.x](migration-2.0.md)
-- [Component benchmarks](../benchmarks/README.md) — graph-only harness and the V/E cost evidence; the 1.x figures are
-  historical
+- [Component benchmarks](../benchmarks/README.md) — graph-only harness, the V/E cost evidence and the measured cost of
+  the call's flow and logs; the 1.x figures are historical
 - [Further reference](#further-reference)
 - [License](#license)
 
