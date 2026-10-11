@@ -34,6 +34,9 @@ class OperationInputDefaultsTest {
         public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(Class<M> type) {
             throw new UnsupportedOperationException();
         }
+        public FlowView flow() {
+            throw new UnsupportedOperationException();
+        }
     }
     /** A transition context that implements only its abstract methods, so {@code input()} reads the default. */
     static class PlainAction implements TransitionContext<Object, S, T> {
@@ -61,6 +64,9 @@ class OperationInputDefaultsTest {
         }
         public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
                 Class<M> type, Collection<? extends P> entities, U transition, CascadePolicy policy) {
+            throw new UnsupportedOperationException();
+        }
+        public FlowContext flow() {
             throw new UnsupportedOperationException();
         }
     }

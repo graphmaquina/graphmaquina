@@ -23,7 +23,9 @@ import java.util.Optional;
  * answer by entity and undo puts it back entry by entry, so a rollback never rebuilds the index.
  * pendingStates and undo are built from the log by the first lookup that finds it non-empty, and append
  * maintains them from then on, so a root that never reads a pending state after its first append allocates
- * neither. journal answers which actions actually ran and is never reverted.
+ * neither. journal answers which actions actually ran and is never reverted. flow is the call's flow, created by the
+ * first context that asks for it: a call that never does pays one empty field, and every rollback reverts the flow's
+ * writes with the log.
  */
 final class UnitOfWork {
 
@@ -49,6 +51,8 @@ final class UnitOfWork {
     private boolean poisonWrapsAForeignFailure;
     /** Whether a start was ever appended: until one is, every entry of the log is a hop. */
     private boolean started;
+    /** The call's flow; empty until a context of the call first asks for it. */
+    private Optional<CallFlow> flow = Optional.empty();
 
     UnitOfWork(int maxDepth, long deadlineNanos) {
         this.maxDepth = maxDepth;
@@ -91,23 +95,37 @@ final class UnitOfWork {
 
     int savepoint() { return log.size(); }
 
+    /** The call's flow, created with {@code rootEntity}, the root call's entity, the first time it is asked for. */
+    CallFlow flow(Object rootEntity) {
+        if (flow.isEmpty()) {
+            flow = Optional.of(new CallFlow(rootEntity));
+        }
+        return flow.get();
+    }
+
+    /** Whether a context of the call asked for its flow. */
+    boolean hasFlow() { return flow.isPresent(); }
+
     /**
      * Undoes the index hop by hop. Before the index exists, savepoint zero clears the whole log directly; zero is
      * valid even for an empty log. Every other path first uses subList to reject invalid savepoints before mutating.
      * Before the index exists there is nothing to undo but the log: the discarded entries are cleared and the first
      * lookup builds the index from what remains. Each hop restores the map before its undo record and
      * its log entry are removed, so an identity whose equals or hashCode throws stops the rollback with the three
-     * still in step, and the same rollback can be retried.
+     * still in step, and the same rollback can be retried. Each branch then drops the flow's writes made after the
+     * savepoint, if the call has a flow.
      */
     void rollbackTo(int savepoint) {
         Optional<Map<EntityRef, Enum<?>>> pending = pendingStates();
         if (savepoint == 0 && pending.isEmpty()) {
             log.clear();
+            rollbackFlow(savepoint);
             return;
         }
         List<LogEntry> discarded = log.subList(savepoint, log.size());
         if (pending.isEmpty()) {
             discarded.clear();
+            rollbackFlow(savepoint);
             return;
         }
         Map<EntityRef, Enum<?>> states = pending.orElseThrow();
@@ -120,6 +138,13 @@ final class UnitOfWork {
             }
             undo.remove(undo.size() - 1);
             log.remove(log.size() - 1);
+        }
+        rollbackFlow(savepoint);
+    }
+
+    private void rollbackFlow(int savepoint) {
+        if (flow.isPresent()) {
+            flow.get().rollbackTo(savepoint);
         }
     }
 

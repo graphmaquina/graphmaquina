@@ -3,14 +3,14 @@ package io.github.graphmaquina.api;
 import java.util.Optional;
 
 /**
- * A guard decides, it does not mutate: no cascade and no depth. Its peer views work only on the thread that called
- * {@code test()} and only until the root transaction ends: elsewhere they throw {@code WrongThreadException},
- * afterwards {@code StaleContextException}. What the guard throws, or completes its stage with, is never routed,
- * whatever {@code failsOn} or a recovery rule of its edge declares: once unwrapped from CompletionException and
- * ExecutionException, it aborts the call with it as cause, unless it is a failure of this call, for which the engine
- * throws it as itself or, when the transaction is poisoned, the failure that poisoned the transaction. An Error thrown
- * as itself propagates. {@link io.github.graphmaquina.error.TransitionAbortedException} says what aborting the call
- * means inside a cascade.
+ * A guard decides, it does not mutate: no cascade, no depth, and a flow it can only read. Its peer views and its
+ * {@link #flow()} work only on the thread that called {@code test()} and only until the root transaction ends:
+ * elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}. What the guard throws,
+ * or completes its stage with, is never routed, whatever {@code failsOn} or a recovery rule of its edge declares:
+ * once unwrapped from CompletionException and ExecutionException, it aborts the call with it as cause, unless it is a
+ * failure of this call, for which the engine throws it as itself or, when the transaction is poisoned, the failure
+ * that poisoned the transaction. An Error thrown as itself propagates.
+ * {@link io.github.graphmaquina.error.TransitionAbortedException} says what aborting the call means inside a cascade.
  */
 public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 
@@ -26,6 +26,16 @@ public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
     <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(MachineKey<P, Q, U> key);
 
     <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(Class<M> peer);
+
+    /**
+     * The flow of this call, read-only: the values the steps of the call put before this guard runs, those of the
+     * action that cascaded to this step included, and the root call's entity, which {@link FlowView#entity()}
+     * describes. The view has no {@code put} or {@code remove}, and no cast gives it one. Like peer views,
+     * {@code flow()} and every read of the view it returns work only on the thread that called {@code test()} and only
+     * until the root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards
+     * {@code StaleContextException}.
+     */
+    FlowView flow();
 
     /**
      * The value passed as this operation's second argument, if any; empty when called with one argument or an

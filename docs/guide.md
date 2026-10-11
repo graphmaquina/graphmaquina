@@ -43,7 +43,7 @@ shop and billing domains the guide quotes.
 - [Watch other machines](#watch-other-machines)
 - [Compose machines](#compose-machines)
 - [Commit, hooks and observers](#commit-hooks-and-observers)
-- [Debug a call](#debug-a-call)
+- [Debug a call: logs and the call's flow](#debug-a-call-logs-and-the-calls-flow)
 - [Concurrency, identity and persistence](#concurrency-identity-and-persistence)
 - [Inspect graphs and export diagrams](#inspect-graphs-and-export-diagrams)
 - [Test your machines](#test-your-machines)
@@ -73,7 +73,8 @@ shop and billing domains the guide quotes.
 | Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child whose parent does not hold it there is rejected, and the step that ends the child runs the parent's exit in the same unit of work. See [compose machines](#compose-machines). |
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
 | Inspectable execution | Outcomes carry transition records, watch reactions and the sub-machines a call started; technical aborts carry diagnostic details where applicable. |
-| Call logs | Each call can log its start, the hops and sub-machine starts it committed, and how it ended, at `DEBUG`, and each step it took, at `TRACE`, through `System.Logger`; off by default. See [debug a call](#debug-a-call). |
+| Call logs | Each call can log its start, the hops and sub-machine starts it committed, and how it ended, at `DEBUG`, and each step it took, at `TRACE`, through `System.Logger`; off by default. See [debug a call](#debug-a-call-logs-and-the-calls-flow). |
+| The call's flow | Actions put typed values in a flow that every step of the same call reads, guards, cascaded steps and the exits of sub-machines included, along with the entity the call was made for. A failure route drops the writes of the step that failed. See [the call's flow](#the-calls-flow). |
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram, which draws each sub-machine inside the state it is bound to. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
@@ -1226,7 +1227,7 @@ The ticket quickstart shows synchronous actions and a guard. Actions receive `Tr
 
 | Method | Meaning |
 | --- | --- |
-| `entity()` | The object supplied by the caller |
+| `entity()` | The entity this step moves: the object supplied by the caller at the root, the peer in a cascaded step, the parent in the exit of a sub-machine |
 | `transition()` | The identifier that selected this edge |
 | `from()` / `to()` | The endpoints of the edge being executed |
 | `depth()` | `0` for the root, increasing through cascades |
@@ -1234,9 +1235,10 @@ The ticket quickstart shows synchronous actions and a guard. Actions receive `Tr
 | `cascade(...)` | Request a peer transition, by identifier, within this unit of work |
 | `cascadeAll(...)` | Apply a cascade to a collection using the selected policy |
 | `input()` / `input(Class)` | The operation's second argument, if the caller passed one |
+| `flow()` | The call's flow: typed values every step of the call shares, and the entity the call was made for; see [the call's flow](#the-calls-flow) |
 
 Guards receive `GuardContext<E, S, T>`, which exposes the entity, the identifier, both endpoints, read-only
-peer access and the same `input` accessors. It has no cascade API. Return `GuardResult.pass()` or
+peer access, the same `input` accessors and a read-only `flow()`. It has no cascade API. Return `GuardResult.pass()` or
 `GuardResult.reject("reason")`; do not return null. A rejecting guard stops the edge before its action runs
 and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. Guard code should be free of
 mutations and external side effects.
@@ -1248,7 +1250,8 @@ erased generic arguments. Input operations do not support method type parameters
 
 The same input reaches the transition's guards, action and handled failure action. Cascades, the exits of
 sub-machines, watch reactions and reevaluation have no input of their own and receive an empty optional. A shared
-guard must handle that absence. Hooks, observers and transition records retain their existing contracts.
+guard must handle that absence. An action can copy its input into [the call's flow](#the-calls-flow) for the
+cascades and exits of the same call. Hooks, observers and transition records retain their existing contracts.
 
 ### Domain failures
 
@@ -1496,12 +1499,14 @@ The engine keeps the boundary between domain failures and technical ones:
 - A cancelled stage, and the timeout, interruption or refusal of the engine's own wait, abort the call and never
   reach a rule. A timeout that the adapter's own client throws, such as a `SocketTimeoutException`, is an exception
   like any other and can be declared.
-- The engine throws a few JDK exceptions from an action's context: `NullPointerException` for a null argument,
-  `IllegalArgumentException` for a primitive class token in `input(Class)` or an identifier of another catalogue,
-  `ClassCastException` when `input(Class)` reads an input of another type, and `WrongThreadException` when the
-  context is used from another thread than the one running the action. They are not library exceptions: if the
-  action lets one through and a declared type accepts it, a rule or `failsOn` routes it like the adapter's own
-  exceptions. None of them is an `IllegalStateException`. Declare the narrowest types the adapter throws.
+- The engine throws a few JDK exceptions from an action's context and its flow: `NullPointerException` for a null
+  argument, `IllegalArgumentException` for a primitive class token in `input(Class)` or `flow().entity(Class)` or an
+  identifier of another catalogue, `ClassCastException` when `input(Class)` reads an input of another type, when
+  `flow().put` receives a value of another class than its key's or when `flow().entity(Class)` names a class the
+  root entity is not an instance of, and `WrongThreadException` when the context or its flow is used from another
+  thread than the one running the action. They are not library exceptions: if the action lets one through and a
+  declared type accepts it, a rule or `failsOn` routes it like the adapter's own exceptions. None of them is an
+  `IllegalStateException`. Declare the narrowest types the adapter throws.
 - Checked exceptions are classified like the others, however they arrive: thrown by a synchronous action without
   being declared, declared by an annotated action method and rethrown unchanged by the generated companion, or
   completing a stage, inside an exact `CompletionException` too.
@@ -1513,8 +1518,9 @@ fallback is. The recovery identifier of every rule, like the fallback's, needs a
 of them when a `Transition` declares several, and may not be the failing edge's own key: `SG301` otherwise. Two
 rules may share a recovery, and a recovery may lead to the state the failing edge was heading for. Before the
 recovery runs, the engine returns to the savepoint taken before the failing edge, which discards that edge's pending
-states and cascades, its destination included; the journal keeps the actions that started. Entered as a recovery,
-the edge, a move or an action:
+states and cascades, its destination included, and what its action and those cascades wrote to
+[the call's flow](#the-calls-flow); the journal keeps the actions that started. Entered as a recovery, the edge, a
+move or an action:
 
 - runs none of its guards;
 - passes the same input to its action;
@@ -1563,8 +1569,9 @@ its rules and `failsOn`, all with `IllegalArgumentException`.
 
 Recovery rules choose a route and nothing more. Nothing retries automatically or waits for a backoff:
 `SCHEDULE_RETRY` only records that a retry is due, and the application decides when to request `RETRY`. Nothing
-compensates either: the savepoint discards the engine's pending states, not the changes the action made to the
-entity, to the application's transaction or to external systems. To assert kinds and rules in a test, see
+compensates either: the savepoint discards the engine's pending states and the writes to the call's flow, not the
+changes the action made to the entity, to an object it stored in the flow, to the application's transaction or to
+external systems. To assert kinds and rules in a test, see
 [failure kinds and recovery rules](testing.md#failure-kinds-and-recovery-rules) in the testing guide.
 
 ## Handle transition outcomes
@@ -2124,17 +2131,21 @@ actions nor reverses HTTP calls, payments, messages or database writes performed
 Capture the data required by the service while the action or guard is running. Prefer immutable values, as
 `AsyncTicketActions` does with `String ticketId`, over passing a mutable entity or live context to a callback.
 
-![Transaction-aware context operations belong to the original operation thread and live transaction. Service callbacks receive immutable data and translate results without using peer views or cascades.](images/async-context-boundary.svg)
+![Transaction-aware context operations belong to the original operation thread and live transaction. Service
+callbacks receive immutable data and translate results without using peer views, cascades or the
+flow.](images/async-context-boundary.svg)
 
-`ctx.peer(...)`, `ctx.cascade(...)`, `ctx.cascadeAll(...)` and context-derived peer views require both the
-original operation thread and a live transaction. A wrong thread produces `WrongThreadException`; use after
-invalidation produces `StaleContextException`. After the root commits or aborts, its transaction-aware
-context is invalidated before post-commit hooks run.
+`ctx.peer(...)`, `ctx.cascade(...)`, `ctx.cascadeAll(...)`, `ctx.flow()`, context-derived peer views and every
+operation of a context's flow, `get`, `keys`, `entity`, `put` and `remove`, require both the original operation
+thread and a live transaction. A wrong thread produces `WrongThreadException`; use after invalidation produces
+`StaleContextException`. After the root commits or aborts, its transaction-aware context is invalidated before
+post-commit hooks run.
 
 Neither `thenApply` nor `thenApplyAsync` promises to run on that original operation thread. Even a callback
-without the `Async` suffix may run on the service's completion thread. Do not hide a cascade in one of these
-callbacks. Read peers or stage required cascades while on the operation thread; after an external result, a
-separate facade invocation is a new transaction, not a continuation of the original unit of work.
+without the `Async` suffix may run on the service's completion thread. Do not hide a cascade or a write to the flow
+in one of these callbacks. Read peers, write the flow or stage required cascades while on the operation thread;
+after an external result, a separate facade invocation is a new transaction, not a continuation of the original
+unit of work.
 
 The context's simple entity/from/to/depth getters do not enforce these lifetime/thread checks. That does not
 make the entity immutable or safe for concurrent access. Do not mutate the state property in an action or a
@@ -2142,7 +2153,7 @@ late callback; GraphMaquina owns graph-state writes during commit.
 
 Both `screen(entity, verdict)` and `machine.async(() -> machine.screen(entity, verdict))` carry the value.
 Input getters are simple data accessors like entity/from/to/depth; the library neither copies nor freezes
-the value. Capture immutable data for asynchronous callbacks. Peer views and cascades still require the
+the value. Capture immutable data for asynchronous callbacks. Peer views, cascades and the flow still require the
 original execution thread and a live transaction.
 
 ### Executors and machine lifetime
@@ -2816,10 +2827,10 @@ The runtime's normal root execution follows this sequence:
 
 A rejected or ignored root does not commit state changes. A handled failure does commit its failure route.
 External side effects performed by actions, and mutations to other entity fields, are not automatically undone
-when the unit of work aborts. A call that [logs](#debug-a-call) at `DEBUG` writes its `committed` and `started` lines
-after step 4, and its `end` or `failed` line after the observers learn how it ended. At `TRACE`, it also logs the check
-of step 3, each setter of step 4 before it is called, each hook of step 6 before it runs, and each owner lookup of
-step 7.
+when the unit of work aborts. A call that [logs](#debug-a-call-logs-and-the-calls-flow) at `DEBUG` writes its
+`committed` and `started` lines after step 4, and its `end` or `failed` line after the observers learn how it ended.
+At `TRACE`, it also logs the check of step 3, each setter of step 4 before it is called, each hook of step 6 before it
+runs, and each owner lookup of step 7.
 
 ### After-commit hooks
 
@@ -2909,15 +2920,15 @@ how far it got in writing states; an `Error` is reported too, then propagates.
 An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
 `System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
 propagates. That warning is the only record logged on `io.github.graphmaquina` itself: the lines of each call go to
-its child logger `io.github.graphmaquina.runtime`, as [debug a call](#debug-a-call) describes. An observer cannot
-start a transition on its own thread either: an operation called from an observer throws
+its child logger `io.github.graphmaquina.runtime`, as [debug a call](#debug-a-call-logs-and-the-calls-flow)
+describes. An observer cannot start a transition on its own thread either: an operation called from an observer throws
 `ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread as
 a call of its own, unless that executor runs tasks inline, in which case the returned future fails with that exception
 as its cause. When a failure must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a
 machine. Observers run on the thread of every call, so keep them thread-safe and quick. Add as many as you need: they
 are notified in the order they were added.
 
-## Debug a call
+## Debug a call: logs and the call's flow
 
 ### Logs
 
@@ -3005,14 +3016,16 @@ Square brackets below mark the parts a line may leave out.
 | `TRACE` | `call=<id> depth=<d> action <name> start mode=<sync\|async>` | An action starts, synchronous or asynchronous: the edge's own action, or the recovery action of a failure route. |
 | `TRACE` | `call=<id> depth=<d> action <name> awaiting budget=<us\|none>` | An asynchronous action returned its stage, and the step waits for it at most `<us>`: what is left of the edge's `timeout` or of the call's `asyncTimeout`, whichever ends first. `none` when neither sets a limit. |
 | `TRACE` | `call=<id> depth=<d> action <name> OK elapsed=<us>` / `call=<id> depth=<d> action <name> FAILED[ kind=<kind>] reason="<reason>" elapsed=<us>` / `call=<id> depth=<d> action <name> THREW error=<class> elapsed=<us>` | The action ended, after the time since its `start` line. `OK`: it returned `ActionOutcome.ok()`. `FAILED`: it returned a failure, with the simple name of its failure kind when it has one, and its reason. `THREW`: it threw or completed its stage exceptionally, or the step gave up on it, for a null result or a wait that timed out, was interrupted or was refused. The line names the class of that throwable, never its message. An `Error` the action throws logs no end. |
-| `TRACE` | `call=<id> depth=<d> route <failed T> -> <recovery T> rollback-to=<savepoint>[ kind=<kind>] reason="<reason>"` | The failure of `<failed T>` took its route: the step dropped what the call had logged after the first `<savepoint>` hops and starts, and takes `<recovery T>`. The line names the failure kind the route reports, if any, and the failure's reason; for a routed throwable, that is its simple class name and message, which the outcome's `explanation()` leaves out. |
-| `TRACE` | `call=<id> depth=<d> unhandled <failed T> reason="<reason>"` | The failure of `<failed T>` has no route: the step dropped what it had logged, and the call throws `UnhandledFailureException`, or, inside a cascade or an exit, aborts. |
+| `TRACE` | `call=<id> depth=<d> route <failed T> -> <recovery T> rollback-to=<savepoint>[ kind=<kind>] reason="<reason>"` | The failure of `<failed T>` took its route: the step dropped what the call had logged after the first `<savepoint>` hops and starts, with the writes to the call's flow made since, and takes `<recovery T>`. The line names the failure kind the route reports, if any, and the failure's reason; for a routed throwable, that is its simple class name and message, which the outcome's `explanation()` leaves out. |
+| `TRACE` | `call=<id> depth=<d> unhandled <failed T> reason="<reason>"` | The failure of `<failed T>` has no route: the step dropped what it had logged and written to the call's flow, and the call throws `UnhandledFailureException`, or, inside a cascade or an exit, aborts. |
 | `TRACE` | `call=<id> depth=<d> cascade <ref> <T>[ policy=<policy>]` | An action cascades `<T>` to the peer `<ref>`, at the action's depth; each element of `cascadeAll` adds its `CascadePolicy`. The lines of the cascaded step follow, one depth deeper. |
 | `TRACE` | `call=<id> depth=<d> cascade-result <ref> <T> code=<code>` | The cascaded step returned its outcome, with its `code()`. |
 | `TRACE` | `call=<id> depth=<d> collect-rollback <ref> <T> error=<error>` | Under `COLLECT`, the step of the element `<ref>` aborted with `<error>`: the element was rolled back, the poison it left was cleared, and the next element runs. |
 | `TRACE` | `call=<id> depth=<d> submachine-start <ref> <previous> -> <initial> parent=<ref> node=<node>` | A hop entered `<node>`, which starts its sub-machine: the child moves from `<previous>` to its initial state, at the depth of the entering step. |
 | `TRACE` | `call=<id> depth=<d> submachine-exit <ref> terminal=<state> parent=<ref> exit=<T>` | The child `<ref>` stands in `<state>`, a terminal state of its graph, which selects the exit `<T>` of its parent. The step of the exit follows, one depth deeper. |
 | `TRACE` | `call=<id> depth=<d> poison error=<error>` | A failure poisoned the call, which then commits nothing: the abort of a step at a depth above 0, a cascade that failed before its step could run, such as a cycle or a machine the registry does not hold, or the aggregate of a `COLLECT`. The call keeps its first poison, and only that one is logged. |
+| `TRACE` | `call=<id> depth=<d> flow-put <key>[=<value>]` | An action put a value in [the call's flow](#the-calls-flow), at the depth of its step. `<key>` is the key as `name:Type`, with the simple name of its class; a key made with `FlowKey.visible` adds `=` and the value's `toString()`. |
+| `TRACE` | `call=<id> depth=<d> flow-remove <key>` | An action removed the value of `<key>` from the call's flow. |
 | `TRACE` | `call=<id> commit-check entities=<n> hops=<n>` / `call=<id> commit-conflict reason="<conflict>"` | The commit checks the original state of each entity in the call's log: `entities=` counts them, and `hops=` the hops of the log, starts not counted. A state that changed while the call ran is a conflict: the commit writes nothing and throws `CommitFailedException`. |
 | `TRACE` | `call=<id> setter <ref> <from> -> <to> entries=<n>` | The commit is about to call the setter of `<ref>`, which moves it from its first state to its last, through `<n>` hops and starts of the log. |
 | `TRACE` | `call=<id> hook <hook> <ref> <T>` | The hook `<hook>` is about to run for the committed hop `<T>` of `<ref>`. |
@@ -3026,25 +3039,111 @@ before it starts, as [observers](#observers) see it, logs nothing. Each call log
 submitted through `async()` logs on the executor's thread, and the submission itself logs nothing.
 
 At `TRACE`, a step logs as it goes: its binding check, its edge, its guards, the start of the sub-machine its hop
-enters, its action and the cascades the action runs, then its failure route, if any, and last the exits it runs. The
-lines of the commit come before the `committed` lines; the hook and watch lines come after them, before the lines of
-the reactions.
+enters, its action and, in the order the action makes them, its writes to the flow and its cascades, then its failure
+route, if any, and last the exits it runs. The lines of the commit come before the `committed` lines; the hook and
+watch lines come after them, before the lines of the reactions.
 
 An entity appears in a line only as `<ref>`: its machine key and its identity, such as `Ticket/TicketState#T-1`. A
 standalone machine without `identity(...)` prints `#@` and the entity's identity hash code in hexadecimal instead.
 The runtime prints the identity it has already computed, so a line never calls the identity function, a getter or
-the entity's `toString()`. The `start` line names no entity, and `end` and `failed` name it only once the call
-computed it: a reevaluation that selected no edge, or that failed before its edge ran, names none. The identity may
-be personal data, such as an e-mail address used as an identifier, and the reasons and exception messages the lines
-print may carry internal details; treat these logs like any record that carries your identifiers. If the `toString()`
-of an identity or of an exception throws a `RuntimeException`, the line prints `<toString threw <exception class>>` in
-its place, and the call goes on; an `Error` propagates.
+the entity's `toString()`, unless your code puts the entity in the flow under a visible key: a `flow-put` line of a
+key made with `FlowKey.visible` prints the value's `toString()`, whatever the value is. The `start` line names no
+entity, and `end` and `failed` name it only once the call computed it: a reevaluation that selected no edge, or that
+failed before its edge ran, names none. The identity may be personal data, such as an e-mail address used as an
+identifier, and the reasons, exception messages and visible flow values the lines print may carry internal details;
+treat these logs like any record that carries your identifiers. If the `toString()` of an identity, of an exception or
+of a visible flow value throws a `RuntimeException`, the line prints `<toString threw <exception class>>` in its
+place, and the call goes on; an `Error` propagates.
 
 The runtime asks the logger for its two levels once, when a call starts, and builds no line of a level that is off: a
 level raised while a call runs applies from the next call, a call logged at `DEBUG` alone builds no `TRACE` line, and
 a call that logs nothing pays for no line. A `RuntimeException` from the logging backend loses the line and changes
 nothing in the call; an `Error` propagates. An `Error` that ends a call is not a `CallFailedException` and gets no
 `failed` line: the lines logged before it stay, and none follows them.
+
+### The call's flow
+
+Each call carries one flow: typed values that its steps share, and the entity the call was made for. It lives in
+memory for that call alone: nothing of it is persisted, and the next call starts with an empty one. Every step of the
+call reaches the same flow, whatever entity the step moves: the root's own step, each cascaded step and the exit of
+each sub-machine. A watch reaction is a call of its own, with its own flow.
+
+An action reads and writes the flow through `ctx.flow()`, a `FlowContext`. A guard reads it through `ctx.flow()` too,
+and gets a `FlowView`, without `put` or `remove`. A value lives under a `FlowKey`, a name and a class: two keys with
+the same name and class read and write the same value. Declare each key once, where every step that uses it can see
+it:
+
+```java
+public final class ShopFlow {
+    public static final FlowKey<String> CANCELLATION = FlowKey.visible("cancellation", String.class);
+
+    private ShopFlow() { }
+}
+```
+
+`FlowKey.of` and `FlowKey.visible` refuse a null or blank name and a primitive class token: write `Integer.class` for
+`int`. A key takes a class token, as `input(Class)` does, so it cannot name a generic type such as `List<String>`; use
+the raw class, `List.class`. `put` refuses a null key or value with `NullPointerException`, and a value that is not an
+instance of the key's class with `ClassCastException`; `get` and `remove` refuse a null key. `get` answers the value of
+the last write of the key, and `keys()` lists the keys that hold a value, in the order of the write that gave each its
+current value.
+
+A cascaded step and the exit of a sub-machine receive no `input()`. When they need a value the caller passed, the
+action that received it copies it into the flow before it cascades. For instance, an order's `cancel` action, called
+as `cancel(order, cancellationId)`, can hand that identifier to each item it cancels:
+
+```java
+@GraphAction
+public ActionOutcome cancel(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {
+    ctx.flow().put(ShopFlow.CANCELLATION, ctx.input(String.class).orElse("manual"));
+    ctx.cascadeAll(Items.class, ctx.entity().items(), ItemTransition.CANCEL,
+            CascadePolicy.COLLECT);
+    return ActionOutcome.ok();
+}
+```
+
+An action on the item's `CANCEL` edge can then read it. `ctx.entity()` is the item the step moves, and
+`flow().entity()` the entity the root call was made for. Only the order's `cancel` puts the value, so when it is there
+the root is the order, and `flow().entity(Order.class)` casts it. That cast throws `ClassCastException` when the root
+is of another class, such as an item cancelled on its own, and refuses a null or primitive class token as
+`input(Class)` does:
+
+```java
+@GraphAction
+public ActionOutcome restock(TransitionContext<Item, ItemStatus, ItemTransition> ctx) {
+    Optional<String> cancellation = ctx.flow().get(ShopFlow.CANCELLATION);
+    if (cancellation.isPresent()) {
+        Order order = ctx.flow().entity(Order.class).orElseThrow();
+        ctx.entity().restockedIn(cancellation.get());
+        order.restocked(ctx.entity());
+    }
+    return ActionOutcome.ok();
+}
+```
+
+A write is undone with the step that made it. When a step's failure takes its route, the call drops every write made
+since that step took its hop, its action's and those of the steps it cascaded to, and keeps what earlier steps wrote;
+the recovery action then writes anew. A `COLLECT` element whose step aborts is dropped the same way, its writes with
+it, before the next element runs. A call that aborts commits nothing, and its writes end with it.
+
+Values are stored by reference, never copied, and a rollback drops the write, not what was done to the object. An
+action that puts a list, adds an element to it and then fails into its route leaves the recovery action without a
+value under that key, while the list itself still holds the element. Treat stored values as immutable. Entities
+behave the same way: what a step changes on its own entity through `ctx.entity()`, or on the root's through
+`flow().entity(...)`, takes effect at once and is never undone, as
+[commit, hooks and observers](#commit-hooks-and-observers) says of other entity fields. In the example, `restockedIn`
+and `restocked` stay done even if a later step fails the call.
+
+The flow follows the rules of [contexts](#contexts-and-completion-callbacks). `ctx.flow()` and every operation of the
+flow it returns, reads included, work only on the thread running the action or the guard, and only until the root
+commits or aborts: elsewhere they throw `WrongThreadException`, afterwards `StaleContextException`. An asynchronous
+action writes before it returns its stage. A write inside a callback of that stage, which may run on the service's
+thread, throws `WrongThreadException` and stores nothing; the exception completes the stage exceptionally, so the call
+aborts with it as its cause, unless a type the edge declares accepts it.
+
+Each write is logged at `TRACE` as a `flow-put` or `flow-remove` line, which prints the key as `name:Type`. A key
+made with `FlowKey.visible` also prints `=` and the value's `toString()`, whatever object it is: make a key visible
+only for values you accept to see in your logs.
 
 ## Concurrency, identity and persistence
 
@@ -3629,7 +3728,7 @@ code runs.
 | `ReentrantTransitionException` | A guard, an action, a state accessor, an identity function, a sub-machine's `childOf` or `parentOf`, or a watch's owner lookup, peer lookup or condition, or an observer, called `execute` or `reevaluate`. An action moves peers through `ctx.cascade(...)`; hooks may start transitions; observers and the other callbacks may not on their own thread. Inside a call it arrives as the cause of the call's failure: an abort when a guard, an action, a state getter, an identity function, a sub-machine's `childOf` or `parentOf`, or a reevaluation's peers reader or condition throws it, and a `CommitFailedException` when a setter, or the getter during the commit's check, does. An owner lookup's is what its `Reaction.Aborted` carries, and an observer's is contained. |
 | `PoisonedUnitOfWorkException` | A context's `peer`, `cascade` or `cascadeAll` was called after a failed cascade poisoned the transaction; `original()` is that failure. When the action lets this exception through, or the engine has the action's outcome, while the transaction is poisoned, the engine throws the failure that poisoned the transaction; the `PoisonedUnitOfWorkException` Javadoc says what else can end the call. |
 | `StaleContextException` | A context or context-derived view was used after invalidation. Used by a guard or an action of another call, it arrives as the cause of that call's abort. |
-| `java.lang.WrongThreadException` | Context peer/cascade access or a derived peer view was used from another thread; it can appear as the cause of an abort. |
+| `java.lang.WrongThreadException` | Context peer/cascade/flow access, a derived peer view or an operation of a context's flow was used from another thread; it can appear as the cause of an abort. |
 | `UnknownFacadeException` / `UnknownPeerMachineException` | The requested peer was not registered in the set/registry. Thrown by a guard or an action, it arrives as the cause of that call's abort. |
 | `CommitFailedException` | Phase `COMMIT`: the commit stopped before its first setter, because the pre-commit check failed or reading the states or grouping the log by entity threw (`NONE` written), or a setter threw (`PARTIAL`); inspect `applied()`, `failedEntity()` and `pending()` before retrying. |
 | `AfterCommitException` | A hook threw: phase `HOOK`, every state written; `hop()`, `records()` and `starts()` say what. |

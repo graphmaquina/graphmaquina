@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
@@ -11,7 +12,10 @@ import lombok.AccessLevel;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
-/** Live {@link GuardContext} handed to a guard: entity and edge, read-only, with peers but no cascading. */
+/**
+ * Live {@link GuardContext} handed to a guard: entity and edge, read-only, with peers and a read-only view of the
+ * call's flow, but no cascading.
+ */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>> implements GuardContext<E, S, T>, ContextHandle {
 
@@ -51,6 +55,13 @@ final class DefaultGuardContext<E, S extends Enum<S>, T extends Enum<T>> impleme
     public <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> PeerView<P, Q, U> peer(@NonNull Class<M> peer) {
         check();
         return tx.peer(this, this::check, tx.peerKeyFor(this, peer));
+    }
+
+    /** Checks this context, then hands out a read-only view of the call's flow that runs the same check first. */
+    @Override
+    public FlowView flow() {
+        check();
+        return tx.flow(this::check, depth).readOnly();
     }
 
     /** Only from the thread running test(), and only while the transaction is alive. */

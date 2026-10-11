@@ -1,6 +1,7 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.CascadePolicy;
+import io.github.graphmaquina.api.FlowContext;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
@@ -16,7 +17,7 @@ import lombok.Getter;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
-/** Live {@link TransitionContext} handed to an action: entity, edge, depth, peers and cascading. */
+/** Live {@link TransitionContext} handed to an action: entity, edge, depth, peers, cascading and the call's flow. */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
         implements TransitionContext<E, S, T>, ContextHandle {
@@ -94,6 +95,13 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
             @NonNull CascadePolicy policy) {
         check();
         return tx.cascadeAll(this, peer, peers, transition, policy);
+    }
+
+    /** Checks this context, then hands out a writable handle on the call's flow that runs the same check first. */
+    @Override
+    public FlowContext flow() {
+        check();
+        return tx.flow(this::check, depth);
     }
 
     /** Only from the thread running process(), and only while the transaction is alive. */

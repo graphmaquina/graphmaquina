@@ -24,11 +24,13 @@ import org.junit.jupiter.api.io.TempDir;
  * Compiles the Java fragments of the guide's "Handle transition outcomes" section, its failed-call handler included,
  * plus its async completion callback and observer examples, against the published core jar. A second test compiles
  * every fragment of the guide's "Recover by failure kind and exception type" section the same way, as a compilation
- * unit of its own, and a third one every fragment of its "Compose machines" section. This test runs no generator, so
- * the annotated declarations of those two sections compile against stand-ins shaped like what the generator and the
- * processor emit: the {@code Transition} and {@code Recovery} annotations of the recovery section, and the billing
- * example's graph and pair vocabulary, symbols and set builder, beside stand-ins for its entities, enums and hosts, for
- * the composition section. The fragments are cut out of {@code docs/guide.md} verbatim and wrapped only by stand-in
+ * unit of its own, a third one every fragment of its "Compose machines" section, and a fourth one every fragment of
+ * its "The call's flow" section. This test runs no generator, so the annotated declarations of the recovery and
+ * composition sections compile against stand-ins shaped like what the generator and the processor emit: the
+ * {@code Transition} and {@code Recovery} annotations of the recovery section, and the billing example's graph and
+ * pair vocabulary, symbols and set builder, beside stand-ins for its entities, enums and hosts, for the composition
+ * section; the flow section's actions compile on stand-in hosts, beside stand-ins for an order, its items and their
+ * enums and facade. The fragments are cut out of {@code docs/guide.md} verbatim and wrapped only by stand-in
  * types and methods, so a renamed accessor in the guide breaks this test the way it would break a reader. A heading or
  * block that cannot be found fails the test instead of compiling nothing. The guide, the repository and the release
  * come from the {@code readmePath}, {@code artifactRepository} and {@code artifactVersion} system properties that
@@ -39,6 +41,7 @@ class GuideOutcomeFragmentsTest {
     private static final String SECTION_HEADING = "## Handle transition outcomes";
     private static final String RECOVERY_HEADING = "### Recover by failure kind and exception type";
     private static final String COMPOSITION_HEADING = "## Compose machines";
+    private static final String FLOW_HEADING = "### The call's flow";
     private static final String FUTURE_PREFIX =
             "CompletableFuture<Outcome<Ticket, TicketState, TicketTransition>> pending =";
     private static final String OBSERVER_PREFIX =
@@ -442,6 +445,50 @@ class GuideOutcomeFragmentsTest {
                 // --- "Compose machines", block 1 (the Bookings interface)
             """;
 
+    private static final String FLOW_HEADER = """
+            package guide;
+
+            import io.github.graphmaquina.annotation.GraphAction;
+            import io.github.graphmaquina.api.ActionOutcome;
+            import io.github.graphmaquina.api.CascadePolicy;
+            import io.github.graphmaquina.api.FlowKey;
+            import io.github.graphmaquina.api.Machine;
+            import io.github.graphmaquina.api.TransitionContext;
+            import java.util.ArrayList;
+            import java.util.List;
+            import java.util.Optional;
+
+            /** Every flow fragment of docs/guide.md, extracted verbatim, compiled against core. */
+            public final class GuideFlowFragments {
+                private GuideFlowFragments() { }
+
+                /** States of an order. */
+                enum OrderStatus { NEW, CANCELLED }
+                /** Identifiers of an order. */
+                enum OrderTransition { CANCEL }
+                /** States of an item. */
+                enum ItemStatus { PENDING, CANCELLED }
+                /** Identifiers of an item. */
+                enum ItemTransition { CANCEL }
+
+                /** Order entity stand-in, which holds its items and the items it restocked. */
+                static final class Order {
+                    private final List<Item> items = new ArrayList<>();
+                    private final List<Item> restocked = new ArrayList<>();
+                    List<Item> items() { return items; }
+                    void restocked(Item item) { restocked.add(item); }
+                }
+                /** Item entity stand-in, which records the cancellation it was restocked in. */
+                static final class Item {
+                    private Optional<String> cancellation = Optional.empty();
+                    void restockedIn(String id) { cancellation = Optional.of(id); }
+                }
+                /** Item facade stand-in. */
+                interface Items extends Machine<Item, ItemStatus, ItemTransition> { }
+
+                // --- "The call's flow", block 1 (the key)
+            """;
+
     @Test
     void everyOutcomeFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir) throws IOException {
         List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
@@ -543,6 +590,30 @@ class GuideOutcomeFragmentsTest {
         List<String> diagnostics = compile(workDir, "GuideCompositionFragments", source.toString(), coreJar);
         assertTrue(diagnostics.isEmpty(), "the guide's composition fragments must compile against the published core:\n"
                 + String.join("\n", diagnostics) + "\n--- generated GuideCompositionFragments.java ---\n" + source);
+    }
+
+    /** Compiles the flow section's three Java blocks against the staged core jar. */
+    @Test
+    void everyFlowFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir) throws IOException {
+        List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
+        Path coreJar = publishedCoreJar();
+
+        assertJavaBlockCount(guide, FLOW_HEADING, 3);
+
+        StringBuilder source = new StringBuilder(FLOW_HEADER);
+        source.append(blockAfter(guide, FLOW_HEADING, 1)).append('\n');
+        source.append("    // --- block 2 (the order's action), on its host\n");
+        source.append("    /** Order action host stand-in. */\n");
+        source.append("    static final class OrderActions {\n");
+        source.append(blockAfter(guide, FLOW_HEADING, 2)).append("    }\n\n");
+        source.append("    // --- block 3 (the item's action), on its host\n");
+        source.append("    /** Item action host stand-in. */\n");
+        source.append("    static final class ItemActions {\n");
+        source.append(blockAfter(guide, FLOW_HEADING, 3)).append("    }\n}\n");
+
+        List<String> diagnostics = compile(workDir, "GuideFlowFragments", source.toString(), coreJar);
+        assertTrue(diagnostics.isEmpty(), "the guide's flow fragments must compile against the published core:\n"
+                + String.join("\n", diagnostics) + "\n--- generated GuideFlowFragments.java ---\n" + source);
     }
 
     /**
@@ -665,7 +736,7 @@ class GuideOutcomeFragmentsTest {
         }
     }
 
-    /** Resolves the staged core jar shared by both fragment compilations. */
+    /** Resolves the staged core jar shared by every fragment compilation. */
     private static Path publishedCoreJar() {
         String version = property("artifactVersion");
         Path coreJar = Path.of(property("artifactRepository"), "io/github/graphmaquina/graphmaquina-core", version,

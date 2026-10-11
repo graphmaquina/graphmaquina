@@ -6,8 +6,9 @@ import lombok.Getter;
 import lombok.NonNull;
 
 /**
- * A context's {@code peer(...)}, {@code cascade(...)} or {@code cascadeAll(...)}, or a peer view's
- * {@code stateOf(...)}, was called after its transaction had ended. The context's plain accessors, such as
+ * A context's {@code peer(...)}, {@code cascade(...)}, {@code cascadeAll(...)} or {@code flow()}, a peer view's
+ * {@code stateOf(...)}, or an operation of the flow a context handed out, {@code get}, {@code keys}, {@code entity},
+ * {@code put} or {@code remove}, was called after its transaction had ended. The context's plain accessors, such as
  * {@code entity()}, do not check.
  */
 @Getter

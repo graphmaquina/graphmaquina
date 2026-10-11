@@ -106,6 +106,14 @@ final class Transaction {
 
     UnitOfWork uow() { return uow; }
 
+    /**
+     * A handle on the call's flow for a context of this call at {@code depth}, checked by {@code guard}, that
+     * context's own check. The first context that asks creates the flow, with the entity of the root call.
+     */
+    FlowHandle flow(Runnable guard, int depth) {
+        return FlowHandle.of(uow.flow(callEntity), uow, guard, log, depth);
+    }
+
     void enter(CallPhase next) { phase = next; }
 
     /** Phase 2 is about to call a setter: from here a failure in COMMIT may leave the states partially written. */
