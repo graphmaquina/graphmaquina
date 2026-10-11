@@ -25,13 +25,13 @@ public enum CallPhase {
 
     /**
      * Grouping the call's log by entity, the check that every entity the call moves is still in the state it was
-     * read in, then the setters.
+     * read in, then the setters, until the last one returns.
      */
     COMMIT,
 
     /**
-     * The after-commit hooks, and before them the DEBUG lines of the hops and starts the call committed. The states
-     * are written.
+     * From the moment the last setter of the commit returned: the after-commit hooks, and before them the DEBUG lines
+     * of the hops and starts the call committed. The states are written.
      */
     HOOK,
 

@@ -324,16 +324,18 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * its trail ending with the rejection of a rejected outcome, or into the empty view when the call records no
      * trail and no write of the call created its flow. A failure of the call gets the flow frozen as the call left
      * it, its trail ending with the failure, attached before the observers hear of the failure; an Error gets none,
-     * and propagates as itself. An Error the trail's clock throws while the failure's flow is frozen propagates in
-     * place of the failure, and the observers hear of that Error, in the phase the call reached.
+     * and propagates as itself. The trail ends without that failure when the trail's clock throws a RuntimeException
+     * or answers null as it reads the failure's instant, as Transaction.endWith says. An Error the trail's clock
+     * throws while the failure's flow is frozen propagates in place of the failure, and the observers hear of that
+     * Error, in the phase the call reached.
      * The observers hear of the call's start before its log does, and of its end after it: the start line follows
      * onStarted, and the end or failed line comes just before their end event, each inside a try that tells them of
      * an Error, so a backend Error on any of these lines ends the call and is the end event they hear. An execute logs
-     * its start line here; a reevaluation logged its own before it read the state. The committed hops and starts are
-     * logged once phase 2 wrote them, in HOOK before the hooks run, so an Error on those lines reports every state
-     * written; an Error gets no failed line. At TRACE, phase 2 logs its check and its
-     * setters, each hook is logged before it runs and each of its writes to the call's flow as it makes it, and the
-     * watch dispatch logs each owner lookup.
+     * its start line here; a reevaluation logged its own before it read the state. Phase 2 moves the call on to HOOK
+     * once its last setter returned, so that whatever fails from then on reports every state written: building the
+     * committed hops and starts, their lines, logged before the hooks run, and the hooks; an Error gets no failed
+     * line. At TRACE, phase 2 logs its check and its setters, each hook is logged before it runs and each of its
+     * writes to the call's flow as it makes it, and the watch dispatch logs each owner lookup.
      */
     Outcome<E, S, T> runRoot(E entity, Optional<Enum<?>> requested, boolean reaction, Optional<Observed> observed,
                              CallLog log, Function<Transaction, StepResult<S, T>> body, int chain) {
@@ -375,7 +377,6 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             }
             List<Reaction> reactions = List.of();
             if (!committed.isEmpty()) {
-                tx.enter(CallPhase.HOOK);
                 if (log.debug()) {
                     log.committed(committed);
                 }

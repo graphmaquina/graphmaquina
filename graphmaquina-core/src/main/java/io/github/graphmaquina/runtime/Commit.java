@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.error.CommitFailedException;
 import java.util.ArrayList;
@@ -13,8 +14,10 @@ import java.util.Optional;
  * behind. A setter that throws any throwable that is not an Error, a checked exception included, stops phase 2 where it
  * stood. It tells the transaction before each setter call, so that a failure during phase 2 is known to have written
  * some states or none. Whatever throws before the first setter, the state read of the check or the grouping of the log,
- * stops phase 2 with nothing written. A call that logs at TRACE logs the check, the conflict it found, if any, and each
- * setter before it is called; those lines print what the log already holds and call no getter or identity function.
+ * stops phase 2 with nothing written. Once the last setter returned, it moves the call on to HOOK, so that whatever
+ * fails from then on, before the hooks too, reports every state written. A call that logs at TRACE logs the check,
+ * the conflict it found, if any, and each setter before it is called; those lines print what the log already holds and
+ * call no getter or identity function.
  */
 final class Commit {
 
@@ -62,6 +65,7 @@ final class Commit {
                         change.ref().instance(), instancesOf(changes.subList(index + 1, changes.size())), e);
             }
         }
+        tx.enter(CallPhase.HOOK);
         return summary;
     }
 
