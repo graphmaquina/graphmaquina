@@ -121,8 +121,8 @@ class TrailAssertionsTest {
 
     /**
      * The records of the hops say which machine and entity took each, from where to where, in an outcome's trail, where
-     * they are the records the outcome lists, and in a failure's, which has no records of its own; the start, the
-     * rejection and the failure of a trail are not hops.
+     * they are the records the outcome lists, and in the trail of an abort, which has no records of its own; the
+     * start, the rejection and the failure of a trail are not hops.
      */
     @Test
     void theHopsOpenAsTheRecordsOfTheHopEntries() {

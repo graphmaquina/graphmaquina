@@ -113,6 +113,7 @@ class GeneratedScopeTest {
                 """);
         sources.put("app.InstantSource", """
                 package app;
+                /** The application's own InstantSource, whose simple name clashes with java.time.InstantSource. */
                 public record InstantSource(String zone) { }
                 """);
         sources.put("app.Shop", """

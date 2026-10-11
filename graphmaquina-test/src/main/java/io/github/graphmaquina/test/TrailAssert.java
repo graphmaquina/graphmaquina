@@ -19,10 +19,10 @@ import java.util.Optional;
  * {@link FlowEntry.Failed} when the call ended so. Order and multiplicity are part of the contract. An entry's class is
  * compared exactly, so {@code FlowEntry} itself matches none. {@link #hasHopsExactly(Enum[])} names each hop by the
  * identifier of its transition alone, whatever machine took it; {@link #hops()} opens the records of the hops, which
- * say which machine and entity took each, from which state to which, so the hops of a failed call, which has no
- * committed records, can be asserted as an outcome's are. The list is copied when the view is built, so later edits
- * to the caller's collection are not seen, and a null element, which only a list built by hand can hold, is refused
- * then with a {@link NullPointerException}.
+ * say which machine and entity took each, from which state to which, so the hops of a call that failed before its
+ * commit, which has no committed records, can be asserted as an outcome's are. The list is copied when the view is
+ * built, so later edits to the caller's collection are not seen, and a null element, which only a list built by hand
+ * can hold, is refused then with a {@link NullPointerException}.
  */
 public final class TrailAssert {
 

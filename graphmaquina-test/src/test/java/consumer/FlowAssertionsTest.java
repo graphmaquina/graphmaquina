@@ -131,7 +131,10 @@ class FlowAssertionsTest {
 
     // --- where the view opens ----------------------------------------------------------------------
 
-    /** An abort undoes no write, so the flow of its failure keeps what the aborted step put. */
+    /**
+     * The abort of a throwable that no type of the edge declares undoes no write, so the flow of its failure keeps
+     * what the aborted step put.
+     */
     @Test
     void aCallFailureViewOpensTheFlowOfTheFailedCall() {
         Parcel shipped = new Parcel("p2", Spot.SHIPPED);

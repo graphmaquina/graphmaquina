@@ -66,12 +66,13 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Spec R15 and R16: the root call freezes its flow after its hooks and its watch reactions and hands it out, in the
- * outcome it returns or in the failure it throws. The frozen flow holds the root entity and the values present then;
- * reading never creates the flow, only a write does, so a call that wrote nothing hands out {@link FlowView#empty()}
- * (spec R11.1 and D18), and so do a cascade's outcome and an ignored one. Each watch reaction hands out its own flow,
- * a failure of another call keeps its own, a reevaluation that fails before it runs an edge carries the empty flow,
- * and an Error carries none. The handed-out view is read from any thread, and nothing reaches the live flow once the
- * call returned.
+ * outcome it returns or in the failure it throws. The frozen flow holds the root entity and the values present then.
+ * These machines record no trail, so reading never creates the flow, only a write does, and a call that wrote nothing
+ * hands out {@link FlowView#empty()} (spec R11.1 and D18), and so do a cascade's outcome and an ignored one; a call
+ * that records its trail, which {@code TrailTest} covers, creates its flow when it starts. Each watch reaction hands
+ * out its own flow, a failure of another call keeps its own, a reevaluation that fails before it runs an edge carries
+ * the empty flow, here without a trail (spec D11), and an Error carries none. The handed-out view is read from any
+ * thread, and nothing reaches the live flow once the call returned.
  */
 class FlowDeliveryTest {
 
@@ -415,8 +416,8 @@ class FlowDeliveryTest {
     }
 
     /**
-     * An abort undoes nothing of the flow: the failure holds what the action put before it threw, with the root
-     * entity.
+     * The abort of a throwable that no type of the edge declares undoes nothing of the flow: the failure holds what
+     * the action put before it threw, with the root entity.
      */
     @Test
     void anAbortHandsOutTheValuesPresentWhenTheCallFailed() {
