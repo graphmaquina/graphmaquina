@@ -3074,8 +3074,8 @@ Square brackets below mark the parts a line may leave out.
 | `DEBUG` | `call=<id> start <machine> <request>[ trigger=<id>]` | A call starts. `<machine>` is the machine key, such as `Ticket/TicketState`, and `<request>` the identifier `execute` was asked for, or `reevaluate`. A watch reaction adds `trigger=` and the id of the call whose commit triggered it, if that call logged its own lines. |
 | `DEBUG` | `call=<id> committed <ref> <from> -<T>-> <to> depth=<d>` | The call committed a hop: one line per hop, cascaded hops and the exits of sub-machines included, at the depth of the step that took it. |
 | `DEBUG` | `call=<id> started <ref> <previous> -> <initial> parent=<ref> node=<node> depth=<d>` | The call committed the start of a sub-machine: the child moved from `<previous>` to its initial state when its parent entered `<node>`. |
-| `DEBUG` | `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n>[ reason="<reason>"] elapsed=<us>` | The call returned its outcome: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. |
-| `DEBUG` | `call=<id> failed phase=<phase> written=<written>[ entity=<ref>] error=<error> elapsed=<us>` | The call threw its `CallFailedException`: its `phase()` and `statesWritten()`, the exception's class name and message, without a stack trace, and the time since the call started. |
+| `DEBUG` | `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n>[ reason="<reason>"] elapsed=<us>` | The call ended with its outcome, just before its [observers](#observers) hear of it: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. An `Error` that an observer then throws reaches the caller in place of the outcome. |
+| `DEBUG` | `call=<id> failed phase=<phase> written=<written>[ entity=<ref>] error=<error> elapsed=<us>` | The call ended with its `CallFailedException`, just before its [observers](#observers) hear of it: its `phase()` and `statesWritten()`, the exception's class name and message, without a stack trace, and the time since the call started. An `Error` that an observer then throws reaches the caller in place of the exception. |
 | `TRACE` | `call=<id> depth=<d> resolved <ref> <from> -<T>-> <to> kind=<kind>[ exit-of=<ref>]` | A step resolved the single edge keyed by its entity's state and the requested identifier, before its guards run. `<kind>` is the edge's `kind()`, `ACTION` or `MOVE`. The step of a sub-machine's exit adds `exit-of=` and the child whose terminal state selected the exit. |
 | `TRACE` | `call=<id> depth=<d> no-edge <ref> <from> <T>` | A step found no edge for its entity's state and the requested identifier: the request is rejected, or, inside a cascade or an exit, the call aborts. |
 | `TRACE` | `call=<id> depth=<d> binding <ref> parent=<ref> node=<node>` | The step of a sub-machine's child found the parent that holds it in `<node>`, before it looked up its edge. |
@@ -3354,7 +3354,7 @@ and sub-machine starts included:
 | `FlowEntry.Hop` | Each hop the call took | `hop()`, the hop's `TransitionRecord`, which in an outcome, and in an `AfterCommitException`, is the very instance its `records()` lists. On the hop of a failure route, `recovery()` holds what failed: the identifier of the transition whose step failed, the reason, the throwable if one failed the step, and the failure kind the outcome reports, if any: the one a returned failure named, or the one of the recovery rule whose type routed the throwable. |
 | `FlowEntry.Start` | Each sub-machine the call started | `start()`, the start's `SubmachineStart`, which in an outcome, and in an `AfterCommitException`, is the very instance its `starts()` lists. |
 | `FlowEntry.Rejected` | Last, when the call returns `Outcome.Rejected` | The root call's machine key and entity, the state, the requested identifier, the `RejectionKind`, the reason and the guard that rejected, if one did. |
-| `FlowEntry.Failed` | Last, when the call throws a `CallFailedException` | `failure()`, a `CallFailure` equal to the one the observers receive: the phase, `statesWritten()`, which says what the call wrote, and the exception. |
+| `FlowEntry.Failed` | Last, when the call throws a `CallFailedException`, unless the clock throws as the call reads its instant | `failure()`, a `CallFailure` equal to the one the observers receive: the phase, `statesWritten()`, which says what the call wrote, and the exception. |
 
 Each entry's `at()` is read on the root machine's clock. A hop's or a start's is read right after the call took
 it, after the guards of its step and before its action runs, so an action reads its own hop in the trail. A
@@ -3385,9 +3385,11 @@ The trail follows the rollbacks of the call:
 
 - A failure route drops the hop of the step that failed, with the hops and starts of the steps it cascaded to, and
   its recovery hop carries the `Recovery`. A `COLLECT` element whose step aborts leaves no entry either.
-- A failed call keeps what it took up to the failure, then its `Failed` entry. An abort undoes nothing, but the
-  engine rolls back the step of an `UnhandledFailureException` first, so its trail lacks that step's entries.
-- A `reevaluate` that fails before it runs an edge has the `Failed` entry alone, beside the entity and no value.
+- A failed call keeps what it took up to the failure, then its `Failed` entry, unless the clock threw as the call
+  read that entry's instant, as below. An abort undoes nothing, but the engine rolls back the step of an
+  `UnhandledFailureException` first, so its trail lacks that step's entries.
+- A `reevaluate` that fails before it runs an edge has the `Failed` entry alone, or no entry when the clock threw,
+  beside the entity and no value.
 - An `Error` ends the call without an entry and without a flow.
 - An `Ignored` outcome and the outcome a cascade returns have no trail: both answer `FlowView.empty()`.
 
