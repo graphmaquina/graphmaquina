@@ -18,8 +18,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *       one of those two answers before it builds a line: a level raised during a call reaches the next call.</li>
  *   <li>A call that finds both levels off gets {@link #OFF}, which is shared and emits nothing, so the call allocates
  *       nothing for its log.</li>
- *   <li>Each line starts with {@code call=<id>}. The id comes from a counter that advances only for a call that logs
- *       at DEBUG; it is 0 otherwise.</li>
+ *   <li>Each line starts with {@code call=<id>}. The id comes from one counter that advances for every call that
+ *       logs, at DEBUG, at TRACE or at both; it is 0 only for {@link #OFF}, which logs nothing. A TRACE line of a
+ *       step carries its depth next; the TRACE lines of the commit, the hooks and the watch dispatch carry none.</li>
  *   <li>An entity is printed only as an {@link EntityRef} the engine already holds, through {@link #show}: a line
  *       never calls an identity function, a getter or an entity's own {@code toString()}. Enum constants are printed
  *       by {@code name()}.</li>
@@ -40,7 +41,7 @@ final class CallLog {
     private final boolean trace;
     private final long id;
     private final long startNanos;
-    /** The id of the call whose commit triggered this watch reaction, when that call logged at DEBUG. */
+    /** The id of the call whose commit triggered this watch reaction, when that call logged. */
     private final Optional<Long> trigger;
     /** The root entity's reference, once the engine registered it; kept only by a call that logs at DEBUG. */
     private Optional<EntityRef> entity = Optional.empty();
@@ -70,7 +71,7 @@ final class CallLog {
         if (!debug && !trace) {
             return OFF;
         }
-        return new CallLog(logger, debug, trace, debug ? IDS.incrementAndGet() : 0, System.nanoTime(), trigger);
+        return new CallLog(logger, debug, trace, IDS.incrementAndGet(), System.nanoTime(), trigger);
     }
 
     /** Whether {@code level} is loggable; a backend that throws a RuntimeException is taken as saying no. */
@@ -86,7 +87,7 @@ final class CallLog {
 
     boolean trace() { return trace; }
 
-    /** Greater than 0 when this call logs at DEBUG, 0 otherwise. */
+    /** Greater than 0 when this call logs, at DEBUG or TRACE; 0 for {@link #OFF}. */
     long id() { return id; }
 
     /** The {@code System.nanoTime()} read when the log opened, which {@code elapsed} counts from; 0 for OFF. */

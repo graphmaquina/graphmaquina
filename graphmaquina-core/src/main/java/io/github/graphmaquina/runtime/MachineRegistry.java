@@ -399,27 +399,35 @@ public final class MachineRegistry implements AutoCloseable {
      * re-evaluated only once even if several of its peers moved. A registry that indexed no watcher answers before
      * reading which entities moved, which is what most transactions pay. An owner lookup that throws a throwable that
      * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException. Each lookup runs
-     * with the reentrancy marker set, so one that calls execute or reevaluate ends that way too. {@code trigger} is
-     * the id of the call whose commit is dispatched, when that call logs at DEBUG; each reaction's log names it.
+     * with the reentrancy marker set, so one that calls execute or reevaluate ends that way too. {@code log} is the
+     * log of the call whose commit is dispatched: at TRACE it logs each lookup, with the owner it found or what it
+     * threw, and when that call logs, each reaction's log names its id as the trigger.
      */
-    List<Reaction> dispatchWatches(CommitSummary summary, int chain, Optional<Long> trigger) {
+    List<Reaction> dispatchWatches(CommitSummary summary, int chain, CallLog log) {
         if (watchers.isEmpty()) {
             return List.of();
         }
+        Optional<Long> trigger = log.id() > 0 ? Optional.of(log.id()) : Optional.empty();
         Map<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> targets = new LinkedHashMap<>();
         List<Reaction> reactions = new ArrayList<>();
         for (EntityRef moved : summary.movedEntities()) {
             for (Watcher<?, ?, ?, ?, ?, ?> watcher : watchers.getOrDefault(moved.key(), List.of())) {
                 try {
                     Optional<EntityRef> owner = watcher.ownerToReevaluate(moved.instance());
+                    if (log.trace()) {
+                        log.trace("watch watcher=" + watcher.machine().key() + " moved=" + CallLog.show(moved)
+                                + " owner=" + (owner.isPresent() ? CallLog.show(owner.get()) : "none"));
+                    }
                     if (owner.isPresent()) {
                         targets.putIfAbsent(owner.get(), watcher);
                     }
                 } catch (RuntimeException e) {
+                    traceLookupThrew(log, watcher, moved, e);
                     reactions.add(new Reaction.Aborted(moved.key(), moved.instance(), e));
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    traceLookupThrew(log, watcher, moved, e);
                     reactions.add(new Reaction.Aborted(moved.key(), moved.instance(),
                             new UndeclaredThrowableException(e)));
                 }
@@ -429,6 +437,15 @@ public final class MachineRegistry implements AutoCloseable {
             reactions.add(entry.getValue().react(entry.getKey().instance(), chain + 1, trigger));
         }
         return List.copyOf(reactions);
+    }
+
+    /** Logs at TRACE that the lookup of {@code watcher} threw {@code error} for the moved entity {@code moved}. */
+    private static void traceLookupThrew(CallLog log, Watcher<?, ?, ?, ?, ?, ?> watcher, EntityRef moved,
+                                         Throwable error) {
+        if (log.trace()) {
+            log.trace("watch-lookup-threw watcher=" + watcher.machine().key() + " moved=" + CallLog.show(moved)
+                    + " error=" + CallLog.show(error));
+        }
     }
 
     /**

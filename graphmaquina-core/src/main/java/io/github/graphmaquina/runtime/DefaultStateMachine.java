@@ -180,7 +180,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * of its own that maxWatchChain never counts. The marker is released before the selected edge runs as a root.
      * Observers see the whole of it as one call, which ends in RESOLVE if it throws before an edge runs, and so does
      * its log. The log's start line names {@code trigger}: the id of the call whose commit triggered this watch
-     * reaction, when that call logged at DEBUG, and empty for a reevaluation the application made.
+     * reaction, when that call logged, and empty for a reevaluation the application made.
      */
     Outcome<E, S, T> reevaluate(E entity, int chain, Optional<Long> trigger) {
         Reentrancy.check(key(), entity);
@@ -292,7 +292,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * The observers hear of the call before its log does: the start line follows onStarted, inside the try that tells
      * them of an Error, and the end or failed line follows their end event. An execute logs its start line here; a
      * reevaluation logged its own before it read the state. The committed hops and starts are logged once phase 2
-     * wrote them, before the hooks, and an Error gets no failed line.
+     * wrote them, before the hooks, and an Error gets no failed line. At TRACE, phase 2 logs its check and its
+     * setters, each hook is logged before it runs, and the watch dispatch logs each owner lookup.
      */
     Outcome<E, S, T> runRoot(E entity, Optional<Enum<?>> requested, boolean reaction, Optional<Observed> observed,
                              CallLog log, Function<Transaction, StepResult<S, T>> body, int chain) {
@@ -337,8 +338,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 tx.enter(CallPhase.HOOK);
                 runHooks(tx, records, committed);
                 tx.enter(CallPhase.REACTIONS);
-                reactions = registry.dispatchWatches(summary, chain,
-                        log.debug() ? Optional.of(log.id()) : Optional.empty());
+                reactions = registry.dispatchWatches(summary, chain, log);
             }
             outcome = switch (step) {
                 case StepResult.Applied<S, T> applied ->
@@ -417,7 +417,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected; a
      * sub-machine's start runs no hook. Any throwable a hook throws that is not an Error, checked ones included,
      * becomes an AfterCommitException of the call, naming the hop and carrying every hop and every start the call
-     * committed; an Error propagates unchanged.
+     * committed; an Error propagates unchanged. A call that logs at TRACE logs each hook before it runs.
      */
     private void runHooks(Transaction tx, List<TransitionRecord<?, ?, ?>> records, List<LogEntry> committed) {
         for (int index = 0; index < committed.size(); index++) {
@@ -439,6 +439,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         P target = owner.key().entity().cast(entry.ref().instance());
         CommitContext<Q, U> context = new CommitContext<>(spec.from(), spec.transition(), spec.to(), spec.kind(),
                 owner.definition().terminals().contains(spec.to()));
+        if (tx.log().trace()) {
+            tx.log().trace("hook " + hook.name() + " " + CallLog.show(entry.ref()) + " " + spec.transition().name());
+        }
         try {
             hook.run(target, context);
         } catch (Error fatal) {

@@ -164,7 +164,6 @@ class CallLogTest {
                 "TRACE call=" + log.id() + " hook Notify"), backend.lines);
     }
 
-    /** A call logged at TRACE alone takes no id: its lines say {@code call=0}. */
     @Test
     void aLevelThatIsOffEmitsNothing() {
         Backend debugOnly = new Backend(Level.DEBUG);
@@ -176,10 +175,22 @@ class CallLogTest {
         CallLog trace = CallLog.open(traceOnly, Optional.empty());
         assertNotSame(CallLog.OFF, trace);
         assertFalse(trace.debug());
-        assertEquals(0, trace.id());
         trace.debug("start Doc/DocStatus SUBMIT");
         trace.trace(1, "action Send OK elapsed=1us");
-        assertEquals(List.of("TRACE call=0 depth=1 action Send OK elapsed=1us"), traceOnly.lines);
+        assertEquals(List.of("TRACE call=" + trace.id() + " depth=1 action Send OK elapsed=1us"), traceOnly.lines);
+    }
+
+    /** The counter numbers every call that logs, at DEBUG or at TRACE alone: no line says {@code call=0}. */
+    @Test
+    void aCallThatLogsAtTraceAloneTakesAnIdFromTheSameCounter() {
+        CallLog debug = CallLog.open(new Backend(Level.DEBUG), Optional.empty());
+        CallLog trace = CallLog.open(new Backend(Level.TRACE), Optional.empty());
+        CallLog next = CallLog.open(new Backend(Level.DEBUG), Optional.empty());
+        assertTrue(trace.trace());
+        assertFalse(trace.debug());
+        assertTrue(trace.id() > 0);
+        assertEquals(debug.id() + 1, trace.id());
+        assertEquals(trace.id() + 1, next.id());
     }
 
     /** D16: a level change reaches only the calls that open after it. */

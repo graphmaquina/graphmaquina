@@ -73,7 +73,7 @@ shop and billing domains the guide quotes.
 | Sub-machines | A state can hold another machine. Entering the state starts the child at its initial state, a call to a child whose parent does not hold it there is rejected, and the step that ends the child runs the parent's exit in the same unit of work. See [compose machines](#compose-machines). |
 | Reasoned refusals | Every node carries a policy, so a request with no edge gets an explanation instead of a fabricated transition. |
 | Inspectable execution | Outcomes carry transition records, watch reactions and the sub-machines a call started; technical aborts carry diagnostic details where applicable. |
-| Call logs | Each call can log its start, the hops and sub-machine starts it committed, and how it ended, through `System.Logger`; off by default. See [debug a call](#debug-a-call). |
+| Call logs | Each call can log its start, the hops and sub-machine starts it committed, and how it ended, at `DEBUG`, and each step it took, at `TRACE`, through `System.Logger`; off by default. See [debug a call](#debug-a-call). |
 | Graph inspection | Read the declared edges from the definition or export a deterministic Graphviz state diagram, which draws each sub-machine inside the state it is bound to. |
 
 GraphMaquina manages state transitions in objects you supply. It does not provide a database, entity locking,
@@ -2817,7 +2817,9 @@ The runtime's normal root execution follows this sequence:
 A rejected or ignored root does not commit state changes. A handled failure does commit its failure route.
 External side effects performed by actions, and mutations to other entity fields, are not automatically undone
 when the unit of work aborts. A call that [logs](#debug-a-call) at `DEBUG` writes its `committed` and `started` lines
-after step 4, and its `end` or `failed` line after the observers learn how it ended.
+after step 4, and its `end` or `failed` line after the observers learn how it ended. At `TRACE`, it also logs the check
+of step 3, each setter of step 4 before it is called, each hook of step 6 before it runs, and each owner lookup of
+step 7.
 
 ### After-commit hooks
 
@@ -2920,9 +2922,10 @@ are notified in the order they were added.
 ### Logs
 
 The runtime logs each call through `System.getLogger("io.github.graphmaquina.runtime")`, standalone machines and
-machine sets alike. Every line is logged at `DEBUG`, and nothing at `INFO` or above: the caller already receives the
-outcome or the exception. The logger is off by default. `java.util.logging`, the JDK's default backend for
-`System.Logger`, maps `DEBUG` to `FINE`, which its default configuration does not log.
+machine sets alike, at two levels. `DEBUG` logs how each call started, the hops and starts it committed and how it
+ended; `TRACE` adds each step the call took on the way. Nothing is logged at `INFO` or above: the caller already
+receives the outcome or the exception. The logger is off by default. `java.util.logging`, the JDK's default backend for
+`System.Logger`, maps `DEBUG` to `FINE` and `TRACE` to `FINER`, and its default configuration logs neither.
 
 To see the lines, lower the logger and a handler to `FINE`, for instance in a `logging.properties` file:
 
@@ -2936,7 +2939,8 @@ io.github.graphmaquina.runtime.level = FINE
 Start the JVM with `-Djava.util.logging.config.file=logging.properties`. The console handler drops records below
 `INFO` until its own level is lowered, so the logger's level alone shows nothing. The format line is optional: it
 prints each record on one line. As a child of `io.github.graphmaquina`, the runtime logger takes that logger's level
-when it has none of its own.
+when it has none of its own. For the `TRACE` lines too, write `FINER` in place of `FINE` on both levels: a handler left
+at `FINE` drops them.
 
 With this file, a ticket machine like the quickstart's, called as its `App` begins (submit and approve `T-1`, then
 submit `T-2` and `T-3`), logs these lines; the elapsed times vary from run to run:
@@ -2955,38 +2959,92 @@ FINE: call=4 committed Ticket/TicketState#T-3 OPEN -DECLINE-> FAILED depth=0
 FINE: call=4 end code=FAILURE_ROUTED state=FAILED entity=Ticket/TicketState#T-3 records=1 starts=0 reactions=0 aborted=0 reason="the review board declined the ticket" elapsed=1060us
 ```
 
-Each message starts with `call=<id>`. The id numbers the calls logged at `DEBUG`, from 1, with one counter for every
-machine. Square brackets below mark the parts a line may leave out.
+With both levels at `FINER`, the fourth of those calls, whose action fails into its route, logs these lines:
 
-| Line | Logged when |
-| --- | --- |
-| `call=<id> start <machine> <request>[ trigger=<id>]` | A call starts. `<machine>` is the machine key, such as `Ticket/TicketState`, and `<request>` the identifier `execute` was asked for, or `reevaluate`. A watch reaction adds `trigger=` and the id of the call whose commit triggered it, if that call logged its own lines. |
-| `call=<id> committed <ref> <from> -<T>-> <to> depth=<d>` | The call committed a hop: one line per hop, cascaded hops and the exits of sub-machines included, at the depth of the step that took it. |
-| `call=<id> started <ref> <previous> -> <initial> parent=<ref> node=<node> depth=<d>` | The call committed the start of a sub-machine: the child moved from `<previous>` to its initial state when its parent entered `<node>`. |
-| `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n>[ reason="<reason>"] elapsed=<us>` | The call returned its outcome: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. |
-| `call=<id> failed phase=<phase> written=<written>[ entity=<ref>] error=<error> elapsed=<us>` | The call threw its `CallFailedException`: its `phase()` and `statesWritten()`, the exception's class name and message, without a stack trace, and the time since the call started. |
+```text
+FINE: call=4 start Ticket/TicketState SUBMIT
+FINER: call=4 depth=0 resolved Ticket/TicketState#T-3 OPEN -SUBMIT-> REVIEW kind=ACTION
+FINER: call=4 depth=0 guard hasTitle PASS elapsed=5us
+FINER: call=4 depth=0 action register start mode=sync
+FINER: call=4 depth=0 action register FAILED reason="the review board declined the ticket" elapsed=284us
+FINER: call=4 depth=0 route SUBMIT -> DECLINE rollback-to=0 reason="the review board declined the ticket"
+FINER: call=4 commit-check entities=1 hops=1
+FINER: call=4 setter Ticket/TicketState#T-3 OPEN -> FAILED entries=1
+FINE: call=4 committed Ticket/TicketState#T-3 OPEN -DECLINE-> FAILED depth=0
+FINE: call=4 end code=FAILURE_ROUTED state=FAILED entity=Ticket/TicketState#T-3 records=1 starts=0 reactions=0 aborted=0 reason="the review board declined the ticket" elapsed=2644us
+```
+
+SLF4J and Log4j receive the same lines through their `System.LoggerFinder` bridges on the class path, which map
+`DEBUG` and `TRACE` to their own levels of the same name. Set the logger `io.github.graphmaquina.runtime` to `debug` or
+`trace` there:
+
+- SLF4J 2: add `org.slf4j:slf4j-jdk-platform-logging` next to `slf4j-api` and a binding. With `slf4j-simple`, pass
+  `-Dorg.slf4j.simpleLogger.log.io.github.graphmaquina.runtime=trace`.
+- Log4j 2: add `org.apache.logging.log4j:log4j-jpl` next to `log4j-api` and `log4j-core`. In a `log4j2.properties`
+  file, `logger.graphmaquina.name = io.github.graphmaquina.runtime` and `logger.graphmaquina.level = trace`.
+
+These two bridges were checked with SLF4J 2.0.20 and Log4j 2.26.1 on JDK 21.
+
+Each message starts with `call=<id>`. The id numbers the calls that log, at either level, from 1, with one counter for
+every machine. A `TRACE` line of a step names its depth next: 0 for the root's own step, one more for each cascade and
+each exit of a sub-machine below it. The `TRACE` lines of the commit, the hooks and the watch dispatch name none.
+Square brackets below mark the parts a line may leave out.
+
+| Level | Line | Logged when |
+| --- | --- | --- |
+| `DEBUG` | `call=<id> start <machine> <request>[ trigger=<id>]` | A call starts. `<machine>` is the machine key, such as `Ticket/TicketState`, and `<request>` the identifier `execute` was asked for, or `reevaluate`. A watch reaction adds `trigger=` and the id of the call whose commit triggered it, if that call logged its own lines. |
+| `DEBUG` | `call=<id> committed <ref> <from> -<T>-> <to> depth=<d>` | The call committed a hop: one line per hop, cascaded hops and the exits of sub-machines included, at the depth of the step that took it. |
+| `DEBUG` | `call=<id> started <ref> <previous> -> <initial> parent=<ref> node=<node> depth=<d>` | The call committed the start of a sub-machine: the child moved from `<previous>` to its initial state when its parent entered `<node>`. |
+| `DEBUG` | `call=<id> end code=<code> state=<state>[ entity=<ref>] records=<n> starts=<n> reactions=<n> aborted=<n>[ reason="<reason>"] elapsed=<us>` | The call returned its outcome: its `code()` and `recordedState()`, the sizes of its `records()`, `starts()` and `reactions()`, how many of those reactions were aborted, its `explanation()` when it has one, as given and unescaped, and the time since the call started, in whole microseconds. |
+| `DEBUG` | `call=<id> failed phase=<phase> written=<written>[ entity=<ref>] error=<error> elapsed=<us>` | The call threw its `CallFailedException`: its `phase()` and `statesWritten()`, the exception's class name and message, without a stack trace, and the time since the call started. |
+| `TRACE` | `call=<id> depth=<d> resolved <ref> <from> -<T>-> <to> kind=<kind>[ exit-of=<ref>]` | A step resolved the single edge keyed by its entity's state and the requested identifier, before its guards run. `<kind>` is the edge's `kind()`, `ACTION` or `MOVE`. The step of a sub-machine's exit adds `exit-of=` and the child whose terminal state selected the exit. |
+| `TRACE` | `call=<id> depth=<d> no-edge <ref> <from> <T>` | A step found no edge for its entity's state and the requested identifier: the request is rejected, or, inside a cascade or an exit, the call aborts. |
+| `TRACE` | `call=<id> depth=<d> binding <ref> parent=<ref> node=<node>` | The step of a sub-machine's child found the parent that holds it in `<node>`, before it looked up its edge. |
+| `TRACE` | `call=<id> depth=<d> detached <ref> reason="<reason>"` | The step of a sub-machine's child found parents, but none that holds it: the request is rejected as `DETACHED`, for `<reason>`. |
+| `TRACE` | `call=<id> depth=<d> guard <name> PASS elapsed=<us>` / `call=<id> depth=<d> guard <name> REJECT reason="<reason>" elapsed=<us>` | A guard passed, or rejected the request for `<reason>`, as given and unescaped, with the time it took. A guard that throws logs neither. |
+| `TRACE` | `call=<id> depth=<d> action <name> start mode=<sync\|async>` | An action starts, synchronous or asynchronous: the edge's own action, or the recovery action of a failure route. |
+| `TRACE` | `call=<id> depth=<d> action <name> awaiting budget=<us\|none>` | An asynchronous action returned its stage, and the step waits for it at most `<us>`: what is left of the edge's `timeout` or of the call's `asyncTimeout`, whichever ends first. `none` when neither sets a limit. |
+| `TRACE` | `call=<id> depth=<d> action <name> OK elapsed=<us>` / `call=<id> depth=<d> action <name> FAILED[ kind=<kind>] reason="<reason>" elapsed=<us>` / `call=<id> depth=<d> action <name> THREW error=<class> elapsed=<us>` | The action ended, after the time since its `start` line. `OK`: it returned `ActionOutcome.ok()`. `FAILED`: it returned a failure, with the simple name of its failure kind when it has one, and its reason. `THREW`: it threw or completed its stage exceptionally, or the step gave up on it, for a null result or a wait that timed out, was interrupted or was refused. The line names the class of that throwable, never its message. An `Error` the action throws logs no end. |
+| `TRACE` | `call=<id> depth=<d> route <failed T> -> <recovery T> rollback-to=<savepoint>[ kind=<kind>] reason="<reason>"` | The failure of `<failed T>` took its route: the step dropped what the call had logged after the first `<savepoint>` hops and starts, and takes `<recovery T>`. The line names the failure kind the route reports, if any, and the failure's reason; for a routed throwable, that is its simple class name and message, which the outcome's `explanation()` leaves out. |
+| `TRACE` | `call=<id> depth=<d> unhandled <failed T> reason="<reason>"` | The failure of `<failed T>` has no route: the step dropped what it had logged, and the call throws `UnhandledFailureException`, or, inside a cascade or an exit, aborts. |
+| `TRACE` | `call=<id> depth=<d> cascade <ref> <T>[ policy=<policy>]` | An action cascades `<T>` to the peer `<ref>`, at the action's depth; each element of `cascadeAll` adds its `CascadePolicy`. The lines of the cascaded step follow, one depth deeper. |
+| `TRACE` | `call=<id> depth=<d> cascade-result <ref> <T> code=<code>` | The cascaded step returned its outcome, with its `code()`. |
+| `TRACE` | `call=<id> depth=<d> collect-rollback <ref> <T> error=<error>` | Under `COLLECT`, the step of the element `<ref>` aborted with `<error>`: the element was rolled back, the poison it left was cleared, and the next element runs. |
+| `TRACE` | `call=<id> depth=<d> submachine-start <ref> <previous> -> <initial> parent=<ref> node=<node>` | A hop entered `<node>`, which starts its sub-machine: the child moves from `<previous>` to its initial state, at the depth of the entering step. |
+| `TRACE` | `call=<id> depth=<d> submachine-exit <ref> terminal=<state> parent=<ref> exit=<T>` | The child `<ref>` stands in `<state>`, a terminal state of its graph, which selects the exit `<T>` of its parent. The step of the exit follows, one depth deeper. |
+| `TRACE` | `call=<id> depth=<d> poison error=<error>` | A failure poisoned the call, which then commits nothing: the abort of a step at a depth above 0, a cascade that failed before its step could run, such as a cycle or a machine the registry does not hold, or the aggregate of a `COLLECT`. The call keeps its first poison, and only that one is logged. |
+| `TRACE` | `call=<id> commit-check entities=<n> hops=<n>` / `call=<id> commit-conflict reason="<conflict>"` | The commit checks the original state of each entity in the call's log: `entities=` counts them, and `hops=` the hops of the log, starts not counted. A state that changed while the call ran is a conflict: the commit writes nothing and throws `CommitFailedException`. |
+| `TRACE` | `call=<id> setter <ref> <from> -> <to> entries=<n>` | The commit is about to call the setter of `<ref>`, which moves it from its first state to its last, through `<n>` hops and starts of the log. |
+| `TRACE` | `call=<id> hook <hook> <ref> <T>` | The hook `<hook>` is about to run for the committed hop `<T>` of `<ref>`. |
+| `TRACE` | `call=<id> watch watcher=<machine> moved=<ref> owner=<ref\|none>` / `call=<id> watch-lookup-threw watcher=<machine> moved=<ref> error=<error>` | The watch of `<machine>` looked up the owner of the entity the call moved: the owner it found in the watched state, which a reaction reevaluates, or `none` when it found none; or the lookup threw `<error>`, which aborts that reaction. |
 
 The `committed` and `started` lines follow the order the call took its hops and starts, and come after the commit,
 before the hooks: a call whose commit fails logs none. A watch reaction is a call of its own, whose lines come between
-the `committed` lines and the `end` line of the call that triggered it. A cascade logs no line of its own, since it is
-part of the call that runs it. A request refused before it starts, as [observers](#observers) see it, logs nothing.
-Each call logs on the thread that runs it: one submitted through `async()` logs on the executor's thread, and the
-submission itself logs nothing.
+the `committed` lines and the `end` line of the call that triggered it. A cascade is part of the call that runs it: it
+logs no `start`, `end` or `failed` line of its own, and its `TRACE` lines carry the id of that call. A request refused
+before it starts, as [observers](#observers) see it, logs nothing. Each call logs on the thread that runs it: one
+submitted through `async()` logs on the executor's thread, and the submission itself logs nothing.
+
+At `TRACE`, a step logs as it goes: its binding check, its edge, its guards, the start of the sub-machine its hop
+enters, its action and the cascades the action runs, then its failure route, if any, and last the exits it runs. The
+lines of the commit come before the `committed` lines; the hook and watch lines come after them, before the lines of
+the reactions.
 
 An entity appears in a line only as `<ref>`: its machine key and its identity, such as `Ticket/TicketState#T-1`. A
 standalone machine without `identity(...)` prints `#@` and the entity's identity hash code in hexadecimal instead.
 The runtime prints the identity it has already computed, so a line never calls the identity function, a getter or
 the entity's `toString()`. The `start` line names no entity, and `end` and `failed` name it only once the call
 computed it: a reevaluation that selected no edge, or that failed before its edge ran, names none. The identity may
-be personal data, such as an e-mail address used as an identifier; treat these logs like any record that carries
-your identifiers. If the `toString()` of an identity throws a `RuntimeException`, the line prints
-`<toString threw <exception class>>` in its place, and the call goes on; an `Error` propagates.
+be personal data, such as an e-mail address used as an identifier, and the reasons and exception messages the lines
+print may carry internal details; treat these logs like any record that carries your identifiers. If the `toString()`
+of an identity or of an exception throws a `RuntimeException`, the line prints `<toString threw <exception class>>` in
+its place, and the call goes on; an `Error` propagates.
 
-The runtime asks the logger for its level once, when a call starts, and builds no line while the level is off: a
-level raised while a call runs applies from the next call, and a call that logs nothing pays for no line. A
-`RuntimeException` from the logging backend loses the line and changes nothing in the call; an `Error` propagates.
-An `Error` that ends a call is not a `CallFailedException` and gets no `failed` line: the lines logged before it
-stay, and none follows them.
+The runtime asks the logger for its two levels once, when a call starts, and builds no line of a level that is off: a
+level raised while a call runs applies from the next call, a call logged at `DEBUG` alone builds no `TRACE` line, and
+a call that logs nothing pays for no line. A `RuntimeException` from the logging backend loses the line and changes
+nothing in the call; an `Error` propagates. An `Error` that ends a call is not a `CallFailedException` and gets no
+`failed` line: the lines logged before it stay, and none follows them.
 
 ## Concurrency, identity and persistence
 
