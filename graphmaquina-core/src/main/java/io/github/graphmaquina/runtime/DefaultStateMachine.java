@@ -293,7 +293,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * them of an Error, and the end or failed line follows their end event. An execute logs its start line here; a
      * reevaluation logged its own before it read the state. The committed hops and starts are logged once phase 2
      * wrote them, before the hooks, and an Error gets no failed line. At TRACE, phase 2 logs its check and its
-     * setters, each hook is logged before it runs, and the watch dispatch logs each owner lookup.
+     * setters, each hook is logged before it runs and each of its writes to the call's flow as it makes it, and the
+     * watch dispatch logs each owner lookup.
      */
     Outcome<E, S, T> runRoot(E entity, Optional<Enum<?>> requested, boolean reaction, Optional<Observed> observed,
                              CallLog log, Function<Transaction, StepResult<S, T>> body, int chain) {
@@ -417,7 +418,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * Every committed hop with a hook, in log order, on the calling thread, using the edge that was selected; a
      * sub-machine's start runs no hook. Any throwable a hook throws that is not an Error, checked ones included,
      * becomes an AfterCommitException of the call, naming the hop and carrying every hop and every start the call
-     * committed; an Error propagates unchanged. A call that logs at TRACE logs each hook before it runs.
+     * committed; an Error propagates unchanged. A call that logs at TRACE logs each hook before it runs. Each hook
+     * gets a handle of its own on the call's flow, in its CommitContext, invalidated in a finally once the hook
+     * returned or threw; a hop without a hook makes none.
      */
     private void runHooks(Transaction tx, List<TransitionRecord<?, ?, ?>> records, List<LogEntry> committed) {
         for (int index = 0; index < committed.size(); index++) {
@@ -437,8 +440,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         }
         HookRef<P, Q, U> hook = spec.afterCommit().orElseThrow();
         P target = owner.key().entity().cast(entry.ref().instance());
+        FlowHandle.Hook flow = tx.hookFlow(hook.name(), entry.ref());
         CommitContext<Q, U> context = new CommitContext<>(spec.from(), spec.transition(), spec.to(), spec.kind(),
-                owner.definition().terminals().contains(spec.to()));
+                owner.definition().terminals().contains(spec.to()), flow);
         if (tx.log().trace()) {
             tx.log().trace("hook " + hook.name() + " " + CallLog.show(entry.ref()) + " " + spec.transition().name());
         }
@@ -449,6 +453,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         } catch (Throwable e) {
             throw new AfterCommitException(tx.call(), tx.uow().journal(), records, tx.uow().starts(),
                     Typed.record(owner.key(), entry), hook.name(), e);
+        } finally {
+            flow.invalidate();
         }
     }
 

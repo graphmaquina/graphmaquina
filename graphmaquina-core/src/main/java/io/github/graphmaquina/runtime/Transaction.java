@@ -114,6 +114,14 @@ final class Transaction {
         return FlowHandle.of(uow.flow(callEntity), uow, guard, log, depth);
     }
 
+    /**
+     * A handle on the call's flow for the post-commit hook named {@code hook}, which runs for the committed hop
+     * {@code hop}. It creates the flow, with the entity of the root call, only once an operation needs it.
+     */
+    FlowHandle.Hook hookFlow(String hook, EntityRef hop) {
+        return FlowHandle.hook(uow, callEntity, log, hook, hop);
+    }
+
     void enter(CallPhase next) { phase = next; }
 
     /** Phase 2 is about to call a setter: from here a failure in COMMIT may leave the states partially written. */

@@ -3,12 +3,14 @@ package io.github.graphmaquina.runtime;
 import io.github.graphmaquina.api.FlowContext;
 import io.github.graphmaquina.api.FlowKey;
 import io.github.graphmaquina.api.FlowView;
+import io.github.graphmaquina.error.StaleContextException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
 /**
- * A handle on the flow of a call, handed to an action, checked by its owner before every operation.
+ * A handle on the flow of a call, handed to an action, checked by its owner before every operation. A post-commit
+ * hook gets a {@link Hook} instead, from {@link #hook}.
  * <ul>
  *   <li>{@code guard} is the check of the context that made the handle: every operation, a read as well as a write,
  *       runs it first, as {@link DefaultPeerView} does, so a handle used off its thread throws that context's
@@ -46,6 +48,14 @@ final class FlowHandle implements FlowContext {
     /** The reads of this handle alone, checked by the same guard. */
     FlowView readOnly() {
         return new ReadOnly(this);
+    }
+
+    /**
+     * A handle for the hook named {@code hook}, which runs for the committed hop {@code hop}, on the flow of the call
+     * whose unit of work is {@code uow} and whose root entity is {@code rootEntity}; owned by the current thread.
+     */
+    static Hook hook(UnitOfWork uow, Object rootEntity, CallLog log, String hook, EntityRef hop) {
+        return new Hook(uow, rootEntity, log, hook, hop);
     }
 
     @Override
@@ -96,6 +106,108 @@ final class FlowHandle implements FlowContext {
         flow.remove(key, uow.savepoint());
         if (log.trace()) {
             log.trace(depth, "flow-remove " + key);
+        }
+    }
+
+    /**
+     * The handle a post-commit hook gets, through its {@code CommitContext}. It runs after the commit, so it has no
+     * context to check with:
+     * <ul>
+     *   <li>Every operation checks the handle's own lifetime, then its owner thread, the thread that made it, which
+     *       runs the hook. {@link #invalidate()} ends the lifetime once the hook returned or threw: from then on every
+     *       operation throws StaleContextException with the machine key and the entity of the hop.</li>
+     *   <li>It does not create the call's flow: the first read or write of a value that passes its checks does, if
+     *       no step of the call did, and the entity needs none. A hook that never uses it costs this object alone.</li>
+     *   <li>A write applies at once, so the later hooks of the call read it. It keeps the size of the committed log,
+     *       and no rollback follows the commit, so nothing undoes it.</li>
+     *   <li>A call that logs at TRACE logs each write with the hook's name and without a depth, the value only for a
+     *       visible key and through {@link CallLog#show}.</li>
+     * </ul>
+     * Equal only to itself.
+     */
+    static final class Hook implements FlowContext {
+
+        private final UnitOfWork uow;
+        private final Object rootEntity;
+        private final CallLog log;
+        private final String hook;
+        private final EntityRef hop;
+        private final Thread owner = Thread.currentThread();
+        private boolean stale;
+
+        private Hook(UnitOfWork uow, Object rootEntity, CallLog log, String hook, EntityRef hop) {
+            this.uow = uow;
+            this.rootEntity = rootEntity;
+            this.log = log;
+            this.hook = hook;
+            this.hop = hop;
+        }
+
+        /** Ends the lifetime of this handle: its hook returned or threw. */
+        void invalidate() {
+            stale = true;
+        }
+
+        /** Only from the thread running the hook, and only while it runs. */
+        private void check() {
+            if (stale) {
+                throw new StaleContextException(hop.key(), hop.instance());
+            }
+            if (Thread.currentThread() != owner) {
+                throw new WrongThreadException("the flow of the hook " + hook
+                        + " can only be used from the thread running it: " + owner.getName());
+            }
+        }
+
+        @Override
+        public <V> Optional<V> get(FlowKey<V> key) {
+            check();
+            Objects.requireNonNull(key, "key");
+            return uow.flow(rootEntity).get(key);
+        }
+
+        @Override
+        public Set<FlowKey<?>> keys() {
+            check();
+            return uow.flow(rootEntity).keys();
+        }
+
+        @Override
+        public Optional<Object> entity() {
+            check();
+            return Optional.of(rootEntity);
+        }
+
+        @Override
+        public <E> Optional<E> entity(Class<E> type) {
+            check();
+            Objects.requireNonNull(type, "type");
+            if (type.isPrimitive()) {
+                throw new IllegalArgumentException("entity type must be a reference type; use its wrapper class");
+            }
+            return Optional.of(type.cast(rootEntity));
+        }
+
+        @Override
+        public <V> void put(FlowKey<V> key, V value) {
+            check();
+            Objects.requireNonNull(key, "key");
+            Objects.requireNonNull(value, "value");
+            V checked = key.type().cast(value);
+            uow.flow(rootEntity).put(key, checked, uow.savepoint());
+            if (log.trace()) {
+                log.trace("hook-flow-put " + hook + " " + key + (key.visible() ? "=" + CallLog.show(checked) : ""));
+            }
+        }
+
+        @Override
+        public void remove(FlowKey<?> key) {
+            check();
+            Objects.requireNonNull(key, "key");
+            uow.flow(rootEntity).remove(key, uow.savepoint());
+            if (log.trace()) {
+                log.trace("hook-flow-remove " + hook + " " + key);
+            }
         }
     }
 

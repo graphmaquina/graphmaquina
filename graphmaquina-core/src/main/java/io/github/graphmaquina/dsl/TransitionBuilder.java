@@ -137,8 +137,8 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
     TransitionBuilder<E, S, T> afterCommit(String name, Consumer<? super E> hook);
 
     /**
-     * Post-commit hook with the committed edge's metadata and graph-derived terminality. Counts as the edge's single
-     * hook.
+     * Post-commit hook with the committed edge's metadata, graph-derived terminality and the call's flow, which
+     * {@link CommitContext} describes. Counts as the edge's single hook.
      */
     TransitionBuilder<E, S, T> afterCommitWith(String name, BiConsumer<? super E, ? super CommitContext<S, T>> hook);
 

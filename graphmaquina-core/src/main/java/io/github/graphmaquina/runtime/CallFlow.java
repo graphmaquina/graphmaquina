@@ -11,7 +11,8 @@ import java.util.Set;
 
 /**
  * The flow of one root call, owned by its {@link UnitOfWork}: the root entity of the call and the writes its steps
- * made, in order. Local to the thread running the call, like the unit of work, so it has no synchronization.
+ * and its hooks made, in order. Local to the thread running the call, like the unit of work, so it has no
+ * synchronization.
  * <ul>
  *   <li>Each put or remove is a write that keeps the size the log had when it was made, its {@code atLog}. A read
  *       answers the last write of the key, so a remove is a write without a value.</li>
@@ -21,6 +22,8 @@ import java.util.Set;
  *       element's savepoint can equal the position of its parent action's write, which must stay.</li>
  *   <li>{@code atLog} never decreases along the list: a rollback leaves only writes at or below the savepoint, and
  *       the log it truncates to that size grows again from there. So a rollback only drops writes from the end.</li>
+ *   <li>A post-commit hook writes after the commit, at the size of the committed log, so {@code atLog} still never
+ *       decreases. No rollback follows the commit: nothing drops a hook's write.</li>
  * </ul>
  */
 final class CallFlow {

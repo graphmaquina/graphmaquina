@@ -29,12 +29,12 @@ import org.junit.jupiter.api.io.TempDir;
  * composition sections compile against stand-ins shaped like what the generator and the processor emit: the
  * {@code Transition} and {@code Recovery} annotations of the recovery section, and the billing example's graph and
  * pair vocabulary, symbols and set builder, beside stand-ins for its entities, enums and hosts, for the composition
- * section; the flow section's actions compile on stand-in hosts, beside stand-ins for an order, its items and their
- * enums and facade. The fragments are cut out of {@code docs/guide.md} verbatim and wrapped only by stand-in
- * types and methods, so a renamed accessor in the guide breaks this test the way it would break a reader. A heading or
- * block that cannot be found fails the test instead of compiling nothing. The guide, the repository and the release
- * come from the {@code readmePath}, {@code artifactRepository} and {@code artifactVersion} system properties that
- * {@code publishedArtifactTest} sets.
+ * section; the flow section's actions and hook compile on stand-in hosts, beside stand-ins for an order, its items,
+ * their enums and facade, and a carrier. The fragments are cut out of {@code docs/guide.md} verbatim and wrapped only
+ * by stand-in types and methods, so a renamed accessor in the guide breaks this test the way it would break a reader.
+ * A heading or block that cannot be found fails the test instead of compiling nothing. The guide, the repository and
+ * the release come from the {@code readmePath}, {@code artifactRepository} and {@code artifactVersion} system
+ * properties that {@code publishedArtifactTest} sets.
  */
 class GuideOutcomeFragmentsTest {
 
@@ -449,8 +449,10 @@ class GuideOutcomeFragmentsTest {
             package guide;
 
             import io.github.graphmaquina.annotation.GraphAction;
+            import io.github.graphmaquina.annotation.GraphHook;
             import io.github.graphmaquina.api.ActionOutcome;
             import io.github.graphmaquina.api.CascadePolicy;
+            import io.github.graphmaquina.api.CommitContext;
             import io.github.graphmaquina.api.FlowKey;
             import io.github.graphmaquina.api.Machine;
             import io.github.graphmaquina.api.TransitionContext;
@@ -469,14 +471,16 @@ class GuideOutcomeFragmentsTest {
                 /** States of an item. */
                 enum ItemStatus { PENDING, CANCELLED }
                 /** Identifiers of an item. */
-                enum ItemTransition { CANCEL }
+                enum ItemTransition { CANCEL, SHIP }
 
-                /** Order entity stand-in, which holds its items and the items it restocked. */
+                /** Order entity stand-in, which holds its items, the items it restocked and its tracking number. */
                 static final class Order {
                     private final List<Item> items = new ArrayList<>();
                     private final List<Item> restocked = new ArrayList<>();
+                    private Optional<String> tracking = Optional.empty();
                     List<Item> items() { return items; }
                     void restocked(Item item) { restocked.add(item); }
+                    void tracking(String number) { tracking = Optional.of(number); }
                 }
                 /** Item entity stand-in, which records the cancellation it was restocked in. */
                 static final class Item {
@@ -485,6 +489,8 @@ class GuideOutcomeFragmentsTest {
                 }
                 /** Item facade stand-in. */
                 interface Items extends Machine<Item, ItemStatus, ItemTransition> { }
+                /** Carrier service stand-in, which books a shipment and answers its tracking number. */
+                interface Carrier { String book(Order order); }
 
                 // --- "The call's flow", block 1 (the key)
             """;
@@ -592,13 +598,13 @@ class GuideOutcomeFragmentsTest {
                 + String.join("\n", diagnostics) + "\n--- generated GuideCompositionFragments.java ---\n" + source);
     }
 
-    /** Compiles the flow section's three Java blocks against the staged core jar. */
+    /** Compiles the flow section's four Java blocks against the staged core jar. */
     @Test
     void everyFlowFragmentOfTheGuideCompilesAgainstThePublishedCore(@TempDir Path workDir) throws IOException {
         List<String> guide = Files.readAllLines(Path.of(property("readmePath")), UTF_8);
         Path coreJar = publishedCoreJar();
 
-        assertJavaBlockCount(guide, FLOW_HEADING, 3);
+        assertJavaBlockCount(guide, FLOW_HEADING, 4);
 
         StringBuilder source = new StringBuilder(FLOW_HEADER);
         source.append(blockAfter(guide, FLOW_HEADING, 1)).append('\n');
@@ -609,7 +615,13 @@ class GuideOutcomeFragmentsTest {
         source.append("    // --- block 3 (the item's action), on its host\n");
         source.append("    /** Item action host stand-in. */\n");
         source.append("    static final class ItemActions {\n");
-        source.append(blockAfter(guide, FLOW_HEADING, 3)).append("    }\n}\n");
+        source.append(blockAfter(guide, FLOW_HEADING, 3)).append("    }\n\n");
+        source.append("    // --- block 4 (the order's shipping action and its hook), on their host\n");
+        source.append("    /** Order shipping host stand-in. */\n");
+        source.append("    static final class ShippingActions {\n");
+        source.append("        private final Carrier carrier;\n\n");
+        source.append("        ShippingActions(Carrier carrier) { this.carrier = carrier; }\n\n");
+        source.append(blockAfter(guide, FLOW_HEADING, 4)).append("    }\n}\n");
 
         List<String> diagnostics = compile(workDir, "GuideFlowFragments", source.toString(), coreJar);
         assertTrue(diagnostics.isEmpty(), "the guide's flow fragments must compile against the published core:\n"

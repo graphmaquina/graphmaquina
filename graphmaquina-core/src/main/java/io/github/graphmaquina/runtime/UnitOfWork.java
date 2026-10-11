@@ -24,8 +24,9 @@ import java.util.Optional;
  * pendingStates and undo are built from the log by the first lookup that finds it non-empty, and append
  * maintains them from then on, so a root that never reads a pending state after its first append allocates
  * neither. journal answers which actions actually ran and is never reverted. flow is the call's flow, created by the
- * first context that asks for it: a call that never does pays one empty field, and every rollback reverts the flow's
- * writes with the log.
+ * first context that asks for it, or by the first operation of a hook's flow that needs it: a call where neither
+ * happens pays one empty field, and every rollback reverts the flow's writes with the log. No rollback follows the
+ * commit, so nothing reverts what a hook writes.
  */
 final class UnitOfWork {
 
@@ -51,7 +52,7 @@ final class UnitOfWork {
     private boolean poisonWrapsAForeignFailure;
     /** Whether a start was ever appended: until one is, every entry of the log is a hop. */
     private boolean started;
-    /** The call's flow; empty until a context of the call first asks for it. */
+    /** The call's flow; empty until a context of the call, or a hook's flow, first asks for it. */
     private Optional<CallFlow> flow = Optional.empty();
 
     UnitOfWork(int maxDepth, long deadlineNanos) {
@@ -103,7 +104,7 @@ final class UnitOfWork {
         return flow.get();
     }
 
-    /** Whether a context of the call asked for its flow. */
+    /** Whether a context of the call, or a hook's flow, asked for its flow. */
     boolean hasFlow() { return flow.isPresent(); }
 
     /**

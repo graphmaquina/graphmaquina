@@ -17,7 +17,8 @@ import lombok.NonNull;
  * @param <S> state enum
  * @param <T> transition identifier enum
  * @param name the name carried by diagnostics
- * @param hook the callback, receiving the entity and the metadata of the committed transition
+ * @param hook the callback, receiving the entity and the {@link CommitContext} of the committed hop: its metadata and
+ *             the call's flow, which works only while the callback runs
  */
 public record HookRef<E, S extends Enum<S>, T extends Enum<T>>(
         @NonNull String name, @NonNull BiConsumer<? super E, ? super CommitContext<S, T>> hook) {
@@ -28,7 +29,7 @@ public record HookRef<E, S extends Enum<S>, T extends Enum<T>>(
         }
     }
 
-    /** Adapter for a hook that only wants the entity. */
+    /** Adapter for a hook that only wants the entity: it never sees the context, so never the call's flow. */
     public static <E, S extends Enum<S>, T extends Enum<T>> HookRef<E, S, T> of(@NonNull String name,
                                                                                 @NonNull Consumer<? super E> hook) {
         return new HookRef<>(name, (E entity, CommitContext<S, T> context) -> hook.accept(entity));
