@@ -862,6 +862,51 @@ class TrailTest {
     }
 
     /**
+     * An Error the clock throws while the call reads the instant of its final {@code Failed} entry propagates as
+     * itself, and the observers still hear how the call ended: of that Error, in the phase the call reached and with
+     * what it wrote. So does a reevaluation that fails before it runs an edge.
+     */
+    @Test
+    void anErrorTheClockThrowsForTheFailedEntryStillEndsTheCallForTheObservers() {
+        Fatal fatal = new Fatal();
+        TickingClock secondRead = new TickingClock();
+        secondRead.onRead = () -> {
+            if (secondRead.reads() == 1) {
+                throw fatal;
+            }
+        };
+        TickingClock firstRead = new TickingClock();
+        firstRead.onRead = () -> {
+            throw fatal;
+        };
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.afterCommitWith("Persist",
+                        (Doc committed, CommitContext<DocStatus, DocTransition> commit) -> {
+                            throw new IllegalStateException("store unreachable");
+                        }));
+        List<CallFailure> failures = new ArrayList<>();
+        Doc hooked = new Doc("1", DRAFT);
+        try (MachineRegistry registry = MachineRegistry.builder().add(recording(graph, secondRead))
+                .observer(failures(failures)).build()) {
+            assertSame(fatal, assertThrows(Fatal.class, () -> registry.of(DOCS).execute(hooked, SUBMIT)));
+        }
+        assertEquals(REVIEW, hooked.status());
+        assertEquals(List.of(new CallFailure(CallPhase.HOOK, StatesWritten.ALL, fatal)), failures);
+
+        failures.clear();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(graph)
+                        .state((Doc doc) -> {
+                            throw new IllegalStateException("unreadable");
+                        }, Doc::setStatus)
+                        .identity(Doc::id).recordTrail(firstRead))
+                .observer(failures(failures)).build()) {
+            assertSame(fatal, assertThrows(Fatal.class, () -> registry.of(DOCS).reevaluate(new Doc("2", DRAFT))));
+        }
+        assertEquals(List.of(new CallFailure(CallPhase.RESOLVE, StatesWritten.NONE, fatal)), failures);
+    }
+
+    /**
      * A clock that answers null fails the call as one that throws does, with a NullPointerException that says so: the
      * hop it could not mark aborts the root's step before anything is written, and the rejection whose instant it
      * could not read fails the call. The trail ends without the entries the clock could not mark.

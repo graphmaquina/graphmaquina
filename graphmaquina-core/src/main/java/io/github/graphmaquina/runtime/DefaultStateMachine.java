@@ -191,9 +191,10 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * Observers see the whole of it as one call, which ends in RESOLVE if it throws before an edge runs, and so does
      * its log. Such a failure has no transaction. When this machine records its trail, the failure carries a flow
      * of its own, attached before the observers hear of it: the entity, no value, and a single Failed entry, read
-     * then, as Transaction.endWith says; otherwise it carries the empty flow, and an Error carries none. The log's
-     * start line names {@code trigger}: the id of the call whose commit triggered this watch reaction, when that call
-     * logged, and empty for a reevaluation the application made.
+     * then, as Transaction.endWith says; otherwise it carries the empty flow, and an Error carries none. An Error the
+     * clock throws while it reads that entry's instant propagates in place of the failure, and the observers hear of
+     * that Error. The log's start line names {@code trigger}: the id of the call whose commit triggered this watch
+     * reaction, when that call logged, and empty for a reevaluation the application made.
      */
     Outcome<E, S, T> reevaluate(E entity, int chain, Optional<Long> trigger) {
         Reentrancy.check(key(), entity);
@@ -238,7 +239,13 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         } catch (Throwable thrown) {
             if (trail.isPresent() && thrown instanceof CallFailedException own) {
                 List<FlowEntry> entries = new ArrayList<>(1);
-                Transaction.endWith(entries, new CallFailure(CallPhase.RESOLVE, StatesWritten.NONE, own), trail.get());
+                try {
+                    Transaction.endWith(entries, new CallFailure(CallPhase.RESOLVE, StatesWritten.NONE, own),
+                            trail.get());
+                } catch (Error fatal) {
+                    failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, fatal);
+                    throw fatal;
+                }
                 CallFailureFlows.attach(own, new FrozenFlow(Optional.of(entity), Map.of(), entries));
             }
             failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, thrown);
@@ -312,7 +319,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * its trail ending with the rejection of a rejected outcome, or into the empty view when the call records no
      * trail and no write of the call created its flow. A failure of the call gets the flow frozen as the call left
      * it, its trail ending with the failure, attached before the observers hear of the failure; an Error gets none,
-     * and propagates as itself.
+     * and propagates as itself. An Error the trail's clock throws while the failure's flow is frozen propagates in
+     * place of the failure, and the observers hear of that Error, in the phase the call reached.
      * The observers hear of the call before its log does: the start line follows onStarted, inside the try that tells
      * them of an Error, and the end or failed line follows their end event. An execute logs its start line here; a
      * reevaluation logged its own before it read the state. The committed hops and starts are logged once phase 2
@@ -387,7 +395,13 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 throw failed(observed, tx, fatal);
             }
             CallFailedException own = tx.classify(thrown);
-            CallFailureFlows.attach(own, tx.frozenFlow(own));
+            FlowView flow;
+            try {
+                flow = tx.frozenFlow(own);
+            } catch (Error fatal) {
+                throw failed(observed, tx, fatal);
+            }
+            CallFailureFlows.attach(own, flow);
             CallFailedException failure = failed(observed, tx, own);
             if (log.debug()) {
                 log.failed(tx.failureOf(failure));
