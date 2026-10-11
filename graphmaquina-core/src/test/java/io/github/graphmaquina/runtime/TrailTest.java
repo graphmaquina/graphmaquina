@@ -334,6 +334,34 @@ class TrailTest {
     }
 
     /**
+     * The recovery hop holds its {@code Recovery} from the moment it is marked, before the sub-machine its target binds
+     * starts: a booking that cannot pay in full falls back to BOOK, whose DEPOSIT starts the deposit payment, and a
+     * booking without one aborts on that start. The recovery hop stays in the trail of the abort, with what it
+     * recovered from.
+     */
+    @Test
+    void aRecoveryHopWhoseSubmachineCannotStartKeepsItsRecovery() {
+        Billing billing = new Billing();
+        billing.bookingActions.behaviour = (TransitionContext<Booking, BookingStatus, BookingTransition> ctx) ->
+                ActionOutcome.failed("card declined");
+        Booking booking = new Booking("b1", BookingStatus.REQUESTED)
+                .attachBalance(new Payment("p1", PaymentStatus.AUTHORIZING));
+        TransitionAbortedException aborted;
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(billing.bookingMachine().recordTrail(new TickingClock())).add(billing.paymentMachine()).build()) {
+            aborted = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(BOOKINGS).execute(booking, BookingTransition.PAY_IN_FULL));
+        }
+        List<FlowEntry> trail = aborted.flow().trail();
+        assertEquals(2, trail.size());
+        FlowEntry.Hop hop = assertInstanceOf(FlowEntry.Hop.class, trail.get(0));
+        assertEquals(BookingTransition.BOOK, hop.hop().transition());
+        assertEquals(Optional.of(new FlowEntry.Recovery(BookingTransition.PAY_IN_FULL, "card declined",
+                Optional.empty(), Optional.empty())), hop.recovery());
+        assertInstanceOf(FlowEntry.Failed.class, trail.get(1));
+    }
+
+    /**
      * The engine rolls the step of an UnhandledFailureException back before it finds that no route takes the failure,
      * so the trail lacks the entries of that step: at the root, the trail is the {@code Failed} entry alone; for a
      * cascaded step, the parent's hop, then {@code Failed}.

@@ -466,7 +466,7 @@ final class Transaction {
             phase = CallPhase.ACTION;
         }
         int savepoint = uow.savepoint();
-        appendHop(machine, ref, entity, transition, depth);
+        appendHop(machine, ref, entity, transition, depth, Optional.empty());
         if (transition.action().isEmpty()) {
             return new StepResult.Applied<>(from, transition.transition(), transition.to());
         }
@@ -821,12 +821,18 @@ final class Transaction {
      * Logs the hop of {@code entity} along {@code edge}. When the edge enters a state of the machine's own graph that
      * holds a sub-machine, the start of that child follows right after it, as {@link #start} says; a machine whose
      * graph binds no sub-machine pays one field read. Both entries sit after the savepoint the caller took, so a
-     * rollback to it drops them together.
+     * rollback to it drops them together. {@code recovery} is present only on the hop of a failure route in a call
+     * that records its trail: it goes on the hop's mark as soon as the hop is marked, before the child starts, so a
+     * start that aborts leaves the hop in the trail with what it recovered from.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> void appendHop(DefaultStateMachine<E, S, T> machine,
                                                                      EntityRef ref, E entity,
-                                                                     TransitionSpec<E, S, T> edge, int depth) {
+                                                                     TransitionSpec<E, S, T> edge, int depth,
+                                                                     Optional<FlowEntry.Recovery> recovery) {
         uow.append(new LogEntry.Hop(ref, edge, depth));
+        if (recovery.isPresent()) {
+            uow.flow().orElseThrow().recovery(uow.savepoint() - 1, recovery.get());
+        }
         if (machine.bindsSubmachines()) {
             Optional<SubmachineSpec<E, S, T, ?, ?, ?>> binding = machine.definition().submachine(edge.to());
             if (binding.isPresent()) {
@@ -1203,7 +1209,8 @@ final class Transaction {
      * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is. A call that logs
      * at TRACE logs the route, or the unhandled failure, once the rollback is done. A call that records its trail
      * leaves what failed on the mark of the recovery hop, which sits at the savepoint since the rollback truncated the
-     * log there, before the recovery action runs.
+     * log there, as soon as the hop is marked: before a sub-machine its target binds starts and before the recovery
+     * action runs.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> failing, int depth,
@@ -1233,11 +1240,10 @@ final class Transaction {
         // The failed action has ended. Keep one frame for the entity, now identifying the recovery edge.
         uow.pop();
         uow.push(ref, route);
-        appendHop(machine, ref, entity, route, depth);
-        if (uow.recordsTrail()) {
-            uow.flow().orElseThrow().recovery(savepoint,
-                    new FlowEntry.Recovery(failing.transition(), reason, cause, failureKind));
-        }
+        Optional<FlowEntry.Recovery> recovered = uow.recordsTrail()
+                ? Optional.of(new FlowEntry.Recovery(failing.transition(), reason, cause, failureKind))
+                : Optional.empty();
+        appendHop(machine, ref, entity, route, depth, recovered);
         if (route.action().isPresent()) {
             ActionRef<E, S, T> action = route.action().orElseThrow();
             int journalIndex = uow.appendJournal(new ActionRecord(machine.key(), entity, from, recoveryId, route.to(),
