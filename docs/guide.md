@@ -2283,6 +2283,8 @@ not instantiate service classes or discover dependency-injection beans.
 | --- | --- |
 | `asyncTimeout(Machine.class, Duration)` | Override timeout for one asynchronous machine |
 | `asyncExecutor(Executor)` | Supply the executor used by `async` calls; otherwise each machine owns a virtual-thread executor |
+| `recordTrail()` | Record the [trail](#record-the-calls-trail) of every call of the set on `InstantSource.system()`; off by default |
+| `recordTrail(InstantSource)` | Record that trail on the given clock instead |
 | `maxCascadeDepth(int)` | Bound nested cascades and sub-machine exits; default `10`, minimum `1`, root depth is `0` |
 | `maxWatchChain(int)` | Bound successive watch reactions; default `10`, minimum `1` |
 | `observer(MachineObserver)` | Observe every call of the set; observers add up, notified in the order given |
@@ -3303,6 +3305,13 @@ order through this registry records the order's hop and the hop of each item its
 although the item machine was built without `recordTrail`, while a call started on an item records nothing, whatever
 its steps reach. A watch reaction is a call of its own: its machine decides its trail, which `Reaction.Done` hands out
 with the reaction's outcome, never in the trail of the call that triggered it.
+
+The generated builder of a [machine set](#build-and-manage-machine-sets) offers `recordTrail()` and
+`recordTrail(InstantSource clock)` as well, and hands them to the `StateMachines.Builder` of every machine of the set.
+Since the root machine decides and every machine of the set records, every call made through the set records its
+trail, the peers it cascades to and the exits of sub-machines its steps run included, and so does each watch reaction,
+whose machine is one of the set. The set has no variant for one of its machines: a registry built with
+`StateMachines.Builder`, as above, chooses machine by machine.
 
 `flow().trail()` lists `FlowEntry` values, in the order the call took them, cascaded steps, the exits of sub-machines
 and sub-machine starts included:

@@ -51,6 +51,7 @@ public final class SetGenerator {
     private static final String DURATION = "java.time.Duration";
     private static final String OBJECTS = "java.util.Objects";
     private static final String EXECUTOR = "java.util.concurrent.Executor";
+    private static final String INSTANT_SOURCE = "java.time.InstantSource";
     private static final String GENERATED = "io.github.graphmaquina.annotation.internal.GeneratedCompanion";
     private static final String SUPPRESS_WARNINGS = "java.lang.SuppressWarnings";
     private static final String OVERRIDE = "java.lang.Override";
@@ -65,8 +66,8 @@ public final class SetGenerator {
      * The parameters of the {@code Builder}'s methods and the local variable of its {@code build()}, by the role
      * they play, which also is their usual name.
      */
-    private static final List<String> SETTER_PARAMETERS = List.of("machine", "timeout", "executor", "depth", "chain",
-            "observer", "built");
+    private static final List<String> SETTER_PARAMETERS = List.of("machine", "timeout", "executor", "clock", "depth",
+            "chain", "observer", "built");
 
     /**
      * The longest doc text of a {@code Builder} method emitted as a one-line comment; a longer one takes the
@@ -74,6 +75,27 @@ public final class SetGenerator {
      * indentation.
      */
     private static final int DOC_LINE_WIDTH = 100;
+
+    /**
+     * The doc text of the {@code Builder}'s {@code recordTrail(InstantSource)}: what
+     * {@code StateMachines.Builder.recordTrail(InstantSource)} says of one machine, said of the set. It never names the
+     * parameter: when another variable of the companion holds {@code clock}, the parameter takes another name.
+     */
+    private static final String RECORD_TRAIL = "Records the trail of every call through the set on the given clock, by"
+            + " handing it to the StateMachines.Builder of every machine of the set. The root machine of a call decides"
+            + " for the whole call, so every root call made through the set records its trail, the peers it cascades to"
+            + " and the exits of sub-machines its steps run included, and so does each watch reaction, a call of its"
+            + " own that its own machine, one of the set, decides. The flow such a call hands out, in its outcome or in"
+            + " its failure, lists in trail() each hop and each sub-machine start the call took, each at the instant"
+            + " that clock read right after the call logged it, then the rejection or the failure that ended the call,"
+            + " at the instant it ended. A call that records its trail creates its flow when it starts, so it hands out"
+            + " its flow, with the root entity and the trail, even when none of its steps or hooks wrote to it. The"
+            + " clock is read on the thread running the call, once per entry; a test can pass a clock it controls, such"
+            + " as a java.time.Clock. A RuntimeException the clock throws fails the call as one an identity function"
+            + " throws does: the entry it could not mark is left out of the trail, and when it throws again for the"
+            + " call's last entry, the call's CallFailedException carries what it threw as suppressed and its trail"
+            + " ends without that entry; an Error propagates. A set built without recordTrail reads no clock and keeps"
+            + " no mark.";
 
     private SetGenerator() { }
 
@@ -257,6 +279,28 @@ public final class SetGenerator {
         out.line(objects + ".requireNonNull(" + executor + ", \"executor\");");
         for (MachineAccessor accessor : model.machines()) {
             out.line(variables.builders().get(accessor.method()) + ".asyncExecutor(" + executor + ");");
+        }
+        out.line("return this;");
+        out.close();
+        out.blank();
+        comment(out, "Records the trail of every call through the set on the system clock, InstantSource.system(), by"
+                + " calling recordTrail() on the StateMachines.Builder of every machine of the set, as"
+                + " recordTrail(InstantSource) describes.");
+        out.open("public Builder recordTrail()");
+        out.line("checkUnused();");
+        for (MachineAccessor accessor : model.machines()) {
+            out.line(variables.builders().get(accessor.method()) + ".recordTrail();");
+        }
+        out.line("return this;");
+        out.close();
+        out.blank();
+        String clock = setters.get("clock");
+        comment(out, RECORD_TRAIL);
+        out.open("public Builder recordTrail(" + names.of(INSTANT_SOURCE) + " " + clock + ")");
+        out.line("checkUnused();");
+        out.line(objects + ".requireNonNull(" + clock + ", \"clock\");");
+        for (MachineAccessor accessor : model.machines()) {
+            out.line(variables.builders().get(accessor.method()) + ".recordTrail(" + clock + ");");
         }
         out.line("return this;");
         out.close();
@@ -534,8 +578,8 @@ public final class SetGenerator {
                 Names.claim(types, fixed);
             }
         }
-        for (String fixed : List.of(MACHINE_OBSERVER, MACHINE_REGISTRY, STATE_MACHINES, OBJECTS, EXECUTOR, GENERATED,
-                SUPPRESS_WARNINGS, OVERRIDE, ILLEGAL_STATE)) {
+        for (String fixed : List.of(MACHINE_OBSERVER, MACHINE_REGISTRY, STATE_MACHINES, OBJECTS, EXECUTOR,
+                INSTANT_SOURCE, GENERATED, SUPPRESS_WARNINGS, OVERRIDE, ILLEGAL_STATE)) {
             Names.claim(types, fixed);
         }
         for (MachineAccessor accessor : model.machines()) {
