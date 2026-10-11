@@ -27,16 +27,17 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Compiles the Java samples of the testing guide's "Failure kinds and recovery rules" and "Sub-machines" sections
- * against the published core and test jars, then runs them in a separate JVM whose class path holds those two jars
- * and the compiled samples, nothing else. The page promises that its samples run, and these are cut out of
- * {@code docs/testing.md} verbatim. They are wrapped only by the types and helpers each section names and by one
- * method per sample, so an expectation the page shows has to hold for this test to pass: the publication types and
- * the {@code graph}, {@code asyncGraph} and {@code machine} helpers for the first section, and for the second the
- * order, payment and invoice types, their keys {@code ORDERS}, {@code PAYMENTS}, {@code INVOICES} and
- * {@code CHARGES}, and the {@code orders}, {@code asyncOrders}, {@code chargedOrders}, {@code invoices},
- * {@code registry}, {@code registryWithInvoices} and {@code chargeRegistry} helpers. A heading or block that cannot be
- * found fails the test instead of compiling nothing. The page, the repository and the release come from the
+ * Compiles the Java samples of the testing guide's "Failure kinds and recovery rules", "Sub-machines" and "The call's
+ * flow and its trail" sections against the published core and test jars, then runs them in a separate JVM whose class
+ * path holds those two jars and the compiled samples, nothing else. The page promises that its samples run, and these
+ * are cut out of {@code docs/testing.md} verbatim. They are wrapped only by the types and helpers each section names
+ * and by one method per sample, or per run of samples that share their variables, so an expectation the page shows has
+ * to hold for this test to pass: the publication types and the {@code graph}, {@code asyncGraph} and {@code machine}
+ * helpers for the first section; for the second the order, payment and invoice types, their keys {@code ORDERS},
+ * {@code PAYMENTS}, {@code INVOICES} and {@code CHARGES}, and the {@code orders}, {@code asyncOrders},
+ * {@code chargedOrders}, {@code invoices}, {@code registry}, {@code registryWithInvoices} and {@code chargeRegistry}
+ * helpers; and for the third the publication types and the {@code graph} helper again. A heading or block that cannot
+ * be found fails the test instead of compiling nothing. The page, the repository and the release come from the
  * {@code testingGuidePath}, {@code artifactRepository} and {@code artifactVersion} system properties that
  * {@code publishedArtifactTest} sets.
  */
@@ -46,6 +47,8 @@ class TestingGuideFragmentsTest {
 
     private static final String SUBMACHINES = "### Sub-machines";
 
+    private static final String FLOW = "### The call's flow and its trail";
+
     private static final String HEADER = """
             import static io.github.graphmaquina.test.ExitExpectation.exit;
             import static io.github.graphmaquina.test.GraphAssertions.assertThat;
@@ -54,16 +57,23 @@ class TestingGuideFragmentsTest {
             import io.github.graphmaquina.api.ActionOutcome;
             import io.github.graphmaquina.api.AsyncTransitionAction;
             import io.github.graphmaquina.api.CallPhase;
+            import io.github.graphmaquina.api.CommitContext;
             import io.github.graphmaquina.api.FailureKind;
+            import io.github.graphmaquina.api.FlowEntry;
+            import io.github.graphmaquina.api.FlowKey;
             import io.github.graphmaquina.api.GraphDefinition;
             import io.github.graphmaquina.api.GuardResult;
+            import io.github.graphmaquina.api.HookRef;
             import io.github.graphmaquina.api.MachineKey;
             import io.github.graphmaquina.api.MachineObserver;
             import io.github.graphmaquina.api.Outcome;
             import io.github.graphmaquina.api.RecoveryRule;
+            import io.github.graphmaquina.api.RejectionKind;
             import io.github.graphmaquina.api.StateMachine;
             import io.github.graphmaquina.api.StatesWritten;
             import io.github.graphmaquina.api.TransitionAction;
+            import io.github.graphmaquina.api.TransitionContext;
+            import io.github.graphmaquina.api.TransitionKind;
             import io.github.graphmaquina.dsl.GraphBuilder;
             import io.github.graphmaquina.dsl.StateGraph;
             import io.github.graphmaquina.dsl.TransitionBuilder;
@@ -72,6 +82,7 @@ class TestingGuideFragmentsTest {
             import io.github.graphmaquina.runtime.StateMachines;
             import io.github.graphmaquina.test.AsyncAssertions;
             import io.github.graphmaquina.test.StateSnapshot;
+            import io.github.graphmaquina.test.TrailAssert;
             import io.github.graphmaquina.test.TransitionRecorder;
             import io.github.graphmaquina.test.probe.ActionCall;
             import io.github.graphmaquina.test.probe.ActionProbe;
@@ -81,6 +92,8 @@ class TestingGuideFragmentsTest {
             import io.github.graphmaquina.test.probe.HookProbe;
             import io.github.graphmaquina.test.probe.PendingInvocation;
             import java.time.Duration;
+            import java.time.Instant;
+            import java.time.InstantSource;
             import java.util.List;
             import java.util.Optional;
             import java.util.concurrent.CompletableFuture;
@@ -448,12 +461,13 @@ class TestingGuideFragmentsTest {
                     exitProbes();
                     asyncExit();
                     sameEntity();
+                    flowAndTrail();
                     System.out.println("TESTING_GUIDE_OK");
                 }
 
             """;
 
-    /** Compiles and runs every sample of both sections with a preemptive watchdog and retained failure transcript. */
+    /** Compiles and runs every sample of the three sections with a preemptive watchdog and a retained transcript. */
     @Test
     @Timeout(value = 150, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void theSamplesOfTheTestingGuideRunAgainstThePublishedJars(
@@ -464,6 +478,7 @@ class TestingGuideFragmentsTest {
 
         assertBlockCount(page, RECOVERY, 4);
         assertBlockCount(page, SUBMACHINES, 7);
+        assertBlockCount(page, FLOW, 4);
 
         StringBuilder source = new StringBuilder(HEADER);
         source.append("    // --- blocks 1 and 2: the routes a synchronous call took, then the declared rules\n");
@@ -495,7 +510,11 @@ class TestingGuideFragmentsTest {
         source.append(blockAfter(page, SUBMACHINES, 6)).append("    }\n\n");
         source.append("    // --- sub-machines, block 7: a child over its parent's own entity\n");
         source.append("    static void sameEntity() {\n");
-        source.append(blockAfter(page, SUBMACHINES, 7)).append("    }\n}\n");
+        source.append(blockAfter(page, SUBMACHINES, 7)).append("    }\n\n");
+        source.append("    // --- the call's flow, blocks 1 to 4: an outcome's, a failure's, a hook's, a bare trail\n");
+        source.append("    static void flowAndTrail() {\n");
+        source.append(blockAfter(page, FLOW, 1)).append(blockAfter(page, FLOW, 2)).append(blockAfter(page, FLOW, 3))
+                .append(blockAfter(page, FLOW, 4)).append("    }\n}\n");
 
         Path classes = Files.createDirectories(workDir.resolve("classes"));
         List<String> diagnostics = compile(workDir, source.toString(), jars, classes);

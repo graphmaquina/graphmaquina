@@ -3374,7 +3374,8 @@ the call's `CallFailedException` carries what it threw as suppressed and its tra
 whose root machine was built without `recordTrail` reads no clock and stores no time.
 
 The trail records what the call took and how it ended; the [`TRACE` lines](#logs) show each step on the way, its
-guards and its action included.
+guards and its action included. To assert the flow and its trail in a test, see
+[the call's flow and its trail](testing.md#the-calls-flow-and-its-trail) in the testing guide.
 
 ## Concurrency, identity and persistence
 
@@ -3640,7 +3641,8 @@ entry. Preserve the graph generation lifecycle for any test graphs.
 ### Typed assertions, probes and graph snapshots
 
 `graphmaquina-test` is a test-scoped module that asserts over the runtime's own values — definitions, edges,
-policies, outcomes, transition records, reactions, sub-machine starts and engine exceptions — and reports every unmet
+policies, outcomes, transition records, reactions, sub-machine starts, engine exceptions, and the flow of a call and
+its trail — and reports every unmet
 expectation as a `GraphAssertionError` carrying the context, the property, the expected value and the actual one. It
 imposes no test framework: nothing in its API mentions JUnit or AssertJ, so it works under the runner your project
 already uses.
@@ -3684,7 +3686,8 @@ let a test decide when an asynchronous callback answers, a recorder of completed
 golden comparison for both the rendered diagram and the complete structure of a graph. The
 [testing guide](testing.md) covers installation, what each entry point checks, what each check does not
 prove, and the golden update procedure for Gradle and Maven. Every sample in it runs in this repository: most
-are copied from a test, and the samples of recovery rules and of sub-machines are cut out of the page and run by one.
+are copied from a test, and the samples of recovery rules, of sub-machines and of the call's flow are cut out of the
+page and run by one.
 
 Useful behavior to cover in your own domain:
 

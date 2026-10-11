@@ -139,7 +139,7 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
      * an outcome that committed nothing and for one a cascade returned.
      */
     public TransitionRecordsAssert records() {
-        return new TransitionRecordsAssert(context + ".records", actual == null ? null : actual.records());
+        return new TransitionRecordsAssert(context + ".records", outcome().map(Outcome::records));
     }
 
     /**
@@ -157,6 +157,16 @@ public abstract class BaseOutcomeAssert<E, S extends Enum<S>, T extends Enum<T>,
      */
     public StartsAssert starts() {
         return new StartsAssert(context + ".starts", outcome().map(Outcome::starts));
+    }
+
+    /**
+     * The flow of the call that returned the outcome, as {@link Outcome#flow()} describes it: the values its steps and
+     * hooks left there, its root entity and, when its root machine records it, its trail. An ignored outcome, one a
+     * cascade returned, and one whose root call wrote nothing to its flow and records no trail hand out
+     * {@link io.github.graphmaquina.api.FlowView#empty()}, which holds no entity.
+     */
+    public FlowAssert flow() {
+        return new FlowAssert(context + ".flow", outcome().map(Outcome::flow));
     }
 
     /** The outcome under test, wrapped once: the field is null only for a view built from a null subject. */

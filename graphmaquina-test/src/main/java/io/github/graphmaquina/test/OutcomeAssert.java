@@ -12,7 +12,7 @@ import io.github.graphmaquina.test.internal.Checks;
  * <p>A failure names the view it came from. A subject handed in directly reads {@code applied outcome} once
  * narrowed; one that came from a sequence or a reaction keeps its place, as in
  * {@code recorded transitions for K[1] (applied)} or {@code reactions for K[0].outcome (applied)}, and the
- * lists opened from it extend that name.
+ * lists and the flow opened from it extend that name.
  *
  * @param <E> entity type of the machine
  * @param <S> state enum of the machine

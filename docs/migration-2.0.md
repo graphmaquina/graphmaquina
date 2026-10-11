@@ -708,7 +708,8 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `at(key, entity, from, transition, to)` compares the committed hop the failing hook ran for, its identifier
   included, `records()` reads every hop the call committed, and `starts()` every sub-machine it started.
 - **`CallFailureAssert`**, reached through `isCallFailure()`, and every narrowed view of a call failure expect a call
-  failure's `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` is available on all of them.
+  failure's `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` and `flow()`, the call's
+  flow, are available on all of them.
 - **`AbortAssert.atUnreadState(key, entity[, transition])`** is new: it locates an abort raised before the entity's
   state was read. `at`, `atUnresolved` and `atUnread` now compare `from` as an `Optional`, so a mismatch reports
   `Optional[...]` on both sides, or `Optional.empty` for an abort that read no state.

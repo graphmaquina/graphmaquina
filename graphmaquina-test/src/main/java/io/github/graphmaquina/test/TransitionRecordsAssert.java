@@ -8,15 +8,18 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
- * Chainable assertion over the transition records a committed outcome carries, obtained from {@link
- * BaseOutcomeAssert#records()} on any outcome view. One transaction may touch several machines, so the list is untyped
- * as a whole and {@link #forEntity(MachineKey, Object)} is what narrows it: it selects by machine key and by entity
- * IDENTITY, never by entity equality, so two entities that carry the same business id stay distinct subjects. Order and
- * multiplicity are part of the contract, and the list is copied when the view is built, so later edits to the caller's
- * collection are not seen. A null element, which only a subject built by hand can hold, is selected by no entity and is
- * reported by position when {@link #containsExactly(java.util.List)} compares it.
+ * Chainable assertion over a list of transition records: the hops a call committed, obtained from {@link
+ * BaseOutcomeAssert#records()} on any outcome view or from {@link AfterCommitAssert#records()}, or the hops a trail
+ * lists, obtained from {@link TrailAssert#hops()}, which the trail of a failed call has too. One transaction may touch
+ * several machines, so the list is untyped as a whole and {@link #forEntity(MachineKey, Object)} is what narrows it:
+ * it selects by machine key and by entity IDENTITY, never by entity equality, so two entities that carry the same
+ * business id stay distinct subjects. Order and multiplicity are part of the contract, and the list is copied when the
+ * view is built, so later edits to the caller's collection are not seen. A null element, which only a subject built by
+ * hand can hold, is selected by no entity and is reported by position when {@link #containsExactly(java.util.List)}
+ * compares it.
  *
  * <p>{@link #containsExactly(java.util.List)} compares the identifier of every hop as well as its endpoints,
  * so two edges that connect the same pair of states under different identifiers never satisfy each other.
@@ -26,26 +29,26 @@ public final class TransitionRecordsAssert {
     private static final String ROOT = "transition records";
 
     private final String context;
-    private final List<? extends TransitionRecord<?, ?, ?>> actual;
+    private final Optional<List<TransitionRecord<?, ?, ?>>> actual;
 
     /** The view of a list that came from another view, which names it as that view's own. */
-    TransitionRecordsAssert(String context, List<? extends TransitionRecord<?, ?, ?>> actual) {
+    TransitionRecordsAssert(String context, Optional<? extends List<? extends TransitionRecord<?, ?, ?>>> actual) {
         this.context = context;
-        this.actual = actual == null ? null : Collections.unmodifiableList(new ArrayList<>(actual));
+        this.actual = actual.map(TransitionRecordsAssert::copy);
     }
 
     public static TransitionRecordsAssert assertThat(List<? extends TransitionRecord<?, ?, ?>> actual) {
-        return new TransitionRecordsAssert(ROOT, actual);
+        return new TransitionRecordsAssert(ROOT, Optional.ofNullable(actual));
     }
 
     public TransitionRecordsAssert hasSize(int expected) {
-        List<? extends TransitionRecord<?, ?, ?>> records = Checks.subject(context, "size", expected, actual);
+        List<TransitionRecord<?, ?, ?>> records = Checks.present(context, "size", expected, actual);
         Checks.equal(context, "size", expected, records.size());
         return this;
     }
 
     public TransitionRecordsAssert isEmpty() {
-        List<? extends TransitionRecord<?, ?, ?>> records = Checks.subject(context, "size", 0, actual);
+        List<TransitionRecord<?, ?, ?>> records = Checks.present(context, "size", 0, actual);
         Checks.equal(context, "size", 0, records.size());
         return this;
     }
@@ -57,8 +60,7 @@ public final class TransitionRecordsAssert {
     public TransitionRecordsAssert containsExactly(List<? extends TransitionRecord<?, ?, ?>> expected) {
         Objects.requireNonNull(expected, "expected");
         List<? extends TransitionRecord<?, ?, ?>> wanted = List.copyOf(expected);
-        List<? extends TransitionRecord<?, ?, ?>> records =
-                Checks.subject(context, "size", wanted.size(), actual);
+        List<TransitionRecord<?, ?, ?>> records = Checks.present(context, "size", wanted.size(), actual);
         Checks.equal(context, "size", wanted.size(), records.size());
         for (int index = 0; index < wanted.size(); index++) {
             String where = context + "[" + index + "]";
@@ -72,14 +74,18 @@ public final class TransitionRecordsAssert {
             MachineKey<E, S, T> key, E entity) {
         Objects.requireNonNull(key, "key");
         Objects.requireNonNull(entity, "entity");
-        List<? extends TransitionRecord<?, ?, ?>> records =
-                Checks.subject(context, "entity records", entity, actual);
+        List<TransitionRecord<?, ?, ?>> records = Checks.present(context, "entity records", entity, actual);
         List<TransitionRecord<E, S, T>> selected = records.stream()
                 .filter((TransitionRecord<?, ?, ?> record) ->
                         record != null && record.key().equals(key) && record.entity() == entity)
                 .map(record -> CheckedTypes.record(key, record))
                 .toList();
         return new TypedRecordsAssert<>(context + " for " + key, selected);
+    }
+
+    /** A copy that keeps a null element, which only a list built by hand can hold, for the comparisons to report. */
+    private static List<TransitionRecord<?, ?, ?>> copy(List<? extends TransitionRecord<?, ?, ?>> records) {
+        return Collections.unmodifiableList(new ArrayList<>(records));
     }
 
     private static void compare(String where, TransitionRecord<?, ?, ?> expected,

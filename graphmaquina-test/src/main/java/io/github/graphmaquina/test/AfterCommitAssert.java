@@ -52,7 +52,7 @@ public final class AfterCommitAssert extends BaseCallFailureAssert<AfterCommitAs
 
     /** Every hop the call committed, in log order. */
     public TransitionRecordsAssert records() {
-        return new TransitionRecordsAssert(context + ".records", failure.records());
+        return new TransitionRecordsAssert(context + ".records", Optional.of(failure.records()));
     }
 
     /** Every sub-machine the call started, in log order; a start runs no hook. */
