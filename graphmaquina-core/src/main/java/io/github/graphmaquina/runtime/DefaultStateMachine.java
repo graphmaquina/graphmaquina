@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.AsyncStateMachine;
 import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CommitContext;
+import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.HookRef;
@@ -27,12 +28,15 @@ import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.WatchChainExceededException;
 import io.github.graphmaquina.internal.CallFailureFlows;
+import io.github.graphmaquina.internal.FrozenFlow;
 import java.time.Duration;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -74,11 +78,14 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final boolean bindsSubmachines;
     /** See {@link #hasBindings()}. */
     private final boolean hasBindings;
+    /** The clock of the trail of every root call this machine starts; empty when it records no trail. */
+    private final Optional<InstantSource> trail;
 
     DefaultStateMachine(GraphDefinition<E, S, T> definition, Function<? super E, ? extends S> getter,
                         BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
                         Optional<Duration> asyncTimeout, Executor executor, boolean ownsExecutor,
-                        MachineRegistry registry, List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild) {
+                        MachineRegistry registry, List<SubmachineBinding<?, ?, ?, ?, ?, ?>> bindingsAsChild,
+                        Optional<InstantSource> trail) {
         this.definition = definition;
         this.getter = getter;
         this.setter = setter;
@@ -92,6 +99,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.bindingsAsChild = bindingsAsChild;
         this.bindsSubmachines = bindsSubmachines(definition);
         this.hasBindings = bindsSubmachines || !bindingsAsChild.isEmpty();
+        this.trail = trail;
     }
 
     /** Whether some state of {@code definition} holds a sub-machine. */
@@ -181,9 +189,11 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * reentrancy marker set, so none of them can start a transition on this thread: a nested root would begin a chain
      * of its own that maxWatchChain never counts. The marker is released before the selected edge runs as a root.
      * Observers see the whole of it as one call, which ends in RESOLVE if it throws before an edge runs, and so does
-     * its log. Such a failure has no transaction, so it carries the empty flow. The log's start line names
-     * {@code trigger}: the id of the call whose commit triggered this watch reaction, when that call logged, and empty
-     * for a reevaluation the application made.
+     * its log. Such a failure has no transaction. When this machine records its trail, the failure carries a flow
+     * of its own, attached before the observers hear of it: the entity, no value, and a single Failed entry, read
+     * then, as Transaction.endWith says; otherwise it carries the empty flow, and an Error carries none. The log's
+     * start line names {@code trigger}: the id of the call whose commit triggered this watch reaction, when that call
+     * logged, and empty for a reevaluation the application made.
      */
     Outcome<E, S, T> reevaluate(E entity, int chain, Optional<Long> trigger) {
         Reentrancy.check(key(), entity);
@@ -226,6 +236,11 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 Reentrancy.exit();
             }
         } catch (Throwable thrown) {
+            if (trail.isPresent() && thrown instanceof CallFailedException own) {
+                List<FlowEntry> entries = new ArrayList<>(1);
+                Transaction.endWith(entries, new CallFailure(CallPhase.RESOLVE, StatesWritten.NONE, own), trail.get());
+                CallFailureFlows.attach(own, new FrozenFlow(Optional.of(entity), Map.of(), entries));
+            }
             failed(observed, CallPhase.RESOLVE, StatesWritten.NONE, thrown);
             if (log.debug() && !(thrown instanceof Error)) {
                 log.failed(new CallFailure(CallPhase.RESOLVE, StatesWritten.NONE, thrown));
@@ -292,9 +307,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      * {@code requested} is the identifier execute was asked for, and empty for a reevaluation.
-     * Once the reactions ran, the call's flow is frozen into the outcome, or into the empty view when no write of the
-     * call created it. A failure of the call gets the flow frozen as the call left it, attached before the observers
-     * hear of the failure; an Error gets none, and propagates as itself.
+     * When this machine, the root's, records its trail, the call's flow is created before the step runs, and every
+     * entry the call logs is marked on its clock. Once the reactions ran, the call's flow is frozen into the outcome,
+     * its trail ending with the rejection of a rejected outcome, or into the empty view when the call records no
+     * trail and no write of the call created its flow. A failure of the call gets the flow frozen as the call left
+     * it, its trail ending with the failure, attached before the observers hear of the failure; an Error gets none,
+     * and propagates as itself.
      * The observers hear of the call before its log does: the start line follows onStarted, inside the try that tells
      * them of an Error, and the end or failed line follows their end event. An execute logs its start line here; a
      * reevaluation logged its own before it read the state. The committed hops and starts are logged once phase 2
@@ -305,6 +323,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     Outcome<E, S, T> runRoot(E entity, Optional<Enum<?>> requested, boolean reaction, Optional<Observed> observed,
                              CallLog log, Function<Transaction, StepResult<S, T>> body, int chain) {
         UnitOfWork uow = new UnitOfWork(registry.maxCascadeDepth(), deadlineNanos());
+        if (trail.isPresent()) {
+            uow.recordTrail(entity, trail.get());
+        }
         Transaction tx = new Transaction(registry, uow, key(), entity, requested, reaction,
                 observed.map(Observed::call), log);
         Outcome<E, S, T> outcome;
@@ -347,27 +368,26 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 tx.enter(CallPhase.REACTIONS);
                 reactions = registry.dispatchWatches(summary, chain, log);
             }
-            FlowView flow = tx.frozenFlow();
             outcome = switch (step) {
                 case StepResult.Applied<S, T> applied ->
                         new Outcome.Applied<>(entity, applied.from(), applied.transition(), applied.to(),
-                                records, reactions, starts, flow);
+                                records, reactions, starts, tx.frozenFlow(records, starts));
                 case StepResult.Ignored<S, T> ignored ->
                         new Outcome.Ignored<>(entity, ignored.from(), ignored.reason());
                 case StepResult.Rejected<S, T> rejected ->
                         new Outcome.Rejected<>(entity, rejected.from(), rejected.transition(), rejected.reason(),
-                                rejected.kind(), rejected.guard(), flow);
+                                rejected.kind(), rejected.guard(), tx.frozenFlow(rejected));
                 case StepResult.Failed<S, T> failed ->
                         new Outcome.Failed<>(entity, failed.from(), failed.transition(), failed.to(),
                                 failed.failureTransition(), failed.movedTo(), failed.reason(), failed.cause(),
-                                records, reactions, failed.failureKind(), starts, flow);
+                                records, reactions, failed.failureKind(), starts, tx.frozenFlow(records, starts));
             };
         } catch (Throwable thrown) {
             if (thrown instanceof Error fatal) {
                 throw failed(observed, tx, fatal);
             }
             CallFailedException own = tx.classify(thrown);
-            CallFailureFlows.attach(own, tx.frozenFlow());
+            CallFailureFlows.attach(own, tx.frozenFlow(own));
             CallFailedException failure = failed(observed, tx, own);
             if (log.debug()) {
                 log.failed(tx.failureOf(failure));
@@ -379,8 +399,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /**
      * Tells the registry's observers that a call starts; reads no clock and allocates nothing when it has none. The
-     * end events measure from the clock read of the call's log, when the call logs, and from a read of their own
-     * otherwise, so a call reads the clock once at its start either way.
+     * end events measure from the {@code System.nanoTime()} read of the call's log, when the call logs, and from a read
+     * of their own otherwise, so a call reads {@code System.nanoTime()} once at its start either way; the clock of a
+     * trail is another one.
      */
     private Optional<Observed> observe(E entity, Optional<Enum<?>> requested, boolean reaction, CallLog log) {
         Observers observers = registry.observers();

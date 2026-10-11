@@ -16,7 +16,8 @@ import java.util.Objects;
  * {@link #hop()} is the committed hop whose hook threw, {@link #records()} every hop the call committed, in log
  * order, and {@link #starts()} every sub-machine it started; a start runs no hook. The hooks of the hops before
  * {@link #hop()} ran; the later hooks and the watch reactions of the call did not. {@link #flow()} holds what the
- * steps wrote and what the hooks that ran wrote, the failing hook's writes before it threw included.
+ * steps wrote and what the hooks that ran wrote, the failing hook's writes before it threw included, and, when the
+ * call records its trail, every hop and start the call committed, then the entry of this failure.
  */
 public final class AfterCommitException extends CallFailedException {
 

@@ -55,6 +55,9 @@ import lombok.RequiredArgsConstructor;
  *       and the exits selected by its terminal initial descendants.</li>
  * </ul>
  * A cascade that an action requests is explicit, so neither it nor what its steps run asks anything of the kind.
+ * The root machine decides the trail of its call the same way: the hops and starts of every peer and every exit of
+ * the call are in the trail when the root machine was built with {@code recordTrail}, whatever the peers' builders
+ * declare, and in none otherwise.
  * Nothing serializes two roots on one entity. The pre-check of phase 2 refuses a state that changed while a root
  * ran, but it catches only the interleavings that leave a different state behind, so concurrent calls on one entity
  * are the application's to serialize. Its observers see every call of its machines, as

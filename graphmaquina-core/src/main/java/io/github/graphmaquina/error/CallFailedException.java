@@ -67,10 +67,14 @@ public abstract class CallFailedException extends StateMachineException {
      * undoes a write, so the step that aborted keeps its writes, and so do the steps it cascaded to. After the commit,
      * they also hold what the hooks wrote, a failing hook's writes before it threw included. The view is immutable,
      * any thread can read it for as long as it is kept, and it compares by value; its values are the very objects
-     * that were put. {@link FlowView#empty()}, without an entity, when no step or hook of the call wrote to its flow,
-     * since reading never creates it, and for a reevaluation that failed before it ran an edge: reading the state, a
-     * chain of watch reactions over its limit, or a watch function that threw. A failure of another call that is the
-     * cause of this one keeps the flow of its own call. An Error that ends a call carries no flow.
+     * that were put. When the root machine records its trail, {@link FlowView#trail()} lists the hops and the
+     * sub-machine starts the call took up to the failure, those a rollback dropped left out, then a
+     * {@link io.github.graphmaquina.api.FlowEntry.Failed} entry with this failure, read when the root caught it; a
+     * reevaluation that failed before it ran an edge, reading the state, a chain of watch reactions over its limit, or
+     * a watch function that threw, has the entity, no value and that entry alone. Without the trail, the flow is
+     * {@link FlowView#empty()}, without an entity, when no step or hook of the call wrote to it, since reading never
+     * creates it, and for such a reevaluation. A failure of another call that is the cause of this one keeps the flow
+     * of its own call. An Error that ends a call carries no flow.
      */
     public FlowView flow() {
         return flow;

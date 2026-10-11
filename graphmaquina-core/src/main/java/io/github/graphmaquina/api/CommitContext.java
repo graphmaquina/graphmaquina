@@ -21,10 +21,11 @@ import lombok.NonNull;
  * @param to the state the hop committed
  * @param kind whether the committed transition ran an action
  * @param isTerminal whether {@code to} is one of the graph's terminal states
- * @param flow the flow of the call: the values its steps and its earlier hooks put, and the root call's entity, which
- *             {@link FlowView#entity()} describes. Each hook receives a handle of its own and can write through it;
- *             its writes are never undone, since the call committed before its hooks run, and the later hooks of
- *             the call read them.
+ * @param flow the flow of the call: the values its steps and its earlier hooks put, the root call's entity, which
+ *             {@link FlowView#entity()} describes, and, when the call records its trail, every hop and start it
+ *             committed, as {@link FlowView#trail()} describes. Each hook receives a handle of its own and can write
+ *             through it; its writes are never undone, since the call committed before its hooks run, and the later
+ *             hooks of the call read them.
  */
 public record CommitContext<S extends Enum<S>, T extends Enum<T>>(@NonNull S from, @NonNull T transition, @NonNull S to,
                                                                    @NonNull TransitionKind kind, boolean isTerminal,

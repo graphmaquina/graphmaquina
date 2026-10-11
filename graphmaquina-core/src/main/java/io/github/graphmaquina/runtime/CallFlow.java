@@ -1,6 +1,8 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.FlowKey;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -24,12 +26,18 @@ import java.util.Set;
  *       the log it truncates to that size grows again from there. So a rollback only drops writes from the end.</li>
  *   <li>A post-commit hook writes after the commit, at the size of the committed log, so {@code atLog} still never
  *       decreases. No rollback follows the commit: nothing drops a hook's write.</li>
+ *   <li>When the root machine records its trail, each entry of the log has a mark at its own index: when it was
+ *       logged, and, on the hop of a failure route, what the route recovered from. {@link #truncateMarks} drops the
+ *       marks of the entries a rollback dropped. A flow that a write created, in a call that does not record its
+ *       trail, keeps no mark and allocates nothing for marks.</li>
  * </ul>
  */
 final class CallFlow {
 
     private final Object rootEntity;
     private final List<Write> writes = new ArrayList<>();
+    /** The mark of each entry of the log, by index; created by the first mark. */
+    private Optional<List<Mark>> marks = Optional.empty();
 
     CallFlow(Object rootEntity) {
         this.rootEntity = rootEntity;
@@ -93,6 +101,48 @@ final class CallFlow {
         return Collections.unmodifiableMap(present);
     }
 
+    /**
+     * Marks the entry at {@code logIndex}, the one just appended: it was logged {@code at}. The marks follow the log,
+     * so that index is the number of marks.
+     */
+    void mark(int logIndex, Instant at) {
+        if (marks.isEmpty()) {
+            marks = Optional.of(new ArrayList<>());
+        }
+        marks.get().add(logIndex, new Mark(at, Optional.empty()));
+    }
+
+    /** Leaves {@code recovery} on the mark of the entry at {@code logIndex}, the hop of a failure route. */
+    void recovery(int logIndex, FlowEntry.Recovery recovery) {
+        List<Mark> list = marks.orElseThrow();
+        list.set(logIndex, new Mark(list.get(logIndex).at(), Optional.of(recovery)));
+    }
+
+    /** Drops the marks of the entries at {@code logSize} and after: a rollback truncated the log to that size. */
+    void truncateMarks(int logSize) {
+        if (marks.isPresent()) {
+            List<Mark> list = marks.get();
+            list.subList(Math.min(logSize, list.size()), list.size()).clear();
+        }
+    }
+
+    /** When the entry at {@code logIndex} was logged; empty when it has no mark. */
+    Optional<Instant> markAt(int logIndex) {
+        return logIndex < markCount() ? Optional.of(marks.get().get(logIndex).at()) : Optional.empty();
+    }
+
+    /** What the hop at {@code logIndex} recovered from, if a failure route took it; empty otherwise. */
+    Optional<FlowEntry.Recovery> recoveryAt(int logIndex) {
+        return logIndex < markCount() ? marks.get().get(logIndex).recovery() : Optional.empty();
+    }
+
+    private int markCount() {
+        return marks.isPresent() ? marks.get().size() : 0;
+    }
+
     /** One put, with its value, or one remove, without; {@code atLog} is the size of the log when it was made. */
     private record Write(FlowKey<?> key, Optional<Object> value, int atLog) { }
+
+    /** The mark of one entry of the log: when it was logged, and what a failure route recovered from, if any. */
+    private record Mark(Instant at, Optional<FlowEntry.Recovery> recovery) { }
 }

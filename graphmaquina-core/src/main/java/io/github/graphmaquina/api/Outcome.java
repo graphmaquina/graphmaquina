@@ -89,13 +89,17 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
      * The flow of the root call that returned this outcome, frozen once its hooks and its watch reactions ran: the
      * root call's entity and the values present then, each under the key that put it, in the order of
      * {@link FlowView#keys()}. They are what the call's steps and hooks put and no failure route dropped, so a failed
-     * outcome holds the recovery action's writes and none of the failed action's. The view is a copy that the caller
-     * may keep and read from any thread, and it compares by value, so equal outcomes need equal flows; its values are
-     * the very objects that were put, never copies. Reading never creates the flow; only a write does, a put or a
-     * remove that a step or a hook makes. So the flow is {@link FlowView#empty()}, without an entity, for a root call
-     * none of whose steps or hooks wrote to it, a rejected outcome included, since only its guards ran and a guard
-     * cannot write; for an ignored outcome; and for any outcome a cascade returned, whose flow belongs to its root. A
-     * watch reaction is a call of its own: the outcome in {@link Reaction.Done} hands out the reaction's own flow.
+     * outcome holds the recovery action's writes and none of the failed action's. When the root machine records its
+     * trail, {@link FlowView#trail()} lists the call's hops and sub-machine starts, each wrapping the very record or
+     * start of {@link #records()} or {@link #starts()}, and a rejected outcome's trail ends with its rejection. The
+     * view is a copy that the caller may keep and read from any thread, and it compares by value, so equal outcomes
+     * need equal flows; its values are the very objects that were put, never copies. Reading never creates the flow;
+     * a write does, a put or a remove that a step or a hook makes, and so does the start of a call whose root machine
+     * records its trail. So the flow is {@link FlowView#empty()}, without an entity, for a root call that records no
+     * trail and none of whose steps or hooks wrote to it, a rejected outcome included, since only its guards ran and
+     * a guard cannot write; for an ignored outcome; and for any outcome a cascade returned, whose flow belongs to its
+     * root. A watch reaction is a call of its own: the outcome in {@link Reaction.Done} hands out the reaction's own
+     * flow, whose trail its own machine decides.
      */
     FlowView flow();
 

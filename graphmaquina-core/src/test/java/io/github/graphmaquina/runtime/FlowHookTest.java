@@ -153,6 +153,7 @@ class FlowHookTest {
         operations.put("keys", flow::keys);
         operations.put("entity", flow::entity);
         operations.put("entity(Class)", () -> flow.entity(Doc.class));
+        operations.put("trail", flow::trail);
         operations.put("put", () -> flow.put(BATCH, "late"));
         operations.put("remove", () -> flow.remove(BATCH));
         return operations;
@@ -169,7 +170,7 @@ class FlowHookTest {
     /** Every operation name of {@link #operations}, each mapped to the same {@code text}, in order. */
     private static Map<String, String> each(String text) {
         Map<String, String> expected = new LinkedHashMap<>();
-        for (String name : List.of("get", "keys", "entity", "entity(Class)", "put", "remove")) {
+        for (String name : List.of("get", "keys", "entity", "entity(Class)", "trail", "put", "remove")) {
             expected.put(name, text);
         }
         return expected;

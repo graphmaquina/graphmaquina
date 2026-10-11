@@ -30,6 +30,7 @@ import io.github.graphmaquina.fixtures.OrderGraphs;
 import io.github.graphmaquina.fixtures.OrderStatus;
 import io.github.graphmaquina.fixtures.OrderTransition;
 import java.time.Duration;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -98,6 +99,9 @@ class BuilderReuseTest {
         calls.put("asyncTimeout", () -> builder.asyncTimeout(Duration.ofSeconds(1)));
         calls.put("asyncExecutor", () -> builder.asyncExecutor(Runnable::run));
         calls.put("as", () -> builder.as(Facades.Docs.class));
+        calls.put("recordTrail()", builder::recordTrail);
+        calls.put("recordTrail(clock)", () -> builder.recordTrail(InstantSource.system()));
+        calls.put("recordTrail(null)", () -> builder.recordTrail(null));
         calls.put("build", builder::build);
         assertEquals(List.of(), accepted(calls, "the builder for Doc/DocStatus was already used"));
     }

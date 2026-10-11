@@ -99,7 +99,8 @@ final class DefaultTransitionContext<E, S extends Enum<S>, T extends Enum<T>>
 
     /**
      * Checks this context, then hands out a writable handle on the call's flow that runs the same check first. It
-     * does not create the flow: the handle's first write does.
+     * does not create the flow: the handle's first write does, unless the call records its trail, whose flow exists
+     * from its start.
      */
     @Override
     public FlowContext flow() {

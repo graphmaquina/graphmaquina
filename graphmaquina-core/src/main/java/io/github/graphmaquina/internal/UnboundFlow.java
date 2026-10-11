@@ -1,10 +1,12 @@
 package io.github.graphmaquina.internal;
 
 import io.github.graphmaquina.api.FlowContext;
+import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.FlowKey;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -14,6 +16,7 @@ import java.util.Set;
  * A flow that belongs to no call: the one the five-argument constructor of
  * {@link io.github.graphmaquina.api.CommitContext} gives, so that a hook can be called by hand, in a unit test, and
  * what it wrote read back. It starts empty and has no entity: {@link #entity()} and {@link #entity(Class)} are empty.
+ * It never has a trail: {@link #trail()} is the empty list.
  * It has no owner thread, never goes stale and is not synchronized. It refuses what the flow of a call refuses, and
  * {@link #keys()} keeps the same order. Two unbound flows are equal when they hold equal values under equal keys,
  * whatever their order, so contexts built by hand compare by their components; like a collection's, its hash code
@@ -49,6 +52,11 @@ public final class UnboundFlow implements FlowContext {
             throw new IllegalArgumentException("entity type must be a reference type; use its wrapper class");
         }
         return Optional.empty();
+    }
+
+    @Override
+    public List<FlowEntry> trail() {
+        return List.of();
     }
 
     /** Removes the key first, so a key put again moves to the end and the key that put the value is the one kept. */

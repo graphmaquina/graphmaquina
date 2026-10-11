@@ -2,13 +2,17 @@ package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.StateMachineException;
+import java.time.Instant;
+import java.time.InstantSource;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -23,10 +27,13 @@ import java.util.Optional;
  * answer by entity and undo puts it back entry by entry, so a rollback never rebuilds the index.
  * pendingStates and undo are built from the log by the first lookup that finds it non-empty, and append
  * maintains them from then on, so a root that never reads a pending state after its first append allocates
- * neither. journal answers which actions actually ran and is never reverted. flow is the call's flow, created by the
- * first write, a put or a remove, that a step or a hook of the call makes; a read never creates it. A call that
- * writes nothing pays one empty field, and every rollback reverts the flow's writes with the log. No rollback follows
- * the commit, so nothing reverts what a hook writes.
+ * neither. journal answers which actions actually ran and is never reverted. flow is the call's flow, created at
+ * the start of the call when its root machine records its trail, and otherwise by the first write, a put or a remove,
+ * that a step or a hook of the call makes; a read never creates it. A call that writes nothing and records no trail
+ * pays two empty fields, and every rollback reverts the flow's writes with the log. No rollback follows the commit,
+ * so nothing reverts what a hook writes. A call that records its trail marks each entry of the log on its clock,
+ * right after the entry is in the log, and every rollback truncates the marks with the log; a call that does not
+ * reads no clock and keeps no mark.
  */
 final class UnitOfWork {
 
@@ -52,8 +59,12 @@ final class UnitOfWork {
     private boolean poisonWrapsAForeignFailure;
     /** Whether a start was ever appended: until one is, every entry of the log is a hop. */
     private boolean started;
-    /** The call's flow; empty until a step or a hook of the call first writes to it. */
+    /**
+     * The call's flow; empty until a step or a hook of the call first writes to it, unless the call records its trail.
+     */
     private Optional<CallFlow> flow = Optional.empty();
+    /** The clock of the call's trail; empty when the root machine does not record its trail. */
+    private Optional<InstantSource> clock = Optional.empty();
 
     UnitOfWork(int maxDepth, long deadlineNanos) {
         this.maxDepth = maxDepth;
@@ -98,7 +109,7 @@ final class UnitOfWork {
 
     /**
      * The call's flow, created with {@code rootEntity}, the root call's entity, the first time it is asked for. Only a
-     * write asks for it this way; a read uses {@link #flow()}, which never creates it.
+     * write and {@link #recordTrail} ask for it this way; a read uses {@link #flow()}, which never creates it.
      */
     CallFlow flow(Object rootEntity) {
         if (flow.isEmpty()) {
@@ -107,11 +118,29 @@ final class UnitOfWork {
         return flow.get();
     }
 
-    /** The call's flow, if a write of the call created it; empty otherwise. It never creates the flow. */
+    /**
+     * The call's flow, if the call records its trail or a write of the call created it; empty otherwise. It never
+     * creates the flow.
+     */
     Optional<CallFlow> flow() { return flow; }
 
-    /** Whether a write of the call, a step's or a hook's, created its flow. */
+    /** Whether the call has its flow: it records its trail, or a write of a step or a hook of the call created it. */
     boolean hasFlow() { return flow.isPresent(); }
+
+    /**
+     * Records the trail of the call on {@code clock}: creates the call's flow now, with {@code rootEntity}, the root
+     * call's entity, and marks every entry appended from now on. The root calls it once, before its step runs.
+     */
+    void recordTrail(Object rootEntity, InstantSource clock) {
+        this.clock = Optional.of(clock);
+        flow(rootEntity);
+    }
+
+    /** Whether the call records its trail. */
+    boolean recordsTrail() { return clock.isPresent(); }
+
+    /** The clock of the call's trail; only for a call that records its trail. */
+    InstantSource clock() { return clock.orElseThrow(); }
 
     /**
      * Undoes the index hop by hop. Before the index exists, savepoint zero clears the whole log directly; zero is
@@ -120,7 +149,7 @@ final class UnitOfWork {
      * lookup builds the index from what remains. Each hop restores the map before its undo record and
      * its log entry are removed, so an identity whose equals or hashCode throws stops the rollback with the three
      * still in step, and the same rollback can be retried. Each branch then drops the flow's writes made after the
-     * savepoint, if the call has a flow.
+     * savepoint and the marks of the entries it dropped, if the call has a flow.
      */
     void rollbackTo(int savepoint) {
         Optional<Map<EntityRef, Enum<?>>> pending = pendingStates();
@@ -152,6 +181,7 @@ final class UnitOfWork {
     private void rollbackFlow(int savepoint) {
         if (flow.isPresent()) {
             flow.get().rollbackTo(savepoint);
+            flow.get().truncateMarks(savepoint);
         }
     }
 
@@ -161,13 +191,30 @@ final class UnitOfWork {
 
     /**
      * When the index exists it is updated before the log, so an identity whose equals or hashCode throws leaves the
-     * log, the index and undo as they were.
+     * log, the index and undo as they were. A call that records its trail then marks the entry, as {@link #mark()}
+     * says.
      */
     void append(LogEntry entry) {
+        add(entry);
+        mark();
+    }
+
+    private void add(LogEntry entry) {
         if (pendingStates != null) {
             index(pendingStates, undo, entry);
         }
         log.add(entry);
+    }
+
+    /**
+     * Marks the entry just appended, when the call records its trail: the clock is read now, once the entry is in the
+     * log, never before, so a mark never sits at the savepoint its own step took. A call that does not record its
+     * trail reads no clock.
+     */
+    private void mark() {
+        if (clock.isPresent()) {
+            flow.orElseThrow().mark(log.size() - 1, clock.get().instant());
+        }
     }
 
     /**
@@ -199,10 +246,14 @@ final class UnitOfWork {
         undo.add(new PendingUndo(entry.ref(), previous != null, previous));
     }
 
-    /** Appends the start of a sub-machine as {@link #append} appends a hop, and notes that the log holds starts. */
+    /**
+     * Appends the start of a sub-machine as {@link #append} appends a hop, and notes that the log holds starts before
+     * it marks the start.
+     */
     void appendStart(LogEntry.Start start) {
-        append(start);
+        add(start);
         started = true;
+        mark();
     }
 
     List<LogEntry> entries() { return List.copyOf(log); }
@@ -368,6 +419,43 @@ final class UnitOfWork {
             }
         }
         return List.copyOf(starts);
+    }
+
+    /**
+     * The trail of the call so far, unmodifiable: an entry per entry of the log, in order, as {@link #trailOf} builds
+     * it from new records. The empty list when the call does not record its trail.
+     */
+    List<FlowEntry> trail() {
+        if (clock.isEmpty()) {
+            return List.of();
+        }
+        return Collections.unmodifiableList(trailOf(records(), starts()));
+    }
+
+    /**
+     * The entries of the trail of a call that records it, in log order, in a new list the caller may extend: a hop
+     * entry wraps the next of {@code records}, a start entry the next of {@code starts}, which are the
+     * {@link #records()} and {@link #starts()} of the log as it stands; each is at the instant of its entry's mark, and
+     * a hop carries the recovery its mark holds. The entries stop at the first entry of the log without a mark: only
+     * the last entry can lack one, when the clock threw instead of marking it, and the call fails with what it threw.
+     */
+    List<FlowEntry> trailOf(List<TransitionRecord<?, ?, ?>> records, List<SubmachineStart<?, ?, ?>> starts) {
+        CallFlow marks = flow.orElseThrow();
+        List<FlowEntry> entries = new ArrayList<>(log.size() + 1);
+        int hop = 0;
+        int start = 0;
+        for (int index = 0; index < log.size(); index++) {
+            Optional<Instant> at = marks.markAt(index);
+            if (at.isEmpty()) {
+                break;
+            }
+            if (log.get(index) instanceof LogEntry.Hop) {
+                entries.add(new FlowEntry.Hop(records.get(hop++), marks.recoveryAt(index), at.get()));
+            } else {
+                entries.add(new FlowEntry.Start(starts.get(start++), at.get()));
+            }
+        }
+        return entries;
     }
 
     /**

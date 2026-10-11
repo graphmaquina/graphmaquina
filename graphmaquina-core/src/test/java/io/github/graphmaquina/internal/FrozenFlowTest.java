@@ -1,15 +1,25 @@
 package io.github.graphmaquina.internal;
 
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
+import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
+import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
+import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.graphmaquina.api.CallFailure;
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.FlowKey;
 import io.github.graphmaquina.api.FlowView;
+import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.api.TransitionKind;
+import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.Item;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -20,9 +30,10 @@ import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 /**
- * The flow a call hands out, frozen: the root entity and the values it was built from, copied in their order and
- * never changed afterwards, readable from any thread; it refuses what every flow refuses, and two frozen flows are
- * equal when their entities and their values are. {@link FlowView#empty()} is the frozen flow without either.
+ * The flow a call hands out, frozen: the root entity, the values and the trail it was built from, copied in their
+ * order and never changed afterwards, readable from any thread; it refuses what every flow refuses, and two frozen
+ * flows are equal when their entities, their values and their trails are. {@link FlowView#empty()} is the frozen flow
+ * without any of them.
  */
 class FrozenFlowTest {
 
@@ -37,6 +48,17 @@ class FrozenFlowTest {
         public String toString() {
             throw new IllegalStateException("no text");
         }
+    }
+
+    private static final IllegalStateException FAILURE = new IllegalStateException("reviewer unavailable");
+
+    /** A trail of one hop of {@code doc} at {@code second} seconds after the epoch, then a failure at the next. */
+    private static List<FlowEntry> trail(Doc doc, int second) {
+        TransitionRecord<Doc, ?, ?> hop = new TransitionRecord<>(DOCS, doc, DRAFT, SUBMIT, REVIEW, TransitionKind.MOVE,
+                Optional.empty(), 0);
+        CallFailure failure = new CallFailure(CallPhase.ACTION, StatesWritten.NONE, FAILURE);
+        return List.of(new FlowEntry.Hop(hop, Optional.empty(), Instant.ofEpochSecond(second)),
+                new FlowEntry.Failed(failure, Instant.ofEpochSecond(second + 1)));
     }
 
     private static Map<FlowKey<?>, Object> values(Object... keysAndValues) {
@@ -170,5 +192,56 @@ class FrozenFlowTest {
         FrozenFlow flow = new FrozenFlow(Optional.of(new Odd()), values(BATCH, "b-1", odd, new Odd()));
         assertEquals("FrozenFlow[keys=[batch:String, odd:Odd]]", flow.toString());
         assertEquals("FrozenFlow[keys=[]]", FlowView.empty().toString());
+        assertEquals("FrozenFlow[keys=[batch:String]]",
+                new FrozenFlow(Optional.of(new Odd()), values(BATCH, "b-1"), trail(new Doc("1", DRAFT), 1)).toString());
+    }
+
+    /**
+     * The trail is copied, in its order, and unmodifiable; any thread reads it. A frozen flow built without a trail,
+     * and the empty view, have an empty one.
+     */
+    @Test
+    void aFrozenFlowHoldsACopyOfItsTrail() throws InterruptedException {
+        Doc doc = new Doc("1", DRAFT);
+        List<FlowEntry> source = new ArrayList<>(trail(doc, 1));
+        FrozenFlow flow = new FrozenFlow(Optional.of(doc), values(BATCH, "b-1"), source);
+        source.clear();
+        assertEquals(trail(doc, 1), flow.trail());
+        assertThrows(UnsupportedOperationException.class, () -> flow.trail().clear());
+        List<Object> read = new ArrayList<>();
+        Thread other = new Thread(() -> read.add(flow.trail()));
+        other.start();
+        other.join();
+        assertEquals(List.of(trail(doc, 1)), read);
+        assertEquals(List.of(), new FrozenFlow(Optional.of(doc), values(BATCH, "b-1")).trail());
+        assertEquals(List.of(), FlowView.empty().trail());
+    }
+
+    @Test
+    void aFrozenFlowRefusesANullTrailOrEntry() {
+        List<FlowEntry> nullEntry = new ArrayList<>();
+        nullEntry.add(null);
+        assertEquals("trail", assertThrows(NullPointerException.class,
+                () -> new FrozenFlow(Optional.empty(), Map.of(), null)).getMessage());
+        assertEquals("entry", assertThrows(NullPointerException.class,
+                () -> new FrozenFlow(Optional.empty(), Map.of(), nullEntry)).getMessage());
+    }
+
+    /**
+     * Spec D6: two frozen flows with equal entities and values are equal only when their trails are, entry by entry,
+     * and then their hash codes are too. The empty view equals no flow with a trail.
+     */
+    @Test
+    void twoFrozenFlowsAreEqualOnlyWithEqualTrails() {
+        Doc doc = new Doc("1", DRAFT);
+        FrozenFlow first = new FrozenFlow(Optional.of(doc), values(BATCH, "b-1"), trail(doc, 1));
+        FrozenFlow second = new FrozenFlow(Optional.of(doc), values(BATCH, "b-1"), trail(doc, 1));
+        assertEquals(first, second);
+        assertEquals(first.hashCode(), second.hashCode());
+        assertNotEquals(first, new FrozenFlow(Optional.of(doc), values(BATCH, "b-1"), trail(doc, 2)));
+        assertNotEquals(first, new FrozenFlow(Optional.of(doc), values(BATCH, "b-1")));
+        assertNotEquals(first, new FrozenFlow(Optional.of(doc), values(BATCH, "b-1"), trail(doc, 1).subList(0, 1)));
+        assertNotEquals(FlowView.empty(), new FrozenFlow(Optional.empty(), Map.of(), trail(doc, 1)));
+        assertEquals(FlowView.empty(), new FrozenFlow(Optional.empty(), Map.of(), List.of()));
     }
 }

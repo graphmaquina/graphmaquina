@@ -1,9 +1,11 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.FlowContext;
+import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.FlowKey;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.error.StaleContextException;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -17,7 +19,10 @@ import java.util.Set;
  *       WrongThreadException and one used after the transaction its StaleContextException.</li>
  *   <li>A handle does not create the call's flow, and neither does a read: before the call's first write,
  *       {@link #get} answers empty and {@link #keys} an empty set, and the entity needs no flow. The first write, a
- *       put or a remove, creates the flow with the root call's entity.</li>
+ *       put or a remove, creates the flow with the root call's entity, unless the call records its trail, whose flow
+ *       exists from the start of the call.</li>
+ *   <li>{@link #trail} builds the trail of the log so far with its marks, afresh at each read; it is empty when the
+ *       call does not record its trail.</li>
  *   <li>A write is staged at the size the log has when it is made, so {@link UnitOfWork#rollbackTo} drops it with
  *       the step that made it.</li>
  *   <li>A call that logs at TRACE logs each write at the depth of the context that made the handle, the value only
@@ -64,13 +69,13 @@ final class FlowHandle implements FlowContext {
         return new Hook(uow, rootEntity, log, hook, hop);
     }
 
-    /** The value of {@code key} in the call's flow; empty when no write created the flow. */
+    /** The value of {@code key} in the call's flow; empty when the call has no flow yet. */
     private static <V> Optional<V> read(UnitOfWork uow, FlowKey<V> key) {
         Optional<CallFlow> flow = uow.flow();
         return flow.isPresent() ? flow.get().get(key) : Optional.empty();
     }
 
-    /** The keys of the call's flow; an empty set when no write created the flow. */
+    /** The keys of the call's flow; an empty set when the call has no flow yet. */
     private static Set<FlowKey<?>> keysOf(UnitOfWork uow) {
         Optional<CallFlow> flow = uow.flow();
         return flow.isPresent() ? flow.get().keys() : Set.of();
@@ -106,6 +111,12 @@ final class FlowHandle implements FlowContext {
     }
 
     @Override
+    public List<FlowEntry> trail() {
+        guard.run();
+        return uow.trail();
+    }
+
+    @Override
     public <V> void put(FlowKey<V> key, V value) {
         guard.run();
         Objects.requireNonNull(key, "key");
@@ -136,7 +147,10 @@ final class FlowHandle implements FlowContext {
      *       operation throws StaleContextException with the machine key and the entity of the hop.</li>
      *   <li>It does not create the call's flow, and neither does a read: before the call's first write, a read
      *       answers empty, and the entity needs no flow. Its first write that passes its checks creates the flow, if
-     *       no step of the call wrote. A hook that never writes costs this object alone.</li>
+     *       no step of the call wrote and the call does not record its trail. A hook that never writes costs this
+     *       object alone.</li>
+     *   <li>Its trail is the call's whole trail: every hop and start the call committed, the call's log being
+     *       final once it committed.</li>
      *   <li>A write applies at once, so the later hooks of the call read it. It keeps the size of the committed log,
      *       and no rollback follows the commit, so nothing undoes it.</li>
      *   <li>A call that logs at TRACE logs each write with the hook's name and without a depth, the value only for a
@@ -208,6 +222,12 @@ final class FlowHandle implements FlowContext {
         }
 
         @Override
+        public List<FlowEntry> trail() {
+            check();
+            return uow.trail();
+        }
+
+        @Override
         public <V> void put(FlowKey<V> key, V value) {
             check();
             Objects.requireNonNull(key, "key");
@@ -257,6 +277,11 @@ final class FlowHandle implements FlowContext {
         @Override
         public <E> Optional<E> entity(Class<E> type) {
             return handle.entity(type);
+        }
+
+        @Override
+        public List<FlowEntry> trail() {
+            return handle.trail();
         }
     }
 }

@@ -319,8 +319,10 @@ moving after its call completes, so if the assertion must see the entity as it w
 `TransitionRecorder.projecting(...)` instead of the live outcome.
 
 Each outcome carries the call's flow, `outcome.flow()`, so the recorder also retains every flow it records: the
-root entity and the values the call's steps and hooks left there, by reference, for as long as the recorder is
-kept. It stores the outcome beside a projection too, so projecting releases neither.
+root entity and the values the call's steps and hooks left there, and, for a call whose root machine records its
+trail, the entries of the trail, which hold the call's entities and the throwable a failure route took, all by
+reference, for as long as the recorder is kept. It stores the outcome beside a projection too, so projecting releases
+neither.
 
 ### Tracked entity state
 

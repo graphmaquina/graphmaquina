@@ -32,6 +32,15 @@ class UnboundFlowTest {
         assertEquals(Optional.empty(), flow.entity(String.class));
     }
 
+    /** It never has a trail: it belongs to no call. */
+    @Test
+    void anUnboundFlowHasNoTrail() {
+        UnboundFlow flow = new UnboundFlow();
+        flow.put(BATCH, "b-1");
+        assertEquals(List.of(), flow.trail());
+        assertThrows(UnsupportedOperationException.class, () -> flow.trail().clear());
+    }
+
     /** As in a call's flow, keys() follows the order of the write that gave each key its current value. */
     @Test
     void anUnboundFlowPutsReadsAndRemovesValues() {

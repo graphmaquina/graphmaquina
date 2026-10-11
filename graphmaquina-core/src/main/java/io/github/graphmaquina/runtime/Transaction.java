@@ -8,6 +8,7 @@ import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.FailureKind;
+import io.github.graphmaquina.api.FlowEntry;
 import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GuardRef;
 import io.github.graphmaquina.api.GuardResult;
@@ -19,6 +20,8 @@ import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.SubmachineSpec;
+import io.github.graphmaquina.api.SubmachineStart;
+import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AbortDetails;
 import io.github.graphmaquina.error.AmbiguousIdentityException;
@@ -32,6 +35,7 @@ import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UnhandledFailureException;
 import io.github.graphmaquina.internal.FrozenFlow;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -111,7 +115,7 @@ final class Transaction {
     /**
      * A handle on the call's flow for a context of this call at {@code depth}, checked by {@code guard}, that
      * context's own check. It does not create the flow: the first write of the call does, with the entity of the
-     * root call.
+     * root call, unless the call records its trail, whose flow exists from its start.
      */
     FlowHandle flow(Runnable guard, int depth) {
         return FlowHandle.of(uow, callEntity, guard, log, depth);
@@ -119,22 +123,75 @@ final class Transaction {
 
     /**
      * A handle on the call's flow for the post-commit hook named {@code hook}, which runs for the committed hop
-     * {@code hop}. It does not create the flow either: its first write does, if no step of the call wrote.
+     * {@code hop}. It does not create the flow either: its first write does, if no step of the call wrote and the
+     * call records no trail.
      */
     FlowHandle.Hook hookFlow(String hook, EntityRef hop) {
         return FlowHandle.hook(uow, callEntity, log, hook, hop);
     }
 
     /**
-     * The call's flow as the call hands it out: frozen, with the root call's entity and the values present now, or
-     * {@link FlowView#empty()} when no write of the call created the flow. It never creates the flow.
+     * The call's flow as an applied or a failed outcome hands it out: frozen, with the root call's entity, the values
+     * present now and, when the call records its trail, the trail, whose hop and start entries wrap {@code records}
+     * and {@code starts}, the outcome's own. {@link FlowView#empty()} when the call records no trail and no write of
+     * the call created the flow. It never creates the flow.
      */
-    FlowView frozenFlow() {
+    FlowView frozenFlow(List<TransitionRecord<?, ?, ?>> records, List<SubmachineStart<?, ?, ?>> starts) {
+        if (!uow.recordsTrail()) {
+            return frozen(List.of());
+        }
+        return frozen(uow.trailOf(records, starts));
+    }
+
+    /**
+     * The call's flow as a rejected outcome hands it out: as {@link #frozenFlow(List, List)} says, the trail built
+     * from the log and ended by the {@code Rejected} entry of {@code rejected}, at the instant the clock reads now. A
+     * clock that throws fails the call, which classifies what it threw.
+     */
+    FlowView frozenFlow(StepResult.Rejected<?, ?> rejected) {
+        if (!uow.recordsTrail()) {
+            return frozen(List.of());
+        }
+        List<FlowEntry> trail = uow.trailOf(uow.records(), uow.starts());
+        trail.add(new FlowEntry.Rejected(callKey, callEntity, rejected.from(), rejected.transition(), rejected.kind(),
+                rejected.reason(), rejected.guard(), uow.clock().instant()));
+        return frozen(trail);
+    }
+
+    /**
+     * The call's flow as {@code failure}, a failure of this call, hands it out: as {@link #frozenFlow(List, List)}
+     * says, the trail built from the log as the call left it and ended as {@link #endWith} says, with what
+     * {@link #failureOf} tells the observers of {@code failure}.
+     */
+    FlowView frozenFlow(CallFailedException failure) {
+        if (!uow.recordsTrail()) {
+            return frozen(List.of());
+        }
+        List<FlowEntry> trail = uow.trailOf(uow.records(), uow.starts());
+        endWith(trail, failureOf(failure), uow.clock());
+        return frozen(trail);
+    }
+
+    /**
+     * Ends {@code trail} with the {@code Failed} entry of {@code failure}, at the instant {@code clock} reads now. A
+     * clock that throws a RuntimeException leaves the entry out, and the exception of {@code failure}, which the call
+     * throws, carries what the clock threw as suppressed; an Error propagates.
+     */
+    static void endWith(List<FlowEntry> trail, CallFailure failure, InstantSource clock) {
+        try {
+            trail.add(new FlowEntry.Failed(failure, clock.instant()));
+        } catch (RuntimeException thrown) {
+            failure.error().addSuppressed(thrown);
+        }
+    }
+
+    /** The call's flow frozen with {@code trail}, or {@link FlowView#empty()} when the call has no flow. */
+    private FlowView frozen(List<FlowEntry> trail) {
         Optional<CallFlow> flow = uow.flow();
         if (flow.isEmpty()) {
             return FlowView.empty();
         }
-        return new FrozenFlow(Optional.of(flow.get().rootEntity()), flow.get().values());
+        return new FrozenFlow(Optional.of(flow.get().rootEntity()), flow.get().values(), trail);
     }
 
     void enter(CallPhase next) { phase = next; }
@@ -1140,7 +1197,9 @@ final class Transaction {
      * Roll back to the savepoint, then resolve {@code recovery}, the identifier the failure selected, from the
      * original origin and run that edge without guards and without a failure route of its own. An empty
      * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is. A call that logs
-     * at TRACE logs the route, or the unhandled failure, once the rollback is done.
+     * at TRACE logs the route, or the unhandled failure, once the rollback is done. A call that records its trail
+     * leaves what failed on the mark of the recovery hop, which sits at the savepoint since the rollback truncated the
+     * log there, before the recovery action runs.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> failing, int depth,
@@ -1171,6 +1230,10 @@ final class Transaction {
         uow.pop();
         uow.push(ref, route);
         appendHop(machine, ref, entity, route, depth);
+        if (uow.recordsTrail()) {
+            uow.flow().orElseThrow().recovery(savepoint,
+                    new FlowEntry.Recovery(failing.transition(), reason, cause, failureKind));
+        }
         if (route.action().isPresent()) {
             ActionRef<E, S, T> action = route.action().orElseThrow();
             int journalIndex = uow.appendJournal(new ActionRecord(machine.key(), entity, from, recoveryId, route.to(),

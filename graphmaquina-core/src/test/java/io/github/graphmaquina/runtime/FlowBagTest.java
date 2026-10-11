@@ -165,6 +165,7 @@ class FlowBagTest {
         operations.put("keys", flow::keys);
         operations.put("entity", flow::entity);
         operations.put("entity(Class)", () -> flow.entity(Doc.class));
+        operations.put("trail", flow::trail);
         if (flow instanceof FlowContext writable) {
             operations.put("put", () -> writable.put(BATCH, "late"));
             operations.put("remove", () -> writable.remove(BATCH));
@@ -474,7 +475,7 @@ class FlowBagTest {
         stale.put("flow()", describe(thrownBy(() -> context.get().flow())));
         operations(captured.get()).forEach((String name, Runnable operation) ->
                 stale.put(name, describe(thrownBy(operation))));
-        List<String> names = List.of("flow()", "get", "keys", "entity", "entity(Class)", "put", "remove");
+        List<String> names = List.of("flow()", "get", "keys", "entity", "entity(Class)", "trail", "put", "remove");
         assertEquals(each(names, "WrongThreadException: the context of Doc/DocStatus can only be used from the thread"
                 + " running process(): " + owner.get()), offThread);
         assertEquals(each(names, "StaleContextException: the context of Doc/DocStatus is no longer valid: the"
@@ -509,7 +510,7 @@ class FlowBagTest {
         stale.put("flow()", describe(thrownBy(() -> context.get().flow())));
         operations(captured.get()).forEach((String name, Runnable operation) ->
                 stale.put(name, describe(thrownBy(operation))));
-        List<String> names = List.of("flow()", "get", "keys", "entity", "entity(Class)");
+        List<String> names = List.of("flow()", "get", "keys", "entity", "entity(Class)", "trail");
         assertEquals(each(names, "WrongThreadException: the context of Doc/DocStatus can only be used from the thread"
                 + " running test(): " + owner.get()), offThread);
         assertEquals(each(names, "StaleContextException: the context of Doc/DocStatus is no longer valid: the"

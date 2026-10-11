@@ -16,7 +16,8 @@ public sealed interface Reaction permits Reaction.Done, Reaction.Aborted {
 
     /**
      * A watch re-evaluation that ran to completion, carrying its outcome. The reaction is a call of its own, so the
-     * outcome's {@link Outcome#flow()} is the reaction's flow, not the flow of the call that triggered it.
+     * outcome's {@link Outcome#flow()} is the reaction's flow, not the flow of the call that triggered it, and the
+     * machine re-evaluated decides whether it records a trail.
      */
     record Done(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity,
                 @NonNull Outcome<?, ?, ?> outcome) implements Reaction {

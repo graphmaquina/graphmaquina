@@ -29,11 +29,12 @@ public interface GuardContext<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * The flow of this call, read-only: the values the steps of the call put before this guard runs, those of the
-     * action that cascaded to this step included, and the root call's entity, which {@link FlowView#entity()}
-     * describes. The view has no {@code put} or {@code remove}, and no cast gives it one. Like peer views,
-     * {@code flow()} and every read of the view it returns work only on the thread that called {@code test()} and only
-     * until the root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards
-     * {@code StaleContextException}.
+     * action that cascaded to this step included, the root call's entity, which {@link FlowView#entity()}
+     * describes, and, when the root machine records its trail, what the call took before this guard's step, as
+     * {@link FlowView#trail()} describes. The view has no {@code put} or {@code remove}, and no cast gives it one.
+     * Like peer views, {@code flow()} and every read of the view it returns work only on the thread that called
+     * {@code test()} and only until the root transaction ends: elsewhere they throw {@code WrongThreadException},
+     * afterwards {@code StaleContextException}.
      */
     FlowView flow();
 
