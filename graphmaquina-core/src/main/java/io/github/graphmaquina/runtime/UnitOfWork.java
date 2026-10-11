@@ -148,7 +148,8 @@ final class UnitOfWork {
      * lookup builds the index from what remains. Each hop restores the map before its undo record and
      * its log entry are removed, so an identity whose equals or hashCode throws stops the rollback with the three
      * still in step, and the same rollback can be retried. Each branch then drops the flow's writes made after the
-     * savepoint and the marks of the entries it dropped, if the call has a flow.
+     * savepoint and the marks of the entries it dropped, if the call has a flow; a rollback that an identity stops
+     * drops those of the entries it undid, so the flow stays in step with the log it left.
      */
     void rollbackTo(int savepoint) {
         if (savepoint == 0 && pending.isEmpty()) {
@@ -164,17 +165,20 @@ final class UnitOfWork {
         }
         Map<EntityRef, Enum<?>> states = pending.get().states();
         List<PendingUndo> undo = pending.get().undo();
-        while (log.size() > savepoint) {
-            PendingUndo old = undo.get(undo.size() - 1);
-            if (old.present()) {
-                states.put(old.ref(), old.previous());
-            } else {
-                states.remove(old.ref());
+        try {
+            while (log.size() > savepoint) {
+                PendingUndo old = undo.get(undo.size() - 1);
+                if (old.present()) {
+                    states.put(old.ref(), old.previous());
+                } else {
+                    states.remove(old.ref());
+                }
+                undo.remove(undo.size() - 1);
+                log.remove(log.size() - 1);
             }
-            undo.remove(undo.size() - 1);
-            log.remove(log.size() - 1);
+        } finally {
+            rollbackFlow(log.size());
         }
-        rollbackFlow(savepoint);
     }
 
     private void rollbackFlow(int savepoint) {

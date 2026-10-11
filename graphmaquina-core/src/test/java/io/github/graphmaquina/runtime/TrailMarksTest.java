@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.FlowEntry;
+import io.github.graphmaquina.api.FlowKey;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.fixtures.TickingClock;
@@ -209,6 +210,39 @@ class TrailMarksTest {
         uow.append(hop(ref(3)));
         assertEquals(new FlowEntry.Hop(uow.records().get(1), Optional.empty(), TickingClock.at(3)),
                 uow.trail().get(1));
+    }
+
+    /**
+     * A rollback that an identity interrupts keeps the flow in step with the log it left: the writes and the marks of
+     * the entries it already undid are gone, those of the entries still in the log stay, and the same rollback
+     * finishes once the identity recovers.
+     */
+    @Test
+    void anInterruptedRollbackKeepsTheFlowInStepWithTheLog() {
+        UnitOfWork uow = recording();
+        FlowKey<String> kept = FlowKey.of("kept", String.class);
+        FlowKey<String> undone = FlowKey.of("undone", String.class);
+        EntityRef fragile = ref(new PendingStateIndexTest.FragileId(2));
+        uow.append(hop(ref(1)));
+        uow.append(hop(fragile));
+        CallFlow flow = uow.flow().orElseThrow();
+        flow.put(kept, "written by the step of the fragile entity", uow.savepoint());
+        uow.append(hop(ref(3)));
+        flow.put(undone, "written by the last step", uow.savepoint());
+        assertEquals(Optional.of(S.B), uow.pendingState(fragile));
+        try {
+            PendingStateIndexTest.FragileId.failing = true;
+            assertThrows(IllegalStateException.class, () -> uow.rollbackTo(0));
+            PendingStateIndexTest.FragileId.failing = false;
+            assertMarksEnd(uow, 2);
+            assertEquals(Optional.of("written by the step of the fragile entity"), flow.get(kept));
+            assertEquals(Optional.empty(), flow.get(undone));
+            uow.rollbackTo(0);
+            assertMarksEnd(uow, 0);
+            assertEquals(Optional.empty(), flow.get(kept));
+        } finally {
+            PendingStateIndexTest.FragileId.failing = false;
+        }
     }
 
     /** A flow without marks answers none, and truncating them is harmless. */
