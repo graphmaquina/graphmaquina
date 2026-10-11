@@ -74,11 +74,12 @@ public interface FlowView {
     /**
      * The trail of the call: what it took, in order, one {@link FlowEntry} per hop and per sub-machine start, those of
      * cascaded steps and of the exits of sub-machines included, each at the instant it was logged; a rollback drops
-     * the entries of what it undoes. Once the call ended, a rejection or a failure adds its final entry. Empty unless
-     * the root machine of the call was built with {@code recordTrail}: the root machine decides for the whole call,
-     * whatever the machines its steps cascade to or exit into, and a watch reaction, a call of its own, is decided by
-     * its own machine. Read during the call, it lists what the call took so far. The list is unmodifiable and does not
-     * follow later entries.
+     * the entries of what it undoes. Once the call ended, a rejection or a failure adds its final entry, unless the
+     * clock throws or answers null when that entry's instant is read; an Error adds none. Empty unless the root
+     * machine of the call was built with {@code recordTrail}: the root machine decides for the whole call, whatever
+     * the machines its steps cascade to or exit into, and a watch reaction, a call of its own, is decided by its own
+     * machine. Read during the call, it lists what the call took so far. The list is unmodifiable and does not follow
+     * later entries.
      */
     List<FlowEntry> trail();
 }

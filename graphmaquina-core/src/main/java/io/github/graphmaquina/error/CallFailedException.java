@@ -69,9 +69,10 @@ public abstract class CallFailedException extends StateMachineException {
      * any thread can read it for as long as it is kept, and it compares by value; its values are the very objects
      * that were put. When the root machine records its trail, {@link FlowView#trail()} lists the hops and the
      * sub-machine starts the call took up to the failure, those a rollback dropped left out, then a
-     * {@link io.github.graphmaquina.api.FlowEntry.Failed} entry with this failure, read when the root caught it; a
-     * reevaluation that failed before it ran an edge, reading the state, a chain of watch reactions over its limit, or
-     * a watch function that threw, has the entity, no value and that entry alone. Without the trail, the flow is
+     * {@link io.github.graphmaquina.api.FlowEntry.Failed} entry with this failure, read when the root caught it,
+     * unless the trail's clock throws or answers null then, which leaves the entry out; a reevaluation that failed
+     * before it ran an edge, reading the state, a chain of watch reactions over its limit, or a watch function that
+     * threw, has the entity, no value and at most that entry. Without the trail, the flow is
      * {@link FlowView#empty()}, without an entity, when no step or hook of the call wrote to it, since reading never
      * creates it, and for such a reevaluation. A failure of another call that is the cause of this one keeps the flow
      * of its own call. An Error that ends a call carries no flow.

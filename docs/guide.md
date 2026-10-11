@@ -1693,9 +1693,11 @@ read them.
 
 ### Records, journals and reactions
 
-- `TransitionRecord` describes a planned-and-committed hop: machine key, entity, source, transition
-  identifier, destination, kind, action label and cascade depth. Two actions that share a name and endpoints
-  stay distinguishable because the identifier is part of the record.
+- `TransitionRecord` describes a hop the call took: machine key, entity, source, transition identifier,
+  destination, kind, action label and cascade depth. Two actions that share a name and endpoints stay
+  distinguishable because the identifier is part of the record. The records of an outcome and of an
+  `AfterCommitException` are committed hops. In the trail of any other failure, a record is a hop the call took,
+  and that failure's `statesWritten()` says whether none or some of their states were written.
 - `records()` and `reactions()` answer on every outcome. A root `Applied` or `Failed` returns the
   transaction's records and the reactions of its commit; `Rejected`, `Ignored` and a nested `cascade` result
   return empty lists, the last because it is provisional and has no independent root commit or reaction list.

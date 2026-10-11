@@ -8,7 +8,8 @@ import lombok.NonNull;
  * One entry of the trail of a call, {@link FlowView#trail()}, which a call records when its root machine was built
  * with {@code recordTrail}. The trail lists what the call took, in order: a {@link Hop} for each hop and a
  * {@link Start} for each sub-machine start, those of cascaded steps and of the exits of sub-machines included, then,
- * when the call ends in a rejection or in a failure, a final {@link Rejected} or {@link Failed}. A hop or a start that
+ * when the call ends in a rejection or in a failure, a final {@link Rejected} or {@link Failed}, unless the clock
+ * throws or answers null when that entry's instant is read; an Error ends a call without one. A hop or a start that
  * a rollback dropped, the failed step of a failure route or a {@code COLLECT} element that aborted, leaves the trail
  * with it. {@link #at()} is read on the clock the root machine was built with: for a hop or a start, right after it
  * was logged, before its action runs; for the final entry, when the call ended. Each entry is a value, compared by
@@ -74,10 +75,11 @@ public sealed interface FlowEntry permits FlowEntry.Hop, FlowEntry.Start, FlowEn
                     @NonNull Optional<String> guard, @NonNull Instant at) implements FlowEntry { }
 
     /**
-     * The failure that ended the call, the last entry of a call that threw a {@code CallFailedException}:
-     * {@code failure} is equal to the one the observers receive, and its {@link CallFailure#statesWritten()} says
-     * what the call wrote. Its {@code toString()} prints the failure's exception as its {@code toString()} does, never
-     * that exception's flow. An {@code Error} ends a call without an entry.
+     * The failure that ended the call, the last entry of a call that threw a {@code CallFailedException}, when the
+     * clock could read its instant: {@code failure} is equal to the one the observers receive, and its
+     * {@link CallFailure#statesWritten()} says what the call wrote. Its {@code toString()} prints the failure's
+     * exception as its {@code toString()} does, never that exception's flow. An {@code Error} ends a call without an
+     * entry.
      *
      * @param failure how the call failed: its phase, how far it got in writing states, and its exception
      * @param at when the call failed
