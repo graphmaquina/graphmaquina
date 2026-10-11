@@ -187,12 +187,13 @@ final class CallLog {
     }
 
     /**
-     * {@code String.valueOf(value)}, or {@code <toString threw <class name>>} when its {@code toString()} throws a
-     * RuntimeException; an Error propagates.
+     * {@code String.valueOf(value)}, {@code <toString returned null>} when its {@code toString()} answers null, or
+     * {@code <toString threw <class name>>} when it throws a RuntimeException; an Error propagates.
      */
     static String show(Object value) {
         try {
-            return String.valueOf(value);
+            String text = String.valueOf(value);
+            return text != null ? text : "<toString returned null>";
         } catch (RuntimeException e) {
             return "<toString threw " + e.getClass().getName() + ">";
         }

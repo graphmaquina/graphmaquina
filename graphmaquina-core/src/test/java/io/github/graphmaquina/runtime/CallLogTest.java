@@ -222,6 +222,18 @@ class CallLogTest {
         assertThrows(AssertionError.class, () -> CallLog.show(fatal));
     }
 
+    /** A toString that answers null, against its contract, prints a marker, never null. */
+    @Test
+    void showPrintsAMarkerWhenAToStringAnswersNull() {
+        Object silent = new Object() {
+            @Override
+            public String toString() {
+                return null;
+            }
+        };
+        assertEquals("<toString returned null>", CallLog.show(silent));
+    }
+
     @Test
     void microsTruncatesToWholeMicroseconds() {
         assertEquals("0us", CallLog.micros(0));
