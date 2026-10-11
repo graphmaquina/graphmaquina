@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1430" viewBox="0 0 1440 1430" role="img" aria-labelledby="title desc">
+<title id="title">The call's flow: one cancellation in the shop, from its steps to the copy its caller receives</title><desc id="desc">The shop cancels order o1, which holds the pending items i1 and i2, with the batch B-7, on a set built with recordTrail(). Every step and hook of the call shares one flow. The order's root step takes its hop, and its cancel action puts cancellation = B-7, then cascades CANCEL to both items under COLLECT. Each item's step takes its hop, and its restock action reads the batch and the order through flow().entity(Order.class), then puts restock:i1 or restock:i2. Each write comes after the hop of its step, and the trail lists each hop with the instant it was taken. The commit writes CANCELLED for the three entities. The applyRestock hooks then run in hop order and apply each item's restock; a hook can also put and remove values, and nothing undoes those writes. Once the hooks and the watch reactions ran, the flow is frozen into outcome.flow(): the three values, the order as its entity and the three hops. A rollback drops what came after its savepoint: when a step fails into its route, its hop and its writes are dropped with those of the steps it cascaded to, while what earlier steps wrote stays, and the recovery hop carries the Recovery; without a route, the step is dropped the same way and aborts with UnhandledFailureException. When i1 is PACKED, it has no CANCEL edge: its COLLECT element aborts and is dropped, with no hop and no write; the step of i2 still takes its hop and puts restock:i2; then COLLECT aborts the call, nothing commits and no hook runs, and the failure's flow holds cancellation and restock:i2, with the hops of o1 and i2 and a final Failed entry. A call that returns Outcome.Rejected ends its trail with a Rejected entry, and one that throws a CallFailedException with a Failed entry, each with an instant read when the call ended. The flow lives for one call: a watch reaction, or a call that a hook starts, has a flow of its own.</desc>
+<defs>
+  <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
+  <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
+  <pattern id="grid" width="36" height="36" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#7692b0" opacity=".12"/></pattern>
+</defs>
+<rect x="0" y="0" width="1440" height="1430" rx="24" fill="url(#back)" />
+<rect x="0" y="0" width="1440" height="1430" rx="24" fill="url(#grid)" />
+<text x="52" y="50" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">GRAPHMAQUINA / THE CALL'S FLOW</text>
+<text x="52" y="108" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="43" font-weight="700" fill="#f2f6fc" text-anchor="start">One call. One flow. A frozen copy for its caller.</text>
+<text x="52" y="151" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="24" font-weight="400" fill="#a9b8ce" text-anchor="start">The shop cancels an order of two items: orders.cancel(order, "B-7"), on a set built with recordTrail().</text>
+<rect x="52" y="186" width="1336" height="660" rx="20" fill="url(#glow)" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="226" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#7aafff" text-anchor="start">WHAT RUNS</text>
+<text x="78" y="252" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">the root step, then the steps it cascades to</text>
+<text x="652" y="226" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#c3a2ff" text-anchor="start">THE FLOW</text>
+<text x="652" y="252" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">each write comes after its step's hop</text>
+<text x="1040" y="226" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#55e0c0" text-anchor="start">THE TRAIL</text>
+<text x="1040" y="252" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">each hop and its instant</text>
+<rect x="78" y="272" width="522" height="84" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="78" y="286" width="4" height="56" rx="2" fill="#7aafff" />
+<text x="102" y="306" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="18" font-weight="600" fill="#f2f6fc" text-anchor="start">o1  NEW -CANCEL-&gt; CANCELLED</text>
+<text x="572" y="306" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="16" font-weight="400" fill="#a9b8ce" text-anchor="end">depth 0</text>
+<text x="102" y="336" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">cancel puts the batch, then cascades CANCEL to i1 and i2</text>
+<rect x="652" y="296" width="360" height="36" rx="18" fill="#0b1220" stroke="#c3a2ff" stroke-width="2" />
+<text x="832" y="320" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#c3a2ff" text-anchor="middle">put cancellation = B-7</text>
+<rect x="1040" y="296" width="186" height="36" rx="18" fill="#0b1220" stroke="#55e0c0" stroke-width="2" />
+<text x="1133" y="320" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#55e0c0" text-anchor="middle">Hop o1 CANCEL</text>
+<text x="1242" y="320" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">at t1</text>
+<rect x="108" y="368" width="492" height="84" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="108" y="382" width="4" height="56" rx="2" fill="#7aafff" />
+<text x="132" y="402" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="18" font-weight="600" fill="#f2f6fc" text-anchor="start">i1  PENDING -CANCEL-&gt; CANCELLED</text>
+<text x="572" y="402" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="16" font-weight="400" fill="#a9b8ce" text-anchor="end">depth 1</text>
+<text x="132" y="432" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">restock reads the batch and flow().entity(Order.class)</text>
+<rect x="652" y="392" width="360" height="36" rx="18" fill="#0b1220" stroke="#c3a2ff" stroke-width="2" />
+<text x="832" y="416" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#c3a2ff" text-anchor="middle">put restock:i1 = Restock(B-7, o1)</text>
+<rect x="1040" y="392" width="186" height="36" rx="18" fill="#0b1220" stroke="#55e0c0" stroke-width="2" />
+<text x="1133" y="416" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#55e0c0" text-anchor="middle">Hop i1 CANCEL</text>
+<text x="1242" y="416" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">at t2</text>
+<rect x="108" y="464" width="492" height="84" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="108" y="478" width="4" height="56" rx="2" fill="#7aafff" />
+<text x="132" y="498" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="18" font-weight="600" fill="#f2f6fc" text-anchor="start">i2  PENDING -CANCEL-&gt; CANCELLED</text>
+<text x="572" y="498" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="16" font-weight="400" fill="#a9b8ce" text-anchor="end">depth 1</text>
+<text x="132" y="528" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">restock does the same for i2</text>
+<rect x="652" y="488" width="360" height="36" rx="18" fill="#0b1220" stroke="#c3a2ff" stroke-width="2" />
+<text x="832" y="512" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#c3a2ff" text-anchor="middle">put restock:i2 = Restock(B-7, o1)</text>
+<rect x="1040" y="488" width="186" height="36" rx="18" fill="#0b1220" stroke="#55e0c0" stroke-width="2" />
+<text x="1133" y="512" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#55e0c0" text-anchor="middle">Hop i2 CANCEL</text>
+<text x="1242" y="512" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">at t3</text>
+<rect x="78" y="568" width="1284" height="56" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="102" y="604" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#55e0c0" text-anchor="start">COMMIT</text>
+<text x="196" y="604" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">each setter writes CANCELLED: o1, i1 and i2</text>
+<rect x="78" y="640" width="522" height="84" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="78" y="654" width="4" height="56" rx="2" fill="#ffc77a" />
+<text x="102" y="674" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="18" font-weight="600" fill="#f2f6fc" text-anchor="start">applyRestock(i1), applyRestock(i2)</text>
+<text x="102" y="704" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">in hop order, each applies its item's restock:&lt;id&gt;</text>
+<text x="652" y="674" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#ffc77a" text-anchor="start">A hook can also put and remove:</text>
+<text x="652" y="704" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#ffc77a" text-anchor="start">nothing undoes those writes.</text>
+<rect x="78" y="740" width="522" height="84" rx="16" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="78" y="754" width="4" height="56" rx="2" fill="#55e0c0" />
+<text x="102" y="774" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="18" font-weight="600" fill="#f2f6fc" text-anchor="start">outcome.flow()</text>
+<text x="102" y="804" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">frozen once the hooks and the watch reactions ran</text>
+<text x="652" y="774" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#c3a2ff" text-anchor="start">cancellation, restock:i1, restock:i2</text>
+<text x="652" y="804" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">entity(): o1, the order</text>
+<text x="1040" y="774" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#55e0c0" text-anchor="start">Hop o1 · Hop i1 · Hop i2</text>
+<text x="1040" y="804" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">in the order the call took them</text>
+<rect x="52" y="870" width="656" height="392" rx="20" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<rect x="732" y="870" width="656" height="392" rx="20" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="908" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#ff8998" text-anchor="start">A STEP FAILS INTO ITS ROUTE</text>
+<text x="78" y="934" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">Its edge expects the failure; the names are generic.</text>
+<text x="78" y="978" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">earlier step</text>
+<rect x="214" y="954" width="110" height="36" rx="18" fill="#0b1220" stroke="#7aafff" stroke-width="2" />
+<text x="269" y="978" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#7aafff" text-anchor="middle">hop P</text>
+<rect x="336" y="954" width="110" height="36" rx="18" fill="#0b1220" stroke="#c3a2ff" stroke-width="2" />
+<text x="391" y="978" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#c3a2ff" text-anchor="middle">put a</text>
+<text x="682" y="978" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="600" fill="#55e0c0" text-anchor="end">stays</text>
+<path d="M 78 1008 H 682" fill="none" stroke="#ff8998" stroke-width="2" stroke-dasharray="9 8" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="78" y="1030" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="16" font-weight="400" fill="#ff8998" text-anchor="start">savepoint of the step of T</text>
+<text x="78" y="1070" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">step of T</text>
+<rect x="214" y="1046" width="110" height="36" rx="18" fill="#0b1220" stroke="#ff8998" stroke-width="2" stroke-dasharray="7 6" />
+<text x="269" y="1070" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ff8998" text-anchor="middle">hop T</text>
+<rect x="336" y="1046" width="110" height="36" rx="18" fill="#0b1220" stroke="#ff8998" stroke-width="2" stroke-dasharray="7 6" />
+<text x="391" y="1070" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ff8998" text-anchor="middle">put k</text>
+<text x="458" y="1070" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">T fails</text>
+<text x="682" y="1070" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="600" fill="#ff8998" text-anchor="end">dropped</text>
+<text x="78" y="1124" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">route</text>
+<rect x="214" y="1100" width="232" height="36" rx="18" fill="#0b1220" stroke="#ff8998" stroke-width="2" />
+<text x="330" y="1124" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ff8998" text-anchor="middle">hop R + Recovery</text>
+<rect x="458" y="1100" width="110" height="36" rx="18" fill="#0b1220" stroke="#c3a2ff" stroke-width="2" />
+<text x="513" y="1124" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#c3a2ff" text-anchor="middle">put r</text>
+<text x="682" y="1124" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="600" fill="#55e0c0" text-anchor="end">written anew</text>
+<text x="78" y="1180" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">The steps that T cascaded to lose their hops, starts</text>
+<text x="78" y="1206" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">and writes too. Without a route, the step is dropped the</text>
+<text x="78" y="1232" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">same way, then aborts with UnhandledFailureException.</text>
+<text x="758" y="908" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="18" font-weight="700" fill="#ff8998" text-anchor="start">i1 IS PACKED: THE CALL ABORTS</text>
+<text x="758" y="934" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">The same cancellation, with i1 already PACKED.</text>
+<text x="758" y="978" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">o1</text>
+<rect x="806" y="954" width="120" height="36" rx="18" fill="#0b1220" stroke="#7aafff" stroke-width="2" />
+<text x="866" y="978" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#7aafff" text-anchor="middle">hop o1</text>
+<rect x="938" y="954" width="230" height="36" rx="18" fill="#0b1220" stroke="#c3a2ff" stroke-width="2" />
+<text x="1053" y="978" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#c3a2ff" text-anchor="middle">put cancellation</text>
+<text x="1362" y="978" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="600" fill="#55e0c0" text-anchor="end">stays</text>
+<path d="M 758 1008 H 1362" fill="none" stroke="#ff8998" stroke-width="2" stroke-dasharray="9 8" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="758" y="1030" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="16" font-weight="400" fill="#ff8998" text-anchor="start">savepoint of the element of i1</text>
+<text x="758" y="1070" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">i1</text>
+<rect x="806" y="1046" width="362" height="36" rx="18" fill="#0b1220" stroke="#ff8998" stroke-width="2" stroke-dasharray="7 6" />
+<text x="987" y="1070" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ff8998" text-anchor="middle">no CANCEL edge: the step aborts</text>
+<text x="1362" y="1070" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="600" fill="#ff8998" text-anchor="end">no hop, no write</text>
+<text x="758" y="1124" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">i2</text>
+<rect x="806" y="1100" width="120" height="36" rx="18" fill="#0b1220" stroke="#7aafff" stroke-width="2" />
+<text x="866" y="1124" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#7aafff" text-anchor="middle">hop i2</text>
+<rect x="938" y="1100" width="230" height="36" rx="18" fill="#0b1220" stroke="#c3a2ff" stroke-width="2" />
+<text x="1053" y="1124" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#c3a2ff" text-anchor="middle">put restock:i2</text>
+<text x="1362" y="1124" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="600" fill="#55e0c0" text-anchor="end">stays</text>
+<text x="758" y="1170" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="600" fill="#ff8998" text-anchor="start">COLLECT aborts the call: nothing commits, no hook runs.</text>
+<text x="758" y="1206" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#f2f6fc" text-anchor="start">failure.flow()</text>
+<text x="916" y="1206" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#c3a2ff" text-anchor="start">cancellation, restock:i2</text>
+<text x="758" y="1236" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="17" font-weight="400" fill="#a9b8ce" text-anchor="start">its trail</text>
+<text x="916" y="1236" font-family="'SFMono-Regular',Consolas,'Liberation Mono',monospace" font-size="16" font-weight="600" fill="#ff8998" text-anchor="start">Hop o1 · Hop i2 · Failed</text>
+<rect x="52" y="1286" width="1336" height="56" rx="14" fill="#0b1220" stroke="#2b3c54" stroke-width="2" />
+<text x="78" y="1321" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="700" fill="#ffc77a" text-anchor="start">LAST ENTRY</text>
+<text x="212" y="1321" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome.Rejected ends the trail with Rejected, a CallFailedException with Failed, each at the instant the call ended.</text>
+<path d="M 52 1366 H 1388" fill="none" stroke="#2b3c54" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="52" y="1400" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="20" font-weight="400" fill="#a9b8ce" text-anchor="start">The flow lives for one call: a watch reaction, or a call that a hook starts, has a flow of its own.</text>
+</svg>

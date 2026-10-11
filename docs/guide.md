@@ -93,6 +93,8 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 
 | Question | Diagram | Read next |
 | --- | --- | --- |
+| What does GraphMaquina do? | [Typed graphs, predictable transitions](images/graphmaquina-overview.svg) | [What GraphMaquina provides](#what-graphmaquina-provides) |
+| What runs at build time, and what at runtime? | [From declarations to a running machine](images/build-pipeline.svg) | [Generation lifecycle](#generation-lifecycle-and-ide-setup) |
 | How can my source use annotations that do not exist yet? | [Source → vocabulary → compilation](images/annotation-bootstrap.svg) | [First generation](#how-your-flow-annotations-are-generated) |
 | Which transitions are permitted? | [The ticket graph](images/ticket-workflow.svg) | [Understand the graph](#understand-the-graph) |
 | Why did an operation apply, reject or fail? | [Edge selection and outcomes](images/operation-decisions.svg) | [Outcomes](#handle-transition-outcomes) |
@@ -102,8 +104,10 @@ examples. Each illustration is an SVG: open it to inspect labels at full size.
 | What can I safely use in a callback? | [Context and thread boundary](images/async-context-boundary.svg) | [Context ownership](#contexts-and-completion-callbacks) |
 | Does a completed future mean the operation succeeded? | [Future result branches](images/async-future-results.svg) | [Result handling](#read-the-future-and-domain-result) |
 | Do both machines commit together? | [Cascade versus watch](images/cascade-vs-watch.svg) | [Machine coordination](#read-peers-and-cascade-transitions) |
+| When does an owner react to its peers? | [Watch reactions](images/watch-reactions.svg) | [Watch other machines](#watch-other-machines) |
 | How does a state hold a whole machine? | [Sub-machine binding](images/submachine-binding.svg) | [Compose machines](#compose-machines) |
 | When do hooks and reactions run? | [Commit lifecycle](images/commit-lifecycle.svg) | [Commit and hooks](#commit-hooks-and-observers) |
+| What does a call share between its steps, and what does its caller get back? | [One call's flow](images/call-flow.svg) | [The call's flow](#the-calls-flow) |
 
 ## Requirements and artifacts
 
@@ -2846,7 +2850,7 @@ that restarts its payment, the stay and the asynchronous exit.
 
 ![Root actions, cascades and sub-machines stage changes in a shared unit of work. Commit checks original states and
 writes final states; hooks and independent watch reactions follow, then the observers learn how the call
-ended.](images/commit-lifecycle.svg)
+ended, and the call returns its outcome with its frozen flow and its reactions.](images/commit-lifecycle.svg)
 
 Observers are told that the call starts before step 1. A call that completes tells them in step 8; one that throws tells
 them before the exception leaves the call.
@@ -3130,6 +3134,13 @@ caller receives a frozen copy, as [read the flow after the call](#read-the-flow-
 the call reaches the same flow, whatever entity the step moves: the root's own step, each cascaded step and the exit
 of each sub-machine, and so does the hook of every hop the call commits. A watch reaction is a call of its own, with
 its own flow, and so is a call that a hook starts.
+
+![The shop cancels an order of two items on a set that records its trail. The order's step puts the batch in the
+flow and cascades CANCEL to the items, whose steps put their restocks; each write comes after its step's hop, and
+the trail lists each hop with its instant. The commit writes the states, the hooks apply the restocks, and the
+caller receives the flow frozen in the outcome. A failure route drops what its step took and wrote, while earlier
+writes stay. When an item is PACKED, its element aborts and is dropped, the cascade aborts the call, nothing
+commits, and the failure's flow keeps the other writes and ends its trail with Failed.](images/call-flow.svg)
 
 An action reads and writes the flow through `ctx.flow()`, a `FlowContext`. A guard reads it through `ctx.flow()` too,
 and gets a `FlowView`, without `put` or `remove`. A hook that takes a `CommitContext` reads and writes it through
@@ -3583,7 +3594,7 @@ exporter produces its own labels from the definition. The repository keeps exact
 [the example's golden diagrams](../graphmaquina-example/src/test/resources/golden).
 
 The illustrations in this guide are maintained separately from the Graphviz exporter. Their accessible SVG
-sources and regeneration instructions are in [docs/images](images/README.md).
+sources, with a table of what each one shows, are in [docs/images](images/README.md).
 
 ## Test your machines
 
