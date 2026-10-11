@@ -1051,9 +1051,9 @@ Outcome<Ticket, TicketState, TicketTransition> approve(Ticket ticket);
 
 It carries one or more `Transition` annotations from its own generated vocabulary, all with the same `id`.
 Several annotations let one identifier open branches from different origins — that is how the shop's
-`cancel(order)` covers `NEW` and `PAYMENT_DECLINED` in a single method. Two methods cannot claim the same
-identifier, and a type-level `Transition` may add further branches of an identifier a method owns as long as
-the keys stay disjoint; `SG703` reports both mistakes.
+`cancel(order, cancellationId)` covers `NEW` and `PAYMENT_DECLINED` in a single method. Two methods cannot claim
+the same identifier, and a type-level `Transition` may add further branches of an identifier a method owns as
+long as the keys stay disjoint; `SG703` reports both mistakes.
 
 A `Transition` on the interface itself declares an edge with no facade method. It is how failure routes,
 cascade-only and watch-only edges are declared: `DECLINE` in the quickstart and `PAYMENT_DECLINED` in the
@@ -2343,7 +2343,9 @@ public ActionOutcome cancel(TransitionContext<Order, OrderStatus, OrderTransitio
 
 The cascade names `ItemTransition.CANCEL`, an identifier from the item's own catalogue, not the `CANCELLED`
 state. javac refuses a constant of the order's catalogue here, and the engine resolves that identifier from
-each item's current state: `PENDING` and `PACKING` both declare it, `PACKED` does not.
+each item's current state: `PENDING` and `PACKING` both declare it, `PACKED` does not. The shop's own `cancel`
+first copies a batch into the call's flow, for the action of the items' `CANCEL` edge, as
+[the call's flow](#the-calls-flow) shows.
 
 For one entity, use `ctx.cascade(Items.class, item, ItemTransition.CANCEL)`. Machine-key overloads also exist
 for lower-level integrations.
@@ -2874,7 +2876,8 @@ to the call's flow, and each owner lookup of step 7.
 ### After-commit hooks
 
 Use a `@GraphHook` when code must run after GraphMaquina has written state. The quickstart prints every
-committed hop from such a hook. The shop notifies its carrier after the shipping edge commits.
+committed hop from such a hook. The shop notifies its carrier after the shipping edge commits, and puts each
+item it cancels back in stock once the item's `CANCEL` hop commits.
 
 Hooks run synchronously on the operation's thread. Any throwable a hook throws that is not an `Error`, checked ones
 included, becomes `AfterCommitException`: the state is already committed. Its `hook()` names the hook, `hop()` the
@@ -3132,16 +3135,25 @@ An action reads and writes the flow through `ctx.flow()`, a `FlowContext`. A gua
 and gets a `FlowView`, without `put` or `remove`. A hook that takes a `CommitContext` reads and writes it through
 `commit.flow()`, a `FlowContext`, once the call committed; a hook that takes the entity alone does not see it. A value
 lives under a `FlowKey`, a name and a class: two keys with the same name and class read and write the same value.
-Declare each key once, where every step that uses it can see it:
+Declare each key once, where every step that uses it can see it, as the shop does in
+[ShopFlow.java](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/ShopFlow.java):
 
 ```java
 public final class ShopFlow {
+
     public static final FlowKey<String> CANCELLATION = FlowKey.visible("cancellation", String.class);
-    public static final FlowKey<String> TRACKING = FlowKey.of("tracking", String.class);
 
     private ShopFlow() { }
+
+    public static FlowKey<Restock> restockOf(Item item) {
+        return FlowKey.of("restock:" + item.id(), Restock.class);
+    }
 }
 ```
+
+`restockOf` gives each item a key of its own, named after the item's identifier: every step of the call shares the
+flow, so the restocks of two items under one key would replace each other. `Restock` is a record of the shop,
+`Restock(String batch, Order order)`.
 
 `FlowKey.of` and `FlowKey.visible` refuse a null or blank name and a primitive class token: write `Integer.class` for
 `int`. A key takes a class token, as `input(Class)` does, so it cannot name a generic type such as `List<String>`; use
@@ -3151,34 +3163,32 @@ the last write of the key, and `keys()` lists the keys that hold a value, in the
 current value.
 
 A cascaded step and the exit of a sub-machine receive no `input()`. When they need a value the caller passed, the
-action that received it copies it into the flow before it cascades. For instance, an order's `cancel` action, called
-as `cancel(order, cancellationId)`, can hand that identifier to each item it cancels:
+action that received it copies it into the flow before it cascades. The shop's `Orders` facade declares
+`cancel(Order order, String cancellationId)`, whose identifier names the batch the order's items go back to stock in.
+The order's `cancel` action copies it into the flow, or `manual` when the caller passed none, for each item it
+cancels:
 
 ```java
 @GraphAction
 public ActionOutcome cancel(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {
     ctx.flow().put(ShopFlow.CANCELLATION, ctx.input(String.class).orElse("manual"));
-    ctx.cascadeAll(Items.class, ctx.entity().items(), ItemTransition.CANCEL,
-            CascadePolicy.COLLECT);
+    ctx.cascadeAll(Items.class, ctx.entity().items(), ItemTransition.CANCEL, CascadePolicy.COLLECT);
     return ActionOutcome.ok();
 }
 ```
 
-An action on the item's `CANCEL` edge can then read it. `ctx.entity()` is the item the step moves, and
-`flow().entity()` the entity the root call was made for. Only the order's `cancel` puts the value, so when it is there
+The item's `CANCEL` edge runs `restock`, which reads it. `ctx.entity()` is the item the step moves, and
+`flow().entity()` the entity the root call was made for. Only the order's `cancel` cascades `CANCEL` to the items, so
 the root is the order, and `flow().entity(Order.class)` casts it. That cast throws `ClassCastException` when the root
-is of another class, such as an item cancelled on its own, and refuses a null or primitive class token as
-`input(Class)` does:
+is of another class, and refuses a null or primitive class token as `input(Class)` does. `restock` leaves the item's
+restock in the flow and changes no entity, for the reason the next paragraphs give:
 
 ```java
 @GraphAction
 public ActionOutcome restock(TransitionContext<Item, ItemStatus, ItemTransition> ctx) {
-    Optional<String> cancellation = ctx.flow().get(ShopFlow.CANCELLATION);
-    if (cancellation.isPresent()) {
-        Order order = ctx.flow().entity(Order.class).orElseThrow();
-        ctx.entity().restockedIn(cancellation.get());
-        order.restocked(ctx.entity());
-    }
+    String batch = ctx.flow().get(ShopFlow.CANCELLATION).orElseThrow();
+    Order order = ctx.flow().entity(Order.class).orElseThrow();
+    ctx.flow().put(ShopFlow.restockOf(ctx.entity()), new Restock(batch, order));
     return ActionOutcome.ok();
 }
 ```
@@ -3196,8 +3206,11 @@ action that puts a list, adds an element to it and then fails into its route lea
 value under that key, while the list itself still holds the element. Treat stored values as immutable. Entities
 behave the same way: what a step changes on its own entity through `ctx.entity()`, or on the root's through
 `flow().entity(...)`, takes effect at once and is never undone, as
-[commit, hooks and observers](#commit-hooks-and-observers) says of other entity fields. In the example, `restockedIn`
-and `restocked` stay done even if a later step fails the call.
+[commit, hooks and observers](#commit-hooks-and-observers) says of other entity fields. That is why the shop's
+`restock` changes neither the item nor the order: its `COLLECT` cascade tries every item, then aborts the call if the
+step of one of them aborted, and an item would then keep the batch of a cancellation that never committed. It
+leaves the restock in the flow, and a hook applies it once the call commits, as
+[set a field only when the call commits](#set-a-field-only-when-the-call-commits) shows.
 
 The flow follows the rules of [contexts](#contexts-and-completion-callbacks). `ctx.flow()` and every operation of the
 flow it returns, reads included, work only on the thread running the action or the guard, and only until the root
@@ -3215,38 +3228,34 @@ values you accept to see in your logs.
 #### Set a field only when the call commits
 
 What a step sets on an entity stays even when the call fails. To set a field only once its hop commits, the action
-leaves the value in the flow, which a failure of its step undoes, and a post-commit hook assigns it. For instance, an
-order's `ship` action books the shipment with a carrier and cascades `SHIP` to the order's items, and a hook copies
-the tracking number onto the order:
+leaves the value in the flow, which a failure of its step undoes, and a post-commit hook assigns it. The shop's item
+`CANCEL` edge declares `restock` as its action and `applyRestock`, another method of `ItemActions`, as its
+`afterCommit` hook, which applies the restock that the item's step left:
 
 ```java
-@GraphAction
-public ActionOutcome ship(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {
-    ctx.flow().put(ShopFlow.TRACKING, carrier.book(ctx.entity()));
-    ctx.cascadeAll(Items.class, ctx.entity().items(), ItemTransition.SHIP,
-            CascadePolicy.COLLECT);
-    return ActionOutcome.ok();
-}
-
 @GraphHook
-public void committed(Order order, CommitContext<OrderStatus, OrderTransition> commit) {
-    commit.flow().get(ShopFlow.TRACKING).ifPresent(order::tracking);
+public void applyRestock(Item item, CommitContext<ItemStatus, ItemTransition> commit) {
+    Restock restock = commit.flow().get(ShopFlow.restockOf(item)).orElseThrow();
+    item.restockedIn(restock.batch());
+    restock.order().restocked(item);
 }
 ```
 
-When the step of an item aborts, for instance because the item has no `SHIP` edge from its state, the `COLLECT`
-cascade aborts the call: nothing commits, no hook runs, and the order gets no tracking number. When an action fails
-after its put and its step takes a failure route, the route drops the write, and the hook that runs for the
-recovering hop finds nothing. Had the action set the number on the order itself, the order would keep it in both
-cases.
+Hooks run in the order of the committed hops, so the order lists its items in the order the cascade cancelled them.
+When the step of an item aborts, for instance because the item is `PACKED` and has no `CANCEL` edge, the `COLLECT`
+cascade aborts the call once it tried every item: nothing commits, no hook runs, and no item gets a batch, although
+the flow the failure hands out holds the restock of every item whose step completed.
+[OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java) asserts the
+cancellation that commits and the one that aborts. When an action fails after its put and its step takes a failure
+route, the route drops the write, and the hook that runs for the recovering hop finds nothing. Had `restock` set the
+batch on the item itself, the item would keep it in both cases.
 
-Declare the hook once, as the order machine's default with `afterCommit` on `Definition`: it then runs for every hop
-of the order that commits, the hops of failure routes included. The DSL has no default hook; declare it on each edge
-with `afterCommitWith`. An edge that declares its own hook replaces the default, as
+A hook can also be a machine's default, declared once with `afterCommit` on `Definition`: it then runs for every hop
+of the machine that commits, the hops of failure routes included. The DSL has no default hook; declare it on each
+edge with `afterCommitWith`. An edge that declares its own hook replaces the default, as
 [after-commit hooks](#after-commit-hooks) says, so that hook must assign the value too. Like any hook, it does not run
 when an earlier hook of the call throws. The flow belongs to the call, not to the hop, so every hook of the call reads
-the same values: when one call can ship several orders, give each order a key of its own, such as one named after its
-identifier.
+the same values: that is why the shop gives each item's restock a key of its own, which that item's hook reads.
 
 #### Read the flow after the call
 
@@ -3311,7 +3320,9 @@ The generated builder of a [machine set](#build-and-manage-machine-sets) offers 
 Since the root machine decides and every machine of the set records, every call made through the set records its
 trail, the peers it cascades to and the exits of sub-machines its steps run included, and so does each watch reaction,
 whose machine is one of the set. The set has no variant for one of its machines: a registry built with
-`StateMachines.Builder`, as above, chooses machine by machine.
+`StateMachines.Builder`, as above, chooses machine by machine. The shop's
+[OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java) builds its
+set with `recordTrail()`, and reads in the trail of a cancellation the order's hop, then the hop of each item.
 
 `flow().trail()` lists `FlowEntry` values, in the order the call took them, cascaded steps, the exits of sub-machines
 and sub-machine starts included:
@@ -3580,7 +3591,7 @@ Test through generated facades using real entities and deterministic action depe
 `App` is an executable smoke test that covers an applied edge, a guard rejection, a handled failure, a
 request with no edge, a self-loop, a cycle and two parallel edges, and
 [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java)
-shows JUnit tests for payment, retries, cascades, watches and journals.
+shows JUnit tests for payment, retries, cascades, watches, journals, and the flow and the trail of a call.
 
 The test below reads its outcome with `graphmaquina-test`, the module that holds the typed assertions. The
 [install command](#configure-gradle) already wrote it to your local Maven repository alongside the runtime,
@@ -4099,7 +4110,7 @@ Do not publish a bundle signed with a temporary test key. See the
 | [Migrating to 2.0](migration-2.0.md) | Every retired 1.x contract and its replacement, with before/after examples |
 | [Testing guide](testing.md) | Typed assertions, probes, goldens and structural snapshots |
 | [Build integration guide](typed-annotations-build.md) | Adapter lifecycle, toolchain checks, paths and repository configuration |
-| [Shop source](../graphmaquina-example/src/main/java/io/github/graphmaquina/example) | Complete two-machine domain with async payment, guards, cascades and watches |
+| [Shop source](../graphmaquina-example/src/main/java/io/github/graphmaquina/example) | Complete two-machine domain with async payment, guards, cascades, watches, after-commit hooks and the call's flow |
 | [Shop tests](../graphmaquina-example/src/test/java/io/github/graphmaquina/example) | Executable behavior and expected diagrams |
 | [Billing source](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/billing) | One payment machine reused as a sub-machine, in two states of a booking and in one of a subscription |
 | [Billing tests](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/billing) | Starts and exits, a detached payment, an exit's failure route, an asynchronous exit and a sub-machine over its parent's own entity |

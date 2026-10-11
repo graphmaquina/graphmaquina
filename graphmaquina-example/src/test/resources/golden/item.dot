@@ -7,7 +7,7 @@ digraph "Item/ItemStatus" {
     n3 [label="CANCELLED", shape=doublecircle, tooltip="otherwise: terminal state CANCELLED accepts no transitions"];
     initial -> n0;
     n0 -> n1 [label="START_PACKING"];
-    n0 -> n3 [label="CANCEL"];
+    n0 -> n3 [label="CANCEL restock"];
     n1 -> n2 [label="PACK pack"];
-    n1 -> n3 [label="CANCEL"];
+    n1 -> n3 [label="CANCEL restock"];
 }

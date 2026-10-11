@@ -54,5 +54,5 @@ public interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
 
     @OrdersGraph.Transition(id = OrderTransition.CANCEL, from = {NEW, PAYMENT_DECLINED}, to = CANCELLED,
             action = OrderActionsRefs.Cancel.class)
-    Outcome<Order, OrderStatus, OrderTransition> cancel(Order order);
+    Outcome<Order, OrderStatus, OrderTransition> cancel(Order order, String cancellationId);
 }

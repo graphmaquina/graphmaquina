@@ -9,12 +9,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionStatus;
 import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.FlowEntry;
+import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.example.item.Item;
 import io.github.graphmaquina.example.item.ItemActions;
 import io.github.graphmaquina.example.item.ItemStatus;
+import io.github.graphmaquina.example.item.ItemTransition;
 import io.github.graphmaquina.example.item.Items;
 import io.github.graphmaquina.example.item.ItemsRuntime;
+import io.github.graphmaquina.example.item.Restock;
 import io.github.graphmaquina.example.order.Order;
 import io.github.graphmaquina.example.order.OrderActions;
 import io.github.graphmaquina.example.order.OrderStatus;
@@ -29,7 +33,11 @@ import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/** The shop's business rules, asserted through the public testing API instead of by hand. */
+/**
+ * The shop's business rules, asserted through the public testing API instead of by hand. The set records the trail
+ * of every call, so each outcome and each failure lists the hops its call took. It reads the system clock, so the
+ * tests assert the entries of a trail and their order, never their instants.
+ */
 class OrderFlowTest {
 
     final FakeGateway gateway = new FakeGateway();
@@ -38,6 +46,7 @@ class OrderFlowTest {
     final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier),
                     new ItemActions())
             .observer(recorder)
+            .recordTrail()
             .build();
     final Orders orders = shop.orders();
     final Items items = shop.items();
@@ -94,7 +103,7 @@ class OrderFlowTest {
             }
         }
         assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudgetLeft");
-        assertThat(orders.cancel(order)).isApplied()
+        assertThat(orders.cancel(order, "B-7")).isApplied()
                 .hasEntityState(Order::status, OrderStatus.CANCELLED);
         assertThat(order.items().get(0), Item::status).isIn(ItemStatus.CANCELLED);
     }
@@ -115,13 +124,61 @@ class OrderFlowTest {
         Item i1 = new Item("i1", Optional.of(order));
         Item i2 = new Item("i2", Optional.of(order));
 
-        assertThat(orders.cancel(order)).isApplied()
+        assertThat(orders.cancel(order, "B-7")).isApplied()
                 .hasEntityState(Order::status, OrderStatus.CANCELLED)
                 .records().hasSize(3);
         assertThat(i1, Item::status).isIn(ItemStatus.CANCELLED);
         assertThat(i2, Item::status).isIn(ItemStatus.CANCELLED);
     }
 
+    /**
+     * The order's cancel copies its batch into the flow before it cascades. Each item's restock reads it, with the
+     * order the call was made for, and leaves its restock in the flow; each item's hook applies it once the call
+     * committed.
+     */
+    @Test
+    void cancelRestocksEachItemInTheBatchOnceTheCallCommits() {
+        Order order = new Order("o1");
+        Item i1 = new Item("i1", Optional.of(order));
+        Item i2 = new Item("i2", Optional.of(order));
+
+        Outcome<Order, OrderStatus, OrderTransition> outcome = orders.cancel(order, "B-7");
+
+        assertEquals(Optional.of("B-7"), i1.restockedIn());
+        assertEquals(Optional.of("B-7"), i2.restockedIn());
+        assertEquals(List.of(i1, i2), order.restocked());
+        assertThat(outcome).isApplied().flow()
+                .hasEntitySameAs(order)
+                .hasValue(ShopFlow.CANCELLATION, "B-7")
+                .hasValue(ShopFlow.restockOf(i1), new Restock("B-7", order))
+                .hasValue(ShopFlow.restockOf(i2), new Restock("B-7", order))
+                .hasKeysExactly(ShopFlow.CANCELLATION, ShopFlow.restockOf(i1), ShopFlow.restockOf(i2))
+                .trail()
+                .hasEntryTypesExactly(FlowEntry.Hop.class, FlowEntry.Hop.class, FlowEntry.Hop.class)
+                .hasHopsExactly(OrderTransition.CANCEL, ItemTransition.CANCEL, ItemTransition.CANCEL);
+        assertThat(outcome).isApplied().flow().trail().hops().forEntity(OrdersRuntime.KEY, order).single()
+                .from(OrderStatus.NEW).hasTransition(OrderTransition.CANCEL).to(OrderStatus.CANCELLED);
+        for (Item item : List.of(i1, i2)) {
+            assertThat(outcome).isApplied().flow().trail().hops().forEntity(ItemsRuntime.KEY, item).single()
+                    .from(ItemStatus.PENDING).hasTransition(ItemTransition.CANCEL).to(ItemStatus.CANCELLED);
+        }
+    }
+
+    /** A cancellation whose caller passed no batch restocks its items in the manual one. */
+    @Test
+    void aCancellationWithoutABatchRestocksInTheManualOne() {
+        Order order = new Order("o1");
+        Item item = new Item("i1", Optional.of(order));
+
+        assertThat(orders.cancel(order, null)).isApplied().flow().hasValue(ShopFlow.CANCELLATION, "manual");
+        assertEquals(Optional.of("manual"), item.restockedIn());
+    }
+
+    /**
+     * COLLECT tries every item. The PACKED one has no CANCEL edge, so its element aborts; the PENDING one is
+     * cancelled, and its restock stays in the flow. The aggregate then aborts the call: nothing commits, no hook runs
+     * and no entity gets a restock, while the failure's flow keeps what the steps wrote.
+     */
     @Test
     void cancelWithAPackedItemAbortsAndReportsTheJournal() {
         Order order = new Order("o1");
@@ -130,12 +187,28 @@ class OrderFlowTest {
         items.startPacking(packed);
         items.pack(packed);
 
-        assertThat(captureFailure(() -> orders.cancel(order))).isCascadeAbort()
+        Throwable failure = captureFailure(() -> orders.cancel(order, "B-7"));
+
+        assertThat(failure).isCascadeAbort()
                 .hasErrorCount(1).hasPhase(CallPhase.ACTION).hasStatesWritten(StatesWritten.NONE)
-                .journal().hasActionsExactly("cancel").hasStatusesExactly(ActionStatus.THREW);
+                .journal().hasActionsExactly("cancel", "restock")
+                .hasStatusesExactly(ActionStatus.THREW, ActionStatus.OK);
+        assertThat(failure).isCascadeAbort().flow()
+                .hasValue(ShopFlow.CANCELLATION, "B-7")
+                .hasNoValue(ShopFlow.restockOf(packed))
+                .hasValue(ShopFlow.restockOf(pending), new Restock("B-7", order))
+                .trail()
+                .hasEntryTypesExactly(FlowEntry.Hop.class, FlowEntry.Hop.class, FlowEntry.Failed.class)
+                .hasHopsExactly(OrderTransition.CANCEL, ItemTransition.CANCEL)
+                .endsWithFailure(CallPhase.ACTION)
+                .hops().forEntity(ItemsRuntime.KEY, pending).single()
+                .from(ItemStatus.PENDING).hasTransition(ItemTransition.CANCEL).to(ItemStatus.CANCELLED);
         assertThat(order, Order::status).isIn(OrderStatus.NEW);
         assertThat(packed, Item::status).isIn(ItemStatus.PACKED);
         assertThat(pending, Item::status).isIn(ItemStatus.PENDING);
+        assertEquals(Optional.empty(), packed.restockedIn());
+        assertEquals(Optional.empty(), pending.restockedIn());
+        assertEquals(List.of(), order.restocked());
     }
 
     /** No edge carries SHIP from NEW, so the node's policy answers and nothing else is attempted. */

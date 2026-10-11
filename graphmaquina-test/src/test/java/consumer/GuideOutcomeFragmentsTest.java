@@ -30,9 +30,9 @@ import org.junit.jupiter.api.io.TempDir;
  * {@code Transition} and {@code Recovery} annotations of the recovery section, and the billing example's graph and
  * pair vocabulary, symbols and set builder, beside stand-ins for its entities, enums and hosts, for the composition
  * section; the flow section's actions, hook, handler, registry factory and trail printer compile on stand-in hosts,
- * beside stand-ins for an order, its items, their enums and facades, and a carrier. The fragments are cut out of
- * {@code docs/guide.md} verbatim and wrapped only by stand-in types and methods, so a renamed accessor in the guide
- * breaks this test the way it would break a reader.
+ * beside stand-ins for the shop's order, its items, their enums and facades, and its restock record. The fragments
+ * are cut out of {@code docs/guide.md} verbatim and wrapped only by stand-in types and methods, so a renamed accessor
+ * in the guide breaks this test the way it would break a reader.
  * A heading or block that cannot be found fails the test instead of compiling nothing. The guide, the repository and
  * the release come from the {@code readmePath}, {@code artifactRepository} and {@code artifactVersion} system
  * properties that {@code publishedArtifactTest} sets.
@@ -479,43 +479,38 @@ class GuideOutcomeFragmentsTest {
                 /** States of an item. */
                 enum ItemStatus { PENDING, CANCELLED }
                 /** Identifiers of an item. */
-                enum ItemTransition { CANCEL, SHIP }
+                enum ItemTransition { CANCEL }
 
-                /**
-                 * Order entity stand-in, which holds its id, its status, its items, the items it restocked and its
-                 * tracking number.
-                 */
+                /** Order entity stand-in, which holds its id, its status, its items and the items it restocked. */
                 static final class Order {
                     private final List<Item> items = new ArrayList<>();
                     private final List<Item> restocked = new ArrayList<>();
-                    private Optional<String> tracking = Optional.empty();
                     private OrderStatus status = OrderStatus.NEW;
                     String id() { return "o-1"; }
                     OrderStatus status() { return status; }
                     void setStatus(OrderStatus next) { status = next; }
                     List<Item> items() { return items; }
                     void restocked(Item item) { restocked.add(item); }
-                    void tracking(String number) { tracking = Optional.of(number); }
                 }
-                /** Item entity stand-in: its id, its status, and the cancellation it was restocked in. */
+                /** Item entity stand-in: its id, its status, and the batch it went back to stock in. */
                 static final class Item {
-                    private Optional<String> cancellation = Optional.empty();
+                    private Optional<String> restockedIn = Optional.empty();
                     private ItemStatus status = ItemStatus.PENDING;
                     String id() { return "i-1"; }
                     ItemStatus status() { return status; }
                     void setStatus(ItemStatus next) { status = next; }
-                    void restockedIn(String id) { cancellation = Optional.of(id); }
+                    void restockedIn(String batch) { restockedIn = Optional.of(batch); }
                 }
+                /** Restock stand-in: the batch an item goes back to stock in and the order it leaves. */
+                record Restock(String batch, Order order) { }
                 /** Item facade stand-in. */
                 interface Items extends Machine<Item, ItemStatus, ItemTransition> { }
                 /** Order facade stand-in, whose cancel takes the cancellation identifier as its input. */
                 interface Orders extends Machine<Order, OrderStatus, OrderTransition> {
                     Outcome<Order, OrderStatus, OrderTransition> cancel(Order order, String cancellationId);
                 }
-                /** Carrier service stand-in, which books a shipment and answers its tracking number. */
-                interface Carrier { String book(Order order); }
 
-                // --- "The call's flow", block 1 (the key)
+                // --- "The call's flow", block 1 (the keys)
             """;
 
     @Test
@@ -635,15 +630,10 @@ class GuideOutcomeFragmentsTest {
         source.append("    /** Order action host stand-in. */\n");
         source.append("    static final class OrderActions {\n");
         source.append(blockAfter(guide, FLOW_HEADING, 2)).append("    }\n\n");
-        source.append("    // --- block 3 (the item's action), on its host\n");
+        source.append("    // --- blocks 3 and 4 (the item's action and its hook), on their host\n");
         source.append("    /** Item action host stand-in. */\n");
         source.append("    static final class ItemActions {\n");
-        source.append(blockAfter(guide, FLOW_HEADING, 3)).append("    }\n\n");
-        source.append("    // --- block 4 (the order's shipping action and its hook), on their host\n");
-        source.append("    /** Order shipping host stand-in. */\n");
-        source.append("    static final class ShippingActions {\n");
-        source.append("        private final Carrier carrier;\n\n");
-        source.append("        ShippingActions(Carrier carrier) { this.carrier = carrier; }\n\n");
+        source.append(blockAfter(guide, FLOW_HEADING, 3)).append('\n');
         source.append(blockAfter(guide, FLOW_HEADING, 4)).append("    }\n\n");
         source.append("    // --- block 5 (reading the flow after the call), on its host\n");
         source.append("    /** Cancellation handler stand-in. */\n");

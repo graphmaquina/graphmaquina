@@ -71,15 +71,18 @@ itself and needs no declaration. Inside this repository no publication is needed
 
 The machines under test are built exactly as the application builds them: a real registry, real entities,
 and test doubles only where the domain reaches outside the process. A `TransitionRecorder` is a
-`MachineObserver`, so it is installed the way any observer is. From
+`MachineObserver`, so it is installed the way any observer is, and `recordTrail()` makes every call of the set
+record its [trail](#the-calls-flow-and-its-trail). From
 [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
 
 ```java
 final FakeGateway gateway = new FakeGateway();
 final FakeCarrier carrier = new FakeCarrier();
 final TransitionRecorder recorder = TransitionRecorder.create();
-final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
+final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier),
+                new ItemActions())
         .observer(recorder)
+        .recordTrail()
         .build();
 final Orders orders = shop.orders();
 final Items items = shop.items();
@@ -222,11 +225,11 @@ One identifier can leave several states. Each `(from, id)` pair is its own edge,
 assertThat(items.definition())
         .transition(ItemStatus.PENDING, ItemTransition.CANCEL)
         .hasTarget(ItemStatus.CANCELLED)
-        .isMove();
+        .isAction().hasActionNamed("restock").hasHookNamed("applyRestock");
 assertThat(items.definition())
         .transition(ItemStatus.PACKING, ItemTransition.CANCEL)
         .hasTarget(ItemStatus.CANCELLED)
-        .isMove();
+        .isAction().hasActionNamed("restock").hasHookNamed("applyRestock");
 ```
 
 A terminal is asserted by the absence of everything, not by a kind:
@@ -288,17 +291,40 @@ not the same question: a route may legitimately reach the state another edge als
 
 An aborted transition throws rather than returning an outcome, so the subject is the throwable.
 `captureFailure` runs the operation and hands back what it threw; it catches no `Error`, so an
-`AssertionError` raised inside the body still fails the test the way it should. From
+`AssertionError` raised inside the body still fails the test the way it should. The order below has a `PACKED`
+item, which has no `CANCEL` edge, and a `PENDING` one. From
 [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
 
 ```java
-assertThat(captureFailure(() -> orders.cancel(order))).isCascadeAbort()
+Throwable failure = captureFailure(() -> orders.cancel(order, "B-7"));
+
+assertThat(failure).isCascadeAbort()
         .hasErrorCount(1).hasPhase(CallPhase.ACTION).hasStatesWritten(StatesWritten.NONE)
-        .journal().hasActionsExactly("cancel").hasStatusesExactly(ActionStatus.THREW);
+        .journal().hasActionsExactly("cancel", "restock")
+        .hasStatusesExactly(ActionStatus.THREW, ActionStatus.OK);
+assertThat(failure).isCascadeAbort().flow()
+        .hasValue(ShopFlow.CANCELLATION, "B-7")
+        .hasNoValue(ShopFlow.restockOf(packed))
+        .hasValue(ShopFlow.restockOf(pending), new Restock("B-7", order))
+        .trail()
+        .hasEntryTypesExactly(FlowEntry.Hop.class, FlowEntry.Hop.class, FlowEntry.Failed.class)
+        .hasHopsExactly(OrderTransition.CANCEL, ItemTransition.CANCEL)
+        .endsWithFailure(CallPhase.ACTION)
+        .hops().forEntity(ItemsRuntime.KEY, pending).single()
+        .from(ItemStatus.PENDING).hasTransition(ItemTransition.CANCEL).to(ItemStatus.CANCELLED);
 assertThat(order, Order::status).isIn(OrderStatus.NEW);
 assertThat(packed, Item::status).isIn(ItemStatus.PACKED);
 assertThat(pending, Item::status).isIn(ItemStatus.PENDING);
+assertEquals(Optional.empty(), packed.restockedIn());
+assertEquals(Optional.empty(), pending.restockedIn());
+assertEquals(List.of(), order.restocked());
 ```
+
+The journal lists the actions that ran: `cancel`, which threw the aggregate of its `COLLECT` cascade, and the
+`restock` of the pending item, which completed. The flow keeps what the steps wrote, the batch and the pending item's
+restock, while its trail holds the order's hop and that item's, then the failure. No hook ran, so no entity holds the
+restock: the shop applies it in a hook, as
+[set a field only when the call commits](guide.md#set-a-field-only-when-the-call-commits) explains.
 
 `isCallFailure()` reads any failure of a call through what every kind shares, and the four call-failure views offer
 the same expectations: `hasPhase(...)`, `hasStatesWritten(...)`, `hasCallSameAs(...)`, which compares by reference
@@ -350,7 +376,7 @@ private StateSnapshot track(Order order, Item first, Item second) {
 ```java
 StateSnapshot before = track(order, packed, pending);
 
-assertThat(captureFailure(() -> orders.cancel(order))).isCascadeAbort().hasErrorCount(1);
+assertThat(captureFailure(() -> orders.cancel(order, "B-7"))).isCascadeAbort().hasErrorCount(1);
 
 before.assertUnchanged();
 ```
@@ -905,6 +931,11 @@ A trail held as a list, such as the one `trail()` of a flow returns, has its own
 List<FlowEntry> entries = traced.execute(new Publication("p8"), PublicationChange.PUBLISH).flow().trail();
 TrailAssert.assertThat(entries).hasSize(1).hasHopsExactly(PublicationChange.PUBLISH).isInTimeOrder();
 ```
+
+The shop's [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java)
+asserts the flow and the trail of a cancellation that commits, and those of one that aborts, which
+[failures and the journal](#failures-and-the-journal) shows. Its set is built with `recordTrail()`, on the system
+clock, so it asserts the entries of a trail and their order, never their instants.
 
 ## Goldens and structural snapshots
 
