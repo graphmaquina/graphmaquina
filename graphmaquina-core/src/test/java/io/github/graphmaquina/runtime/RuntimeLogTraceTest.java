@@ -852,6 +852,49 @@ class RuntimeLogTraceTest {
         }
     }
 
+    /**
+     * An Error that leaves a cascade, single or {@code COLLECT}, poisons the call but logs no poison line: the lines of
+     * the call stop where the cascaded action threw it, and the Error propagates as itself.
+     */
+    @Test
+    void anErrorThatLeavesACascadeLogsNoPoison() {
+        Doc single = new Doc("p1", DRAFT);
+        Doc collecting = new Doc("p2", DRAFT);
+        Doc first = new Doc("c1", DRAFT);
+        Doc second = new Doc("c2", DRAFT);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
+                        .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw new RuntimeLogDebugTest.Fatal("out of reviewers");
+                        }),
+                (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard
+                        .action("Collect", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            if (ctx.entity() == single) {
+                                ctx.cascade(DOCS, first, SUBMIT);
+                            } else {
+                                ctx.cascadeAll(DOCS, List.of(second), SUBMIT, CascadePolicy.COLLECT);
+                            }
+                            return ActionOutcome.ok();
+                        }));
+        try (MachineRegistry registry = registry(graph); LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            assertThrows(RuntimeLogDebugTest.Fatal.class, () -> registry.of(DOCS).execute(single, DISCARD));
+            assertThrows(RuntimeLogDebugTest.Fatal.class, () -> registry.of(DOCS).execute(collecting, DISCARD));
+            assertEquals(List.of(
+                    "FINE call=A start Doc/DocStatus DISCARD",
+                    "FINER call=A depth=0 resolved Doc/DocStatus#p1 DRAFT -DISCARD-> ARCHIVED kind=ACTION",
+                    "FINER call=A depth=0 action Collect start mode=sync",
+                    "FINER call=A depth=0 cascade Doc/DocStatus#c1 SUBMIT",
+                    "FINER call=A depth=1 resolved Doc/DocStatus#c1 DRAFT -SUBMIT-> REVIEW kind=ACTION",
+                    "FINER call=A depth=1 action Review start mode=sync",
+                    "FINE call=B start Doc/DocStatus DISCARD",
+                    "FINER call=B depth=0 resolved Doc/DocStatus#p2 DRAFT -DISCARD-> ARCHIVED kind=ACTION",
+                    "FINER call=B depth=0 action Collect start mode=sync",
+                    "FINER call=B depth=0 cascade Doc/DocStatus#c2 SUBMIT policy=COLLECT",
+                    "FINER call=B depth=1 resolved Doc/DocStatus#c2 DRAFT -SUBMIT-> REVIEW kind=ACTION",
+                    "FINER call=B depth=1 action Review start mode=sync"), lines(log));
+        }
+    }
+
     /** The watch names the owner its lookup found, and the reaction it runs is a call of its own. */
     @Test
     void aWatchTracesTheOwnerItFound() {

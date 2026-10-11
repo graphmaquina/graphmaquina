@@ -1486,7 +1486,8 @@ final class Transaction {
      * else the new abort. A failure of this call is itself the poison. Anything else, an engine exception that
      * describes no call, a throwable from a callback the engine does not wrap such as an identity function, a library
      * exception of another call or an Error, poisons through an abort of the caller's step that names the cascade and
-     * carries it as cause; COLLECT never collects that abort. A transaction keeps its first poison.
+     * carries it as cause; COLLECT never collects that abort. A transaction keeps its first poison. An Error poisons
+     * without a TRACE line: the cascade rethrows it as itself, and no line follows an Error that ends a call.
      */
     private CallFailedException poisonWith(ContextHandle caller, String target, Throwable error) {
         if (error instanceof CallFailedException own && owns(own)) {
@@ -1496,7 +1497,9 @@ final class Transaction {
         }
         TransitionAbortedException wrapper = new TransitionAbortedException(call(), phase, details(caller),
                 "the cascade to " + target + " failed: " + error, error);
-        tracePoison(caller.contextDepth(), wrapper);
+        if (!(error instanceof Error)) {
+            tracePoison(caller.contextDepth(), wrapper);
+        }
         uow.poisonWrapping(wrapper);
         return wrapper;
     }
