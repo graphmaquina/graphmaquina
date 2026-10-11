@@ -21,8 +21,8 @@ public sealed interface FlowEntry permits FlowEntry.Hop, FlowEntry.Start, FlowEn
 
     /**
      * A hop the call took. {@code hop} is the record of the hop: in the trail of an outcome, the very instance the
-     * outcome lists in {@link Outcome#records()}. {@code recovery} is present on the hop of a failure route, and says
-     * what failed.
+     * outcome lists in {@link Outcome#records()}, and in that of an {@code AfterCommitException}, the very instance
+     * its {@code records()} lists. {@code recovery} is present on the hop of a failure route, and says what failed.
      *
      * @param hop the record of the hop
      * @param recovery what failed, on the hop a failure route took; empty on any other hop
@@ -47,7 +47,8 @@ public sealed interface FlowEntry permits FlowEntry.Hop, FlowEntry.Start, FlowEn
 
     /**
      * A sub-machine the call started. {@code start} is the record of the start: in the trail of an outcome, the very
-     * instance the outcome lists in {@link Outcome#starts()}.
+     * instance the outcome lists in {@link Outcome#starts()}, and in that of an {@code AfterCommitException}, the very
+     * instance its {@code starts()} lists.
      *
      * @param start the record of the start
      * @param at when the start was logged, right after the hop that entered its node

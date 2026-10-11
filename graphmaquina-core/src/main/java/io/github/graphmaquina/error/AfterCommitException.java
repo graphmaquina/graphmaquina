@@ -17,7 +17,8 @@ import java.util.Objects;
  * order, and {@link #starts()} every sub-machine it started; a start runs no hook. The hooks of the hops before
  * {@link #hop()} ran; the later hooks and the watch reactions of the call did not. {@link #flow()} holds what the
  * steps wrote and what the hooks that ran wrote, the failing hook's writes before it threw included, and, when the
- * call records its trail, every hop and start the call committed, then the entry of this failure.
+ * call records its trail, every hop and start the call committed, wrapping the very records and starts this exception
+ * lists, then the entry of this failure.
  */
 public final class AfterCommitException extends CallFailedException {
 

@@ -495,6 +495,31 @@ class TrailTest {
     }
 
     /**
+     * Spec R15.1 for a hook that throws: the call built the records and the starts of what it committed once, and its
+     * {@code AfterCommitException} lists them; the hop and the start entries of its trail wrap those very instances.
+     */
+    @Test
+    void aHookFailureTrailWrapsTheRecordsAndStartsItsFailureLists() {
+        Billing billing = new Billing();
+        billing.afterHook = (String hop) -> {
+            throw new IllegalStateException("audit unreachable");
+        };
+        Booking booking = new Booking("b1", BookingStatus.REQUESTED)
+                .attachDeposit(new Payment("d1", PaymentStatus.AUTHORIZING));
+        AfterCommitException failure;
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(billing.bookingMachine().recordTrail(new TickingClock())).add(billing.paymentMachine()).build()) {
+            failure = assertThrows(AfterCommitException.class,
+                    () -> registry.of(BOOKINGS).execute(booking, BookingTransition.BOOK));
+        }
+        List<FlowEntry> trail = failure.flow().trail();
+        assertEquals(3, trail.size());
+        assertSame(failure.records().get(0), hopOf(trail.get(0)));
+        assertSame(failure.starts().get(0), assertInstanceOf(FlowEntry.Start.class, trail.get(1)).start());
+        assertInstanceOf(FlowEntry.Failed.class, trail.get(2));
+    }
+
+    /**
      * Spec R8.3: a rejected call ends with its rejection, read when the root built its outcome: the root's machine and
      * entity, the state, the identifier, the kind, the reason and the guard, if one rejected.
      */

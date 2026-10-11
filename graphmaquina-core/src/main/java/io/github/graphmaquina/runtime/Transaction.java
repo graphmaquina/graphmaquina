@@ -24,6 +24,7 @@ import io.github.graphmaquina.api.SubmachineStart;
 import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AbortDetails;
+import io.github.graphmaquina.error.AfterCommitException;
 import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.AmbiguousParentException;
 import io.github.graphmaquina.error.CallFailedException;
@@ -162,13 +163,17 @@ final class Transaction {
     /**
      * The call's flow as {@code failure}, a failure of this call, hands it out: as {@link #frozenFlow(List, List)}
      * says, the trail built from the log as the call left it and ended as {@link #endWith} says, with what
-     * {@link #failureOf} tells the observers of {@code failure}.
+     * {@link #failureOf} tells the observers of {@code failure}. The hop and start entries of an
+     * {@link AfterCommitException} wrap the records and starts it lists, which the commit built; those of any other
+     * failure wrap records and starts built from the log once, here.
      */
     FlowView frozenFlow(CallFailedException failure) {
         if (!uow.recordsTrail()) {
             return frozen(List.of());
         }
-        List<FlowEntry> trail = uow.trailOf(uow.records(), uow.starts());
+        List<FlowEntry> trail = failure instanceof AfterCommitException hooked
+                ? uow.trailOf(hooked.records(), hooked.starts())
+                : uow.trailOf(uow.records(), uow.starts());
         endWith(trail, failureOf(failure), uow.clock());
         return frozen(trail);
     }
