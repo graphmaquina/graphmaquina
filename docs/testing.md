@@ -842,7 +842,8 @@ value, and a key that holds another value with `Optional[...]` of that value.
 `hasHopsExactly` compares the identifier of every hop, in order, and skips the sub-machine starts and the final entry,
 so with no argument it expects a trail without a hop. `hops()` opens the records of those hops, in the view that
 `records()` opens on an outcome: `forEntity(key, entity)` and `containsExactly(records)` read which machine and entity
-took each hop and from which state to which, on the trail of a failed call too, which has no `records()`.
+took each hop and from which state to which, on the trail of a call that failed before its hooks too, whose exception
+lists no `records()`.
 `isInTimeOrder` checks that no entry's `at()` is earlier than
 the one of the entry before it, so equal instants pass. `endsWithRejection(kind)` and `endsWithFailure(phase)` read
 the final entry. Build the machine on a clock the test controls.
