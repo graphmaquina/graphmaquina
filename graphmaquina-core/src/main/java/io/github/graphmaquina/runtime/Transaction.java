@@ -556,7 +556,9 @@ final class Transaction {
      *       terminal in the entity's graph, {@link #exitParent} runs the parent's exit.</li>
      * </ul>
      * Each exit is a step of its own, which runs its own exits in turn, so a chain climbs one binding per level.
-     * Returns {@code result} itself: the outcome of a call is its own step's.
+     * Returns {@code result} itself: the outcome of a call is its own step's. When {@code result} took a failure route
+     * that a throwable selected, an abort that {@link #exit} builds for this step holds that throwable as suppressed,
+     * as {@link #keepingOriginal} says; the aborts of an exit's own step do not.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> exits(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, int depth, StepResult<S, T> result,
@@ -566,12 +568,15 @@ final class Transaction {
         }
         S reached;
         T last;
+        Optional<Throwable> original;
         if (result instanceof StepResult.Applied<S, T> applied) {
             reached = applied.to();
             last = applied.transition();
+            original = Optional.empty();
         } else if (result instanceof StepResult.Failed<S, T> failed) {
             reached = failed.movedTo();
             last = failed.failureTransition();
+            original = failed.cause();
         } else {
             return result;
         }
@@ -579,13 +584,13 @@ final class Transaction {
         if (machine.bindsSubmachines()) {
             Optional<SubmachineSpec<E, S, T, ?, ?, ?>> bound = machine.definition().submachine(current);
             if (bound.isPresent() && exitEntered(machine, ref, entity, bound.get(), depth, machine, ref,
-                    result.from(), last, reached)) {
+                    result.from(), last, reached, original)) {
                 return result;
             }
         }
         if (holder.isPresent() && machine.definition().terminals().contains(current)) {
             exitParent(machine, ref, result.from(), last, current, depth, holder.get().binding(),
-                    holder.get().parent(), holder.get().logAtCheck());
+                    holder.get().parent(), holder.get().logAtCheck(), original);
         }
         return result;
     }
@@ -599,13 +604,14 @@ final class Transaction {
      * exits normally. When a descendant's exit enters the node again, the latest start under the parent logged since
      * the selection decides, as in {@link #exitParent}: another child cancels the node's exit, and for the same child
      * the exit runs only if its state, read again, is terminal. The position of the log at the selection marks what
-     * came after; starts are never compared by value.
+     * came after; starts are never compared by value. {@code original} is the throwable that selected the failure
+     * route of that entering step, if one did, for {@link #exit}.
      * Returns whether any exit ran, including an exit that already completed the containing machine.
      */
     private <E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>> boolean exitEntered(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity,
             SubmachineSpec<E, S, T, P, Q, U> spec, int depth, DefaultStateMachine<?, ?, ?> origin,
-            EntityRef originRef, Enum<?> from, Enum<?> last, Enum<?> reached) {
+            EntityRef originRef, Enum<?> from, Enum<?> last, Enum<?> reached, Optional<Throwable> original) {
         Optional<LogEntry.Start> selected = uow.lastStartUnder(ref);
         if (selected.isEmpty() || selected.get().node() != spec.state()
                 || !selected.get().ref().key().equals(spec.childKey())) {
@@ -620,7 +626,7 @@ final class Transaction {
             Optional<SubmachineSpec<P, Q, U, ?, ?, ?>> descendant = childMachine.definition().submachine(state);
             if (descendant.isPresent()) {
                 exited = exitEntered(childMachine, start.ref(), spec.childKey().entity().cast(start.ref().instance()),
-                        descendant.get(), depth, origin, originRef, from, last, reached);
+                        descendant.get(), depth, origin, originRef, from, last, reached, original);
             }
         }
         Optional<LogEntry.Start> reentry = uow.lastStartUnderSince(ref, selectedAt);
@@ -633,7 +639,7 @@ final class Transaction {
         if (!childMachine.definition().terminals().contains(state)) {
             return exited;
         }
-        exit(machine, ref, spec, start.ref(), state, origin, originRef, from, last, reached, depth);
+        exit(machine, ref, spec, start.ref(), state, origin, originRef, from, last, reached, depth, original);
         return true;
     }
 
@@ -647,11 +653,13 @@ final class Transaction {
      * Otherwise the exit retains the binding's node as its source, so a parent moved externally since the binding
      * check conflicts with that source at commit before any state is written. Neither the parent's state nor its
      * childOf is read again: the binding check at the start of the child's step decided which parent holds the child,
-     * and only this unit of work's own effects since then can cancel the exit.
+     * and only this unit of work's own effects since then can cancel the exit. {@code original} is the throwable that
+     * selected the failure route of the child's step, if one did, for {@link #exit}.
      */
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> void exitParent(
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> last, Enum<?> terminal,
-            int depth, SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef, int logAtCheck) {
+            int depth, SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef, int logAtCheck,
+            Optional<Throwable> original) {
         SubmachineSpec<A, B, C, P, Q, U> spec = binding.spec();
         if (uow.inFlight(parentRef).isPresent()) {
             return;
@@ -666,7 +674,7 @@ final class Transaction {
         }
         DefaultStateMachine<A, B, C> parentMachine = registry.machineFor(binding.parentKey());
         exit(parentMachine, parentRef, spec, ref, spec.childKey().states().cast(terminal), machine, ref, from, last,
-                terminal, depth);
+                terminal, depth, original);
     }
 
     /**
@@ -674,28 +682,29 @@ final class Transaction {
      * selects in {@code spec}: a step at the depth after {@code depth}, the depth of the step that ended, in the same
      * unit of work, without input and with the privilege of a reserved exit. A terminal that {@code spec} maps to no
      * exit, which only a hand-written graph can hold, and an exit deeper than maxCascadeDepth abort the step that
-     * ended, which {@code machine}, {@code ref}, {@code from}, {@code last} and {@code reached} describe; the exit
-     * it selected is logged at TRACE before the depth is checked.
+     * ended, which {@code machine}, {@code ref}, {@code from}, {@code last} and {@code reached} describe, and hold
+     * {@code original}, the throwable that selected the failure route of that step, if one did, as suppressed before
+     * they poison the call; the exit it selected is logged at TRACE before the depth is checked.
      */
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> void exit(
             DefaultStateMachine<A, B, C> parentMachine, EntityRef parentRef, SubmachineSpec<A, B, C, P, Q, U> spec,
             EntityRef child, Q terminal, DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
-            Enum<?> last, Enum<?> reached, int depth) {
+            Enum<?> last, Enum<?> reached, int depth, Optional<Throwable> original) {
         Optional<C> exit = Optional.ofNullable(spec.exits().get(terminal));
         if (exit.isEmpty()) {
-            throw abort(machine, ref, from, Optional.of(last), Optional.of(reached), Optional.empty(), depth,
-                    "the terminal " + terminal.name() + " of " + spec.childKey() + " has no exit in "
-                            + spec.state().name(),
-                    Optional.empty());
+            throw poisonIfNested(depth, keepingOriginal(unpoisonedAbort(machine, ref, from, Optional.of(last),
+                    Optional.of(reached), Optional.empty(), "the terminal " + terminal.name() + " of "
+                            + spec.childKey() + " has no exit in " + spec.state().name(), Optional.empty()),
+                    original));
         }
         if (log.trace()) {
             log.trace(depth, "submachine-exit " + CallLog.show(child) + " terminal=" + terminal.name() + " parent="
                     + CallLog.show(parentRef) + " exit=" + exit.get().name());
         }
         if (depth + 1 > uow.maxDepth()) {
-            throw poisonIfNested(depth, new CascadeDepthExceededException(call(),
+            throw poisonIfNested(depth, keepingOriginal(new CascadeDepthExceededException(call(),
                     details(machine, ref, from, Optional.of(last), Optional.of(reached), Optional.empty()),
-                    uow.maxDepth()));
+                    uow.maxDepth()), original));
         }
         step(parentMachine, parentMachine.key().entity().cast(parentRef.instance()), exit.get(), depth + 1,
                 Optional.empty(), Optional.of(new ExitOf(spec.state(), child)));
@@ -1331,13 +1340,16 @@ final class Transaction {
      * the failure unhandled. The result carries {@code failureKind} as it is. A recovery action that throws, or
      * completes its stage with, a throwable that is neither an Error thrown as itself nor a failure of the call aborts
      * the call with it as cause, and the abort holds {@code cause}, the original throwable, as suppressed when it is
-     * present and another one: adding it reads no message. The engine's own abort of the recovery step, for a null
-     * outcome or stage or a wait that timed out, was interrupted or was refused, holds it as suppressed too, before it
-     * poisons the call, unless that abort is caused by that very throwable; a poison stored earlier still ends the call
-     * as it is. A call that logs at TRACE logs the route, or the unhandled failure, once the rollback is done. A call
-     * that records its trail leaves what failed on the mark of the recovery hop, which sits at the savepoint since the
-     * rollback truncated the log there, as soon as the hop is marked: before a sub-machine its target binds starts and
-     * before the recovery action runs.
+     * present and another one: adding it reads no message. These aborts that the engine builds for the recovery step
+     * hold it as suppressed too, unless one is caused by that very throwable, as {@link #keepingOriginal} says: its own
+     * abort of the recovery action, for a null outcome or stage or a wait that timed out, was interrupted or was
+     * refused, before it poisons the call, where a poison stored earlier still ends the call as it is; the abort of a
+     * sub-machine that the recovery hop enters and that cannot start, once it poisoned the call, since no poison can
+     * precede it; and, once this method returned, the abort that {@link #exit} builds for this step when the exit that
+     * a terminal state selects cannot run. A call that logs at TRACE logs the route, or the unhandled failure, once the
+     * rollback is done. A call that records its trail leaves what failed on the mark of the recovery hop, which sits at
+     * the savepoint since the rollback truncated the log there, as soon as the hop is marked: before a sub-machine its
+     * target binds starts and before the recovery action runs.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> failing, int depth,
@@ -1370,7 +1382,12 @@ final class Transaction {
         Optional<FlowEntry.Recovery> recovered = uow.recordsTrail()
                 ? Optional.of(new FlowEntry.Recovery(failing.transition(), reason, cause, failureKind))
                 : Optional.empty();
-        appendHop(machine, ref, entity, route, depth, recovered);
+        try {
+            appendHop(machine, ref, entity, route, depth, recovered);
+        } catch (TransitionAbortedException entering) {
+            // Only the abort a start built for this hop gets here, on a unit of work that no poison preceded.
+            throw keepingOriginal(entering, cause);
+        }
         if (route.action().isPresent()) {
             ActionRef<E, S, T> action = route.action().orElseThrow();
             int journalIndex = uow.appendJournal(new ActionRecord(machine.key(), entity, from, recoveryId, route.to(),
@@ -1388,24 +1405,16 @@ final class Transaction {
                 if (recoveryCause instanceof CallFailedException own && owns(own)) {
                     throw poisonOr(own);
                 }
-                TransitionAbortedException aborted = unpoisonedAbort(machine, ref, from, Optional.of(recoveryId),
-                        Optional.of(route.to()), Optional.of(action.name()),
+                throw poisonIfNested(depth, keepingOriginal(unpoisonedAbort(machine, ref, from,
+                        Optional.of(recoveryId), Optional.of(route.to()), Optional.of(action.name()),
                         "the failure route action " + action.name() + " threw after the original failure ("
                                 + reason + ")",
-                        Optional.of(recoveryCause));
-                if (cause.isPresent() && cause.get() != recoveryCause) {
-                    aborted.addSuppressed(cause.get());
-                }
-                throw poisonIfNested(depth, aborted);
+                        Optional.of(recoveryCause)), cause));
             } catch (EngineAbort aborted) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
                 settle(ctx);
-                TransitionAbortedException abort = aborted.abort();
-                if (cause.isPresent() && cause.get() != abort.getCause()) {
-                    abort.addSuppressed(cause.get());
-                }
                 // As in runAction: a poison stored earlier still wins.
-                throw poisonOr(poisonIfNested(depth, abort));
+                throw poisonOr(poisonIfNested(depth, keepingOriginal(aborted.abort(), cause)));
             } catch (CallFailedException e) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
                 settle(ctx);
@@ -1490,6 +1499,18 @@ final class Transaction {
                                              Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action,
                                              int depth, String message, Optional<Throwable> cause) {
         return poisonIfNested(depth, unpoisonedAbort(machine, ref, from, id, to, action, message, cause));
+    }
+
+    /**
+     * {@code abort}, which the engine built for a step that took a failure route, holding as suppressed
+     * {@code original}, the throwable that selected the route, when there is one and it is not the abort's own cause.
+     * Adding it reads no message.
+     */
+    private static <X extends TransitionAbortedException> X keepingOriginal(X abort, Optional<Throwable> original) {
+        if (original.isPresent() && original.get() != abort.getCause()) {
+            abort.addSuppressed(original.get());
+        }
+        return abort;
     }
 
     /** {@link #abort} that poisons nothing yet: an EngineAbort carries it to where the call is poisoned with it. */
