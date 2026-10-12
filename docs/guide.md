@@ -2,7 +2,7 @@
 
 [![Maven Central](https://img.shields.io/maven-central/v/io.github.graphmaquina/graphmaquina-core)](https://central.sonatype.com/artifact/io.github.graphmaquina/graphmaquina-core)
 
-![GraphMaquina: typed graphs and predictable transitions, illustrated by a ticket moving from OPEN through REVIEW to DONE or FAILED.](images/graphmaquina-overview.svg)
+![GraphMaquina: typed graphs and predictable transitions, illustrated by a ticket that goes from OPEN through REVIEW to DONE, or from OPEN to FAILED through the failure route of SUBMIT.](images/graphmaquina-overview.svg)
 
 Typed, graph-based state machines for Java 21. Declare the transitions your domain allows as identified
 edges, give every state a reason for refusing the rest, and let the build validate the whole graph before the
