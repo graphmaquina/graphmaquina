@@ -606,8 +606,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **Raw results the companion could only take unchecked.** A watch's peers reader that returns a raw collection is
   refused with `SG503`, and an action or a guard that returns a raw `CompletionStage` with `SG604` where it is
   declared: only an unchecked conversion made either one a collection of peers or a stage of the verdict. The
-  companion used to compile against them only with unchecked warnings, which `-Werror` turns into errors, and javac
-  refused it outright for a raw peers reader under a watch whose rule names a condition.
+  companion used to compile against them only with unchecked warnings, which javac reports under `-Xlint:unchecked`
+  or `-Xlint:all` and `-Werror` then turns into errors, and javac refused it outright for a raw peers reader under a
+  watch whose rule names a condition.
 - **`@GraphBindings` exports only what the host inherits.** Generated code calls a static binding through the host,
   so a marked static method of an interface is exported only through the interface's own symbol, and one that the
   host or a superclass between hides with a method of the same name and parameter types is not exported through the
@@ -624,18 +625,19 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a member
   type of the facade named like a type they write, with parameter names that would have been keywords, with
   deprecated bound members, a raw operation input or an entity that is an inner class of a generic class, used raw,
-  under `-Werror`, with a cast whose type annotations name enum constants, beside static overloads of the state and
-  identity accessors, in a set with an accessor named `machineRegistry`, with a constant the source encoding cannot
-  represent, such as one named with a Greek letter in an ISO-8859-1 build, for a machine of hundreds or thousands of
-  cells, whose graph the companion declared as one chain of calls, which overflowed javac's stack on a thread of
-  1 MiB at a few hundred cells and, at a few thousand, exceeded the code one method may hold, and for a bound member
-  or accessor that declares a checked exception, which is now handled as the same exception thrown undeclared would
-  be. A companion now declares the graph one statement per declaration, in methods of at most a hundred, and holds
-  ASCII only, writing every other character as a `\uXXXX` escape, so a text such as a policy's `otherwise` also
-  keeps a character the source encoding cannot represent, and an unpaired surrogate, which no encoding represents,
-  where `?` used to replace it. The vocabularies and the references containers the generator writes suppress the
-  deprecation and removal warnings of the hosts, machines and enums they name, as the companions do, so deprecating
-  one, even for removal, no longer fails a `-Werror` build inside a generated file.
+  under `-Xlint:all -Werror`, with a cast whose type annotations name enum constants, beside static overloads of
+  the state and identity accessors, in a set with an accessor named `machineRegistry`, with a constant the source
+  encoding cannot represent, such as one named with a Greek letter in an ISO-8859-1 build, for a machine of
+  hundreds or thousands of cells, whose graph the companion declared as one chain of calls, which overflowed
+  javac's stack on a thread of 1 MiB at a few hundred cells and, at a few thousand, exceeded the code one method
+  may hold, and for a bound member or accessor that declares a checked exception, which is now handled as the same
+  exception thrown undeclared would be. A companion now declares the graph one statement per declaration, in
+  methods of at most a hundred, and holds ASCII only, writing every other character as a `\uXXXX` escape, so a text
+  such as a policy's `otherwise` also keeps a character the source encoding cannot represent, and an unpaired
+  surrogate, which no encoding represents, where `?` used to replace it. The vocabularies and the references
+  containers the generator writes suppress the deprecation and removal warnings of the hosts, machines and enums
+  they name, as the companions do, so deprecating one no longer fails a build under `-Xlint:all -Werror` inside a
+  generated file, nor deprecating one for removal a build under `-Werror` alone.
 - **Generated sources are documented.** Every public member of a vocabulary, a companion and a set carries a
   documentation comment with the `@param` and `@return` tags its signature calls for, most vocabulary elements in
   the inline form `{@return ...}`, but the methods a companion or a set implements, whose comments `javadoc`
