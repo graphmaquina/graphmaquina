@@ -36,6 +36,7 @@ import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UnhandledFailureException;
 import io.github.graphmaquina.internal.FrozenFlow;
+import io.github.graphmaquina.internal.Texts;
 import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -1420,6 +1421,17 @@ final class Transaction {
                 Optional.of(caller.toState()), Optional.empty(), uow.path(), uow.journal());
     }
 
+    /**
+     * {@link #details(ContextHandle)} for when printing what was in flight threw an Error: the path names each
+     * entity's machine alone, so building it prints no identity.
+     */
+    private AbortDetails bareDetails(ContextHandle caller) {
+        uow.markRunningAsThrew();
+        return new AbortDetails(caller.machineKey(), caller.entityInstance(),
+                Optional.of(caller.fromState()), Optional.of(caller.requestedTransition()),
+                Optional.of(caller.toState()), Optional.empty(), uow.machinePath(), uow.journal());
+    }
+
     // Peers and cascading.
 
     /**
@@ -1501,15 +1513,26 @@ final class Transaction {
      * describes no call, a throwable from a callback the engine does not wrap such as an identity function, a library
      * exception of another call or an Error, poisons through an abort of the caller's step that names the cascade and
      * carries it as cause; COLLECT never collects that abort. A transaction keeps its first poison. An Error poisons
-     * without a TRACE line: the cascade rethrows it as itself, and no line follows an Error that ends a call.
+     * without a TRACE line: the cascade rethrows it as itself, and no line follows an Error that ends a call. The abort
+     * prints the failure and the entities in flight through {@link Texts#shown} and {@link EntityRef#toString()}, so
+     * one that cannot be printed shows a marker; when printing them throws an Error, the transaction is first poisoned
+     * by an abort that names the failure's class and each entity's machine alone, and then that Error propagates.
      */
     private CallFailedException poisonWith(ContextHandle caller, String target, Throwable error) {
         if (error instanceof CallFailedException own && owns(own)) {
             poisonAt(caller.contextDepth(), own);
             return own;
         }
-        TransitionAbortedException wrapper = new TransitionAbortedException(call(), phase, details(caller),
-                "the cascade to " + target + " failed: " + error, error);
+        String cascade = "the cascade to " + target + " failed: ";
+        TransitionAbortedException wrapper;
+        try {
+            wrapper = new TransitionAbortedException(call(), phase, details(caller), cascade + Texts.shown(error),
+                    error);
+        } catch (Error fatal) {
+            uow.poisonWrapping(new TransitionAbortedException(call(), phase, bareDetails(caller),
+                    cascade + error.getClass().getName(), error));
+            throw fatal;
+        }
         boolean first = !uow.isPoisoned();
         uow.poisonWrapping(wrapper);
         if (first && !(error instanceof Error)) {
@@ -1636,7 +1659,9 @@ final class Transaction {
     /**
      * The rest of cascadeAll once its elements are accepted: the identifier, the machine, then every element. A call
      * that logs at TRACE logs each COLLECT element it rolls back, once the identity of the element was registered,
-     * with the abort that ended its step.
+     * with the abort that ended its step. When printing the entities in flight for the aggregate throws an Error, an
+     * aggregate whose path names each entity's machine alone poisons the transaction first, as {@link #poisonWith}
+     * says, and then that Error propagates.
      */
     private <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeEach(
             ContextHandle caller, MachineKey<P, Q, U> key, List<P> elements, U id, CascadePolicy policy) {
@@ -1682,7 +1707,13 @@ final class Transaction {
             }
         }
         if (!errors.isEmpty()) {
-            CascadeException aggregate = new CascadeException(call(), details(caller), errors);
+            CascadeException aggregate;
+            try {
+                aggregate = new CascadeException(call(), details(caller), errors);
+            } catch (Error fatal) {
+                uow.poison(new CascadeException(call(), bareDetails(caller), errors));
+                throw fatal;
+            }
             poisonAt(caller.contextDepth(), aggregate);
             throw aggregate;
         }

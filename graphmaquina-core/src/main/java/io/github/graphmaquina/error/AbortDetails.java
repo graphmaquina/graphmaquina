@@ -26,7 +26,8 @@ import lombok.NonNull;
  *     action, and the abort the engine raises when its own code lets a failure through, which names no action even
  *     while one ran
  * @param cascadePath the entities in flight, outermost first; the engine prints each as {@code key#id}, with
- *     {@code <toString threw <class name>>} in place of an id whose {@code toString()} throws anything but an Error
+ *     {@code <toString threw <class name>>} in place of an id whose {@code toString()} throws anything but an Error,
+ *     and as its machine key alone in the abort that poisons a cascade when printing threw an Error
  * @param journal the actions that ran, in order, with their status
  */
 public record AbortDetails(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity, @NonNull Optional<Enum<?>> from,

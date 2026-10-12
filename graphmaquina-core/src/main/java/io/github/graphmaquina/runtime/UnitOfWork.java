@@ -325,6 +325,15 @@ final class UnitOfWork {
         return List.copyOf(path);
     }
 
+    /** The machine of each entity in flight, outermost first: a path that prints no identity. */
+    List<String> machinePath() {
+        List<String> path = new ArrayList<>();
+        for (InFlight flight : inFlight) {
+            path.add(flight.ref().key().toString());
+        }
+        return List.copyOf(path);
+    }
+
     boolean isPoisoned() { return poison.isPresent(); }
 
     Optional<StateMachineException> poison() { return poison; }
