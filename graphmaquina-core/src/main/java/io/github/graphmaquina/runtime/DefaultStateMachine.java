@@ -80,6 +80,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final boolean hasBindings;
     /** The clock of the trail of every root call this machine starts; empty when it records no trail. */
     private final Optional<InstantSource> trail;
+    /** See {@link #releasedTransaction()}. */
+    private final Transaction released;
 
     DefaultStateMachine(GraphDefinition<E, S, T> definition, Function<? super E, ? extends S> getter,
                         BiConsumer<? super E, ? super S> setter, Optional<Function<? super E, ?>> identity,
@@ -100,6 +102,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         this.bindsSubmachines = bindsSubmachines(definition);
         this.hasBindings = bindsSubmachines || !bindingsAsChild.isEmpty();
         this.trail = trail;
+        this.released = Transaction.released(registry, definition.key());
     }
 
     /** Whether some state of {@code definition} holds a sub-machine. */
@@ -121,6 +124,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /** Whether some state of this machine's own definition holds a sub-machine; computed once, at construction. */
     boolean bindsSubmachines() { return bindsSubmachines; }
+
+    /**
+     * The transaction of no call that a context of this machine holds once invalidated, in place of its call's, as
+     * {@link Transaction#released} says; made once, at construction, so that invalidating a context allocates nothing.
+     */
+    Transaction releasedTransaction() { return released; }
 
     /**
      * Whether this machine takes part in a binding: its own definition binds a sub-machine, or some definition binds

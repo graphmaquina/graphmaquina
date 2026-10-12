@@ -47,6 +47,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletionStage;
+import java.util.function.Supplier;
 
 /**
  * Engine of a root transaction. All the state of the transition lives here and in the UnitOfWork, the phase of its
@@ -96,6 +97,17 @@ final class Transaction {
         this.log = Objects.requireNonNull(log, "log");
     }
 
+    /**
+     * The transaction of no call, which a context of the machine with the key {@code key} holds in place of the
+     * transaction of its call once invalidated, so that a context kept after its call keeps neither that call nor its
+     * unit of work reachable. Nothing uses it: an invalidated context refuses every operation before it reaches its
+     * transaction. Its unit of work is its own, and empty, and {@code key} stands in for its entity.
+     */
+    static Transaction released(MachineRegistry registry, MachineKey<?, ?, ?> key) {
+        return new Transaction(registry, new UnitOfWork(0, 0L), key, key, Optional.empty(), false, Optional.empty(),
+                CallLog.OFF);
+    }
+
     /** The log of the call this transaction runs. */
     CallLog log() { return log; }
 
@@ -126,12 +138,12 @@ final class Transaction {
     UnitOfWork uow() { return uow; }
 
     /**
-     * A handle on the call's flow for a context of this call at {@code depth}, checked by {@code guard}, that
-     * context's own check. It does not create the flow: the first write of the call does, with the entity of the
-     * root call, unless the call records its trail, whose flow exists from its start.
+     * A handle on the call's flow for a context of this call at {@code depth}, which reaches the call's unit of work
+     * through {@code unit}, that context's own check. It does not create the flow: the first write of the call does,
+     * with the entity of the root call, unless the call records its trail, whose flow exists from its start.
      */
-    FlowHandle flow(Runnable guard, int depth) {
-        return FlowHandle.of(uow, callEntity, guard, log, depth);
+    FlowHandle flow(Supplier<UnitOfWork> unit, int depth) {
+        return FlowHandle.of(unit, callEntity, log, depth);
     }
 
     /**
@@ -1569,13 +1581,14 @@ final class Transaction {
     // Peers and cascading.
 
     /**
-     * {@code guard} is the caller context's own check: the view stays as alive as the context that made it. A read
-     * stages nothing, so it never poisons: neither does an unknown key here, nor an unknown facade in peerKeyFor.
+     * {@code unit} is the caller context's own check, which answers the call's unit of work: the view stays as alive
+     * as the context that made it, and holds nothing of the call once that context is invalidated. A read stages
+     * nothing, so it never poisons: neither does an unknown key here, nor an unknown facade in peerKeyFor.
      */
-    <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(ContextHandle caller, Runnable guard,
+    <P, Q extends Enum<Q>, U extends Enum<U>> PeerView<P, Q, U> peer(ContextHandle caller, Supplier<UnitOfWork> unit,
                                                                      MachineKey<P, Q, U> key) {
         checkPoison(caller);
-        return new DefaultPeerView<>(guard, uow, registry.machineFor(key));
+        return new DefaultPeerView<>(unit, registry.machineFor(key));
     }
 
     /**

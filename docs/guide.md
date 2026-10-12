@@ -2240,9 +2240,11 @@ flow.](images/async-context-boundary.svg)
 operation of a context's flow, `get`, `keys`, `entity`, `trail`, `put` and `remove`, require both the original
 operation thread and a live transaction. A wrong thread produces `WrongThreadException`; use after invalidation produces
 `StaleContextException`. After the root commits or aborts, its transaction-aware context is invalidated before
-post-commit hooks run. The flow a hook receives from its `CommitContext` is checked the same way, against the thread
-running the hook and the hook's own run: it goes stale once the hook returns or throws. The flow the caller receives
-once the call ended, in its outcome or its failure, is a frozen copy without these checks.
+post-commit hooks run. Once invalidated, a context, its peer views and its flow let go of the call, so one retained
+after the call keeps neither the call nor the values of its flow in memory. The flow a hook receives from its
+`CommitContext` is checked the same way, against the thread running the hook and the hook's own run: it goes stale
+once the hook returns or throws. The flow the caller receives once the call ended, in its outcome or its failure, is a
+frozen copy without these checks.
 
 Cascades also require that the commit has not begun and that no step is being rolled back. A retained action context
 used for `cascade(...)` or `cascadeAll(...)` from a commit getter or setter, or from an identity's `equals` or

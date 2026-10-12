@@ -18,7 +18,9 @@ import java.util.Optional;
  * any element runs and never reads it again: a change made to the collection while the cascade runs, by an element's
  * action for instance, changes neither which elements run nor their order. Peer views, cascades and the call's
  * {@link #flow()} work only on the thread that called {@code process()} and only until the root transaction ends:
- * elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}.
+ * elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}. Once it ends, the
+ * context, its peer views and its flow let go of the call: one retained after it keeps neither the call nor the values
+ * of its flow in memory.
  * Cascades must also run before the commit begins, and not while a step is rolled back: a retained context used to
  * cascade from a commit getter or setter, or from an identity's {@code equals} or {@code hashCode} that a rollback
  * calls, throws {@code IllegalStateException} before it stages anything, since the commit has fixed its changes and
