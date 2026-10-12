@@ -1647,7 +1647,8 @@ final class Transaction {
     /**
      * {@link #cascade(ContextHandle, MachineKey, Object, Enum)}, or one element of a FAIL_FAST cascadeAll, whose
      * {@code policy} the element's TRACE line names; it is empty for a single cascade and when the call does not log
-     * at TRACE.
+     * at TRACE. An element runs inside the catch of {@link #cascadeEach}, which condemns the call: since the elements
+     * before it may have staged their hops, whatever strikes while its arguments are checked again poisons the call.
      */
     private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(
             ContextHandle caller, MachineKey<P, Q, U> key, P peer, U id, Optional<CascadePolicy> policy) {
@@ -1819,7 +1820,9 @@ final class Transaction {
      * nothing. The arguments are refused before any element runs, as cascade refuses its own, and the refusal stages
      * nothing and poisons nothing: a null element first, then an identifier from another catalogue, which the key
      * carries. The machine is looked up next, before any element runs, so an unknown key poisons whatever valid
-     * elements the collection holds, and an empty collection too, as it does in cascade.
+     * elements the collection holds, and an empty collection too, as it does in cascade. Once the identifier is
+     * accepted, whatever ends the cascade poisons the call, as {@link #cascadeEach} says, an Error that strikes between
+     * two elements, after the first one staged its hop, too.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(ContextHandle caller,
                                                                                 MachineKey<P, Q, U> key,
@@ -1853,7 +1856,12 @@ final class Transaction {
     }
 
     /**
-     * The rest of cascadeAll once its elements are accepted: the identifier, the machine, then every element. A call
+     * The rest of cascadeAll once its elements are accepted: the identifier, the machine, then every element. Once the
+     * identifier is accepted, all of it runs inside a catch whose first statement condemns the call with a store, which
+     * needs neither stack nor memory, as the catch of a single cascade does: whatever ends the cascade from then on
+     * poisons the call, the lookup of the machine included, and so does an Error that strikes where no element's catch
+     * runs, between two elements, while an element's arguments are checked again or while the outcomes are gathered.
+     * Such an Error leaves as itself, and {@link #settle} records it, unless a poison is stored already. A call
      * that logs at TRACE logs each COLLECT element it rolls back, once the identity of the element was registered,
      * with the abort that ended its step. An element that fails before its step runs, a cycle or the depth limit,
      * poisons the call through {@link #poisonAt} before it is rolled back, so its poison is logged as a single
@@ -1869,73 +1877,81 @@ final class Transaction {
     private <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeEach(
             ContextHandle caller, MachineKey<P, Q, U> key, List<P> elements, U id, CascadePolicy policy) {
         requireTransition(key, id);
-        requireMachine(caller, key);
-        List<Outcome<P, Q, U>> outcomes = new ArrayList<>();
-        List<TransitionAbortedException> errors = new ArrayList<>();
-        // Only the TRACE lines read the policy and the element's reference: a call that does not log at TRACE keeps
-        // neither, and allocates nothing for them.
-        Optional<CascadePolicy> traced = log.trace() ? Optional.of(policy) : Optional.empty();
-        for (P peer : elements) {
-            if (policy == CascadePolicy.FAIL_FAST) {
-                outcomes.add(cascade(caller, key, peer, id, traced));
-                continue;
-            }
-            int savepoint = uow.savepoint();
-            Optional<EntityRef> target = Optional.empty();
-            try {
-                DefaultStateMachine<P, Q, U> machine = registry.machineFor(key);
-                EntityRef ref = uow.register(machine.refOf(peer));
-                if (log.trace()) {
-                    target = Optional.of(ref);
-                }
-                outcomes.add(cascadeTo(caller, machine, ref, peer, id, traced));
-            } catch (Throwable error) {
-                // As in cascade: a store first, then a VirtualMachineError leaves as itself.
-                condemned = true;
-                if (error instanceof VirtualMachineError fatal) {
-                    throw fatal;
-                }
-                if (error instanceof TransitionAbortedException abort && owns(abort)
-                        && !uow.poisonWrapsAForeignFailure()) {
-                    poisonAt(caller.contextDepth(), abort);
-                    try {
-                        uow.rollbackTo(savepoint);
-                    } catch (Error fatal) {
-                        throw fatal;
-                    } catch (Throwable stopped) {
-                        uow.clearPoison();
-                        TransitionAbortedException interrupted = poisonThrough(caller, key.toString(), stopped);
-                        interrupted.addSuppressed(abort);
-                        throw interrupted;
-                    }
-                    if (target.isPresent()) {
-                        log.trace(caller.contextDepth(), "collect-rollback " + CallLog.show(target.get()) + " "
-                                + id.name() + " error=" + CallLog.show(abort));
-                    }
-                    errors.add(abort);
-                    uow.clearPoison();
-                    condemned = false;
+        try {
+            requireMachine(caller, key);
+            List<Outcome<P, Q, U>> outcomes = new ArrayList<>();
+            List<TransitionAbortedException> errors = new ArrayList<>();
+            // Only the TRACE lines read the policy and the element's reference: a call that does not log at TRACE keeps
+            // neither, and allocates nothing for them.
+            Optional<CascadePolicy> traced = log.trace() ? Optional.of(policy) : Optional.empty();
+            for (P peer : elements) {
+                if (policy == CascadePolicy.FAIL_FAST) {
+                    outcomes.add(cascade(caller, key, peer, id, traced));
                     continue;
                 }
-                CallFailedException poisoned = poisonWith(caller, key.toString(), error);
-                if (error instanceof Error fatal) {
+                int savepoint = uow.savepoint();
+                Optional<EntityRef> target = Optional.empty();
+                try {
+                    DefaultStateMachine<P, Q, U> machine = registry.machineFor(key);
+                    EntityRef ref = uow.register(machine.refOf(peer));
+                    if (log.trace()) {
+                        target = Optional.of(ref);
+                    }
+                    outcomes.add(cascadeTo(caller, machine, ref, peer, id, traced));
+                } catch (Throwable error) {
+                    // As in cascade: a store first, then a VirtualMachineError leaves as itself.
+                    condemned = true;
+                    if (error instanceof VirtualMachineError fatal) {
+                        throw fatal;
+                    }
+                    if (error instanceof TransitionAbortedException abort && owns(abort)
+                            && !uow.poisonWrapsAForeignFailure()) {
+                        poisonAt(caller.contextDepth(), abort);
+                        try {
+                            uow.rollbackTo(savepoint);
+                        } catch (Error fatal) {
+                            throw fatal;
+                        } catch (Throwable stopped) {
+                            uow.clearPoison();
+                            TransitionAbortedException interrupted = poisonThrough(caller, key.toString(), stopped);
+                            interrupted.addSuppressed(abort);
+                            throw interrupted;
+                        }
+                        if (target.isPresent()) {
+                            log.trace(caller.contextDepth(), "collect-rollback " + CallLog.show(target.get()) + " "
+                                    + id.name() + " error=" + CallLog.show(abort));
+                        }
+                        errors.add(abort);
+                        uow.clearPoison();
+                        condemned = false;
+                        continue;
+                    }
+                    CallFailedException poisoned = poisonWith(caller, key.toString(), error);
+                    if (error instanceof Error fatal) {
+                        throw fatal;
+                    }
+                    throw poisoned;
+                }
+            }
+            if (!errors.isEmpty()) {
+                CascadeException aggregate;
+                try {
+                    aggregate = new CascadeException(call(), details(caller), errors);
+                } catch (Error fatal) {
+                    uow.poison(new CascadeException(call(), bareDetails(caller), errors));
                     throw fatal;
                 }
-                throw poisoned;
+                poisonAt(caller.contextDepth(), aggregate);
+                throw aggregate;
             }
+            return List.copyOf(outcomes);
+        } catch (Throwable error) {
+            // First a store, which cannot overflow: once the identifier is accepted, whatever ends the cascade poisons
+            // the call, an Error that strikes between two elements, where no element's catch runs, too. It leaves as
+            // itself, and settle records it unless a poison is stored already.
+            condemned = true;
+            throw error;
         }
-        if (!errors.isEmpty()) {
-            CascadeException aggregate;
-            try {
-                aggregate = new CascadeException(call(), details(caller), errors);
-            } catch (Error fatal) {
-                uow.poison(new CascadeException(call(), bareDetails(caller), errors));
-                throw fatal;
-            }
-            poisonAt(caller.contextDepth(), aggregate);
-            throw aggregate;
-        }
-        return List.copyOf(outcomes);
     }
 
     /** Looks the machine of a cascade up inside the poisoning scope: an unknown key poisons, as in cascadeOne. */

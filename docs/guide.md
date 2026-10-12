@@ -2530,8 +2530,10 @@ declared type accepts, or an `Error` it throws as itself. A cascade that names a
 by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
 `cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue, and neither does a
 cascade refused because the commit has begun or a step is being rolled back. A `VirtualMachineError`, such as a
-`StackOverflowError`, that strikes while these checks run poisons nothing either: the cascade has not started.
-`cascadeAll` copies its
+`StackOverflowError`, that strikes while these checks run, while `cascadeAll` copies its collection or while a
+cascade by facade type looks its machine up, poisons nothing either: the cascade has not started. `cascadeAll`
+makes these checks before its first element runs: from then on, any failure that ends it poisons the unit of work,
+a `VirtualMachineError` that strikes between two elements too. `cascadeAll` copies its
 collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
 change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
 propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another

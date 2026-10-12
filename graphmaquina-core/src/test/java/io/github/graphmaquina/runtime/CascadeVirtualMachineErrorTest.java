@@ -35,11 +35,19 @@ import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.GatewayException;
 import io.github.graphmaquina.fixtures.Probe;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.net.URISyntaxException;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.spi.ToolProvider;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
@@ -49,8 +57,10 @@ import org.junit.jupiter.api.Test;
  * the call all the same: once the action goes on, the engine records, on that step's own stack, an abort of the step
  * that carries no cause, before it reads or stores any other poison, so an action that catches the Error cannot make
  * the call commit, a later peer read or cascade of that action is refused with that abort as the original failure,
- * COLLECT does not collect it, and an earlier poison stays first. The last test runs real overflows on a thread of a
- * small stack, where even recording an ordinary failure can overflow, and checks that nothing commits.
+ * COLLECT does not collect it, and an earlier poison stays first. Where no callback can throw such an Error that
+ * nothing records, a test reads the bytecode instead: what a cascadeAll runs once it accepted its identifier, between
+ * two elements too. The last test runs real overflows on a thread of a small stack, where even recording an ordinary
+ * failure can overflow, and checks that nothing commits.
  */
 class CascadeVirtualMachineErrorTest {
 
@@ -399,6 +409,30 @@ class CascadeVirtualMachineErrorTest {
     }
 
     /**
+     * Once a cascadeAll accepted its identifier, every call it makes and every object it allocates, where a
+     * StackOverflowError or an OutOfMemoryError can strike, is under a catch of any throwable whose first statement
+     * condemns the call: the lookup of the machine, each element with its own checks, the gathering of an outcome
+     * between two elements, the aggregate of a COLLECT and the copy of the outcomes. So an Error that strikes there,
+     * after an element staged its hop, cannot leave the cascade unrecorded and let an action that catches it commit the
+     * elements that ran. The callbacks run inside the elements' own catches, so none can make such an Error strike
+     * there on purpose: the bytecode of cascadeEach shows it instead.
+     */
+    @Test
+    void whateverACascadeAllRunsOnceItAcceptedItsIdentifierRunsUnderACatchThatCondemnsTheCall() throws Exception {
+        MethodCode code = MethodCode.of(Transaction.class, "cascadeEach");
+        List<String> outside = new ArrayList<>();
+        boolean accepted = false;
+        for (Instruction instruction : code.instructions()) {
+            if (accepted && instruction.callsOrAllocates() && !code.condemnedAt(instruction.offset())) {
+                outside.add(instruction.offset() + ": " + instruction.text());
+            }
+            accepted = accepted || instruction.text().equals("invokestatic requireTransition");
+        }
+        assertTrue(accepted, "cascadeEach no longer checks the identifier through requireTransition");
+        assertEquals(List.of(), outside);
+    }
+
+    /**
      * Real overflows: a chain of cells far deeper than a thread of 256 KiB holds, each of whose actions catches the
      * Error of its cascade and returns ok, runs under paddings that move where the stack runs out, into the engine's
      * own recording of a failure too. A cascade that overflows before it accepted its arguments, before it reads the
@@ -437,5 +471,100 @@ class CascadeVirtualMachineErrorTest {
         }
         assertEquals(List.of(), violations.size() > 3 ? violations.subList(0, 3) : violations);
         assertTrue(started > 0, "no action caught the Error of a cascade that had started");
+    }
+
+    /** An instruction of a method: its offset, and its mnemonic followed by the member or class it names, if any. */
+    private record Instruction(int offset, String text) {
+
+        /** Whether it calls a method or allocates, where a StackOverflowError or an OutOfMemoryError can strike. */
+        boolean callsOrAllocates() {
+            String mnemonic = text.split(" ", 2)[0];
+            return mnemonic.startsWith("invoke") || mnemonic.equals("new") || mnemonic.endsWith("newarray");
+        }
+    }
+
+    /** A row of an exception table: the offsets it covers, {@code to} excluded, its handler's, and what it catches. */
+    private record Handler(int from, int to, int target, String type) { }
+
+    /** The code of a method of the compiled main classes as {@code javap -c} prints it, and its exception table. */
+    private record MethodCode(List<Instruction> instructions, List<Handler> handlers) {
+
+        private static final Pattern INSTRUCTION = Pattern.compile("\\s+(\\d+): ([a-z][a-z0-9_]*)\\s*(.*)");
+        private static final Pattern HANDLER = Pattern.compile("\\s+(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+(.+)");
+
+        /** The code of the only method of {@code type} named {@code name}. */
+        static MethodCode of(Class<?> type, String name) throws IOException, URISyntaxException {
+            Path classes = Path.of(type.getProtectionDomain().getCodeSource().getLocation().toURI());
+            StringWriter out = new StringWriter();
+            StringWriter err = new StringWriter();
+            int code = ToolProvider.findFirst("javap").orElseThrow().run(new PrintWriter(out), new PrintWriter(err),
+                    "-c", "-p", "-cp", classes.toString(), type.getName());
+            assertEquals(0, code, "javap " + type.getName() + ": " + err);
+            List<String> lines = out.toString().lines().toList();
+            List<Integer> declarations = new ArrayList<>();
+            for (int index = 0; index < lines.size(); index++) {
+                String line = lines.get(index);
+                if (line.startsWith("  ") && !line.startsWith("   ") && line.contains(" " + name + "(")
+                        && line.endsWith(");")) {
+                    declarations.add(index);
+                }
+            }
+            assertEquals(1, declarations.size(), "methods named " + name + " in " + type.getName());
+            List<Instruction> instructions = new ArrayList<>();
+            List<Handler> handlers = new ArrayList<>();
+            boolean table = false;
+            for (int index = declarations.get(0) + 1; index < lines.size() && !lines.get(index).isEmpty(); index++) {
+                String line = lines.get(index);
+                table = table || line.trim().equals("Exception table:");
+                Matcher instruction = INSTRUCTION.matcher(line);
+                Matcher handler = HANDLER.matcher(line);
+                if (!table && instruction.matches()) {
+                    instructions.add(new Instruction(Integer.parseInt(instruction.group(1)),
+                            instruction.group(2) + named(instruction.group(3))));
+                } else if (table && handler.matches()) {
+                    handlers.add(new Handler(Integer.parseInt(handler.group(1)), Integer.parseInt(handler.group(2)),
+                            Integer.parseInt(handler.group(3)), handler.group(4).trim()));
+                }
+            }
+            return new MethodCode(instructions, handlers);
+        }
+
+        /**
+         * What javap's comment on an instruction's operands names, without its kind and its descriptor, after a space:
+         * {@code " requireTransition"} for {@code #12 // Method requireTransition:(...)V}; empty without a comment.
+         */
+        private static String named(String operands) {
+            int comment = operands.indexOf("// ");
+            if (comment < 0) {
+                return "";
+            }
+            String member = operands.substring(comment + 3);
+            member = member.substring(member.indexOf(' ') + 1);
+            int descriptor = member.indexOf(':');
+            return " " + (descriptor < 0 ? member : member.substring(0, descriptor));
+        }
+
+        /** Whether a handler of any throwable that condemns the call first covers {@code offset}. */
+        boolean condemnedAt(int offset) {
+            for (Handler handler : handlers) {
+                if (handler.from() <= offset && offset < handler.to() && condemnsFirst(handler)
+                        && (handler.type().equals("any") || handler.type().equals("Class java/lang/Throwable"))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /** Whether {@code handler}, once it stored what it caught, first stores true into condemned. */
+        boolean condemnsFirst(Handler handler) {
+            List<String> first = new ArrayList<>();
+            for (Instruction instruction : instructions) {
+                if (instruction.offset() >= handler.target() && first.size() < 4) {
+                    first.add(instruction.text());
+                }
+            }
+            return first.size() == 4 && first.get(0).startsWith("astore")
+                    && first.subList(1, 4).equals(List.of("aload_0", "iconst_1", "putfield condemned"));
+        }
     }
 }

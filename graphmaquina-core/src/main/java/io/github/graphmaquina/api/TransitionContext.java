@@ -9,18 +9,21 @@ import java.util.Optional;
  * cascades and the call's flow. A cascade runs the peer's step in this transaction and returns Applied or Failed; once
  * its arguments are accepted, whatever else it ends in poisons the transaction, so the root cannot commit even if the
  * action catches it: the action receives a failure of the call as it is, anything else as an abort of the call that
- * carries it, and an Error as itself. A VirtualMachineError, a StackOverflowError or an OutOfMemoryError for one,
- * reaches the action at once, before anything records it, since recording it could need the stack or the memory that
- * ran out; once the action caught it and goes on, the engine records it, on the stack of the action's step, as an
- * abort of that step that carries no cause, unless the transaction was already poisoned: as soon as the action reads a
- * peer or cascades again, which then throws {@code PoisonedUnitOfWorkException}, and at the latest when the action
- * ends, unless an Error it throws as itself ends it, which propagates. {@code cascadeAll} copies its collection before
- * any element runs and never reads it again: a change made to the collection while the cascade runs, by an element's
- * action for instance, changes neither which elements run nor their order. Peer views, cascades and the call's
- * {@link #flow()} work only on the thread that called {@code process()} and only until the root transaction ends:
- * elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}. Once it ends, the
- * context, its peer views and its flow let go of the call: one retained after it keeps neither the call nor the values
- * of its flow in memory.
+ * carries it, and an Error as itself. {@code cascadeAll} accepts its arguments before its first element runs, so this
+ * holds between two of its elements too. A VirtualMachineError, a StackOverflowError or an OutOfMemoryError for one,
+ * that strikes once the arguments are accepted reaches the action at once, before anything records it, since recording
+ * it could need the stack or the memory that ran out; once the action caught it and goes on, the engine records it, on
+ * the stack of the action's step, as an abort of that step that carries no cause, unless the transaction was already
+ * poisoned: as soon as the action reads a peer or cascades again, which then throws
+ * {@code PoisonedUnitOfWorkException}, and at the latest when the action ends, unless an Error it throws as itself ends
+ * it, which propagates. One that strikes before, while the cascade checks whether it may run, copies or checks its
+ * arguments, or looks a facade type up, poisons nothing, as a refused argument does: the cascade has not started.
+ * {@code cascadeAll} copies its collection before any element runs and never reads it again: a change made to the
+ * collection while the cascade runs, by an element's action for instance, changes neither which elements run nor their
+ * order. Peer views, cascades and the call's {@link #flow()} work only on the thread that called {@code process()} and
+ * only until the root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards
+ * {@code StaleContextException}. Once it ends, the context, its peer views and its flow let go of the call: one
+ * retained after it keeps neither the call nor the values of its flow in memory.
  * Cascades must also run before the commit begins, and not while a step is rolled back: a retained context used to
  * cascade from a commit getter or setter, or from an identity's {@code equals} or {@code hashCode} that a rollback
  * calls, throws {@code IllegalStateException} before it stages anything, since the commit has fixed its changes and
