@@ -25,12 +25,14 @@ import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 /**
  * A retained action context cannot stage a cascade while the engine rolls a step back: an identity's hashCode, which
  * the rollback calls in the middle of its undo, would otherwise add a hop that the rollback then drops in place of the
- * one it undid, leaving a pending state that nothing commits. The cascade is refused before it stages anything.
+ * one it undid, leaving a pending state that nothing commits, or that a later hop moves from and commits as a move the
+ * graph does not have. The cascade is refused before it stages anything.
  */
 class RollbackCascadeTest {
 
@@ -149,6 +151,63 @@ class RollbackCascadeTest {
             assertEquals(REFUSAL, cause.getMessage());
         }
         assertEquals(List.of(DRAFT, REVIEW, REVIEW), List.of(root.status(), first.status(), second.status()));
+    }
+
+    @Test
+    void aRecoveryAfterANestedRollbackFindsNoStagedStateToMoveFrom() {
+        Doc root = new Doc("root", DRAFT);
+        Doc nested = new Doc("nested", DRAFT);
+        Doc first = new Doc("first", REVIEW);
+        Doc second = new Doc("second", DRAFT);
+        ArmedId firstId = new ArmedId("first");
+        List<String> refusals = new ArrayList<>();
+        List<DocStatus> seen = new ArrayList<>();
+        List<TransitionContext<Doc, DocStatus, DocTransition>> retained = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "a draft is submitted or discarded").statePolicy(REVIEW, "a review is published")
+                .statePolicy(PUBLISHED, "a publication is archived")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        if (ctx.entity() == root) {
+                            ctx.cascade(DOCS, second, SUBMIT);
+                            ctx.cascade(DOCS, nested, SUBMIT);
+                        } else if (ctx.entity() == nested) {
+                            retained.add(ctx);
+                            ctx.cascade(DOCS, first, PUBLISH);
+                            firstId.onHash = () -> {
+                                firstId.onHash = () -> { };
+                                try {
+                                    retained.get(0).cascade(DOCS, second, PUBLISH);
+                                } catch (IllegalStateException refused) {
+                                    refusals.add(refused.getMessage());
+                                }
+                            };
+                            return ActionOutcome.failed("route it");
+                        }
+                        return ActionOutcome.ok();
+                    })
+                    .onFailure(DISCARD)
+                    .endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED)
+                    .action("Archive", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        seen.add(ctx.peer(DOCS).stateOf(second));
+                        ctx.cascade(DOCS, second, ARCHIVE);
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+        try (MachineRegistry registry = registry(graph, first, firstId)) {
+            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(root, SUBMIT));
+            assertEquals(Optional.of(REVIEW), thrown.from());
+            assertEquals(Optional.of(ARCHIVE), thrown.transition());
+        }
+        assertEquals(List.of(REFUSAL), refusals);
+        assertEquals(List.of(REVIEW), seen);
+        assertEquals(List.of(DRAFT, DRAFT, REVIEW, DRAFT),
+                List.of(root.status(), nested.status(), first.status(), second.status()));
     }
 
     @Test
