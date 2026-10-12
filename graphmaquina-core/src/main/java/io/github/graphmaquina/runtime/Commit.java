@@ -78,8 +78,9 @@ final class Commit {
             Enum<?> expected = change.first().from();
             if (current.isEmpty() || current.get() != expected) {
                 return Optional.of("the state of " + change.ref() + " changed during the transaction: expected "
-                        + expected + " but is " + current.map(Enum::name).orElse("null") + "; an action called the"
-                        + " setter, or a concurrent transition on the same entity wrote it first");
+                        + expected.name() + " but is " + current.map(Enum::name).orElse("null")
+                        + "; an action called the setter, or a concurrent transition on the same entity wrote it"
+                        + " first");
             }
         }
         return Optional.empty();

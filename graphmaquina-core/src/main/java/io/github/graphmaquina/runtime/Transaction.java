@@ -466,8 +466,8 @@ final class Transaction {
             }
             if (exitOf.isEmpty() && isReservedExit(machine, from, id)) {
                 return rejected(machine, ref, from, id, Optional.of(transition.to()), depth,
-                        id + " leaves " + from + " only when its sub-machine ends", RejectionKind.RESERVED_EXIT,
-                        Optional.empty(), exitOf);
+                        id.name() + " leaves " + from.name() + " only when its sub-machine ends",
+                        RejectionKind.RESERVED_EXIT, Optional.empty(), exitOf);
             }
             StepResult<S, T> result;
             uow.push(ref, transition);
@@ -658,7 +658,8 @@ final class Transaction {
         Optional<C> exit = Optional.ofNullable(spec.exits().get(terminal));
         if (exit.isEmpty()) {
             throw abort(machine, ref, from, Optional.of(last), Optional.of(reached), Optional.empty(), depth,
-                    "the terminal " + terminal + " of " + spec.childKey() + " has no exit in " + spec.state(),
+                    "the terminal " + terminal.name() + " of " + spec.childKey() + " has no exit in "
+                            + spec.state().name(),
                     Optional.empty());
         }
         if (log.trace()) {
@@ -751,7 +752,7 @@ final class Transaction {
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> Optional<EntityRef>
             findParent(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Object entity, Enum<?> from, Enum<?> id,
                        int depth, SubmachineBinding<A, B, C, P, Q, U> binding) {
-        String name = binding.parentKey() + "." + binding.spec().state();
+        String name = binding.parentKey() + "." + binding.spec().state().name();
         Optional<A> parent;
         try {
             parent = binding.spec().parentOf().apply(binding.spec().childKey().entity().cast(entity));
@@ -792,7 +793,7 @@ final class Transaction {
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> id, int depth,
             SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef) {
         SubmachineSpec<A, B, C, P, Q, U> spec = binding.spec();
-        String name = binding.parentKey() + "." + spec.state();
+        String name = binding.parentKey() + "." + spec.state().name();
         A parent = binding.parentKey().entity().cast(parentRef.instance());
         Optional<P> child;
         try {
@@ -909,7 +910,7 @@ final class Transaction {
             throw fatal;
         } catch (Throwable e) {
             throw entryAbort(machine, ref, edge, depth, "reading the sub-machine of " + parentMachine.key() + "."
-                    + spec.state() + " threw " + Texts.shown(e), Optional.of(e));
+                    + spec.state().name() + " threw " + Texts.shown(e), Optional.of(e));
         }
         Q initial = childMachine.definition().initial();
         uow.appendStart(new LogEntry.Start(childRef, previous, initial, parentRef, spec.state(), depth));
@@ -933,7 +934,7 @@ final class Transaction {
     private <E, S extends Enum<S>, T extends Enum<T>, P> P childOf(
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, TransitionSpec<?, ?, ?> edge, int depth,
             DefaultStateMachine<E, S, T> parentMachine, E parent, SubmachineSpec<E, S, T, P, ?, ?> spec) {
-        String binding = parentMachine.key() + "." + spec.state();
+        String binding = parentMachine.key() + "." + spec.state().name();
         Optional<P> child;
         try {
             child = spec.childOf().apply(parent);
@@ -950,7 +951,8 @@ final class Transaction {
         }
         if (child.isEmpty()) {
             throw entryAbort(machine, ref, edge, depth,
-                    parentMachine.key() + " entered " + spec.state() + " with no " + spec.childKey(), Optional.empty());
+                    parentMachine.key() + " entered " + spec.state().name() + " with no " + spec.childKey(),
+                    Optional.empty());
         }
         return child.get();
     }

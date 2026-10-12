@@ -11,9 +11,11 @@ import java.util.Objects;
 
 /**
  * A call that failed, as the call itself classifies it. Every exception a call throws is an Error, which propagates
- * unchanged, or one of these, of that very call: any other exception involved is its cause. Its message prints that
- * cause, or an entity in flight, through its {@code toString()}, and {@code <toString threw <class name>>} in its place
- * when that throws anything but an Error. {@link #call()} is the call and {@link #phase()} where it was.
+ * unchanged, or one of these, of that very call: any other exception involved is its cause. Its message names each
+ * state and identifier by its {@code name()}, and each entity in flight by its machine key, {@code #} and its
+ * identity, never through the entity's own {@code toString()}; a cause or an identity whose {@code toString()} throws
+ * anything but an Error prints {@code <toString threw <class name>>} in its place, after the key and its {@code #} for
+ * an identity. {@link #call()} is the call and {@link #phase()} where it was.
  * {@link #statesWritten()} says how far it got in writing states through the setters; it says nothing about a database
  * transaction around the call. {@link #journal()} lists which actions ran, which matters more than the phase when
  * deciding whether a retry is safe: an action that ran may have had external effects that nothing undoes.
