@@ -14,7 +14,9 @@ import lombok.NonNull;
  * RESOLVE that carries it, once unwrapped from CompletionException and ExecutionException, which a watch reaction
  * reports as {@code Reaction.Aborted}. A throwable that is not an Error and that {@code ownerOf} throws, while the
  * commit that triggered the reaction looks the owner up, is the cause of a {@code Reaction.Aborted} itself, a checked
- * one wrapped in {@code UndeclaredThrowableException}.
+ * one wrapped in {@code UndeclaredThrowableException}. A {@code peersOf} that returns null instead of a collection
+ * ends the reevaluation the same way, before any condition runs, and an {@code ownerOf} that returns null instead of
+ * an Optional ends the lookup the same way, each with a {@code NullPointerException} that says it returned null.
  */
 public record WatchSpec<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U extends Enum<U>>(
         @NonNull S state,

@@ -15,13 +15,18 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
 
     /**
      * Owner of the moved peer, if any, and exactly in the watched state. ownerOf, the state read and the identity
-     * function run with the reentrancy marker set, so none of them can start a transition on this thread.
+     * function run with the reentrancy marker set, so none of them can start a transition on this thread. An ownerOf
+     * that returns null instead of an Optional is refused with a NullPointerException that says so.
      */
     Optional<EntityRef> ownerToReevaluate(Object movedInstance) {
         P peer = spec.peer().entity().cast(movedInstance);
         Reentrancy.enter(spec.peer(), peer);
         try {
             Optional<E> owner = spec.ownerOf().apply(peer);
+            if (owner == null) {
+                throw new NullPointerException(
+                        "the ownerOf of " + machine.key() + "." + spec.state().name() + " returned null");
+            }
             if (owner.isEmpty()) {
                 return Optional.empty();
             }

@@ -488,6 +488,55 @@ class WatchTest {
         }
     }
 
+    /**
+     * A watch lookup that returns null instead of an Optional or a collection breaks its contract, and is refused with
+     * a NullPointerException saying it returned null before anything reads its answer. An ownerOf, which the commit
+     * runs before any reevaluation, is the cause of the reaction's abort itself. A peersOf ends the reevaluation in
+     * RESOLVE with that refusal as cause, before any condition runs, in a reaction as in a direct reevaluation.
+     */
+    @Test
+    void aWatchLookupThatReturnsNullIsRefusedAsReturningNull() {
+        List<String> conditions = new ArrayList<>();
+        WatchCondition<Doc, Doc, DocStatus, DocTransition> condition =
+                (Doc owner, Collection<? extends Doc> peers, PeerView<Doc, DocStatus, DocTransition> view) -> {
+                    conditions.add(owner.id());
+                    return true;
+                };
+        Doc moved = new Doc("moved", DRAFT);
+        try (MachineRegistry docs = docsWatchingThrough((Doc owner) -> List.of(moved), (Doc peer) -> null,
+                condition)) {
+            Outcome.Applied<?, ?, ?> applied = assertInstanceOf(Outcome.Applied.class,
+                    docs.of(DOCS).execute(moved, SUBMIT));
+            assertEquals(1, applied.reactions().size());
+            Reaction.Aborted aborted = assertInstanceOf(Reaction.Aborted.class, applied.reactions().get(0));
+            assertEquals(DOCS, aborted.key());
+            assertSame(moved, aborted.entity());
+            NullPointerException refusal = assertInstanceOf(NullPointerException.class, aborted.cause());
+            assertEquals("the ownerOf of " + DOCS + ".PUBLISHED returned null", refusal.getMessage());
+        }
+        Doc observer = new Doc("observer", PUBLISHED);
+        Doc peer = new Doc("peer", DRAFT);
+        try (MachineRegistry docs = docsWatchingThrough((Doc owner) -> null,
+                (Doc changed) -> changed == peer ? Optional.of(observer) : Optional.<Doc>empty(), condition)) {
+            Outcome.Applied<?, ?, ?> applied = assertInstanceOf(Outcome.Applied.class,
+                    docs.of(DOCS).execute(peer, SUBMIT));
+            assertEquals(1, applied.reactions().size());
+            Reaction.Aborted aborted = assertInstanceOf(Reaction.Aborted.class, applied.reactions().get(0));
+            assertEquals(DOCS, aborted.key());
+            assertSame(observer, aborted.entity());
+            TransitionAbortedException reaction = assertInstanceOf(TransitionAbortedException.class, aborted.cause());
+            TransitionAbortedException direct = assertThrows(TransitionAbortedException.class,
+                    () -> docs.of(DOCS).reevaluate(observer));
+            for (TransitionAbortedException error : List.of(reaction, direct)) {
+                assertEquals(CallPhase.RESOLVE, error.phase());
+                NullPointerException refusal = assertInstanceOf(NullPointerException.class, error.getCause());
+                assertEquals("the peersOf of " + DOCS + ".PUBLISHED returned null", refusal.getMessage());
+            }
+        }
+        assertEquals(List.of(), conditions);
+        assertEquals(PUBLISHED, observer.status());
+    }
+
     @Test
     void registryRejectsAWatchOnAnUnregisteredPeer() {
         IllegalStateException error = assertThrows(IllegalStateException.class, () -> MachineRegistry.builder()

@@ -1199,8 +1199,10 @@ normalization: `getState()` exports `state`, `items()` exports `items`, and `get
 | `Submachine.parent` | Child reader returning `Optional<ParentEntity>` |
 
 Use `Optional.empty()` for a peer with no owner. Keep relationship accessors consistent and return non-null
-collections. If the setter overloads are ambiguous, the processor reports the ambiguity instead of choosing
-based on declaration order.
+collections: a `peers` reader that returns `null`, or an `Optional` reader that returns `null`, is refused, as
+[triggering and observing watches](#triggering-and-observing-watches) and
+[finding the parent with a lookup](#find-the-parent-with-a-lookup) say. If the setter overloads are ambiguous, the
+processor reports the ambiguity instead of choosing based on declaration order.
 
 ### Method signatures
 
@@ -2525,7 +2527,9 @@ as a separate call on the executor's thread, unless that executor runs tasks inl
 fails with that exception as its cause. Inside a reevaluation, a refusal that one of these functions lets through ends
 the reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as
 `Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so
-its reaction carries the refusal itself.
+its reaction carries the refusal itself. A `peers` reader that returns `null` instead of a collection, or an `owner`
+reader declared to return an `Optional` that returns `null`, is refused the same way, with a `NullPointerException` that
+says it returned null, and no condition runs over a `null` collection.
 
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
