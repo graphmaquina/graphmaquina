@@ -73,11 +73,15 @@ final class PropertyResolver {
                 : Optional.of(new StateAccess(reader.get(), writer.get()));
     }
 
-    /** The reader of {@code machine} that returns the peers a watch of {@code peer} follows. */
+    /**
+     * The reader of {@code machine} that returns the peers a watch of {@code peer} follows: a
+     * {@code Collection<? extends P>} or a subtype of it, never a raw collection, which only an unchecked conversion
+     * would turn into one.
+     */
     Optional<Property> peers(TypeMirror symbol, MachineTypes machine, MachineTypes peer, DiagnosticAnchor anchor) {
         TypeMirror collection = signatures.declared(COLLECTION, signatures.extendsWildcard(peer.entity()));
         return declaration(symbol, machine, anchor).flatMap((PropertyDescriptor property) -> read(property, machine,
-                (TypeMirror returned) -> signatures.assignable(returned, collection),
+                (TypeMirror returned) -> signatures.subtypeOf(returned, collection),
                 "Collection<? extends " + peer.entityName() + ">", anchor));
     }
 

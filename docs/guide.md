@@ -1196,7 +1196,7 @@ normalization: `getState()` exports `state`, `items()` exports `items`, and `get
 | --- | --- |
 | `Definition.state` | Public instance reader returning the machine's state enum; compatible public instance writer |
 | `Definition.id` | Public instance reader returning an identity value; values must be non-null at runtime |
-| `Watch.peers` | Owner reader returning `Collection<? extends PeerEntity>` |
+| `Watch.peers` | Owner reader returning `Collection<? extends PeerEntity>` or a subtype, such as `List<PeerEntity>`; a raw collection is refused |
 | `Watch.owner` | Peer reader returning `Optional<OwnerEntity>` or an owner entity |
 | `Submachine.child` | Parent reader returning `Optional<ChildEntity>` |
 | `Submachine.parent` | Child reader returning `Optional<ParentEntity>` |

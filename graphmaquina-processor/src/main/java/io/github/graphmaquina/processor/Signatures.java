@@ -46,6 +46,14 @@ final class Signatures {
         return types.isAssignable(from, to);
     }
 
+    /**
+     * Whether {@code type} is a subtype of {@code supertype} as it is, without the unchecked conversion that lets a
+     * raw type be assigned to a parameterized one.
+     */
+    boolean subtypeOf(TypeMirror type, TypeMirror supertype) {
+        return types.isSubtype(type, supertype);
+    }
+
     boolean subtype(TypeMirror type, String qualifiedName) {
         return types.isSubtype(types.erasure(type), types.erasure(declared(qualifiedName)));
     }
