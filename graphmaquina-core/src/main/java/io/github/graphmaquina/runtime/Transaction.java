@@ -51,7 +51,9 @@ import java.util.function.Supplier;
 
 /**
  * Engine of a root transaction. All the state of the transition lives here and in the UnitOfWork, the phase of its
- * call included, and so does the call's log.
+ * call included, and so does the call's log. Wherever it contains what application code threw on the calling thread,
+ * through a failure route, an abort or a poison, an InterruptedException interrupts the thread again, as
+ * {@link Interrupts} says; one that completes a stage leaves the thread as it is.
  */
 final class Transaction {
 
@@ -783,6 +785,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             Throwable cause = Unwrap.unwrap(e);
             throw bindingAbort(machine, ref, from, id, depth,
                     "the parentOf of " + name + " threw " + Texts.shown(cause), Optional.of(cause));
@@ -824,6 +827,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             Throwable cause = Unwrap.unwrap(e);
             throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " threw " + Texts.shown(cause),
                     Optional.of(cause));
@@ -882,6 +886,7 @@ final class Transaction {
     private TransitionAbortedException bindingReadAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
                                                         Enum<?> from, Enum<?> id, int depth, String name,
                                                         Throwable thrown) {
+        Interrupts.keep(thrown);
         TransitionAbortedException abort = unpoisonedAbort(machine, ref, from, Optional.of(id), Optional.empty(),
                 Optional.empty(), "checking the binding " + name + " threw " + Texts.shown(thrown),
                 Optional.of(thrown));
@@ -955,6 +960,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             throw entryAbort(machine, ref, edge, depth, "reading the sub-machine of " + parentMachine.key() + "."
                     + spec.state().name() + " threw " + Texts.shown(e), Optional.of(e));
         }
@@ -987,6 +993,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             Throwable cause = Unwrap.unwrap(e);
             throw entryAbort(machine, ref, edge, depth, "the childOf of " + binding + " threw " + Texts.shown(cause),
                     Optional.of(cause));
@@ -1495,6 +1502,7 @@ final class Transaction {
      */
     private TransitionAbortedException unread(DefaultStateMachine<?, ?, ?> machine, Object entity, Enum<?> id,
                                               Throwable error) {
+        Interrupts.keep(error);
         Throwable cause = Unwrap.unwrap(error);
         AbortDetails details = new AbortDetails(machine.key(), entity, Optional.empty(), Optional.of(id),
                 Optional.empty(), Optional.empty(), uow.path(), uow.journal());
@@ -1515,6 +1523,7 @@ final class Transaction {
         if (error instanceof CallFailedException failure && owns(failure)) {
             return failure;
         }
+        Interrupts.keep(error);
         uow.markRunningAsThrew();
         Optional<Enum<?>> from = rootStep.map(RootStep::from);
         Optional<Enum<?>> transition = rootStep.isPresent() ? Optional.of(rootStep.get().id()) : requested;
@@ -1693,6 +1702,7 @@ final class Transaction {
      * {@code error}, and returns that abort.
      */
     private TransitionAbortedException poisonThrough(ContextHandle caller, String target, Throwable error) {
+        Interrupts.keep(error);
         String cascade = "the cascade to " + target + " failed: ";
         TransitionAbortedException wrapper;
         try {

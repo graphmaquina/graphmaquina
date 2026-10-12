@@ -130,12 +130,13 @@ public final class StateMachines {
          * once per entry the call appends, an entry a rollback later drops included, so a clock that advances on each
          * read leaves a gap for each dropped entry; a test can pass a clock it controls, such as a
          * {@link java.time.Clock}. Anything but an Error that the clock throws, a checked exception included, fails the
-         * call as what an identity function throws does: the entry it could not mark is left out of the trail. When it
-         * throws while the call reads the instant of the Failed entry that ends a failed call, whatever failed the
-         * call, the call's {@code CallFailedException} carries what it threw as suppressed, unless it threw that very
-         * exception, and its trail ends without that entry; an InterruptedException suppressed there interrupts the
-         * thread again, and an Error propagates. A clock that answers null counts as one that throws a
-         * NullPointerException. A machine that does not call this reads no clock and keeps no mark.
+         * call as what an identity function throws does, an InterruptedException interrupting the thread again: the
+         * entry it could not mark is left out of the trail. When it throws while the call reads the instant of the
+         * Failed entry that ends a failed call, whatever failed the call, the call's {@code CallFailedException}
+         * carries what it threw as suppressed, unless it threw that very exception, and its trail ends without that
+         * entry; an InterruptedException suppressed there interrupts the thread again, and an Error propagates. A clock
+         * that answers null counts as one that throws a NullPointerException. A machine that does not call this reads
+         * no clock and keeps no mark.
          */
         public Builder<E, S, T> recordTrail(InstantSource clock) {
             requireUnused();

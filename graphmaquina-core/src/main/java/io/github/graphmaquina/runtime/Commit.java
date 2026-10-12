@@ -3,6 +3,7 @@ package io.github.graphmaquina.runtime;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.error.CommitFailedException;
+import io.github.graphmaquina.internal.Interrupts;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -23,7 +24,8 @@ import java.util.Set;
  * fails from then on, before the hooks too, reports every state written. A call that logs at TRACE logs the check,
  * the conflict it found, if any, and each setter before it is called; those lines print what the log already holds and
  * call no getter or identity function. A retained action context cannot stage a cascade from a commit getter or
- * setter: it refuses the cascade before adding anything to the log, whose changes phase 2 already fixed.
+ * setter: it refuses the cascade before adding anything to the log, whose changes phase 2 already fixed. An
+ * InterruptedException that stops phase 2 interrupts the thread again.
  */
 final class Commit {
 
@@ -40,6 +42,7 @@ final class Commit {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             throw new CommitFailedException(tx.call(), uow.journal(), plannedEntities(uow), e);
         }
         List<CommitSummary.Change> changes = summary.changes();
@@ -68,6 +71,7 @@ final class Commit {
             } catch (Error fatal) {
                 throw fatal;
             } catch (Throwable e) {
+                Interrupts.keep(e);
                 throw new CommitFailedException(tx.call(), uow.journal(), instancesOf(changes.subList(0, index)),
                         change.ref().instance(), instancesOf(changes.subList(index + 1, changes.size())), e);
             }

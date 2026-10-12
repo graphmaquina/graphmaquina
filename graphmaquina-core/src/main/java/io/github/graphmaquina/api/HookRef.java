@@ -11,8 +11,8 @@ import lombok.NonNull;
  * the hook's name ({@code hook()}), the committed hop it ran for ({@code hop()}), every hop the call committed
  * ({@code records()}), every sub-machine it started ({@code starts()}) and the call's flow, with what the hooks
  * wrote, this hook's writes before it threw included ({@code flow()}): the application's own transaction decides
- * what to do. An Error propagates unchanged. Either way, the later hooks and the watch reactions of that call do not
- * run.
+ * what to do. An InterruptedException it throws interrupts the thread again. An Error propagates unchanged. Either
+ * way, the later hooks and the watch reactions of that call do not run.
  *
  * @param <E> entity type
  * @param <S> state enum

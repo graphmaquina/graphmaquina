@@ -1,5 +1,7 @@
 package io.github.graphmaquina.runtime;
 
+import static io.github.graphmaquina.fixtures.Billing.BOOKINGS;
+import static io.github.graphmaquina.fixtures.Billing.PAYMENTS;
 import static io.github.graphmaquina.fixtures.DocStatus.ARCHIVED;
 import static io.github.graphmaquina.fixtures.DocStatus.DRAFT;
 import static io.github.graphmaquina.fixtures.DocStatus.PUBLISHED;
@@ -31,7 +33,15 @@ import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.dsl.TransitionBuilder;
+import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.TransitionAbortedException;
+import io.github.graphmaquina.fixtures.Billing;
+import io.github.graphmaquina.fixtures.Billing.Booking;
+import io.github.graphmaquina.fixtures.Billing.BookingStatus;
+import io.github.graphmaquina.fixtures.Billing.BookingTransition;
+import io.github.graphmaquina.fixtures.Billing.Payment;
+import io.github.graphmaquina.fixtures.Billing.PaymentStatus;
+import io.github.graphmaquina.fixtures.Billing.PaymentTransition;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
@@ -42,11 +52,16 @@ import java.lang.reflect.UndeclaredThrowableException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.InstantSource;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.ResourceBundle;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiConsumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.logging.Handler;
@@ -462,6 +477,258 @@ class InterruptedContainmentTest {
             assertTrue(called.interrupted(), "the thread lost its interrupt");
             assertEquals(REVIEW, doc.status());
         }
+    }
+
+    /**
+     * How a call ended: the code of its outcome, or the class of the failure it threw, with the failure's phase and
+     * the class of its cause.
+     */
+    private static String ended(Supplier<? extends Outcome<?, ?, ?>> call) {
+        try {
+            return call.get().code().name();
+        } catch (CallFailedException failure) {
+            return failure.getClass().getSimpleName() + " in " + failure.phase() + " caused by "
+                    + (failure.getCause() == null ? "nothing" : failure.getCause().getClass().getSimpleName());
+        }
+    }
+
+    /** A standalone machine over the doc graph, with {@code getter} and {@code setter} as its state accessors. */
+    private static StateMachines.Builder<Doc, DocStatus, DocTransition> docMachine(
+            GraphDefinition<Doc, DocStatus, DocTransition> graph, Function<Doc, DocStatus> getter,
+            BiConsumer<Doc, DocStatus> setter) {
+        return StateMachines.from(graph).state(getter, setter);
+    }
+
+    /** A getter of the doc's status that blocks on its {@code blocking}th read, counting from one. */
+    private static Function<Doc, DocStatus> statusBlockingOnRead(int blocking) {
+        int[] reads = {0};
+        return (Doc doc) -> {
+            if (++reads[0] == blocking) {
+                block();
+            }
+            return doc.status();
+        };
+    }
+
+    private static String rootIdentity() {
+        return ended(() -> docMachine(docs(UnaryOperator.identity()), Doc::status, Doc::setStatus)
+                .identity((Doc doc) -> {
+                    block();
+                    return doc.id();
+                }).build().execute(new Doc("1", DRAFT), SUBMIT));
+    }
+
+    private static String rootGetter() {
+        return ended(() -> docMachine(docs(UnaryOperator.identity()), statusBlockingOnRead(1), Doc::setStatus).build()
+                .execute(new Doc("1", DRAFT), SUBMIT));
+    }
+
+    /** The first read is the step's; the second is the commit's check. */
+    private static String commitCheckGetter() {
+        return ended(() -> docMachine(docs(UnaryOperator.identity()), statusBlockingOnRead(2), Doc::setStatus).build()
+                .execute(new Doc("1", DRAFT), SUBMIT));
+    }
+
+    private static String setter() {
+        return ended(() -> docMachine(docs(UnaryOperator.identity()), Doc::status, (Doc doc, DocStatus status) -> {
+            block();
+            doc.setStatus(status);
+        }).build().execute(new Doc("1", DRAFT), SUBMIT));
+    }
+
+    private static String hook() {
+        return ended(() -> docMachine(docs((TransitionBuilder<Doc, DocStatus, DocTransition> submit) ->
+                submit.afterCommit("Notify", (Doc doc) -> block())), Doc::status, Doc::setStatus).build()
+                .execute(new Doc("1", DRAFT), SUBMIT));
+    }
+
+    /** The first read marks the hop of SUBMIT; the second dates the Failed entry. */
+    private static String trailClock() {
+        int[] reads = {0};
+        InstantSource clock = () -> {
+            if (++reads[0] == 1) {
+                block();
+            }
+            return Instant.EPOCH;
+        };
+        return ended(() -> docMachine(docs(UnaryOperator.identity()), Doc::status, Doc::setStatus).recordTrail(clock)
+                .build().execute(new Doc("1", DRAFT), SUBMIT));
+    }
+
+    /** SUBMIT's action cascades PUBLISH into a peer whose state read blocks, and lets the failure through. */
+    private static String cascadedPeerGetter() {
+        Doc peer = new Doc("2", REVIEW);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.cascade(DOCS, peer, PUBLISH);
+                            return ActionOutcome.ok();
+                        }));
+        return ended(() -> docMachine(graph, (Doc doc) -> {
+            if (doc == peer) {
+                block();
+            }
+            return doc.status();
+        }, Doc::setStatus).build().execute(new Doc("1", DRAFT), SUBMIT));
+    }
+
+    private static String reevaluatedGetter() {
+        return ended(() -> docMachine(docs(UnaryOperator.identity()), statusBlockingOnRead(1), Doc::setStatus).build()
+                .reevaluate(new Doc("1", DRAFT)));
+    }
+
+    private static String watchCondition() {
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT)
+                .terminal(ARCHIVED)
+                .statePolicy(DRAFT, "a draft is submitted").statePolicy(REVIEW, "a review is published")
+                .statePolicy(PUBLISHED, "a publication is archived")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .watch(DRAFT, DOCS, (Doc owner) -> List.of(owner), (Doc moved) -> Optional.of(moved))
+                    .when("blocks", (Doc owner, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> {
+                        block();
+                        return true;
+                    }).execute(SUBMIT)
+                .endWatch()
+                .build();
+        return ended(() -> docMachine(graph, Doc::status, Doc::setStatus).build().reevaluate(new Doc("1", DRAFT)));
+    }
+
+    /** HOLD of a deposit, whose binding check runs the lookups of the booking that holds it in DEPOSIT. */
+    private static String deposited(MachineRegistry registry) {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit);
+        try (registry) {
+            return ended(() -> registry.of(PAYMENTS).execute(deposit, PaymentTransition.HOLD));
+        }
+    }
+
+    private static String parentOf() {
+        Billing billing = new Billing();
+        billing.bookingOf = (Payment payment) -> {
+            block();
+            return payment.booking();
+        };
+        return deposited(billing.registry());
+    }
+
+    private static String childOfInTheBindingCheck() {
+        Billing billing = new Billing();
+        billing.depositOf = (Booking booking) -> {
+            block();
+            return booking.deposit();
+        };
+        return deposited(billing.registry());
+    }
+
+    private static String parentGetterInTheBindingCheck() {
+        Billing billing = new Billing();
+        return deposited(MachineRegistry.builder()
+                .add(StateMachines.from(billing.bookings).state((Booking booking) -> {
+                    block();
+                    return booking.status();
+                }, Booking::setStatus).identity(Booking::id))
+                .add(billing.paymentMachine())
+                .build());
+    }
+
+    /** BOOK of a booking, which enters DEPOSIT and starts the deposit it holds there. */
+    private static String booked(MachineRegistry registry) {
+        Booking booking = new Booking("b1", BookingStatus.REQUESTED).attachDeposit(
+                new Payment("d1", PaymentStatus.AUTHORIZING));
+        try (registry) {
+            return ended(() -> registry.of(BOOKINGS).execute(booking, BookingTransition.BOOK));
+        }
+    }
+
+    private static String childOfAtTheEntry() {
+        Billing billing = new Billing();
+        billing.depositOf = (Booking booking) -> {
+            block();
+            return booking.deposit();
+        };
+        return booked(billing.registry());
+    }
+
+    private static String childGetterAtTheEntry() {
+        Billing billing = new Billing();
+        return booked(MachineRegistry.builder()
+                .add(billing.bookingMachine())
+                .add(StateMachines.from(billing.payments).state((Payment payment) -> {
+                    block();
+                    return payment.status();
+                }, Payment::setStatus).identity(Payment::id))
+                .build());
+    }
+
+    /** A supplier that a machine whose executor runs every task inline submits through supplyAsync. */
+    private static String submittedSupplier() {
+        StateMachine<Doc, DocStatus, DocTransition> machine = docMachine(docs(UnaryOperator.identity()), Doc::status,
+                Doc::setStatus).asyncExecutor((Runnable task) -> task.run()).build();
+        CompletableFuture<Object> future = machine.supplyAsync(() -> {
+            block();
+            return "never";
+        });
+        Throwable failure = future.handle((Object value, Throwable error) -> error).join();
+        return failure.getClass().getSimpleName() + " caused by " + failure.getCause().getClass().getSimpleName();
+    }
+
+    /**
+     * Each place where the engine contains what application code threw on the calling thread, here an
+     * InterruptedException that a blocking call threw once it cleared the interrupt: the call ends as it does for any
+     * other throwable there, and the thread is interrupted again.
+     */
+    @Test
+    void everyCallbackThatIsInterruptedOnTheCallingThreadKeepsTheInterrupt() {
+        Map<String, Supplier<String>> calls = new LinkedHashMap<>();
+        calls.put("the root's identity function", InterruptedContainmentTest::rootIdentity);
+        calls.put("the root's state getter", InterruptedContainmentTest::rootGetter);
+        calls.put("the getter in the commit's check", InterruptedContainmentTest::commitCheckGetter);
+        calls.put("a state setter", InterruptedContainmentTest::setter);
+        calls.put("an after-commit hook", InterruptedContainmentTest::hook);
+        calls.put("the trail's clock", InterruptedContainmentTest::trailClock);
+        calls.put("a cascaded peer's state getter", InterruptedContainmentTest::cascadedPeerGetter);
+        calls.put("a reevaluated entity's state getter", InterruptedContainmentTest::reevaluatedGetter);
+        calls.put("a watch condition", InterruptedContainmentTest::watchCondition);
+        calls.put("a parentOf", InterruptedContainmentTest::parentOf);
+        calls.put("a childOf in the binding check", InterruptedContainmentTest::childOfInTheBindingCheck);
+        calls.put("a parent's state getter in the binding check",
+                InterruptedContainmentTest::parentGetterInTheBindingCheck);
+        calls.put("a childOf at a sub-machine's entry", InterruptedContainmentTest::childOfAtTheEntry);
+        calls.put("a child's state getter at a sub-machine's entry", InterruptedContainmentTest::childGetterAtTheEntry);
+        calls.put("a supplier submitted through supplyAsync", InterruptedContainmentTest::submittedSupplier);
+        List<String> ends = new ArrayList<>();
+        for (Map.Entry<String, Supplier<String>> call : calls.entrySet()) {
+            Thread.currentThread().interrupt();
+            String end;
+            boolean interrupted;
+            try {
+                end = call.getValue().get();
+            } finally {
+                interrupted = Thread.interrupted();
+            }
+            ends.add(call.getKey() + ": " + end + ", interrupted " + interrupted);
+        }
+        String aborted = "TransitionAbortedException in ";
+        String interrupt = " caused by InterruptedException, interrupted true";
+        assertEquals(List.of(
+                "the root's identity function: " + aborted + "RESOLVE" + interrupt,
+                "the root's state getter: " + aborted + "RESOLVE" + interrupt,
+                "the getter in the commit's check: CommitFailedException in COMMIT" + interrupt,
+                "a state setter: CommitFailedException in COMMIT" + interrupt,
+                "an after-commit hook: AfterCommitException in HOOK" + interrupt,
+                "the trail's clock: " + aborted + "ACTION" + interrupt,
+                "a cascaded peer's state getter: " + aborted + "ACTION" + interrupt,
+                "a reevaluated entity's state getter: " + aborted + "RESOLVE" + interrupt,
+                "a watch condition: " + aborted + "RESOLVE" + interrupt,
+                "a parentOf: " + aborted + "RESOLVE" + interrupt,
+                "a childOf in the binding check: " + aborted + "RESOLVE" + interrupt,
+                "a parent's state getter in the binding check: " + aborted + "RESOLVE" + interrupt,
+                "a childOf at a sub-machine's entry: " + aborted + "ACTION" + interrupt,
+                "a child's state getter at a sub-machine's entry: " + aborted + "ACTION" + interrupt,
+                "a supplier submitted through supplyAsync: CompletionException" + interrupt), ends);
     }
 
     @Test

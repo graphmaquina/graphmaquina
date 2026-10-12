@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.internal.Interrupts;
 import io.github.graphmaquina.internal.Texts;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -13,14 +14,15 @@ import java.util.function.Supplier;
  * CompletableFuture.supplyAsync completes the one it returns, save for a throwable that cannot be printed: a future
  * already done when the task runs, cancelled or completed meanwhile, skips the call, and anything the call throws, an
  * Error included, fails the future, as it is when it is a CompletionException and wrapped in a new one otherwise, so
- * that nothing escapes on the executor's thread. The new CompletionException's message is the string of what the call
- * threw, as supplyAsync's is, {@code <toString returned null>} when that string is null, where supplyAsync's message
- * is null, or {@code <toString threw <class name>>} when printing it throws; supplyAsync reads that string to
- * construct its CompletionException, so a throwable whose printing throws leaves its future pending on JDK 21, while
- * on JDK 25 it fails that future with an empty message and adds what printing threw as a suppressed exception.
- * supplyAsync submits a CompletableFuture.AsynchronousCompletionTask instead, which CompletableFuture's get and join
- * run on a ForkJoinPool worker that waits while the task is queued on it: the call would run inside the callback that
- * waits, on a thread marked as running a transition, and fail with ReentrantTransitionException.
+ * that nothing escapes on the executor's thread; an InterruptedException it throws interrupts that thread again, which
+ * supplyAsync's task does not do. The new CompletionException's message is the string of what the call threw, as
+ * supplyAsync's is, {@code <toString returned null>} when that string is null, where supplyAsync's message is null, or
+ * {@code <toString threw <class name>>} when printing it throws; supplyAsync reads that string to construct its
+ * CompletionException, so a throwable whose printing throws leaves its future pending on JDK 21, while on JDK 25 it
+ * fails that future with an empty message and adds what printing threw as a suppressed exception. supplyAsync submits a
+ * CompletableFuture.AsynchronousCompletionTask instead, which CompletableFuture's get and join run on a ForkJoinPool
+ * worker that waits while the task is queued on it: the call would run inside the callback that waits, on a thread
+ * marked as running a transition, and fail with ReentrantTransitionException.
  * A task submitted to a machine's default executor marks its thread with that executor for as long as it runs, the
  * completion of its future and the dependents that completion runs included, so that {@link #runsTaskOf} tells
  * MachineRegistry.close() not to close that executor from its own task, which would wait for itself forever. A task of
@@ -102,6 +104,7 @@ final class Submit {
         try {
             future.complete(call.get());
         } catch (Throwable thrown) {
+            Interrupts.keep(thrown);
             future.completeExceptionally(
                     thrown instanceof CompletionException ? thrown : new CompletionException(shown(thrown), thrown));
         }

@@ -29,6 +29,7 @@ import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.WatchChainExceededException;
 import io.github.graphmaquina.internal.CallFailureFlows;
 import io.github.graphmaquina.internal.FrozenFlow;
+import io.github.graphmaquina.internal.Interrupts;
 import io.github.graphmaquina.internal.Texts;
 import java.time.Duration;
 import java.time.InstantSource;
@@ -235,6 +236,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     throw unresolved(entity, observed, reaction, Optional.empty(), "reading the entity threw ", e);
                 }
                 if (chain > registry.maxWatchChain()) {
@@ -250,6 +252,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                     } catch (Error fatal) {
                         throw fatal;
                     } catch (Throwable e) {
+                        Interrupts.keep(e);
                         throw unresolved(entity, observed, reaction, Optional.of(state), "the watch threw ", e);
                     }
                 }
@@ -292,7 +295,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     /**
      * A reevaluation that could not read its entity's state or evaluate its watch: an abort in RESOLVE that carries
-     * the failure, unwrapped from CompletionException and ExecutionException.
+     * the failure, unwrapped from CompletionException and ExecutionException. Its caller has already interrupted the
+     * thread again for an InterruptedException that the getter or the watch threw.
      */
     private TransitionAbortedException unresolved(E entity, Optional<Observed> observed, boolean reaction,
                                                   Optional<Enum<?>> from, String what, Throwable error) {
@@ -531,7 +535,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * becomes an AfterCommitException of the call, naming the hop and carrying every hop and every start the call
      * committed, the very {@code records} and {@code starts} the commit built; an Error propagates unchanged. A call
      * that logs at TRACE logs each hook before it runs. Each hook gets a handle of its own on the call's flow, in its
-     * CommitContext, invalidated in a finally once the hook returned or threw; a hop without a hook makes none.
+     * CommitContext, invalidated in a finally once the hook returned or threw; a hop without a hook makes none. An
+     * InterruptedException that a hook throws interrupts the thread again.
      */
     private void runHooks(Transaction tx, List<TransitionRecord<?, ?, ?>> records,
                           List<SubmachineStart<?, ?, ?>> starts, List<LogEntry> committed) {
@@ -563,6 +568,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
+            Interrupts.keep(e);
             throw new AfterCommitException(tx.call(), tx.uow().journal(), records, starts,
                     Typed.record(owner.key(), entry), hook.name(), e);
         } finally {

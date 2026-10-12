@@ -1531,9 +1531,12 @@ the rule while every other `IOException` goes to the fallback.
   `<getMessage threw <exception class>>`, and the route is taken all the same, with the thread interrupted again when
   what `getMessage()` threw is an `InterruptedException`. `cause()` is the very exception the action threw, once
   unwrapped.
-- An `InterruptedException` that an action or a guard throws interrupts the thread again, whatever the engine then
-  does with it, since the blocking call that threw it cleared the interrupt; one that completes a stage leaves the
-  thread as it is.
+- Wherever the engine contains an `InterruptedException` that application code throws on the thread the engine called it
+  on, it interrupts that thread again, since the blocking call that threw it cleared the interrupt: one that an action
+  or a guard throws, whatever the engine then does with it, and one that a hook, a state getter or setter, an identity
+  function, the trail's clock, a sub-machine's `childOf` or `parentOf`, a watch's `peersOf`, `ownerOf` or condition, an
+  observer, the logger's backend, a value's `toString()` or a call submitted through `supplyAsync` throws. One that
+  completes a stage leaves the thread as it is.
 - `explanation()` holds the reason of a returned failure and stays empty when an exception was routed, whichever
   route took it.
 
