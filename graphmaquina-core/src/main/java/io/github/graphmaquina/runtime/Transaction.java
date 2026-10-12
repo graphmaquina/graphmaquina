@@ -1010,11 +1010,16 @@ final class Transaction {
             throw abort(machine, ref, transition.from(), Optional.of(transition.transition()),
                     Optional.of(transition.to()), Optional.of(action.name()), depth,
                     "the action " + action.name() + " threw " + Texts.shown(cause), Optional.of(cause));
+        } catch (EngineAbort aborted) {
+            uow.journalStatus(journalIndex, ActionStatus.THREW);
+            settle(ctx);
+            // A null stage or outcome, or a wait that timed out, was interrupted or was refused: poisoned now that the
+            // action's end is logged, as the abort of an action that threw is.
+            throw poisonOr(poisonIfNested(depth, aborted.abort()));
         } catch (CallFailedException e) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
             settle(ctx);
-            // Reaching here: a null stage or outcome, a wait that timed out, was interrupted or was refused, or a
-            // CallFailedException that a hand-written stage's handle throws.
+            // Reaching here: a CallFailedException that a hand-written stage's handle throws.
             throw poisonOr(e);
         }
         settle(ctx);
@@ -1078,7 +1083,8 @@ final class Transaction {
         try {
             outcome = invokeAction(machine, ref, transition, action, ctx);
         } catch (RuntimeException thrown) {
-            Throwable cause = thrown instanceof ActionFailure failure ? failure.getCause() : thrown;
+            Throwable cause = thrown instanceof ActionFailure || thrown instanceof EngineAbort
+                    ? thrown.getCause() : thrown;
             log.trace(ctx.depth(), name + " THREW error=" + cause.getClass().getName() + " elapsed="
                     + CallLog.micros(System.nanoTime() - started));
             throw thrown;
@@ -1098,9 +1104,11 @@ final class Transaction {
      * that its caller classifies. An Error is never routed: thrown as itself, it propagates; wrapped in
      * CompletionException or ExecutionException, it is unwrapped and aborts. Exceptional stage completions hand the
      * throwable they completed with to ActionFailure; the engine reads no message before classification, though the JDK
-     * may already have read it, as when {@code supplyAsync} wrapped the throwable in a CompletionException. Before it
-     * waits for a stage, a call that logs at TRACE logs the budget the wait has left: none when neither the edge nor
-     * the call sets a limit.
+     * may already have read it, as when {@code supplyAsync} wrapped the throwable in a CompletionException. The
+     * engine's own abort of the step, for a null outcome or stage or a wait that timed out, was interrupted or was
+     * refused, leaves as an EngineAbort, which the step poisons the call with once executeAction logged the action's
+     * end. Before it waits for a stage, a call that logs at TRACE logs the budget the wait has left: none when neither
+     * the edge nor the call sets a limit.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome invokeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -1126,9 +1134,9 @@ final class Transaction {
                     throw new ActionFailure(e);
                 }
                 if (stage == null) {
-                    throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
-                            Optional.of(action.name()), ctx.depth(),
-                            "the action " + action.name() + " returned a null stage", Optional.empty());
+                    throw new EngineAbort(unpoisonedAbort(machine, ref, ctx.from(), Optional.of(ctx.transition()),
+                            Optional.of(ctx.to()), Optional.of(action.name()),
+                            "the action " + action.name() + " returned a null stage", Optional.empty()));
                 }
                 long deadline = edgeDeadline(edgeBudget);
                 if (log.trace()) {
@@ -1136,20 +1144,20 @@ final class Transaction {
                             ? "none" : CallLog.micros(Math.max(0L, deadline - System.nanoTime()))));
                 }
                 Optional<ActionOutcome> result = await(machine, ref, ctx.from(), Optional.of(ctx.transition()),
-                        Optional.of(ctx.to()), Optional.of(action.name()), ctx.depth(), "the action " + action.name(),
-                        stage, deadline);
+                        Optional.of(ctx.to()), Optional.of(action.name()), "the action " + action.name(), stage,
+                        deadline);
                 if (result.isEmpty()) {
-                    throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
-                            Optional.of(action.name()), ctx.depth(), "the action " + action.name() + " returned null",
-                            Optional.empty());
+                    throw new EngineAbort(unpoisonedAbort(machine, ref, ctx.from(), Optional.of(ctx.transition()),
+                            Optional.of(ctx.to()), Optional.of(action.name()),
+                            "the action " + action.name() + " returned null", Optional.empty()));
                 }
                 yield result.orElseThrow();
             }
         };
         if (outcome == null) {
-            throw abort(machine, ref, ctx.from(), Optional.of(ctx.transition()), Optional.of(ctx.to()),
-                    Optional.of(action.name()), ctx.depth(), "the action " + action.name() + " returned null",
-                    Optional.empty());
+            throw new EngineAbort(unpoisonedAbort(machine, ref, ctx.from(), Optional.of(ctx.transition()),
+                    Optional.of(ctx.to()), Optional.of(action.name()), "the action " + action.name() + " returned null",
+                    Optional.empty()));
         }
         return outcome;
     }
@@ -1191,12 +1199,14 @@ final class Transaction {
                 }
                 try {
                     Optional<GuardResult> result = await(machine, ref, transition.from(), id, to, Optional.empty(),
-                            depth, "the guard " + guard.name(), stage, uow.deadlineNanos());
+                            "the guard " + guard.name(), stage, uow.deadlineNanos());
                     if (result.isEmpty()) {
                         throw abort(machine, ref, transition.from(), id, to, Optional.empty(), depth,
                                 "the guard " + guard.name() + " returned null", Optional.empty());
                     }
                     yield result.orElseThrow();
+                } catch (EngineAbort aborted) {
+                    throw poisonIfNested(depth, aborted.abort());
                 } catch (ActionFailure failure) {
                     throw guardFailure(machine, ref, transition, depth, guard, "failed:", failure.getCause());
                 }
@@ -1217,23 +1227,24 @@ final class Transaction {
 
     /**
      * Waits under the deadline. Timeout, interruption and the refusal of the thread's ForkJoinPool to let it block
-     * are aborts, each caused by what ended the wait; the user's stage is left running.
+     * are aborts, each caused by what ended the wait, which leave as an EngineAbort for the step to poison the call
+     * with; the user's stage is left running.
      */
     private <R> Optional<R> await(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
-                                  Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action, int depth,
-                                  String what, CompletionStage<R> stage, long deadlineNanos) {
+                                  Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action, String what,
+                                  CompletionStage<R> stage, long deadlineNanos) {
         try {
             return Await.completedOrAwait(stage, deadlineNanos);
         } catch (Await.Timeout timeout) {
-            throw abort(machine, ref, from, id, to, action, depth, "waiting for " + what + " timed out",
-                    Optional.of(timeout.getCause()));
+            throw new EngineAbort(unpoisonedAbort(machine, ref, from, id, to, action,
+                    "waiting for " + what + " timed out", Optional.of(timeout.getCause())));
         } catch (Await.Interrupted interrupted) {
-            throw abort(machine, ref, from, id, to, action, depth, "interrupted while waiting for " + what,
-                    Optional.of(interrupted.getCause()));
+            throw new EngineAbort(unpoisonedAbort(machine, ref, from, id, to, action,
+                    "interrupted while waiting for " + what, Optional.of(interrupted.getCause())));
         } catch (Await.Rejected rejected) {
-            throw abort(machine, ref, from, id, to, action, depth,
+            throw new EngineAbort(unpoisonedAbort(machine, ref, from, id, to, action,
                     "waiting for " + what + " was refused by the thread's ForkJoinPool",
-                    Optional.of(rejected.getCause()));
+                    Optional.of(rejected.getCause())));
         }
     }
 
@@ -1327,6 +1338,11 @@ final class Transaction {
                         "the failure route action " + action.name() + " threw after the original failure ("
                                 + reason + ")",
                         Optional.of(recoveryCause));
+            } catch (EngineAbort aborted) {
+                uow.journalStatus(journalIndex, ActionStatus.THREW);
+                settle(ctx);
+                // As in runAction.
+                throw poisonOr(poisonIfNested(depth, aborted.abort()));
             } catch (CallFailedException e) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
                 settle(ctx);
@@ -1410,11 +1426,18 @@ final class Transaction {
     private TransitionAbortedException abort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
                                              Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action,
                                              int depth, String message, Optional<Throwable> cause) {
+        return poisonIfNested(depth, unpoisonedAbort(machine, ref, from, id, to, action, message, cause));
+    }
+
+    /** {@link #abort} that poisons nothing yet: an EngineAbort carries it to the step, which poisons the call. */
+    private TransitionAbortedException unpoisonedAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
+                                                       Enum<?> from, Optional<Enum<?>> id, Optional<Enum<?>> to,
+                                                       Optional<String> action, String message,
+                                                       Optional<Throwable> cause) {
         AbortDetails details = details(machine, ref, from, id, to, action);
-        TransitionAbortedException error = cause.isPresent()
+        return cause.isPresent()
                 ? new TransitionAbortedException(call(), phase, details, message, cause.get())
                 : new TransitionAbortedException(call(), phase, details, message);
-        return poisonIfNested(depth, error);
     }
 
     /**

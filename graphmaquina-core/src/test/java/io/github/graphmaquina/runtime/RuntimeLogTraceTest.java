@@ -8,6 +8,7 @@ import static io.github.graphmaquina.fixtures.DocStatus.REVIEW;
 import static io.github.graphmaquina.fixtures.DocTransition.ARCHIVE;
 import static io.github.graphmaquina.fixtures.DocTransition.DISCARD;
 import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
+import static io.github.graphmaquina.fixtures.DocTransition.SEND_BACK;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static io.github.graphmaquina.fixtures.Keys.ITEMS;
@@ -513,6 +514,117 @@ class RuntimeLogTraceTest {
             assertTrue(error.getMessage().contains("waiting for the action Review timed out"), error.getMessage());
             long budget = budgets(log).get(0);
             assertTrue(budget > 0 && budget <= 20_000, "budget=" + budget);
+        }
+    }
+
+    /**
+     * The engine's own abort of a nested action step, for a null outcome, a wait that timed out or a wait that an
+     * interrupt ended, and of a nested recovery action that returned null, traces the action's THREW line and then
+     * the poison of the step, as an action that throws does: a poison line between an action's start and end lines
+     * belongs to a cascade of that action, never to the action's own end.
+     */
+    @Test
+    void anEngineAbortOfANestedActionTracesTheActionsEndBeforeThePoison() {
+        String abort = TransitionAbortedException.class.getName();
+        assertEquals(List.of(
+                "FINE call=A start Doc/DocStatus SUBMIT",
+                "FINER call=A depth=0 resolved Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW kind=ACTION",
+                "FINER call=A depth=0 action Submit start mode=sync",
+                "FINER call=A depth=0 cascade Doc/DocStatus#p PUBLISH",
+                "FINER call=A depth=1 resolved Doc/DocStatus#p REVIEW -PUBLISH-> PUBLISHED kind=ACTION",
+                "FINER call=A depth=1 action Publish start mode=sync",
+                "FINER call=A depth=1 action Publish THREW error=" + abort + " elapsed=<us>",
+                "FINER call=A depth=1 poison error=<the abort: the action Publish returned null>",
+                "FINER call=A depth=0 action Submit THREW error=" + abort + " elapsed=<us>",
+                "FINE call=A failed phase=ACTION written=NONE entity=Doc/DocStatus#1 error=<the abort> elapsed=<us>"),
+                nestedAbort((TransitionBuilder<Doc, DocStatus, DocTransition> publish) -> publish.action("Publish",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> null), "returned null"));
+        List<String> waited = List.of(
+                "FINE call=A start Doc/DocStatus SUBMIT",
+                "FINER call=A depth=0 resolved Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW kind=ACTION",
+                "FINER call=A depth=0 action Submit start mode=sync",
+                "FINER call=A depth=0 cascade Doc/DocStatus#p PUBLISH",
+                "FINER call=A depth=1 resolved Doc/DocStatus#p REVIEW -PUBLISH-> PUBLISHED kind=ACTION",
+                "FINER call=A depth=1 action Publish start mode=async",
+                "FINER call=A depth=1 action Publish awaiting budget=<us>",
+                "FINER call=A depth=1 action Publish THREW error=" + abort + " elapsed=<us>",
+                "FINER call=A depth=1 poison error=<the abort: %s>",
+                "FINER call=A depth=0 action Submit THREW error=" + abort + " elapsed=<us>",
+                "FINE call=A failed phase=ACTION written=NONE entity=Doc/DocStatus#1 error=<the abort> elapsed=<us>");
+        assertEquals(waited.stream().map((String line) -> line.formatted("waiting for the action Publish timed out"))
+                        .toList(),
+                nestedAbort((TransitionBuilder<Doc, DocStatus, DocTransition> publish) -> publish
+                        .asyncAction("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) ->
+                                new CompletableFuture<ActionOutcome>())
+                        .timeout(Duration.ofMillis(20)), "timed out"));
+        try {
+            assertEquals(waited.stream().map((String line) -> line.formatted(
+                            "interrupted while waiting for the action Publish")).toList(),
+                    nestedAbort((TransitionBuilder<Doc, DocStatus, DocTransition> publish) -> publish
+                            .asyncAction("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                                Thread.currentThread().interrupt();
+                                return new CompletableFuture<ActionOutcome>();
+                            }), "interrupted"));
+        } finally {
+            Thread.interrupted();
+        }
+        assertEquals(List.of(
+                "FINE call=A start Doc/DocStatus SUBMIT",
+                "FINER call=A depth=0 resolved Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW kind=ACTION",
+                "FINER call=A depth=0 action Submit start mode=sync",
+                "FINER call=A depth=0 cascade Doc/DocStatus#p PUBLISH",
+                "FINER call=A depth=1 resolved Doc/DocStatus#p REVIEW -PUBLISH-> PUBLISHED kind=ACTION",
+                "FINER call=A depth=1 action Publish start mode=sync",
+                "FINER call=A depth=1 action Publish THREW error=" + GatewayException.class.getName()
+                        + " elapsed=<us>",
+                "FINER call=A depth=1 route PUBLISH -> SEND_BACK rollback-to=1 reason=\"GatewayException: down\"",
+                "FINER call=A depth=1 action SendBack start mode=sync",
+                "FINER call=A depth=1 action SendBack THREW error=" + abort + " elapsed=<us>",
+                "FINER call=A depth=1 poison error=<the abort: the action SendBack returned null>",
+                "FINER call=A depth=0 action Submit THREW error=" + abort + " elapsed=<us>",
+                "FINE call=A failed phase=ACTION written=NONE entity=Doc/DocStatus#1 error=<the abort> elapsed=<us>"),
+                nestedAbort((TransitionBuilder<Doc, DocStatus, DocTransition> publish) -> publish
+                        .action("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            throw new GatewayException("down");
+                        })
+                        .failsOn(GatewayException.class).onFailure(SEND_BACK), "SendBack returned null"));
+    }
+
+    /**
+     * The lines of a call whose action SUBMIT cascades PUBLISH, shaped by {@code publish}, into a doc in REVIEW, which
+     * the engine aborts with a message that contains {@code expected}: the abort's text is replaced by
+     * {@code <the abort>} in the failed line and by {@code <the abort: message>} in the poison line, where
+     * {@code message} is what follows the abort's edge. SEND_BACK, REVIEW to DRAFT, runs an action that returns null;
+     * ARCHIVE moves a publication to ARCHIVED.
+     */
+    private static List<String> nestedAbort(UnaryOperator<TransitionBuilder<Doc, DocStatus, DocTransition>> publish,
+                                            String expected) {
+        GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT)
+                .terminal(ARCHIVED).allowsCycle(DRAFT)
+                .statePolicy(DRAFT, "a draft is submitted")
+                .statePolicy(REVIEW, "a review is published or sent back")
+                .statePolicy(PUBLISHED, "a publication is archived")
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        ctx.cascade(DOCS, new Doc("p", REVIEW), PUBLISH);
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(SEND_BACK, REVIEW, DRAFT)
+                    .action("SendBack", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> null)
+                    .endTransition();
+        graph = publish.apply(graph.transition(PUBLISH, REVIEW, PUBLISHED)).endTransition();
+        try (MachineRegistry registry = registry(graph.build(), Duration.ofSeconds(5));
+             LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT));
+            assertTrue(error.getMessage().contains(expected), error.getMessage());
+            String text = error.toString();
+            String message = error.getMessage();
+            String said = message.substring(message.indexOf(": ") + 2, message.lastIndexOf(" [route"));
+            return lines(log).stream().map((String line) -> line.replace("poison error=" + text,
+                    "poison error=<the abort: " + said + ">").replace("error=" + text, "error=<the abort>")).toList();
         }
     }
 
