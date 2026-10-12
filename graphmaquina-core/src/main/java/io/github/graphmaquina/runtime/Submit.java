@@ -14,8 +14,9 @@ import java.util.function.Supplier;
  * already done when the task runs, cancelled or completed meanwhile, skips the call, and anything the call throws, an
  * Error included, fails the future, as it is when it is a CompletionException and wrapped in a new one otherwise, so
  * that nothing escapes on the executor's thread. The new CompletionException's message is the string of what the call
- * threw, as supplyAsync's is, or {@code <toString threw <class name>>} when printing it throws; supplyAsync reads that
- * string to construct its CompletionException, so a throwable whose printing throws leaves its future pending.
+ * threw, as supplyAsync's is, {@code <toString returned null>} when that string is null, where supplyAsync's message
+ * is null, or {@code <toString threw <class name>>} when printing it throws; supplyAsync reads that string to
+ * construct its CompletionException, so a throwable whose printing throws leaves its future pending.
  * supplyAsync submits a CompletableFuture.AsynchronousCompletionTask instead, which CompletableFuture's get and join
  * run on a ForkJoinPool worker that waits while the task is queued on it: the call would run inside the callback that
  * waits, on a thread marked as running a transition, and fail with ReentrantTransitionException.
