@@ -33,7 +33,9 @@ import javax.lang.model.util.Types;
  *
  * <p>The methods of a host are listed once per round and kept by name, however many calls to it are written:
  * {@link #forget}, which the processor calls at the start of every round, drops them with the members javac enters
- * afresh in that round.</p>
+ * afresh in that round. A binding a machine's model holds from an earlier round, which a set of a later round builds
+ * that machine from, selected a method javac has entered again since: it is recognized among those of the round by
+ * the type that declares it, its name and the erasures of its parameters, so it never competes with itself.</p>
  */
 public final class BoundInvocation {
 
@@ -93,13 +95,38 @@ public final class BoundInvocation {
             // Package and protected overloads can also be visible from the generated facade. Considering
             // every non-private candidate is conservative when the facade lives in another package: it may
             // add a cast, but must never let javac select a different accessible overload.
-            if (!other.equals(binding.method()) && !other.getModifiers().contains(Modifier.PRIVATE)
+            if (!same(other, binding.method()) && !other.getModifiers().contains(Modifier.PRIVATE)
                     && other.getParameters().size() == binding.arguments().size()
                     && applies(binding, other)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * Whether {@code other}, listed in this round, is the declaration {@code method} is, which javac may have
+     * entered in an earlier round: both are declared by one type, with one name and parameters that erase to the
+     * same types, which no two methods a type declares share.
+     */
+    private boolean same(ExecutableElement other, ExecutableElement method) {
+        if (other.equals(method)) {
+            return true;
+        }
+        if (!(other.getEnclosingElement() instanceof TypeElement otherOwner)
+                || !(method.getEnclosingElement() instanceof TypeElement owner)
+                || !otherOwner.getQualifiedName().contentEquals(owner.getQualifiedName())
+                || !other.getSimpleName().contentEquals(method.getSimpleName())
+                || other.getParameters().size() != method.getParameters().size()) {
+            return false;
+        }
+        for (int at = 0; at < method.getParameters().size(); at++) {
+            if (!types.isSameType(types.erasure(other.getParameters().get(at).asType()),
+                    types.erasure(method.getParameters().get(at).asType()))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** The methods {@code owner} declares or inherits, by name, listed once in this round. */

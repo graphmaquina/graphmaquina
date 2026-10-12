@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -18,10 +19,12 @@ import org.junit.jupiter.api.Test;
  * <p>The value of an annotation StateGraph does not own, the application's or another tool's, never affects the
  * machine, which gets its companion and its place in the published index whatever such a value names. A value of
  * StateGraph's own vocabulary is read once a round resolves it: the machine, and a set that holds it, wait for that
- * round. A value no round resolves is javac's alone to refuse, which {@code MachineHeaderErrorsTest} pins, and the
- * machine is still checked declaration by declaration. A text that reads like javac's placeholder for such a value
- * is still a text. javac itself refuses, before any processor runs, such a constant in an annotation repeated
- * without its container, and a state or an identifier that is not an enum constant.</p>
+ * round, where the set builds every machine it holds as a set of the first round would, even one the first round
+ * resolved; so does a set another processor generates. A value no round resolves is javac's alone to refuse, which
+ * {@code MachineHeaderErrorsTest} pins, and the machine is still checked declaration by declaration. A text that reads
+ * like javac's placeholder for such a value is still a text. javac itself refuses, before any processor runs, such a
+ * constant in an annotation repeated without its container, and a state or an identifier that is not an enum
+ * constant.</p>
  */
 class LaterRoundValuesTest {
 
@@ -60,6 +63,14 @@ class LaterRoundValuesTest {
                 public static final String DRAFT = "a draft goes " + "to review first";
                 public static final String NEVER_ARCHIVED = "a draft is never archived";
                 private Texts() { }
+            }
+            """;
+
+    /** The exception Docs fails on in {@link #staged}, which {@link AnotherProcessor} generates. */
+    private static final String BROKEN = """
+            package fx.model;
+            public final class Broken extends RuntimeException {
+                private static final long serialVersionUID = 1L;
             }
             """;
 
@@ -332,6 +343,146 @@ class LaterRoundValuesTest {
         assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
         assertFalse(result.hasGenerated("fx.LibraryRuntime"), result.describe());
         assertFalse(Files.exists(prepared.request().classesOutput().resolve(PUBLISHED)), result.describe());
+    }
+
+    /**
+     * Docs fails on a class {@link AnotherProcessor} generates in the first round, so it waits for the second, and
+     * so does the set that holds it, which then builds Pages from the model the first round resolved. The writer of
+     * Pages takes a package-private type of Pages' package, which the set's package cannot name: the set calls that
+     * writer as a set of the first round would, without a cast to that type.
+     */
+    @Test
+    void aSetOfALaterRoundCallsTheWriterOfAMachineOfAnEarlierOneAsTheFirstRoundWould() {
+        AnotherProcessor.generates(Map.of("fx.model.Broken", BROKEN));
+
+        Compilation.Result result = compile(Compilation.prepare(staged("Broken")), AnotherProcessor.class);
+
+        assertTrue(result.success(), result.describe());
+        assertEquals(List.of(), result.diagnostics(), result.describe());
+        assertTrue(result.generated("fx.app.LibraryRuntime").contains(".status(state)"),
+                result.generated("fx.app.LibraryRuntime"));
+    }
+
+    /**
+     * The companion of a set is the same whichever round builds it: the set of a compilation where Docs waits for
+     * the class it fails on is the set of one where nothing waits.
+     */
+    @Test
+    void aSetIsGeneratedTheSameInALaterRound() {
+        Map<String, String> waiting = staged("Broken");
+        waiting.put("fx.model.Stage", "package fx.model;\npublic interface Stage { }\n");
+        Map<String, String> immediate = staged("IllegalStateException");
+        immediate.put("fx.model.Stage", "package fx.model;\npublic interface Stage { }\n");
+        AnotherProcessor.generates(Map.of("fx.model.Broken", BROKEN));
+        Compilation.Result later = compile(Compilation.prepare(waiting), AnotherProcessor.class);
+        AnotherProcessor.generates(Map.of());
+        Compilation.Result first = compile(Compilation.prepare(immediate), AnotherProcessor.class);
+
+        assertTrue(later.success(), later.describe());
+        assertTrue(first.success(), first.describe());
+        assertEquals(first.generated("fx.app.LibraryRuntime"), later.generated("fx.app.LibraryRuntime"));
+    }
+
+    /** A set {@link AnotherProcessor} generates in the first round holds machines the first round resolved. */
+    @Test
+    void aSetAnotherProcessorGeneratesCallsTheWriterAsTheFirstRoundWould() {
+        Map<String, String> sources = staged("IllegalStateException");
+        AnotherProcessor.generates(Map.of("fx.app.Library", sources.remove("fx.app.Library")));
+
+        Compilation.Result result = compile(Compilation.prepare(sources), AnotherProcessor.class);
+
+        assertTrue(result.success(), result.describe());
+        assertEquals(List.of(), result.diagnostics(), result.describe());
+        assertTrue(result.generated("fx.app.LibraryRuntime").contains(".status(state)"),
+                result.generated("fx.app.LibraryRuntime"));
+    }
+
+    /**
+     * Pages and Docs in {@code fx.model}, and the set that holds both in {@code fx.app}. The entity of Pages has a
+     * state writer that takes {@code Stage}, a package-private interface its state enum implements; Docs's edge
+     * fails on {@code failsOn}.
+     */
+    private static Map<String, String> staged(String failsOn) {
+        Map<String, String> sources = new LinkedHashMap<>();
+        sources.put("fx.model.Stage", "package fx.model;\ninterface Stage { }\n");
+        sources.put("fx.model.PageStatus",
+                "package fx.model;\npublic enum PageStatus implements Stage { OPEN, DONE }\n");
+        sources.put("fx.model.PageTransition", "package fx.model;\npublic enum PageTransition { FINISH }\n");
+        sources.put("fx.model.Page", """
+                package fx.model;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public final class Page {
+                    @GraphProperty private PageStatus status = PageStatus.OPEN;
+                    @GraphProperty public String id() { return "page"; }
+                    public PageStatus status() { return status; }
+                    public void status(Stage value) { status = (PageStatus) value; }
+                }
+                """);
+        sources.put("fx.model.Pages", """
+                package fx.model;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import static fx.model.PageStatus.*;
+                import static fx.model.PageTransition.*;
+                @GenerateGraphApi
+                @PagesGraph.Definition(initial = OPEN, terminals = DONE, state = PageRefs.Status.class,
+                        id = PageRefs.Id.class)
+                @PagesGraph.StatePolicy(state = OPEN, otherwise = "a page is finished")
+                @PagesGraph.Transition(id = FINISH, from = OPEN, to = DONE)
+                public interface Pages extends Machine<Page, PageStatus, PageTransition> { }
+                """);
+        sources.put("fx.model.DocStatus", "package fx.model;\npublic enum DocStatus { DRAFT, PUBLISHED }\n");
+        sources.put("fx.model.DocTransition", "package fx.model;\npublic enum DocTransition { PUBLISH }\n");
+        sources.put("fx.model.Doc", """
+                package fx.model;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public final class Doc {
+                    @GraphProperty private DocStatus status = DocStatus.DRAFT;
+                    @GraphProperty public String id() { return "doc"; }
+                    public DocStatus status() { return status; }
+                    public void status(DocStatus value) { status = value; }
+                }
+                """);
+        sources.put("fx.model.DocActions", """
+                package fx.model;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.api.ActionOutcome;
+                import io.github.graphmaquina.api.TransitionContext;
+                public final class DocActions {
+                    private DocActions() { }
+                    @GraphAction
+                    public static ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                        return ActionOutcome.ok();
+                    }
+                }
+                """);
+        sources.put("fx.model.Docs", """
+                package fx.model;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import static fx.model.DocStatus.*;
+                import static fx.model.DocTransition.*;
+                @GenerateGraphApi
+                @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED, state = DocRefs.Status.class,
+                        id = DocRefs.Id.class)
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "a draft is published")
+                @DocsGraph.Transition(id = PUBLISH, from = DRAFT, to = PUBLISHED, action = DocActionsRefs.Publish.class,
+                        failsOn = %s.class)
+                public interface Docs extends Machine<Doc, DocStatus, DocTransition> { }
+                """.formatted(failsOn));
+        sources.put("fx.app.Library", """
+                package fx.app;
+                import fx.model.Docs;
+                import fx.model.Pages;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                @StateGraphs
+                public interface Library extends Machines {
+                    Docs docs();
+                    Pages pages();
+                }
+                """);
+        return sources;
     }
 
     /** {@code sources} with {@link #MARKER}. */
