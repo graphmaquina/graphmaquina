@@ -223,12 +223,21 @@ public final class SnapshotGraphs {
      * that one exit and nothing else.
      */
     public static GraphDefinition<String, Stage, Verdict> submachineGraph(Verdict exitOfC) {
+        return submachineGraph(exitOfC, branchGraph(true));
+    }
+
+    /**
+     * The same parent over {@code child}, whose terminal states B and C it maps: two of these over children of the
+     * same key differ only in what the children's own graphs declare.
+     */
+    public static GraphDefinition<String, Stage, Verdict> submachineGraph(Verdict exitOfC,
+                                                                          GraphDefinition<String, Step, Move> child) {
         return StateGraph.define(STAGE_KEY).initial(Stage.DRAFT).terminal(Stage.ACCEPTED).terminal(Stage.DROPPED)
                 .statePolicy(Stage.DRAFT, "submit the draft").statePolicy(Stage.REVIEW, "the review decides")
                 .transition(Verdict.SUBMIT, Stage.DRAFT, Stage.REVIEW).endTransition()
                 .transition(Verdict.ACCEPT, Stage.REVIEW, Stage.ACCEPTED).endTransition()
                 .transition(Verdict.DROP, Stage.REVIEW, Stage.DROPPED).endTransition()
-                .submachine(Stage.REVIEW, branchGraph(true), CHILD_OF, PARENT_OF)
+                .submachine(Stage.REVIEW, child, CHILD_OF, PARENT_OF)
                     .exit(Step.B, Verdict.ACCEPT).exit(Step.C, exitOfC).endSubmachine()
                 .build();
     }

@@ -144,7 +144,7 @@ constant of another machine's catalogue does not compile inside it.
 | State setter | `StateWriteProbe` | every write in entry order with its status, and a failure armed on one call |
 | Async callback | `ControlledAsyncAction`, `ControlledAsyncGuard` | that the engine entered the callback, with the test deciding when and how it answers |
 | Rendered diagram | `GraphGoldens.assertMatches` | visual DOT output only; not machine logic |
-| Whole definition | `GraphSnapshots.assertMatches` | every field the definition carries against a checked-in resource |
+| Whole definition | `GraphSnapshots.assertMatches` | the fields the definition declares against a checked-in resource, a sub-machine by its child's key and exits only, so the child's graph needs a snapshot of its own |
 
 ## Asserting on identity
 
@@ -949,15 +949,17 @@ logic.
 - `GraphSnapshots.assertMatches(definition, resource)` compares declared metadata with a checked-in
   `.graph` file: the machine key including the transition enum, the ordered catalogue of identifiers,
   ordered states, initial state, terminals, async mode, node policies, watches and their ordered rules with
-  the identifier each one executes, each sub-machine with its child machine and the identifier each terminal state
-  of the child exits through, and for every edge its `(from, id)` key, destination, kind, reason-free
+  the identifier each one executes, each sub-machine with its child's machine key and the identifier each terminal
+  state of the child exits through, and for every edge its `(from, id)` key, destination, kind, reason-free
   action and guard names/modes, fallback failure identifier, `failsOn` classes, timeout, after-commit hook and, only
   when the edge declares some, its recovery rules in declaration order, each with its failure kind, recovery
   identifier and `failsOn` classes. That order routes nothing, yet reordering the rules changes the snapshot.
   It reads `GraphDefinition` and its `TransitionSpec`s directly and does not call an exporter. Absence has no
-  path at all: an identifier with no edge from a state simply does not appear. Use typed graph assertions
-  for focused expectations. Neither approach executes domain logic; test guards, actions, cascades and
-  watches through real operations and assert their outcomes, records, reactions and observed entity states.
+  path at all: an identifier with no edge from a state simply does not appear. The graph of a bound child is not
+  part of its parent's snapshot, so a change to that graph alone leaves the parent's snapshot as it was: give the
+  child's definition a snapshot of its own. Use typed graph assertions for focused expectations. Neither approach
+  executes domain logic; test guards, actions, cascades and watches through real operations and assert their
+  outcomes, records, reactions and observed entity states.
 - `GraphGoldens.assertMatches(definition, resource)` compares the Graphviz DOT output with a checked-in
   `.dot` file. There is no detail mode: the export draws the declared edges, draws each sub-machine as a
   cluster inside the state it is bound to, and renders each node's policy as that node's tooltip, or as the
