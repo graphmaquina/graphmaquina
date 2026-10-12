@@ -528,8 +528,11 @@ and only the order inside the header decides how the two are closed. Try-with-re
 order, so the fixture is closed first, which is what `ControlledAsyncAction` asks for: closing cancels the
 invocations it is still holding, and a worker parked inside the action is released before the registry waits
 for it. Listed the other way round, a test that fails before answering an invocation makes the registry wait
-out the machine's whole `asyncTimeout` — once per unanswered invocation — before the fixture ever gets to
-cancel it.
+until each unanswered call gives up at its own deadline, the edge's `timeout` or the call's `asyncTimeout`,
+whichever ends first, before the fixture ever gets to cancel it. Calls that run side by side wait out their
+deadlines side by side, so two unanswered invocations started together cost about one such wait, not two. Only
+the default executors of the machines are awaited: closing the registry does not wait for an executor the
+application supplied.
 
 The machine that holds an async edge must declare `asyncTimeout(...)`, as any async machine does. When a call
 on a sub-machine can run that edge implicitly, as the exit of its binding or an edge that exit leads to, the
