@@ -457,15 +457,22 @@ final class UnitOfWork {
         return List.of(records);
     }
 
-    /** {@link #records()} of a log that held a start: the hops alone. */
+    /** {@link #records()} of a log that held a start: the hops alone, in an array sized by counting them first. */
     private List<TransitionRecord<?, ?, ?>> hopRecords() {
-        List<TransitionRecord<?, ?, ?>> records = new ArrayList<>();
+        int hops = 0;
         for (int index = 0; index < log.size(); index++) {
-            if (log.get(index) instanceof LogEntry.Hop hop) {
-                records.add(Typed.record(hop.ref().key(), hop));
+            if (log.get(index) instanceof LogEntry.Hop) {
+                hops++;
             }
         }
-        return List.copyOf(records);
+        TransitionRecord<?, ?, ?>[] records = new TransitionRecord<?, ?, ?>[hops];
+        int next = 0;
+        for (int index = 0; index < log.size(); index++) {
+            if (log.get(index) instanceof LogEntry.Hop hop) {
+                records[next++] = Typed.record(hop.ref().key(), hop);
+            }
+        }
+        return List.of(records);
     }
 
     /**
@@ -476,15 +483,22 @@ final class UnitOfWork {
         return started ? loggedStarts() : List.of();
     }
 
-    /** {@link #starts()} of a log that held a start. */
+    /** {@link #starts()} of a log that held a start: the starts alone, in an array sized by counting them first. */
     private List<SubmachineStart<?, ?, ?>> loggedStarts() {
-        List<SubmachineStart<?, ?, ?>> starts = new ArrayList<>();
+        int count = 0;
         for (int index = 0; index < log.size(); index++) {
-            if (log.get(index) instanceof LogEntry.Start start) {
-                starts.add(Typed.start(start.ref().key(), start));
+            if (log.get(index) instanceof LogEntry.Start) {
+                count++;
             }
         }
-        return List.copyOf(starts);
+        SubmachineStart<?, ?, ?>[] starts = new SubmachineStart<?, ?, ?>[count];
+        int next = 0;
+        for (int index = 0; index < log.size(); index++) {
+            if (log.get(index) instanceof LogEntry.Start start) {
+                starts[next++] = Typed.start(start.ref().key(), start);
+            }
+        }
+        return List.of(starts);
     }
 
     /**
