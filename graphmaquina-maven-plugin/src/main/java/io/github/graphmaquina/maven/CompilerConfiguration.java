@@ -71,7 +71,10 @@ import java.util.regex.Pattern;
  * user property the parameter is bound to, from the command line, from the properties of the JVM and from the
  * properties of the project, in that order. Reading only the XML would miss a project that configures its
  * compiler entirely through {@code maven.compiler.*} properties, which is a common and fully supported way to
- * write a POM.</p>
+ * write a POM. Every value is read as Maven evaluates it for the compiler, through Maven's own evaluator of plugin
+ * parameters, so an expression the effective model leaves for that evaluator, such as
+ * {@code ${session.executionRootDirectory}}, is completed before the value is compared with anything or handed to
+ * the generator.</p>
  */
 final class CompilerConfiguration {
 
@@ -1088,8 +1091,8 @@ final class CompilerConfiguration {
         Path expected = Path.of(request.classesOutput()).toAbsolutePath().normalize();
         boolean main = execution == CompilerExecution.MAIN;
         Optional<Setting> directory = main
-            ? setting("outputDirectory", "maven.compiler.outputDirectory")
-            : configured("outputDirectory");
+            ? setting("outputDirectory", "maven.compiler.outputDirectory", File.class)
+            : configured("outputDirectory", File.class);
         String writes = " execution of maven-compiler-plugin write its classes ";
         String consequence = ", while StateGraph completes this compilation in " + expected + ", the class output of"
             + " the project: the completion would find no class of this compilation to publish there, after the"
@@ -1232,12 +1235,14 @@ final class CompilerConfiguration {
 
     /**
      * The source roots javac compiles when this execution declares {@code <compileSourceRoots>} of its own, which
-     * replace the source roots of the project: each as an absolute path, a relative one resolved, as
-     * maven-compiler-plugin 3.15.0 resolves it, against the working directory of the JVM running Maven. An empty value
-     * is left out.
+     * replace the source roots of the project: each evaluated as {@link #parameterValues} evaluates it, then as an
+     * absolute path, a relative one resolved, as maven-compiler-plugin 3.15.0 resolves it, against the working
+     * directory of the JVM running Maven. An empty value, or one that evaluates to nothing, is left out.
      *
      * @return the roots; empty when the execution declares no such element, or one with neither text nor a child,
-     *     for which Maven gives the compiler its default, the source roots of the project, so that javac compiles those
+     *     for which Maven gives the compiler its default, the source roots of the project, so that javac compiles
+     *     those; and also when the text of the element evaluates to nothing, as {@code ${project.compileSourceRoots}}
+     *     does, which names the source roots of the project
      */
     Optional<List<String>> compileSourceRoots() {
         Optional<Xpp3Dom> element = element("compileSourceRoots");
@@ -1419,13 +1424,16 @@ final class CompilerConfiguration {
 
     /**
      * The values Maven gives one array or collection parameter of the effective configuration of this execution,
-     * as the sisu-plexus configurator of Maven 3.9.12 converts it: the text of the element split on every comma,
-     * empty parts included, when it has text, else the text of each child element, in order. A value that is empty
-     * becomes {@code null}. The text is read from the effective model, where Maven has interpolated the properties
-     * but not the expressions only that configurator evaluates, such as those of {@code ${session}}, which are read
-     * as written, as everywhere in this class.
+     * as the sisu-plexus configurator of Maven 3.9.12 converts it: when the element has text, that text evaluated as
+     * {@link #evaluated} evaluates it, then split on every comma, empty parts included; else the text of each child
+     * element, in order. Each value is then evaluated as {@link #evaluated} evaluates it, as that configurator
+     * evaluates every value of the list again, and one that is empty, or that evaluates to nothing, becomes
+     * {@code null}. So an expression the effective model leaves for that configurator, such as one of
+     * {@code ${session}}, is completed before the values are read.
      *
-     * @return the values, empty when the configuration has no such element
+     * @return the values, empty when the configuration has no such element, or when its text evaluates to nothing,
+     *     being one expression naming an object Maven does not take for a {@code String}, such as
+     *     {@code ${project.compileSourceRoots}}
      */
     private Optional<List<String>> parameterValues(String parameter) {
         Optional<Xpp3Dom> declared = element(parameter);
@@ -1435,16 +1443,27 @@ final class CompilerConfiguration {
         List<String> values = new ArrayList<>();
         String text = declared.get().getValue();
         if (text != null && !text.isEmpty()) {
-            for (String part : text.split(",", -1)) {
-                values.add(part.isEmpty() ? null : part);
+            Optional<String> evaluatedText = evaluated(text);
+            if (evaluatedText.isEmpty()) {
+                return Optional.empty();
+            }
+            // The configurator splits an empty text into no value at all.
+            if (!evaluatedText.get().isEmpty()) {
+                for (String part : evaluatedText.get().split(",", -1)) {
+                    values.add(listValue(part));
+                }
             }
         } else {
             for (Xpp3Dom child : declared.get().getChildren()) {
-                String value = child.getValue();
-                values.add(value == null || value.isEmpty() ? null : value);
+                values.add(listValue(child.getValue()));
             }
         }
         return Optional.of(Collections.unmodifiableList(values));
+    }
+
+    /** One value of a list parameter, evaluated: {@code null} when it is empty or evaluates to nothing. */
+    private String listValue(String value) {
+        return value == null || value.isEmpty() ? null : evaluated(value).orElse(null);
     }
 
     /**
@@ -1460,34 +1479,66 @@ final class CompilerConfiguration {
     }
 
     /**
-     * The value of one compiler parameter, and where the build set it: the effective configuration of this
-     * execution, then the property the parameter is bound to.
+     * The value of one {@code String} or {@code boolean} compiler parameter, and where the build set it: the effective
+     * configuration of this execution, then the property the parameter is bound to, as the next method reads them.
      */
     private Optional<Setting> setting(String parameter, String property) {
-        return configured(parameter).or(() -> property(property));
-    }
-
-    /** The value of one compiler parameter bound to no property, and how the effective configuration spells it. */
-    private Optional<Setting> configured(String parameter) {
-        return value(parameter).map((String configured) -> new Setting('<' + parameter + '>' + configured + "</"
-            + parameter + '>', configured));
+        return setting(parameter, property, String.class);
     }
 
     /**
-     * The value of one property, and where the build set it, from the command line, from the properties of the
-     * JVM and from the properties of the project, in that order.
+     * The value of one compiler parameter of {@code type}, and where the build set it: the effective configuration of
+     * this execution, then the property the parameter is bound to. Either value is evaluated as Maven evaluates it for
+     * that parameter, as {@link #evaluated(String, Class)} describes; one that evaluates to nothing counts as unset.
      */
+    private Optional<Setting> setting(String parameter, String property, Class<?> type) {
+        return configured(parameter, type).or(() -> property(property, type));
+    }
+
+    /** The value of one {@code String} or {@code boolean} compiler parameter bound to no property. */
+    private Optional<Setting> configured(String parameter) {
+        return configured(parameter, String.class);
+    }
+
+    /**
+     * The value of one compiler parameter of {@code type} bound to no property, evaluated as Maven evaluates it for
+     * that parameter, as {@link #evaluated(String, Class)} describes, and how the effective configuration spells it;
+     * empty when it is unset or evaluates to nothing.
+     */
+    private Optional<Setting> configured(String parameter, Class<?> type) {
+        return value(parameter).flatMap((String written) -> evaluated(written, type)
+            .map((String configured) -> new Setting('<' + parameter + '>' + written + "</" + parameter + '>',
+                configured)));
+    }
+
+    /** The value of one property a {@code String} parameter of the compiler is bound to, read as below. */
     private Optional<Setting> property(String property) {
+        return property(property, String.class);
+    }
+
+    /**
+     * The value of one property a compiler parameter of {@code type} is bound to, and where the build set it, from
+     * the command line, from the properties of the JVM and from the properties of the project, in that order. Maven
+     * evaluates a value it reads there for a parameter when the value holds an expression {@code ${...}}, such as
+     * {@code ${session.executionRootDirectory}}, and only then: such a value is evaluated as
+     * {@link #evaluated(String, Class)} describes, and one that evaluates to nothing counts as unset.
+     */
+    private Optional<Setting> property(String property, Class<?> type) {
         for (Properties candidates : properties) {
             String value = candidates.getProperty(property);
             if (value != null && !value.isBlank()) {
-                return Optional.of(new Setting(property + '=' + value.strip(), value.strip()));
+                String written = value.strip();
+                Optional<String> resolved = written.contains("${") ? evaluated(written, type) : Optional.of(written);
+                return resolved.map((String evaluated) -> new Setting(property + '=' + written, evaluated));
             }
         }
         return Optional.empty();
     }
 
-    /** The value of {@code name} in the effective configuration of this execution. */
+    /**
+     * The text of {@code name} in the effective configuration of this execution, as the effective model writes it,
+     * before Maven evaluates it.
+     */
     private Optional<String> value(String name) {
         return element(name).map(Xpp3Dom::getValue).filter(value -> !value.isBlank()).map(String::strip);
     }
@@ -1497,18 +1548,21 @@ final class CompilerConfiguration {
         return configuration == null ? Optional.empty() : Optional.ofNullable(configuration.getChild(name));
     }
 
-    /** The text of one child element, or {@code null} when the element or its text is absent. */
-    private static String childValue(Xpp3Dom element, String name) {
+    /**
+     * The text of one child element, evaluated as {@link #evaluated} evaluates it, or {@code null} when the element
+     * or its text is absent or evaluates to nothing.
+     */
+    private String childValue(Xpp3Dom element, String name) {
         Xpp3Dom child = element.getChild(name);
-        return child == null || child.getValue() == null ? null : child.getValue().strip();
+        return child == null || child.getValue() == null ? null : evaluated(child.getValue().strip()).orElse(null);
     }
 
     /**
      * The compiler arguments of the effective configuration of this execution, as maven-compiler-plugin 3.15.0
      * adds them to the arguments of the compiler: the entries of the deprecated {@code <compilerArguments>} map, by
      * key, each key once with its last value, since Maven converts that element into a sorted map; then
-     * {@code <compilerArgument>}; then the values of {@code <compilerArgs>}, as {@link #parameterValues} reads them,
-     * an empty one left out. The test compilation takes {@code <testCompilerArguments>} and
+     * {@code <compilerArgument>}; then the values of {@code <compilerArgs>}, as {@link #parameterValues} reads and
+     * evaluates them, an empty one left out. The test compilation takes {@code <testCompilerArguments>} and
      * {@code <testCompilerArgument>} over the first two when they are set. Each entry of the map gives its key,
      * prefixed with a dash unless it starts with one, then its value unless that is empty; a key that then starts
      * with {@code -A} and has a value gives the single argument {@code key=value} instead. Each value is evaluated
@@ -1548,37 +1602,47 @@ final class CompilerConfiguration {
             .filter((String argument) -> !argument.isEmpty())
             .ifPresent(arguments::add);
         for (String argument : parameterValues("compilerArgs").orElse(List.of())) {
-            if (argument != null) {
-                evaluated(argument).filter((String text) -> !text.isEmpty()).ifPresent(arguments::add);
+            if (argument != null && !argument.isEmpty()) {
+                arguments.add(argument);
             }
         }
         return List.copyOf(arguments);
     }
 
+    /** {@code value} as Maven configures a {@code String} parameter of the compiler with it, as described below. */
+    private Optional<String> evaluated(String value) {
+        return evaluated(value, String.class);
+    }
+
     /**
-     * {@code value} as Maven configures a {@code String} parameter of the compiler with it, as far as that can be told
-     * when {@code generate} runs: evaluated as a {@code String} by Maven's own evaluator of plugin parameters. That
-     * completes what the effective model leaves for it, such as {@code ${settings.localRepository}} or
-     * {@code ${session.executionRootDirectory}}. It keeps {@code $${...}} as the text {@code ${...}}, and turns
-     * {@code $$} into {@code $} only after the last {@code ${...}} of the value, or in the whole value when it holds
-     * none. An expression it cannot complete within a longer value stays as it is written. A value that is one
-     * expression naming an object Maven does not take for a {@code String}, such as {@code ${project.file}},
-     * evaluates to nothing, as it does whenever Maven evaluates it. A value that is one expression the evaluator
-     * cannot complete stays as it is written instead: Maven evaluates the parameters of the compiler only when the
-     * compiler runs, after a plugin bound to a later phase may have set a property, and against the execution of the
-     * compiler, which this plugin cannot see, so an expression about the running goal or its plugin, such as
+     * {@code value} as Maven configures a parameter of the compiler of {@code type} with it, as far as that can be
+     * told when {@code generate} runs: evaluated for that type by Maven's own evaluator of plugin parameters. A
+     * {@code boolean} parameter is evaluated as a {@code String}, which gives the same text, since that evaluator
+     * takes a {@code Boolean} for either type. That completes what the effective model leaves for it, such as
+     * {@code ${settings.localRepository}} or {@code ${session.executionRootDirectory}}. It keeps {@code $${...}} as
+     * the text {@code ${...}}, and turns {@code $$} into {@code $} only after the last {@code ${...}} of the value, or
+     * in the whole value when it holds none. An expression it cannot complete within a longer value stays as it is
+     * written. A value that is one expression naming an object Maven does not take for that type, such as
+     * {@code ${project.file}} for a {@code String}, evaluates to nothing, as it does whenever Maven evaluates it; one
+     * naming a file, for a {@code File}, evaluates to its path. A value that is one expression the evaluator cannot
+     * complete stays as it is written instead: Maven evaluates the parameters of the compiler only when the compiler
+     * runs, after a plugin bound to a later phase may have set a property, and against the execution of the compiler,
+     * which this plugin cannot see, so an expression about the running goal or its plugin, such as
      * {@code ${plugin.version}}, completes there and not here. So does a value the evaluator fails on.
      *
      * @return the evaluated value, empty when Maven evaluates it to nothing whenever it evaluates it
      */
-    private Optional<String> evaluated(String value) {
+    private Optional<String> evaluated(String value, Class<?> type) {
         try {
-            Object typed = evaluator.evaluate(value, String.class);
+            Object typed = evaluator.evaluate(value, type);
+            if (typed instanceof File file) {
+                return Optional.of(file.getPath());
+            }
             if (typed != null) {
                 return Optional.of(String.valueOf(typed));
             }
-            // Typed as a String, the evaluator gives nothing both for an expression it cannot complete and for one
-            // naming an object it does not take for a String; untyped, it gives that object.
+            // Typed, the evaluator gives nothing both for an expression it cannot complete and for one naming an
+            // object it does not take for that type; untyped, it gives that object.
             return evaluator.evaluate(value) == null ? Optional.of(value) : Optional.empty();
         } catch (ExpressionEvaluationException | RuntimeException unevaluable) {
             return Optional.of(value);
@@ -1607,7 +1671,8 @@ final class CompilerConfiguration {
     /**
      * The requirements the compiler selects its own JDK with: empty when the execution declares no
      * {@code <jdkToolchain>}, and an empty map for one that declares no requirement, which maven-compiler-plugin still
-     * hands the toolchain manager, as it hands it any other.
+     * hands the toolchain manager, as it hands it any other. Each value is evaluated as {@link #evaluated} evaluates
+     * it; one that is absent or evaluates to nothing becomes an empty text.
      */
     private Optional<Map<String, String>> jdkToolchain() {
         Optional<Xpp3Dom> toolchain = element("jdkToolchain");
@@ -1617,7 +1682,7 @@ final class CompilerConfiguration {
         Map<String, String> requirements = new LinkedHashMap<>();
         for (Xpp3Dom requirement : toolchain.get().getChildren()) {
             requirements.put(requirement.getName(),
-                requirement.getValue() == null ? "" : requirement.getValue().strip());
+                requirement.getValue() == null ? "" : evaluated(requirement.getValue().strip()).orElse(""));
         }
         return Optional.of(Map.copyOf(requirements));
     }

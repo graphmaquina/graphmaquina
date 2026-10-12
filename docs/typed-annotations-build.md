@@ -533,6 +533,14 @@ main compilation. When no execution of the goal runs, the compilation is skipped
 that both compile the vocabulary are refused, naming both: javac would compile it twice into one class output, and
 the later run fails on the classes of the earlier one.
 
+Every setting the goals read from that execution, or from the property the setting is bound to, is read as Maven
+evaluates it for the compiler, through Maven's own evaluator of plugin parameters. An expression the effective model
+leaves for that evaluator, such as `${session.executionRootDirectory}` or `${settings.localRepository}`, is completed
+first, so an `<outputDirectory>` or `<compileSourceRoots>` spelled with one is checked, and passed to the generator,
+as the compiler gets it. A value that is one expression naming an object Maven does not take for that setting, such
+as `${project.file}` for a text, counts as unset, and an expression that cannot be completed yet stays as it is
+written, as the [compiler arguments](#what-the-maven-adapter-requires-and-refuses) do.
+
 ### Outputs
 
 | Path | Content |
@@ -769,12 +777,13 @@ object Maven does not take for a `String`, such as `${project.file}`, or that ev
 out, as javac never gets it, and a `<compilerArguments>` value that does so leaves its key alone. An expression that
 cannot be completed yet stays as it is written: one about the running goal or its plugin, or a property not set when
 the checks run, which a plugin bound to a later phase may still set. A list parameter written as comma-separated
-text, such as `<compilerArgs>-Xlint:all,-Werror</compilerArgs>`, is split on every comma, as Maven splits it, and so
-are `<annotationProcessors>`, `<compileSourceRoots>` and every list of patterns, for these checks and, for the roots
-and the patterns that select sources, for the sources passed to the generator. `<annotationProcessors>` can
-therefore name its processors as text, `<annotationProcessors>p.First,p.Second</annotationProcessors>`, or in one
-element that holds a comma list, `<annotationProcessor>p.First,p.Second</annotationProcessor>`, as well as one name
-per element: javac gets the names joined by commas and splits them on every comma again.
+text, such as `<compilerArgs>-Xlint:all,-Werror</compilerArgs>`, is evaluated, then split on every comma, as Maven
+splits it, each part evaluated again, and so are `<annotationProcessors>`, `<compileSourceRoots>` and every list of
+patterns, for these checks and, for the roots and the patterns that select sources, for the sources passed to the
+generator. `<annotationProcessors>` can therefore name its processors as text,
+`<annotationProcessors>p.First,p.Second</annotationProcessors>`, or in one element that holds a comma list,
+`<annotationProcessor>p.First,p.Second</annotationProcessor>`, as well as one name per element: javac gets the
+names joined by commas and splits them on every comma again.
 
 The processor-list check refuses only a list that leaves out the StateGraph processor or holds a name that is
 not a valid qualified class name. Other mistakes in a processor list are javac's to report, such as a

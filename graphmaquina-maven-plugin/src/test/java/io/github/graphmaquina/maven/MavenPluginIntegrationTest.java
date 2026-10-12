@@ -2339,6 +2339,56 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * Maven evaluates a parameter of the compiler before it hands it over, completing what the effective model leaves
+     * for it, such as {@code ${session.executionRootDirectory}}, the directory the build was started in, and so does
+     * the generation. An {@code <outputDirectory>} that names the class output of the project through that expression
+     * builds and publishes, and so does the {@code maven.compiler.outputDirectory} property spelled the same way, while
+     * one that names another directory through it is refused before anything is retired, naming the directory it
+     * evaluates to.
+     */
+    @Test
+    void anOutputDirectoryIsReadAsMavenEvaluatesIt() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        String main = "<id>default-compile</id>\n            <configuration>";
+        String classes = "<outputDirectory>${session.executionRootDirectory}/target/classes</outputDirectory>";
+        fixture.editPom(main, main + "\n              " + classes);
+
+        MavenResult same = fixture.run("package");
+
+        assertEquals(0, same.exitCode(), same.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+
+        String elsewhere = "<outputDirectory>${session.executionRootDirectory}/target/elsewhere-classes"
+                + "</outputDirectory>";
+        fixture.editPom(classes, elsewhere);
+
+        MavenResult moved = fixture.run("package");
+
+        assertNotEquals(0, moved.exitCode(), moved.output());
+        Matcher refusal = Pattern.compile(Pattern.quote(elsewhere + " makes the default-compile execution of"
+                + " maven-compiler-plugin write its classes to ") + "(.+?), while StateGraph completes")
+                .matcher(moved.output());
+        assertTrue(refusal.find(), moved.output());
+        Path written = Path.of(refusal.group(1));
+        assertEquals(fixture.projectDirectory().resolve("target").toRealPath(), written.getParent().toRealPath(),
+                moved.output());
+        assertEquals("elsewhere-classes", written.getFileName().toString(), moved.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("\n              " + elsewhere, "");
+
+        MavenResult property = fixture.run(
+                "-Dmaven.compiler.outputDirectory=${session.executionRootDirectory}/target/classes", "package");
+
+        assertEquals(0, property.exitCode(), property.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+    }
+
+    /**
      * javac takes the last {@code -d} and the last {@code -s} it is given, and maven-compiler-plugin passes its own
      * ahead of the compiler arguments. A {@code -d} compiler argument therefore moves the classes, and the index the
      * annotation processor publishes beside them, away from the class output the completion reads, and a {@code -s}
@@ -2560,6 +2610,49 @@ class MavenPluginIntegrationTest {
         MavenResult throughLink = fixture.run("package");
 
         assertEquals(0, throughLink.exitCode(), throughLink.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertArrayEquals(published, Files.readAllBytes(exports), Files.readString(exports));
+    }
+
+    /**
+     * The roots of {@code <compileSourceRoots>} are read as Maven evaluates them for the compiler, completing what the
+     * effective model leaves for it, such as {@code ${session.executionRootDirectory}}, the directory the build was
+     * started in. Here a root of their own named through that expression holds the shared domain, while the source
+     * root of the project holds only a draft that does not parse: the generator parses the root javac compiles, and
+     * not the draft. The directory the generator writes into, named through the same expression, is then one javac
+     * compiles too, so that build is not refused either, and both publish the same index.
+     */
+    @Test
+    void compileSourceRootsAreReadAsMavenEvaluatesThem() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        for (Map.Entry<String, String> source : MavenFixture.domainSources().entrySet()) {
+            fixture.writeFile("src/other/java/" + source.getKey().replace('.', '/') + ".java",
+                    source.getValue().getBytes(StandardCharsets.UTF_8));
+        }
+        fixture.writeSources(Map.of("misc.Draft", draft("misc")));
+        String main = "<id>default-compile</id>\n            <configuration>";
+        String generated = "<compileSourceRoot>${project.build.directory}/generated-sources/graphmaquina"
+                + "</compileSourceRoot>";
+        fixture.editPom(main, main + "\n              <compileSourceRoots>"
+                + "<compileSourceRoot>${session.executionRootDirectory}/src/other/java</compileSourceRoot>"
+                + generated + "</compileSourceRoots>");
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
+                fixture.localExports());
+        assertFalse(fixture.jarContains("misc/Draft.class"));
+        Path exports = fixture.projectDirectory().resolve(MAIN_EXPORTS);
+        byte[] published = Files.readAllBytes(exports);
+
+        fixture.editPom(generated, "<compileSourceRoot>${session.executionRootDirectory}/target/generated-sources"
+                + "/graphmaquina</compileSourceRoot>");
+
+        MavenResult session = fixture.run("package");
+
+        assertEquals(0, session.exitCode(), session.output());
         assertTrue(fixture.inventoryIsSealed("main"));
         assertArrayEquals(published, Files.readAllBytes(exports), Files.readString(exports));
     }
