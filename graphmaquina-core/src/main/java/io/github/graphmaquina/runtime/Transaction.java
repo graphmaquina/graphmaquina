@@ -1227,8 +1227,9 @@ final class Transaction {
 
     /**
      * Waits under the deadline. Timeout, interruption and the refusal of the thread's ForkJoinPool to let it block
-     * are aborts, each caused by what ended the wait, which leave as an EngineAbort for the step to poison the call
-     * with; the user's stage is left running.
+     * are aborts, each caused by what ended the wait, which leave as an EngineAbort that has not poisoned the call: an
+     * action's step poisons the call with it once it logged the action's end, a guard's evaluation as soon as it
+     * catches it. The user's stage is left running.
      */
     private <R> Optional<R> await(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
                                   Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action, String what,
@@ -1429,7 +1430,7 @@ final class Transaction {
         return poisonIfNested(depth, unpoisonedAbort(machine, ref, from, id, to, action, message, cause));
     }
 
-    /** {@link #abort} that poisons nothing yet: an EngineAbort carries it to the step, which poisons the call. */
+    /** {@link #abort} that poisons nothing yet: an EngineAbort carries it to where the call is poisoned with it. */
     private TransitionAbortedException unpoisonedAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
                                                        Enum<?> from, Optional<Enum<?>> id, Optional<Enum<?>> to,
                                                        Optional<String> action, String message,
