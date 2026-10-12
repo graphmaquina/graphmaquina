@@ -15,6 +15,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
+import javax.tools.Diagnostic;
+import javax.tools.JavaFileObject;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -33,23 +35,32 @@ class MachineHeaderErrorsTest {
 
     /**
      * A state is an enum constant of the machine's own enum, so a name that is not one is not a diagnostic of
-     * this tool at all: javac refuses it at the value, wherever the header spells a state or an identifier.
+     * this tool at all: javac refuses it at the value, wherever the header spells a state or an identifier, and no
+     * companion is generated. javac 21 words that error as {@code cannot find symbol} and javac 25 as
+     * {@code an enum annotation value must be an enum constant}, so the test reads where it is, not what it says.
      */
     @Test
     void aStateThatIsNotAConstantIsRefusedByJavacAlone() {
-        List<String> headers = List.of(
-                Fixtures.DOCS_HEADER.replace("initial = DRAFT", "initial = DRAFTT"),
-                Fixtures.DOCS_HEADER.replace("terminals = ARCHIVED", "terminals = {ARCHIVED, GONE}"),
-                Fixtures.DOCS_HEADER.replace("allowsCycle = REVIEW", "allowsCycle = LOOP"),
-                Fixtures.DOCS_HEADER.replace("@DocsGraph.StatePolicy(state = DRAFT", "@DocsGraph.StatePolicy(state = DRAF"),
-                Fixtures.DOCS_HEADER.replace("@DocsGraph.Transition(id = RETURN", "@DocsGraph.Transition(id = RETURNN"));
-        for (String header : headers) {
-            Compilation.Result result = Compilation.compileTyped(Fixtures.withDocs(header, Fixtures.DOCS_BODY));
+        List<String[]> typos = List.of(
+                new String[] {"initial = DRAFT", "initial = DRAFTT", "DRAFTT"},
+                new String[] {"terminals = ARCHIVED", "terminals = {ARCHIVED, GONE}", "GONE"},
+                new String[] {"allowsCycle = REVIEW", "allowsCycle = LOOP", "LOOP"},
+                new String[] {"@DocsGraph.StatePolicy(state = DRAFT", "@DocsGraph.StatePolicy(state = DRAF", "DRAF"},
+                new String[] {"@DocsGraph.Transition(id = RETURN", "@DocsGraph.Transition(id = RETURNN", "RETURNN"});
+        for (String[] typo : typos) {
+            assertTrue(Fixtures.DOCS_HEADER.contains(typo[0]), typo[0]);
+            Map<String, String> sources =
+                    Fixtures.withDocs(Fixtures.DOCS_HEADER.replace(typo[0], typo[1]), Fixtures.DOCS_BODY);
+            long start = sources.get("fx.Docs").indexOf(typo[1]) + typo[1].lastIndexOf(typo[2]);
+
+            Compilation.Result result = Compilation.compileTyped(sources);
 
             assertFalse(result.success(), result.describe());
             assertFalse(result.errors().stream().anyMatch(error -> error.contains("[SG")), result.describe());
-            assertTrue(result.errors().stream().anyMatch(error -> error.contains("cannot find symbol")),
-                    result::describe);
+            assertEquals(1, result.diagnostics().stream().filter((Diagnostic<? extends JavaFileObject> diagnostic) ->
+                    diagnostic.getKind() == Diagnostic.Kind.ERROR && diagnostic.getStartPosition() == start
+                            && diagnostic.getEndPosition() == start + typo[2].length()).count(), result.describe());
+            assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
         }
     }
 
