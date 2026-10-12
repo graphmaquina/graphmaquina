@@ -650,6 +650,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `submit(Doc theDocument)` refuses a null with the message `theDocument`, where it used to name the parameter after
   the entity's type, `doc`. A declared name the companion already uses, such as `stateMachine`, is suffixed in the
   source only.
+- **An owner reader that returns null is refused.** A watch's `owner` reader declared to return the owner entity
+  itself, rather than an `Optional` of it, that returns null is refused as one declared to return an `Optional` is:
+  the commit of the peer reports the lookup as a `Reaction.Aborted` carrying a `NullPointerException` that says the
+  ownerOf returned null. The companion used to read null as no owner, so the watch silently never reacted; declare an
+  `Optional` reader and return `Optional.empty()` for a peer without an owner.
 - **One problem no longer hides the others.** A failed export check (`SG604`) or a refused companion name no
   longer stops the rest of the compilation from being checked, and javac rerun over the previous companions
   reports them as stale output (`SG602`) instead of a collision (`SG603`).

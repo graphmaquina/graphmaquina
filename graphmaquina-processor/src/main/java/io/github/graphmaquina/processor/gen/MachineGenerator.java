@@ -559,7 +559,12 @@ public final class MachineGenerator {
                 : ", " + names.qualifier(LIST) + ".of(" + String.join(", ", classes) + ")";
     }
 
-    /** The chain of one watch: the call that opens it, one line per rule, and the call that closes it. */
+    /**
+     * The chain of one watch: the call that opens it, one line per rule, and the call that closes it. An owner reader
+     * that returns the owner itself, rather than an {@code Optional} of it, is wrapped in one after a
+     * {@code requireNonNull} whose message is the engine's for an {@code ownerOf} that returns null: absence is an
+     * empty {@code Optional}, never null.
+     */
     private static List<String> watch(MachineModel model, Names names, Variables variables,
                                       BoundInvocation invocations, WatchModel watch) {
         String e = names.of(model.types().entityElement().getQualifiedName().toString());
@@ -570,9 +575,13 @@ public final class MachineGenerator {
         String entity = variables.entity();
         List<String> arguments = conditionParameters(entity, variables);
         String peer = unique(decapitalize(watch.peer().entityName()), variables.taken());
+        String read = peer + "." + watch.owner().method() + "()";
+        String refusal = "the ownerOf of " + model.types().entityName() + "/" + model.types().statesName() + "."
+                + watch.state() + " returned null";
         String owner = watch.ownerIsOptional()
-                ? peer + "." + watch.owner().method() + "()"
-                : names.qualifier(OPTIONAL) + ".ofNullable(" + peer + "." + watch.owner().method() + "())";
+                ? read
+                : names.qualifier(OPTIONAL) + ".of(" + names.qualifier(OBJECTS) + ".requireNonNull(" + read + ", "
+                        + quote(refusal) + "))";
         String peers = lambda(e + " " + entity, entity + "." + watch.peers().method() + "()",
                 invocations.caught(watch.peers().accessor()).map(names::of), true, variables.rethrow(), variables.failure());
         String owners = lambda(p + " " + peer, owner, invocations.caught(watch.owner().accessor()).map(names::of), true,
@@ -669,7 +678,7 @@ public final class MachineGenerator {
             Names.claim(types, fixed);
         }
         boolean anyTimeout = false;
-        boolean anyNullableOwner = false;
+        boolean anyPlainOwner = false;
         boolean anyBuiltIn = false;
         boolean anyTypeList = false;
         for (TransitionModel transition : model.allTransitions()) {
@@ -679,7 +688,7 @@ public final class MachineGenerator {
             }
         }
         for (WatchModel watch : model.watches()) {
-            anyNullableOwner |= !watch.ownerIsOptional();
+            anyPlainOwner |= !watch.ownerIsOptional();
             for (RuleModel rule : watch.rules()) {
                 anyBuiltIn |= rule.kind() != RuleKind.CONDITION;
             }
@@ -695,7 +704,7 @@ public final class MachineGenerator {
         if (anyTimeout) {
             Names.claim(types, DURATION);
         }
-        if (anyNullableOwner) {
+        if (anyPlainOwner) {
             Names.claim(types, OPTIONAL);
         }
         if (anyBuiltIn) {

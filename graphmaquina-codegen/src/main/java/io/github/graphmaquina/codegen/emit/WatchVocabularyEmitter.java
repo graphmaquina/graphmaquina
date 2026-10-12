@@ -108,7 +108,8 @@ final class WatchVocabularyEmitter {
         String property = MachineVocabularyEmitter.symbolClass("PropertySymbol");
         element(source, owner.stateType() + " state();", "the state of the owner in which its peers are watched");
         element(source, property + " peers();", "the property of the owner that reads its peers");
-        element(source, property + " owner();", "the property of a peer that reads its owner");
+        element(source, property + " owner();", "the property of a peer that reads its owner, as an {@code Optional},"
+            + " empty for a peer without one, or as the owner itself, never null");
         element(source, vocabulary + ".When[] rules();", "the rules, in order: the first that holds is applied");
         close(source);
     }

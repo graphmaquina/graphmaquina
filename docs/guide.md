@@ -1205,12 +1205,13 @@ normalization: `getState()` exports `state`, `items()` exports `items`, and `get
 | `Definition.state` | Public instance reader returning the machine's state enum; compatible public instance writer |
 | `Definition.id` | Public instance reader returning an identity value; values must be non-null at runtime |
 | `Watch.peers` | Owner reader returning `Collection<? extends PeerEntity>` or a subtype, such as `List<PeerEntity>`; a raw collection is refused |
-| `Watch.owner` | Peer reader returning `Optional<OwnerEntity>` or an owner entity |
+| `Watch.owner` | Peer reader returning `Optional<OwnerEntity>` or an owner entity, never `null` |
 | `Submachine.child` | Parent reader returning `Optional<ChildEntity>` |
 | `Submachine.parent` | Child reader returning `Optional<ParentEntity>` |
 
-Use `Optional.empty()` for a peer with no owner. Keep relationship accessors consistent and return non-null
-collections: a `peers` reader that returns `null`, or an `Optional` reader that returns `null`, is refused, as
+Use `Optional.empty()` for a peer with no owner: an `owner` reader that returns the owner entity itself declares that
+every peer has one. Keep relationship accessors consistent and never return null: a `peers` reader, an `owner`
+reader, whichever type it declares, and any other `Optional` reader that returns `null` are refused, as
 [triggering and observing watches](#triggering-and-observing-watches) and
 [finding the parent with a lookup](#find-the-parent-with-a-lookup) say. If the setter overloads are ambiguous, the
 processor reports the ambiguity instead of choosing based on declaration order.
@@ -2615,8 +2616,8 @@ that exception as its cause. Inside a reevaluation, a refusal that one of these 
 the reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as
 `Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so
 its reaction carries the refusal itself. A `peers` reader that returns `null` instead of a collection, or an `owner`
-reader declared to return an `Optional` that returns `null`, is refused the same way, with a `NullPointerException` that
-says it returned null, and no condition runs over a `null` collection.
+reader that returns `null`, whether it declares an `Optional` or the owner entity, is refused the same way, with a
+`NullPointerException` that says it returned null, and no condition runs over a `null` collection.
 
 Changing a collection or setting a field directly does not emit a transition event. If your application
 changes relationships outside a peer transition, explicitly request reevaluation where appropriate:
