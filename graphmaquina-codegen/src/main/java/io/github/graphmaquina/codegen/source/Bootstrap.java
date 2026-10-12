@@ -44,8 +44,8 @@ public final class Bootstrap {
     private static final String COLLISION = "SG603";
 
     /**
-     * The directories of a version control system that Ant's default excludes, the ones Gradle applies, leave out of
-     * a source directory with everything inside them.
+     * The directories of a version control system that Ant's default excludes leave out of a source directory with
+     * everything inside them.
      */
     private static final Set<String> EXCLUDED_DIRECTORIES = Set.of(".git", ".svn", ".hg", ".bzr", "CVS", "SCCS");
 
@@ -156,11 +156,14 @@ public final class Bootstrap {
      * declarations are recorded under that path, and each path the walk reached it through remains one of the
      * original sources it reports. A file with two hard links is two files to javac, which parses each of them.
      *
-     * <p>Below a directory, the walk leaves out what Ant's default excludes leave out, which is what Gradle leaves
-     * out of every source directory, so javac never compiles any of it: a file named {@code ._*}, {@code .DS_Store},
-     * {@code *~}, {@code #*#}, {@code .#*} or {@code %*%}, such as the AppleDouble companion a copy from macOS
-     * leaves beside a source, and every directory named {@code .git}, {@code .svn}, {@code .hg}, {@code .bzr},
-     * {@code CVS} or {@code SCCS}, with everything inside it. The scanner of maven-compiler-plugin leaves out more:
+     * <p>Below a directory, the walk leaves out of its Java sources what the default excludes of Ant 1.10 leave out:
+     * a file named {@code ._*}, {@code .DS_Store}, {@code *~}, {@code #*#}, {@code .#*} or {@code %*%}, such as the
+     * AppleDouble companion a copy from macOS leaves beside a source, and every directory named {@code .git},
+     * {@code .svn}, {@code .hg}, {@code .bzr}, {@code CVS} or {@code SCCS}, with everything inside it. Gradle leaves
+     * out the same files while the build keeps those default excludes, which a settings script can change through
+     * Ant's {@code DirectoryScanner}; the Gradle plugin hands a directory whole only while the build's default
+     * excludes are Ant's and nothing else filters it, and names its files one by one otherwise, as Gradle selects
+     * them. The scanner of maven-compiler-plugin leaves out more:
      * plexus-utils also excludes the directories {@code RCS}, {@code BitKeeper}, {@code ChangeSet}, {@code _darcs},
      * {@code .metadata}, {@code .arch-ids} and {@code .darcsrepo} and the files {@code -darcs-backup*}. The Maven
      * plugin applies that longer list itself whenever it lists files. A root the execution does not narrow is
