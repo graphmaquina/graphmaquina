@@ -890,3 +890,11 @@ what javac actually accepted, so:
   sets, the types a machine is over and every class that carries a marker, such as a binding host, in the Java
   sources of the compilation, not in its Kotlin sources; a marked class can also come from a dependency built
   through the GraphMaquina lifecycle.
+- **`graphmaquina-core` is an automatic module.** Its jar carries no `module-info` and names the module
+  `io.github.graphmaquina.core` in its manifest, and javac can warn about a module that requires an automatic one.
+  `requires transitive io.github.graphmaquina.core` gets the `requires-transitive-automatic` warning, which javac
+  reports by default, so `-Werror` alone fails on it; turn it off with `-Xlint:-requires-transitive-automatic`, and
+  under `-Xlint:all` turn off `requires-automatic` too, which javac reports in its place. A plain `requires` gets
+  no warning by default; under `-Xlint:all` it gets the `requires-automatic` one, and the `exports` one for every
+  GraphMaquina type the API of an exported package names, the generated companions' included, which
+  `-requires-automatic` and `-exports` in the `-Xlint:` list turn off.
