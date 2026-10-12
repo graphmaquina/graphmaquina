@@ -2937,7 +2937,7 @@ The runtime's normal root execution follows this sequence:
    edge enters and the exits of those that end, against a shared unit of work.
 3. Begin the commit: verify that participating entities still have their expected original states.
 4. Write each participating entity's final state through its setter.
-5. Invalidate transition contexts and release the root reentrancy marker.
+5. Release the root reentrancy marker and invalidate transition contexts.
 6. Run hooks for the committed hops, in log order.
 7. Dispatch watch reactions for moved peers.
 8. Freeze the call's flow, notify the observers that the call completed, and return its outcome, which carries the

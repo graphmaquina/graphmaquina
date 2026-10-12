@@ -61,7 +61,7 @@ final class Observers {
 
     private void notifyEach(MachineCall call, String callback, Consumer<MachineObserver> event) {
         for (MachineObserver observer : observers) {
-            Reentrancy.enter(call.key(), call.entity());
+            boolean[] marker = Reentrancy.enter(call.key(), call.entity());
             try {
                 event.accept(observer);
             } catch (Error fatal) {
@@ -78,7 +78,7 @@ final class Observers {
                     Interrupts.keep(backend);
                 }
             } finally {
-                Reentrancy.exit();
+                marker[0] = false;
             }
         }
     }

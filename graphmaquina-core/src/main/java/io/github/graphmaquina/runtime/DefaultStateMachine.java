@@ -210,7 +210,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             if (log.debug()) {
                 log.start(key(), "reevaluate");
             }
-            Reentrancy.enter(key(), entity);
+            boolean[] marker = Reentrancy.enter(key(), entity);
             try {
                 try {
                     state = readState(entity);
@@ -236,7 +236,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                     }
                 }
             } finally {
-                Reentrancy.exit();
+                marker[0] = false;
             }
         } catch (Throwable thrown) {
             if (trail.isPresent() && thrown instanceof CallFailedException own) {
@@ -319,8 +319,9 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     /**
      * Root transaction: new UoW with its deadline, reentrancy marker, step, phase 2, context invalidation, then the
      * hooks and the watch reactions of what it committed. Everything is prepared before the marker is set, so that
-     * from {@code Reentrancy.enter} on, the only way out runs through the {@code finally} that releases it, whatever
-     * the step throws. The transaction keeps the phase of the call, which the observers are told when it throws.
+     * from {@code Reentrancy.enter} on, the only way out runs through the {@code finally} that releases it, with a
+     * store before it invalidates the contexts, whatever the step throws, a StackOverflowError included. The
+     * transaction keeps the phase of the call, which the observers are told when it throws.
      * Watch reactions are dispatched after the marker is released, so a reaction may start its own transaction; the
      * dispatch sets the marker again only while it runs an owner lookup, and a reevaluation while it runs its watch.
      * {@code requested} is the identifier execute was asked for, and empty for a reevaluation.
@@ -361,7 +362,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             List<SubmachineStart<?, ?, ?>> starts;
             List<LogEntry> committed;
             CommitSummary summary;
-            Reentrancy.enter(key(), entity);
+            boolean[] marker = Reentrancy.enter(key(), entity);
             try {
                 step = body.apply(tx);
                 boolean commits = step instanceof StepResult.Applied<S, T> || step instanceof StepResult.Failed<S, T>;
@@ -378,8 +379,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
                     committed = List.of();
                 }
             } finally {
+                marker[0] = false;
                 tx.invalidate();
-                Reentrancy.exit();
             }
             List<Reaction> reactions = List.of();
             if (!committed.isEmpty()) {

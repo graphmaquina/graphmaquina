@@ -521,6 +521,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   no limit, and the other limit stays in charge. Such budgets used to overflow, into `ArithmeticException` or a
   deadline silently switched off, and an `asyncTimeout` above that left its thread refusing every later
   transition.
+- **A stack overflow leaves its thread usable.** A call that ends in a `StackOverflowError`, whatever depth it
+  started at and wherever its stack ran out, releases its thread for the next call. It could leave the thread
+  refusing every later call with `ReentrantTransitionException`.
 - **An async wait runs no other task.** A root waiting on a `ForkJoinPool` worker no longer runs other queued
   tasks on its thread, as `CompletableFuture`'s own wait could, on a common-pool worker for instance, where such a
   task could fail with `ReentrantTransitionException`, keep the wait past its timeout, or cascade through the

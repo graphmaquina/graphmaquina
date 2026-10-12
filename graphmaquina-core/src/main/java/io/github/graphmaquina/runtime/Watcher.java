@@ -20,7 +20,7 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
      */
     Optional<EntityRef> ownerToReevaluate(Object movedInstance) {
         P peer = spec.peer().entity().cast(movedInstance);
-        Reentrancy.enter(spec.peer(), peer);
+        boolean[] marker = Reentrancy.enter(spec.peer(), peer);
         try {
             Optional<E> owner = spec.ownerOf().apply(peer);
             if (owner == null) {
@@ -36,7 +36,7 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
             }
             return Optional.of(machine.refOf(entity));
         } finally {
-            Reentrancy.exit();
+            marker[0] = false;
         }
     }
 
