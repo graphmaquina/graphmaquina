@@ -133,6 +133,9 @@ public final class GenerationOutput {
                 previouslyOwned.addAll(ManifestCodec.readCompile(inventory).ownedSources());
             }
         }
+        // Every generation the generator publishes owns its carrier, so a manifest that owns nothing records none: at
+        // most a run that failed before it published, as each run after the work directory was deleted does.
+        boolean recorded = !previouslyOwned.isEmpty() || CompilationOutputs.holdsInventory(work);
         // Save the last generation before anything that can fail invalidates its active manifest. A failure to save it
         // leaves that manifest in place, since no source has changed yet.
         remember(pending, manifest, previouslyOwned);
@@ -140,7 +143,7 @@ public final class GenerationOutput {
             delete(staging);
             requireNoClasspathCollision(request, sources);
             requireDistinctInCase(request, sources, manifest.local().model().symbols());
-            List<Path> staged = stage(request, sources, staging, previouslyOwned, originals);
+            List<Path> staged = stage(request, sources, staging, previouslyOwned, recorded, originals);
             Path output = Files.createDirectories(request.sourcesOutput().toAbsolutePath());
             Set<String> publishing = new TreeSet<>(previouslyOwned);
             publishing.addAll(manifest.ownedSources());
@@ -179,10 +182,13 @@ public final class GenerationOutput {
      * Writes every source under {@code staging}, in the encoding of the compilation, refusing one an original
      * source already declares, one that takes the name of an original source or type where the volume does not
      * tell names apart by case, one that a symbolic link inside the generated source output would take out of it,
-     * and one that would overwrite a file the previous generation did not own.
+     * and one that would overwrite a file the previous generation did not own. When nothing in the work directory
+     * records a file a previous generation wrote, as after that directory was deleted, {@code recorded} is false and
+     * that refusal says so and names clean as the remedy: such a file cannot be told from one somebody else put
+     * there, so it is never overwritten.
      */
     private static List<Path> stage(GenerationRequest request, List<GeneratedSource> sources, Path staging,
-            Set<String> previouslyOwned, List<Bootstrap.OriginalSource> originals)
+            Set<String> previouslyOwned, boolean recorded, List<Bootstrap.OriginalSource> originals)
             throws IOException {
         List<Path> directories = new ArrayList<>();
         for (Path source : request.sources()) {
@@ -215,7 +221,10 @@ public final class GenerationOutput {
             }
             if (Files.exists(target) && !ownedBefore(request.sourcesOutput(), target, relative, previouslyOwned)) {
                 throw new CodegenException(COLLISION, "the generated type " + source.qualifiedName()
-                    + " would overwrite the unowned file " + target);
+                    + " would overwrite the unowned file " + target + (recorded ? ""
+                    : ": nothing in the work directory " + request.workDirectory() + " records a file a previous"
+                    + " generation wrote, as when that directory was deleted; if one wrote this file, run clean, or"
+                    + " delete the generated sources, then build again"));
             }
             Path file = staging.resolve(relative);
             Files.createDirectories(file.getParent());

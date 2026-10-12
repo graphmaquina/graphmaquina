@@ -32,6 +32,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -329,6 +330,45 @@ class GenerationOutputTest {
             assertEquals("SG603", failure.code());
             assertEquals(handwritten, Files.readString(manual));
         }
+    }
+
+    /**
+     * Deleting the work directory, as deleting {@code build/graphmaquina} or {@code target/graphmaquina} does, while
+     * the generated sources stay takes away every record of the files the previous generation wrote. The next runs
+     * still refuse to overwrite them, since nothing tells them from files somebody else put there, but say that
+     * nothing records them and that clean is the remedy, on every run until the build is cleaned. An inventory of a
+     * compilation in the work directory is a record, so the refusal then says nothing more.
+     */
+    @Test
+    void saysThatNothingRecordsTheGeneratedSourcesOnceTheWorkDirectoryIsDeleted() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        StateGraphCodegen.generate(request());
+        Map<String, String> generated = texts();
+        deleteTree(request().workDirectory());
+
+        for (int attempt = 0; attempt < 2; attempt++) {
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> StateGraphCodegen.generate(request()));
+
+            assertEquals("SG603", failure.code());
+            assertEquals("the generated type fx.DocsGraph would overwrite the unowned file "
+                    + output().resolve("fx/DocsGraph.java") + ": nothing in the work directory "
+                    + request().workDirectory() + " records a file a previous generation wrote, as when that directory"
+                    + " was deleted; if one wrote this file, run clean, or delete the generated sources, then build"
+                    + " again", failure.getMessage());
+            assertEquals(generated, texts());
+        }
+        ManifestCodec.writeOwned(request().workDirectory().resolve("owned-outputs.json"),
+                new OwnedOutputs(2, List.of(), List.of(), List.of(), List.of()));
+        CodegenException recorded = assertThrows(CodegenException.class,
+                () -> StateGraphCodegen.generate(request()));
+        assertEquals("the generated type fx.DocsGraph would overwrite the unowned file "
+                + output().resolve("fx/DocsGraph.java"), recorded.getMessage());
+
+        deleteTree(output());
+        deleteTree(request().workDirectory());
+        StateGraphCodegen.generate(request());
+        assertEquals(generated, texts());
     }
 
     @Test
@@ -949,6 +989,24 @@ class GenerationOutputTest {
             return walk.filter(Files::isRegularFile)
                     .map(file -> output().relativize(file).toString().replace('\\', '/'))
                     .sorted().toList();
+        }
+    }
+
+    /** Every published file with its text. */
+    private Map<String, String> texts() throws IOException {
+        Map<String, String> texts = new TreeMap<>();
+        for (String name : published()) {
+            texts.put(name, Files.readString(output().resolve(name), StandardCharsets.UTF_8));
+        }
+        return texts;
+    }
+
+    /** Deletes {@code root} and everything below it, deepest entry first, as a build's clean deletes it. */
+    private static void deleteTree(Path root) throws IOException {
+        try (Stream<Path> walk = Files.walk(root)) {
+            for (Path entry : walk.sorted(Comparator.reverseOrder()).toList()) {
+                Files.delete(entry);
+            }
         }
     }
 

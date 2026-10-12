@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -175,6 +176,12 @@ public final class CompilationOutputs {
             retired.addAll(OwnedClassFiles.enumerate(classes, owned));
         }
         delete(retired, List.of(classes, processorSources));
+    }
+
+    /** Whether {@code work}, a work directory, holds a sealed or a pending inventory of the outputs a cycle owned. */
+    static boolean holdsInventory(Path work) {
+        return Files.exists(work.resolve(INVENTORY), LinkOption.NOFOLLOW_LINKS)
+                || Files.exists(work.resolve(PENDING_INVENTORY), LinkOption.NOFOLLOW_LINKS);
     }
 
     /**
