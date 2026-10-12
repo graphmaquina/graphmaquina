@@ -88,7 +88,10 @@ public class TransitionAbortedException extends CallFailedException {
     /** The state the entity was in; absent when the abort happened before it was read. */
     public Optional<Enum<?>> from() { return details.from(); }
 
-    /** The requested identifier, absent when the abort happened before one was read. */
+    /**
+     * The identifier of the step this abort describes, absent when the abort happened before one was read; as
+     * {@link AbortDetails#transition()} says, it can differ from the identifier of the call.
+     */
     public Optional<Enum<?>> transition() { return details.transition(); }
 
     /** The destination of the resolved edge; absent when no edge was selected. */
