@@ -52,16 +52,18 @@ import java.util.regex.Pattern;
  * to, and the {@code generate} and {@code generate-test} goals refuse to run when the two disagree, naming both
  * sides and the configuration that would fix it.</p>
  *
- * <p>That execution is the one of the compiler's goal, {@code compile} or {@code testCompile}, that the lifecycle of
- * the project runs and that compiles the vocabulary the generator writes, whatever its id. An execution runs when it
- * is bound to a phase of a lifecycle, the phase it declares or else the default phase of its goal, so one bound to
- * {@code none}, as kotlin-maven-plugin asks of {@code default-compile} and {@code default-testCompile} in a build
- * that compiles its Java sources through executions of its own, never runs and is never read. It compiles the
- * vocabulary unless it declares {@code <compileSourceRoots>} of its own that leave out the directory the generator
- * writes into, as an execution that compiles another source root into a multi-release jar does; such an execution
- * runs untouched. A compilation no execution runs is skipped, one that two running executions compile the
- * vocabulary of is refused, and so is one whose execution runs before the preparation or after the completion of the
- * compilation.</p>
+ * <p>That execution is the one of the compiler's goal, {@code compile} or {@code testCompile}, that the default
+ * lifecycle of the project runs and that compiles the vocabulary the generator writes, whatever its id. An execution
+ * runs there when it is bound to a phase of the default lifecycle, the one the StateGraph goals run in: the phase it
+ * declares or else the default phase of its goal. One bound to {@code none}, as kotlin-maven-plugin asks of
+ * {@code default-compile} and {@code default-testCompile} in a build that compiles its Java sources through
+ * executions of its own, never runs and is never read, and neither is one bound to a phase of another lifecycle,
+ * such as {@code pre-site}, which runs only when the build invokes that lifecycle, never between the preparation and
+ * the completion of a compilation. An execution compiles the vocabulary unless it declares
+ * {@code <compileSourceRoots>} of its own that leave out the directory the generator writes into, as an execution
+ * that compiles another source root into a multi-release jar does; such an execution runs untouched. A compilation
+ * no execution runs is skipped, one that two running executions compile the vocabulary of is refused, and so is one
+ * whose execution runs before the preparation or after the completion of the compilation.</p>
  *
  * <p>A setting is read the way Maven itself resolves a parameter: the effective configuration of the compiler
  * execution first — the one Maven merged the configuration the plugin declares for all of its executions into,
@@ -78,6 +80,9 @@ final class CompilerConfiguration {
 
     /** The key the project model files this plugin under. */
     private static final String STATEGRAPH = "io.github.graphmaquina:graphmaquina-maven-plugin";
+
+    /** The id of the lifecycle that holds the phases of the StateGraph goals and of the compilations they surround. */
+    private static final String DEFAULT_LIFECYCLE = "default";
 
     /** The processor option that tells the annotation processor which manifest describes this compilation. */
     private static final String MANIFEST_OPTION = "-Agraphmaquina.annotationManifest=";
@@ -187,9 +192,11 @@ final class CompilerConfiguration {
      * @param project the project being built
      * @param session the session, which carries the properties the command line and the JVM set
      * @param execution the compilation the calling goal belongs to
-     * @param lifecycles the lifecycles of this build, whose phases an execution must be bound to to run
+     * @param lifecycles the lifecycles of this build, among them the default lifecycle, a phase of which an execution
+     *     must be bound to to run between the preparation and the completion
      * @param generatedSources the directory the generator writes the vocabulary of this compilation into
-     * @return the configuration, empty when the lifecycle runs no execution of the goal, as {@link #idle} reports
+     * @return the configuration, empty when the default lifecycle runs no execution of the goal, as {@link #idle}
+     *     reports
      */
     static Optional<CompilerConfiguration> of(MavenProject project, MavenSession session, CompilerExecution execution,
             DefaultLifecycles lifecycles, Path generatedSources) {
@@ -218,8 +225,8 @@ final class CompilerConfiguration {
     }
 
     /**
-     * Why the lifecycle of {@code project} runs no execution of the compiler goal of {@code execution}, which makes
-     * this compilation one the build switches off.
+     * Why the default lifecycle of {@code project} runs no execution of the compiler goal of {@code execution}, which
+     * makes this compilation one the build switches off.
      *
      * @param project the project being built
      * @param execution the compilation the calling goal belongs to
@@ -235,19 +242,26 @@ final class CompilerConfiguration {
         if (compiler != null) {
             for (PluginExecution candidate : compiler.getExecutions()) {
                 if (candidate.getGoals().contains(execution.goal())) {
-                    bindings.add(candidate.getId() + " is bound to " + phase(candidate, execution)
-                        + ", which is no phase of a lifecycle");
+                    String phase = phase(candidate, execution);
+                    Lifecycle lifecycle = lifecycles.get(phase);
+                    bindings.add(candidate.getId() + " is bound to " + phase + (lifecycle == null
+                        ? ", which is no phase of a lifecycle"
+                        : ", a phase of the " + lifecycle.getId() + " lifecycle"));
                 }
             }
         }
-        return Optional.of("maven-compiler-plugin runs no execution of its " + execution.goal() + " goal for this"
-            + " project" + (bindings.isEmpty() ? "" : ", as " + String.join(", and ", bindings)));
+        return Optional.of("maven-compiler-plugin runs no execution of its " + execution.goal() + " goal in the"
+            + " default lifecycle of this project"
+            + (bindings.isEmpty() ? "" : ", as " + String.join(", and ", bindings)));
     }
 
     /**
-     * The executions of the compiler goal of {@code execution} that the lifecycle of {@code project} runs, in the
-     * order of the project model: those bound to a phase of one of {@code lifecycles}. Maven runs no execution bound
-     * to anything else, {@code none} included, and binds one that names no phase to the default phase of its goal.
+     * The executions of the compiler goal of {@code execution} that the default lifecycle of {@code project} runs, in
+     * the order of the project model: those bound to a phase of that lifecycle, which holds the phases of the
+     * StateGraph goals. Maven runs no execution bound to anything else, {@code none} included, binds one that names
+     * no phase to the default phase of its goal, and runs one bound to a phase of another lifecycle, such as
+     * {@code pre-site} or {@code clean}, only when the build invokes that lifecycle, before or after the default one,
+     * never between the preparation and the completion of a compilation.
      */
     private static List<PluginExecution> running(MavenProject project, CompilerExecution execution,
             DefaultLifecycles lifecycles) {
@@ -257,8 +271,9 @@ final class CompilerConfiguration {
             return running;
         }
         for (PluginExecution candidate : compiler.getExecutions()) {
-            if (candidate.getGoals().contains(execution.goal())
-                    && lifecycles.get(phase(candidate, execution)) != null) {
+            Lifecycle lifecycle = lifecycles.get(phase(candidate, execution));
+            if (candidate.getGoals().contains(execution.goal()) && lifecycle != null
+                    && lifecycle.getId().equals(DEFAULT_LIFECYCLE)) {
                 running.add(candidate);
             }
         }

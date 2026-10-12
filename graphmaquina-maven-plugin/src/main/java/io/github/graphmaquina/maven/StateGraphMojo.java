@@ -101,8 +101,8 @@ public abstract class StateGraphMojo extends AbstractMojo {
     private ToolchainManager toolchainManager;
 
     /**
-     * The lifecycles of the build, injected as a descriptor requirement: an execution of the compiler runs only when
-     * it is bound to one of their phases.
+     * The lifecycles of the build, injected as a descriptor requirement: an execution of the compiler runs between the
+     * preparation and the completion only when it is bound to a phase of the default one.
      */
     private DefaultLifecycles lifecycles;
 
@@ -119,11 +119,12 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * Whether this build compiles nothing for {@code execution}, in which case the calling goal does nothing and
      * says so at info level. That is a project packaged as {@code pom}, which binds no compiler at all — the
      * parent of a multi-module build runs the executions its modules inherit from it — a compilation for which the
-     * lifecycle runs no execution of the compiler's goal, as when {@code default-compile} is bound to the phase
-     * {@code none} and nothing else compiles the main sources, and a compilation the build switched off the way
-     * maven-compiler-plugin skips its own goal: by {@code maven.main.skip} or {@code <skipMain>} for the main one, by
-     * {@code maven.test.skip} or {@code <skip>} for the test one. Nothing is generated, retired or published then, so
-     * the outputs of the previous cycle stay exactly as the compiler leaves them.
+     * default lifecycle runs no execution of the compiler's goal, as when {@code default-compile} is bound to the phase
+     * {@code none}, or to a phase of another lifecycle such as {@code pre-site}, and nothing else compiles the main
+     * sources, and a compilation the build switched off the way maven-compiler-plugin skips its own goal: by
+     * {@code maven.main.skip} or {@code <skipMain>} for the main one, by {@code maven.test.skip} or {@code <skip>}
+     * for the test one. Nothing is generated, retired or published then, so the outputs of the previous cycle stay
+     * exactly as the compiler leaves them.
      *
      * @param execution the compiler execution the calling goal belongs to
      * @return {@code true} if the calling goal must return without doing anything
@@ -477,13 +478,14 @@ public abstract class StateGraphMojo extends AbstractMojo {
 
     /**
      * The configuration of the execution of the compiler that compiles {@code execution}, as
-     * {@link CompilerConfiguration#of} picks it. Every goal asks {@link #skips} first, which skips a compilation no
-     * execution runs, so there is one.
+     * {@link CompilerConfiguration#of} picks it. Every goal asks {@link #skips} first, which skips a compilation the
+     * default lifecycle runs no execution for, so there is one.
      */
     private CompilerConfiguration compiler(CompilerExecution execution) {
         return CompilerConfiguration.of(project, session, execution, lifecycles, generatedSources(execution))
             .orElseThrow(() -> new IllegalStateException("maven-compiler-plugin runs no execution of its "
-                + execution.goal() + " goal for this project, which the goal should have skipped"));
+                + execution.goal() + " goal in the default lifecycle of this project, which the goal should have"
+                + " skipped"));
     }
 
     /**

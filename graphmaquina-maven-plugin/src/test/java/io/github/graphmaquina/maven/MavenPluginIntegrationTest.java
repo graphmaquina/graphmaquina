@@ -1798,9 +1798,53 @@ class MavenPluginIntegrationTest {
 
         assertEquals(0, result.exitCode(), result.output());
         assertTrue(result.output().contains("StateGraph skips fx.build:fixture:main: maven-compiler-plugin runs no"
-                + " execution of its compile goal for this project, as default-compile is bound to none, which is no"
-                + " phase of a lifecycle"), result.output());
+                + " execution of its compile goal in the default lifecycle of this project, as default-compile is bound"
+                + " to none, which is no phase of a lifecycle"), result.output());
         assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * StateGraph surrounds the compilations of the default lifecycle, and Maven runs an execution of the compiler bound
+     * to a phase of another lifecycle, such as {@code pre-site} of the site lifecycle, only when the build invokes that
+     * lifecycle, never between the preparation and the completion. A compilation whose only execution of the compile
+     * goal is bound there is skipped in a build of the default lifecycle, as one bound to {@code none} is, naming both
+     * bindings, and the index and the sealed inventory of the previous build stay as they were. Beside
+     * {@code default-compile}, such an execution, which would compile the vocabulary too, is not a second running
+     * execution of the goal: the build compiles and publishes as without it.
+     */
+    @Test
+    void aCompilerExecutionBoundToAPhaseOfAnotherLifecycleIsNotOneTheDefaultLifecycleRuns() throws IOException {
+        MavenFixture alone = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("alone")),
+                fixtureRepository);
+        assertEquals(0, alone.run("compile").exitCode());
+        List<String> published = alone.localExportsOf(MAIN_EXPORTS);
+        moveCompilation(alone, "default-compile", "site-compile", "compile", "pre-site");
+
+        MavenResult skipped = alone.run("compile");
+
+        assertEquals(0, skipped.exitCode(), skipped.output());
+        assertTrue(skipped.output().contains("StateGraph skips fx.build:fixture:main: maven-compiler-plugin runs no"
+                + " execution of its compile goal in the default lifecycle of this project, as default-compile is bound"
+                + " to none, which is no phase of a lifecycle, and site-compile is bound to pre-site, a phase of the"
+                + " site lifecycle"), skipped.output());
+        assertNothingWasRetired(alone, published);
+
+        MavenFixture beside = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("beside")),
+                fixtureRepository);
+        beside.editPom("<id>default-testCompile</id>", """
+                <id>site-compile</id>
+                            <phase>pre-site</phase>
+                            <goals><goal>compile</goal></goals>
+                          </execution>
+                          <execution>
+                            <id>default-testCompile</id>""".strip());
+
+        MavenResult built = beside.run("compile");
+
+        assertEquals(0, built.exitCode(), built.output());
+        assertTrue(beside.inventoryIsSealed("main"));
+        assertTrue(beside.exists(MAIN_EXPORTS));
+        assertTrue(beside.exists("target/classes/fx/OrdersGraph.class"));
     }
 
     /**

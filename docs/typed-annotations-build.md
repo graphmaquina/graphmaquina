@@ -487,12 +487,13 @@ reads `<testRelease>`, `<testSource>` and `<testTarget>`, or their `maven.compil
 The goal prefix is `graphmaquina`, so a goal can also be invoked directly, for example
 `mvn graphmaquina:generate`.
 
-A goal does nothing, and says so at info level (`StateGraph skips <compilationId>: …`), for a compilation the
-build switches off the way `maven-compiler-plugin` skips its own goal: `maven.main.skip` or `<skipMain>` for
-the three main goals, `maven.test.skip` or `<skip>` for the three test goals. So does it for a compilation the
-lifecycle runs no execution of the compiler's goal for, as when `default-compile` is bound to the phase `none`
-and nothing else compiles the main sources. Nothing is generated, retired or published then. All six do nothing in
-a project packaged as `pom`, such as the parent of a multi-module build whose modules inherit the executions.
+A goal does nothing, and says so at info level (`StateGraph skips <compilationId>: …`), for a compilation the build
+switches off the way `maven-compiler-plugin` skips its own goal: `maven.main.skip` or `<skipMain>` for the three
+main goals, `maven.test.skip` or `<skip>` for the three test goals. So does it for a compilation the default
+lifecycle runs no execution of the compiler's goal for, as when `default-compile` is bound to the phase `none`, or
+to a phase of another lifecycle such as `pre-site`, and nothing else compiles the main sources. Nothing is
+generated, retired or published then. All six do nothing in a project packaged as `pom`, such as the parent of a
+multi-module build whose modules inherit the executions.
 
 The observed order of a `mvn test-compile`, which the plugin's own suite asserts from real Maven output:
 
@@ -517,18 +518,20 @@ itself, as below, runs among the others of its phase in the order their plugins 
 
 ### The compiler execution the goals read
 
-The checks and the request read the execution of the `compile` goal of `maven-compiler-plugin`, `testCompile`
-for the test goals, that the lifecycle runs and that compiles the vocabulary the generator writes, whatever its
-id. An execution runs when it is bound to a phase of a lifecycle: the phase it declares, else the default phase
-of its goal, `compile` or `test-compile`. One bound to anything else, `none` included, never runs and is never
-read, so a build may bind `default-compile` and `default-testCompile` to `none` and compile its Java sources
+The checks and the request read the execution of the `compile` goal of `maven-compiler-plugin`, `testCompile` for
+the test goals, that the default lifecycle runs and that compiles the vocabulary the generator writes, whatever its
+id. An execution runs there when it is bound to a phase of the default lifecycle, the one the StateGraph goals run
+in: the phase it declares, else the default phase of its goal, `compile` or `test-compile`. One bound to anything
+else is never read: one bound to `none` never runs, and one bound to a phase of another lifecycle, such as
+`pre-site` or `clean`, runs only when the build invokes that lifecycle, never between the preparation and the
+completion. So a build may bind `default-compile` and `default-testCompile` to `none` and compile its Java sources
 through executions of its own, as `kotlin-maven-plugin` asks a mixed Kotlin and Java build to do; the manifest
-argument and every setting the adapter checks then belong to those executions. An execution compiles the
-vocabulary unless its own `<compileSourceRoots>` leave out the directory the generator writes into; one that
-compiles another source root into a multi-release jar, with `<multiReleaseOutput>` and roots of its own, runs
-untouched beside the main compilation. When no execution of the goal runs, the compilation is skipped, as above.
-Two running executions that both compile the vocabulary are refused, naming both: javac would compile it twice
-into one class output, and the later run fails on the classes of the earlier one.
+argument and every setting the adapter checks then belong to those executions. An execution compiles the vocabulary
+unless its own `<compileSourceRoots>` leave out the directory the generator writes into; one that compiles another
+source root into a multi-release jar, with `<multiReleaseOutput>` and roots of its own, runs untouched beside the
+main compilation. When no execution of the goal runs, the compilation is skipped, as above. Two running executions
+that both compile the vocabulary are refused, naming both: javac would compile it twice into one class output, and
+the later run fails on the classes of the earlier one.
 
 ### Outputs
 
