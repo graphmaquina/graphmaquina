@@ -27,8 +27,9 @@ import java.util.List;
  * consumer. There is no conversion, partial model reading or cleanup using retired inventories.
  *
  * <p>Every read method parses the document with a strict {@link com.google.gson.stream.JsonReader}: a document
- * that is not well-formed strict JSON, holds bytes that are not UTF-8 text or carries content after its end,
- * unknown {@code schemaVersion} values, a missing mandatory member, a member of the wrong JSON type, a number
+ * that is not well-formed strict JSON, holds bytes that are not UTF-8 text, escapes a surrogate that is not half of
+ * a pair in a string or a name, or carries content after its end, unknown {@code schemaVersion} values, a missing
+ * mandatory member, a member of the wrong JSON type, a number
  * member that is not an exact integer of its range (a fraction, or a value beyond 32 bits for
  * {@code schemaVersion} and 64 bits for an origin's {@code line} and {@code column}), a number anywhere in the
  * document whose exponent lies beyond the range a {@link java.math.BigDecimal} holds, such as

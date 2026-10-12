@@ -478,15 +478,27 @@ public final class GenerationOutput {
 
     /**
      * Writes {@code manifest} beside {@code target} and moves it into place, so no run is ever left with half a
-     * manifest, which every later run would refuse to read.
+     * manifest, which every later run would refuse to read. A write or a move that fails removes the temporary file it
+     * wrote, and nothing else that stands there, such as a directory.
      */
     private static void replace(Path target, CompileManifest manifest) throws IOException {
         Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
-        ManifestCodec.writeCompile(temporary, manifest);
         try {
-            Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException unsupported) {
-            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            ManifestCodec.writeCompile(temporary, manifest);
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException | RuntimeException failure) {
+            try {
+                if (Files.isRegularFile(temporary, LinkOption.NOFOLLOW_LINKS)) {
+                    Files.delete(temporary);
+                }
+            } catch (IOException cleanup) {
+                failure.addSuppressed(cleanup);
+            }
+            throw failure;
         }
     }
 

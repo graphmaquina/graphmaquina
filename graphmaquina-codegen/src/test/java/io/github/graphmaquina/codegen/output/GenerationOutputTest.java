@@ -788,6 +788,28 @@ class GenerationOutputTest {
     }
 
     /**
+     * A manifest the codec cannot write, here because a dependency it carries holds an unpaired surrogate, which no
+     * UTF-8 file can hold, leaves no temporary file behind: the write that failed removes what it began.
+     */
+    @Test
+    void leavesNoTemporaryManifestBehindWhenItCannotBeWritten() throws IOException {
+        SourceFiles.write(sources(), ORIGINALS);
+        GenerationRequest request = request();
+        GenerationModel model = Bootstrap.inspect(request);
+        List<GeneratedSource> emitted = ApiEmitter.emit(model, request.compilationId());
+        ExportIndex dependency = new ExportIndex(2, ToolVersion.current(), "other:lib:main",
+                new GenerationModel(List.of(), List.of()), List.of("lib.Orders\ud800.Transition"));
+        CompileManifest manifest = ManifestAssembler.assemble(request, model, emitted, List.of(dependency));
+
+        assertThrows(IOException.class, () -> GenerationOutput.publish(request, emitted, manifest));
+
+        try (Stream<Path> files = Files.list(directory.resolve("work"))) {
+            assertEquals(List.of(), files.map((Path file) -> file.getFileName().toString())
+                    .filter((String name) -> name.endsWith(".tmp")).toList());
+        }
+    }
+
+    /**
      * Publishing on its own reads the original sources only to check the generated types against them: it walks and
      * parses them, and that reading resolves no declaration and opens no classpath. The check for a class a
      * generated type would shadow still opens the archives of the request's classpath, which here are the jars on

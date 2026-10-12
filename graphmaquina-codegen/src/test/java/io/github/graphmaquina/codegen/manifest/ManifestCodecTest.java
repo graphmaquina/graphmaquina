@@ -207,6 +207,37 @@ class ManifestCodecTest {
             failure.getMessage());
     }
 
+    /**
+     * Strict JSON can escape a surrogate that is not half of a pair, which no UTF-8 file can hold, so the tools could
+     * not write the value back. Every file the codec reads refuses one, in a string or in a name, with {@code SG602},
+     * naming the file, the surrogate and its place; a pair, escaped or not, is read as the character it encodes.
+     */
+    @Test
+    void rejectsAnUnpairedSurrogateInAStringOrAName() throws IOException {
+        Path request = directory.resolve("request.json");
+        ManifestCodec.writeRequest(request, new GenerationRequest(directory.resolve("project"),
+            List.of(directory.resolve("project/src")), List.of(), directory.resolve("generated"),
+            directory.resolve("processor"), directory.resolve("classes"), directory.resolve("work"),
+            "fx:demo:main"));
+        Files.writeString(request, Files.readString(request).replace("fx:demo:main", "fx:demo\\ud800:main"));
+        Path inventory = directory.resolve("processor-inventory.json");
+        Files.writeString(inventory, "{\"schemaVersion\": 2, \"generatedTypes\": [], \"x\\udc00\": 1}\n");
+        Path paired = directory.resolve("paired-inventory.json");
+        Files.writeString(paired, "{\"schemaVersion\": 2, \"generatedTypes\": [\"fx.A\\ud83d\\ude00\"]}\n");
+
+        CodegenException value = assertThrows(CodegenException.class, () -> ManifestCodec.readRequest(request));
+        CodegenException name =
+            assertThrows(CodegenException.class, () -> ManifestCodec.readProcessorInventory(inventory));
+
+        assertEquals("SG602", value.code());
+        assertEquals("malformed JSON in " + request + ": an unpaired surrogate \\ud800 at path $.compilationId",
+            value.getMessage());
+        assertEquals("SG602", name.code());
+        assertEquals("malformed JSON in " + inventory + ": an unpaired surrogate \\udc00 at path $.x\\udc00",
+            name.getMessage());
+        assertEquals(List.of("fx.A\ud83d\ude00"), ManifestCodec.readProcessorInventory(paired));
+    }
+
     /** The branch that names content after the document is the one a reader sees, not the parser's advice. */
     @Test
     void reportsContentAfterTheDocumentAsTrailingContent() throws IOException {
