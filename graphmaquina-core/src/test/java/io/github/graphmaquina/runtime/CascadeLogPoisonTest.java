@@ -127,4 +127,59 @@ class CascadeLogPoisonTest {
             }
         }
     }
+
+    /**
+     * A COLLECT element that ends in an abort the cascade throws without poisoning, a cycle or the depth limit, is held
+     * poisoned while it is rolled back and logged: an Error of its collect-rollback line, which the action catches,
+     * still aborts the call.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"cycle", "depth"})
+    void anUnpoisonedCollectAbortStaysPoisonedThroughItsRollbackLine(String scenario) {
+        MachineKey<Node, State, Step> key = MachineKey.of(Node.class, State.class, Step.class);
+        Node grandchild = new Node("grandchild", false, List.of());
+        Node child = new Node("child", false, List.of(grandchild));
+        Node root = new Node("root", false, List.of(child));
+        AssertionError fatal = new AssertionError("the TRACE backend failed");
+        List<Error> caught = new ArrayList<>();
+        GraphDefinition<Node, State, Step> graph = StateGraph.define(key).initial(State.A).terminal(State.B)
+                .statePolicy(State.A, "GO leaves A")
+                .transition(Step.GO, State.A, State.B)
+                .action("cascade", (TransitionContext<Node, State, Step> ctx) -> {
+                    Node node = ctx.entity();
+                    List<Node> elements = scenario.equals("cycle") && node == root ? List.of(root) : node.children;
+                    if (!elements.isEmpty()) {
+                        try {
+                            ctx.cascadeAll(key, elements, Step.GO, CascadePolicy.COLLECT);
+                        } catch (Error thrown) {
+                            caught.add(thrown);
+                        }
+                    }
+                    return ActionOutcome.ok();
+                }).endTransition().build();
+        BreakingHandler handler = new BreakingHandler("collect-rollback", fatal);
+        Logger logger = Logger.getLogger("io.github.graphmaquina.runtime");
+        try (LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            logger.addHandler(handler);
+            try (MachineRegistry registry = MachineRegistry.builder().maxCascadeDepth(1)
+                    .add(StateMachines.from(graph)
+                            .state((Node node) -> node.state, (Node node, State state) -> node.state = state)
+                            .identity((Node node) -> node.name))
+                    .build()) {
+                CallFailedException failure = assertThrows(CallFailedException.class,
+                        () -> registry.of(key).execute(root, Step.GO));
+                assertEquals(StatesWritten.NONE, failure.statesWritten());
+                assertEquals(List.of(State.A, State.A, State.A),
+                        List.of(root.state, child.state, grandchild.state));
+                assertEquals(scenario.equals("depth") ? 2 : 1, caught.size());
+                for (Error thrown : caught) {
+                    assertSame(fatal, thrown);
+                }
+                assertTrue(log.records().stream()
+                        .anyMatch((LogRecord record) -> record.getMessage().contains("collect-rollback")));
+            } finally {
+                logger.removeHandler(handler);
+            }
+        }
+    }
 }
