@@ -6,6 +6,7 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -17,7 +18,9 @@ import java.util.concurrent.TimeoutException;
  * failure says the test stopped waiting, never that the engine timed out, and the stage is left exactly as it
  * was — neither wait ever cancels a stage it was handed. A stage is awaited through a callback of its own, as
  * the engine awaits one, so even a stage that refuses {@link CompletionStage#toCompletableFuture()} can be
- * handed in.
+ * handed in. Neither the wait nor that callback prints the throwable a stage ended with, so one whose message
+ * cannot be read is reported or handed on like any other, and the thread that completes the stage never
+ * receives an exception from the callback.
  *
  * <p>The two entry points split the two things a stage can do. {@link #await} expects a result and reports
  * anything else — an exceptional completion, a cancellation, an expired budget — as a
@@ -72,20 +75,35 @@ public final class AsyncAssertions {
     }
 
     /**
-     * Waits through a future of this class's own, completed by a callback on the stage, which is how the engine
-     * waits as well. A stage is never converted to a future, since a stage may refuse that, and never cancelled.
+     * Waits through a future of this class's own, completed by a handle callback on the stage, which is how the
+     * engine waits as well. A stage is never converted to a future, since a stage may refuse that, and never
+     * cancelled. The throwable a stage ended with is never printed, since printing it may throw: the callback
+     * returns normally, so the stage constructs no CompletionException around it on the thread that completes it,
+     * and the wait reads it back through another handle, not through get, which constructs its ExecutionException
+     * from the throwable's string. It ends the wait as get would: a CancellationException as itself, any other
+     * throwable as the cause of an ExecutionException, once unwrapped from a CompletionException that carries a
+     * cause.
      */
     private static <T> T join(CompletionStage<? extends T> stage, long nanos)
             throws InterruptedException, ExecutionException, TimeoutException {
         CompletableFuture<T> owned = new CompletableFuture<>();
-        stage.whenComplete((T value, Throwable error) -> {
+        stage.handle((T value, Throwable error) -> {
             if (error != null) {
                 owned.completeExceptionally(error);
             } else {
                 owned.complete(value);
             }
+            return null;
         });
-        return owned.get(nanos, TimeUnit.NANOSECONDS);
+        Throwable error = owned.handle((T value, Throwable thrown) -> thrown).get(nanos, TimeUnit.NANOSECONDS);
+        if (error == null) {
+            return owned.resultNow();
+        }
+        if (error instanceof CancellationException cancelled) {
+            throw cancelled;
+        }
+        Throwable cause = error instanceof CompletionException && error.getCause() != null ? error.getCause() : error;
+        throw new ExecutionException(null, cause);
     }
 
     private static long budgetNanos(Duration budget) {

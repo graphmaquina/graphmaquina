@@ -1,5 +1,6 @@
 package consumer;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -22,7 +23,10 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.CompletionStage;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -238,6 +242,66 @@ class AsyncAssertionsTest {
         assertTrue(inside.complete(applied(new Entity("e", State.NEW))));
     }
 
+    // --- a throwable whose message cannot be read -------------------------------------------------------
+
+    /**
+     * A stage that failed with a throwable whose message cannot be read, bare or inside a CompletionException, is
+     * still reported as a discrepancy, which shows the throwable by its class and identity and chains it as its
+     * cause.
+     */
+    @Test
+    void awaitReportsAThrowableWhoseMessageCannotBeRead() {
+        UnreadableFailure failure = new UnreadableFailure();
+        for (CompletableFuture<Outcome<Entity, State, Id>> stage : failedWith(failure)) {
+            GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                    () -> AsyncAssertions.await(stage, Duration.ofSeconds(2)));
+            assertSame(failure, error.actual());
+            assertSame(failure, error.getCause());
+            assertEquals("async test: outcome expected <normal result> but was <" + shown(failure) + ">",
+                    error.getMessage());
+        }
+    }
+
+    /** A throwable whose message cannot be read, bare or inside a CompletionException, is handed on. */
+    @Test
+    void awaitFailureHandsOnAThrowableWhoseMessageCannotBeRead() {
+        UnreadableFailure failure = new UnreadableFailure();
+        for (CompletableFuture<Outcome<Entity, State, Id>> stage : failedWith(failure)) {
+            TransitionFailureAssert handedOn = AsyncAssertions.awaitFailure(stage, Duration.ofSeconds(2));
+            assertSame(failure, assertThrows(GraphAssertionError.class, handedOn::isAbort).actual());
+        }
+    }
+
+    /**
+     * The callback a wait leaves on a stage reads nothing of the throwable, so the thread that completes the stage
+     * with one whose message cannot be read, while the wait is pending, returns normally, and the wait hands that
+     * throwable on.
+     */
+    @Test
+    void completingAWaitedStageWithAThrowableWhoseMessageCannotBeReadThrowsNothing() throws Exception {
+        UnreadableFailure failure = new UnreadableFailure();
+        CompletableFuture<Outcome<Entity, State, Id>> stage = new CompletableFuture<>();
+        AtomicReference<Object> ended = new AtomicReference<>();
+        Thread waiter = new Thread(() -> {
+            try {
+                ended.set(AsyncAssertions.awaitFailure(stage, Duration.ofSeconds(10)));
+            } catch (Throwable thrown) {
+                ended.set(thrown);
+            }
+        });
+        waiter.start();
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (stage.getNumberOfDependents() == 0 && System.nanoTime() - deadline < 0) {
+            Thread.sleep(1);
+        }
+        assertEquals(1, stage.getNumberOfDependents(), "the wait did not register its callback");
+        assertTrue(assertDoesNotThrow(() -> stage.completeExceptionally(failure)));
+        waiter.join(TimeUnit.SECONDS.toMillis(10));
+        assertFalse(waiter.isAlive(), "the wait did not end");
+        TransitionFailureAssert handedOn = assertInstanceOf(TransitionFailureAssert.class, ended.get());
+        assertSame(failure, assertThrows(GraphAssertionError.class, handedOn::isAbort).actual());
+    }
+
     // --- the null subject, one case per public wait ----------------------------------------------------
 
     @Test
@@ -292,6 +356,27 @@ class AsyncAssertionsTest {
                         () -> AsyncAssertions.await(stage, tooLong)).getCause());
         assertThrows(IllegalArgumentException.class,
                 () -> AsyncAssertions.awaitFailure(stage, tooLong));
+    }
+
+    /** A failure whose message cannot be read, as one built from a detached lazy entity's field. */
+    private static final class UnreadableFailure extends RuntimeException {
+        @Override
+        public String getMessage() {
+            throw new IllegalStateException("the message cannot be read");
+        }
+    }
+
+    /** Two stages that failed with {@code failure}: bare, and inside a CompletionException. */
+    private static List<CompletableFuture<Outcome<Entity, State, Id>>> failedWith(Throwable failure) {
+        CompletableFuture<Outcome<Entity, State, Id>> wrapped = new CompletableFuture<>();
+        wrapped.completeExceptionally(new CompletionException("wrapped", failure));
+        return List.of(CompletableFuture.failedFuture(failure), wrapped);
+    }
+
+    /** How a failure report shows {@code failure}: its class and identity, and what printing it threw. */
+    private static String shown(UnreadableFailure failure) {
+        return UnreadableFailure.class.getName() + "@" + Integer.toHexString(System.identityHashCode(failure))
+                + " (toString() threw java.lang.IllegalStateException: the message cannot be read)";
     }
 
     /** A stage that answers only through its own callbacks, as the interface allows: it refuses the conversion. */
