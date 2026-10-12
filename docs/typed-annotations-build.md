@@ -731,7 +731,13 @@ failure names what to change:
   empty `<jdkToolchain/>`, or else the one selected for the build; else the JDK running Maven. Its home must be
   the home of the JDK the generator's `java` belongs to, the directory above the `bin` holding that `java` once
   symbolic links are followed. A launcher outside a JDK's `bin` directory, such as a wrapper script, has a home
-  of its own and is refused, even when it starts the same JDK.
+  of its own and is refused, even when it starts the same JDK. A `<fork>` with neither an `<executable>` nor a
+  toolchain makes the compiler look javac up itself, relative to the home of the JDK running Maven: at
+  `bin/javac` on macOS, at `../sh/javac` on AIX and at `../bin/javac` elsewhere; then at `$JAVA_HOME/bin/javac`;
+  and last as a plain `javac` from the `PATH`. The check still takes the JDK running Maven for javac's then. That
+  is the forked javac's JDK when javac is found in that JDK's own `bin`, which only the macOS lookup tries, or at
+  `$JAVA_HOME/bin/javac` with `JAVA_HOME` naming the JDK running Maven, as it does when `mvn` starts Maven
+  through it; configure `<executable>` or a toolchain to have the check read the javac that runs.
 - **A JDK 21 or later for the generator.** Its `java` must exist, have a `javac` beside it, and belong to a JDK
   whose `release` file, when it has one, declares 21 or later. On Windows, a `javaExecutable` whose name has no
   extension and names no file stands for the `.exe` beside it.
