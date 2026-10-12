@@ -1326,15 +1326,18 @@ final class Transaction {
     }
 
     /**
-     * Roll back to the savepoint, then resolve {@code recovery}, the identifier the failure selected, from the
-     * original origin and run that edge without guards and without a failure route of its own. An empty
-     * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is. A recovery action
-     * that throws, or completes its stage with, a throwable that is neither an Error thrown as itself nor a failure of
-     * the call aborts the call with it as cause, and the abort holds {@code cause}, the original throwable, as
-     * suppressed when it is present and another one: adding it reads no message. A call that logs at TRACE logs the
-     * route, or the unhandled failure, once the rollback is done. A call that records its trail leaves what failed on
-     * the mark of the recovery hop, which sits at the savepoint since the rollback truncated the log there, as soon as
-     * the hop is marked: before a sub-machine its target binds starts and before the recovery action runs.
+     * Roll back to the savepoint, then resolve {@code recovery}, the identifier the failure selected, from the original
+     * origin and run that edge without guards and without a failure route of its own. An empty {@code recovery} leaves
+     * the failure unhandled. The result carries {@code failureKind} as it is. A recovery action that throws, or
+     * completes its stage with, a throwable that is neither an Error thrown as itself nor a failure of the call aborts
+     * the call with it as cause, and the abort holds {@code cause}, the original throwable, as suppressed when it is
+     * present and another one: adding it reads no message. The engine's own abort of the recovery step, for a null
+     * outcome or stage or a wait that timed out, was interrupted or was refused, holds it as suppressed too, before it
+     * poisons the call, unless that abort is caused by that very throwable; a poison stored earlier still ends the call
+     * as it is. A call that logs at TRACE logs the route, or the unhandled failure, once the rollback is done. A call
+     * that records its trail leaves what failed on the mark of the recovery hop, which sits at the savepoint since the
+     * rollback truncated the log there, as soon as the hop is marked: before a sub-machine its target binds starts and
+     * before the recovery action runs.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> failing, int depth,
@@ -1397,8 +1400,12 @@ final class Transaction {
             } catch (EngineAbort aborted) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
                 settle(ctx);
-                // As in runAction.
-                throw poisonOr(poisonIfNested(depth, aborted.abort()));
+                TransitionAbortedException abort = aborted.abort();
+                if (cause.isPresent() && cause.get() != abort.getCause()) {
+                    abort.addSuppressed(cause.get());
+                }
+                // As in runAction: a poison stored earlier still wins.
+                throw poisonOr(poisonIfNested(depth, abort));
             } catch (CallFailedException e) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
                 settle(ctx);

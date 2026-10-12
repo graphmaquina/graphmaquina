@@ -1596,9 +1596,10 @@ fails, because it returns a failure, throws, fails its wait or runs a cascade th
 failure always aborts: no other rule is tried and the fallback is not used. The journal still lists the actions
 that ran, but not the kind or the cause of the first failure. When the recovery action throws, or completes its stage
 with, an exception that aborts the call, the abort also holds the exception that selected the route, if one did, as
-suppressed, unless the recovery action threw that very exception. A definition assembled without the DSL whose rule
-names an identifier with no edge from the origin aborts the call when that rule is selected, as such an
-`onFailure` does.
+suppressed, unless the recovery action threw that very exception. So does the engine's own abort of the recovery step,
+for a null outcome or stage or a wait that timed out, was interrupted or was refused, unless a failed cascade had
+poisoned the call, which then ends in that poison as it is. A definition assembled without the DSL whose rule names an
+identifier with no edge from the origin aborts the call when that rule is selected, as such an `onFailure` does.
 
 `Outcome.Failed` reports the kind as `failureKind()`, empty when the failure has none, beside
 `failureTransition()`, the identifier of the recovery edge that ran. `status()` is `FAILED` and `code()` is
