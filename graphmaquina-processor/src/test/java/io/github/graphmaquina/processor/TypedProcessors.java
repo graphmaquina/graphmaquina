@@ -130,10 +130,11 @@ public final class TypedProcessors {
             Signatures signatures = new Signatures(elements, types);
             Diagnostics diagnostics = new Diagnostics(processingEnv);
             Map<String, SymbolDescriptor> symbols = SymbolResolver.symbols(registry.manifest().orElseThrow());
-            SymbolResolver methods = new SymbolResolver(symbols, signatures, new EffectiveMethods(signatures),
-                    new Bindings(signatures), diagnostics);
-            PropertyResolver properties = new PropertyResolver(symbols, signatures, new Accessors(signatures),
-                    diagnostics);
+            MissingExportIndex missingIndex = new MissingExportIndex(elements, processingEnv.getFiler());
+            SymbolResolver methods = new SymbolResolver(symbols, missingIndex, signatures,
+                    new EffectiveMethods(signatures), new Bindings(signatures), diagnostics);
+            PropertyResolver properties = new PropertyResolver(symbols, missingIndex, signatures,
+                    new Accessors(signatures), diagnostics);
             BoundInvocation invocations = new BoundInvocation(elements, types);
             for (Ask ask : ASKS) {
                 answer(ask, methods, properties, invocations, elements);

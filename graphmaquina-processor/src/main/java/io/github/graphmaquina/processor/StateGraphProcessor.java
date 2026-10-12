@@ -5,6 +5,7 @@ import io.github.graphmaquina.annotation.StateGraphs;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.emit.SymbolNames;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
+import io.github.graphmaquina.codegen.manifest.ExportIndex;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
@@ -28,6 +29,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Stream;
 import javax.annotation.processing.AbstractProcessor;
 import javax.annotation.processing.ProcessingEnvironment;
 import javax.annotation.processing.RoundEnvironment;
@@ -99,6 +101,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private Optional<TypedMachineModelBuilder> typed = Optional.empty();
     private Optional<VocabularyPlacement> placement = Optional.empty();
     private CompanionScope scope;
+    private MissingExportIndex missingIndex;
     private SetModelBuilder sets;
     private Map<String, MachineModel> models;
     private Set<String> failed;
@@ -149,13 +152,16 @@ public final class StateGraphProcessor extends AbstractProcessor {
         StructuralChecks structure = new StructuralChecks(signatures, diagnostics);
         sets = new SetModelBuilder(annotations, signatures, diagnostics, invocations);
         scope = new CompanionScope(env.getElementUtils(), diagnostics, runtimeOrigins);
+        missingIndex = new MissingExportIndex(env.getElementUtils(), env.getFiler());
         placement = manifests.manifest().map((CompileManifest manifest) ->
                 new VocabularyPlacement(manifest, annotations, diagnostics));
         typed = manifests.manifest().map((CompileManifest manifest) -> {
             Map<String, SymbolDescriptor> symbols = SymbolResolver.symbols(manifest);
             VocabularyRegistry vocabulary = new VocabularyRegistry(manifest, env.getElementUtils());
-            PropertyResolver propertyResolver = new PropertyResolver(symbols, signatures, accessors, diagnostics);
-            SymbolResolver symbolResolver = new SymbolResolver(symbols, signatures, effective, bindings, diagnostics);
+            PropertyResolver propertyResolver = new PropertyResolver(symbols, missingIndex, signatures, accessors,
+                    diagnostics);
+            SymbolResolver symbolResolver = new SymbolResolver(symbols, missingIndex, signatures, effective, bindings,
+                    diagnostics);
             TypedPairs pairs = new TypedPairs(structure, signatures, diagnostics);
             return new TypedMachineModelBuilder(vocabulary, structure, propertyResolver,
                     new TypedTransitions(structure, symbolResolver, new TypedTimeouts(annotations, diagnostics),
@@ -459,7 +465,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
      * The model of {@code machine}, which the set {@code set} holds. A machine the index of this compilation names
      * that no round handed to this processor, which is what javac does with a source it compiles implicitly, from
      * the source path, has no companion, and the set's companion could not build it without one: that is reported
-     * as {@code SG602} at the set, whose companion is not generated either.
+     * as {@code SG602} at the set, whose companion is not generated either. So is a machine that no index lists and
+     * that comes from a dependency that carries no export index: its vocabulary is read only where an index lists it.
      */
     private Optional<MachineModel> held(TypeElement machine, TypeElement set, RoundEnvironment round) {
         String name = machine.getQualifiedName().toString();
@@ -469,6 +476,12 @@ public final class StateGraphProcessor extends AbstractProcessor {
                     + " implicitly, from the source path, so pass every source of the compilation to javac", set);
             return Optional.empty();
         }
+        Optional<Path> unindexed = isListed(name) ? Optional.empty() : missingIndex.entryOf(machine);
+        if (unindexed.isPresent()) {
+            diagnostics.error("SG602", set.getQualifiedName() + " holds " + name + ", but " + name
+                    + MissingExportIndex.unlisted(unindexed.get()), set);
+            return Optional.empty();
+        }
         return resolve(machine, round);
     }
 
@@ -476,6 +489,17 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private boolean isLocal(String name) {
         return manifests.manifest().map((CompileManifest manifest) -> manifest.local().model().graphs().stream()
                 .anyMatch((GraphDescriptor graph) -> graph.facade().equals(name))).orElse(false);
+    }
+
+    /**
+     * Whether an index this compilation reads, its own or a dependency's, lists the machine {@code name}. Without a
+     * manifest, which has been reported already, nothing is known not to be listed.
+     */
+    private boolean isListed(String name) {
+        return manifests.manifest().map((CompileManifest manifest) -> Stream.concat(Stream.of(manifest.local()),
+                        manifest.dependencies().stream())
+                .flatMap((ExportIndex index) -> index.model().graphs().stream())
+                .anyMatch((GraphDescriptor graph) -> graph.facade().equals(name))).orElse(true);
     }
 
     /**

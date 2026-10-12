@@ -123,6 +123,29 @@ class RepeatedCompilationTest {
                 && error.contains("prepare-compile")), rerun.describe());
     }
 
+    /**
+     * A rerun of javac without the lifecycle, after the action host stopped exporting, finds the previous action
+     * symbol in the class output, which no export index sits beside. That output is this compilation's own, never a
+     * dependency whose index went missing, so the symbol is refused as one this compilation does not export.
+     */
+    @Test
+    void refusesASymbolLeftInItsOwnClassOutputAsUnknownRatherThanAsAMissingIndex() throws IOException {
+        Compilation.Prepared first = Compilation.prepare(project, TypedFixtures.minimal());
+        Compilation.Result initial = Compilation.compilePrepared(first);
+        assertTrue(initial.success(), initial.describe());
+        Files.delete(first.request().classesOutput().resolve(PUBLISHED));
+        Map<String, String> sources = TypedFixtures.minimal();
+        sources.put("fx.DocActions", sources.get("fx.DocActions").replace("@GraphAction public", "public"));
+
+        Compilation.Result rerun = Compilation.recompileWithoutLifecycle(Compilation.prepare(project, sources));
+
+        assertFalse(rerun.success(), rerun.describe());
+        assertTrue(rerun.errors().contains("[SG605] fx.DocActionsRefs.Publish is not a symbol this compilation exports"
+                + " or depends on; use one of the generated <Host>Refs types"), rerun.describe());
+        assertFalse(rerun.errors().stream().anyMatch((String error) -> error.contains("export index")),
+                rerun.describe());
+    }
+
     @Test
     void refusesRetiredInventoriesAndLeavesCleanupToTheUser() throws IOException {
         Map<String, String> sources = TypedFixtures.minimal();

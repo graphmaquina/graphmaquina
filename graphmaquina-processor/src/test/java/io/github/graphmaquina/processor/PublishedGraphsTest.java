@@ -17,6 +17,8 @@ import java.io.UncheckedIOException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -295,6 +297,58 @@ class PublishedGraphsTest {
         assertEquals(List.of(missing.formatted("DEPOSIT"), missing.formatted("BALANCE")), result.errors(),
                 result.describe());
         assertFalse(result.hasGenerated("cons.ShopRuntime"), result.describe());
+    }
+
+    /**
+     * A producer jar that lost its export index, as an assembly step that drops {@code META-INF/graphmaquina} leaves
+     * it, is reported as the missing index it is, at every use the consumer makes of it: at each generated symbol a
+     * machine binds and at the set that holds the producer's machine, which no index the consumer reads lists. None
+     * of them is told to use another symbol or to apply a Definition the machine carries already.
+     */
+    @Test
+    void reportsAProducerJarWithoutItsExportIndexWhereTheConsumerUsesIt() throws IOException {
+        Path jar = publish(producer(), directory.resolve("producer.jar"), UnaryOperator.identity());
+        try (FileSystem archive = FileSystems.newFileSystem(jar)) {
+            Files.delete(archive.getPath(PUBLISHED));
+        }
+
+        Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
+
+        assertEquals(List.of(
+                "[SG602] prod.BillRefs.Status" + unlisted(jar),
+                "[SG602] prod.BillRefs.Id" + unlisted(jar),
+                "[SG602] prod.BillActionsRefs.Cancel" + unlisted(jar),
+                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + unlisted(jar)), result.errors(),
+                result.describe());
+        assertTrue(result.lineOf("SG602") > 0, result.describe());
+        assertFalse(result.hasGenerated("cons.ArchivesRuntime"), result.describe());
+        assertFalse(result.hasGenerated("cons.ShelfRuntime"), result.describe());
+    }
+
+    /** The same producer compiled into a directory of classes, whose export index was deleted afterwards. */
+    @Test
+    void reportsAProducerDirectoryWithoutItsExportIndexWhereTheConsumerUsesIt() throws IOException {
+        Compilation.Prepared producer = Compilation.prepare(producer());
+        Compilation.Result produced = Compilation.compilePrepared(producer);
+        assertTrue(produced.success(), produced.describe());
+        Path classes = producer.request().classesOutput().toRealPath();
+        Files.delete(classes.resolve(PUBLISHED));
+
+        Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(classes)));
+
+        assertEquals(List.of(
+                "[SG602] prod.BillRefs.Status" + unlisted(classes),
+                "[SG602] prod.BillRefs.Id" + unlisted(classes),
+                "[SG602] prod.BillActionsRefs.Cancel" + unlisted(classes),
+                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + unlisted(classes)), result.errors(),
+                result.describe());
+    }
+
+    /** What a diagnostic says after naming a type that {@code entry}, which lost its export index, carries. */
+    private static String unlisted(Path entry) {
+        return " comes from " + entry + ", which carries no export index " + PUBLISHED + ", so no index this"
+                + " compilation reads lists it: package the index the producer's StateGraph build publishes with its"
+                + " classes, or rebuild the producer through the complete lifecycle";
     }
 
     @Test

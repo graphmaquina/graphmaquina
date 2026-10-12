@@ -39,14 +39,16 @@ final class PropertyResolver {
     private static final String OPTIONAL = "java.util.Optional";
 
     private final Map<String, SymbolDescriptor> symbols;
+    private final MissingExportIndex missingIndex;
     private final Signatures signatures;
     private final Accessors accessors;
     private final Diagnostics diagnostics;
     private final Annotations annotations;
 
-    PropertyResolver(Map<String, SymbolDescriptor> symbols, Signatures signatures, Accessors accessors,
-            Diagnostics diagnostics) {
+    PropertyResolver(Map<String, SymbolDescriptor> symbols, MissingExportIndex missingIndex, Signatures signatures,
+            Accessors accessors, Diagnostics diagnostics) {
         this.symbols = symbols;
+        this.missingIndex = missingIndex;
         this.signatures = signatures;
         this.accessors = accessors;
         this.diagnostics = diagnostics;
@@ -111,11 +113,12 @@ final class PropertyResolver {
 
     /**
      * The property {@code symbol} names on the entity of {@code host}, or empty after reporting {@code SG605}
-     * when it is not a property symbol of this compilation or names another entity.
+     * when it is not a property symbol of this compilation or names another entity, and {@code SG602} when it comes
+     * from a dependency that carries no export index.
      */
     private Optional<PropertyDescriptor> declaration(TypeMirror symbol, MachineTypes host, DiagnosticAnchor anchor) {
         Optional<SymbolResolver.Reference> reference = SymbolResolver.reference(symbol, SymbolKind.PROPERTY,
-                anchor, symbols, annotations, diagnostics);
+                anchor, symbols, missingIndex, annotations, diagnostics);
         if (reference.isEmpty()) {
             return Optional.empty();
         }
