@@ -29,6 +29,7 @@ import io.github.graphmaquina.error.UninitializedStateException;
 import io.github.graphmaquina.error.WatchChainExceededException;
 import io.github.graphmaquina.internal.CallFailureFlows;
 import io.github.graphmaquina.internal.FrozenFlow;
+import io.github.graphmaquina.internal.Texts;
 import java.time.Duration;
 import java.time.InstantSource;
 import java.util.ArrayList;
@@ -282,7 +283,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         AbortDetails details = new AbortDetails(key(), entity, from, Optional.empty(), Optional.empty(),
                 Optional.empty(), List.of(), List.of());
         return new TransitionAbortedException(callOf(entity, observed, reaction), CallPhase.RESOLVE, details,
-                what + cause, cause);
+                what + Texts.shown(cause), cause);
     }
 
     /** Rules in order; the first one wins. The view is fresh: outside any transaction it reads the getters. */

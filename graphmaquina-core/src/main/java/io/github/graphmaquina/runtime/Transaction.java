@@ -720,8 +720,8 @@ final class Transaction {
             throw fatal;
         } catch (Throwable e) {
             Throwable cause = Unwrap.unwrap(e);
-            throw bindingAbort(machine, ref, from, id, depth, "the parentOf of " + name + " threw " + cause,
-                    Optional.of(cause));
+            throw bindingAbort(machine, ref, from, id, depth,
+                    "the parentOf of " + name + " threw " + Texts.shown(cause), Optional.of(cause));
         }
         if (parent == null) {
             throw bindingAbort(machine, ref, from, id, depth, "the parentOf of " + name + " returned null",
@@ -736,8 +736,8 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw bindingAbort(machine, ref, from, id, depth, "checking the binding " + name + " threw " + e,
-                    Optional.of(e));
+            throw bindingAbort(machine, ref, from, id, depth,
+                    "checking the binding " + name + " threw " + Texts.shown(e), Optional.of(e));
         }
     }
 
@@ -762,7 +762,7 @@ final class Transaction {
             throw fatal;
         } catch (Throwable e) {
             Throwable cause = Unwrap.unwrap(e);
-            throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " threw " + cause,
+            throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " threw " + Texts.shown(cause),
                     Optional.of(cause));
         }
         if (child == null) {
@@ -785,8 +785,8 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw bindingAbort(machine, ref, from, id, depth, "checking the binding " + name + " threw " + e,
-                    Optional.of(e));
+            throw bindingAbort(machine, ref, from, id, depth,
+                    "checking the binding " + name + " threw " + Texts.shown(e), Optional.of(e));
         }
         if (state == spec.state()) {
             return Optional.of(Hold.IN_NODE);
@@ -869,9 +869,8 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw entryAbort(machine, ref, edge, depth,
-                    "reading the sub-machine of " + parentMachine.key() + "." + spec.state() + " threw " + e,
-                    Optional.of(e));
+            throw entryAbort(machine, ref, edge, depth, "reading the sub-machine of " + parentMachine.key() + "."
+                    + spec.state() + " threw " + Texts.shown(e), Optional.of(e));
         }
         Q initial = childMachine.definition().initial();
         uow.appendStart(new LogEntry.Start(childRef, previous, initial, parentRef, spec.state(), depth));
@@ -903,7 +902,7 @@ final class Transaction {
             throw fatal;
         } catch (Throwable e) {
             Throwable cause = Unwrap.unwrap(e);
-            throw entryAbort(machine, ref, edge, depth, "the childOf of " + binding + " threw " + cause,
+            throw entryAbort(machine, ref, edge, depth, "the childOf of " + binding + " threw " + Texts.shown(cause),
                     Optional.of(cause));
         }
         if (child == null) {
@@ -956,7 +955,7 @@ final class Transaction {
             }
             throw abort(machine, ref, transition.from(), Optional.of(transition.transition()),
                     Optional.of(transition.to()), Optional.of(action.name()), depth,
-                    "the action " + action.name() + " threw " + cause, Optional.of(cause));
+                    "the action " + action.name() + " threw " + Texts.shown(cause), Optional.of(cause));
         } catch (CallFailedException e) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
             // Reaching here: a null stage or outcome, a wait that timed out, was interrupted or was refused, or a
@@ -1000,7 +999,7 @@ final class Transaction {
         }
         return abort(machine, ref, transition.from(), Optional.of(transition.transition()),
                 Optional.of(transition.to()), Optional.empty(), depth,
-                "the guard " + guard.name() + " " + what + " " + cause, Optional.of(cause));
+                "the guard " + guard.name() + " " + what + " " + Texts.shown(cause), Optional.of(cause));
     }
 
     /**
@@ -1325,12 +1324,22 @@ final class Transaction {
 
     /**
      * The reason a routed throwable reports, whichever declared type admitted it: the throwable's simple name and its
-     * message. An anonymous class has an empty simple name, so its binary name stands in: a reason is never blank.
+     * message. An anonymous class has an empty simple name, so its binary name stands in: a reason is never blank. A
+     * message whose read throws anything but an Error reads {@code <getMessage threw <class name>>}, so the route is
+     * taken all the same; an Error propagates.
      */
     private static String describe(Throwable cause) {
-        String message = cause.getMessage();
+        Optional<String> message;
+        try {
+            message = Optional.ofNullable(cause.getMessage());
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable unreadable) {
+            message = Optional.of("<getMessage threw " + unreadable.getClass().getName() + ">");
+        }
         String type = cause.getClass().getSimpleName();
-        return (type.isEmpty() ? cause.getClass().getName() : type) + (message == null ? "" : ": " + message);
+        return (type.isEmpty() ? cause.getClass().getName() : type) + message.map((String text) -> ": " + text)
+                .orElse("");
     }
 
     private TransitionAbortedException abort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
@@ -1352,8 +1361,8 @@ final class Transaction {
         Throwable cause = Unwrap.unwrap(error);
         AbortDetails details = new AbortDetails(machine.key(), entity, Optional.empty(), Optional.of(id),
                 Optional.empty(), Optional.empty(), uow.path(), uow.journal());
-        return new TransitionAbortedException(call(), CallPhase.RESOLVE, details, "reading the entity threw " + cause,
-                cause);
+        return new TransitionAbortedException(call(), CallPhase.RESOLVE, details,
+                "reading the entity threw " + Texts.shown(cause), cause);
     }
 
     /**
@@ -1376,7 +1385,8 @@ final class Transaction {
         Optional<Enum<?>> to = edge.isPresent() ? Optional.of(edge.get().to()) : Optional.empty();
         AbortDetails details = new AbortDetails(callKey, callEntity, from, transition, to, Optional.empty(),
                 uow.path(), uow.journal());
-        return new TransitionAbortedException(call(), phase, details, "the engine could not go on: " + error, error);
+        return new TransitionAbortedException(call(), phase, details,
+                "the engine could not go on: " + Texts.shown(error), error);
     }
 
     /** At depth greater than zero, the failure poisons the UoW: the parent cannot go on as if nothing happened. */

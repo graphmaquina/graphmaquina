@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.StatesWritten;
+import io.github.graphmaquina.internal.Texts;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -36,13 +37,14 @@ public final class CommitFailedException extends CallFailedException {
     public CommitFailedException(MachineCall call, List<ActionRecord> journal, List<?> applied, Object failedEntity,
                                  List<?> pending, Throwable cause) {
         this(call, journal, applied, Optional.of(Objects.requireNonNull(failedEntity, "failedEntity")), pending,
-                "a setter threw " + Objects.requireNonNull(cause, "cause"), Optional.of(cause));
+                "a setter threw " + Texts.shown(Objects.requireNonNull(cause, "cause")), Optional.of(cause));
     }
 
     /** Phase 2 stopped before calling any setter because {@code cause} was thrown, by a state read for instance. */
     public CommitFailedException(MachineCall call, List<ActionRecord> journal, List<?> pending, Throwable cause) {
         this(call, journal, List.of(), Optional.empty(), pending,
-                "preparing the commit threw " + Objects.requireNonNull(cause, "cause"), Optional.of(cause));
+                "preparing the commit threw " + Texts.shown(Objects.requireNonNull(cause, "cause")),
+                Optional.of(cause));
     }
 
     private CommitFailedException(MachineCall call, List<ActionRecord> journal, List<?> applied,

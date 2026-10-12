@@ -1480,7 +1480,9 @@ the rule while every other `IOException` goes to the fallback.
   `onFailure`, the call ends in `UnhandledFailureException`, unless a failed cascade poisoned the transaction, in which
   case the engine throws the failure that poisoned the transaction.
 - The reason is composed from the exception's simple name and its message, or from its binary name for an
-  anonymous class. `cause()` is the very exception the action threw, once unwrapped.
+  anonymous class. A message that cannot be read, because `getMessage()` throws anything but an `Error`, reads
+  `<getMessage threw <exception class>>`, and the route is taken all the same. `cause()` is the very exception the
+  action threw, once unwrapped.
 - `explanation()` holds the reason of a returned failure and stays empty when an exception was routed, whichever
   route took it.
 
