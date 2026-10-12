@@ -24,14 +24,18 @@ import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
+import io.github.graphmaquina.fixtures.LibraryLog;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import org.junit.jupiter.api.Test;
 
 /**
- * An identity whose hashCode throws while COLLECT rolls an aborted element back stops that rollback; the action that
- * ran the cascade receives what stopped it as it receives any other failure that leaves a cascade: an abort of its own
- * step that names the cascade and carries it as its cause. The call still aborts with the element's abort.
+ * An identity whose hashCode throws while COLLECT rolls an aborted element back stops that rollback, which is then a
+ * failure that leaves the cascade like any other: an abort of the step that ran the cascade, which names the cascade
+ * and carries what stopped the rollback as its cause, poisons the call in place of the element's abort, which it holds
+ * as suppressed, reaches that step's action, and stops every enclosing COLLECT at once. The call aborts with it.
  */
 class CollectRollbackFailureTest {
 
@@ -91,18 +95,76 @@ class CollectRollbackFailureTest {
                     .endTransition()
                 .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
                 .build();
-        try (MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph)
+        try (LibraryLog log = LibraryLog.runtime(Level.FINER);
+             MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph)
                 .state(Doc::status, Doc::setStatus).identity((Doc doc) -> doc == child ? childId : doc.id())).build()) {
             TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(DOCS).execute(root, SUBMIT));
+            List<String> lines = log.records().stream().map(LogRecord::getMessage).toList();
+            assertTrue(lines.stream().noneMatch((String line) -> line.contains("collect-rollback")), lines.toString());
+            assertTrue(lines.stream().anyMatch((String line) -> line.startsWith("call=")
+                    && line.endsWith(" depth=0 poison error=" + thrown)), lines.toString());
             assertEquals(StatesWritten.NONE, thrown.statesWritten());
-            assertTrue(thrown.getMessage().contains("the action Publish threw"), thrown.getMessage());
+            assertEquals(1, caught.size());
+            assertSame(caught.get(0), thrown);
+            assertSame(hashFailure, thrown.getCause());
+            assertTrue(thrown.getMessage().contains("the cascade to Doc/DocStatus failed: " + hashFailure),
+                    thrown.getMessage());
+            TransitionAbortedException element = assertInstanceOf(TransitionAbortedException.class,
+                    thrown.getSuppressed()[0]);
+            assertTrue(element.getMessage().contains("the action Publish threw"), element.getMessage());
         }
-        assertEquals(1, caught.size());
-        TransitionAbortedException received = assertInstanceOf(TransitionAbortedException.class, caught.get(0));
-        assertSame(hashFailure, received.getCause());
-        assertTrue(received.getMessage().contains("the cascade to Doc/DocStatus failed: " + hashFailure),
-                received.getMessage());
         assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), child.status()));
+    }
+
+    @Test
+    void anIdentityThatStopsANestedCollectRollbackStopsTheEnclosingCollectToo() {
+        Doc root = new Doc("root", DRAFT);
+        Doc first = new Doc("first", DRAFT);
+        Doc second = new Doc("second", DRAFT);
+        Doc element = new Doc("element", REVIEW);
+        ArmedId elementId = new ArmedId("element");
+        IllegalStateException hashFailure = new IllegalStateException("identity hash failed during rollback");
+        List<String> ran = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "a draft is submitted").statePolicy(REVIEW, "a review is published")
+                .statePolicy(PUBLISHED, "a publication is archived")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        ran.add("submit " + ctx.entity().id());
+                        try {
+                            if (ctx.entity() == root) {
+                                ctx.cascadeAll(DOCS, List.of(first, second), SUBMIT, CascadePolicy.COLLECT);
+                            } else if (ctx.entity() == first) {
+                                ctx.cascadeAll(DOCS, List.of(element), PUBLISH, CascadePolicy.COLLECT);
+                            }
+                        } catch (RuntimeException thrown) {
+                            // the call is poisoned anyway
+                        }
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED)
+                    .action("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        ran.add("publish " + ctx.entity().id());
+                        elementId.onHash = () -> {
+                            elementId.onHash = () -> { };
+                            throw hashFailure;
+                        };
+                        throw new IllegalArgumentException("the element failed");
+                    })
+                    .endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph)
+                .state(Doc::status, Doc::setStatus).identity((Doc doc) -> doc == element ? elementId : doc.id()))
+                .build()) {
+            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(root, SUBMIT));
+            assertSame(hashFailure, thrown.getCause());
+        }
+        assertEquals(List.of("submit root", "submit first", "publish element"), ran);
+        assertEquals(List.of(DRAFT, DRAFT, DRAFT, REVIEW),
+                List.of(root.status(), first.status(), second.status(), element.status()));
     }
 }

@@ -1578,6 +1578,15 @@ final class Transaction {
             poisonAt(caller.contextDepth(), own);
             return own;
         }
+        return poisonThrough(caller, target, error);
+    }
+
+    /**
+     * {@link #poisonWith} for what it wraps, whatever {@code error} is: poisons the transaction, unless it is already
+     * poisoned, through an abort of the caller's step that names the cascade to {@code target} and carries
+     * {@code error}, and returns that abort.
+     */
+    private TransitionAbortedException poisonThrough(ContextHandle caller, String target, Throwable error) {
         String cascade = "the cascade to " + target + " failed: ";
         TransitionAbortedException wrapper;
         try {
@@ -1720,9 +1729,11 @@ final class Transaction {
     /**
      * The rest of cascadeAll once its elements are accepted: the identifier, the machine, then every element. A call
      * that logs at TRACE logs each COLLECT element it rolls back, once the identity of the element was registered,
-     * with the abort that ended its step. A rollback that an identity's equals or hashCode stops reaches the action
-     * as any other failure that leaves the cascade does, through {@link #poisonWith}, and the call keeps the
-     * element's abort as its poison. When printing the entities in flight for the aggregate throws an Error, an
+     * with the abort that ended its step. A rollback that an identity's equals or hashCode stops is a failure that
+     * leaves the cascade like any other, whatever it threw: the abort of the caller's step that carries it, through
+     * {@link #poisonThrough}, replaces the element's abort as the poison, holds that abort as suppressed, and reaches
+     * the action; a COLLECT that encloses this one collects no such poison, so it stops at once too. When printing the
+     * entities in flight for the aggregate throws an Error, an
      * aggregate whose path names each entity's machine alone poisons the transaction first, as {@link #poisonWith}
      * says, and then that Error propagates.
      */
@@ -1758,7 +1769,10 @@ final class Transaction {
                     } catch (Error fatal) {
                         throw fatal;
                     } catch (Throwable stopped) {
-                        throw poisonWith(caller, key.toString(), stopped);
+                        uow.clearPoison();
+                        TransitionAbortedException interrupted = poisonThrough(caller, key.toString(), stopped);
+                        interrupted.addSuppressed(abort);
+                        throw interrupted;
                     }
                     if (target.isPresent()) {
                         log.trace(caller.contextDepth(), "collect-rollback " + CallLog.show(target.get()) + " "
@@ -1800,9 +1814,9 @@ final class Transaction {
 
     /**
      * A commit callback cannot add a hop after phase 2 has fixed the changes it will write, and an identity's equals
-     * or hashCode cannot add one while a rollback undoes the log, as {@link UnitOfWork#rollbackTo} says. The rollback is
-     * checked before the poison: COLLECT rolls an aborted element back with the call poisoned, and that refusal is the
-     * same as the one a failure route's rollback gives.
+     * or hashCode cannot add one while a rollback undoes the log, as {@link UnitOfWork#rollbackTo} says. The rollback
+     * is checked before the poison: COLLECT rolls an aborted element back with the call poisoned, and that refusal is
+     * the same as the one a failure route's rollback gives.
      */
     private void checkCascade(ContextHandle caller) {
         if (uow.rollingBack()) {

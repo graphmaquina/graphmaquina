@@ -12,7 +12,9 @@ import lombok.Getter;
  * it poisons the transaction. Only a transition abort of the call is collected, and not one whose element a nested
  * cascade poisoned with a failure that is no failure of the call, such as an unknown machine or a peer's null state,
  * even when the element's action caught it. Any other failure poisons the transaction, through an abort that carries
- * it when it is no failure of the call, and stops the cascade at once: the elements after it do not run.
+ * it when it is no failure of the call, and stops the cascade at once: the elements after it do not run. So does what
+ * an identity's {@code equals} or {@code hashCode} throws while a failed element is rolled back: the abort that carries
+ * it poisons the transaction in place of that element's abort, which it holds as suppressed.
  */
 @Getter
 public final class CascadeException extends TransitionAbortedException {

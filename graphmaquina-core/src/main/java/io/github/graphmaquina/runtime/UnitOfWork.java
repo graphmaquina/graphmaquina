@@ -366,7 +366,10 @@ final class UnitOfWork {
 
     boolean poisonWrapsAForeignFailure() { return poisonWrapsAForeignFailure; }
 
-    /** Only cascadeAll with COLLECT can clear it, after reverting the failed element. */
+    /**
+     * Only cascadeAll with COLLECT clears it: after reverting the failed element, or once an identity stopped that
+     * revert, to poison the call with what stopped it instead.
+     */
     void clearPoison() {
         poison = Optional.empty();
         poisonWrapsAForeignFailure = false;
