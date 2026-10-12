@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.CascadePolicy;
+import io.github.graphmaquina.api.FlowEntry;
+import io.github.graphmaquina.api.FlowKey;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.TransitionContext;
@@ -25,8 +27,11 @@ import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.LibraryLog;
+import java.time.Instant;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import org.junit.jupiter.api.Test;
@@ -35,9 +40,12 @@ import org.junit.jupiter.api.Test;
  * An identity whose hashCode throws while COLLECT rolls an aborted element back stops that rollback, which is then a
  * failure that leaves the cascade like any other: an abort of the step that ran the cascade, which names the cascade
  * and carries what stopped the rollback as its cause, poisons the call in place of the element's abort, which it holds
- * as suppressed, reaches that step's action, and stops every enclosing COLLECT at once. The call aborts with it.
+ * as suppressed, reaches that step's action, and stops every enclosing COLLECT at once. The call aborts with it, and
+ * its flow keeps the writes and the hops the stopped rollback had not undone.
  */
 class CollectRollbackFailureTest {
+
+    private static final FlowKey<String> NOTE = FlowKey.of("note", String.class);
 
     /** An identity whose hashCode runs {@link #onHash} once it is armed; it prints by name. */
     static final class ArmedId {
@@ -87,6 +95,7 @@ class CollectRollbackFailureTest {
                     .endTransition()
                 .transition(PUBLISH, REVIEW, PUBLISHED)
                     .action("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        ctx.flow().put(NOTE, "written by the child");
                         childId.onHash = () -> {
                             throw hashFailure;
                         };
@@ -97,7 +106,8 @@ class CollectRollbackFailureTest {
                 .build();
         try (LibraryLog log = LibraryLog.runtime(Level.FINER);
              MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph)
-                .state(Doc::status, Doc::setStatus).identity((Doc doc) -> doc == child ? childId : doc.id())).build()) {
+                .state(Doc::status, Doc::setStatus).identity((Doc doc) -> doc == child ? childId : doc.id())
+                .recordTrail(InstantSource.fixed(Instant.EPOCH))).build()) {
             TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(DOCS).execute(root, SUBMIT));
             List<String> lines = log.records().stream().map(LogRecord::getMessage).toList();
@@ -113,6 +123,14 @@ class CollectRollbackFailureTest {
             TransitionAbortedException element = assertInstanceOf(TransitionAbortedException.class,
                     thrown.getSuppressed()[0]);
             assertTrue(element.getMessage().contains("the action Publish threw"), element.getMessage());
+            assertEquals(Optional.of("written by the child"), thrown.flow().get(NOTE));
+            List<Object> hops = new ArrayList<>();
+            for (FlowEntry entry : thrown.flow().trail()) {
+                if (entry instanceof FlowEntry.Hop hop) {
+                    hops.add(hop.hop().entity());
+                }
+            }
+            assertEquals(List.of(root, child), hops);
         }
         assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), child.status()));
     }
