@@ -76,11 +76,73 @@ class MachineGenerationTest {
 
         assertTrue(result.success(), result.describe());
         assertTrue(result.generated("fx.DocsRuntime")
-                .contains("@SuppressWarnings({\"deprecation\", \"removal\"})\npublic final class DocsRuntime"),
+                .contains("@SuppressWarnings({\"deprecation\", \"removal\", \"rawtypes\"})\n"
+                        + "public final class DocsRuntime"),
                 result.generated("fx.DocsRuntime"));
         assertTrue(result.generated("fx.LibraryRuntime")
-                .contains("@SuppressWarnings({\"deprecation\", \"removal\"})\npublic final class LibraryRuntime"),
+                .contains("@SuppressWarnings({\"deprecation\", \"removal\", \"rawtypes\"})\n"
+                        + "public final class LibraryRuntime"),
                 result.generated("fx.LibraryRuntime"));
+    }
+
+    /**
+     * A raw type the author writes and suppresses in a declaration they own, as the input of an operation or as an
+     * entity that is an inner class of a generic class used raw, is written back by the companions, where the author
+     * cannot suppress anything, so neither a companion nor a set compiled with {@code -Xlint:all -Werror} may warn
+     * about it.
+     */
+    @Test
+    void rawTypesTheAuthorSuppressesKeepAStrictBuildGreen() {
+        for (String input : List.of("java.util.List", "Class", "java.util.List<Comparable>")) {
+            Map<String, String> sources = TypedFixtures.minimal();
+            String declared = "Outcome<Doc, DocStatus, DocTransition> publish(Doc doc";
+            sources.put("fx.Docs", sources.get("fx.Docs").replace(declared + ");",
+                    "@SuppressWarnings(\"rawtypes\")\n    " + declared + ", " + input + " input);"));
+
+            Compilation.Result result = Compilation.compileTyped(sources);
+
+            assertTrue(result.success(), input + "\n" + result.describe());
+        }
+        Map<String, String> inner = new LinkedHashMap<>();
+        inner.put("fx.DocStatus", "package fx;\npublic enum DocStatus { DRAFT, REVIEW, PUBLISHED }\n");
+        inner.put("fx.DocTransition", "package fx;\npublic enum DocTransition { SUBMIT, PUBLISH }\n");
+        inner.put("fx.Store", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public final class Store<T> {
+                    public final class Doc {
+                        @GraphProperty private DocStatus status = DocStatus.DRAFT;
+                        @GraphProperty public String id() { return "doc"; }
+                        public DocStatus status() { return status; }
+                        public void status(DocStatus value) { status = value; }
+                    }
+                }
+                """);
+        inner.put("fx.Docs", """
+                package fx;
+                import io.github.graphmaquina.annotation.GenerateGraphApi;
+                import io.github.graphmaquina.api.Machine;
+                import io.github.graphmaquina.api.Outcome;
+                import static fx.DocStatus.*;
+                import static fx.DocTransition.*;
+                @GenerateGraphApi
+                @DocsGraph.Definition(initial = DRAFT, terminals = PUBLISHED,
+                    state = StoreDocRefs.Status.class, id = StoreDocRefs.Id.class)
+                @DocsGraph.StatePolicy(state = DRAFT, otherwise = "submit first")
+                @DocsGraph.StatePolicy(state = REVIEW, otherwise = "publish next")
+                @SuppressWarnings("rawtypes")
+                public interface Docs extends Machine<Store.Doc, DocStatus, DocTransition> {
+                    @DocsGraph.Transition(id = SUBMIT, from = DRAFT, to = REVIEW)
+                    Outcome<Store.Doc, DocStatus, DocTransition> submit(Store.Doc doc);
+                    @DocsGraph.Transition(id = PUBLISH, from = REVIEW, to = PUBLISHED)
+                    Outcome<Store.Doc, DocStatus, DocTransition> publish(Store.Doc doc);
+                }
+                """);
+        inner.put("fx.Library", Fixtures.LIBRARY.replace("    Pages pages();\n", ""));
+
+        Compilation.Result result = Compilation.compileTyped(inner);
+
+        assertTrue(result.success(), result.describe());
     }
 
     /**

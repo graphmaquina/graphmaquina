@@ -21,12 +21,13 @@ import javax.lang.model.type.TypeMirror;
  * assembles the registry from the machines' companions and hands out the facades.
  *
  * <p>Like a machine's companion, it is marked {@code @GeneratedCompanion} and suppresses the {@code deprecation}
- * and {@code removal} warnings of the members it calls, it writes its types and suffixes its variables as
- * {@link MachineGenerator} describes, its own {@code Builder} counted among the member types of its scope, and it
- * throws on a checked exception that a state or identity accessor declares as that class describes, naming its
- * method after the methods the set declares or inherits; a variable is named after its role, after the accessor
- * it serves, or after the class a parameter of {@code builder(...)} takes. {@link #emit} answers, beside the source,
- * what the processor checks against that scope before writing it.</p>
+ * and {@code removal} warnings of the members it calls and the {@code rawtypes} warnings of the types it writes,
+ * it writes its types and suffixes its variables as {@link MachineGenerator} describes, its own {@code Builder}
+ * counted among the member types of its scope, and it throws on a checked exception that a state or identity
+ * accessor declares as that class describes, naming its method after the methods the set declares or inherits; a
+ * variable is named after its role, after the accessor it serves, or after the class a parameter of
+ * {@code builder(...)} takes. {@link #emit} answers, beside the source, what the processor checks against that
+ * scope before writing it.</p>
  *
  * <p>Its {@code Builder} mirrors {@code MachineRegistry.Builder} and {@code StateMachines.Builder}: it creates them
  * when it is created and hands every setting to them as soon as it is given, so a setting they refuse is refused where
@@ -163,7 +164,7 @@ public final class SetGenerator {
         out.line("/** Generated set of {@link " + set
                 + "}: builds the registry once and hands out the facades. Do not edit. */");
         out.line("@" + names.of(GENERATED));
-        out.line("@" + names.of(SUPPRESS_WARNINGS) + "({\"deprecation\", \"removal\"})");
+        out.line("@" + names.of(SUPPRESS_WARNINGS) + "({\"deprecation\", \"removal\", \"rawtypes\"})");
         out.open("public final class " + companion + " implements " + set);
         out.blank();
         out.line("private final " + names.of(MACHINE_REGISTRY) + " " + registry + ";");

@@ -600,14 +600,15 @@ observe. Most items refuse up front what used to fail later, in generated code o
   segment a type, member type or constant of its scope takes, so that no spelling reaches it (`SG603`); and a
   machine javac compiled implicitly, from the source path, that the export index or a set names (`SG602`). The index
   case used to publish nothing and report nothing.
-- **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a
-  member type of the facade named like a type they write, with parameter names that would have been keywords,
-  with deprecated bound members under `-Werror`, with a cast whose type annotations name enum constants, beside
-  static overloads of the state and identity accessors, in a set with an accessor named `machineRegistry`, and
-  for a bound member or accessor that declares a checked exception, which is now handled as the same exception
-  thrown undeclared would be. The vocabularies and the references containers the generator writes suppress the
-  deprecation and removal warnings of the hosts, machines and enums they name, as the companions do, so deprecating
-  one, even for removal, no longer fails a `-Werror` build inside a generated file.
+- **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a member
+  type of the facade named like a type they write, with parameter names that would have been keywords, with
+  deprecated bound members, a raw operation input or an entity that is an inner class of a generic class under
+  `-Werror`, with a cast whose type annotations name enum constants, beside static overloads of the state and
+  identity accessors, in a set with an accessor named `machineRegistry`, and for a bound member or accessor that
+  declares a checked exception, which is now handled as the same exception thrown undeclared would be. The
+  vocabularies and the references containers the generator writes suppress the deprecation and removal warnings of
+  the hosts, machines and enums they name, as the companions do, so deprecating one, even for removal, no longer
+  fails a `-Werror` build inside a generated file.
 - **One problem no longer hides the others.** A failed export check (`SG604`) or a refused companion name no
   longer stops the rest of the compilation from being checked, and javac rerun over the previous companions
   reports them as stale output (`SG602`) instead of a collision (`SG603`).

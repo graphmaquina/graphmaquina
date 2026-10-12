@@ -36,9 +36,10 @@ import javax.lang.model.util.Elements;
  * interface.
  *
  * <p>The companion is marked {@code @GeneratedCompanion}, which this processor owns, and suppresses the
- * {@code deprecation} and {@code removal} warnings of the members it calls: the author deprecates a bound member
- * in the sources they own and cannot suppress what a generated file says about it, and a build that compiles that
- * file with {@code -Xlint:all -Werror} fails on such a warning.</p>
+ * {@code deprecation} and {@code removal} warnings of the members it calls and the {@code rawtypes} warnings of the
+ * types it writes back: the author deprecates a bound member, or declares a raw operation input or an entity that is
+ * an inner class of a generic class, in the sources they own and cannot suppress what a generated file says about
+ * it, and a build that compiles that file with {@code -Xlint:all -Werror} fails on such a warning.</p>
  *
  * <p>Each recovery rule of an edge becomes one {@code recover} call of that edge, in declaration order, after its
  * {@code failsOn} calls and before its hook: {@code recover(K.class, id)} for a rule that lists no throwable type,
@@ -216,7 +217,7 @@ public final class MachineGenerator {
         out.blank();
         out.line("/** Generated companion of {@link " + facade + "}: builds its graph and implements its facade. Do not edit. */");
         out.line("@" + names.of(GENERATED));
-        out.line("@" + names.of(SUPPRESS_WARNINGS) + "({\"deprecation\", \"removal\"})");
+        out.line("@" + names.of(SUPPRESS_WARNINGS) + "({\"deprecation\", \"removal\", \"rawtypes\"})");
         out.open("public final class " + companion + " implements " + facade);
         out.blank();
         out.line("public static final " + key + generics + " KEY = " + names.qualifier(MACHINE_KEY) + ".of(" + e

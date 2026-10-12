@@ -130,7 +130,7 @@ class TypedRecoveryRuntimeTest {
 
             /** Generated companion of {@link Docs}: builds its graph and implements its facade. Do not edit. */
             @GeneratedCompanion
-            @SuppressWarnings({"deprecation", "removal"})
+            @SuppressWarnings({"deprecation", "removal", "rawtypes"})
             public final class DocsRuntime implements Docs {
 
                 public static final MachineKey<Doc, DocStatus, DocTransition> KEY = MachineKey.of(Doc.class, \
