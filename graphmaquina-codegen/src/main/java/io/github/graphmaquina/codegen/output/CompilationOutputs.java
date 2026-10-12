@@ -31,12 +31,13 @@ import javax.lang.model.SourceVersion;
  * member would keep publishing the binaries of the previous one. {@code prepare} retires them, and it does so
  * from an inventory rather than from a name prefix: it removes the exact class files and resources the inventories
  * recorded and the processor's sources the sealed inventory recorded and, after an interrupted cycle, the sources the
- * processor inventory names and the class files that reading them attributes to a unit an inventory, the manifest
- * or the processor inventory names, so {@code fx/OldRefs$Manual.class} written by hand survives a run that retires
- * {@code fx/OldRefs.class}. It never removes a source the generator wrote for the current generation, whatever path
- * names the directory it stands in: the generator retires the sources of earlier generations itself, through its own
- * manifests, when it publishes the next one. It also removes the published index and the provisional one, so no
- * consumer and no packager can read what this compilation has not yet verified.</p>
+ * processor inventory names and the class files that reading them attributes to a unit whose source an inventory or
+ * the manifest lists, or that the processor inventory names, so {@code fx/OldRefs$Manual.class} written by hand
+ * survives a run that retires {@code fx/OldRefs.class}, and the class files of an application class {@code fx.My}
+ * survive one that retires {@code fx/My$HostRefs.class}. It never removes a source the generator wrote for the
+ * current generation, whatever path names the directory it stands in: the generator retires the sources of earlier
+ * generations itself, through its own manifests, when it publishes the next one. It also removes the published index
+ * and the provisional one, so no consumer and no packager can read what this compilation has not yet verified.</p>
  *
  * <p>Between the two steps the inventory of what is being retired lives in
  * {@code <workDirectory>/owned-outputs.pending.json}, written before the first deletion to a file beside it that
@@ -103,8 +104,9 @@ public final class CompilationOutputs {
      * every identifier it reads: a path made of such an entry could name a file the processor never wrote, or no file
      * at all, so what only such an inventory could name is left alone, even what its valid names name. The class
      * files are retired by asking {@link OwnedClassFiles} which binaries belong to the units that generation owned, as
-     * the inventories, the current manifest and that processor inventory name them; a class file the enumeration does
-     * not attribute to one of them is never touched.</p>
+     * the sources of the inventories and of the current manifest and that processor inventory name them; a binary an
+     * inventory lists names no unit, and a class file the enumeration does not attribute to one of them is never
+     * touched.</p>
      *
      * @throws CodegenException {@code SG602} if the generator wrote no manifest for this compilation, or
      *     {@code SG603} if the sealed or the pending inventory names a path outside the root it belongs to, one no
@@ -418,33 +420,19 @@ public final class CompilationOutputs {
     }
 
     /**
-     * The top-level types a generation owns, as far as its inventory can say: the sources it generated, and the
-     * types the binaries it already listed belong to. These are candidates only — {@link OwnedClassFiles}
-     * decides which class files really belong to them by reading the class files themselves.
+     * The top-level types a generation owns, as far as its inventory can say: the types of the sources it generated,
+     * the generator's and the processor's, which name every unit javac could have compiled for it. Its binaries
+     * name class files, which are retired by their exact paths, and never a unit: a class file named
+     * {@code fx/My$HostRefs.class} does not make the application class {@code fx.My} one. These are candidates
+     * only — {@link OwnedClassFiles} decides which class files really belong to them by reading the class files
+     * themselves.
      */
     private static Set<String> ownedTypes(OwnedOutputs inventory) {
         Set<String> types = new TreeSet<>();
         for (String source : inventory.sources()) {
             types.add(typeName(source));
         }
-        for (String binary : inventory.binaries()) {
-            types.addAll(declaringTypes(binary));
-        }
-        for (String excluded : inventory.excludedBinaries()) {
-            types.addAll(declaringTypes(excluded));
-        }
         return types;
-    }
-
-    /**
-     * The types a class file path could have been compiled from: the name it spells, and — since {@code $}
-     * separates a nested class from its outer one but is also legal in a top-level name — the part before its
-     * first {@code $}.
-     */
-    private static List<String> declaringTypes(String binary) {
-        String name = binary.substring(0, binary.length() - ".class".length()).replace('/', '.');
-        int nested = name.indexOf('$');
-        return nested < 0 ? List.of(name) : List.of(name, name.substring(0, nested));
     }
 
     /** The canonical name of the type a source path relative to its source root declares. */

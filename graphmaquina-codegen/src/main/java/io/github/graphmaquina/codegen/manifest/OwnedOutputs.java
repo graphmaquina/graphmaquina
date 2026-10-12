@@ -21,8 +21,8 @@ import java.util.Objects;
  * source the current generation writes, and the generator retires its own from {@code sourcesOutput}. Besides those
  * sources and the files the other lists name, the next preparation only removes the published and the pending export
  * index and, after an interrupted cycle, the sources of the types the processor inventory names, with the same
- * exception, and the class files it attributes, by reading them, to the types the inventories and the processor
- * inventory name; any other file is never touched, whatever its name looks like.</p>
+ * exception, and the class files it attributes, by reading them, to the types whose sources the inventories list and
+ * the types the processor inventory names; any other file is never touched, whatever its name looks like.</p>
  */
 public record OwnedOutputs(int schemaVersion, List<String> sources,
         List<String> binaries, List<String> resources, List<String> excludedBinaries) {

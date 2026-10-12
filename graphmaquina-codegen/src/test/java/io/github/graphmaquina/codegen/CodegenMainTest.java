@@ -144,6 +144,53 @@ class CodegenMainTest {
     }
 
     /**
+     * A host named {@code fx.My$Host} gets the top-level references container {@code fx.My$HostRefs}, whose binaries
+     * start like those of the application class {@code fx.My} of {@code My.java}, which no inventory, manifest or
+     * processor inventory names. After a cycle whose javac failed, the next preparation retires the class files of
+     * the units the generation owned, and leaves those of {@code fx.My} and its nested class alone.
+     */
+    @Test
+    void keepsTheClassFilesOfAnApplicationClassNamedLikeThePrefixOfAGeneratedType() throws IOException {
+        Map<String, String> sources = new LinkedHashMap<>(ORIGINALS);
+        sources.put("fx.My", """
+                package fx;
+                public class My {
+                    public static class Nested { }
+                }
+                """);
+        sources.put("fx.My$Host", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                public class My$Host {
+                    @GraphAction
+                    public static Doc publish(Doc doc) { return doc; }
+                }
+                """);
+        Path request = request(SourceFiles.classpath(), sources);
+        Path classes = directory.resolve("classes");
+        assertEquals(0, run("generate", request).exitCode());
+        assertEquals(0, run("prepare-compile", request).exitCode());
+        compile();
+        writeProvisionalIndex();
+        writeProcessorInventory();
+        assertEquals(0, run("complete-compile", request).exitCode());
+        assertEquals(0, run("generate", request).exitCode());
+        assertEquals(0, run("prepare-compile", request).exitCode());
+        compile();
+        byte[] application = Files.readAllBytes(classes.resolve("fx/My.class"));
+        byte[] nested = Files.readAllBytes(classes.resolve("fx/My$Nested.class"));
+        assertTrue(Files.isRegularFile(classes.resolve("fx/My$HostRefs.class")));
+
+        assertEquals(0, run("generate", request).exitCode());
+        Invocation prepared = run("prepare-compile", request);
+
+        assertEquals(0, prepared.exitCode(), prepared.errors());
+        assertArrayEquals(application, Files.readAllBytes(classes.resolve("fx/My.class")));
+        assertArrayEquals(nested, Files.readAllBytes(classes.resolve("fx/My$Nested.class")));
+        assertFalse(Files.exists(classes.resolve("fx/My$HostRefs.class")));
+    }
+
+    /**
      * A wrapped failure says what the tool was doing in its own message and what went wrong in its cause, so
      * the line the build prints carries the whole chain and not only the outermost sentence.
      */
@@ -220,7 +267,12 @@ class CodegenMainTest {
 
     /** The same, over {@code classpath}. */
     private Path request(List<Path> classpath) throws IOException {
-        SourceFiles.write(directory.resolve("originals"), ORIGINALS);
+        return request(classpath, ORIGINALS);
+    }
+
+    /** The same, with {@code sources} as the fixture. */
+    private Path request(List<Path> classpath, Map<String, String> sources) throws IOException {
+        SourceFiles.write(directory.resolve("originals"), sources);
         GenerationRequest request = new GenerationRequest(directory,
                 List.of(directory.resolve("originals")), classpath,
                 directory.resolve("bootstrap"), directory.resolve("processor"), directory.resolve("classes"),
