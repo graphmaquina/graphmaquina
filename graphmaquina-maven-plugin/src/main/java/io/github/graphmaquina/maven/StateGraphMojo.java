@@ -14,10 +14,16 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystemLoopException;
+import java.nio.file.FileVisitOption;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -63,6 +69,15 @@ public abstract class StateGraphMojo extends AbstractMojo {
 
     /** The directory, under the build directory, that holds the manifests and inventories of a compilation. */
     private static final String WORK = "graphmaquina";
+
+    /**
+     * The names the default excludes of Ant 1.10 name outright, which the generator's walk of a whole root leaves out
+     * beside the names {@code ._*}, {@code *~}, {@code #*#}, {@code .#*} and {@code %*%}: the files and directories
+     * of version control systems, and the {@code .DS_Store} of macOS.
+     */
+    private static final Set<String> WALK_EXCLUDED_NAMES = Set.of("CVS", ".cvsignore", "SCCS", "vssver.scc", ".svn",
+        ".git", ".gitattributes", ".gitignore", ".gitmodules", ".hg", ".hgignore", ".hgsub", ".hgsubstate", ".hgtags",
+        ".bzr", ".bzrignore", ".DS_Store");
 
     /** The project this compilation belongs to; injected from {@code ${project}}. */
     private MavenProject project;
@@ -477,8 +492,11 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * the two directories this build generates into, which its own outputs must never overlap, whatever symbolic links
      * their names lead through. A root the execution does not narrow is handed to the generator whole, and the
      * generator walks it with Ant's default excludes, not with plexus-utils' longer list; {@code SourcePatterns}
-     * describes what that leaves in. A root the includes or excludes of the compiler narrow is handed over as the very
-     * files they select, with the compiler's own default excludes left out. Either is handed over under the name
+     * describes what that leaves in. That walk leaves out, as Gradle does, every directory whose name one of those
+     * excludes names, with everything inside it, where the scanner of the compiler enters it, so a root under which
+     * javac compiles a source inside such a directory is handed over as the files the compiler selects instead. A
+     * root the includes or excludes of the compiler narrow is handed over as the very files they select, with the
+     * compiler's own default excludes left out. Either is handed over under the name
      * {@link #spelling} gives it, which anchors the origins the generator publishes to the project directory.
      */
     private List<String> originalSources(CompilerExecution execution, List<String> roots, Path sourcesOutput,
@@ -497,20 +515,81 @@ public abstract class StateGraphMojo extends AbstractMojo {
                 continue;
             }
             Path source = spelling(declared, canonicalRoot, projectDirectory, canonicalProject);
-            if (!patterns.narrow()) {
-                sources.add(source.toString());
-                continue;
-            }
             try {
+                if (!patterns.narrow() && !compilesWhatTheWalkLeavesOut(source, patterns)) {
+                    sources.add(source.toString());
+                    continue;
+                }
                 for (Path file : patterns.select(source)) {
                     sources.add(file.toString());
                 }
             } catch (IOException failure) {
-                throw new MojoExecutionException("cannot read the sources under " + source
-                    + " that the includes and excludes of the " + compiler.id() + " execution select", failure);
+                throw new MojoExecutionException("cannot read the sources under " + source + " that the "
+                    + compiler.id() + " execution compiles", failure);
             }
         }
         return List.copyOf(sources);
+    }
+
+    /**
+     * Whether javac compiles a source under {@code root} that the generator, handed {@code root} whole, leaves out:
+     * one the scanner of the compiler selects inside a directory whose name a default exclude of Ant names, such as
+     * {@code old~} or {@code .gitignore}. plexus-utils enters such a directory and leaves out only the files those
+     * patterns name, while the generator's walk, like Gradle's, leaves the directory out with everything inside it.
+     *
+     * @param root a source root of the compilation
+     * @param patterns the includes and excludes of the compiler execution, which narrow no root
+     * @return {@code true} if javac compiles such a source
+     * @throws IOException if the root, or a directory below it, cannot be walked
+     */
+    private static boolean compilesWhatTheWalkLeavesOut(Path root, SourcePatterns patterns) throws IOException {
+        if (!Files.isDirectory(root)) {
+            return false;
+        }
+        List<Path> leftOut = new ArrayList<>();
+        Files.walkFileTree(root, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE,
+            new SimpleFileVisitor<Path>() {
+
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
+                    if (!attributes.isRegularFile() || !file.getFileName().toString().endsWith(".java")) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    List<String> names = new ArrayList<>();
+                    for (Path name : root.relativize(file)) {
+                        names.add(name.toString());
+                    }
+                    if (names.subList(0, names.size() - 1).stream().anyMatch(StateGraphMojo::walkExcludes)
+                        && patterns.selects(String.join("/", names))) {
+                        leftOut.add(file);
+                        return FileVisitResult.TERMINATE;
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult visitFileFailed(Path file, IOException failure) throws IOException {
+                    if (failure instanceof FileSystemLoopException) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    throw failure;
+                }
+            });
+        return !leftOut.isEmpty();
+    }
+
+    /**
+     * Whether the generator's walk of a whole root leaves out a directory named {@code name}, with everything inside
+     * it: whether a default exclude of Ant names it, as {@code ._*}, {@code *~}, {@code #*#}, {@code .#*},
+     * {@code %*%} or one of {@link #WALK_EXCLUDED_NAMES}.
+     */
+    private static boolean walkExcludes(String name) {
+        return name.startsWith("._")
+            || WALK_EXCLUDED_NAMES.contains(name)
+            || name.endsWith("~")
+            || (name.length() > 1 && name.startsWith("#") && name.endsWith("#"))
+            || name.startsWith(".#")
+            || (name.length() > 1 && name.startsWith("%") && name.endsWith("%"));
     }
 
     /**

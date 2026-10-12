@@ -1267,6 +1267,47 @@ class ExportDeclarationsTest {
     }
 
     /**
+     * Gradle leaves out of a source directory, with everything inside it, every directory a default exclude of Ant
+     * names, not only the directory of a version control system: one named like an editor's backup or lock file,
+     * like an AppleDouble companion or like a file of a version control system. So does the generator's walk. A
+     * directory whose name only resembles one, such as {@code #} or {@code %}, which the patterns {@code #*#} and
+     * {@code %*%} need two characters to match, is walked as Gradle walks it.
+     */
+    @Test
+    void skipsTheDirectoriesGradleExcludesByDefault() throws IOException {
+        Path sources = directory.resolve("src");
+        SourceFiles.write(sources, Map.of("fx.Order", ORDER));
+        byte[] junk = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ', 'O', 'S', ' ', 'X',
+            (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
+        for (String excluded : List.of("~", "old~", "#old#", ".#old", "%old%", "._old", ".DS_Store", ".cvsignore",
+                "vssver.scc", ".gitattributes", ".gitignore", ".gitmodules", ".hgignore", ".hgsub", ".hgsubstate",
+                ".hgtags", ".bzrignore")) {
+            Path file = sources.resolve("fx").resolve(excluded).resolve("Junk.java");
+            Files.createDirectories(file.getParent());
+            Files.write(file, junk);
+        }
+        for (Map.Entry<String, String> walked : Map.of("#", "PaymentActions", "%", "RefundActions").entrySet()) {
+            Path file = sources.resolve("fx").resolve(walked.getKey()).resolve(walked.getValue() + ".java");
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphAction;
+                    public class %s {
+                        @GraphAction
+                        public void authorize(Order order) {}
+                    }
+                    """.formatted(walked.getValue()));
+        }
+
+        GenerationModel model = Bootstrap.inspect(new GenerationRequest(directory, List.of(sources),
+                SourceFiles.classpath(), directory.resolve("out/sources"), directory.resolve("out/processor"),
+                directory.resolve("out/classes"), directory.resolve("out/work"), "fx:demo:main"));
+
+        assertEquals(List.of("fx.PaymentActionsRefs.Authorize", "fx.RefundActionsRefs.Authorize"),
+                model.symbols().stream().map(SymbolDescriptor::qualifiedName).toList());
+    }
+
+    /**
      * Without graphmaquina-core on the generator classpath no marker can be recognized; that is reported at the
      * first marker spelled like one, instead of generating nothing and leaving javac to fail later.
      */

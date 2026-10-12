@@ -51,7 +51,9 @@ import java.util.regex.Pattern;
  * {@code -darcs-backup*}.</p>
  *
  * <p>Those extra entries only take effect when this plugin lists files. A root the execution does not narrow is
- * handed to the generator whole, and the generator walks it with Ant's default excludes, not with plexus-utils'
+ * handed to the generator whole, unless javac compiles a source under it inside a directory whose name a default
+ * exclude names, such as {@code old~}, which this scanner enters while the generator's walk leaves it out with
+ * everything inside it. The generator walks a root handed whole with Ant's default excludes, not with plexus-utils'
  * longer list: a file under such a root inside one of those directories, or named {@code -darcs-backup*}, is read
  * by the generator although javac never compiles it.</p>
  */
@@ -89,8 +91,9 @@ final class SourcePatterns {
     /**
      * Whether these patterns narrow the sources of a root at all. When they do not, javac compiles every Java
      * source under the root that the default excludes of its scanner leave. A root the execution does not narrow
-     * is handed to the generator whole, and the generator walks it with Ant's default excludes, not with
-     * plexus-utils' longer list; the class description says what that leaves in.
+     * is handed to the generator whole, unless javac compiles a source under it that the generator's walk leaves out,
+     * and the generator walks it with Ant's default excludes, not with plexus-utils' longer list; the class
+     * description says what that leaves in.
      *
      * @return {@code true} if the execution declares includes or excludes
      */

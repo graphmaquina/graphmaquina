@@ -1,5 +1,6 @@
 package io.github.graphmaquina.gradle;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
@@ -2168,6 +2169,34 @@ class StateGraphPluginFunctionalTest {
             assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome(), filter);
             assertTrue(fixture.jarContains("fx/OrdersGraph.class"), filter);
         }
+    }
+
+    /**
+     * Gradle leaves out of a source directory, with everything inside it, every directory a default exclude names,
+     * not only the directory of a version control system: one named like an editor's backup or lock file, such as
+     * {@code old~} or {@code .#old}, like an AppleDouble companion or like a file of a version control system, such
+     * as {@code .gitignore}. javac never compiles a file inside one, and the generator, handed the source directory
+     * whole, never reads one either.
+     */
+    @Test
+    void skipsTheDirectoriesABuildExcludesByDefault() throws IOException {
+        byte[] junk = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ', 'O', 'S', ' ', 'X',
+            (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        for (String directory : List.of("~", "old~", "#old#", ".#old", "%old%", "._old", ".DS_Store", ".cvsignore",
+                "vssver.scc", ".gitattributes", ".gitignore", ".gitmodules", ".hgignore", ".hgsub", ".hgsubstate",
+                ".hgtags", ".bzrignore")) {
+            fixture.writeFile("src/main/java/fx/" + directory + "/Junk.java", junk);
+        }
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        JsonArray requested = fixture.request("main").getAsJsonArray("sources");
+        assertEquals(1, requested.size(), requested::toString);
+        assertTrue(Path.of(requested.get(0).getAsString()).endsWith(Path.of("src", "main", "java")),
+                requested::toString);
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
     }
 
     /**

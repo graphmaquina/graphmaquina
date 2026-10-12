@@ -213,9 +213,9 @@ class SourcePatternsTest {
      * The scanner of the compiler adds the default excludes of plexus-utils on top of the excludes of an execution,
      * so the files these patterns select leave out, as javac leaves them out, an AppleDouble companion, an editor's
      * lock file, a darcs backup and anything inside the directory of a version control system, plexus-utils' longer
-     * list of them included. Only a root the execution narrows is selected this way: a root the execution does not
-     * narrow is handed to the generator whole, and the generator walks it with Ant's default excludes, not with
-     * plexus-utils' longer list.
+     * list of them included. A root the execution does not narrow is selected this way only when javac compiles a
+     * source under it that the generator's walk leaves out; otherwise it is handed to the generator whole, and the
+     * generator walks it with Ant's default excludes, not with plexus-utils' longer list.
      */
     @Test
     void leavesOutWhatTheDefaultExcludesName(@TempDir Path root) throws IOException {

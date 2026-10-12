@@ -3146,8 +3146,9 @@ class MavenPluginIntegrationTest {
      * inside the directory of a version control system, such as {@code CVS}. The generator leaves out these two,
      * which Ant's default excludes name as well, whether this plugin hands it the files that includes and excludes
      * select or a whole root to walk. Not every file the compiler leaves out is left out of a whole root: a root the
-     * execution does not narrow is handed to the generator whole, and the generator walks it with Ant's default
-     * excludes, not with plexus-utils' longer list.
+     * execution does not narrow is handed to the generator whole, unless javac compiles a source under it that the
+     * generator's walk leaves out, and the generator walks it with Ant's default excludes, not with plexus-utils'
+     * longer list.
      */
     @Test
     void theGeneratorSkipsTheFilesTheCompilerExcludesByDefault() throws IOException {
@@ -3167,6 +3168,31 @@ class MavenPluginIntegrationTest {
             assertEquals(0, result.exitCode(), result.output());
             assertTrue(fixture.jarContains("fx/OrdersGraph.class"), excludes);
         }
+    }
+
+    /**
+     * The scanner of maven-compiler-plugin enters a directory named like a file its default excludes name, such as
+     * {@code old~} or {@code .gitignore}, and javac compiles the sources inside it, while the generator, walking a
+     * whole root as Gradle walks it, leaves such a directory out. A root the execution does not narrow that holds a
+     * source javac compiles inside one is therefore handed to the generator file by file, so the generator reads the
+     * machine and the action host declared there.
+     */
+    @Test
+    void theGeneratorReadsTheSourcesTheCompilerCompilesInsideADirectoryNamedLikeAnExcludedFile() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        Map<String, String> sources = MavenFixture.domainSources();
+        String orders = sources.remove("fx.Orders");
+        String actions = sources.remove("fx.Actions");
+        fixture.writeSources(sources);
+        fixture.writeFile("src/main/java/fx/old~/Orders.java", orders.getBytes(StandardCharsets.UTF_8));
+        fixture.writeFile("src/main/java/fx/.gitignore/Actions.java", actions.getBytes(StandardCharsets.UTF_8));
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertTrue(fixture.localExports().containsAll(List.of("fx.Orders", "fx.ActionsRefs.Approve")),
+                fixture.localExports()::toString);
     }
 
     /**

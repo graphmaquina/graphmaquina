@@ -227,8 +227,9 @@ default excludes. A directory is handed to the generator whole when the generato
 same files: when neither the source set nor the compile task gives it a pattern, `java.filter` is the `java`
 plugin's own `**/*.java` include, and the default excludes are Ant's, which Gradle applies unless a settings
 script changes them through `org.apache.tools.ant.DirectoryScanner`. Files the default excludes leave out, such
-as `._*` copies and `.git` directories, are left out either way, and symbolic links are followed, a link that
-leads back into a directory being walked skipped.
+as `._*` copies, are left out either way, and so is every directory one of them names, `.git` or `old~` for
+instance, with everything inside it. Symbolic links are followed, a link that leads back into a directory being
+walked skipped.
 
 A filter given to the compile task as a spec or a closure, and a source added to the compile task or put in place
 of the source set's, are not followed. When they make javac compile other original Java sources than the
@@ -569,19 +570,24 @@ In the `<configuration>` of `maven-source-plugin` 3.4.0, this one does:
 The source roots are the compiler's own `<compileSourceRoots>` when the execution declares them, a relative one
 resolved against the directory Maven was started in, as `maven-compiler-plugin` resolves it, and the project's
 otherwise; an empty `<compileSourceRoots/>` stands for the project's. A source root the execution does not narrow
-is passed to the generator whole; one its `<includes>` or `<excludes>` narrow (`<testIncludes>`, `<testExcludes>`
-or `<testIncrementalExcludes>` for the tests) is passed as the files they select, with the patterns matched as
-the compiler's plexus-utils scanner matches them, `%ant[...]` and `%regex[...]` included, and without the files
-that scanner excludes by default, the list of plexus-utils, which leaves out `._*` copies and the directories of
-version control systems among others. Directories are entered as that scanner enters them: only when an include
-matches the directory and no exclude does, or when an include could match a path below it, which an include that
-starts with a separator never can. Such an include matches a path as if it had no leading separator, so `/fx/**`
-selects the sources under `fx`, a directory it matches, while `/io/github/graphmaquina/generated/**` alone selects
-nothing, since the scanner never enters `io`. The generator walks a whole root with
-Ant's shorter default list instead, so a `.java` file under such a root inside an `RCS`, `BitKeeper`,
-`ChangeSet`, `_darcs`, `.metadata`, `.arch-ids` or `.darcsrepo` directory, or one named `-darcs-backup*`, is
-read by the generator although javac never compiles it. Symbolic links are followed, and a link that leads back
-into a directory being walked is skipped.
+is passed to the generator whole, but for the case below; one its `<includes>` or `<excludes>` narrow
+(`<testIncludes>`, `<testExcludes>` or `<testIncrementalExcludes>` for the tests) is passed as the files they
+select, with the patterns matched as the compiler's plexus-utils scanner matches them, `%ant[...]` and `%regex[...]`
+included, and without the files that scanner excludes by default, the list of plexus-utils, which leaves out `._*`
+copies and the directories of version control systems among others. Directories are entered as that scanner enters
+them: only when an include matches the directory and no exclude does, or when an include could match a path below
+it, which an include that starts with a separator never can. Such an include matches a path as if it had no leading
+separator, so `/fx/**` selects the sources under `fx`, a directory it matches, while
+`/io/github/graphmaquina/generated/**` alone selects nothing, since the scanner never enters `io`.
+
+The generator walks a whole root as Gradle walks a source directory, with Ant's shorter default list: it leaves
+out every directory a default exclude names, with everything inside it. The compiler's scanner leaves out what is
+inside a directory only when an exclude ending in `/**` names it, as one names each directory of a version control
+system, so a root under which javac compiles a source inside a directory named like an excluded file, `old~` or
+`.gitignore` for instance, is passed as the files the compiler selects, as a narrowed one is. Under a root passed
+whole, a `.java` file inside an `RCS`, `BitKeeper`, `ChangeSet`, `_darcs`, `.metadata`, `.arch-ids` or
+`.darcsrepo` directory, or one named `-darcs-backup*`, is read by the generator although javac never compiles it.
+Symbolic links are followed, and a link that leads back into a directory being walked is skipped.
 
 The request also carries the release javac compiles at, `<release>`, else `<target>`, or their properties, with the
 test settings for the test compilation. javac takes the last `--release` it is given, and `maven-compiler-plugin`

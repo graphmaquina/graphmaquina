@@ -46,10 +46,12 @@ public final class Bootstrap {
     private static final String HEADER = "SG502";
 
     /**
-     * The directories of a version control system that Ant's default excludes leave out of a source directory with
-     * everything inside them.
+     * The names the default excludes of Ant 1.10 name outright: the files and directories of version control systems,
+     * and the {@code .DS_Store} of macOS.
      */
-    private static final Set<String> EXCLUDED_DIRECTORIES = Set.of(".git", ".svn", ".hg", ".bzr", "CVS", "SCCS");
+    private static final Set<String> EXCLUDED_NAMES = Set.of("CVS", ".cvsignore", "SCCS", "vssver.scc", ".svn",
+            ".git", ".gitattributes", ".gitignore", ".gitmodules", ".hg", ".hgignore", ".hgsub", ".hgsubstate",
+            ".hgtags", ".bzr", ".bzrignore", ".DS_Store");
 
     private Bootstrap() {
     }
@@ -174,19 +176,26 @@ public final class Bootstrap {
      * declarations are recorded under that path, and each path the walk reached it through remains one of the
      * original sources it reports. A file with two hard links is two files to javac, which parses each of them.
      *
-     * <p>Below a directory, the walk leaves out of its Java sources what the default excludes of Ant 1.10 leave out:
-     * a file named {@code ._*}, {@code .DS_Store}, {@code *~}, {@code #*#}, {@code .#*} or {@code %*%}, such as the
-     * AppleDouble companion a copy from macOS leaves beside a source, and every directory named {@code .git},
-     * {@code .svn}, {@code .hg}, {@code .bzr}, {@code CVS} or {@code SCCS}, with everything inside it. Gradle leaves
+     * <p>Below a directory, the walk leaves out what Gradle leaves out under the default excludes of Ant 1.10: every
+     * file and every directory whose name one of them names, a directory with everything inside it. Those are the
+     * names {@code ._*}, {@code *~}, {@code #*#}, {@code .#*} and {@code %*%}, which cover the AppleDouble companion a
+     * copy from macOS leaves beside a source and an editor's backup or lock file, {@code .DS_Store}, and the names of
+     * the files and directories of version control systems, such as {@code .git}, {@code .gitignore}, {@code CVS} or
+     * {@code .svn}. So a directory named like such a file, {@code old~} for one, is left out as well. Gradle leaves
      * out the same files while the build keeps those default excludes, which a settings script can change through
      * Ant's {@code DirectoryScanner}; the Gradle plugin hands a directory whole only while the build's default
      * excludes are Ant's and nothing else filters it, and names its files one by one otherwise, as Gradle selects
-     * them. The scanner of maven-compiler-plugin leaves out more:
-     * plexus-utils also excludes the directories {@code RCS}, {@code BitKeeper}, {@code ChangeSet}, {@code _darcs},
-     * {@code .metadata}, {@code .arch-ids} and {@code .darcsrepo} and the files {@code -darcs-backup*}. The Maven
-     * plugin applies that longer list itself whenever it lists files. A root the execution does not narrow is
-     * handed to the generator whole, and the generator walks it with Ant's default excludes, not with
-     * plexus-utils' longer list.</p>
+     * them.</p>
+     *
+     * <p>The scanner of maven-compiler-plugin applies its default excludes otherwise. plexus-utils leaves out the
+     * files they name, but the files inside a directory only when an exclude ending in {@code /**} names that
+     * directory, as one does for the directory of every version control system on its list, so javac compiles a
+     * source inside {@code old~}. Its list is also longer: it excludes the directories {@code RCS},
+     * {@code BitKeeper}, {@code ChangeSet}, {@code _darcs}, {@code .metadata}, {@code .arch-ids} and
+     * {@code .darcsrepo} and the files {@code -darcs-backup*} too. The Maven plugin applies that list itself whenever
+     * it lists files. It hands a root the execution does not narrow to the generator whole unless javac compiles a
+     * source below it inside a directory this walk leaves out, and lists its files otherwise; a root handed whole is
+     * walked as described here, not with plexus-utils' longer list.</p>
      */
     private static List<Reached> sources(GenerationRequest request) {
         List<Reached> files = new ArrayList<>();
@@ -211,7 +220,7 @@ public final class Bootstrap {
                         @Override
                         public FileVisitResult preVisitDirectory(Path visited, BasicFileAttributes attributes) {
                             return !visited.equals(directory)
-                                    && EXCLUDED_DIRECTORIES.contains(visited.getFileName().toString())
+                                    && excludedByDefault(visited.getFileName().toString())
                                     ? FileVisitResult.SKIP_SUBTREE
                                     : FileVisitResult.CONTINUE;
                         }
@@ -241,12 +250,12 @@ public final class Bootstrap {
     }
 
     /**
-     * Whether a file named {@code name} is one the Ant-style default excludes leave out:
-     * {@code ._*}, {@code .DS_Store}, {@code *~}, {@code #*#}, {@code .#*} or {@code %*%}.
+     * Whether a file or a directory named {@code name} is one the default excludes of Ant 1.10 name: {@code ._*},
+     * {@code *~}, {@code #*#}, {@code .#*}, {@code %*%} or one of {@link #EXCLUDED_NAMES}.
      */
     private static boolean excludedByDefault(String name) {
         return name.startsWith("._")
-                || name.equals(".DS_Store")
+                || EXCLUDED_NAMES.contains(name)
                 || name.endsWith("~")
                 || (name.length() > 1 && name.startsWith("#") && name.endsWith("#"))
                 || name.startsWith(".#")
