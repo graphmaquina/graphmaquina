@@ -1351,7 +1351,7 @@ final class Transaction {
             case DETACHED -> "detached sub-machine";
             case RESERVED_EXIT -> "reserved exit";
         };
-        String inside = exitOf.isPresent() ? "the exit of " + exitOf.get().node() : "a cascade";
+        String inside = exitOf.isPresent() ? "the exit of " + exitOf.get().node().name() : "a cascade";
         throw abort(machine, ref, from, Optional.of(id), to.map((S state) -> (Enum<?>) state), Optional.empty(), depth,
                 "rejected inside " + inside + " by " + who + ": " + reason, Optional.empty());
     }

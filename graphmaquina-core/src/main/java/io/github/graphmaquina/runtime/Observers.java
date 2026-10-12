@@ -16,8 +16,9 @@ import java.util.function.Consumer;
  * set, so an observer cannot start a transition on its own thread. A throwable that is not an Error, a checked
  * exception included, is logged as a warning that names the observer, the callback and the call, never the entity, and
  * the next observer is still notified. Anything but an Error that the warning backend throws, a checked exception
- * included, is contained too. An InterruptedException either contains interrupts the thread again. An Error from the
- * callback or the backend propagates unchanged, and the marker is released whatever throws.
+ * included, is contained too, and either containment interrupts the thread again when what it contains is an
+ * InterruptedException. An Error from the callback or the backend propagates unchanged, and the marker is released
+ * whatever throws.
  */
 final class Observers {
 

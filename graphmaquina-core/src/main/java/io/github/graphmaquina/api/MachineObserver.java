@@ -17,7 +17,7 @@ import java.time.Duration;
  *   observers are told. It is logged as a warning through {@code System.getLogger("io.github.graphmaquina")}, naming
  *   the observer, the callback and the call, never the entity. Anything but an Error that the warning's backend
  *   throws, a checked exception included, is contained too; an Error from it propagates unchanged. An
- *   InterruptedException that either throws, once contained, interrupts the thread again.</li>
+ *   InterruptedException from the observer or from that backend, once contained, interrupts the thread again.</li>
  *   <li>An observer whose {@code onStarted} threw still receives its end event.</li>
  *   <li>An Error it throws, or that the backend of its warning throws, propagates unchanged, as everywhere in the
  *   library, and voids these guarantees for that call.</li>

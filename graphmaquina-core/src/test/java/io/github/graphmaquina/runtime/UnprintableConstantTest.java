@@ -282,6 +282,38 @@ class UnprintableConstantTest {
     }
 
     @Test
+    void aRejectionInsideAnExitNamesTheNodeOfTheExit() {
+        GraphDefinition<Paper, Seal, SealMove> seals = StateGraph.define(SEALS).initial(Seal.OPEN)
+                .terminal(Seal.SEALED).statePolicy(Seal.OPEN, "a seal is closed")
+                .transition(SealMove.CLOSE, Seal.OPEN, Seal.SEALED).endTransition()
+                .build();
+        GraphDefinition<Paper, Stage, Move> papers = StateGraph.define(PAPERS).initial(Stage.DRAFT)
+                .terminal(Stage.ARCHIVED).statePolicy(Stage.DRAFT, "a draft is submitted")
+                .statePolicy(Stage.REVIEW, "a review is published once its seal is closed")
+                .statePolicy(Stage.PUBLISHED, "a publication is archived")
+                .transition(Move.SUBMIT, Stage.DRAFT, Stage.REVIEW).endTransition()
+                .transition(Move.PUBLISH, Stage.REVIEW, Stage.PUBLISHED)
+                    .guard("Approved", (GuardContext<Paper, Stage, Move> ctx) -> GuardResult.reject("not approved"))
+                    .endTransition()
+                .transition(Move.ARCHIVE, Stage.PUBLISHED, Stage.ARCHIVED).endTransition()
+                .submachine(Stage.REVIEW, seals)
+                    .exit(Seal.SEALED, Move.PUBLISH)
+                    .endSubmachine()
+                .build();
+        Paper paper = new Paper("p1", Stage.REVIEW);
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(papers).state(Paper::stage, Paper::setStage).identity(Paper::id))
+                .add(StateMachines.from(seals).state(Paper::seal, Paper::setSeal).identity(Paper::id))
+                .build()) {
+            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(SEALS).execute(paper, SealMove.CLOSE));
+            assertTrue(thrown.getMessage().contains(
+                    "rejected inside the exit of REVIEW by guard Approved: not approved"), thrown.getMessage());
+        }
+        assertEquals(List.of(Stage.REVIEW, Seal.OPEN), List.of(paper.stage(), paper.seal()));
+    }
+
+    @Test
     void aReservedExitRejectionNamesItsIdentifierAndItsNode() {
         GraphDefinition<Paper, Seal, SealMove> seals = StateGraph.define(SEALS).initial(Seal.OPEN)
                 .terminal(Seal.SEALED).statePolicy(Seal.OPEN, "a seal is closed")
