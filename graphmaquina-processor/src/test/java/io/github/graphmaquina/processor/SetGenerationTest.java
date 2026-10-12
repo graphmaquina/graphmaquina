@@ -186,6 +186,19 @@ class SetGenerationTest {
         assertInstanceOf(IllegalArgumentException.class, error.getCause());
     }
 
+    /** The generated maxWatchChain says what MachineRegistry.Builder's does: a call that a hook starts is not counted. */
+    @Test
+    void theGeneratedMaxWatchChainSaysThatACallAHookStartsIsNotCounted() {
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        assertTrue(result.success(), result.describe());
+        String source = result.generated("fx.LibraryRuntime").replaceAll("\n\\s*\\* ?", " ");
+        assertTrue(source.contains("Bounds how many watch reactions may follow one another; the default is 10, and a"
+                + " value below 1 is refused. A call that an after-commit hook starts is a new root, which this bound"
+                + " never counts: the watch reactions it triggers begin a chain of their own, so hooks that keep"
+                + " starting calls recur until the stack of the thread overflows, as MachineRegistry says."), source);
+    }
+
     /**
      * The generated Builder mirrors MachineRegistry.Builder and StateMachines.Builder: a setting is refused when
      * it is given, a null clock by name, and a refused setting configures nothing, so a set whose clock was refused

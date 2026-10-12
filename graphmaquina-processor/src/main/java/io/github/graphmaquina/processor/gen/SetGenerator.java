@@ -330,7 +330,10 @@ public final class SetGenerator {
                 "@param " + setters.get("depth") + " the deepest level a cascade may reach, at least 1",
                 registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
         forward(out, "Bounds how many watch reactions may follow one another; the default is 10, and a value below 1"
-                + " is refused.", "maxWatchChain", "int " + setters.get("chain"),
+                + " is refused. A call that an after-commit hook starts is a new root, which this bound never counts:"
+                + " the watch reactions it triggers begin a chain of their own, so hooks that keep starting calls recur"
+                + " until the stack of the thread overflows, as MachineRegistry says.", "maxWatchChain",
+                "int " + setters.get("chain"),
                 "@param " + setters.get("chain") + " how many watch reactions may follow one another, at least 1",
                 registry + ".maxWatchChain(" + setters.get("chain") + ");");
         forward(out, "Adds an observer of every call of the set; observers add up and are notified in the order they"
