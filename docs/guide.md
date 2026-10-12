@@ -1369,6 +1369,14 @@ their cause. All of these are `SG302`. Declare specific foreign throwable types,
 interruption and cancellation are not a substitute for a returned domain failure. `@Timeout` is valid only for
 asynchronous actions.
 
+The generated companion declares each edge, from each of its origins, as one chained expression, with one call per
+guard, `failsOn` class and recovery rule, and javac attributes a chain recursively, so the stack of the thread it runs
+on bounds how long one can be. With JDK 21 on a thread with a 1 MiB stack, javac compiled an edge with 400 `failsOn`
+classes and failed with a `StackOverflowError` on one with 800. A statement written by hand with the DSL is bounded
+the same way, by every call it chains, every edge of the graph when one statement declares them all: on that thread,
+one of 400 edges without actions, 803 calls, compiled, and one of 600 edges failed. Keep an edge, or such a statement,
+to a few hundred calls.
+
 The full action implementation is in
 [OrderActions.java](../graphmaquina-example/src/main/java/io/github/graphmaquina/example/order/OrderActions.java).
 
