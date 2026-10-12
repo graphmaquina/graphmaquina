@@ -9,10 +9,12 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -115,18 +117,24 @@ class MachineHeaderErrorsTest {
         assertTrue(result.hasError("SG502"), result.describe());
     }
 
+    /**
+     * A nested machine that declares its whole graph with the vocabulary the generator emits for it,
+     * {@code HolderDocsGraph}, is refused for being nested, and for nothing else, and no companion is generated.
+     */
     @Test
-    void sg502NestedInterfaceIsRejectedAndGeneratesNothing() {
+    void sg502NestedInterfaceIsRejectedAndGeneratesNothing() throws IOException {
         Map<String, String> nested = Fixtures.domain();
         nested.put("fx.Holder", Fixtures.DOCS_IMPORTS.replace("@GenerateGraphApi\n", "")
                 + "public final class Holder {\n@GenerateGraphApi\n"
-                + Fixtures.DOCS_HEADER.replace("@DocsGraph.", "@Holder_DocsGraph.")
+                + Fixtures.DOCS_HEADER.replace("@DocsGraph.", "@HolderDocsGraph.")
                 + "public interface Docs extends Machine<Doc, DocStatus, DocTransition> {\n"
-                + Fixtures.DOCS_BODY.replace("@DocsGraph.", "@Holder_DocsGraph.") + "}\n}\n");
+                + Fixtures.DOCS_BODY.replace("@DocsGraph.", "@HolderDocsGraph.") + "}\n}\n");
         Compilation.Result result = Compilation.compileTyped(nested);
-        assertTrue(result.hasError("SG502"), result.describe());
-        assertFalse(result.hasGenerated("fx.Holder.DocsRuntime"), result.describe());
-        assertFalse(result.hasGenerated("fx.DocsRuntime"), result.describe());
+        assertEquals(List.of("[SG502] Docs must be a top-level interface: the generated companion lives next to it in"
+                + " the package"), result.errors(), result.describe());
+        try (Stream<Path> generated = Files.walk(result.output())) {
+            assertEquals(List.of(), generated.filter(Files::isRegularFile).toList(), result.describe());
+        }
     }
 
     /**
