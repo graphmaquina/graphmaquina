@@ -163,9 +163,12 @@ class TestingApiTest {
         assertThat(orders.cancel(order, "B-7")).isApplied().movedTo(OrderStatus.CANCELLED);
 
         assertEquals(List.of(
-                        new StateChange(OrdersRuntime.KEY, order, OrderStatus.NEW, OrderStatus.CANCELLED),
-                        new StateChange(ItemsRuntime.KEY, i1, ItemStatus.PENDING, ItemStatus.CANCELLED),
-                        new StateChange(ItemsRuntime.KEY, i2, ItemStatus.PENDING, ItemStatus.CANCELLED)),
+                        new StateChange(OrdersRuntime.KEY, order, Optional.of(OrderStatus.NEW),
+                                Optional.of(OrderStatus.CANCELLED)),
+                        new StateChange(ItemsRuntime.KEY, i1, Optional.of(ItemStatus.PENDING),
+                                Optional.of(ItemStatus.CANCELLED)),
+                        new StateChange(ItemsRuntime.KEY, i2, Optional.of(ItemStatus.PENDING),
+                                Optional.of(ItemStatus.CANCELLED))),
                 before.changes());
     }
 

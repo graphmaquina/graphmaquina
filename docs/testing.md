@@ -384,7 +384,9 @@ before.assertUnchanged();
 
 `assertUnchanged()` fails with every entity that moved, not only the first, so one run names the whole
 difference. `changes()` reads every tracked getter again on each call and answers about the entities as they
-are now.
+are now. Each `StateChange` holds the key, the entity and its states `before()` and `after()`, both `Optional`: a
+getter that answers null observes no state, which is empty, so a state that appears or disappears is a change like
+any other.
 
 ### Probes
 
