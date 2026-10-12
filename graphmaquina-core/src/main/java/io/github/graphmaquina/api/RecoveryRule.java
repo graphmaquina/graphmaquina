@@ -55,7 +55,7 @@ public record RecoveryRule<T extends Enum<T>>(@NonNull Class<? extends FailureKi
     public RecoveryRule {
         failsOn = List.copyOf(failsOn);
         FailureTypes.requireValidKind(kind);
-        String where = "recover(" + kind.getName() + ", " + transition + ")";
+        String where = "recover(" + kind.getName() + ", " + transition.name() + ")";
         Set<Class<? extends Throwable>> declared = new HashSet<>();
         for (Class<? extends Throwable> type : failsOn) {
             if (FailureTypes.isForbiddenThrowable(type)) {

@@ -201,7 +201,7 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
     }
 
     private String where() {
-        return from + " -" + transition + "-> " + to;
+        return from.name() + " -" + transition.name() + "-> " + to.name();
     }
 
     /** A closed draft has already become its edge, and a built graph reads nothing more: a late call is refused. */

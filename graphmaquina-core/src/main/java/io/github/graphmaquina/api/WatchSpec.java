@@ -26,7 +26,7 @@ public record WatchSpec<E, S extends Enum<S>, T extends Enum<T>, P, Q extends En
     public WatchSpec {
         rules = List.copyOf(rules);
         if (rules.isEmpty()) {
-            throw new IllegalArgumentException("the watch of " + state + " has no rules");
+            throw new IllegalArgumentException("the watch of " + state.name() + " has no rules");
         }
     }
 }

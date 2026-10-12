@@ -63,7 +63,7 @@ public record TransitionSpec<E, S extends Enum<S>, T extends Enum<T>>(
         guards = List.copyOf(guards);
         failsOn = List.copyOf(failsOn);
         recoveryRules = List.copyOf(recoveryRules);
-        String where = from + " -" + transition + "-> " + to;
+        String where = from.name() + " -" + transition.name() + "-> " + to.name();
         if (action.isEmpty() && (onFailure.isPresent() || !failsOn.isEmpty())) {
             throw new IllegalArgumentException(where + ": onFailure and failsOn are only allowed with an action");
         }

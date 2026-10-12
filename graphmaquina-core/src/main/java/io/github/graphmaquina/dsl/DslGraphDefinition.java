@@ -90,7 +90,8 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
     public Optional<TransitionSpec<E, S, T>> findTransition(@NonNull S from, @NonNull T transition) {
         requireState(from);
         if (!key.transitions().isInstance(transition)) {
-            throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": " + transition);
+            throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": "
+                    + transition.name());
         }
         return Optional.ofNullable(index.get(new TransitionKey<>(from, transition)));
     }
@@ -116,14 +117,14 @@ final class DslGraphDefinition<E, S extends Enum<S>, T extends Enum<T>> implemen
         requireState(state);
         V found = map.get(state);
         if (found == null) {
-            throw new IllegalArgumentException("unknown state: " + state);
+            throw new IllegalArgumentException("unknown state: " + state.name());
         }
         return found;
     }
 
     private void requireState(S state) {
         if (!key.states().isInstance(state)) {
-            throw new IllegalArgumentException("state must belong to " + key.states().getName() + ": " + state);
+            throw new IllegalArgumentException("state must belong to " + key.states().getName() + ": " + state.name());
         }
     }
 

@@ -86,13 +86,14 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     private void requireState(S state) {
         if (!key.states().isInstance(state)) {
-            throw new IllegalArgumentException("state must belong to " + key.states().getName() + ": " + state);
+            throw new IllegalArgumentException("state must belong to " + key.states().getName() + ": " + state.name());
         }
     }
 
     void requireTransition(T transition) {
         if (!key.transitions().isInstance(transition)) {
-            throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": " + transition);
+            throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": "
+                    + transition.name());
         }
     }
 
@@ -126,7 +127,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         requireUnbuilt();
         requireState(state);
         if (statePolicies.putIfAbsent(state, otherwise) != null) {
-            problems.add("SG102", state.ordinal(), -1, "the state " + state + " declares two policies");
+            problems.add("SG102", state.ordinal(), -1, "the state " + state.name() + " declares two policies");
         }
         return this;
     }
@@ -139,7 +140,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         Map<T, String> forState = rejections.computeIfAbsent(state, (S ignored) -> new LinkedHashMap<>());
         if (forState.putIfAbsent(transition, reason) != null) {
             problems.add("SG102", state.ordinal(), transition.ordinal(),
-                    "the state " + state + " rejects " + transition + " twice");
+                    "the state " + state.name() + " rejects " + transition.name() + " twice");
         }
         return this;
     }
@@ -164,7 +165,7 @@ final class DefaultGraphBuilder<E, S extends Enum<S>, T extends Enum<T>> impleme
         requireState(state);
         WatchDraft<E, S, T, P, Q, U> draft = new WatchDraft<>(this, state, peer, peersOf, ownerOf);
         if (watches.putIfAbsent(state, draft) != null) {
-            problems.add("SG403", state.ordinal(), -1, "the state " + state + " declares two watches");
+            problems.add("SG403", state.ordinal(), -1, "the state " + state.name() + " declares two watches");
         }
         return draft;
     }
