@@ -65,13 +65,15 @@ class MachineHeaderErrorsTest {
                 new String[] {"action = DocActionsRefs.Publish.class", "action = DocActionsRefs.Publsh.class"},
                 new String[] {"guards = DocActionsRefs.Approved.class", "guards = DocActionsRefs.Aproved.class"},
                 new String[] {"afterCommit = DocActionsRefs.Notify.class", "afterCommit = DocActionsRefs.Notfy.class"},
-                new String[] {"action = DocActionsRefs.ArchiveAsync.class", "action = DocActionsRefs.ArchivAsync.class"},
+                new String[] {"action = DocActionsRefs.ArchiveAsync.class",
+                        "action = DocActionsRefs.ArchivAsync.class"},
                 new String[] {"kind = Unavailable.class", "kind = Unavailabl.class"},
                 new String[] {"failsOn = Broken.class", "failsOn = Brokn.class"},
                 new String[] {"peers = DocRefs.Pages.class", "peers = DocRefs.Pags.class"},
                 new String[] {"owner = PageRefs.Doc.class", "owner = PageRefs.Dc.class"});
         String publish = """
-                    failsOn = Broken.class, recoveries = @DocsGraph.Recovery(kind = Unavailable.class, transition = RETURN),
+                    failsOn = Broken.class,
+                    recoveries = @DocsGraph.Recovery(kind = Unavailable.class, transition = RETURN),
                     onFailure = RETURN,""";
         Map<String, String> valid = Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
                 Fixtures.DOCS_BODY.replace("onFailure = RETURN,", publish), Fixtures.LIBRARY);

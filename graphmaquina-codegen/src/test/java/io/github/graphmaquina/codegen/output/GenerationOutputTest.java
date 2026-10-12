@@ -89,7 +89,9 @@ class GenerationOutputTest {
         return Map.copyOf(sources);
     }
 
-    /** Two hosts whose references containers, {@code OuterInnerRefs} and {@code OuterinnerRefs}, differ only in case. */
+    /**
+     * Two hosts whose references containers, {@code OuterInnerRefs} and {@code OuterinnerRefs}, differ only in case.
+     */
     private static final Map<String, String> CASE_TWINS_OF_TYPES = Map.of("fx.Outer", """
             package fx;
             import io.github.graphmaquina.annotation.GraphAction;
