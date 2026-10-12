@@ -12,6 +12,7 @@ import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
 import io.github.graphmaquina.error.UnknownFacadeException;
 import io.github.graphmaquina.error.UnknownPeerMachineException;
+import io.github.graphmaquina.internal.Interrupts;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -401,11 +402,11 @@ public final class MachineRegistry implements AutoCloseable {
      * After the root commit: for each moved entity, every watcher of its machine resolves the owner; an owner is
      * re-evaluated only once even if several of its peers moved. A registry that indexed no watcher answers before
      * reading which entities moved, which is what most transactions pay. An owner lookup that throws a throwable that
-     * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException. Each lookup runs
-     * with the reentrancy marker set, so one that calls execute or reevaluate ends that way too. {@code log} is the
-     * log of the call whose commit is dispatched: at TRACE it logs each lookup once, with the owner it found, once
-     * that owner is a target, or what it threw, and when that call logs, each reaction's log names its id as the
-     * trigger.
+     * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException, and an
+     * InterruptedException interrupts the thread again. Each lookup runs with the reentrancy marker set, so one that
+     * calls execute or reevaluate ends that way too. {@code log} is the log of the call whose commit is dispatched: at
+     * TRACE it logs each lookup once, with the owner it found, once that owner is a target, or what it threw, and when
+     * that call logs, each reaction's log names its id as the trigger.
      */
     List<Reaction> dispatchWatches(CommitSummary summary, int chain, CallLog log) {
         if (watchers.isEmpty()) {
@@ -431,6 +432,7 @@ public final class MachineRegistry implements AutoCloseable {
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     traceLookupThrew(log, watcher, moved, e);
                     reactions.add(new Reaction.Aborted(moved.key(), moved.instance(),
                             new UndeclaredThrowableException(e)));

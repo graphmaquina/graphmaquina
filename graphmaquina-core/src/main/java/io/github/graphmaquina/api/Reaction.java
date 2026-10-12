@@ -29,7 +29,8 @@ public sealed interface Reaction permits Reaction.Done, Reaction.Aborted {
      * re-evaluation's cause is its {@code CallFailedException}, which says how far the reaction got in writing states
      * and hands out the reaction's own flow; a checked exception an owner lookup throws without declaring it, or any
      * other throwable that is neither a RuntimeException nor an Error, arrives wrapped in
-     * {@link java.lang.reflect.UndeclaredThrowableException}.
+     * {@link java.lang.reflect.UndeclaredThrowableException}, and an InterruptedException it wraps interrupts the
+     * thread again.
      */
     record Aborted(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity,
                    @NonNull RuntimeException cause) implements Reaction {

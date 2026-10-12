@@ -1728,8 +1728,9 @@ read them.
   itself committed; it is not proof that the reaction left state unchanged. A reevaluation that failed carries its
   `CallFailedException`, whose `statesWritten()` says whether the reaction wrote anything. An owner lookup fails before
   any reevaluation, so the reaction carries what it threw: a `RuntimeException` as it is, and a checked exception or any
-  other throwable that is neither a `RuntimeException` nor an `Error`, wrapped in `UndeclaredThrowableException`. An
-  `Error` is not caught: it propagates to the caller whose commit triggered the reaction.
+  other throwable that is neither a `RuntimeException` nor an `Error`, wrapped in `UndeclaredThrowableException`, with
+  the thread interrupted again when what it threw is an `InterruptedException`. An `Error` is not caught: it propagates
+  to the caller whose commit triggered the reaction.
 
 ### Handle a failed call
 

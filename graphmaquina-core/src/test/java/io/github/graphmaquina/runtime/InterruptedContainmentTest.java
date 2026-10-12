@@ -22,6 +22,8 @@ import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
+import io.github.graphmaquina.api.PeerView;
+import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.GraphBuilder;
@@ -34,8 +36,10 @@ import io.github.graphmaquina.fixtures.DocTransition;
 import io.github.graphmaquina.fixtures.LibraryLog;
 import io.github.graphmaquina.fixtures.Sneaky;
 import io.github.graphmaquina.internal.Texts;
+import java.lang.reflect.UndeclaredThrowableException;
 import java.time.Instant;
 import java.time.InstantSource;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.ResourceBundle;
@@ -307,6 +311,37 @@ class InterruptedContainmentTest {
         assertEquals("BlockingMessage: <getMessage threw java.lang.InterruptedException>", failed.reason());
         assertTrue(called.interrupted(), "the thread lost its interrupt");
         assertEquals(ARCHIVED, doc.status());
+    }
+
+    @Test
+    void anOwnerLookupThatIsInterruptedAbortsItsReactionAndKeepsTheInterruptOfTheCall() {
+        Doc doc = new Doc("1", DRAFT);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT)
+                .terminal(ARCHIVED)
+                .statePolicy(DRAFT, "a draft is submitted").statePolicy(REVIEW, "a review is published")
+                .statePolicy(PUBLISHED, "a publication is archived")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .watch(PUBLISHED, DOCS, (Doc owner) -> List.of(owner), (Doc moved) -> {
+                    block();
+                    return Optional.<Doc>empty();
+                })
+                    .when("always", (Doc owner, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> true).execute(ARCHIVE)
+                .endWatch()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id)).build()) {
+            Interrupted<Outcome<Doc, DocStatus, DocTransition>> called =
+                    onInterruptedThread(() -> registry.of(DOCS).execute(doc, SUBMIT));
+            Reaction.Aborted aborted = assertInstanceOf(Reaction.Aborted.class, called.result().reactions().get(0));
+            UndeclaredThrowableException wrapper =
+                    assertInstanceOf(UndeclaredThrowableException.class, aborted.cause());
+            assertInstanceOf(InterruptedException.class, wrapper.getCause());
+            assertTrue(called.interrupted(), "the thread lost its interrupt");
+            assertEquals(REVIEW, doc.status());
+        }
     }
 
     @Test
