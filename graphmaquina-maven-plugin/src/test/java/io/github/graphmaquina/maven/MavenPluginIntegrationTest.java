@@ -490,6 +490,67 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * The scanner of maven-compiler-plugin enters a directory only when an include matches it and no exclude does, or
+     * when an include could match a path below it, which an include that starts with a separator never can. So
+     * {@code /io/github/graphmaquina/generated/**} matches the carrier and still leaves it out, since the scanner never
+     * enters {@code io}: javac would compile no carrier. Such includes are refused by the generation, before anything
+     * is retired, naming the include and the directory the scanner never enters.
+     */
+    @Test
+    void anIncludeThatStartsWithASeparatorAndLeavesTheCarrierOutIsRefusedBeforeAnythingIsRetired()
+            throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        String carrier = fixture.projectDirectory().resolve("target/generated-sources/graphmaquina")
+                .relativize(fixture.carrierSource()).toString();
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <includes>\n"
+                + "            <include>/fx/**</include>\n"
+                + "            <include>/io/github/graphmaquina/generated/**</include>\n"
+                + "          </includes>");
+
+        MavenResult result = fixture.run("package");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("the <includes> of the default-compile execution of"
+                + " maven-compiler-plugin, [/fx/**, /io/github/graphmaquina/generated/**], select no " + carrier),
+                result.output());
+        assertTrue(result.output().contains("The include /io/github/graphmaquina/generated/** matches that path, but"
+                + " the scanner of the compiler never enters io: it enters a directory only when an include matches"
+                + " that directory and no exclude does"), result.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * The generator reads the sources the scanner of maven-compiler-plugin reaches, and that scanner enters an excluded
+     * directory only when an include could match a path below it, which {@code /fx/**} never can: with that include and
+     * the exclude {@code fx/drafts}, which matches the directory and none of the files under it, javac compiles no
+     * draft there, and the generator reads none, although {@code /fx/**} matches the draft's path. The draft does not
+     * even parse.
+     */
+    @Test
+    void theGeneratorSkipsTheDirectoriesTheCompilersScannerNeverEnters() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>", "<release>21</release>\n"
+                + "          <includes>\n"
+                + "            <include>/fx/**</include>\n"
+                + "            <include>io/github/graphmaquina/generated/**</include>\n"
+                + "          </includes>\n"
+                + "          <excludes><exclude>fx/drafts</exclude></excludes>");
+        Map<String, String> sources = MavenFixture.domainSources();
+        sources.put("fx.drafts.Draft", draft("fx.drafts"));
+        fixture.writeSources(sources);
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertFalse(fixture.jarContains("fx/drafts/Draft.class"));
+    }
+
+    /**
      * Includes that also select the sources the generator emits outside the packages of the project build and
      * package: the generator reads only the included sources — a draft outside them does not even parse — and
      * javac compiles the generated vocabulary together with its carrier.

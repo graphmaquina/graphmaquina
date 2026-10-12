@@ -4,16 +4,20 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystemException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * Pins {@link SourcePatterns} to the semantics of the directory scanner of maven-compiler-plugin, which decides
@@ -46,6 +50,11 @@ class SourcePatternsTest {
         assertFalse(SourcePatterns.matches("fx/drafts", "fx/drafts/Draft.java"));
     }
 
+    /**
+     * Matching a path ignores a leading separator of the pattern. Whether the scanner of the compiler reaches that
+     * path is another question, which {@link #theScannerEntersADirectoryOnlyWhenAnIncludeMatchesItOrCouldMatchBelowIt}
+     * answers: it reaches {@code fx/Orders.java} for {@code /fx/**}, which matches the directory {@code fx} itself.
+     */
     @Test
     void matchingIsCaseSensitiveAndIgnoresALeadingSeparator() {
         assertFalse(SourcePatterns.matches("FX/**", "fx/Orders.java"));
@@ -117,6 +126,87 @@ class SourcePatternsTest {
         assertEquals(List.of(root.resolve("fx/Orders.java")), patterns.select(root));
         assertEquals(List.of(), patterns.select(root.resolve("absent")));
         assertFalse(new SourcePatterns(List.of(), List.of()).narrow());
+    }
+
+    /**
+     * The scanner of the compiler enters a directory below the root only when an include matches that directory and
+     * no exclude does, or when an include could match a path below it, which plexus-utils judges false for every
+     * include that starts with a separator. Such an include still matches a path as if it had no leading separator,
+     * so {@code /fx/**} selects the sources under {@code fx}, a directory it matches, while
+     * {@code /io/github/graphmaquina/generated/**} selects nothing, since it matches no directory above those sources,
+     * and {@code /**}{@code /*.java} selects only the sources at the root. An excluded directory is entered only when
+     * an include could match a path below it. Every selection here is the one the DirectoryScanner of plexus-utils
+     * 4.0.2 makes.
+     */
+    @Test
+    void theScannerEntersADirectoryOnlyWhenAnIncludeMatchesItOrCouldMatchBelowIt(@TempDir Path root)
+            throws IOException {
+        String carrier = "io/github/graphmaquina/generated/bootstrap/GraphCompilation0123456789abcdef.java";
+        for (String source : List.of("Root.java", "fx/Orders.java", "fx/drafts/Draft.java", "other/Other.java",
+                carrier)) {
+            Path file = root.resolve(source);
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, "", StandardCharsets.UTF_8);
+        }
+        List<Path> fx = List.of(root.resolve("fx/Orders.java"), root.resolve("fx/drafts/Draft.java"));
+
+        assertEquals(fx, new SourcePatterns(List.of("/fx/**", "/io/github/graphmaquina/generated/**"), List.of())
+                .select(root));
+        assertEquals(fx, new SourcePatterns(List.of("\\fx\\**", "\\io\\github\\graphmaquina\\generated\\**"),
+                List.of()).select(root));
+        assertEquals(List.of(root.resolve("fx/Orders.java"), root.resolve("fx/drafts/Draft.java"),
+                root.resolve(carrier)), new SourcePatterns(List.of("/fx/**", "io/github/graphmaquina/generated/**"),
+                List.of()).select(root));
+        assertEquals(List.of(root.resolve("Root.java")), new SourcePatterns(List.of("/**/*.java"), List.of())
+                .select(root));
+        assertEquals(List.of(), new SourcePatterns(List.of("/io/**"), List.of("io/github")).select(root));
+        assertEquals(List.of(root.resolve("fx/Orders.java")), new SourcePatterns(List.of("/fx/**"),
+                List.of("fx/drafts")).select(root));
+        assertEquals(fx, new SourcePatterns(List.of("fx/**"), List.of("fx/drafts")).select(root));
+        assertEquals(List.of(root.resolve(carrier)), new SourcePatterns(List.of("/io/github/graphmaquina/generated/**",
+                "%regex[nothing.*]"), List.of()).select(root));
+    }
+
+    /**
+     * Whether one source is selected, which the check of the carrier asks before the carrier exists, follows the same
+     * walk: an include that matches the path is not enough when the scanner never enters a directory above it, and
+     * the first such directory is named.
+     */
+    @Test
+    void oneSourceIsSelectedOnlyWhenTheScannerEntersEveryDirectoryAboveIt() {
+        String carrier = "io/github/graphmaquina/generated/bootstrap/GraphCompilation0123456789abcdef.java";
+        SourcePatterns leading = new SourcePatterns(List.of("/io/github/graphmaquina/generated/**"), List.of());
+        SourcePatterns plain = new SourcePatterns(List.of("io/github/graphmaquina/generated/**"), List.of());
+
+        assertTrue(SourcePatterns.matches("/io/github/graphmaquina/generated/**", carrier));
+        assertFalse(leading.selects(carrier));
+        assertEquals(Optional.of("io"), leading.skippedDirectory(carrier));
+        assertTrue(plain.selects(carrier));
+        assertEquals(Optional.empty(), plain.skippedDirectory(carrier));
+        assertEquals(Optional.of("io/github"),
+                new SourcePatterns(List.of("/io/**"), List.of("io/github")).skippedDirectory(carrier));
+    }
+
+    /**
+     * plexus-utils also judges whether an include could match below a directory with every backslash of the path read
+     * as a separator, so a directory named {@code \fx} counts as {@code /fx}, which an include that starts with a
+     * separator can match the start of. The test runs only where the separator is {@code /}, and is aborted where such
+     * a name cannot be created.
+     */
+    @Test
+    void aBackslashInTheNameOfADirectoryIsAlsoReadAsASeparator(@TempDir Path root) throws IOException {
+        assumeTrue(File.separatorChar == '/', "a backslash is a separator here");
+        Path named = root.resolve("\\fx/Y.java");
+        try {
+            Files.createDirectories(named.getParent());
+            Files.writeString(named, "", StandardCharsets.UTF_8);
+        } catch (InvalidPathException | FileSystemException unsupported) {
+            Assumptions.abort("a directory named \\fx cannot be created here: " + unsupported);
+        }
+        Files.createDirectories(root.resolve("other"));
+        Files.writeString(root.resolve("other/Y.java"), "", StandardCharsets.UTF_8);
+
+        assertEquals(List.of(named), new SourcePatterns(List.of("/*/Y.java"), List.of()).select(root));
     }
 
     /**

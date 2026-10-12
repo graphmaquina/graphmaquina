@@ -534,7 +534,11 @@ is passed to the generator whole; one its `<includes>` or `<excludes>` narrow (`
 or `<testIncrementalExcludes>` for the tests) is passed as the files they select, with the patterns matched as
 the compiler's plexus-utils scanner matches them, `%ant[...]` and `%regex[...]` included, and without the files
 that scanner excludes by default, the list of plexus-utils, which leaves out `._*` copies and the directories of
-version control systems among others. The generator walks a whole root with
+version control systems among others. Directories are entered as that scanner enters them: only when an include
+matches the directory and no exclude does, or when an include could match a path below it, which an include that
+starts with a separator never can. Such an include matches a path as if it had no leading separator, so `/fx/**`
+selects the sources under `fx`, a directory it matches, while `/io/github/graphmaquina/generated/**` alone selects
+nothing, since the scanner never enters `io`. The generator walks a whole root with
 Ant's shorter default list instead, so a `.java` file under such a root inside an `RCS`, `BitKeeper`,
 `ChangeSet`, `_darcs`, `.metadata`, `.arch-ids` or `.darcsrepo` directory, or one named `-darcs-backup*`, is
 read by the generator although javac never compiles it. Symbolic links are followed, and a link that leads back
@@ -621,8 +625,11 @@ written or retired, and every failure names what to change:
 - **Includes and excludes that keep the carrier.** The compiler applies its `<includes>` and `<excludes>`
   (`<testIncludes>`, `<testExcludes>` and `<testIncrementalExcludes>` for the tests) to the generated source root
   too. Patterns that leave out the compilation carrier are refused, naming the exclude, or the include list; with
-  includes, the remedy is `<include>io/github/graphmaquina/generated/**</include>`. So is a main
-  `<incrementalExcludes>` pattern that matches the carrier: the compiler leaves what it matches out of its check
+  includes, the remedy is `<include>io/github/graphmaquina/generated/**</include>`. An include that matches the
+  carrier leaves it out all the same when the compiler's scanner never enters a directory above it, as
+  `<include>/io/github/graphmaquina/generated/**</include>` does, whose leading separator keeps the scanner out of
+  `io`; the refusal then also names that include and that directory. A main `<incrementalExcludes>` pattern that
+  matches the carrier is refused as well: the compiler leaves what it matches out of its check
   for stale sources, and the carrier, which has no class file once a compilation completes, is what makes that
   check compile the module again after the preparation. Includes that hold only empty values, such as
   `<includes>,</includes>` or a lone `<include/>`, are refused too: Maven turns those values into null,

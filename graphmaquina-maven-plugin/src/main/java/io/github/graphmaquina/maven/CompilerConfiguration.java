@@ -961,7 +961,10 @@ final class CompilerConfiguration {
      * vocabulary without it, and the completion would find nothing of this compilation to publish. Includes that
      * hold only empty values select no source at all, so javac would not run. The carrier is matched under the very
      * name the generator gives it: {@code GraphCompilation} and the first sixteen hexadecimal digits of the SHA-256
-     * of the identity of the compilation, in {@code io/github/graphmaquina/generated/bootstrap}.
+     * of the identity of the compilation, in {@code io/github/graphmaquina/generated/bootstrap}. It is selected as
+     * {@link SourcePatterns#selects} selects a source, so an include that matches it is not enough when the scanner of
+     * the compiler never enters a directory above it, as for {@code /io/github/graphmaquina/generated/**}, whose
+     * leading separator keeps the scanner out of every directory the include does not match itself.
      *
      * <p>The main compilation also leaves the sources its {@code <incrementalExcludes>} match out of the check for
      * stale sources that decides whether it runs javac at all, while it still compiles them. The carrier, whose class
@@ -1015,14 +1018,24 @@ final class CompilerConfiguration {
                 + carrier + " included, javac would not run and the completion would find nothing of this compilation"
                 + " to publish. Remove those empty values, so that maven-compiler-plugin includes every source.");
         }
-        for (String include : includes) {
-            if (SourcePatterns.matches(include, carrier)) {
-                return;
-            }
+        SourcePatterns selection = sourcePatterns();
+        if (selection.selects(carrier)) {
+            return;
+        }
+        // An include can match the carrier while the scanner never reaches it, as one that starts with a separator.
+        String unreached = "";
+        Optional<String> skipped = selection.skippedDirectory(carrier);
+        Optional<String> matching = includes.stream()
+            .filter((String include) -> SourcePatterns.matches(include, carrier)).findFirst();
+        if (skipped.isPresent() && matching.isPresent()) {
+            unreached = " The include " + matching.get() + " matches that path, but the scanner of the compiler never"
+                + " enters " + skipped.get() + ": it enters a directory only when an include matches that directory and"
+                + " no exclude does, or when an include that does not start with a separator could match a path below"
+                + " it.";
         }
         throw new MojoExecutionException("the <" + execution.includesParameter() + ">" + compiler + ", " + includes
-            + ", select no " + carrier + consequence + " Add <include>" + GENERATED_INCLUDE + "</include> to the <"
-            + execution.includesParameter() + "> of that execution.");
+            + ", select no " + carrier + consequence + unreached + " Add <include>" + GENERATED_INCLUDE
+            + "</include> to the <" + execution.includesParameter() + "> of that execution.");
     }
 
     /**

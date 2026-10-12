@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 /**
@@ -29,6 +30,16 @@ import java.util.regex.Pattern;
  * {@code fx/drafts} alone, and no file below it. Either spelling needs at least two characters between its
  * brackets; a shorter one is a plain pattern, brackets included. A pattern is trimmed as {@link String#trim()}
  * trims it. Without includes every source is included.</p>
+ *
+ * <p>The scanner reaches a source only through the directories above it, and it enters a directory below the root
+ * only when an include matches that directory and no exclude does, or when an include could match a path below
+ * it. plexus-utils judges that a regular expression always could, and that any other include could when its names
+ * match the names of the directory one by one, up to its first {@code **} or to the last name of the directory,
+ * whichever comes first, unless the include starts with a separator: such an include matches a path as if it had
+ * none, but never lets the scanner into a directory it does not match itself. So {@code /fx/**} selects the
+ * sources under {@code fx}, a directory it matches, {@code /io/github/graphmaquina/generated/**} alone selects
+ * nothing, as it matches none of the directories above those sources, and an excluded directory is entered only
+ * when an include could match a path below it. Without includes every directory is entered.</p>
  *
  * <p>The scanner of the compiler cannot be reused here: Maven does not export plexus-utils to the realm of a
  * plugin, and this plugin depends on nothing but the generator. Its default excludes are applied on top of the
@@ -89,7 +100,8 @@ final class SourcePatterns {
 
     /**
      * The Java sources under {@code root} these patterns select, in sorted order, following symbolic links as the
-     * scanner of the compiler follows them, and leaving out what the default excludes name.
+     * scanner of the compiler follows them, entering only the directories it enters, and leaving out what the
+     * default excludes name.
      *
      * <p>A link that leads back into a directory the walk is already inside is skipped, as the generator's own walk
      * skips it, so the walk ends. The scanner of the compiler follows such a link instead, again and again until
@@ -109,9 +121,16 @@ final class SourcePatterns {
                 new SimpleFileVisitor<Path>() {
 
                     @Override
+                    public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
+                        return directory.equals(root) || entered(relativePath(root, directory))
+                                ? FileVisitResult.CONTINUE
+                                : FileVisitResult.SKIP_SUBTREE;
+                    }
+
+                    @Override
                     public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
                         if (attributes.isRegularFile() && file.getFileName().toString().endsWith(".java")
-                                && selects(relativePath(root, file))) {
+                                && matched(relativePath(root, file))) {
                             selected.add(file);
                         }
                         return FileVisitResult.CONTINUE;
@@ -129,8 +148,48 @@ final class SourcePatterns {
         return List.copyOf(selected);
     }
 
-    /** Whether the relative {@code path} of one source is included, and excluded neither here nor by default. */
-    private boolean selects(String path) {
+    /**
+     * Whether the scanner of the compiler selects the source at {@code path} under a root that holds it: whether it
+     * enters every directory on the way to it, and the patterns include it and exclude it neither here nor by
+     * default.
+     *
+     * @param path the path of a source relative to its root, its names separated by {@code /}
+     * @return {@code true} if javac compiles that source
+     */
+    boolean selects(String path) {
+        return skippedDirectory(path).isEmpty() && matched(path);
+    }
+
+    /**
+     * The first directory on the way from a root to {@code path} that the scanner of the compiler does not enter, so
+     * that it never reaches that path.
+     *
+     * @param path a path relative to its root, its names separated by {@code /}
+     * @return that directory, relative to the root; empty when the scanner enters every directory above the path
+     */
+    Optional<String> skippedDirectory(String path) {
+        List<String> names = names(path);
+        for (int depth = 1; depth < names.size(); depth++) {
+            String directory = String.join("/", names.subList(0, depth));
+            if (!entered(directory)) {
+                return Optional.of(directory);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Whether the scanner of the compiler, once it reaches the directory at the relative {@code path}, enters it: when
+     * the patterns include it and exclude it neither here nor by default, or when an include could match a path below
+     * it. Without includes it enters every directory.
+     */
+    private boolean entered(String path) {
+        return includes.isEmpty() || matched(path)
+                || includes.stream().anyMatch((String pattern) -> couldMatchBelow(pattern, path));
+    }
+
+    /** Whether the relative {@code path} is included, and excluded neither here nor by default. */
+    private boolean matched(String path) {
         boolean included = includes.isEmpty()
                 || includes.stream().anyMatch((String pattern) -> matches(pattern, path));
         return included && excludes.stream().noneMatch((String pattern) -> matches(pattern, path))
@@ -154,25 +213,68 @@ final class SourcePatterns {
      * @return {@code true} if the pattern selects that path
      */
     static boolean matches(String pattern, String path) {
-        // plexus-utils normalizes the whole pattern before it reads the spelling inside it: it trims it, turns every
-        // pair of backslashes of a regular expression into the separator, or every backslash of any other pattern,
-        // and only then appends ** to a pattern that ends with the separator.
-        String normalized = pattern.trim();
-        if (normalized.startsWith(REGEX)) {
-            normalized = normalized.replace("\\\\", "/");
-        } else {
-            normalized = normalized.replace('\\', '/');
-            if (normalized.endsWith("/")) {
-                normalized += "**";
-            }
-        }
+        String normalized = normalized(pattern);
         if (spelled(normalized, REGEX)) {
             return path.matches(normalized.substring(REGEX.length(), normalized.length() - 1));
         }
-        String ant = spelled(normalized, ANT)
-                ? normalized.substring(ANT.length(), normalized.length() - 1)
-                : normalized;
-        return matches(names(ant), 0, names(path), 0);
+        return matches(names(ant(normalized)), 0, names(path), 0);
+    }
+
+    /**
+     * Whether plexus-utils judges that an include could match a path below the directory at the relative
+     * {@code path}, which lets its scanner into that directory: a regular expression always could; any other include
+     * could when its names match the names of the directory one by one, up to its first {@code **} or to the last
+     * name of the directory, whichever comes first, provided that the include starts with a separator exactly when
+     * the path does. A relative path never does, so an include that starts with a separator never could. plexus-utils
+     * also tries the path with every backslash read as a separator, which only a name that holds a backslash changes.
+     */
+    private static boolean couldMatchBelow(String pattern, String path) {
+        String normalized = normalized(pattern);
+        if (spelled(normalized, REGEX)) {
+            return true;
+        }
+        String ant = ant(normalized);
+        return startMatches(ant, path) || startMatches(ant, path.replace('\\', '/'));
+    }
+
+    /** One of the two tests of {@link #couldMatchBelow}, over {@code path} as it is spelled. */
+    private static boolean startMatches(String ant, String path) {
+        if (ant.startsWith("/") != path.startsWith("/")) {
+            return false;
+        }
+        List<String> pattern = names(ant);
+        List<String> directory = names(path);
+        int at = 0;
+        while (at < pattern.size() && at < directory.size()) {
+            if (pattern.get(at).equals("**")) {
+                return true;
+            }
+            if (!matchesName(pattern.get(at), directory.get(at))) {
+                return false;
+            }
+            at++;
+        }
+        return at == directory.size() || at < pattern.size();
+    }
+
+    /**
+     * {@code pattern} normalized as plexus-utils normalizes the whole pattern before it reads the spelling inside it:
+     * trimmed; then, in a pattern that starts with {@code %regex[}, every pair of backslashes turned into the
+     * separator, and in any other every backslash, after which {@code **} is appended to it when it ends with the
+     * separator.
+     */
+    private static String normalized(String pattern) {
+        String normalized = pattern.trim();
+        if (normalized.startsWith(REGEX)) {
+            return normalized.replace("\\\\", "/");
+        }
+        normalized = normalized.replace('\\', '/');
+        return normalized.endsWith("/") ? normalized + "**" : normalized;
+    }
+
+    /** The Ant pattern a normalized pattern that is no regular expression stands for, unwrapped from {@code %ant[]}. */
+    private static String ant(String normalized) {
+        return spelled(normalized, ANT) ? normalized.substring(ANT.length(), normalized.length() - 1) : normalized;
     }
 
     /**
