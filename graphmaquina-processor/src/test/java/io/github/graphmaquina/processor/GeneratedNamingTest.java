@@ -302,7 +302,7 @@ class GeneratedNamingTest {
         assertTrue(result.success(), result.describe());
         String cases = result.generated("fx.CasesRuntime");
         assertTrue(cases.contains("public static GraphDefinition<Case, CaseStatus, CaseTransition> graph(Default default2)"), cases);
-        assertTrue(cases.contains("close(Case caseEntity)"), cases);
+        assertTrue(cases.contains("reevaluate(Case caseEntity)"), cases);
         assertTrue(cases.contains("(Interface interface2) -> interface2.owner()"), cases);
     }
 

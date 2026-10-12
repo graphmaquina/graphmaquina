@@ -255,6 +255,60 @@ class MachineGenerationTest {
         assertTrue(result.hasGenerated("fx.PagesRuntime"), result.describe());
     }
 
+    /**
+     * An operation of the companion takes its parameters under the names the facade's method declares, and the
+     * NullPointerException it throws for a null entity names that parameter as declared. A declared name the
+     * companion already uses, here that of its field {@code stateMachine}, is suffixed in the source only.
+     */
+    @Test
+    void anOperationTakesItsParametersUnderTheNamesTheFacadeDeclares() throws Exception {
+        Map<String, String> sources = TypedFixtures.minimal();
+        sources.put("fx.DocTransition", "package fx; public enum DocTransition { PUBLISH, AUTO_PUBLISH }");
+        sources.put("fx.Docs", sources.get("fx.Docs").replace("publish(Doc doc);", """
+                publish(Doc theDocument, String theReason);
+                    @DocsGraph.Transition(id = AUTO_PUBLISH, from = DRAFT, to = PUBLISHED)
+                    Outcome<Doc, DocStatus, DocTransition> autoPublish(Doc stateMachine);
+                """));
+        sources.put("fx.Consumer", """
+                package fx;
+                import io.github.graphmaquina.runtime.StateMachines;
+                import java.util.ArrayList;
+                import java.util.List;
+                public final class Consumer {
+                    public static List<String> refusals() {
+                        Docs docs = new DocsRuntime(StateMachines.from(DocsRuntime.graph(new DocActions()))
+                                .state(Doc::status, Doc::status).build());
+                        List<String> messages = new ArrayList<>();
+                        for (Runnable call : List.<Runnable>of(() -> docs.publish(null, "late"),
+                                () -> docs.autoPublish(null))) {
+                            try {
+                                call.run();
+                                messages.add("accepted");
+                            } catch (NullPointerException refused) {
+                                messages.add(refused.getMessage());
+                            }
+                        }
+                        return messages;
+                    }
+                }
+                """);
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertTrue(result.success(), result.describe());
+        String source = result.generated("fx.DocsRuntime");
+        assertTrue(source.contains("publish(Doc theDocument, java.lang.String theReason) {"), source);
+        assertTrue(source.contains("Objects.requireNonNull(theDocument, \"theDocument\");"), source);
+        assertTrue(source.contains("return stateMachine.execute(theDocument, DocTransition.PUBLISH, theReason);"),
+                source);
+        assertTrue(source.contains("autoPublish(Doc stateMachine2) {"), source);
+        assertTrue(source.contains("Objects.requireNonNull(stateMachine2, \"stateMachine\");"), source);
+        assertTrue(source.contains("return stateMachine.execute(stateMachine2, DocTransition.AUTO_PUBLISH);"),
+                source);
+        assertEquals(List.of("theDocument", "stateMachine"),
+                result.load("fx.Consumer").getMethod("refusals").invoke(null));
+    }
+
     @Test
     void namesTheParametersOfAConditionLambdaApartFromEachOther() {
         for (String entity : List.of("Peers", "View")) {

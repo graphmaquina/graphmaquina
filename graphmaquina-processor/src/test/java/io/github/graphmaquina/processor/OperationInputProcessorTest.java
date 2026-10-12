@@ -43,7 +43,7 @@ class OperationInputProcessorTest {
             assertTrue(result.success(), type + "\n" + result.describe());
             String generated = result.generated("fx.DocsRuntime");
             assertTrue(generated.contains(
-                    "return stateMachine.execute(doc, DocTransition.PUBLISH, input);"), generated);
+                    "return stateMachine.execute(doc, DocTransition.PUBLISH, value);"), generated);
         }
     }
 
@@ -56,7 +56,7 @@ class OperationInputProcessorTest {
         Compilation.Result result = Compilation.compileTyped(twoOperations(false));
         assertTrue(result.success(), result.describe());
         String generated = result.generated("fx.DocsRuntime");
-        assertTrue(generated.contains("return stateMachine.execute(doc, DocTransition.PUBLISH, input);"), generated);
+        assertTrue(generated.contains("return stateMachine.execute(doc, DocTransition.PUBLISH, value);"), generated);
         assertTrue(generated.contains("return stateMachine.execute(doc, DocTransition.AUTO_PUBLISH);"), generated);
         assertTrue(generated.contains("public Outcome<Doc, DocStatus, DocTransition> announce(Doc doc)"), generated);
     }
@@ -274,6 +274,7 @@ class OperationInputProcessorTest {
                 text.replaceAll("\\bDoc\\b", "Input").replace("DocRefs", "InputRefs")));
         Compilation.Result result = Compilation.compileTyped(renamed);
         assertTrue(result.success(), result.describe());
-        assertTrue(result.generated("fx.DocsRuntime").contains("external.Verdict input2"));
+        assertTrue(result.generated("fx.DocsRuntime").contains("publish(Input doc, external.Verdict value)"),
+                result.generated("fx.DocsRuntime"));
     }
 }

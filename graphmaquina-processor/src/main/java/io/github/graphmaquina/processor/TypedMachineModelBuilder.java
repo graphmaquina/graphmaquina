@@ -26,6 +26,7 @@ import javax.lang.model.element.Element;
 import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.element.VariableElement;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
 
@@ -289,14 +290,19 @@ final class TypedMachineModelBuilder {
                 continue;
             }
             String name = method.getSimpleName().toString();
-            Optional<TypeMirror> inputType = method.getParameters().size() == 2
-                    ? Optional.of(method.getParameters().get(1).asType()) : Optional.empty();
+            Optional<VariableElement> input = method.getParameters().size() == 2
+                    ? Optional.of(method.getParameters().get(1)) : Optional.empty();
+            Optional<TypeMirror> inputType = input.map(VariableElement::asType);
+            String entityParameter = method.getParameters().get(0).getSimpleName().toString();
+            Optional<String> inputParameter =
+                    input.map((VariableElement parameter) -> parameter.getSimpleName().toString());
             List<TransitionModel> edges = new ArrayList<>();
             for (AnnotationMirror mirror : mirrors) {
                 transitions.read(method, mirror, types, name, defaultAfterCommit).ifPresent(edges::add);
             }
             if (edges.size() == mirrors.size()) {
-                operations.add(new OperationModel(name, identifier.get(), edges, inputType));
+                operations.add(new OperationModel(name, identifier.get(), edges, inputType, entityParameter,
+                        inputParameter));
             }
         }
         return operations;

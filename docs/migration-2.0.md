@@ -645,6 +645,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
   the inline form `{@return ...}`, but the methods a companion or a set implements, whose comments `javadoc`
   inherits, so a `javadoc` run over the generated sources, under its default doclint or `-Xdoclint:all`, no longer
   warns about a file the author cannot edit.
+- **Operations keep the facade's parameter names.** A companion's operation declares its parameters under the names
+  the facade's method gives them, and the `NullPointerException` it throws for a null entity names that parameter:
+  `submit(Doc theDocument)` refuses a null with the message `theDocument`, where it used to name the parameter after
+  the entity's type, `doc`. A declared name the companion already uses, such as `stateMachine`, is suffixed in the
+  source only.
 - **One problem no longer hides the others.** A failed export check (`SG604`) or a refused companion name no
   longer stops the rest of the compilation from being checked, and javac rerun over the previous companions
   reports them as stale output (`SG602`) instead of a collision (`SG603`).

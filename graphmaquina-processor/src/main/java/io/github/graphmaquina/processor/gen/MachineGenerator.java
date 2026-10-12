@@ -85,14 +85,18 @@ import javax.lang.model.util.Elements;
  * and simple name the companion writes and which of them an expression reads, and the processor refuses, as
  * {@code SG603} and before writing it, a facade whose companion would write one that its scope takes.</p>
  *
- * <p>Variables are named after the types they hold, or after their role. The parameter that takes the definition of a
- * child is the decapitalized simple name of the child's facade followed by {@code Graph}. The parameter that takes the
- * entity is its decapitalized simple name; when that name is a keyword, or a name the companion already uses, it is
- * that name followed by {@code Entity}, and by the smallest numeric suffix from {@code 2} that frees it should that be
- * used as well: an entity {@code Case} is taken as {@code caseEntity}. Every other variable whose name is a keyword, is
- * taken by another variable in scope, or is an identifier the file writes at the head of a type reference gets the
- * smallest numeric suffix from {@code 2} that frees it: a host {@code Default} is taken as {@code default2}. So no
- * variable the companion declares obscures a type or a package it names.</p>
+ * <p>Variables are named after the types they hold, or after their role, but for the parameters of an operation, which
+ * take the names the facade's method declares them with. The parameter that takes the definition of a child is the
+ * decapitalized simple name of the child's facade followed by {@code Graph}. The parameter that takes the entity
+ * anywhere else is its decapitalized simple name; when that name is a keyword, or a name the companion already uses,
+ * it is that name followed by {@code Entity}, and by the smallest numeric suffix from {@code 2} that frees it should
+ * that be used as well: an entity {@code Case} is taken as {@code caseEntity}. Every other variable whose name is a
+ * keyword, is taken by another variable in scope, or is an identifier the file writes at the head of a type reference
+ * gets the smallest numeric suffix from {@code 2} that frees it: a host {@code Default} is taken as {@code default2}.
+ * So does a declared parameter of an operation whose name the companion already uses, as its field's or that of a
+ * variable of another of its methods: a parameter {@code stateMachine} is taken as {@code stateMachine2}. The
+ * {@code NullPointerException} with which an operation refuses a null entity names the parameter as the facade
+ * declares it. So no variable the companion declares obscures a type or a package it names.</p>
  *
  * <p>A bound method or an accessor the companion calls may declare a checked exception, which no functional
  * interface of the DSL declares. The lambda then makes the call in a block that catches what it throws, as
@@ -142,10 +146,10 @@ public final class MachineGenerator {
      * constructor, {@code async} and {@code transitionsFrom}, and of every catch clause; {@code definitions} and
      * {@code parameters} are the parameters of {@code graph(...)}, the definitions of the children by the qualified
      * name of their facade and the classes with instance members by their own, and {@code entity} names the entity
-     * wherever a method or a lambda takes it. {@code rethrow} names the private method that throws on what a lambda
-     * caught; it and {@code failure} are empty when no lambda catches anything. {@code builder} names the variable
-     * that holds the graph's builder, and the parameter of each private method that declares part of the graph, the
-     * methods {@code part} names followed by their number, starting at {@code 1}.
+     * wherever a method other than an operation, or a lambda, takes it. {@code rethrow} names the private method that
+     * throws on what a lambda caught; it and {@code failure} are empty when no lambda catches anything.
+     * {@code builder} names the variable that holds the graph's builder, and the parameter of each private method that
+     * declares part of the graph, the methods {@code part} names followed by their number, starting at {@code 1}.
      */
     private record Variables(Set<String> reserved, String machine, String state, String call,
                              Map<String, String> definitions, Map<String, String> parameters, String entity,
@@ -239,16 +243,16 @@ public final class MachineGenerator {
         graph(model, names, variables, invocations, out);
         for (OperationModel operation : model.operations()) {
             Set<String> declared = new LinkedHashSet<>(variables.reserved());
-            declared.add(entity);
-            String input = unique("input", declared);
+            String target = unique(operation.entityParameter(), declared);
+            Optional<String> input = operation.inputParameter().map((String name) -> unique(name, declared));
             String declaration = operation.inputType()
-                    .map((TypeMirror type) -> ", " + TypeSource.render(type) + " " + input).orElse("");
-            String argument = operation.inputType().isPresent() ? ", " + input : "";
+                    .map((TypeMirror type) -> ", " + TypeSource.render(type) + " " + input.orElseThrow()).orElse("");
+            String argument = input.map((String name) -> ", " + name).orElse("");
             out.blank();
             out.line(override);
-            out.open("public " + outcome + generics + " " + operation.name() + "(" + e + " " + entity + declaration + ")");
-            out.line(objects + ".requireNonNull(" + entity + ", " + quote(entity) + ");");
-            out.line("return " + machine + ".execute(" + entity + ", "
+            out.open("public " + outcome + generics + " " + operation.name() + "(" + e + " " + target + declaration + ")");
+            out.line(objects + ".requireNonNull(" + target + ", " + quote(operation.entityParameter()) + ");");
+            out.line("return " + machine + ".execute(" + target + ", "
                     + constant(names, model.types().transitionsElement(), operation.transitionId()) + argument + ");");
             out.close();
         }
