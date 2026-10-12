@@ -1742,9 +1742,15 @@ final class Transaction {
         }
     }
 
-    /** A commit callback cannot add a hop after phase 2 has fixed the changes it will write. */
+    /**
+     * A commit callback cannot add a hop after phase 2 has fixed the changes it will write, and an identity's equals
+     * or hashCode cannot add one while a rollback undoes the log, as {@link UnitOfWork#rollbackTo} says.
+     */
     private void checkCascade(ContextHandle caller) {
         checkPoison(caller);
+        if (uow.rollingBack()) {
+            throw new IllegalStateException("cascades cannot run while the call rolls back a step");
+        }
         if (phase == CallPhase.COMMIT || phase == CallPhase.HOOK || phase == CallPhase.REACTIONS) {
             throw new IllegalStateException("cascades can only run before the commit");
         }

@@ -2184,9 +2184,11 @@ post-commit hooks run. The flow a hook receives from its `CommitContext` is chec
 running the hook and the hook's own run: it goes stale once the hook returns or throws. The flow the caller receives
 once the call ended, in its outcome or its failure, is a frozen copy without these checks.
 
-Cascades also require that the commit has not begun. A retained action context used for `cascade(...)` or
-`cascadeAll(...)` from a commit getter or setter throws `IllegalStateException` before it stages anything:
-the commit has already fixed the changes it will write. Reading peers or the flow does not stage another hop.
+Cascades also require that the commit has not begun and that no step is being rolled back. A retained action context
+used for `cascade(...)` or `cascadeAll(...)` from a commit getter or setter, or from an identity's `equals` or
+`hashCode` while a rollback calls it, throws `IllegalStateException` before it stages anything: the commit has already
+fixed the changes it will write, and the rollback is undoing them. Reading peers or the flow does not stage another
+hop.
 
 Neither `thenApply` nor `thenApplyAsync` promises to run on that original operation thread. Even a callback
 without the `Async` suffix may run on the service's completion thread. Do not hide a cascade or a write to the flow

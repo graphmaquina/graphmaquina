@@ -59,6 +59,11 @@ final class UnitOfWork {
     /** Whether a start was ever appended: until one is, every entry of the log is a hop. */
     private boolean started;
     /**
+     * Whether a rollback is undoing the pending index, whose identities' equals and hashCode it calls: the transaction
+     * refuses a cascade meanwhile.
+     */
+    private boolean rollingBack;
+    /**
      * The call's flow; empty until a step or a hook of the call first writes to it, unless the call records its trail.
      */
     private Optional<CallFlow> flow = Optional.empty();
@@ -149,7 +154,9 @@ final class UnitOfWork {
      * its log entry are removed, so an identity whose equals or hashCode throws stops the rollback with the three
      * still in step, and the same rollback can be retried. Each branch then drops the flow's writes made after the
      * savepoint and the marks of the entries it dropped, if the call has a flow; a rollback that an identity stops
-     * drops those of the entries it undid, so the flow stays in step with the log it left.
+     * drops those of the entries it undid, so the flow stays in step with the log it left. While the index is undone,
+     * {@link #rollingBack()} answers true: a cascade that an identity's equals or hashCode attempted through a retained
+     * context would add an entry in the middle of the undo, which would then drop it in place of the one it undid.
      */
     void rollbackTo(int savepoint) {
         if (savepoint == 0 && pending.isEmpty()) {
@@ -165,6 +172,7 @@ final class UnitOfWork {
         }
         Map<EntityRef, Enum<?>> states = pending.get().states();
         List<PendingUndo> undo = pending.get().undo();
+        rollingBack = true;
         try {
             while (log.size() > savepoint) {
                 PendingUndo old = undo.get(undo.size() - 1);
@@ -177,9 +185,13 @@ final class UnitOfWork {
                 log.remove(log.size() - 1);
             }
         } finally {
+            rollingBack = false;
             rollbackFlow(log.size());
         }
     }
+
+    /** Whether a rollback is undoing the pending index, as {@link #rollbackTo} says. */
+    boolean rollingBack() { return rollingBack; }
 
     private void rollbackFlow(int savepoint) {
         if (flow.isPresent()) {

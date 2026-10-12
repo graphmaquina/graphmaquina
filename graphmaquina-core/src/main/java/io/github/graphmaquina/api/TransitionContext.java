@@ -14,8 +14,10 @@ import java.util.Optional;
  * changes neither which elements run nor their order. Peer views, cascades and the call's {@link #flow()} work only
  * on the thread that called {@code process()} and only until the root transaction ends: elsewhere they throw
  * {@code WrongThreadException}, afterwards {@code StaleContextException}.
- * Cascades must also run before the commit begins: a retained context used to cascade from a commit getter or
- * setter throws {@code IllegalStateException} before it stages anything, since the commit has fixed its changes.
+ * Cascades must also run before the commit begins, and not while a step is rolled back: a retained context used to
+ * cascade from a commit getter or setter, or from an identity's {@code equals} or {@code hashCode} that a rollback
+ * calls, throws {@code IllegalStateException} before it stages anything, since the commit has fixed its changes and
+ * the rollback is undoing them.
  * What the action throws, or completes its stage with, once unwrapped from CompletionException and ExecutionException,
  * is its own failure. A throwable of the edge's action, other than a recovery action, that a type its edge declares
  * accepts, in {@link TransitionSpec#failsOn()} or in one of its {@link TransitionSpec#recoveryRules()}, takes the route
@@ -96,8 +98,8 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
      * the flow first. Like peer views and cascades, {@code flow()} and every operation of the flow it returns work only
      * on the thread that called {@code process()} and only until the root transaction ends: elsewhere they throw
      * {@code WrongThreadException}, afterwards {@code StaleContextException}. Cascades additionally require that
-     * the commit has not begun. An asynchronous action writes before it
-     * returns its stage, never in a callback of the stage, which may run on another thread.
+     * the commit has not begun and that no step is being rolled back. An asynchronous action writes before it returns
+     * its stage, never in a callback of the stage, which may run on another thread.
      */
     FlowContext flow();
 
