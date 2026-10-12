@@ -34,9 +34,9 @@ import javax.tools.StandardLocation;
  *
  * <p>The dependency is the classpath entry javac read the type's class file from, a jar or a directory of classes,
  * and it is named only when what its index says can be verified: that there is none, or that the one there, read
- * with the codec the generator reads it with, lists no machine and no symbol of that name. A type read from a source has none, and
- * neither has one read from this compilation's own class output, whose index the generator never reads as a
- * dependency's, or from a file javac does not keep at a path of the default file system.</p>
+ * with the codec the generator reads it with, lists no machine and no symbol of that name. A type read from a source
+ * has none, and neither has one read from this compilation's own class output, whose index the generator never reads
+ * as a dependency's, or from a file javac does not keep at a path of the default file system.</p>
  */
 final class MissingExportIndex {
 
