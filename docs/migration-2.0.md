@@ -601,15 +601,39 @@ observe. Most items refuse up front what used to fail later, in generated code o
   segment a type, member type or constant of its scope takes, so that no spelling reaches it (`SG603`); and a
   machine javac compiled implicitly, from the source path, that the export index or a set names (`SG602`). The index
   case used to publish nothing and report nothing.
+- **Raw results the companion could only take unchecked.** A watch's peers reader that returns a raw collection is
+  refused with `SG503`, and an action or a guard that returns a raw `CompletionStage` with `SG604` where it is
+  declared: only an unchecked conversion made either one a collection of peers or a stage of the verdict. The
+  companion used to compile against them only with unchecked warnings, which `-Werror` turns into errors, and javac
+  refused it outright for a raw peers reader under a watch whose rule names a condition.
+- **`@GraphBindings` exports only what the host inherits.** Generated code calls a static binding through the host,
+  so a marked static method of an interface is exported only through the interface's own symbol, and one that the
+  host or a superclass between hides with a method of the same name and parameter types is not exported through the
+  host, the hiding method taking its place when it is marked. Naming either one through the host is javac's
+  `cannot find symbol`, or `SG604` for a hidden method whose parameter is a type variable, which only the processor
+  can tell is hidden. Both used to be exported through the host: the companion then called an unmarked method of the
+  host that hid the marked one in its place, and the processor refused a static method of an interface with `SG505`,
+  as one whose signature fit no machine.
+- **A dependency without its export index is `SG602`.** A jar or a directory of classes that carries a machine a
+  set holds, or a generated symbol a declaration binds, but no export index, or an index that does not list it
+  because it is stale or another build's, is reported as `SG602` where the set or the declaration uses it, naming
+  that jar or directory. Such a symbol used to be `SG605`, one the compilation neither exports nor depends on, and
+  the set's machine `SG502`, one that declares no graph.
 - **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a member
   type of the facade named like a type they write, with parameter names that would have been keywords, with
   deprecated bound members, a raw operation input or an entity that is an inner class of a generic class, used raw,
   under `-Werror`, with a cast whose type annotations name enum constants, beside static overloads of the state and
-  identity accessors, in a set with an accessor named `machineRegistry`, and for a bound member or accessor that
-  declares a checked exception, which is now handled as the same exception thrown undeclared would be. The
-  vocabularies and the references containers the generator writes suppress the deprecation and removal warnings of
-  the hosts, machines and enums they name, as the companions do, so deprecating one, even for removal, no longer
-  fails a `-Werror` build inside a generated file.
+  identity accessors, in a set with an accessor named `machineRegistry`, with a constant the source encoding cannot
+  represent, such as one named with a Greek letter in an ISO-8859-1 build, for a machine of hundreds or thousands of
+  cells, whose graph the companion declared as one chain of calls, which overflowed javac's stack on a thread of
+  1 MiB at a few hundred cells and, at a few thousand, exceeded the code one method may hold, and for a bound member
+  or accessor that declares a checked exception, which is now handled as the same exception thrown undeclared would
+  be. A companion now declares the graph one statement per declaration, in methods of at most a hundred, and holds
+  ASCII only, writing every other character as a `\uXXXX` escape, so a text such as a policy's `otherwise` also
+  keeps a character the source encoding cannot represent, and an unpaired surrogate, which no encoding represents,
+  where `?` used to replace it. The vocabularies and the references containers the generator writes suppress the
+  deprecation and removal warnings of the hosts, machines and enums they name, as the companions do, so deprecating
+  one, even for removal, no longer fails a `-Werror` build inside a generated file.
 - **Generated sources are documented.** Every public member of a vocabulary, a companion and a set carries a
   documentation comment with the `@param` and `@return` tags its signature calls for, most vocabulary elements in
   the inline form `{@return ...}`, but the methods a companion or a set implements, whose comments `javadoc`
@@ -636,7 +660,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
   name, or that differs from one, or from another generated type, only in case where the volume does not tell
   names apart (`SG603`); and an inventory entry whose file the generator's steps would remove through a symbolic
   link inside its output root that leads out of it, a generated source that would be written through such a link,
-  and an inventory entry that no path can spell, such as one holding a NUL character (`SG603`).
+  an inventory entry that no path can spell, such as one holding a NUL character, and one that is not the kind of
+  file its list holds, a binary that is no `.class` file or a source that is no `.java` file (`SG603`). A peer that
+  `@GraphPeers` names twice, by any spelling, is refused with `SG608`, the code the processor reports it with, where
+  the generator used to report two declarations that claim the pair's generated vocabulary (`SG603`).
 - **Declarations the generator misread.** An inner class that extends a sibling inner class, which overflowed the
   stack, a member class of a generic interface, a type named in a declaration's header like a member type the
   declaration declares or inherits, an on-demand import of a type the source cannot access, and a sibling type in
@@ -654,11 +681,13 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **Manifests.** A schema 1 manifest is left in place and refused on every build until `clean`; malformed JSON
   in a manifest or an index is `SG602` naming the file, and so is a `schemaVersion` or a source position that is
   not an exact integer, which used to be truncated. So is an owned source of a manifest that no path can spell,
-  such as one holding a NUL character, that has a root, as `\x` and `C:x` have on Windows, or that names the
-  directory itself, such as `.`. A number whose exponent is out of range, such as `1e99999999999`, in the request,
-  a manifest, an index or an inventory a step needs is `SG602` too, where an unchecked `NumberFormatException`
-  used to escape; a processor inventory read only to clean up after an earlier run is then read as listing
-  nothing, as one that cannot be read is.
+  such as one holding a NUL character, that has a root, as `\x` and `C:x` have on Windows, that names the
+  directory itself, such as `.`, or that is no `.java` file, such as `x`. A number whose exponent is out of range,
+  such as `1e99999999999`, and a string or a name that escapes a surrogate that is not half of a pair, such as
+  `\ud800`, which no UTF-8 file can hold, in the request, a manifest, an index or an inventory a step needs are
+  `SG602` too, where an unchecked `NumberFormatException` used to escape and such a surrogate used to be read as it
+  was; a processor inventory read only to clean up after an earlier run is then read as listing nothing, as one that
+  cannot be read is.
 - **A failed pending-manifest write keeps the record.** A `generate` that fails while it first writes its pending
   manifest, on a full disk for instance, leaves `annotation-manifest.json` in place; a later failure deletes it
   but leaves the pending manifest, which still records the previous sources, so either way the next run retires
@@ -756,7 +785,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   toolchain, and a launcher older than the release the sources are parsed at is refused before the generator runs. A
   processor declaration the build removes no longer counts, and the compilation id reads the group the build script
   settles on, even when something realized the generation task before the group was set. What a generator that
-  completes writes on its error stream is logged as a warning.
+  completes writes on its error stream is logged as a warning. A source moved unchanged to another source directory
+  of its source set puts the generation out of date, so the index publishes the origin a clean build publishes,
+  where the generation used to stay up to date and the index kept the source's previous path.
 
 ### Testing library
 
