@@ -1678,7 +1678,9 @@ static int httpStatus(OutcomeCode code) {
 
 The `switch` has no `default`: it is exhaustive, so a code added by a future release fails the build instead of
 falling through. Do not serialize the `Outcome` itself: it holds the entity, a `Throwable`, reactions with their own
-entities, and the call's flow, whose values are whatever the steps and hooks put.
+entities, and the call's flow, whose values are whatever the steps and hooks put. A call failure cannot be serialized
+at all: every `CallFailedException`, whatever its subtype, holds its `MachineCall`, which is not `Serializable`, so
+writing one to an `ObjectOutputStream` throws `NotSerializableException`.
 
 ### Read what only one variant carries
 

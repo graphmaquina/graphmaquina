@@ -21,7 +21,9 @@ import java.util.Objects;
  * deciding whether a retry is safe: an action that ran may have had external effects that nothing undoes.
  * {@link #flow()} is the call's flow, frozen when the call failed. A refused argument and a reentrant call are refused
  * before the call starts, and are not call failures. Only {@link TransitionAbortedException}, before the commit,
- * {@link CommitFailedException}, during it, and {@link AfterCommitException}, after it, extend it.
+ * {@link CommitFailedException}, during it, and {@link AfterCommitException}, after it, extend it. No call failure can
+ * be serialized: neither its call nor its flow is serializable, so writing one to an {@code ObjectOutputStream} throws
+ * {@code NotSerializableException}.
  */
 public abstract class CallFailedException extends StateMachineException {
 
