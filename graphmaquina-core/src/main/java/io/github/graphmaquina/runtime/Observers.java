@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.internal.Interrupts;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
@@ -15,8 +16,8 @@ import java.util.function.Consumer;
  * set, so an observer cannot start a transition on its own thread. A throwable that is not an Error, a checked
  * exception included, is logged as a warning that names the observer, the callback and the call, never the entity, and
  * the next observer is still notified. Anything but an Error that the warning backend throws, a checked exception
- * included, is contained too. An Error from the callback or the backend propagates unchanged, and the marker is
- * released whatever throws.
+ * included, is contained too. An InterruptedException either contains interrupts the thread again. An Error from the
+ * callback or the backend propagates unchanged, and the marker is released whatever throws.
  */
 final class Observers {
 
@@ -65,6 +66,7 @@ final class Observers {
             } catch (Error fatal) {
                 throw fatal;
             } catch (Throwable e) {
+                Interrupts.keep(e);
                 try {
                     logger.log(Level.WARNING, () -> "the observer " + observer.getClass().getName() + " threw in "
                             + callback + " for " + call, e);
@@ -72,6 +74,7 @@ final class Observers {
                     throw fatal;
                 } catch (Throwable backend) {
                     // A warning is best effort; the next observer must still receive the event.
+                    Interrupts.keep(backend);
                 }
             } finally {
                 Reentrancy.exit();

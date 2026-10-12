@@ -1481,8 +1481,9 @@ the rule while every other `IOException` goes to the fallback.
   case the engine throws the failure that poisoned the transaction.
 - The reason is composed from the exception's simple name and its message, or from its binary name for an
   anonymous class. A message that cannot be read, because `getMessage()` throws anything but an `Error`, reads
-  `<getMessage threw <exception class>>`, and the route is taken all the same. `cause()` is the very exception the
-  action threw, once unwrapped.
+  `<getMessage threw <exception class>>`, and the route is taken all the same, with the thread interrupted again when
+  what `getMessage()` threw is an `InterruptedException`. `cause()` is the very exception the action threw, once
+  unwrapped.
 - `explanation()` holds the reason of a returned failure and stays empty when an exception was routed, whichever
   route took it.
 
@@ -3004,7 +3005,8 @@ the call attached before it told the observers.
 An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
 `System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
 propagates. The warning is best effort: anything but an `Error` from its backend, a checked exception included, is
-contained too, while an `Error` from it propagates unchanged. Either `Error`, the observer's own or its warning
+contained too, while an `Error` from it propagates unchanged. An `InterruptedException` that the observer or that
+backend throws, once contained, interrupts the thread again. Either `Error`, the observer's own or its warning
 backend's, voids for that call the promise of one `onStarted` and exactly one end event. That warning is the only record
 logged on `io.github.graphmaquina` itself: the lines of each call go to its child logger
 `io.github.graphmaquina.runtime`, as [debug a call](#debug-a-call-logs-and-the-calls-flow) describes. An observer cannot
@@ -3146,13 +3148,15 @@ address used as an identifier, and the reasons, exception messages and visible f
 internal details; treat these logs like any record that carries your identifiers. If the `toString()` of an identity,
 of an exception or of a visible flow value throws anything but an `Error`, a checked exception included, the line prints
 `<toString threw <exception class>>` in its place, after the machine key and its `#` for an identity, and the call
-goes on; an `Error` propagates. A `toString()` that returns `null` prints `<toString returned null>` for an
+goes on, with the thread interrupted again when what it threw is an `InterruptedException`; an `Error` propagates. A
+`toString()` that returns `null` prints `<toString returned null>` for an
 exception or a visible flow value, and `null` after the `#` of an identity.
 
 The runtime asks the logger for its two levels once, when a call starts, and builds no line of a level that is off: a
 level raised while a call runs applies from the next call, a call logged at `DEBUG` alone builds no `TRACE` line, and a
 call that logs nothing pays for no line. Anything but an `Error` from the logging backend, a checked exception included,
-loses the line and changes nothing in the call; an `Error` propagates. An `Error` on a `committed`, `started`, `end` or
+loses the line and changes nothing in the call, except that an `InterruptedException` interrupts the thread again; an
+`Error` propagates. An `Error` on a `committed`, `started`, `end` or
 `failed` line ends the call with that `Error`, which the [observers](#observers) receive as the call's end event, in the
 phase the call reached: the `committed` and `started` lines come once every setter returned, in `HOOK`. An `Error` that
 ends a call is not a `CallFailedException` and gets no `failed` line: the lines logged before it stay, and none follows
@@ -3431,7 +3435,8 @@ advances on each read. A clock that throws anything but an `Error`, a checked ex
 identity function that throws does: the entry it could not mark stays out of the trail. When it throws while the call
 reads the instant of the `Failed` entry that ends a failed call, whatever failed the call, the call's
 `CallFailedException` carries what it threw as suppressed, unless it threw that very exception, and its trail ends
-without that entry. A clock that answers `null` counts as one that throws a `NullPointerException`. A call whose root
+without that entry; an `InterruptedException` suppressed there interrupts the thread again. A clock that answers `null`
+counts as one that throws a `NullPointerException`. A call whose root
 machine was built without `recordTrail` reads no clock and stores no time.
 
 The trail records what the call took and how it ended; the [`TRACE` lines](#logs) show each step on the way, its

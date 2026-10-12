@@ -97,9 +97,9 @@ public final class SetGenerator {
             + " the trail. When it throws while the"
             + " call reads the instant of the Failed entry that ends a failed call, whatever failed the call, the"
             + " call's CallFailedException carries what it threw as suppressed, unless it threw that very exception,"
-            + " and its trail ends without that entry; an Error propagates. A clock that answers null counts as one"
-            + " that throws a NullPointerException. A set built without recordTrail reads no clock and keeps no"
-            + " mark.";
+            + " and its trail ends without that entry; an InterruptedException suppressed there interrupts the"
+            + " thread again, and an Error propagates. A clock that answers null counts as one that throws a"
+            + " NullPointerException. A set built without recordTrail reads no clock and keeps no mark.";
 
     private SetGenerator() { }
 

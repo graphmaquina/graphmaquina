@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.Reaction;
+import io.github.graphmaquina.internal.Interrupts;
 import io.github.graphmaquina.internal.Texts;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
@@ -28,7 +29,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *       value's {@code toString()}. The enum constants a line names are printed by {@code name()}; a reason or an
  *       error is printed as it was given.</li>
  *   <li>Anything but an Error that the backend throws, a checked exception included, never reaches the call: a level
- *       it was asked about counts as off, and a line it was given is dropped. An Error propagates.</li>
+ *       it was asked about counts as off, and a line it was given is dropped. An InterruptedException interrupts the
+ *       thread again. An Error propagates.</li>
  * </ul>
  */
 final class CallLog {
@@ -84,6 +86,7 @@ final class CallLog {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable backend) {
+            Interrupts.keep(backend);
             return false;
         }
     }
@@ -126,6 +129,7 @@ final class CallLog {
             throw fatal;
         } catch (Throwable backend) {
             // a backend that fails never changes the call: the line is dropped
+            Interrupts.keep(backend);
         }
     }
 
@@ -194,7 +198,8 @@ final class CallLog {
     /**
      * {@code value.toString()}, {@code <toString returned null>} when that answers null, or
      * {@code <toString threw <class name>>} when it throws anything but an Error, a checked exception included, as
-     * {@link Texts#shown} prints it; an Error propagates.
+     * {@link Texts#shown} prints it, which interrupts the thread again for an InterruptedException; an Error
+     * propagates.
      */
     static String show(Object value) {
         return Texts.shown(value);

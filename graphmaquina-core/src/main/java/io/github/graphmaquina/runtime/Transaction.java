@@ -36,6 +36,7 @@ import io.github.graphmaquina.error.StateMachineException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UnhandledFailureException;
 import io.github.graphmaquina.internal.FrozenFlow;
+import io.github.graphmaquina.internal.Interrupts;
 import io.github.graphmaquina.internal.Texts;
 import java.time.Instant;
 import java.time.InstantSource;
@@ -195,8 +196,8 @@ final class Transaction {
      * Ends {@code trail} with the {@code Failed} entry of {@code failure}, at the instant {@code clock} reads now. A
      * clock that throws anything but an Error, a checked exception included, or answers null as {@link CallFlow#now}
      * refuses, leaves the entry out, and the exception of {@code failure}, which the call throws, carries that
-     * exception as suppressed, unless the clock threw that very exception, which cannot suppress itself; an Error
-     * propagates.
+     * exception as suppressed, unless the clock threw that very exception, which cannot suppress itself; an
+     * InterruptedException interrupts the thread again, and an Error propagates.
      */
     static void endWith(List<FlowEntry> trail, CallFailure failure, InstantSource clock) {
         try {
@@ -204,6 +205,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable thrown) {
+            Interrupts.keep(thrown);
             if (thrown != failure.error()) {
                 failure.error().addSuppressed(thrown);
             }
@@ -1367,7 +1369,7 @@ final class Transaction {
      * The reason a routed throwable reports, whichever declared type admitted it: the throwable's simple name and its
      * message. An anonymous class has an empty simple name, so its binary name stands in: a reason is never blank. A
      * message whose read throws anything but an Error reads {@code <getMessage threw <class name>>}, so the route is
-     * taken all the same; an Error propagates.
+     * taken all the same, and an InterruptedException interrupts the thread again; an Error propagates.
      */
     private static String describe(Throwable cause) {
         Optional<String> message;
@@ -1376,6 +1378,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable unreadable) {
+            Interrupts.keep(unreadable);
             message = Optional.of("<getMessage threw " + unreadable.getClass().getName() + ">");
         }
         String type = cause.getClass().getSimpleName();

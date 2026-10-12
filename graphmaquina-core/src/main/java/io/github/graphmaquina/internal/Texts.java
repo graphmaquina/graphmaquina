@@ -13,8 +13,8 @@ public final class Texts {
 
     /**
      * {@code value.toString()}: {@code <toString returned null>} when that answers null, and
-     * {@code <toString threw <class name>>} when it throws anything but an Error, a checked exception included. An
-     * Error propagates.
+     * {@code <toString threw <class name>>} when it throws anything but an Error, a checked exception included, which
+     * interrupts the thread again when it is an InterruptedException. An Error propagates.
      *
      * @param value the value to print
      * @return the text of {@code value}, never null
@@ -28,6 +28,7 @@ public final class Texts {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable unprintable) {
+            Interrupts.keep(unprintable);
             return "<toString threw " + unprintable.getClass().getName() + ">";
         }
     }
@@ -35,7 +36,7 @@ public final class Texts {
     /**
      * The text of an identity, printed after its machine key and {@code #}: {@code id.toString()}, {@code null} when
      * that answers null, and {@code <toString threw <class name>>} when it throws anything but an Error, a checked
-     * exception included. An Error propagates.
+     * exception included, which interrupts the thread again when it is an InterruptedException. An Error propagates.
      *
      * @param id the identity to print
      * @return the text of {@code id}, never null
@@ -49,6 +50,7 @@ public final class Texts {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable unprintable) {
+            Interrupts.keep(unprintable);
             return "<toString threw " + unprintable.getClass().getName() + ">";
         }
     }

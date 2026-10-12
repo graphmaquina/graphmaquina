@@ -16,7 +16,8 @@ import java.time.Duration;
  *   <li>A throwable that is not an Error, a checked exception included, changes neither the call nor what the other
  *   observers are told. It is logged as a warning through {@code System.getLogger("io.github.graphmaquina")}, naming
  *   the observer, the callback and the call, never the entity. Anything but an Error that the warning's backend
- *   throws, a checked exception included, is contained too; an Error from it propagates unchanged.</li>
+ *   throws, a checked exception included, is contained too; an Error from it propagates unchanged. An
+ *   InterruptedException that either throws, once contained, interrupts the thread again.</li>
  *   <li>An observer whose {@code onStarted} threw still receives its end event.</li>
  *   <li>An Error it throws, or that the backend of its warning throws, propagates unchanged, as everywhere in the
  *   library, and voids these guarantees for that call.</li>
