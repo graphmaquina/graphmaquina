@@ -22,6 +22,7 @@ import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Billing;
 import io.github.graphmaquina.fixtures.Billing.Booking;
 import io.github.graphmaquina.fixtures.Billing.BookingStatus;
+import io.github.graphmaquina.fixtures.Billing.BookingTransition;
 import io.github.graphmaquina.fixtures.Billing.Payment;
 import io.github.graphmaquina.fixtures.Billing.PaymentStatus;
 import io.github.graphmaquina.fixtures.Billing.PaymentTransition;
@@ -96,6 +97,20 @@ class RejectedClockFailureTest {
                 () -> StateMachines.from(guarded()).state(Doc::status, Doc::setStatus).recordTrail(STOPPED).build()
                         .reevaluate(new Doc("1", DRAFT)));
         assertDescribes(thrown, DRAFT, SUBMIT, Optional.of(REVIEW));
+    }
+
+    @Test
+    void aReservedExitRejectionNamesTheDestinationOfItsEdge() {
+        Billing billing = new Billing();
+        Booking booking = new Booking("b1", BookingStatus.DEPOSIT)
+                .attachDeposit(new Payment("d1", PaymentStatus.AUTHORIZING));
+        try (MachineRegistry registry = MachineRegistry.builder().add(billing.bookingMachine().recordTrail(STOPPED))
+                .add(billing.paymentMachine()).build()) {
+            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(Billing.BOOKINGS).execute(booking, BookingTransition.DEPOSIT_PAID));
+            assertDescribes(thrown, BookingStatus.DEPOSIT, BookingTransition.DEPOSIT_PAID,
+                    Optional.of(BookingStatus.BALANCE));
+        }
     }
 
     @Test

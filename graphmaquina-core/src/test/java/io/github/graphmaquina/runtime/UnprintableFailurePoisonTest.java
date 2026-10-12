@@ -244,6 +244,36 @@ class UnprintableFailurePoisonTest {
     }
 
     @Test
+    void anIdentityInFlightThatCannotBePrintedStillLetsTheFailedCascadePoison() {
+        Doc root = new Doc("root", DRAFT);
+        Doc peer = new Doc("peer", REVIEW);
+        PrintedId rootId = new PrintedId("root");
+        List<Throwable> caught = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                catching((TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                    rootId.print = () -> {
+                        throw new IllegalStateException("the identity cannot be printed");
+                    };
+                    return ctx.cascade(DOCS, peer, PUBLISH);
+                }, caught),
+                UnaryOperator.identity());
+        try (MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph)
+                .state((Doc doc) -> {
+                    if (doc == peer) {
+                        throw new IllegalArgumentException("the peer cannot be read");
+                    }
+                    return doc.status();
+                }, Doc::setStatus).identity((Doc doc) -> doc == root ? rootId : doc.id())).build()) {
+            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(root, SUBMIT));
+            assertEquals(List.of("Doc/DocStatus#<toString threw java.lang.IllegalStateException>"),
+                    thrown.cascadePath());
+            assertEquals(List.of(thrown), caught);
+        }
+        assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), peer.status()));
+    }
+
+    @Test
     void anErrorFromAnIdentityInFlightLeavesAPoisonThatNamesTheMachinesAlone() {
         Doc root = new Doc("root", DRAFT);
         Doc peer = new Doc("peer", REVIEW);

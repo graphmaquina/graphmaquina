@@ -50,8 +50,8 @@ import org.junit.jupiter.api.Test;
 /**
  * A log backend, the backend of the observers' warning or a trail clock that throws a checked exception it never
  * declared, as Kotlin code or a sneaky throw can, is held to the rule of one that throws a RuntimeException: the log
- * loses its line or counts its level as off, the warning is lost, and a clock failure fails the call or, on the instant
- * of the Failed entry, is suppressed; none of them changes how the call ends.
+ * loses its line or counts its level as off and the warning is lost, neither of which changes how the call ends, and a
+ * clock failure fails the call, as the cause of its abort, or, on the instant of the Failed entry, is suppressed.
  */
 class CheckedBackendFailureTest {
 
@@ -250,6 +250,26 @@ class CheckedBackendFailureTest {
         }
         assertEquals(List.of("started", "completed APPLIED"), events);
         assertEquals(REVIEW, doc.status());
+    }
+
+    @Test
+    void aTrailClockThatThrowsACheckedExceptionOnAHopFailsTheCall() {
+        Doc doc = new Doc("1", DRAFT);
+        List<String> events = new ArrayList<>();
+        IOException offline = new IOException("clock offline");
+        InstantSource clock = () -> {
+            throwUndeclared(offline);
+            return Instant.EPOCH;
+        };
+        try (MachineRegistry registry = MachineRegistry.builder().observer(recording(events))
+                .add(StateMachines.from(docs(UnaryOperator.identity())).state(Doc::status, Doc::setStatus)
+                        .identity(Doc::id).recordTrail(clock)).build()) {
+            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(doc, SUBMIT));
+            assertSame(offline, thrown.getCause());
+        }
+        assertEquals(List.of("started", "failed ACTION"), events);
+        assertEquals(DRAFT, doc.status());
     }
 
     @Test
