@@ -884,3 +884,9 @@ what javac actually accepted, so:
   given. An original source using a preview feature that javac's parser checks, such as string templates on
   JDK 21, is refused with SG601; one using a preview feature javac checks only after parsing, such as primitive
   patterns at release 25, is read like any other source.
+- **The generator reads Java sources only.** It parses the `.java` sources of the compilation, so a marker on a
+  Kotlin declaration is never read. In a Gradle source set that mixes Kotlin and Java, a Java machine whose entity
+  or state enum a Kotlin source declares is refused with SG601, that type unresolved. Declare the machines, the
+  sets, the types a machine is over and every class that carries a marker, such as a binding host, in the Java
+  sources of the compilation, not in its Kotlin sources; a marked class can also come from a dependency built
+  through the GraphMaquina lifecycle.

@@ -4236,6 +4236,7 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 | Durability and concurrent access | Application responsibilities; there is no automatic DB transaction, durable watch queue or entity lock. |
 | Async timeout | Stops waiting; does not terminate synchronous code or cancel a user's running stage. The wait's callback stays registered on that stage until it completes; later waits for the same stage object share it, so the stage carries one however many waits give up on it, plus one per wait already in progress when the first gave up. A new wrapper per call is a new stage. |
 | Preview language features | The generator parses the original sources without `--enable-preview`, whatever javac is given: a source using a preview feature that javac's parser checks is refused with `SG601`. See the [build guide](typed-annotations-build.md#limits). |
+| Kotlin sources | The generator parses Java sources only: a marker on a Kotlin declaration is never read, and in a Gradle source set that mixes Kotlin and Java, a Java machine over an entity or a state enum a Kotlin source declares is refused with `SG601`. See the [build guide](typed-annotations-build.md#limits). |
 | Public compatibility matrix | Java 21 is the baseline; no claim of verification across all newer JDKs or Gradle versions. |
 
 ## Build, verify and release this repository
