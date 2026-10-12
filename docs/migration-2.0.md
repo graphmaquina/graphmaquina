@@ -334,6 +334,7 @@ that survive keep their numbers; some of them mean something slightly different.
 |---|---|
 | SG101 | Retired from core. There is no N² completeness to check. |
 | SG104 | Retired from core. A self-loop is an ordinary edge; it needs `allowsCycle`, not a special kind. In 1.x this code refused a `MOVE` whose `from` equalled its `to` in the DSL, and refused any annotated cell whose `to` was also in its `from`. |
+| SG105 | Now also refuses two guards of one edge that share a name, in the DSL and in the processor. In 1.x it refused only the same guard declared twice. |
 | SG506 | Retired from the processor along with the row it closed. A non-terminal with no outgoing edge is `SG202`; a state with no policy is `SG701`. |
 | SG204 | Still rejects an unauthorised cycle, but reports **one witness per cyclic strongly connected component** instead of every elementary cycle. The acceptance rule is unchanged; the number of messages is deliberately smaller. |
 | SG301 | Now means: the recovery identifier is this edge's own key, or no edge with that identifier leaves the same origin. |
@@ -579,6 +580,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `RecoveryRule`, `StatePolicy` and `WatchSpec`, the refusals of a registry's build, and a call's refusal of an
   identifier of another enum name states and identifiers by `name()`, never through a `toString()` the application
   overrides, which used to change their text or, when it threw, replace the refusal, or refuse a valid declaration.
+- **Guard names are unique per edge.** A rejection reports the name of the guard that rejected, and 1.x let two guards
+  of one edge share it. `SG105` now refuses a second guard of one name on an edge: in the DSL, two given names, or the
+  class name that two instances of one class take; in the processor, two symbols whose members share a simple name,
+  such as `DocActionsRefs.Approved` and `ReviewsRefs.Approved`. Rename one of the two.
 - **`failsOn`.** `SG302` also refuses a `CancellationException` or one of its subtypes, and
   `CompletionException` and `ExecutionException` themselves, in the DSL and in the processor. A cancellation
   never matched, and the two wrappers are unwrapped before matching whenever they carry a cause.

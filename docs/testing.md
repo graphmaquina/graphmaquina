@@ -266,8 +266,9 @@ assertThat(items.pack(i2)).isApplied().reactions()
         .hasEntityState(Order::status, OrderStatus.SHIPPED);
 ```
 
-A guard rejection names the guard, and asserting the name also asserts `RejectionKind.GUARD`. A domain
-failure keeps the very exception instance the action reported, and names the identifier that recovered:
+A guard rejection names the guard, and asserting the name also asserts `RejectionKind.GUARD`. The guards of one edge
+have distinct names, which `SG105` enforces, so the name identifies the guard that rejected. A domain failure keeps the
+very exception instance the action reported, and names the identifier that recovered:
 
 ```java
 assertThat(orders.retry(order)).isRejected().isRejectedByGuardNamed("retryBudgetLeft");

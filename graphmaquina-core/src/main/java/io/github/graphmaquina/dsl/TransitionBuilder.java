@@ -18,6 +18,9 @@ import java.util.function.Consumer;
  * {@code onFailure}, {@code failsOn} and {@code recover} require an action, and {@code timeout} an asynchronous one.
  * An edge runs at most one action and declares at most one {@code onFailure} and one {@code timeout}: a second one is
  * reported as SG507 rather than swapped in. It declares any number of recovery rules, one per {@code recover} call.
+ * Its guards run in declaration order, each under a name of its own, which a rejection reports: the name given or,
+ * without one, the simple name of the guard's class. A guard declared twice, and a second guard of one name, are
+ * reported as SG105.
  * Once the edge is closed, or the graph built, the stage refuses every call with {@link IllegalStateException}.
  */
 public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {

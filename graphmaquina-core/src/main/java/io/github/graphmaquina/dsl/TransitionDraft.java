@@ -282,6 +282,8 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
         }
         List<GuardRef<E, S, T>> guardRefs = new ArrayList<>();
         Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        // A rejection names the guard that rejected, so the name of each guard of the edge must be its own.
+        Set<String> named = new HashSet<>();
         for (GuardDraft<E, S, T> guard : guards) {
             if (!seen.add(guard.instance())) {
                 problems.add("SG105", fromIndex, idIndex, where + " declares the same guard twice");
@@ -291,6 +293,11 @@ final class TransitionDraft<E, S extends Enum<S>, T extends Enum<T>> implements 
             Optional<String> name = Names.resolve(guard.explicitName(), guard.instance(), "a guard", where,
                     fromIndex, idIndex, problems);
             if (name.isEmpty()) {
+                valid = false;
+                continue;
+            }
+            if (!named.add(name.get())) {
+                problems.add("SG105", fromIndex, idIndex, where + " declares two guards named " + name.get());
                 valid = false;
                 continue;
             }

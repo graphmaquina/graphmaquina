@@ -7,8 +7,10 @@ import io.github.graphmaquina.processor.model.RecoveryModel;
 import io.github.graphmaquina.processor.model.TransitionModel;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import javax.lang.model.element.AnnotationMirror;
@@ -140,10 +142,15 @@ final class TypedTransitions {
                 DiagnosticAnchor.of(element, mirror, declared.get()), diagnostics);
     }
 
-    /** The guards the edge asks, in declaration order; {@code SG105} for one the declaration names twice. */
+    /**
+     * The guards the edge asks, in declaration order; {@code SG105} for one the declaration names twice, and for one
+     * whose member has the simple name of an earlier one's: the generated guard is named by that simple name, which a
+     * rejection reports, so two guards of one edge that shared it could not be told apart.
+     */
     private List<Binding> guards(Element element, AnnotationMirror mirror, MachineTypes machine) {
         List<Binding> guards = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
+        Map<String, TypeMirror> named = new HashMap<>();
         for (AnnotationValue value : annotations.array(mirror, "guards")) {
             if (!(value.getValue() instanceof TypeMirror symbol)) {
                 continue;
@@ -153,7 +160,18 @@ final class TypedTransitions {
                         "the guard " + symbol + " is declared twice");
                 continue;
             }
-            resolve(value, Bindings.Role.GUARD, element, mirror, machine).ifPresent(guards::add);
+            Optional<Binding> guard = resolve(value, Bindings.Role.GUARD, element, mirror, machine);
+            if (guard.isEmpty()) {
+                continue;
+            }
+            TypeMirror earlier = named.putIfAbsent(guard.get().methodName(), symbol);
+            if (earlier != null) {
+                DiagnosticAnchor.of(element, mirror, value).report(diagnostics, DUPLICATE_GUARD,
+                        "the guards " + earlier + " and " + symbol + " share the name " + guard.get().methodName()
+                                + ", which a rejection reports: the guards of one edge need members of distinct names");
+                continue;
+            }
+            guards.add(guard.get());
         }
         return guards;
     }

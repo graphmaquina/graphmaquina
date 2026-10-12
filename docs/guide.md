@@ -1264,8 +1264,9 @@ The ticket quickstart shows synchronous actions and a guard. Actions receive `Tr
 Guards receive `GuardContext<E, S, T>`, which exposes the entity, the identifier, both endpoints, read-only
 peer access, the same `input` accessors and a read-only `flow()`. It has no cascade API. Return `GuardResult.pass()` or
 `GuardResult.reject("reason")`; do not return null. A rejecting guard stops the edge before its action runs
-and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. Guard code should be free of
-mutations and external side effects.
+and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. The guards of one edge have distinct names, so
+the name tells which one rejected: a generated guard is named by its member's simple name, and two guards of one name
+on an edge are refused with `SG105`. Guard code should be free of mutations and external side effects.
 
 Without an input the optional is empty. A null input is refused before the call starts, as a null entity is, with a
 `NullPointerException` that names the parameter. A value of an incompatible class throws `ClassCastException`;
@@ -4058,7 +4059,9 @@ and a terminal initial descendant's exit started by the caller's own entry, as
 annotated example.
 
 Other stages support named guards, async guards, async actions, `failsOn`, `recover`, `timeout`, `afterCommit`,
-`afterCommitWith`, watches, sub-machines and cycle allowances. A low-level `StateMachine` exposes
+`afterCommitWith`, watches, sub-machines and cycle allowances. A guard is named by the name given or, without one, by
+the simple name of its class, and `build()` refuses a second guard of one name on an edge with `SG105`, as it refuses
+the same guard declared twice. A low-level `StateMachine` exposes
 `execute(entity, id)`, `execute(entity, id, input)` and `async().execute(...)`; a generated application
 facade intentionally presents the domain operations instead. Keep registry lifetime explicit to close owned
 executors.
@@ -4086,7 +4089,7 @@ companion.
 | --- | --- |
 | `SG102` | Duplicate `(from, id)` key, or a state that declares two policies or rejects one identifier twice. Two edges that merely share endpoints are not a duplicate. |
 | `SG103` | Missing or blank reason on a policy or a rejection. |
-| `SG105` | Duplicate guard declaration: list each guard once per transition. |
+| `SG105` | Duplicate guard: list each guard once per transition, and give the guards of one transition distinct names, which a rejection reports. A generated guard takes its member's simple name, so one transition cannot ask for two hosts' guards whose members share a name; a DSL guard takes the name given or, without one, its class's simple name. |
 | `SG106` | DSL callback has no inferable name: provide the explicit name overload for a lambda. |
 | `SG107` | Blank DSL callback or condition name: supply a nonblank label. |
 | `SG201` | Missing or repeated DSL initial declaration. |
