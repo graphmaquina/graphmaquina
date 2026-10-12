@@ -2178,6 +2178,15 @@ On an engine wait timeout, the operation throws `TransitionAbortedException`, pe
 are discarded, and transaction-aware context operations become invalid. Through `machine.async`, that
 exception completes the operation future exceptionally. Neither a recovery rule nor the declared `onFailure` route
 is used for this timeout. The user's stage and the underlying service request are left running.
+The engine waits through a callback registered on that stage with `handle`, which stays there until the stage
+completes, as the JDK keeps every `handle` dependent; a wait that an interrupt or a pool's refusal ends leaves it
+too. The engine remembers that callback, holding the stage weakly and by its identity alone, and a later wait for
+the same stage, from any machine, waits on it instead of registering another. A stage that a single-flight cache
+hands to every caller therefore carries one callback however many calls give up on it, plus one for each call that
+was already waiting on it when the first gave up. Distinct stage objects are distinct stages: an action that returns
+a new wrapper of a shared future on each call, such as `shared.thenApply(...)`, leaves on each wrapper one callback,
+which the engine remembers too, until the shared future completes. A `CompletionStage` implementation of your own
+keeps whatever its own `handle` keeps.
 
 ![After an engine wait times out, graph state does not commit. The user stage and external service can finish later, but that completion does not resume the aborted graph transaction.](images/async-late-completion.svg)
 
@@ -4128,7 +4137,7 @@ binding declarations, the full diagnostic and whether the problem occurs on a cl
 | IDE acceptance | Generated-root build integration is automated; manual IntelliJ navigation, editor completion and rename/regeneration checks remain pending. |
 | External payments demo | Its strict-lint acceptance is still partial; it is outside this repository's library test totals. |
 | Durability and concurrent access | Application responsibilities; there is no automatic DB transaction, durable watch queue or entity lock. |
-| Async timeout | Stops waiting; does not terminate synchronous code or cancel a user's running stage. |
+| Async timeout | Stops waiting; does not terminate synchronous code or cancel a user's running stage. The wait's callback stays registered on that stage until it completes; later waits for the same stage object share it, so the stage carries one however many waits give up on it, plus one per wait already in progress when the first gave up. A new wrapper per call is a new stage. |
 | Preview language features | The generator parses the original sources without `--enable-preview`, whatever javac is given: a source using a preview feature that javac's parser checks is refused with `SG601`. See the [build guide](typed-annotations-build.md#limits). |
 | Public compatibility matrix | Java 21 is the baseline; no claim of verification across all newer JDKs or Gradle versions. |
 

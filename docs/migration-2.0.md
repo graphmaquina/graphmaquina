@@ -529,6 +529,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
   worker block now aborts the transition, where its `RejectedExecutionException` used to escape the call. The abort
   carries that exception as its cause, unless a failed cascade has already poisoned the transaction: the call then
   ends in the failure that poisoned it.
+- **A wait that gives up leaves one callback per stage.** A wait that times out, is interrupted or is refused still
+  leaves its callback on the stage until the stage completes, but later waits for the same stage share it: a stage
+  that a single-flight cache hands to every caller no longer collects one callback per call that gave up on it. See
+  [timeout, cancellation and late completion](guide.md#timeout-cancellation-and-late-completion).
 - **A submitted call runs inside no `CompletableFuture` wait.** A call submitted through `async(...)`, or through
   `AsyncStateMachine`'s `execute` or `reevaluate`, is queued as a plain task, which `CompletableFuture`'s `get` and
   `join` no longer run on a waiting `ForkJoinPool` worker, a common-pool worker for instance, inside the callback
