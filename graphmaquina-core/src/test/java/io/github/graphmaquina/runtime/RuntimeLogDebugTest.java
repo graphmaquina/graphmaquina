@@ -421,7 +421,10 @@ class RuntimeLogDebugTest {
         }
     }
 
-    /** Each reaction names the one before it, and a reaction past maxWatchChain fails before it reads its state. */
+    /**
+     * Each reaction names the one before it, and a reaction past maxWatchChain fails once it has read its state, before
+     * its watch runs and before its step begins, so its failed line names no entity.
+     */
     @Test
     void aChainOfReactionsAndTheLinkItRefusesAreLogged() {
         GraphDefinition<Doc, DocStatus, DocTransition> pingPong = StateGraph.define(DOCS)
@@ -501,8 +504,12 @@ class RuntimeLogDebugTest {
         }
     }
 
+    /**
+     * A reevaluation that fails before its step begins, while its watch runs or while it reads the state, computed no
+     * reference for the entity: the failed line names none.
+     */
     @Test
-    void aReevaluationThatFailsBeforeItsEdgeRunsLogsItsFailureWithoutAnEntity() {
+    void aReevaluationThatFailsBeforeItsStepBeginsLogsItsFailureWithoutAnEntity() {
         Doc doc = new Doc("1", DRAFT);
         GraphDefinition<Doc, DocStatus, DocTransition> broken = watching(
                 (Doc owner, Collection<? extends Doc> peers, PeerView<Doc, DocStatus, DocTransition> view) -> {
@@ -525,6 +532,62 @@ class RuntimeLogDebugTest {
                     "FINE call=B start Doc/DocStatus reevaluate",
                     "FINE call=B failed phase=RESOLVE written=NONE error=" + readError + " elapsed=<us>"),
                     lines(log));
+        }
+    }
+
+    /**
+     * A reevaluation whose watch selected START_PACKING begins its step, which computes the reference of the item
+     * first, and then fails in its binding check, before its edge runs, because the parentOf of the order's binding
+     * throws: the failed line names the item.
+     */
+    @Test
+    void aReevaluationWhoseStepBeganNamesItsEntityEvenWhenItFailsBeforeItsEdgeRuns() {
+        GraphDefinition<Item, ItemStatus, ItemTransition> items = StateGraph.define(ITEMS)
+                .initial(ItemStatus.PENDING).terminal(ItemStatus.PACKED).terminal(ItemStatus.CANCELLED)
+                .statePolicy(ItemStatus.PENDING, "a pending item is packed or cancelled")
+                .statePolicy(ItemStatus.PACKING, "an item in packing is packed")
+                .transition(ItemTransition.START_PACKING, ItemStatus.PENDING, ItemStatus.PACKING).endTransition()
+                .transition(ItemTransition.PACK, ItemStatus.PACKING, ItemStatus.PACKED).endTransition()
+                .transition(ItemTransition.CANCEL, ItemStatus.PENDING, ItemStatus.CANCELLED).endTransition()
+                .watch(ItemStatus.PENDING, ITEMS, (Item item) -> List.of(item), (Item moved) -> Optional.<Item>empty())
+                    .when("always", (Item owner, Collection<? extends Item> peers,
+                            PeerView<Item, ItemStatus, ItemTransition> view) -> true)
+                        .execute(ItemTransition.START_PACKING)
+                    .endWatch()
+                .build();
+        GraphDefinition<Order, OrderStatus, OrderTransition> orders = StateGraph.define(ORDERS)
+                .initial(OrderStatus.NEW).terminal(OrderStatus.SHIPPED).terminal(OrderStatus.CANCELLED)
+                .terminal(OrderStatus.PAYMENT_DECLINED)
+                .statePolicy(OrderStatus.NEW, "a new order is charged or declined")
+                .statePolicy(OrderStatus.PAID, "a paid order ships or is cancelled with its item")
+                .transition(OrderTransition.CHARGE, OrderStatus.NEW, OrderStatus.PAID).endTransition()
+                .transition(OrderTransition.DECLINE, OrderStatus.NEW, OrderStatus.PAYMENT_DECLINED).endTransition()
+                .transition(OrderTransition.SHIP, OrderStatus.PAID, OrderStatus.SHIPPED).endTransition()
+                .transition(OrderTransition.CANCEL, OrderStatus.PAID, OrderStatus.CANCELLED).endTransition()
+                .submachine(OrderStatus.PAID, items, (Order order) -> Optional.of(order.items().get(0)),
+                        (Item item) -> {
+                            throw new IllegalStateException("the order store is offline");
+                        })
+                    .exit(ItemStatus.PACKED, OrderTransition.SHIP)
+                    .exit(ItemStatus.CANCELLED, OrderTransition.CANCEL)
+                    .endSubmachine()
+                .build();
+        Order order = new Order("o1", OrderStatus.PAID);
+        Item item = new Item("i1", ItemStatus.PENDING, Optional.of(order));
+        order.add(item);
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(orders).state(Order::status, Order::setStatus).identity(Order::id))
+                .add(StateMachines.from(items).state(Item::status, Item::setStatus).identity(Item::id))
+                .build();
+             LibraryLog log = LibraryLog.runtime(Level.FINE)) {
+            TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(ITEMS).reevaluate(item));
+            assertTrue(error.getMessage().contains("the parentOf of Order/OrderStatus.PAID threw"), error.getMessage());
+            assertEquals(List.of(
+                    "FINE call=A start Item/ItemStatus reevaluate",
+                    "FINE call=A failed phase=RESOLVE written=NONE entity=Item/ItemStatus#i1 error=" + error
+                            + " elapsed=<us>"), lines(log));
+            assertEquals(ItemStatus.PENDING, item.status());
         }
     }
 

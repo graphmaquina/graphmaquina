@@ -3179,8 +3179,10 @@ standalone machine without `identity(...)` prints `#@` and the entity's identity
 The runtime prints the identity it has already computed, so a line never calls the identity function, a getter or
 the entity's `toString()`, unless your code puts the entity in the flow under a visible key: a `flow-put` or
 `hook-flow-put` line of a key made with `FlowKey.visible` prints the value's `toString()`, whatever the value is. The
-`start` line names no entity, and `end` and `failed` name it only once the call computed it: a reevaluation that
-selected no edge, or that failed before its edge ran, names none. The identity may be personal data, such as an e-mail
+`start` line names no entity, and `end` and `failed` name it only once the call computed it, which its step does as it
+begins: a reevaluation that selected no edge names none, and so does one that failed before its step began, while it
+read the state, ran its watch or exceeded the watch chain. A reevaluation whose step began names it, even when the step
+failed before its edge ran, in its binding check for instance. The identity may be personal data, such as an e-mail
 address used as an identifier, and the reasons, exception messages and visible flow values the lines print may carry
 internal details; treat these logs like any record that carries your identifiers. If the `toString()` of an identity,
 of an exception or of a visible flow value throws anything but an `Error`, a checked exception included, the line prints
