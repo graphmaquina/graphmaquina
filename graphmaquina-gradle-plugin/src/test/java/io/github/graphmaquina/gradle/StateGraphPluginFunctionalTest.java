@@ -946,6 +946,33 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
+     * The java sources of a source set carry a filter of their own beside their patterns, the one the {@code java}
+     * plugin gives its {@code **}{@code /*.java} include, and javac compiles what it selects. The generator reads the
+     * source set that way too, file by file, whether the filter leaves a draft that does not parse out with a pattern
+     * or with a spec, while the source set and the compilation task carry no pattern at all.
+     */
+    @Test
+    void parsesOnlyTheSourcesTheFilterOfTheJavaSourcesSelects() throws IOException {
+        for (String exclusion : List.of("\"**/Draft.java\"", "{ element -> element.file.name == \"Draft.java\" }")) {
+            PluginFixture fixture = PluginFixture.basic(Files.createDirectories(
+                    tempDirectory.resolve(exclusion.startsWith("{") ? "spec" : "pattern")), FIXTURE_REPOSITORY);
+            Map<String, String> sources = PluginFixture.domainSources();
+            sources.put("fx.drafts.Draft", draft("fx.drafts"));
+            fixture.writeSources(sources);
+            fixture.appendToBuildScript("sourceSets.named(\"main\") {\n    java.filter.exclude(" + exclusion
+                    + ")\n}\n");
+
+            BuildResult result = fixture.run("jar");
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome(), exclusion);
+            List<String> requested = requestedSources(fixture.request("main"));
+            assertTrue(requested.contains("fx/Orders.java"), requested::toString);
+            assertFalse(requested.contains("fx/drafts/Draft.java"), requested::toString);
+            assertTrue(fixture.jarContains("fx/OrdersGraph.class"), exclusion);
+        }
+    }
+
+    /**
      * A source directory that neither the source set nor its compilation task filters is still handed to the
      * generator as a directory, so a hand-written type that shares its simple name with a generated one, in a package
      * that merely ends like the generated one's, is no collision: the generator compares a generated type with the
@@ -2141,6 +2168,31 @@ class StateGraphPluginFunctionalTest {
             assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome(), filter);
             assertTrue(fixture.jarContains("fx/OrdersGraph.class"), filter);
         }
+    }
+
+    /**
+     * A settings script may change the default excludes of the build, as Gradle documents, through Ant's
+     * {@code DirectoryScanner}. javac never compiles a file a default exclude the build adds leaves out, and the
+     * generator, which leaves out only Ant's own default excludes when it walks a whole directory, is handed the
+     * files Gradle selects instead, so it never reads a draft that does not parse either.
+     */
+    @Test
+    void leavesOutWhatADefaultExcludeOfTheBuildLeavesOut() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Map<String, String> sources = PluginFixture.domainSources();
+        sources.put("fx.drafts.Draft", draft("fx.drafts"));
+        fixture.writeSources(sources);
+        Path settings = fixture.projectDirectory().resolve("settings.gradle.kts");
+        Files.writeString(settings, Files.readString(settings)
+                + "\norg.apache.tools.ant.DirectoryScanner.addDefaultExclude(\"**/Draft.java\")\n");
+
+        BuildResult result = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome());
+        List<String> requested = requestedSources(fixture.request("main"));
+        assertTrue(requested.contains("fx/Orders.java"), requested::toString);
+        assertFalse(requested.contains("fx/drafts/Draft.java"), requested::toString);
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
     }
 
     /**

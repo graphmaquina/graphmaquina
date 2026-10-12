@@ -604,10 +604,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
 
 - **The generator reads what javac compiles.** The request carries the compilation's release and source
   encoding: the generator parses at that release, reads and writes in that encoding, and refuses syntax the
-  release does not have with `SG601`. Gradle source-set patterns and Maven `<includes>` and `<excludes>` are
-  honoured, files Ant's default excludes name, such as `._*` copies and `.git` directories, are left out (the
-  build guide says where Maven's longer list differs), and symbolic links are followed. See the
-  [build guide](typed-annotations-build.md).
+  release does not have with `SG601`. Gradle source-set patterns and filters and Maven `<includes>` and
+  `<excludes>` are honoured, files the default excludes name, Ant's such as `._*` copies and `.git` directories,
+  or in Gradle those a settings script sets, are left out (the build guide says where Maven's longer list
+  differs), and symbolic links are followed. See the [build guide](typed-annotations-build.md).
 - **New generator refusals:** a generic facade, a marker whose annotation type is not on the generator's
   classpath, and a facade, enum, host or peer that the generated code cannot access (`SG601`, `SG604`, `SG608`);
   a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or

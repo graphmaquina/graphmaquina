@@ -47,9 +47,12 @@ public abstract class GenerateGraphApi extends DefaultTask {
 
     /**
      * The original sources of the source set: its source directories other than the generated ones, each named
-     * whole, or file by file as the include and exclude patterns of the source set and the include and exclude
-     * pattern strings of its compilation task select them when they filter it. That is what javac compiles of them
-     * unless the compilation task is given a filter as a spec or a closure, or a source of its own. When one of those
+     * file by file as the include and exclude patterns and the filter of the source set's java sources, the include
+     * and exclude pattern strings of its compilation task and the default excludes of the build select them, or
+     * named whole when the generator's own walk of it selects the same files: when no pattern of the source set or
+     * of the compilation task filters it, the filter is the {@code java} plugin's own and the default excludes are
+     * Ant's. That is what javac compiles of them unless the compilation task is given a filter as a spec or a
+     * closure, or a source of its own. When one of those
      * changes the original Java sources javac compiles, the plugin refuses the generation before the generator runs,
      * and the preparation refuses the compilation when the generation is up to date. They are what the generator
      * parses, so the task is out of date whenever any of them changes, and it runs after every task those directories

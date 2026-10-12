@@ -221,10 +221,14 @@ leaves its source out of the source set's sources jar and javadoc.
 ### What the generator reads
 
 The generation task parses what javac compiles of the source set: every source directory but the generated
-ones, whole, or file by file as the source set's include and exclude patterns and the compile task's include and
-exclude pattern strings select them. Files Gradle leaves out of a source directory by default, such as `._*`
-copies and `.git` directories, are left out either way, and symbolic links are followed, a link that leads back
-into a directory being walked skipped.
+ones, file by file as Gradle selects them through the include and exclude patterns of the source set's java
+sources and their filter, `java.filter`, the compile task's include and exclude pattern strings, and the build's
+default excludes. A directory is handed to the generator whole when the generator's own walk of it selects the
+same files: when neither the source set nor the compile task gives it a pattern, `java.filter` is the `java`
+plugin's own `**/*.java` include, and the default excludes are Ant's, which Gradle applies unless a settings
+script changes them through `org.apache.tools.ant.DirectoryScanner`. Files the default excludes leave out, such
+as `._*` copies and `.git` directories, are left out either way, and symbolic links are followed, a link that
+leads back into a directory being walked skipped.
 
 A filter given to the compile task as a spec or a closure, and a source added to the compile task or put in place
 of the source set's, are not followed. When they make javac compile other original Java sources than the
