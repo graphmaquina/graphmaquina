@@ -21,6 +21,8 @@ import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 /**
  * The companion generated for a machine: what its source writes for the key, the graph and the operations, how it
@@ -79,6 +81,46 @@ class MachineGenerationTest {
         assertTrue(result.generated("fx.LibraryRuntime")
                 .contains("@SuppressWarnings({\"deprecation\", \"removal\"})\npublic final class LibraryRuntime"),
                 result.generated("fx.LibraryRuntime"));
+    }
+
+    /**
+     * Deprecating a type the generated files name is as ordinary a step: a host, the machine, its state enum or the
+     * machine it watches. The vocabularies and the references containers the generator writes name such a type where
+     * the author cannot suppress anything, and the build compiles them with {@code -Xlint:all -Werror}, so neither a
+     * {@code [deprecation]} nor a {@code [removal]} warning may come out of them either; the author suppresses the
+     * warnings of the sources they own that name the type, listed beside it. The machine names its states qualified,
+     * since no annotation suppresses what javac says about a static import of a deprecated enum.
+     */
+    @ParameterizedTest
+    @CsvSource(delimiter = '|', value = {
+        "fx.DocActions | ''",
+        "fx.Docs | fx.Library",
+        "fx.DocStatus | fx.Doc fx.DocActions fx.Docs",
+        "fx.Pages | fx.Docs fx.Library"})
+    void deprecatedTypesTheGeneratedFilesNameKeepAStrictBuildGreen(String deprecated, String users) {
+        for (String deprecation : List.of("@Deprecated", "@Deprecated(since = \"2\", forRemoval = true)")) {
+            Map<String, String> sources = Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                    Fixtures.DOCS_BODY, Fixtures.LIBRARY);
+            sources.put("fx.Docs", sources.get("fx.Docs").replace("import static fx.DocStatus.*;\n", "")
+                    .replaceAll("\\b(DRAFT|REVIEW|PUBLISHED|ARCHIVED)\\b", "DocStatus.$1"));
+            annotate(sources, deprecated, deprecation);
+            for (String user : users.split(" ")) {
+                if (!user.isEmpty()) {
+                    annotate(sources, user, "@SuppressWarnings({\"deprecation\", \"removal\"})");
+                }
+            }
+
+            Compilation.Result result = Compilation.compileTyped(sources);
+
+            assertTrue(result.success(), deprecation + " " + deprecated + "\n" + result.describe());
+        }
+    }
+
+    /** Writes {@code annotation} on the top-level type the source of {@code name} declares, before its modifiers. */
+    private static void annotate(Map<String, String> sources, String name, String annotation) {
+        String source = sources.get(name);
+        int declaration = source.indexOf("\npublic ") + 1;
+        sources.put(name, source.substring(0, declaration) + annotation + "\n" + source.substring(declaration));
     }
 
     /**

@@ -46,6 +46,8 @@ public final class ExportDeclarations {
     private static final String BINDINGS = "io.github.graphmaquina.annotation.GraphBindings";
     /** The package of the StateGraph types every references container writes by qualified name. */
     private static final String STATEGRAPH_PACKAGE = "io.github.graphmaquina";
+    /** The annotation every references container carries, written by qualified name. */
+    private static final String SUPPRESS_WARNINGS = "java.lang.SuppressWarnings";
     private static final Map<String, SymbolKind> ROLES = roles();
 
     private ExportDeclarations() {
@@ -55,9 +57,10 @@ public final class ExportDeclarations {
      * Every symbol the original sources of {@code index} export, ordered by qualified name so that neither the
      * order of the files nor the order of a hash table can change the result. A host its references container
      * cannot name, because it is private or nested in a private type, is refused with {@code SG604}. A host is
-     * refused with {@code SG603} when a qualified name its container writes, StateGraph's {@code io} package or, for
-     * a host of a named package, the host's own name, starts with the simple name of a type the host's package
-     * declares or of a public type of {@code java.lang}: inside the container that type obscures the package.
+     * refused with {@code SG603} when a qualified name its container writes, StateGraph's {@code io} package,
+     * {@code java.lang.SuppressWarnings} or, for a host of a named package, the host's own name, starts with the
+     * simple name of a type the host's package declares or of a public type of {@code java.lang}: inside the
+     * container that type obscures the package.
      */
     public static List<SymbolDescriptor> collect(DeclarationIndex index) {
         Objects.requireNonNull(index, "index");
@@ -80,8 +83,8 @@ public final class ExportDeclarations {
             }
             index.requireUnobscured(packageName, "the references container generated for the host "
                 + host.canonicalName() + " in " + (packageName.isEmpty() ? "the unnamed package" : "package "
-                + packageName), packageName.isEmpty() ? List.of(STATEGRAPH_PACKAGE)
-                : List.of(STATEGRAPH_PACKAGE, host.canonicalName()), origin(host));
+                + packageName), packageName.isEmpty() ? List.of(STATEGRAPH_PACKAGE, SUPPRESS_WARNINGS)
+                : List.of(STATEGRAPH_PACKAGE, SUPPRESS_WARNINGS, host.canonicalName()), origin(host));
             TypeHeader previous = containers.putIfAbsent(container, host);
             if (previous != null) {
                 throw sharedContainer(container, previous, host);

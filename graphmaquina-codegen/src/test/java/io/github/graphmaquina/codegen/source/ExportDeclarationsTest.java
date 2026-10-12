@@ -935,14 +935,15 @@ class ExportDeclarationsTest {
     }
 
     /**
-     * The references container names StateGraph's {@code io} package and its host qualified, so a type of the
-     * host's package named like the first segment of either obscures it there (JLS 6.4.2). That is refused at the
-     * host, naming the type.
+     * The references container names StateGraph's {@code io} package, {@code java.lang.SuppressWarnings} and its host
+     * qualified, so a type of the host's package named like the first segment of any of them obscures it there
+     * (JLS 6.4.2). That is refused at the host, naming the type.
      */
     @Test
     void refusesAHostWhosePackageObscuresAPackageItsReferencesContainerNames() {
         Map<String, String> obscurers = new LinkedHashMap<>();
         obscurers.put("fx.io", "io.github.graphmaquina");
+        obscurers.put("fx.java", "java.lang.SuppressWarnings");
         obscurers.put("fx.fx", "fx.Shop");
         for (Map.Entry<String, String> obscurer : obscurers.entrySet()) {
             Path project = directory.resolve(obscurer.getKey());
