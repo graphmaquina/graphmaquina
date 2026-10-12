@@ -1781,11 +1781,11 @@ call wrote up to the failure:
   except what a rollback removed earlier. A step whose failure its edge expects, a failure its action returned or a
   throwable of a type the edge declares, is rolled back whether a route takes the failure or not: an
   `UnhandledFailureException` therefore lacks the writes of its step and of the steps that step cascaded to. Each
-  `COLLECT` element that aborted is rolled back too, so a `CascadeException` lacks their writes; an identity whose
-  `equals` or `hashCode` throws stops that rollback, which leaves the writes and hops it had not undone. Once a failed
-  cascade poisoned the call, a step whose action still returns or throws such a failure is not rolled back for it: it
-  ends in the failure that poisoned the call and keeps its writes and its hop, unless a `COLLECT` collects that
-  failure, which rolls back the whole element the step ran in.
+  `COLLECT` element whose abort the cascade collects is rolled back too, so a `CascadeException` lacks their writes; an
+  identity whose `equals` or `hashCode` throws stops that rollback, which leaves the writes and hops it had not undone.
+  Once a failed cascade poisoned the call, a step whose action still returns or throws such a failure is not rolled back
+  for it: it ends in the failure that poisoned the call and keeps its writes and its hop, unless a `COLLECT` collects
+  that failure, which rolls back the whole element the step ran in.
 - A `CommitFailedException` holds everything the steps wrote.
 - An `AfterCommitException` also holds what the hooks wrote, the failing hook's writes before it threw included.
 - When the call records its trail, its flow also lists the hops and starts the call took up to the failure, except
@@ -2460,7 +2460,7 @@ from its pending state like any other.
 | Policy | Behavior |
 | --- | --- |
 | `FAIL_FAST` | Stop when a cascade fails. |
-| `COLLECT` | Try peers under savepoints and collect the transition aborts of the call; if any were collected, poison the transaction with a `CascadeException` that aggregates them and throw it into the action that cascaded. Any other failure stops it at once, and so does an element whose step a nested cascade poisoned with a failure that is no failure of the call, or an identity whose `equals` or `hashCode` throws while a failed element is rolled back. |
+| `COLLECT` | Try peers under savepoints and collect the transition aborts of the call; if any were collected, poison the transaction with a `CascadeException` that aggregates them and throw it into the action that cascaded. Any other failure stops it at once, and so does an element whose sub-machine binding check could not read a parent or a child, such as a parent whose state is null, an element whose step a nested cascade poisoned with a failure that is no failure of the call, or an identity whose `equals` or `hashCode` throws while a failed element is rolled back. |
 
 `COLLECT` is not partial commit. A nested transition that is rejected, because no edge carries it, a guard rejected it
 or a sub-machine refused it, is an abort rather than an ordinary root-level `Rejected` result. A handled domain
@@ -3349,13 +3349,13 @@ public ActionOutcome restock(TransitionContext<Item, ItemStatus, ItemTransition>
 An action's write is undone with the step that made it. When a step fails with a failure its edge expects, one its
 action returns or a throwable of a type the edge declares, the call drops every write made since that step took its hop,
 its action's and those of the steps it cascaded to, and keeps what earlier steps wrote: the recovery action of its route
-then writes anew, and without a route the step aborts with `UnhandledFailureException`. A `COLLECT` element whose step
-aborts is dropped the same way, its writes with it, before the next element runs, unless an identity's `equals` or
-`hashCode` throws while it is dropped, which stops the rollback and leaves what it had not undone. Once a failed cascade
-poisoned the call, a step whose failure its edge expects is not dropped: it ends in the failure that poisoned the call
-and keeps its writes, unless a `COLLECT` collects that failure and drops the whole element. No other abort undoes a
-write: a call that aborts commits nothing, and the flow its failure hands out keeps what its steps wrote. A hook writes
-after the commit, and nothing undoes its writes.
+then writes anew, and without a route the step aborts with `UnhandledFailureException`. A `COLLECT` element whose abort
+the cascade collects is dropped the same way, its writes with it, before the next element runs, unless an identity's
+`equals` or `hashCode` throws while it is dropped, which stops the rollback and leaves what it had not undone. Once a
+failed cascade poisoned the call, a step whose failure its edge expects is not dropped: it ends in the failure that
+poisoned the call and keeps its writes, unless a `COLLECT` collects that failure and drops the whole element. No other
+abort undoes a write: a call that aborts commits nothing, and the flow its failure hands out keeps what its steps wrote.
+A hook writes after the commit, and nothing undoes its writes.
 
 Values are stored by reference, never copied, and a rollback drops the write, not what was done to the object. An
 action that puts a list, adds an element to it and then fails into its route leaves the recovery action without a

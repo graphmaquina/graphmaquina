@@ -698,8 +698,8 @@ final class Transaction {
      * abort the step with an {@link AmbiguousParentException} as cause, except one parent that holds the child both
      * in the node its pending state names and leaving another node, on an edge between two nodes that bind the same
      * child: the node it enters, whose entry has just restarted the child, holds it. A lookup that returns null or
-     * throws, and a parent or child that cannot be read, abort it too, as {@link #bindingAbort} says. Every lookup runs
-     * inside the root, under its reentrancy marker.
+     * throws, and a parent or child that cannot be read, abort it too, as {@link #bindingAbort} and
+     * {@link #bindingReadAbort} say. Every lookup runs inside the root, under its reentrancy marker.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> BindingCheck checkBindings(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from, T id, int depth) {
@@ -788,8 +788,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw bindingAbort(machine, ref, from, id, depth,
-                    "checking the binding " + name + " threw " + Texts.shown(e), Optional.of(e));
+            throw bindingReadAbort(machine, ref, from, id, depth, name, e);
         }
     }
 
@@ -799,7 +798,7 @@ final class Transaction {
      * one first, is the bound node ({@link Hold#IN_NODE}), or the parent is in flight on an edge that leaves the node
      * ({@link Hold#LEAVING}). Another child, or none, is no hold; another instance with the child's identity aborts the
      * step with an {@link AmbiguousIdentityException} as cause, and so does a parent whose state is null, with an
-     * {@code UninitializedStateException}.
+     * {@code UninitializedStateException}, as {@link #bindingReadAbort} says.
      */
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> Optional<Hold> holds(
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> id, int depth,
@@ -837,8 +836,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw bindingAbort(machine, ref, from, id, depth,
-                    "checking the binding " + name + " threw " + Texts.shown(e), Optional.of(e));
+            throw bindingReadAbort(machine, ref, from, id, depth, name, e);
         }
         if (state == spec.state()) {
             return Optional.of(Hold.IN_NODE);
@@ -854,11 +852,35 @@ final class Transaction {
     /**
      * An abort of a child's step from its binding check, before its edge was looked up: in RESOLVE at the root, in
      * ACTION and poisoning when nested. A lookup's throwable that is not an Error is the cause, unwrapped from
-     * CompletionException and ExecutionException; what reading the parent or the child threw is the cause as it is.
+     * CompletionException and ExecutionException. What reading the parent or the child threw aborts the step as
+     * {@link #bindingReadAbort} says.
      */
     private TransitionAbortedException bindingAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
                                                     Enum<?> id, int depth, String message, Optional<Throwable> cause) {
         return abort(machine, ref, from, Optional.of(id), Optional.empty(), Optional.empty(), depth, message, cause);
+    }
+
+    /**
+     * An abort of a child's step for what reading the parent or the child threw while checking the binding
+     * {@code name}: an identity function or a state getter that threw, a null state or an ambiguous identity, the
+     * cause as it is. At the root it is an abort like those of {@link #bindingAbort}. Nested, it poisons as a failure
+     * that is no failure of the call, as the same failure of a cascaded entity's own identity or state does, so COLLECT
+     * never collects it and stops at once. The first poison is stored before its TRACE line, as in {@link #poisonAt}.
+     */
+    private TransitionAbortedException bindingReadAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
+                                                        Enum<?> from, Enum<?> id, int depth, String name,
+                                                        Throwable thrown) {
+        TransitionAbortedException abort = unpoisonedAbort(machine, ref, from, Optional.of(id), Optional.empty(),
+                Optional.empty(), "checking the binding " + name + " threw " + Texts.shown(thrown),
+                Optional.of(thrown));
+        if (depth > 0) {
+            boolean first = !uow.isPoisoned();
+            uow.poisonWrapping(abort);
+            if (first) {
+                tracePoison(depth, abort);
+            }
+        }
+        return abort;
     }
 
     /**
@@ -1756,9 +1778,10 @@ final class Transaction {
      * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
      * COLLECT gathers the aborts of the call only: any other failure poisons, through an abort that carries it, and
      * stops the cascade at once, a nested one too, once an element's step was poisoned through such an abort, whether
-     * its action let it through, caught it or replaced it. A VirtualMachineError stops it at once too, as itself and
-     * unrecorded, as a single cascade lets it through, and so does the abort of an element's step that recorded one
-     * its action caught.
+     * its action let it through, caught it or replaced it. The abort of an element's step whose binding check could
+     * not read a parent or a child poisons as such a failure, as {@link #bindingReadAbort} says, so it stops the
+     * cascade too. A VirtualMachineError stops it at once too, as itself and unrecorded, as a single cascade lets it
+     * through, and so does the abort of an element's step that recorded one its action caught.
      * Once the poison is checked, the collection is copied, and every later step reads the copy alone: the elements
      * checked are the elements run, and a change to the collection while the cascade runs, by an element's action for
      * instance, changes neither which elements run nor their order. Copying is part of accepting the arguments: an
