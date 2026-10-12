@@ -34,7 +34,7 @@ final class Reentrancy {
     }
 
     /**
-     * Claims the marker, as {@link #check} rejects a call first, and returns the thread's cell, which the caller
+     * Rejects a call as {@link #check} does, then claims the marker and returns the thread's cell, which the caller
      * releases with {@code cell[0] = false} as the first statement of the finally of the try that follows: nothing
      * between the claim and the try can throw. The cell is read before the marker is claimed, so a read that
      * overflows leaves the marker as it was.
