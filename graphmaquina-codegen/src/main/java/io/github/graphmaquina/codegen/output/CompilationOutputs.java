@@ -65,6 +65,8 @@ public final class CompilationOutputs {
     private static final String UNUSABLE = "SG602";
     private static final String COLLISION = "SG603";
     private static final int SCHEMA_VERSION = 2;
+    private static final String JAVA_SOURCE = ".java";
+    private static final String CLASS_FILE = ".class";
 
     private CompilationOutputs() {
     }
@@ -106,7 +108,9 @@ public final class CompilationOutputs {
      *
      * @throws CodegenException {@code SG602} if the generator wrote no manifest for this compilation, or
      *     {@code SG603} if the sealed or the pending inventory names a path outside the root it belongs to, one no
-     *     path can spell, or one this step removes whose file a symbolic link inside that root takes out of it
+     *     path can spell, a source that is no Java source, a binary or an excluded binary that is no class file, or
+     *     one this step removes whose file a symbolic link inside that root takes out of it; all of them before the
+     *     pending inventory is rewritten
      * @throws IOException if the manifest, an inventory or a class file cannot be read, the pending inventory
      *     cannot be written, or a source or an output cannot be examined or removed
      */
@@ -278,7 +282,8 @@ public final class CompilationOutputs {
      * The inventory at {@code path} when it exists, with its sources checked against {@code processorSources} and
      * its other paths against {@code classes}, which they are removed from, so they must also
      * {@linkplain #requireStaysInside stay inside} it. Whether its sources must is left to the caller: those of a
-     * pending inventory are never removed.
+     * pending inventory are never removed. Each source must be a Java source and each binary and excluded binary a
+     * class file, as {@link #requireKind} checks them.
      */
     private static List<OwnedOutputs> readInventory(Path path, Path classes, Path processorSources)
             throws IOException {
@@ -288,12 +293,31 @@ public final class CompilationOutputs {
         OwnedOutputs inventory = ManifestCodec.readOwned(path);
         String name = path.getFileName().toString();
         requireInside(inventory.sources(), processorSources, name);
+        requireKind(inventory.sources(), JAVA_SOURCE, "source file", processorSources, name);
         for (List<String> removed
                 : List.of(inventory.binaries(), inventory.resources(), inventory.excludedBinaries())) {
             requireInside(removed, classes, name);
             requireStaysInside(removed, classes, name);
         }
+        requireKind(inventory.binaries(), CLASS_FILE, "class file", classes, name);
+        requireKind(inventory.excludedBinaries(), CLASS_FILE, "class file", classes, name);
         return List.of(inventory);
+    }
+
+    /**
+     * Refuses an entry whose file name is not a name followed by {@code suffix}, which is how the type of each unit
+     * an inventory names is read from it.
+     *
+     * @throws CodegenException {@code SG603} naming the inventory and the entry
+     */
+    private static void requireKind(List<String> entries, String suffix, String kind, Path root, String inventory) {
+        for (String entry : entries) {
+            String fileName = entry.substring(entry.lastIndexOf('/') + 1);
+            if (!fileName.endsWith(suffix) || fileName.length() == suffix.length()) {
+                throw new CodegenException(COLLISION, "the inventory " + inventory + " claims '" + entry
+                    + "', which is not a " + kind + " under " + root);
+            }
+        }
     }
 
     /**

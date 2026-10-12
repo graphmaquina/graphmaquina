@@ -345,6 +345,17 @@ final class JsonSupport {
         }
     }
 
+    /**
+     * Rejects an owned source whose file name is not a name followed by {@code .java}: every source a generation
+     * owns is a Java source, and the type it declares is read from its path.
+     */
+    static void requireJavaSource(String value, Path file) {
+        String fileName = value.substring(value.lastIndexOf('/') + 1);
+        if (!fileName.endsWith(".java") || fileName.length() == ".java".length()) {
+            throw new CodegenException(ERROR_CODE, "inventory path '" + value + "' names no Java source in " + file);
+        }
+    }
+
     static void writeStringArray(JsonWriter writer, List<String> values) throws IOException {
         writer.beginArray();
         for (String value : values) {

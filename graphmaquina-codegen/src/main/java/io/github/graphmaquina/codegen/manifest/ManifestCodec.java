@@ -35,7 +35,8 @@ import java.util.List;
  * document whose exponent lies beyond the range a {@link java.math.BigDecimal} holds, such as
  * {@code 1e99999999999}, a duplicate key at any nesting level, and an inventory path
  * ({@link CompileManifest#ownedSources()}) that no path can spell, that is absolute or has a root, that holds a
- * {@code ..} segment or that names the root itself, as {@code .} does, are all rejected with a
+ * {@code ..} segment, that names the root itself, as {@code .} does, or that is no Java source, as {@code x} is not,
+ * are all rejected with a
  * {@link CodegenException} carrying code {@code SG602} and naming the file. A genuine I/O failure
  * (the file cannot be opened, read or written) is reported as an {@link IOException} instead, exactly as declared.
  *
@@ -130,7 +131,7 @@ import java.util.List;
  *   "local": { ...an ExportIndex, as above... },
  *   "dependencies": [ { ...an ExportIndex, as above... }, ... ],
  *   "processorInventory": "<string, absolute execution path of the processor's inventory>",
- *   "ownedSources": ["<string, path relative to its source root>", ...]
+ *   "ownedSources": ["<string, path of a .java source relative to its source root>", ...]
  * }
  * }</pre>
  *
@@ -268,6 +269,7 @@ public final class ManifestCodec {
         List<String> ownedSources = JsonSupport.requireStringArray(object, "ownedSources", path);
         for (String ownedSource : ownedSources) {
             JsonSupport.requireRelativeInventoryPath(ownedSource, path);
+            JsonSupport.requireJavaSource(ownedSource, path);
         }
         return new CompileManifest(schemaVersion, toolVersion, local, dependencies, processorInventory, ownedSources);
     }
@@ -276,13 +278,14 @@ public final class ManifestCodec {
      * Writes {@code manifest} to {@code path}, in the canonical order documented on this class.
      *
      * @throws CodegenException {@code SG602} if {@link #readCompile} would refuse an owned source: one that no path
-     *     can spell, that is absolute or has a root, that holds a {@code ..} segment or that names the root itself;
-     *     nothing is written then
+     *     can spell, that is absolute or has a root, that holds a {@code ..} segment, that names the root itself or
+     *     that is no Java source; nothing is written then
      * @throws IOException if {@code path} cannot be written
      */
     public static void writeCompile(Path path, CompileManifest manifest) throws IOException {
         for (String ownedSource : manifest.ownedSources()) {
             JsonSupport.requireRelativeInventoryPath(ownedSource, path);
+            JsonSupport.requireJavaSource(ownedSource, path);
         }
         try (JsonWriter writer = JsonSupport.newWriter(path)) {
             writer.beginObject();
