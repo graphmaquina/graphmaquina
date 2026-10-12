@@ -110,9 +110,10 @@ public interface TransitionBuilder<E, S extends Enum<S>, T extends Enum<T>> {
      * read that message, for example when {@code supplyAsync} wrapped the throwable in a CompletionException. A
      * throwable from the action when it runs as a recovery action is never routed, even one a declared type accepts: an
      * Error thrown as itself propagates; the engine throws a failure of this call as itself or, when the transaction is
-     * poisoned, the failure that poisoned the transaction; and on any other throwable the engine aborts the call.
-     * {@link io.github.graphmaquina.error.TransitionAbortedException} says what aborting the call means inside a
-     * cascade.
+     * poisoned, the failure that poisoned the transaction; and on any other throwable the engine aborts the call with
+     * it as cause, holding as suppressed the throwable that selected the failure route, when a throwable selected it
+     * and is not the same one. {@link io.github.graphmaquina.error.TransitionAbortedException} says what aborting the
+     * call means inside a cascade.
      *
      * <p>{@code transition} is resolved from this edge's origin, and the recovery edge runs without its guards and
      * without consulting its own rules or {@code onFailure}. Two rules may name the same recovery, and a rule may name

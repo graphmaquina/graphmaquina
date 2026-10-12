@@ -1287,11 +1287,13 @@ final class Transaction {
     /**
      * Roll back to the savepoint, then resolve {@code recovery}, the identifier the failure selected, from the
      * original origin and run that edge without guards and without a failure route of its own. An empty
-     * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is. A call that logs
-     * at TRACE logs the route, or the unhandled failure, once the rollback is done. A call that records its trail
-     * leaves what failed on the mark of the recovery hop, which sits at the savepoint since the rollback truncated the
-     * log there, as soon as the hop is marked: before a sub-machine its target binds starts and before the recovery
-     * action runs.
+     * {@code recovery} leaves the failure unhandled. The result carries {@code failureKind} as it is. A recovery action
+     * that throws, or completes its stage with, a throwable that is neither an Error thrown as itself nor a failure of
+     * the call aborts the call with it as cause, and the abort holds {@code cause}, the original throwable, as
+     * suppressed when it is present and another one: adding it reads no message. A call that logs at TRACE logs the
+     * route, or the unhandled failure, once the rollback is done. A call that records its trail leaves what failed on
+     * the mark of the recovery hop, which sits at the savepoint since the rollback truncated the log there, as soon as
+     * the hop is marked: before a sub-machine its target binds starts and before the recovery action runs.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> StepResult<S, T> failureRoute(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, TransitionSpec<E, S, T> failing, int depth,
@@ -1342,11 +1344,15 @@ final class Transaction {
                 if (recoveryCause instanceof CallFailedException own && owns(own)) {
                     throw poisonOr(own);
                 }
-                throw abort(machine, ref, from, Optional.of(recoveryId), Optional.of(route.to()),
-                        Optional.of(action.name()), depth,
+                TransitionAbortedException aborted = unpoisonedAbort(machine, ref, from, Optional.of(recoveryId),
+                        Optional.of(route.to()), Optional.of(action.name()),
                         "the failure route action " + action.name() + " threw after the original failure ("
                                 + reason + ")",
                         Optional.of(recoveryCause));
+                if (cause.isPresent() && cause.get() != recoveryCause) {
+                    aborted.addSuppressed(cause.get());
+                }
+                throw poisonIfNested(depth, aborted);
             } catch (EngineAbort aborted) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
                 settle(ctx);

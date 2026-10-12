@@ -1563,7 +1563,9 @@ move or an action:
 Requested by an ordinary call, the same identifier runs its guards and applies its own rules. If the recovery
 fails, because it returns a failure, throws, fails its wait or runs a cascade that fails, the call aborts as that
 failure always aborts: no other rule is tried and the fallback is not used. The journal still lists the actions
-that ran, but not the kind or the cause of the first failure. A definition assembled without the DSL whose rule
+that ran, but not the kind or the cause of the first failure. When the recovery action throws, or completes its stage
+with, an exception that aborts the call, the abort also holds the exception that selected the route, if one did, as
+suppressed, unless the recovery action threw that very exception. A definition assembled without the DSL whose rule
 names an identifier with no edge from the origin aborts the call when that rule is selected, as such an
 `onFailure` does.
 
@@ -2511,7 +2513,8 @@ action throws or completes with is never routed, whatever the recovery edge decl
 propagates; the engine throws a failure of this call as itself or, when the transaction is poisoned, the failure that
 poisoned the transaction; and on any other throwable the engine aborts the call with a message composed from the
 recovery action's name and the original failure's reason, never from that throwable's string, whether or not the
-transaction is poisoned.
+transaction is poisoned. That abort carries the throwable as cause and holds as suppressed the throwable that selected
+the failure route, when a throwable selected it and is not the same one.
 
 `@GraphPeers` is for generating the vocabulary of a pair: the annotations that declare the owner's watches and
 sub-machines over the peer. A runtime peer read or cascade alone does not require a pair that no watch or

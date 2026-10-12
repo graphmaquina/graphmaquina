@@ -992,6 +992,68 @@ class AsyncRecoveryTest {
         });
     }
 
+    /** SCHEDULE_RETRY with a synchronous action that throws {@code failure}. */
+    private static UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> retryThrowing(
+            RuntimeException failure) {
+        return (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry.action("schedule retry",
+                (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                    throw failure;
+                });
+    }
+
+    /**
+     * A recovery that throws loses neither failure. PUBLISH throws a ServiceUnavailableException, which its rule
+     * routes to SCHEDULE_RETRY, whose action then throws, or completes its stage with, another exception: the call
+     * aborts with that one as cause and holds, by identity, the one that selected the route as suppressed. A recovery
+     * that rethrows the very exception that selected it leaves that exception the cause alone, and a route that a
+     * returned failure selected has no exception to keep.
+     */
+    @Test
+    void aRecoveryThatThrowsKeepsTheExceptionThatSelectedItAsSuppressed() {
+        bounded(() -> {
+            ServiceUnavailableException down = new ServiceUnavailableException("provider down");
+            IllegalStateException broken = new IllegalStateException("the scheduler is down");
+            UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> unavailableThrown =
+                    (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> RecoveryFixtures.exampleRules(
+                            publish.action("publish", (TransitionContext<Ticket, TicketState, TicketChange> ctx) -> {
+                                ctx.entity().calls.add("publish");
+                                throw down;
+                            }));
+            Map<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> retries =
+                    new LinkedHashMap<>();
+            retries.put("sync", retryThrowing(broken));
+            retries.put("async", (TransitionBuilder<Ticket, TicketState, TicketChange> retry) -> retry.asyncAction(
+                    "schedule retry", (TransitionContext<Ticket, TicketState, TicketChange> ctx) ->
+                            CompletableFuture.failedFuture(broken)));
+            for (Map.Entry<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> retry
+                    : retries.entrySet()) {
+                Ticket ticket = new Ticket(retry.getKey());
+                StateMachine<Ticket, TicketState, TicketChange> machine =
+                        machine(tickets(unavailableThrown, retry.getValue()));
+                TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
+                        () -> machine.execute(ticket, TicketChange.PUBLISH), retry.getKey());
+                assertSame(broken, error.getCause(), retry.getKey());
+                assertEquals(1, error.getSuppressed().length, retry.getKey());
+                assertSame(down, error.getSuppressed()[0], retry.getKey());
+                assertEquals(TicketState.READY, ticket.state, retry.getKey());
+            }
+
+            StateMachine<Ticket, TicketState, TicketChange> rethrowing =
+                    machine(tickets(unavailableThrown, retryThrowing(down)));
+            TransitionAbortedException same = assertThrows(TransitionAbortedException.class,
+                    () -> rethrowing.execute(new Ticket("rethrown"), TicketChange.PUBLISH));
+            assertSame(down, same.getCause());
+            assertEquals(0, same.getSuppressed().length);
+
+            StateMachine<Ticket, TicketState, TicketChange> returning =
+                    machine(tickets(unavailable(), retryThrowing(broken)));
+            TransitionAbortedException noException = assertThrows(TransitionAbortedException.class,
+                    () -> returning.execute(new Ticket("returned"), TicketChange.PUBLISH));
+            assertSame(broken, noException.getCause());
+            assertEquals(0, noException.getSuppressed().length);
+        });
+    }
+
     /**
      * The recovery edge's own hook runs once the recovery has committed and sees the committed state, while the hook
      * of the failed PUBLISH never runs. PUBLISH is asynchronous, and its stage fails while the facade's call waits.

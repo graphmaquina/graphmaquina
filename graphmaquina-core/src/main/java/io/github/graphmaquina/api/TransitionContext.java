@@ -49,7 +49,9 @@ import java.util.Optional;
  * is never routed, whatever the recovery edge declares: an Error thrown as itself propagates; the engine throws a
  * failure of this call as itself or, when the transaction is poisoned, the failure that poisoned the transaction; and
  * on any other throwable the engine aborts the call with a message composed from the recovery action's name and the
- * original failure's reason, never from that throwable's string, whether or not the transaction is poisoned.
+ * original failure's reason, never from that throwable's string, whether or not the transaction is poisoned. That
+ * abort carries the throwable as cause and holds as suppressed the throwable that selected the failure route, when a
+ * throwable selected it and is not the same one.
  * {@link io.github.graphmaquina.error.TransitionAbortedException} says what aborting the call means inside a cascade.
  */
 public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {

@@ -49,7 +49,8 @@ import lombok.Getter;
  * itself propagates; the engine throws a failure of this call as itself or, when the transaction is poisoned, the
  * failure that poisoned the transaction; and on any other throwable the engine aborts the call with a message
  * composed from the recovery action's name and the original failure's reason, never from that throwable's string,
- * whether or not the transaction is poisoned.
+ * whether or not the transaction is poisoned. That abort carries the throwable as cause and holds as suppressed the
+ * throwable that selected the failure route, when a throwable selected it and is not the same one.
  */
 @Getter
 public final class PoisonedUnitOfWorkException extends TransitionAbortedException {
