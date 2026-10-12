@@ -1150,9 +1150,10 @@ Original Java declarations and invocation names remain unchanged. If normalizati
 fails with `SG603` naming both sources: `id` / `_id` and `authorize` / `Authorize` conflict within one references
 container. A conflict with the container itself also fails; there are no underscore escapes or opaque suffixes.
 Names that cannot produce a valid nonempty Java identifier are rejected. Two generated names that differ only in
-case, such as the symbols `ApproveId` / `ApproveID` of the members `approveId` / `approveID` or the containers
-`OuterInnerRefs` / `OuterinnerRefs` of the hosts `Outer.Inner` / `Outerinner`, fail with `SG603` where a volume
-that holds their files does not tell names apart by case, since it would keep one file of the two.
+case, such as the symbols `ApproveId` / `ApproveID` of the members `approveId` / `approveID`, the containers
+`OuterInnerRefs` / `OuterinnerRefs` of the hosts `Outer.Inner` / `Outerinner` or the companions `LibraryRuntime` /
+`LIBRARYRuntime` of the sets `Library` / `LIBRARY`, fail with `SG603` where a volume that holds their files does not
+tell names apart by case, since it would keep one file of the two.
 
 A generated symbol is a compile-time reference. It is not an action instance, a dependency-injection bean or
 a reflective lookup. The facade calls the selected declaration directly, preserving the marked overload.

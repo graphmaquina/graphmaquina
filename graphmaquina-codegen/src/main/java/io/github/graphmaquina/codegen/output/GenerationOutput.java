@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.jar.JarFile;
@@ -195,9 +194,9 @@ public final class GenerationOutput {
         Map<String, List<Bootstrap.OriginalSource>> standing = new HashMap<>();
         Map<String, List<Declared>> declaring = new HashMap<>();
         for (Bootstrap.OriginalSource original : originals) {
-            standing.computeIfAbsent(caseKey(original.path()), (String key) -> new ArrayList<>()).add(original);
+            standing.computeIfAbsent(CaseFolding.key(original.path()), (String key) -> new ArrayList<>()).add(original);
             for (String type : original.types()) {
-                declaring.computeIfAbsent(caseKey(type), (String key) -> new ArrayList<>())
+                declaring.computeIfAbsent(CaseFolding.key(type), (String key) -> new ArrayList<>())
                         .add(new Declared(type, original.origin()));
             }
         }
@@ -205,8 +204,9 @@ public final class GenerationOutput {
         for (GeneratedSource source : sources) {
             String relative = source.qualifiedName().replace('.', '/') + ".java";
             requireNoOriginal(source.qualifiedName(), relative, directories,
-                    standing.getOrDefault(caseKey(relative), List.of()),
-                    declaring.getOrDefault(caseKey(source.qualifiedName()), List.of()), request.classesOutput());
+                    standing.getOrDefault(CaseFolding.key(relative), List.of()),
+                    declaring.getOrDefault(CaseFolding.key(source.qualifiedName()), List.of()),
+                    request.classesOutput());
             Path target = request.sourcesOutput().resolve(relative);
             if (!writesUnder(request.sourcesOutput(), target)) {
                 throw new CodegenException(COLLISION, "the generated type " + source.qualifiedName()
@@ -356,7 +356,7 @@ public final class GenerationOutput {
                     + " is already declared by the original source " + declared.origin());
             }
         }
-        if (!declaring.isEmpty() && foldsCase(classesOutput)) {
+        if (!declaring.isEmpty() && CaseFolding.folds(classesOutput)) {
             Declared declared = declaring.get(0);
             throw new CodegenException(COLLISION, "the generated type " + qualifiedName + " differs only in case"
                 + " from " + declared.type() + ", which the original source " + declared.origin() + " declares,"
@@ -380,7 +380,7 @@ public final class GenerationOutput {
             List<SymbolDescriptor> symbols) throws IOException {
         Map<String, String> types = new HashMap<>();
         for (GeneratedSource source : sources) {
-            String previous = types.putIfAbsent(caseKey(source.qualifiedName()), source.qualifiedName());
+            String previous = types.putIfAbsent(CaseFolding.key(source.qualifiedName()), source.qualifiedName());
             if (previous == null || previous.equals(source.qualifiedName())) {
                 continue;
             }
@@ -389,7 +389,7 @@ public final class GenerationOutput {
             volumes.put("the work directory ", request.workDirectory());
             volumes.put("the class output ", request.classesOutput());
             for (Map.Entry<String, Path> volume : volumes.entrySet()) {
-                if (foldsCase(volume.getValue())) {
+                if (CaseFolding.folds(volume.getValue())) {
                     throw new CodegenException(COLLISION, "the generated types " + previous + " and "
                         + source.qualifiedName() + " differ only in case, and the volume of " + volume.getKey()
                         + volume.getValue() + " does not tell their files apart");
@@ -398,9 +398,9 @@ public final class GenerationOutput {
         }
         Map<String, SymbolDescriptor> nested = new HashMap<>();
         for (SymbolDescriptor symbol : symbols) {
-            SymbolDescriptor previous = nested.putIfAbsent(caseKey(symbol.qualifiedName()), symbol);
+            SymbolDescriptor previous = nested.putIfAbsent(CaseFolding.key(symbol.qualifiedName()), symbol);
             if (previous != null && !previous.qualifiedName().equals(symbol.qualifiedName())
-                    && foldsCase(request.classesOutput())) {
+                    && CaseFolding.folds(request.classesOutput())) {
                 throw new CodegenException(COLLISION, "the generated symbols " + previous.qualifiedName() + ", of "
                     + member(previous) + ", and " + symbol.qualifiedName() + ", of " + member(symbol)
                     + ", differ only in case, and the volume of the class output " + request.classesOutput()
@@ -417,52 +417,6 @@ public final class GenerationOutput {
     /** The directories of {@code path}, a path separated by {@code /}, with the last separator; empty for none. */
     private static String directories(String path) {
         return path.substring(0, path.lastIndexOf('/') + 1);
-    }
-
-    /**
-     * {@code name} with every character in one case, as {@link String#equalsIgnoreCase} compares characters, so
-     * two names that differ only in case have the same key.
-     */
-    private static String caseKey(String name) {
-        StringBuilder key = new StringBuilder(name.length());
-        name.codePoints().forEach((int codePoint) ->
-                key.appendCodePoint(Character.toLowerCase(Character.toUpperCase(codePoint))));
-        return key.toString();
-    }
-
-    /**
-     * Whether the volume of {@code classesOutput} does not tell names apart by case. The class output, or while it
-     * does not exist the nearest directory above it that does, is looked up under its own name with one letter in
-     * the other case, going further up while a name has no letter that has another case; the volume does not tell
-     * names apart when that lookup finds the very same directory. The directory asked is therefore the one that
-     * holds the directory looked up: the parent of the class output, or of the existing ancestor looked up instead.
-     */
-    private static boolean foldsCase(Path classesOutput) throws IOException {
-        Path probed = classesOutput.toAbsolutePath().normalize();
-        while (probed != null) {
-            Path name = probed.getFileName();
-            if (name != null && Files.exists(probed)) {
-                Optional<String> otherCase = otherCase(name.toString());
-                if (otherCase.isPresent()) {
-                    Path other = probed.resolveSibling(otherCase.get());
-                    return Files.exists(other) && Files.isSameFile(other, probed);
-                }
-            }
-            probed = probed.getParent();
-        }
-        return false;
-    }
-
-    /** {@code name} with its first letter that has another case in that case; empty when no letter has one. */
-    private static Optional<String> otherCase(String name) {
-        for (int index = 0; index < name.length(); index++) {
-            char letter = name.charAt(index);
-            char other = Character.isUpperCase(letter) ? Character.toLowerCase(letter) : Character.toUpperCase(letter);
-            if (other != letter) {
-                return Optional.of(name.substring(0, index) + other + name.substring(index + 1));
-            }
-        }
-        return Optional.empty();
     }
 
     /**

@@ -3,7 +3,13 @@ package io.github.graphmaquina.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import javax.tools.Diagnostic;
@@ -76,6 +82,51 @@ class GeneratedNamingTest {
         assertTrue(refusal.getSource().getName().endsWith("_Library.java"), refusal.getSource().getName());
         String companion = result.generated("fx.LibraryRuntime");
         assertTrue(companion.contains("public final class LibraryRuntime implements Library"), companion);
+    }
+
+    /**
+     * Two sets whose companions differ only in case, {@code LibraryRuntime} and {@code LIBRARYRuntime}, would have one
+     * companion file, and one class file, on a volume that does not tell names apart by case, where javac writes the
+     * second companion over the first. There the second set is refused, naming both, and the first keeps its
+     * companion. Its interface is declared in a file of another name, as two such interfaces of one package must be
+     * on such a volume.
+     */
+    @Test
+    void setsWhoseRuntimesDifferOnlyInCaseAreRefusedOnACaseInsensitiveVolume() throws IOException {
+        assumeTrue(caseInsensitiveTemporaryVolume(), "only a case-insensitive volume holds two such files as one");
+        Map<String, String> sources = TypedFixtures.minimal();
+        sources.put("fx.Library", LIBRARY);
+        sources.put("fx.Sets", """
+                package fx;
+                import io.github.graphmaquina.annotation.StateGraphs;
+                import io.github.graphmaquina.api.Machines;
+                final class Sets { }
+                @StateGraphs interface LIBRARY extends Machines { Docs docs(); }
+                """);
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertEquals(List.of("[SG603] the generated runtimes fx.LibraryRuntime of fx.Library and fx.LIBRARYRuntime of"
+                + " fx.LIBRARY differ only in case, and the volume of the generated sources "
+                + result.output().toRealPath() + " does not tell their files apart"), result.errors(),
+                result.describe());
+        String companion = result.generated("fx.LibraryRuntime");
+        assertTrue(companion.contains("public final class LibraryRuntime implements Library"), companion);
+    }
+
+    /** On a volume that tells names apart by case, the same two sets each get their own companion. */
+    @Test
+    void setsWhoseRuntimesDifferOnlyInCaseBothCompileOnACaseSensitiveVolume() throws IOException {
+        assumeFalse(caseInsensitiveTemporaryVolume(), "only a case-sensitive volume tells both names apart");
+        Map<String, String> sources = TypedFixtures.minimal();
+        sources.put("fx.Library", LIBRARY);
+        sources.put("fx.LIBRARY", LIBRARY.replace("interface Library ", "interface LIBRARY "));
+
+        Compilation.Result result = Compilation.compileTyped(sources);
+
+        assertTrue(result.success(), result.describe());
+        assertEquals("fx.LibraryRuntime", result.load("fx.LibraryRuntime").getName());
+        assertEquals("fx.LIBRARYRuntime", result.load("fx.LIBRARYRuntime").getName());
     }
 
     @Test
@@ -449,6 +500,21 @@ class GeneratedNamingTest {
                 }
                 """.formatted(members, action, parameters));
         return sources;
+    }
+
+    /**
+     * Whether the volume of the temporary directory, where every compilation of these tests lays out its project,
+     * finds a file under a name that differs from the one it was written with in case.
+     */
+    private static boolean caseInsensitiveTemporaryVolume() throws IOException {
+        Path directory = Files.createTempDirectory("graphmaquina-case-");
+        try {
+            Files.writeString(directory.resolve("case-probe"), "", StandardCharsets.UTF_8);
+            return Files.exists(directory.resolve("CASE-PROBE"));
+        } finally {
+            Files.deleteIfExists(directory.resolve("case-probe"));
+            Files.delete(directory);
+        }
     }
 
     @Test

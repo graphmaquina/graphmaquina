@@ -8,6 +8,7 @@ import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GraphDescriptor;
 import io.github.graphmaquina.codegen.model.SymbolDescriptor;
+import io.github.graphmaquina.codegen.output.CaseFolding;
 import io.github.graphmaquina.processor.gen.BoundInvocation;
 import io.github.graphmaquina.processor.gen.Emitted;
 import io.github.graphmaquina.processor.gen.MachineGenerator;
@@ -16,6 +17,7 @@ import io.github.graphmaquina.processor.model.MachineModel;
 import io.github.graphmaquina.processor.model.SetModel;
 import java.io.IOException;
 import java.io.Writer;
+import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
@@ -39,6 +41,8 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
+import javax.tools.FileObject;
+import javax.tools.StandardLocation;
 
 /**
  * Entry point. Claims the annotations {@link ManifestRegistry} enumerates for this compilation, the fixed ones
@@ -62,12 +66,13 @@ import javax.lang.model.type.TypeMirror;
  * of the whole compilation, but not its validation: every other declaration is still checked, and only a machine
  * that uses such an export is left out without a word of its own. A generated name an existing type already
  * takes is a collision, unless that type is this processor's own output of a previous compilation that the build
- * did not retire, which is reported as such; and a facade or a set whose companion would write a name that a
- * type or a field of the companion's scope takes is refused, as {@link CompanionScope} decides, before its
- * companion is written. A refused declaration withholds only what depends on it: its own companion and, for a
- * machine, the companion of a set that holds it. The round goes on, and every declaration of it is still checked.
- * A type that a later round brings into the package of a companion already written, and that takes a name the
- * companion writes, is reported at that companion's facade or set.</p>
+ * did not retire, which is reported as such. Two companion names that differ only in case are a collision too where
+ * the volume of the companions' sources or of the class output does not tell names apart; and a facade or a set
+ * whose companion would write a name that a type or a field of the companion's scope takes is refused, as
+ * {@link CompanionScope} decides, before its companion is written. A refused declaration withholds only what depends
+ * on it: its own companion and, for a machine, the companion of a set that holds it. The round goes on, and every
+ * declaration of it is still checked. A type that a later round brings into the package of a companion already
+ * written, and that takes a name the companion writes, is reported at that companion's facade or set.</p>
  *
  * <p>Only a machine some round hands to this processor gets a companion. javac hands none of the sources it
  * compiles implicitly, from the source path, so a set that holds such a machine of this compilation is reported
@@ -103,6 +108,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private Set<String> generated;
     private Set<String> verified;
     private final Map<String, TypeElement> runtimeOrigins = new LinkedHashMap<>();
+    private final Map<String, String> runtimeCases = new LinkedHashMap<>();
 
     @Override
     public Set<String> getSupportedOptions() {
@@ -192,10 +198,12 @@ public final class StateGraphProcessor extends AbstractProcessor {
     /**
      * Reserves the normalized runtime names of this round's top-level declarations before any source of the round is
      * written. A declaration is refused, at the declaration itself, when its simple name does not normalize to a
-     * runtime name, when another declaration or an existing type takes that name already, or when its companion
-     * would take a name that a companion written in an earlier round writes. A refused declaration is still
-     * checked like every other declaration of the round, so all their problems are reported together, but its
-     * companion is never written, nor is the companion of a set that holds it, which would name that companion.
+     * runtime name, when another declaration or an existing type takes that name already, when the companion name of
+     * another declaration differs from it only in case and the volume of the companions' sources or of the class
+     * output does not tell names apart, which would hold the two companions, or their class files, as one file, or
+     * when its companion would take a name that a companion written in an earlier round writes. A refused declaration
+     * is still checked like every other declaration of the round, so all their problems are reported together, but
+     * its companion is never written, nor is the companion of a set that holds it, which would name that companion.
      *
      * <p>The existing type is looked up by the companion's qualified name as javac's {@code Filer} looks up a type
      * it is asked to create, so a member type whose canonical name that is takes the name too, as one nested in a
@@ -231,6 +239,16 @@ public final class StateGraphProcessor extends AbstractProcessor {
                 }
                 continue;
             }
+            String twin = runtimeCases.putIfAbsent(CaseFolding.key(name), name);
+            Optional<String> volume = twin == null ? Optional.empty() : caseBlindVolume();
+            if (volume.isPresent()) {
+                diagnostics.error("SG603", "the generated runtimes " + twin + " of "
+                        + runtimeOrigins.get(twin).getQualifiedName() + " and " + name + " of "
+                        + type.getQualifiedName() + " differ only in case, and the volume of " + volume.get()
+                        + " does not tell their files apart", type);
+                refused.add(declared);
+                continue;
+            }
             TypeElement existing = processingEnv.getElementUtils().getTypeElement(name);
             if (existing == null) {
                 if (!scope.admitsLater(type, name)) {
@@ -249,6 +267,30 @@ public final class StateGraphProcessor extends AbstractProcessor {
                         + " conflicts with existing type " + existing.getQualifiedName(), type);
             }
         }
+    }
+
+    /**
+     * The first output of the companions whose volume does not tell names apart by case, named as a diagnostic names
+     * it: the output of their sources, then the class output, each the directory the {@code Filer} resolves a file of
+     * the unnamed package in. Empty when each tells names apart, and for an output that is no directory of the
+     * default file system or that cannot be examined, as one a file manager keeps in memory.
+     */
+    private Optional<String> caseBlindVolume() {
+        Map<String, StandardLocation> outputs = new LinkedHashMap<>();
+        outputs.put("the generated sources ", StandardLocation.SOURCE_OUTPUT);
+        outputs.put("the class output ", StandardLocation.CLASS_OUTPUT);
+        for (Map.Entry<String, StandardLocation> output : outputs.entrySet()) {
+            try {
+                FileObject probe = processingEnv.getFiler().getResource(output.getValue(), "", "graphmaquina-case");
+                Path directory = Path.of(probe.toUri()).getParent();
+                if (directory != null && CaseFolding.folds(directory)) {
+                    return Optional.of(output.getKey() + directory);
+                }
+            } catch (IOException | IllegalArgumentException | FileSystemNotFoundException | SecurityException unknown) {
+                // An output that is no directory, or that cannot be examined, is not known to hold two names as one.
+            }
+        }
+        return Optional.empty();
     }
 
     /**
