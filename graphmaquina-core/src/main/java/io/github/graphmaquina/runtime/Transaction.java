@@ -77,6 +77,12 @@ final class Transaction {
     private Optional<RootStep> rootStep = Optional.empty();
     /** The log of the call: {@link CallLog#OFF} when the call found both levels off. */
     private final CallLog log;
+    /**
+     * Set by the first statement of the catch of every cascade, with a store, which needs neither stack nor memory: a
+     * cascade of the call failed, and what it failed with may not be the poison yet. {@link #settle} records it.
+     * COLLECT clears it, with the poison, when it collects the abort of an element.
+     */
+    private boolean condemned;
 
     Transaction(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
                 Optional<Enum<?>> requested, boolean reaction, Optional<MachineCall> call, CallLog log) {
@@ -985,6 +991,7 @@ final class Transaction {
             outcome = executeAction(machine, ref, transition, action, ctx);
         } catch (ActionFailure failure) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
+            settle(ctx);
             Throwable cause = failure.getCause();
             if (cause instanceof CallFailedException own && owns(own)) {
                 throw poisonOr(own);
@@ -1005,10 +1012,12 @@ final class Transaction {
                     "the action " + action.name() + " threw " + Texts.shown(cause), Optional.of(cause));
         } catch (CallFailedException e) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
+            settle(ctx);
             // Reaching here: a null stage or outcome, a wait that timed out, was interrupted or was refused, or a
             // CallFailedException that a hand-written stage's handle throws.
             throw poisonOr(e);
         }
+        settle(ctx);
         if (uow.isPoisoned()) {
             uow.journalStatus(journalIndex, ActionStatus.THREW);
             throw uow.poison().orElseThrow();
@@ -1308,6 +1317,7 @@ final class Transaction {
                 outcome = executeAction(machine, ref, route, action, ctx);
             } catch (ActionFailure failure) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
+                settle(ctx);
                 Throwable recoveryCause = failure.getCause();
                 if (recoveryCause instanceof CallFailedException own && owns(own)) {
                     throw poisonOr(own);
@@ -1319,9 +1329,11 @@ final class Transaction {
                         Optional.of(recoveryCause));
             } catch (CallFailedException e) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
+                settle(ctx);
                 // Reaching here: what reaches the same catch in runAction.
                 throw poisonOr(e);
             }
+            settle(ctx);
             if (uow.isPoisoned()) {
                 uow.journalStatus(journalIndex, ActionStatus.THREW);
                 throw uow.poison().orElseThrow();
@@ -1535,7 +1547,8 @@ final class Transaction {
      * refuses a null argument before calling this: such a refusal stages nothing and poisons nothing. Once the cascade
      * starts, any failure poisons the UnitOfWork: the parent cannot carry on as if nothing happened. The action
      * receives the failure of this call as it is, or else the new abort, as {@link #poisonWith} says, and an Error as
-     * itself.
+     * itself. A VirtualMachineError, a StackOverflowError or an OutOfMemoryError for one, leaves at once, unrecorded:
+     * {@link #settle} records it once the action goes on.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(ContextHandle caller, MachineKey<P, Q, U> key,
                                                                        P peer, U id) {
@@ -1554,6 +1567,12 @@ final class Transaction {
         try {
             return cascadeOne(caller, key, peer, id, policy);
         } catch (Throwable error) {
+            // First a store, which cannot overflow: whatever the rest of this catch throws, a cascade failed.
+            condemned = true;
+            if (error instanceof VirtualMachineError fatal) {
+                // Recording it would need the stack or the memory that ran out; settle records it.
+                throw fatal;
+            }
             CallFailedException poisoned = poisonWith(caller, key.toString(), error);
             if (error instanceof Error fatal) {
                 throw fatal;
@@ -1573,8 +1592,9 @@ final class Transaction {
      * Poisons the transaction with a failure that left a cascade, and returns the failure of this call as it is, or
      * else the new abort. A failure of this call is itself the poison. Anything else, an engine exception that
      * describes no call, a throwable from a callback the engine does not wrap such as an identity function, a library
-     * exception of another call or an Error, poisons through an abort of the caller's step that names the cascade and
-     * carries it as cause; COLLECT never collects that abort. A transaction keeps its first poison. An Error poisons
+     * exception of another call or an Error other than a VirtualMachineError, which the cascades let through before
+     * they call this, poisons through an abort of the caller's step that names the cascade and carries it as cause;
+     * COLLECT never collects that abort. A transaction keeps its first poison. An Error poisons
      * without a TRACE line: the cascade rethrows it as itself, and no line follows an Error that ends a call. The abort
      * prints the failure and the entities in flight through {@link Texts#shown} and {@link EntityRef#toString()}, so
      * one that cannot be printed shows a marker; when printing them throws an Error, the transaction is first poisoned
@@ -1694,7 +1714,9 @@ final class Transaction {
      * the failed one, and at the end poisons with the aggregate. It is the only place that clears the poison.
      * COLLECT gathers the aborts of the call only: any other failure poisons, through an abort that carries it, and
      * stops the cascade at once, a nested one too, once an element's step was poisoned through such an abort, whether
-     * its action let it through, caught it or replaced it.
+     * its action let it through, caught it or replaced it. A VirtualMachineError stops it at once too, as itself and
+     * unrecorded, as a single cascade lets it through, and so does the abort of an element's step that recorded one
+     * its action caught.
      * Once the poison is checked, the collection is copied, and every later step reads the copy alone: the elements
      * checked are the elements run, and a change to the collection while the cascade runs, by an element's action for
      * instance, changes neither which elements run nor their order. Copying is part of accepting the arguments: an
@@ -1773,6 +1795,11 @@ final class Transaction {
                 }
                 outcomes.add(cascadeTo(caller, machine, ref, peer, id, traced));
             } catch (Throwable error) {
+                // As in cascade: a store first, then a VirtualMachineError leaves as itself.
+                condemned = true;
+                if (error instanceof VirtualMachineError fatal) {
+                    throw fatal;
+                }
                 if (error instanceof TransitionAbortedException abort && owns(abort)
                         && !uow.poisonWrapsAForeignFailure()) {
                     poisonAt(caller.contextDepth(), abort);
@@ -1792,6 +1819,7 @@ final class Transaction {
                     }
                     errors.add(abort);
                     uow.clearPoison();
+                    condemned = false;
                     continue;
                 }
                 CallFailedException poisoned = poisonWith(caller, key.toString(), error);
@@ -1841,8 +1869,24 @@ final class Transaction {
     }
 
     private void checkPoison(ContextHandle caller) {
+        settle(caller);
         if (uow.isPoisoned()) {
             throw new PoisonedUnitOfWorkException(call(), details(caller), uow.poison().orElseThrow());
+        }
+    }
+
+    /**
+     * Records a failed cascade that left no poison, as an abort of {@code caller}'s step that carries no cause: a
+     * VirtualMachineError that the cascade let through unrecorded, or a failure whose recording overflowed the stack,
+     * which the step's action caught and went on from. The engine calls this on that step's own stack, unwound from
+     * the Error, before it reads or stores a poison there: before it checks the poison for a peer read or a cascade,
+     * and first when the action ends, unless an Error it throws as itself ends it. The abort is a failure that is no
+     * failure of the call, so COLLECT does not collect it, and a poison already stored stays: the call keeps its first.
+     */
+    private void settle(ContextHandle caller) {
+        if (condemned && !uow.isPoisoned()) {
+            uow.poisonWrapping(new TransitionAbortedException(call(), phase, details(caller),
+                    "the action caught an Error that ended one of its cascades: the call cannot commit"));
         }
     }
 }

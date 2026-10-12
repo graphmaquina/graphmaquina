@@ -65,7 +65,8 @@ final class UnitOfWork {
 
     /**
      * Whether the poison is an abort that wraps what is not a failure of this call, such as a peer's null state, an
-     * unknown machine or an Error. COLLECT never collects such an abort: it stops at once.
+     * unknown machine or an Error, or that stands for an Error the call did not record when it struck, such as a
+     * StackOverflowError. COLLECT never collects such an abort: it stops at once.
      */
     private boolean poisonWrapsAForeignFailure;
     /** Whether a start was ever appended: until one is, every entry of the log is a hop. */
@@ -399,7 +400,7 @@ final class UnitOfWork {
         }
     }
 
-    /** Poisons with an abort that wraps what is not a failure of this call, if nothing poisoned yet. */
+    /** Poisons with an abort that wraps, or stands for, what is not a failure of this call, if nothing poisoned yet. */
     void poisonWrapping(StateMachineException abort) {
         if (poison.isEmpty()) {
             poison = Optional.of(abort);

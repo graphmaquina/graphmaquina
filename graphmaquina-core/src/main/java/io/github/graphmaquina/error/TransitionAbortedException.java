@@ -24,7 +24,9 @@ import lombok.Getter;
  * calling thread, it propagates unchanged rather than as this exception. It becomes the cause of one only when it did
  * not reach the engine as itself: when it completed the stage of an asynchronous action or guard, when a guard or an
  * action threw it wrapped in CompletionException or ExecutionException, or when an action swallowed it from a cascade
- * and the poison it left aborted the root.
+ * and the poison it left aborted the root. A VirtualMachineError, a StackOverflowError or an OutOfMemoryError for one,
+ * that an action swallowed from a cascade is the cause of none: the poison it leaves is an abort of the step whose
+ * action swallowed it, with no cause, and with a message that says so.
  *
  * <p>Where this library's documentation says that a step aborts, that something aborts the call, that the call aborts,
  * or that the call ends in this exception or one of its subclasses, the engine throws this exception, or a subclass,

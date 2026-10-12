@@ -2441,7 +2441,13 @@ abort of a nested step goes. Anything else reaches your action as a `TransitionA
 and carries the failure as its cause: an engine exception that describes no call, such as an unknown machine or an
 ambiguous identity, or a throwable other than an `Error` from a callback the engine does not wrap, such as an identity
 function. An `Error` poisons through such an abort too, but reaches your action as itself, with any `Error` that
-printing it threw as suppressed. Catching it in your action
+printing it threw as suppressed. A `VirtualMachineError`, such as a `StackOverflowError` or an `OutOfMemoryError`,
+reaches your action at once, before that abort exists, since building it could need the stack or the memory that ran
+out. If your action catches it and goes on, the engine records the poison on your action's step, once the stack has
+unwound to it: as soon as your action reads a peer or cascades again, which then throws a
+`PoisonedUnitOfWorkException`, and at the latest when it ends, unless an `Error` it throws as itself ends it, which
+propagates. That poison is a `TransitionAbortedException` that names your action's step and carries no cause, and a
+transaction that was poisoned before keeps its first poison. Catching an `Error` in your action
 does not make the transaction safe to commit. Once the engine has your action's outcome, it throws the failure that
 poisoned the transaction instead of applying it. It does the same for a failure of the call that your action throws or
 completes its stage with, and, unless the action is a recovery action, for a throwable that its `failsOn` or one of its

@@ -487,7 +487,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   before any element runs, and an unknown machine even over an empty collection; an unknown facade in a cascade poisons
   like an unknown key. What poisons without being a failure of the call, an unknown machine or facade, an ambiguous
   identity, a null peer state, reaches the action as an abort that carries it. The transaction is poisoned; the
-  `PoisonedUnitOfWorkException` Javadoc says what the engine throws when the action ends.
+  `PoisonedUnitOfWorkException` Javadoc says what the engine throws when the action ends. A `StackOverflowError`,
+  an `OutOfMemoryError` or another `VirtualMachineError` reaches the action at once; if the action catches it, the
+  poison is an abort of the action's step that carries no cause.
 - **`cascadeAll` reads its collection once.** It copies the collection before any element runs, so elements
   added or removed while the cascade runs change neither which elements run nor their order. It used to fail with
   a `ConcurrentModificationException` of its own iteration or stop early, which could let the root commit a
