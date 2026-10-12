@@ -4037,9 +4037,14 @@ identifier belongs, or a constant of another machine's catalogue, is refused by 
 code runs. A mistyped generated symbol, such as `DocActionsRefs.Publsh.class`, is javac's alone to refuse too, as
 `cannot find symbol` once annotation processing is over: the processor still reports every other problem of that
 machine's declarations, but none about its graph as a whole, and generates no companion for it. A class another
-annotation processor generates can still be named, such as an exception in `failsOn`: the processor builds that
-machine, and a set that holds it, in the round that brings the class. The values of annotations GraphMaquina does not
-own are left to javac, so an annotation of your own on a facade may even name the machine's companion.
+annotation processor generates can still be named, such as an exception in `failsOn`, and so can a constant it
+declares, such as the text of a policy, the reason of a rejection or the seconds of a timeout: the processor builds
+that machine, and a set that holds it, in the round that brings the class, and a constant no round resolves is
+javac's alone to refuse, like a mistyped symbol. javac refuses such a constant before any processor runs, as
+`expression not allowed as annotation value`, in an annotation repeated without its container: list those
+annotations in their container instead, such as `@DocsGraph.StatePolicies({...})`. The values of annotations
+GraphMaquina does not own are left to javac, so an annotation of your own on a facade may even name the machine's
+companion.
 
 ### Graph and declaration diagnostics
 

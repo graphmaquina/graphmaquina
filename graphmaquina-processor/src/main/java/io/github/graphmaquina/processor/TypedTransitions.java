@@ -35,8 +35,8 @@ import javax.lang.model.type.TypeMirror;
  * rule's transition leaves every origin of the edge is a question about the whole graph, which its outline answers.
  * A rule whose kind or transition javac hands over unread is left out, since javac has already refused it: an
  * unresolved kind class reaches the processor this way. An unresolved transition constant does not, because javac stops
- * before annotation processing when a constant cannot be resolved. Unreadable class values are omitted from both an
- * edge's own failsOn and each rule's failsOn; retained types and annotation values stay aligned.</p>
+ * before annotation processing when an enum constant cannot be resolved. Unreadable class values are omitted from
+ * both an edge's own failsOn and each rule's failsOn; retained types and annotation values stay aligned.</p>
  */
 final class TypedTransitions {
 

@@ -82,16 +82,16 @@ import javax.tools.StandardLocation;
  * compiles implicitly, from the source path, so a set that holds such a machine of this compilation is reported
  * and gets no companion either, and an index that names one is not published.</p>
  *
- * <p>A class literal javac could not resolve yet may name a type a later round brings: one another processor
- * generates, or a companion this one writes. javac hands such a value to the processor unread, resolves it in the
- * round that brings that type, and reports it once processing is over only if no round did. The values of an
- * annotation this processor does not claim, the application's or another tool's, are never read, so they never
- * hold a machine back, even where they name its own companion. A machine some round handed whose own
- * declarations, on the facade or on one of its members, hold such a value waits instead, by name, for the first
- * round that resolves it, and is built and generated in that round; so does a set that holds it. A value the round
- * that ends processing still finds unresolved is javac's alone to refuse: that machine is then built like a machine
- * whose vocabulary is misplaced, every other problem of its declarations is reported, but nothing is concluded from
- * its graph as a whole, which misses what that value declares, and neither it nor a set that holds it gets a
+ * <p>A value javac could not resolve yet, a class literal or a constant that gives a text or a number, may name a type
+ * a later round brings: one another processor generates, or a companion this one writes. javac hands such a value to
+ * the processor unread, resolves it in the round that brings that type, and reports it once processing is over only if
+ * no round did. The values of an annotation this processor does not claim, the application's or another tool's, are
+ * never read, so they never hold a machine back, even where they name its own companion. A machine some round handed
+ * whose own declarations, on the facade or on one of its members, hold such a value waits instead, by name, for the
+ * first round that resolves it, and is built and generated in that round; so does a set that holds it. A value the
+ * round that ends processing still finds unresolved is javac's alone to refuse: that machine is then built like a
+ * machine whose vocabulary is misplaced, every other problem of its declarations is reported, but nothing is concluded
+ * from its graph as a whole, which misses what that value declares, and neither it nor a set that holds it gets a
  * companion; nor is the index, which names it, published.</p>
  */
 public final class StateGraphProcessor extends AbstractProcessor {
@@ -452,10 +452,13 @@ public final class StateGraphProcessor extends AbstractProcessor {
 
     /**
      * Whether a declaration of {@code type}, on the facade or on one of its members, holds a value of an annotation
-     * this processor claims that javac has not resolved, nested annotations and arrays included. javac hands such a
-     * value to the processor as the text of an error, a string where its element declares something else, enters
-     * every source again in the next round, where the value names a type that round brought, and reports it once
-     * processing is over if none did. The values of any other annotation are never read: no model is built from them.
+     * this processor claims that javac has not resolved, nested annotations and arrays included: a class literal, or
+     * a constant that gives a text or a number. javac hands such a value to the processor as the text of an error: a
+     * string where its element declares something else, or, where its element declares a string, one whose source
+     * form, which {@link AnnotationValue#toString()} returns, is not a string literal, so a text that reads like that
+     * error is still a text. javac enters every source again in the next round, where the value names a type that
+     * round brought, and reports it once processing is over if none did. The values of any other annotation are never
+     * read: no model is built from them.
      */
     private boolean holdsUnresolvedValue(TypeElement type) {
         if (unresolved(type)) {
@@ -493,7 +496,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private static boolean unresolved(TypeMirror declared, AnnotationValue value) {
         return switch (value.getValue()) {
             case String text -> !(declared instanceof DeclaredType type
-                    && ((TypeElement) type.asElement()).getQualifiedName().contentEquals("java.lang.String"));
+                    && ((TypeElement) type.asElement()).getQualifiedName().contentEquals("java.lang.String"))
+                    || !value.toString().startsWith("\"");
             case AnnotationMirror nested -> unresolved(nested);
             case List<?> values -> declared instanceof ArrayType array && values.stream()
                     .anyMatch((Object item) -> unresolved(array.getComponentType(), (AnnotationValue) item));
