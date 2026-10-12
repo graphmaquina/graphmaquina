@@ -39,6 +39,7 @@ import org.junit.jupiter.api.Test;
 class HookContextRetentionTest {
 
     private static final FlowKey<Object> LARGE = FlowKey.of("large", Object.class);
+    private static final FlowKey<String> BETWEEN = FlowKey.of("between", String.class);
 
     /** Whether the referent of {@code weak} is collected within a few full collections. */
     private static boolean collected(WeakReference<Object> weak) throws InterruptedException {
@@ -76,7 +77,10 @@ class HookContextRetentionTest {
                     .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
                         Object large = new byte[8_000_000];
                         written.add(new WeakReference<>(large));
+                        // A write of another key in between keeps the put in the log: a remove right after it
+                        // would replace it in place, and the value would be gone before the hook runs.
                         ctx.flow().put(LARGE, large);
+                        ctx.flow().put(BETWEEN, "between");
                         ctx.flow().remove(LARGE);
                         return ActionOutcome.ok();
                     })
