@@ -2789,6 +2789,37 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * javac takes the last {@code --release} it is given, and maven-compiler-plugin passes the release it is configured
+     * with ahead of the compiler arguments, so a {@code --release} compiler argument is the release javac compiles at.
+     * The {@code generate} goal checks that release and the request carries it: a {@code --release 17} argument beside
+     * {@code <release>21</release>} is refused before the request is written, naming the argument and what fixes it,
+     * and a {@code --release=21} argument beside {@code <release>17</release>} is accepted, the request carrying 21.
+     * Only the generation runs, so no javac does.
+     */
+    @Test
+    void aReleaseCompilerArgumentWinsOverTheConfiguredRelease() throws IOException {
+        String goal = "io.github.graphmaquina:graphmaquina-maven-plugin:" + VERSION + ":generate";
+        MavenFixture lowered = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("lowered")),
+                fixtureRepository);
+        addMainCompilerArguments(lowered, "<arg>--release</arg><arg>17</arg>");
+        MavenFixture raised = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("raised")),
+                fixtureRepository);
+        raised.editPom("<release>21</release>", "<release>17</release>");
+        addMainCompilerArguments(raised, "<arg>--release=21</arg>");
+
+        MavenResult refused = lowered.run(goal);
+        MavenResult accepted = raised.run(goal);
+
+        assertNotEquals(0, refused.exitCode(), refused.output());
+        assertTrue(refused.output().contains("the default-compile execution of maven-compiler-plugin compiles with the"
+                + " compiler argument --release 17, but the vocabulary the StateGraph generator emits needs Java 21 or"
+                + " later. Give that argument a release of 21 or later, or remove it."), refused.output());
+        assertFalse(lowered.exists("target/graphmaquina/main/request.json"));
+        assertEquals(0, accepted.exitCode(), accepted.output());
+        assertEquals("21", raised.requestValue("main", "release"));
+    }
+
+    /**
      * The {@code generate-test} goal checks the release of the test compilation alone: a {@code <testRelease>} of
      * Java 21 is what the test compilation compiles at, whatever older release the main compilation is configured
      * with, and so is a {@code <testTarget>} of Java 21 over an older {@code <target>}. The {@code generate-test}

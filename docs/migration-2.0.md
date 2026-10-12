@@ -674,7 +674,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   them, as far as that can be told when the checks run, `${settings.localRepository}` for instance, and one that is
   a single expression Maven turns into nothing, such as `${project.file}`, is left out, as javac never gets it; an
   `-encoding` compiler argument names the encoding the generator reads in wherever javac reads in it: when no
-  encoding is configured, and when the compiler forks javac, which takes the last `-encoding`; and on Windows a
+  encoding is configured, and when the compiler forks javac, which takes the last `-encoding`; a `--release`
+  compiler argument beside a configured release is the release checked and passed to the generator, as javac
+  takes the last `--release`; and on Windows a
   `javaExecutable` without an extension stands for the `.exe` beside it.
 - **Maven: paths.** A relative manifest path is resolved where javac runs, in the directory Maven was started in
   or, for a forked javac, in the project directory, so a module of a build started from its parent is refused

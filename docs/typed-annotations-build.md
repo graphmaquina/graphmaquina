@@ -544,15 +544,18 @@ Ant's shorter default list instead, so a `.java` file under such a root inside a
 read by the generator although javac never compiles it. Symbolic links are followed, and a link that leads back
 into a directory being walked is skipped.
 
-The request also carries the release the compiler compiles at, `<release>`, else `<target>`, or their
-properties, with the test settings for the test compilation, and the encoding javac reads the sources in. The
-configured encoding is `<encoding>`, else `project.build.sourceEncoding`. A javac that compiles inside Maven reads
-the sources through a file manager `maven-compiler-plugin` opens in the configured encoding, which wins over every
-`-encoding` compiler argument: the encoding is the configured one, else the last `-encoding` compiler argument. A
-javac the compiler forks, as it does when `<fork>` is true and when it compiles with a `jdk` toolchain, gets the
-configured encoding as an `-encoding` ahead of the compiler arguments and takes the last one: the encoding is the
-last `-encoding` compiler argument, else the configured one. The generator parses at that release, reads in that
-encoding and writes the generated sources in it; without an encoding, it reads and writes UTF-8. The companions the
+The request also carries the release javac compiles at, `<release>`, else `<target>`, or their properties, with the
+test settings for the test compilation. javac takes the last `--release` it is given, and `maven-compiler-plugin`
+passes a release that is set ahead of the compiler arguments, so the last `--release` compiler argument, spelled
+`--release N` or `--release=N`, wins over that release; without a release, the compiler passes `-source` and
+`-target`, which javac refuses beside a `--release`. The request also carries the encoding javac reads the sources
+in. The configured encoding is `<encoding>`, else `project.build.sourceEncoding`. A javac that compiles inside Maven
+reads the sources through a file manager `maven-compiler-plugin` opens in the configured encoding, which wins over
+every `-encoding` compiler argument: the encoding is the configured one, else the last `-encoding` compiler
+argument. A javac the compiler forks, as it does when `<fork>` is true and when it compiles with a `jdk` toolchain,
+gets the configured encoding as an `-encoding` ahead of the compiler arguments and takes the last one: the encoding
+is the last `-encoding` compiler argument, else the configured one. The generator parses at that release, reads in
+that encoding and writes the generated sources in it; without an encoding, it reads and writes UTF-8. The companions the
 annotation processor generates hold ASCII only, every other character written as a `\uXXXX` escape, so javac
 writes them alike in any encoding.
 
@@ -571,8 +574,9 @@ written or retired, and every failure names what to change:
 - **A release of 21 or later.** Resolved from the execution's configuration, the plugin's configuration,
   `maven.compiler.release`, `source`/`target` or their properties, a property given on the command line winning
   over one of the JVM, and that over one of the project. The test compilation is checked against its own test
-  settings when they are set. No release at all is a failure too, because `maven-compiler-plugin` would then fall
-  back to its own default, which is below 21.
+  settings when they are set. When a release is set, the last `--release` compiler argument wins over it, as it
+  does for javac, and is the one checked; the refusal then asks for that argument to change. No release at all is
+  a failure too, because `maven-compiler-plugin` would then fall back to its own default, which is below 21.
 - **The annotation processor on the compiler's processor path.** Annotation processing switched off is refused:
   `-proc:none` as the last `-proc:` option javac gets, from `<proc>none</proc>`, `${maven.compiler.proc}=none`
   or a compiler argument. `maven-compiler-plugin` passes `<proc>` ahead of the compiler arguments, so a later

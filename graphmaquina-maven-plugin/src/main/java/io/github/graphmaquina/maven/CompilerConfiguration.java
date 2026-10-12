@@ -110,6 +110,12 @@ final class CompilerConfiguration {
     /** The javac option that names the encoding javac reads the sources in; javac takes the last one. */
     private static final String ENCODING = "-encoding";
 
+    /**
+     * The javac option that names the release javac compiles at, spelled {@code --release N} or
+     * {@code --release=N}; javac takes the last one.
+     */
+    private static final String RELEASE = "--release";
+
     /** The lowest Java feature release the generated vocabulary compiles under. */
     private static final int MINIMUM_RELEASE = 21;
 
@@ -212,19 +218,31 @@ final class CompilerConfiguration {
      * Advice to configure {@code <release>} is given only where it fixes the compilation: a test release that is
      * set wins over it, so the refusal of one asks for {@code <testRelease>} instead.</p>
      *
+     * <p>javac takes the last {@code --release} it is given, and maven-compiler-plugin passes a release that is set
+     * as one ahead of the compiler arguments, so the last {@code --release} compiler argument wins over that release,
+     * and is what is checked then; its refusal asks for that argument to change. Without a release, the compiler
+     * passes {@code -source} and {@code -target}, which javac refuses beside a {@code --release}, so no such argument
+     * is read.</p>
+     *
      * <p>Without a release, a source or a target left unset is refused as well: {@code source} and {@code target}
      * of {@code maven-compiler-plugin} default to {@code 1.8}, so a compilation that sets neither a release nor
      * both of them compiles the generated vocabulary below Java 21.</p>
      */
     private void requireSupportedRelease() throws MojoExecutionException {
         Optional<Setting> testRelease = testSetting("testRelease", "maven.compiler.testRelease");
-        if (testRelease.isPresent()) {
-            requireSupported(testRelease.get(), "testRelease");
+        Optional<Setting> release = setting("release", "maven.compiler.release");
+        Optional<Setting> argument = lastOption(List.of(RELEASE));
+        if ((testRelease.isPresent() || release.isPresent()) && argument.isPresent()) {
+            requireSupported(argument.get(), "Give that argument a release of " + MINIMUM_RELEASE
+                + " or later, or remove it.");
             return;
         }
-        Optional<Setting> release = setting("release", "maven.compiler.release");
+        if (testRelease.isPresent()) {
+            requireSupported(testRelease.get(), configure("testRelease"));
+            return;
+        }
         if (release.isPresent()) {
-            requireSupported(release.get(), "release");
+            requireSupported(release.get(), configure("release"));
             return;
         }
         Optional<Setting> source = testSetting("testSource", "maven.compiler.testSource")
@@ -239,10 +257,10 @@ final class CompilerConfiguration {
                 + "</release> for that execution.");
         }
         if (source.isPresent()) {
-            requireSupported(source.get(), "release");
+            requireSupported(source.get(), configure("release"));
         }
         if (target.isPresent()) {
-            requireSupported(target.get(), "release");
+            requireSupported(target.get(), configure("release"));
         }
         if (source.isEmpty() || target.isEmpty()) {
             throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin"
@@ -257,16 +275,20 @@ final class CompilerConfiguration {
      * Refuses one release-shaped setting below what the generated vocabulary compiles with.
      *
      * @param setting the setting this compilation compiles with
-     * @param fix the parameter whose value of Java 21 makes this compilation compile at Java 21
+     * @param remedy the sentence that says what makes this compilation compile at Java 21
      */
-    private void requireSupported(Setting setting, String fix) throws MojoExecutionException {
+    private void requireSupported(Setting setting, String remedy) throws MojoExecutionException {
         int feature = featureVersion(setting.value());
         if (feature > 0 && feature < MINIMUM_RELEASE) {
             throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin"
                 + " compiles with " + setting + ", but the vocabulary the StateGraph generator emits needs"
-                + " Java " + MINIMUM_RELEASE + " or later. Configure <" + fix + '>' + MINIMUM_RELEASE
-                + "</" + fix + "> for that execution.");
+                + " Java " + MINIMUM_RELEASE + " or later. " + remedy);
         }
+    }
+
+    /** The advice to configure {@code parameter} at Java 21 for this execution. */
+    private static String configure(String parameter) {
+        return "Configure <" + parameter + '>' + MINIMUM_RELEASE + "</" + parameter + "> for that execution.";
     }
 
     /**
@@ -275,18 +297,20 @@ final class CompilerConfiguration {
      * or {@code maven.compiler.release}, else {@code <target>} or {@code maven.compiler.target}, as a feature
      * release ({@code 1.8} is 8). The test compilation takes {@code <testRelease>} or
      * {@code maven.compiler.testRelease} over the release, and {@code <testTarget>} or
-     * {@code maven.compiler.testTarget} over the target, when they are set.
+     * {@code maven.compiler.testTarget} over the target, when they are set. When a release is set, the last
+     * {@code --release} compiler argument wins over it, since javac takes the last {@code --release} it is given and
+     * the compiler passes the release ahead of the compiler arguments.
      *
      * @return the release, empty when neither a release nor a target is set, or when the one read is not a release
      *     this plugin understands
      */
     Optional<Integer> release() {
-        Optional<Setting> release = testSetting("testRelease", "maven.compiler.testRelease")
+        Optional<Setting> configured = testSetting("testRelease", "maven.compiler.testRelease")
             .or(() -> setting("release", "maven.compiler.release"));
-        if (release.isEmpty()) {
-            release = testSetting("testTarget", "maven.compiler.testTarget")
+        Optional<Setting> release = configured.isPresent()
+            ? lastOption(List.of(RELEASE)).or(() -> configured)
+            : testSetting("testTarget", "maven.compiler.testTarget")
                 .or(() -> setting("target", "maven.compiler.target"));
-        }
         return release.map((Setting declared) -> featureVersion(declared.value()))
             .filter((Integer feature) -> feature > 0);
     }
