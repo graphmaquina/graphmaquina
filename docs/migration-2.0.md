@@ -609,11 +609,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
 - **`@GraphBindings` exports only what the host inherits.** Generated code calls a static binding through the host,
   so a marked static method of an interface is exported only through the interface's own symbol, and one that the
   host or a superclass between hides with a method of the same name and parameter types is not exported through the
-  host, the hiding method taking its place when it is marked. Naming either one through the host is javac's
-  `cannot find symbol`, or `SG604` for a hidden method whose parameter is a type variable, which only the processor
-  can tell is hidden. Both used to be exported through the host: the companion then called an unmarked method of the
-  host that hid the marked one in its place, and the processor refused a static method of an interface with `SG505`,
-  as one whose signature fit no machine.
+  host, whose symbol of that name exports the hiding method when it is marked. A symbol that is therefore not
+  generated is javac's `cannot find symbol` where it is named; a hidden method whose parameter is a type variable,
+  which only the processor can tell is hidden, is refused with `SG604` instead. Both used to be exported through the
+  host: the companion then called an unmarked method of the host that hid the marked one in its place, and the
+  processor refused a static method of an interface with `SG505`, as one whose signature fit no machine.
 - **A dependency without its export index is `SG602`.** A jar or a directory of classes that carries a machine a
   set holds, or a generated symbol a declaration binds, but no export index, or an index that does not list it
   because it is stale or another build's, is reported as `SG602` where the set or the declaration uses it, naming
