@@ -27,8 +27,6 @@ import org.gradle.api.tasks.bundling.Jar;
 import org.gradle.api.tasks.compile.JavaCompile;
 import org.gradle.api.tasks.javadoc.Javadoc;
 import org.gradle.api.tasks.util.PatternFilterable;
-import org.gradle.jvm.toolchain.JavaLauncher;
-import org.gradle.jvm.toolchain.JavaToolchainService;
 
 import java.io.File;
 import java.io.IOException;
@@ -172,13 +170,11 @@ public final class StateGraphPlugin implements Plugin<Project> {
         });
 
         JavaPluginExtension java = project.getExtensions().getByType(JavaPluginExtension.class);
-        JavaToolchainService toolchains = project.getExtensions().getByType(JavaToolchainService.class);
-        Provider<JavaLauncher> launcher = toolchains.launcherFor(java.getToolchain());
-        java.getSourceSets().configureEach(sourceSet -> wire(project, sourceSet, launcher));
+        java.getSourceSets().configureEach(sourceSet -> wire(project, sourceSet));
     }
 
     /** Registers the generation task of {@code sourceSet} and gives its compilation the lifecycle it needs. */
-    private void wire(Project project, SourceSet sourceSet, Provider<JavaLauncher> launcher) {
+    private void wire(Project project, SourceSet sourceSet) {
         ObjectFactory objects = project.getObjects();
         ProcessorDeclarations declarations = processorDeclarations(project, sourceSet);
         Provider<Boolean> participates = project.provider(declarations::takesPart);
@@ -208,7 +204,12 @@ public final class StateGraphPlugin implements Plugin<Project> {
                     .dir("graphmaquina/" + sourceSet.getName()));
             task.getRequestFile().convention(task.getWorkDirectory().file(REQUEST));
             task.getProjectDirectory().convention(project.getLayout().getProjectDirectory());
-            task.getJavaLauncher().convention(launcher);
+            // The generator parses at the release javac compiles at, which only a JDK of that release or later
+            // supports, so it runs on the very JDK javac compiles with: the installation of the compilation's
+            // javaCompiler, which follows a javaHome or an executable Gradle forks javac from. It is read through a
+            // plain provider, as the release below is.
+            task.getJavaLauncher().convention(project.provider(() ->
+                    CompilerLauncher.of(compile.get().getJavaCompiler().get())));
             task.getCompilationId().convention(project.provider(() -> compilationId(project, sourceSet)));
             // The generator reads the sources in the encoding javac reads them in, and at the release javac compiles
             // at. Both are read through a plain provider: one derived from the compile task would carry that task as

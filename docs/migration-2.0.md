@@ -721,10 +721,12 @@ observe. Most items refuse up front what used to fail later, in generated code o
   set's patterns do not filter, and the sources jar and javadoc leave out the compilation carrier. The generation
   runs after the tasks that build the source set's other directories. Its locations, launcher and generator
   classpath are conventions that `prepare-compile` and `complete-compile` follow, and `classesOutput`,
-  `processorSourcesOutput` and `annotationManifest` cannot be set. A processor declaration the build removes no
-  longer counts, and the compilation id reads the group the build script settles on, even when something
-  realized the generation task before the group was set. What a generator that completes writes on its error
-  stream is logged as a warning.
+  `processorSourcesOutput` and `annotationManifest` cannot be set. The launcher is by default the JDK javac compiles
+  with, also one the compile task takes from a toolchain of its own or forks javac from, rather than the project's
+  toolchain, and a launcher older than the release the sources are parsed at is refused before the generator runs. A
+  processor declaration the build removes no longer counts, and the compilation id reads the group the build script
+  settles on, even when something realized the generation task before the group was set. What a generator that
+  completes writes on its error stream is logged as a warning.
 
 ### Testing library
 

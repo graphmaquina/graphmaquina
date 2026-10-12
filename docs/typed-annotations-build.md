@@ -334,14 +334,30 @@ before, they replace it. `classesOutput` and `processorSourcesOutput` follow the
 
 ### Toolchain
 
-The generator runs as a separate process under the generation task's `javaLauncher`, by convention the launcher
-of the project's Java toolchain, not under the Gradle daemon's JVM; `prepare-compile` and `complete-compile` run
-under the same launcher. The toolchain must be a **JDK 21 or later**; below that, or an installation with no
-`bin/javac`, the build fails before anything is generated:
+The generator runs as a separate process under the generation task's `javaLauncher`, not under the Gradle
+daemon's JVM; `prepare-compile` and `complete-compile` run under the same launcher. By convention it is the `java`
+of the JDK javac compiles with, so the generator and javac run on one JDK and the generator parses at a release
+its JDK supports: the JDK of the compile task's `javaCompiler`, which is a compiler the build gives the compile
+task, else the JDK of `options.forkOptions.javaHome` or `options.forkOptions.executable` when `options.fork` is
+set, else the project's Java toolchain. A `javaLauncher` the build sets wins, but one whose JDK is older than the
+release the sources are parsed at is refused before the generator runs, since a JDK supports no release later
+than its own:
 
 ```
-the StateGraph generator needs a Java 21 toolchain or later, but the one selected for this project is
-Java 17 at <installation>. Raise java.toolchain.languageVersion to 21 or later.
+the StateGraph generator cannot parse the sources of task ':generateStateGraphApi' at release 25 under its
+javaLauncher, Java 21 at <installation>, since a JDK supports no release later than its own. Give javaLauncher
+a JDK 25 or later. A build that does not set it runs the generator on the JDK javac compiles with, which must
+support that release as well.
+```
+
+That JDK must be a **JDK 21 or later**; below that, or an installation with no `bin/javac`, the build fails
+before anything is generated:
+
+```
+the StateGraph generator needs a Java 21 toolchain or later, but the one it runs under, the JDK javac compiles
+with unless the generation task's javaLauncher names another, is Java 17 at <installation>. Raise
+java.toolchain.languageVersion, the toolchain of the compile task or that javaLauncher, whichever selects it,
+to 21 or later.
 ```
 
 ### Choosing the generator
@@ -725,8 +741,9 @@ inventory it left.
 | `SG603` "…claims '…', which is not a file under …", "…which is not a class file under …", "…which is not a source file under …" | an inventory of the work directory names an entry that is not a file under its output root: a blank one, one that no path can spell, such as one holding a NUL character, or one that is absolute, has a root, names the root itself or leads out of it; or a binary that is no `.class` file, or a source that is no `.java` file, such as `x`. Clean the build. |
 | `SG609` | a declaration still uses the retired 1.x matrix vocabulary. The message names the typed declaration to write instead; see [migrating to 2.0](migration-2.0.md) and the [generated typed annotations](guide.md#annotation-and-binding-reference). |
 | `package OrdersGraph does not exist` | the generated vocabulary is missing: generation did not run, or the source root was not registered. In Gradle, check that `generateStateGraphApi` ran; in Maven, that `sg-generate` ran in `generate-sources`. |
-| "the StateGraph generator needs a Java 21 toolchain or later" (Gradle), "…needs Java 21 or later, but … belongs to Java …" (Maven) | raise the Gradle toolchain to 21+, or point Maven's `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
-| "…needs the jdk.compiler module…" | the Gradle toolchain, or Maven's `graphmaquina.javaExecutable` or `jdk` toolchain, has no `javac` beside its `java`: it is a runtime, or, in Maven, a launcher outside a JDK's `bin` directory. Point it at a full JDK 21 or later, in Maven at the `java` in that JDK's `bin`. |
+| "the StateGraph generator needs a Java 21 toolchain or later" (Gradle), "…needs Java 21 or later, but … belongs to Java …" (Maven) | in Gradle, raise the JDK javac compiles with, from the project's toolchain or the compile task's own, or the generation task's `javaLauncher` when the build sets one, to 21+; in Maven, point `graphmaquina.javaExecutable` / `jdk` toolchain at a JDK 21+. |
+| "…needs the jdk.compiler module…" | the installation the Gradle generation task's `javaLauncher` names, or Maven's `graphmaquina.javaExecutable` or `jdk` toolchain, has no `javac` beside its `java`: it is a runtime, or, in Maven, a launcher outside a JDK's `bin` directory. Point it at a full JDK 21 or later, in Maven at the `java` in that JDK's `bin`. |
+| "…cannot parse the sources of … at release … under its javaLauncher…" (Gradle) | the `javaLauncher` the build gives the generation task is a JDK older than the release javac compiles at. Give it a JDK of that release or later, or leave it unset, so the generator runs on the JDK javac compiles with. |
 | "…The two must be the same JDK…" | the generator's `java` and javac belong to different JDK homes. Point `graphmaquina.javaExecutable` at the `java` in the `bin` directory of the JDK javac compiles with, not at a wrapper launcher, or have javac compile with the generator's JDK. |
 | "…is not on the `<annotationProcessorPaths>` …", "…is not on the dependencies of this project, and the … declares no path in `<annotationProcessorPaths>`…" (Maven) | the processor is missing from the compiler's processor path, or, when the execution declares none, from the project's dependencies. Declare it in `<annotationProcessorPaths>`, after Lombok. |
 | "…gives javac the processor path it takes, the only place it then looks for annotation processors, and that path reaches no …StateGraphProcessor.class…" (Maven) | a `-processorpath` or `--processor-path` compiler argument does not reach the processor. When the path the message names is another compiler argument, the value after the option is missing or evaluated to nothing, as `${project.file}` does, so javac takes the next argument as the path. Add the processor's jar and the jars it depends on to that path, or remove the argument and declare the processor in `<annotationProcessorPaths>`. |

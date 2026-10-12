@@ -24,9 +24,9 @@ import java.util.Objects;
  * Runs one operation of the StateGraph generator as a separate process and writes the request it reads.
  *
  * <p>The generator is never loaded into the plugin's own classloader: it runs under the launcher and over the
- * classpath the generation task of the source set holds — by convention the launcher the project's Java toolchain
- * selected and the {@code graphmaquinaGenerator} configuration — so the build's daemon JVM and the generator's
- * JVM stay independent. Its command line is fixed — {@code <operation> --request <file>} — and so is its
+ * classpath the generation task of the source set holds — by convention the launcher of the JDK the source set's
+ * javac compiles with and the {@code graphmaquinaGenerator} configuration — so the build's daemon JVM and the
+ * generator's JVM stay independent. Its command line is fixed — {@code <operation> --request <file>} — and so is its
  * contract: status {@code 0} means the operation completed, anything else means the build must fail rather than
  * compile against the vocabulary of a previous run. Whatever the generator wrote on its error stream is never
  * dropped: it ends the message of the exception this class throws when the operation failed, and it is a warning
@@ -81,15 +81,18 @@ public final class CodegenProcess {
         int languageVersion = metadata.getLanguageVersion().asInt();
         if (languageVersion < MINIMUM_LANGUAGE_VERSION) {
             throw new GradleException("the StateGraph generator needs a Java " + MINIMUM_LANGUAGE_VERSION
-                + " toolchain or later, but the one selected for this project is Java " + languageVersion
-                + " at " + metadata.getInstallationPath().getAsFile()
-                + ". Raise java.toolchain.languageVersion to " + MINIMUM_LANGUAGE_VERSION + " or later.");
+                + " toolchain or later, but the one it runs under, the JDK javac compiles with unless the"
+                + " generation task's javaLauncher names another, is Java " + languageVersion
+                + " at " + metadata.getInstallationPath().getAsFile() + ". Raise java.toolchain.languageVersion,"
+                + " the toolchain of the compile task or that javaLauncher, whichever selects it, to "
+                + MINIMUM_LANGUAGE_VERSION + " or later.");
         }
         if (!compilerOf(metadata).isFile()) {
             throw new GradleException("the StateGraph generator needs the jdk.compiler module, but the"
-                + " toolchain selected for this project, at " + metadata.getInstallationPath().getAsFile()
+                + " installation it runs under, at " + metadata.getInstallationPath().getAsFile()
                 + ", carries no " + compilerOf(metadata).getName() + ", so it is a runtime, not a JDK."
-                + " Point java.toolchain at a full JDK " + MINIMUM_LANGUAGE_VERSION + " or later.");
+                + " Point the generation task's javaLauncher, or whatever selects that installation, at a full JDK "
+                + MINIMUM_LANGUAGE_VERSION + " or later.");
         }
         return new CodegenProcess(launcher.getExecutablePath().getAsFile(), generatorClasspath, execOperations);
     }
@@ -224,10 +227,14 @@ public final class CodegenProcess {
 
     /** The compiler executable of {@code metadata}'s installation, whose absence means a runtime, not a JDK. */
     private static File compilerOf(JavaInstallationMetadata metadata) {
-        String name = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows")
-            ? "javac.exe"
-            : "javac";
-        return new File(new File(metadata.getInstallationPath().getAsFile(), "bin"), name);
+        return new File(new File(metadata.getInstallationPath().getAsFile(), "bin"), executableName("javac"));
+    }
+
+    /** The file name of the executable {@code tool} of a JDK on this platform: {@code tool.exe} on Windows. */
+    static String executableName(String tool) {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows")
+            ? tool + ".exe"
+            : tool;
     }
 
     private static List<File> toList(Iterable<File> files) {

@@ -431,11 +431,13 @@ public final class PluginFixture {
                     val generator = tasks.named<GenerateGraphApi>("generateStateGraphApi")
                             .flatMap { it.javaLauncher }
                     val toolchain = javaToolchains.launcherFor(java.toolchain)
+                    val compiler = tasks.named<JavaCompile>("compileJava").flatMap { it.javaCompiler }
                     doLast {
                         println("GENERATOR_LAUNCHER=" + generator.get().executablePath.asFile.absolutePath)
                         println("GENERATOR_LANGUAGE_VERSION="
                                 + generator.get().metadata.languageVersion.asInt())
                         println("TOOLCHAIN_LAUNCHER=" + toolchain.get().executablePath.asFile.absolutePath)
+                        println("COMPILER_HOME=" + compiler.get().metadata.installationPath.asFile.absolutePath)
                         println("DAEMON_JAVA_HOME=" + System.getProperty("java.home"))
                         println("DAEMON_LANGUAGE_VERSION=" + Runtime.version().feature())
                     }

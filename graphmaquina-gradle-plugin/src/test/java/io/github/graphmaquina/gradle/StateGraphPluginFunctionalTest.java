@@ -522,10 +522,11 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * The generator runs under the launcher the project's Java toolchain selected: the generation task's own
-     * launcher is the one {@code launcherFor(java.toolchain)} reports, of the toolchain's Java 21, and the process
-     * the build started is that very executable. The daemon of the build may run on that same JDK, so this test
-     * cannot tell the toolchain from the daemon's JVM; {@code launchesSelectedToolchainInsteadOfDaemonJdk} can.
+     * The generator runs under the launcher the project's Java toolchain selected, which is the JDK javac compiles
+     * with when the compile task is given no other: the generation task's own launcher is the one
+     * {@code launcherFor(java.toolchain)} reports, of the toolchain's Java 21, and the process the build started is
+     * that very executable. The daemon of the build may run on that same JDK, so this test cannot tell the toolchain
+     * from the daemon's JVM; {@code launchesSelectedToolchainInsteadOfDaemonJdk} can.
      */
     @Test
     void launchesTheLauncherOfTheSelectedToolchain() throws IOException {
@@ -572,6 +573,90 @@ class StateGraphPluginFunctionalTest {
         assertTrue(generation.getOutput().contains("Starting process 'command '" + launcher + "''"),
                 "the generator did not run under the toolchain launcher " + launcher
                         + "; the daemon runs on " + reported.get("DAEMON_JAVA_HOME"));
+    }
+
+    /**
+     * The generator runs on the JDK javac compiles with, also when the compile task does not take it from the
+     * project's toolchain: from a toolchain of its own, or from the {@code forkOptions.javaHome} Gradle starts javac
+     * from. With no release given, javac compiles at the language version of that JDK, above the project's Java 21,
+     * and the generator, on that very JDK, parses the sources at that release, in a build that stores its
+     * configuration cache entry. The test is skipped when Gradle detects no JDK above Java 21.
+     */
+    @Test
+    void runsTheGeneratorOnTheJdkTheCompileTaskCompilesWith() throws IOException {
+        Map<String, String> shapes = new LinkedHashMap<>();
+        shapes.put("toolchain", """
+                tasks.named<JavaCompile>("compileJava") {
+                    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(%d) }
+                }
+                """);
+        shapes.put("fork", """
+                tasks.named<JavaCompile>("compileJava") {
+                    options.isFork = true
+                    options.forkOptions.javaHome = javaToolchains
+                        .compilerFor { languageVersion = JavaLanguageVersion.of(%d) }
+                        .get().metadata.installationPath.asFile
+                }
+                """);
+        Optional<Integer> later = toolchains(PluginFixture.basic(
+                Files.createDirectories(tempDirectory.resolve("detection")), FIXTURE_REPOSITORY)).detected().stream()
+                .filter((Integer version) -> version > 21)
+                .findFirst();
+        assumeTrue(later.isPresent(), "Gradle detects no JDK above Java 21");
+        for (Map.Entry<String, String> shape : shapes.entrySet()) {
+            PluginFixture fixture = PluginFixture.basic(
+                    Files.createDirectories(tempDirectory.resolve(shape.getKey())), FIXTURE_REPOSITORY);
+            fixture.replaceInBuildScript("options.release = 21\n", "");
+            fixture.appendToBuildScript(shape.getValue().formatted(later.get()));
+
+            BuildResult result = fixture.run("jar", "--info", "--configuration-cache");
+            Map<String, String> reported = report(fixture.run("printGeneratorLauncher"));
+
+            assertEquals(TaskOutcome.SUCCESS, result.task(":compileJava").getOutcome(), shape.getKey());
+            assertTrue(result.getOutput().contains("Configuration cache entry stored."), result::getOutput);
+            assertEquals(later.get().intValue(), fixture.request("main").get("release").getAsInt(), shape.getKey());
+            String launcher = reported.get("GENERATOR_LAUNCHER");
+            assertEquals(String.valueOf(later.get()), reported.get("GENERATOR_LANGUAGE_VERSION"), shape.getKey());
+            assertTrue(Path.of(launcher).startsWith(Path.of(reported.get("COMPILER_HOME"))), reported::toString);
+            assertTrue(result.getOutput().contains("Starting process 'command '" + launcher + "''"),
+                    shape.getKey() + ": the generator did not run under " + launcher);
+            assertTrue(fixture.jarContains("fx/OrdersGraph.class"), shape.getKey());
+        }
+    }
+
+    /**
+     * A launcher a build gives the generation task wins over the JDK javac compiles with, but a JDK cannot parse the
+     * sources at a release later than its own: the generation refuses such a launcher before the generator runs,
+     * naming {@code javaLauncher}, instead of failing inside the generator on a release its JDK does not know. The
+     * test is skipped when Gradle detects no JDK above Java 21.
+     */
+    @Test
+    void refusesALauncherOlderThanTheReleaseBeforeTheGeneratorRuns() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        Optional<Integer> later = toolchains(fixture).detected().stream()
+                .filter((Integer version) -> version > 21)
+                .findFirst();
+        assumeTrue(later.isPresent(), "Gradle detects no JDK above Java 21");
+        fixture.replaceInBuildScript("options.release = 21\n", "");
+        fixture.appendToBuildScript("""
+                tasks.named<JavaCompile>("compileJava") {
+                    javaCompiler = javaToolchains.compilerFor { languageVersion = JavaLanguageVersion.of(%d) }
+                }
+                tasks.named<GenerateGraphApi>("generateStateGraphApi") {
+                    javaLauncher = javaToolchains.launcherFor(java.toolchain)
+                }
+                """.formatted(later.get()));
+
+        BuildResult refused = fixture.runFailing("jar");
+
+        assertEquals(TaskOutcome.FAILED, refused.task(":generateStateGraphApi").getOutcome());
+        assertTrue(refused.getOutput().contains("the StateGraph generator cannot parse the sources of task"
+                + " ':generateStateGraphApi' at release " + later.get() + " under its javaLauncher, Java 21 at "),
+                refused::getOutput);
+        assertTrue(refused.getOutput().contains("Give javaLauncher a JDK " + later.get() + " or later"),
+                refused::getOutput);
+        assertFalse(refused.getOutput().contains("not supported"), refused::getOutput);
+        assertFalse(fixture.exists(MAIN_PENDING_INVENTORY), "the preparation never ran");
     }
 
     @Test

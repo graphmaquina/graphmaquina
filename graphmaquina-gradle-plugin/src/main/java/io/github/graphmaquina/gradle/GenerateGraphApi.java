@@ -1,6 +1,7 @@
 package io.github.graphmaquina.gradle;
 
 import org.gradle.api.DefaultTask;
+import org.gradle.api.GradleException;
 import org.gradle.api.file.ConfigurableFileCollection;
 import org.gradle.api.file.DirectoryProperty;
 import org.gradle.api.file.RegularFileProperty;
@@ -16,6 +17,7 @@ import org.gradle.api.tasks.OutputFile;
 import org.gradle.api.tasks.PathSensitive;
 import org.gradle.api.tasks.PathSensitivity;
 import org.gradle.api.tasks.TaskAction;
+import org.gradle.jvm.toolchain.JavaInstallationMetadata;
 import org.gradle.jvm.toolchain.JavaLauncher;
 import org.gradle.process.ExecOperations;
 
@@ -30,12 +32,12 @@ import java.util.List;
  * Generates the StateGraph typed vocabulary of one Java source set, before its compiler runs.
  *
  * <p>The task writes the request the generator reads and runs {@code generate} over it under the launcher it
- * holds, by convention the project's Java toolchain. What it produces is the generated source directory javac
- * then compiles and the annotation manifest javac passes to the processor; everything else the request names —
- * the class output, the processor's source output and the shared work directory — belongs to the compilation,
- * not to this task, and is therefore {@link Internal internal} here. The sealed inventory the compilation
- * lifecycle writes into that same work directory is registered as an output of {@code JavaCompile}, so no
- * completion step can invalidate this task's own snapshot and turn every build into a regeneration.</p>
+ * holds, by convention the one of the JDK javac compiles the source set with. What it produces is the generated
+ * source directory javac then compiles and the annotation manifest javac passes to the processor; everything else
+ * the request names — the class output, the processor's source output and the shared work directory — belongs to
+ * the compilation, not to this task, and is therefore {@link Internal internal} here. The sealed inventory the
+ * compilation lifecycle writes into that same work directory is registered as an output of {@code JavaCompile}, so
+ * no completion step can invalidate this task's own snapshot and turn every build into a regeneration.</p>
  *
  * <p>Application dependencies are tracked as a {@link Classpath} rather than a compile classpath because the
  * generator reads the {@code META-INF/graphmaquina/exports.json} each of them publishes: a dependency whose only
@@ -253,9 +255,16 @@ public abstract class GenerateGraphApi extends DefaultTask {
     public abstract Property<String> getEncoding();
 
     /**
-     * The launcher the generator runs under, by convention the one the project's Java toolchain selected; it is
-     * not the JVM of the Gradle daemon unless the toolchain resolves to the very same installation. The
-     * preparation and the completion around the compilation of this source set run under it as well.
+     * The launcher the generator runs under. The preparation and the completion around the compilation of this source
+     * set run under it as well.
+     *
+     * <p>By convention it is the {@code java} of the JDK javac compiles this source set with, so the generator parses
+     * the sources at a release its JDK supports: the installation of the compilation's {@code javaCompiler}, which is
+     * a compiler the build gives the compilation, else the JDK of the {@code forkOptions.javaHome} or
+     * {@code forkOptions.executable} Gradle starts javac from when {@code options.fork} is set, else the project's Java
+     * toolchain. It is not the JVM of the Gradle daemon unless that is the very same installation. A launcher a build
+     * sets wins whenever the build sets it; one whose JDK is older than the {@link #getRelease() release} the sources
+     * are parsed at is refused before the generator runs, since a JDK supports no release later than its own.</p>
      *
      * @return the launcher of the generator process
      */
@@ -288,9 +297,19 @@ public abstract class GenerateGraphApi extends DefaultTask {
     @Inject
     protected abstract ExecOperations getExecOperations();
 
-    /** Writes the request of this source set and runs the generator's {@code generate} operation over it. */
+    /**
+     * Writes the request of this source set and runs the generator's {@code generate} operation over it, once the
+     * launcher is known to run it.
+     *
+     * @throws GradleException if {@link CodegenProcess#of} refuses the launcher, or if the launcher's JDK is older
+     *         than the release the sources are parsed at
+     */
     @TaskAction
     public void generate() {
+        JavaLauncher launcher = getJavaLauncher().get();
+        CodegenProcess process = CodegenProcess.of(launcher, getGeneratorClasspath().getFiles(), getExecOperations());
+        Integer release = getRelease().getOrNull();
+        requireRelease(launcher.getMetadata(), release);
         Path requestFile = getRequestFile().get().getAsFile().toPath();
         CodegenProcess.write(requestFile, new CodegenProcess.Request(
             absolute(getProjectDirectory()),
@@ -301,10 +320,24 @@ public abstract class GenerateGraphApi extends DefaultTask {
             absolute(getClassesOutput()),
             absolute(getWorkDirectory()),
             getCompilationId().get(),
-            getRelease().getOrNull(),
+            release,
             getEncoding().getOrNull()));
-        CodegenProcess.of(getJavaLauncher().get(), getGeneratorClasspath().getFiles(), getExecOperations())
-            .run("generate", requestFile);
+        process.run("generate", requestFile);
+    }
+
+    /**
+     * Refuses a launcher whose JDK, {@code installation}, is older than {@code release}: the generator parses the
+     * sources with the compiler of the JDK it runs on, and a JDK supports no release later than its own.
+     */
+    private void requireRelease(JavaInstallationMetadata installation, Integer release) {
+        int languageVersion = installation.getLanguageVersion().asInt();
+        if (release != null && release > languageVersion) {
+            throw new GradleException("the StateGraph generator cannot parse the sources of " + this + " at release "
+                + release + " under its javaLauncher, Java " + languageVersion + " at "
+                + installation.getInstallationPath().getAsFile() + ", since a JDK supports no release later than its"
+                + " own. Give javaLauncher a JDK " + release + " or later. A build that does not set it runs the"
+                + " generator on the JDK javac compiles with, which must support that release as well.");
+        }
     }
 
     private static String absolute(DirectoryProperty directory) {

@@ -118,8 +118,8 @@ public final class CompilationLifecycle {
         }
 
         /**
-         * The launcher the generation task of this source set runs the generator under, by convention the one the
-         * project's Java toolchain selected, so every step of one compilation runs on the same JDK.
+         * The launcher the generation task of this source set runs the generator under, by convention the one of the
+         * JDK javac compiles with, so every step of one compilation runs on the same JDK.
          *
          * @return the launcher of the generator process
          */
