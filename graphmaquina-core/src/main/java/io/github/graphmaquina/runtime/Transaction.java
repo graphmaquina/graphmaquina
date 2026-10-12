@@ -728,7 +728,7 @@ final class Transaction {
             DefaultStateMachine<E, S, T> machine, EntityRef ref, E entity, S from, T id, int depth) {
         Optional<Holder> active = Optional.empty();
         Optional<Hold> activeHold = Optional.empty();
-        List<Enum<?>> found = new ArrayList<>();
+        List<Enum<?>> found = new ArrayList<>(machine.bindingsAsChild().size());
         for (SubmachineBinding<?, ?, ?, ?, ?, ?> binding : machine.bindingsAsChild()) {
             Optional<EntityRef> parent = findParent(machine, ref, entity, from, id, depth, binding);
             if (parent.isEmpty()) {
