@@ -2681,6 +2681,73 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * A javac that compiles inside Maven reads the sources through a file manager maven-compiler-plugin opens in the
+     * encoding it is configured with, which then wins over every {@code -encoding} compiler argument, and without one
+     * in the last {@code -encoding} compiler argument. The generator is told the encoding javac reads in either way: an
+     * accented identifier of a project kept in ISO-8859-1 that names no encoding and passes
+     * {@code -encoding ISO-8859-1} reaches the generated vocabulary intact, and a project kept in ISO-8859-1 that names
+     * that encoding and passes {@code -encoding UTF-8} is read in ISO-8859-1. Its accented letters stay in a comment:
+     * javac writes the sources annotation processors generate in the last {@code -encoding} and reads them back in the
+     * configured encoding, so an accented identifier would fail javac there.
+     */
+    @Test
+    void aJavacInsideMavenReadsTheConfiguredEncodingElseTheLastEncodingArgument() throws IOException {
+        MavenFixture argument = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("argument")),
+                fixtureRepository);
+        argument.editPom("<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>", "");
+        addMainCompilerArguments(argument, "<arg>-encoding</arg><arg>ISO-8859-1</arg>");
+        argument.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
+        MavenFixture configured = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("configured")),
+                fixtureRepository);
+        configured.editPom("<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>",
+                "<project.build.sourceEncoding>ISO-8859-1</project.build.sourceEncoding>");
+        addMainCompilerArguments(configured, "<arg>-encoding</arg><arg>UTF-8</arg>");
+        Map<String, String> sources = MavenFixture.domainSources();
+        sources.put("fx.Notes", """
+                package fx;
+
+                /** Notes about an order, kept beside its résumé. */
+                public final class Notes {
+
+                    private Notes() {
+                    }
+                }
+                """);
+        configured.writeSources(sources, StandardCharsets.ISO_8859_1);
+
+        MavenResult fromArgument = argument.run("package");
+        MavenResult fromConfiguration = configured.run("package");
+
+        assertEquals(0, fromArgument.exitCode(), fromArgument.output());
+        assertEquals("ISO-8859-1", argument.requestValue("main", "encoding"));
+        assertTrue(argument.localExports().contains("fx.ActionsRefs.ApproveRésumé"), fromArgument.output());
+        assertEquals(0, fromConfiguration.exitCode(), fromConfiguration.output());
+        assertEquals("ISO-8859-1", configured.requestValue("main", "encoding"));
+    }
+
+    /**
+     * A javac that maven-compiler-plugin forks gets the encoding the compiler is configured with as an
+     * {@code -encoding} ahead of the compiler arguments, and takes the last one, so an {@code -encoding} compiler
+     * argument wins over the configured encoding, and the generator is told that one: a project kept in ISO-8859-1
+     * whose {@code project.build.sourceEncoding} says UTF-8 builds with a forked javac given
+     * {@code -encoding ISO-8859-1}, its accented identifier intact.
+     */
+    @Test
+    void aForkedJavacReadsTheLastEncodingArgumentOverTheConfiguredEncoding() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<release>21</release>",
+                "<release>21</release><fork>true</fork><executable>${java.home}/bin/javac</executable>");
+        addMainCompilerArguments(fixture, "<arg>-encoding</arg><arg>ISO-8859-1</arg>");
+        fixture.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertEquals("ISO-8859-1", fixture.requestValue("main", "encoding"));
+        assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), result.output());
+    }
+
+    /**
      * The test compilation of maven-compiler-plugin compiles at {@code <testRelease>} when one is set, else at
      * {@code <release>}, and takes {@code <testSource>} and {@code <testTarget>} over {@code <source>} and
      * {@code <target>} the same way. A test release or test source below Java 21 is therefore refused by the
@@ -2884,6 +2951,12 @@ class MavenPluginIntegrationTest {
                 """);
         sources.put("fx.Orders", MavenFixture.orders("Orders", "ApproveRésumé", "approveRésumé"));
         return sources;
+    }
+
+    /** Adds {@code arguments}, as {@code <arg>} elements, to the compiler arguments of the main compilation. */
+    private static void addMainCompilerArguments(MavenFixture fixture, String arguments) throws IOException {
+        String manifest = "graphmaquina/main/annotation-manifest.json</arg>";
+        fixture.editPom(manifest, manifest + arguments);
     }
 
     /**

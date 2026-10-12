@@ -107,6 +107,9 @@ final class CompilerConfiguration {
     /** The items a {@code -g:} list of javac may name, as javac spells them. */
     private static final Set<String> DEBUG_ITEMS = Set.of("lines", "vars", "source");
 
+    /** The javac option that names the encoding javac reads the sources in; javac takes the last one. */
+    private static final String ENCODING = "-encoding";
+
     /** The lowest Java feature release the generated vocabulary compiles under. */
     private static final int MINIMUM_RELEASE = 21;
 
@@ -295,16 +298,32 @@ final class CompilerConfiguration {
 
     /**
      * The encoding javac reads the sources of this compilation in, which the generator reads the original sources
-     * in and writes the generated ones in: {@code <encoding>} or the {@code encoding} property, else
+     * in and writes the generated ones in, as maven-compiler-plugin 3.15.0 and plexus-compiler-javac 2.16.2 hand it to
+     * javac. The configured encoding is {@code <encoding>} or the {@code encoding} property, else
      * {@code project.build.sourceEncoding}, the default maven-compiler-plugin gives that parameter.
      *
+     * <p>A javac that compiles inside Maven reads the sources through a file manager the compiler opens in the
+     * configured encoding, which then wins over every {@code -encoding} javac is given: the encoding is the configured
+     * one, else the value of the last {@code -encoding} compiler argument. A javac the compiler forks gets the
+     * configured encoding as an {@code -encoding} ahead of the compiler arguments, and takes the last {@code -encoding}
+     * it is given: the encoding is the value of the last {@code -encoding} compiler argument, else the configured
+     * one.</p>
+     *
+     * @param toolchains the component that resolves the {@code jdk} toolchains of this build, one of which makes the
+     *     compiler fork javac
+     * @param session the session the toolchains are resolved against
      * @return the name of the encoding, empty when the build names none. javac then reads the default charset of
      *     the JVM it runs in, which is UTF-8 from Java 18 on unless {@code file.encoding} names another, while the
      *     generator reads UTF-8.
      */
-    Optional<String> encoding() {
-        return setting("encoding", "encoding").or(() -> property("project.build.sourceEncoding"))
-            .map(Setting::value);
+    Optional<String> encoding(ToolchainManager toolchains, MavenSession session) {
+        Optional<Setting> configured = setting("encoding", "encoding")
+            .or(() -> property("project.build.sourceEncoding"));
+        Optional<Setting> argument = lastOption(List.of(ENCODING));
+        Optional<Setting> read = javac(toolchains, session).forked()
+            ? argument.or(() -> configured)
+            : configured.or(() -> argument);
+        return read.map(Setting::value);
     }
 
     /** The feature release {@code value} names, {@code 0} when it is not a release this plugin understands. */

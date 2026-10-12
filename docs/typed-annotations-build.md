@@ -545,9 +545,14 @@ read by the generator although javac never compiles it. Symbolic links are follo
 into a directory being walked is skipped.
 
 The request also carries the release the compiler compiles at, `<release>`, else `<target>`, or their
-properties, with the test settings for the test compilation, and the encoding it reads the sources in,
-`<encoding>`, else `project.build.sourceEncoding`. The generator parses at that release, reads in that encoding
-and writes the generated sources in it; without an encoding, it reads and writes UTF-8. The companions the
+properties, with the test settings for the test compilation, and the encoding javac reads the sources in. The
+configured encoding is `<encoding>`, else `project.build.sourceEncoding`. A javac that compiles inside Maven reads
+the sources through a file manager `maven-compiler-plugin` opens in the configured encoding, which wins over every
+`-encoding` compiler argument: the encoding is the configured one, else the last `-encoding` compiler argument. A
+javac the compiler forks, as it does when `<fork>` is true and when it compiles with a `jdk` toolchain, gets the
+configured encoding as an `-encoding` ahead of the compiler arguments and takes the last one: the encoding is the
+last `-encoding` compiler argument, else the configured one. The generator parses at that release, reads in that
+encoding and writes the generated sources in it; without an encoding, it reads and writes UTF-8. The companions the
 annotation processor generates hold ASCII only, every other character written as a `\uXXXX` escape, so javac
 writes them alike in any encoding.
 
@@ -693,7 +698,7 @@ inventory it left.
 | `SG602` "…is still compiled from a previous compilation that nothing retired…" | javac ran again over a class output that still holds the previous companions. Run the lifecycle, whose preparation retires them, or clean the build. |
 | `SG602` "…no class file in … belongs to the carrier…" | javac's debug setting left the `SourceFile` attribute out of the class files, which the completion reads: `-g:none`, or a `-g:` list without `source` such as `-g:lines,vars`. Compile with javac's default debug setting, with `-g`, or with a `-g:` list that includes `source`. Both plugins refuse such a setting before anything is retired when they can read it. |
 | `SG602` "inventory path '…' …" | a manifest of the work directory lists an owned source that is not a relative path to a file: one that no path can spell, such as one holding a NUL character, one that is absolute or has a root, one with a `..` segment, or one that names the directory itself, such as `.`. Clean the build. |
-| `SG602` "member 'encoding' names no charset this JVM supports in …" | the source encoding of the compilation is no charset of the JVM the generator runs under: in Maven `<encoding>` or its property `encoding`, else `project.build.sourceEncoding`; in Gradle the generation task's `encoding`, by convention the encoding javac reads the sources in, from `options.encoding` or an `-encoding` compiler argument. Name a charset that JVM supports, such as `UTF-8`. |
+| `SG602` "member 'encoding' names no charset this JVM supports in …" | the source encoding of the compilation is no charset of the JVM the generator runs under: in Maven the encoding javac reads in, from `<encoding>` or its property `encoding`, `project.build.sourceEncoding` or an `-encoding` compiler argument; in Gradle the generation task's `encoding`, by convention the encoding javac reads the sources in, from `options.encoding` or an `-encoding` compiler argument. Name a charset that JVM supports, such as `UTF-8`. |
 | `SG602` "number with an exponent out of range in …" | the request, a manifest, an inventory or a dependency's export index holds a number whose exponent is out of range, such as `1e99999999999`, so it was edited or damaged after the tools wrote it. Clean the build, or rebuild the dependency that published the index. |
 | `SG601` at a machine | the generator could not resolve a type it needs (the entity, the state enum, a host), or could not parse an original source at the compilation's release. The message names the type and the declaration. |
 | `SG603` | a generated name collides or cannot be written: names that collide after PascalCase normalization, such as `id` / `_id`; a generated type that an original source already declares, that would shadow a class of the classpath or overwrite a file of the generated directory the previous generation did not own, or that differs from an original only in case where the volume does not tell names apart; two generated types, or two symbol types of one references container, whose names differ only in case where a volume that holds their files does not tell names apart, such as the containers `OuterInnerRefs` and `OuterinnerRefs` of the hosts `Outer.Inner` and `Outerinner`; or a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or like a `java.lang` type. The diagnostic names both sides; rename one of them and its references, then regenerate. |

@@ -672,8 +672,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
   and select only the sources its scanner reaches, which enters no directory for an include that starts with a
   separator unless that include matches the directory itself; compiler arguments are evaluated as Maven evaluates
   them, as far as that can be told when the checks run, `${settings.localRepository}` for instance, and one that is
-  a single expression Maven turns into nothing, such as `${project.file}`, is left out, as javac never gets it; and
-  on Windows a `javaExecutable` without an extension stands for the `.exe` beside it.
+  a single expression Maven turns into nothing, such as `${project.file}`, is left out, as javac never gets it; an
+  `-encoding` compiler argument names the encoding the generator reads in wherever javac reads in it: when no
+  encoding is configured, and when the compiler forks javac, which takes the last `-encoding`; and on Windows a
+  `javaExecutable` without an extension stands for the `.exe` beside it.
 - **Maven: paths.** A relative manifest path is resolved where javac runs, in the directory Maven was started in
   or, for a forked javac, in the project directory, so a module of a build started from its parent is refused
   up front, where javac used to fail on it after the preparation. Paths are compared with their symbolic links

@@ -148,7 +148,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
             build.resolve(WORK).resolve("main").toString(),
             compilationId("main"),
             compiler.release().orElse(null),
-            compiler.encoding().orElse(null));
+            compiler.encoding(toolchainManager, session).orElse(null));
     }
 
     /**
@@ -177,7 +177,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
             build.resolve(WORK).resolve("test").toString(),
             compilationId("test"),
             compiler.release().orElse(null),
-            compiler.encoding().orElse(null));
+            compiler.encoding(toolchainManager, session).orElse(null));
     }
 
     /**
