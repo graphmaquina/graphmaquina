@@ -10,6 +10,7 @@ import static io.github.graphmaquina.fixtures.DocTransition.PUBLISH;
 import static io.github.graphmaquina.fixtures.DocTransition.SUBMIT;
 import static io.github.graphmaquina.fixtures.Keys.DOCS;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -31,7 +32,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * A CommitContext may be kept after its hook, and its flow is stale from then on: keeping it must not keep the call
- * reachable, its unit of work and every value its steps put in the flow, removed ones included.
+ * reachable, its unit of work and every value its steps put in the flow, removed ones included. The context reaches
+ * the call only through the handle of its flow, which lets go of the unit of work once invalidated, as checked here
+ * without the garbage collector; the whole kept context is checked through it too, on a JVM that collects on request.
  */
 class HookContextRetentionTest {
 
@@ -47,6 +50,17 @@ class HookContextRetentionTest {
             Thread.sleep(20);
         }
         return false;
+    }
+
+    @Test
+    void aHookHandleHoldsTheCallsUnitOfWorkOnlyUntilItIsInvalidated() {
+        Doc doc = new Doc("1", DRAFT);
+        FlowHandle.Hook handle = FlowHandle.hook(new UnitOfWork(1, Long.MAX_VALUE), doc, CallLog.OFF, "Keep",
+                new EntityRef(DOCS, doc.id(), doc));
+        assertFalse(handle.released());
+        handle.invalidate();
+        assertTrue(handle.released());
+        assertThrows(StaleContextException.class, () -> handle.get(LARGE));
     }
 
     @Test

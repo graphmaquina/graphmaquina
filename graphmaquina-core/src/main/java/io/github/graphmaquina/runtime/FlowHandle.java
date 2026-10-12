@@ -162,8 +162,11 @@ final class FlowHandle implements FlowContext {
      */
     static final class Hook implements FlowContext {
 
-        /** The unit of work of the call while the hook runs; empty once the hook returned or threw. */
-        private Optional<UnitOfWork> uow;
+        /** What {@link #uow} holds once the hook returned or threw: the unit of work of no call, which nothing uses. */
+        private static final UnitOfWork RELEASED = new UnitOfWork(0, 0L);
+
+        /** The unit of work of the call while the hook runs; {@link #RELEASED} once the hook returned or threw. */
+        private UnitOfWork uow;
         private final Object rootEntity;
         private final CallLog log;
         private final String hook;
@@ -171,7 +174,7 @@ final class FlowHandle implements FlowContext {
         private final Thread owner = Thread.currentThread();
 
         private Hook(UnitOfWork uow, Object rootEntity, CallLog log, String hook, EntityRef hop) {
-            this.uow = Optional.of(uow);
+            this.uow = uow;
             this.rootEntity = rootEntity;
             this.log = log;
             this.hook = hook;
@@ -180,19 +183,24 @@ final class FlowHandle implements FlowContext {
 
         /** Ends the lifetime of this handle, which lets go of the call's unit of work: its hook returned or threw. */
         void invalidate() {
-            uow = Optional.empty();
+            uow = RELEASED;
+        }
+
+        /** Whether the lifetime of this handle ended, so that it no longer holds the call's unit of work. */
+        boolean released() {
+            return uow == RELEASED;
         }
 
         /** The call's unit of work, only from the thread running the hook, and only while it runs. */
         private UnitOfWork check() {
-            if (uow.isEmpty()) {
+            if (released()) {
                 throw new StaleContextException(hop.key(), hop.instance());
             }
             if (Thread.currentThread() != owner) {
                 throw new WrongThreadException("the flow of the hook " + hook
                         + " can only be used from the thread running it: " + owner.getName());
             }
-            return uow.get();
+            return uow;
         }
 
         @Override
