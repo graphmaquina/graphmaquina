@@ -200,10 +200,10 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
         @Override
         public OutcomeCode code() {
-            return switch (reason) {
-                case NO_WATCH -> OutcomeCode.NO_WATCH;
-                case NO_RULE_MATCHED -> OutcomeCode.NO_RULE_MATCHED;
-            };
+            // Not a switch: on another class's enum, javac compiles one to a synthetic class with a static
+            // initializer, which assembling a registry cannot name to initialise, as
+            // MachineRegistry.staticallyInitialized says.
+            return reason == IgnoreReason.NO_WATCH ? OutcomeCode.NO_WATCH : OutcomeCode.NO_RULE_MATCHED;
         }
 
         @Override
@@ -260,12 +260,17 @@ public sealed interface Outcome<E, S extends Enum<S>, T extends Enum<T>>
 
         @Override
         public OutcomeCode code() {
-            return switch (kind) {
-                case NO_TRANSITION -> OutcomeCode.NO_TRANSITION;
-                case GUARD -> OutcomeCode.GUARD_REJECTED;
-                case DETACHED -> OutcomeCode.DETACHED;
-                case RESERVED_EXIT -> OutcomeCode.RESERVED_EXIT;
-            };
+            // Not a switch, as in Ignored.code().
+            if (kind == RejectionKind.NO_TRANSITION) {
+                return OutcomeCode.NO_TRANSITION;
+            }
+            if (kind == RejectionKind.GUARD) {
+                return OutcomeCode.GUARD_REJECTED;
+            }
+            if (kind == RejectionKind.DETACHED) {
+                return OutcomeCode.DETACHED;
+            }
+            return OutcomeCode.RESERVED_EXIT;
         }
 
         @Override

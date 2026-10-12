@@ -231,11 +231,15 @@ final class Transaction {
      * did.
      */
     StatesWritten statesWritten() {
-        return switch (phase) {
-            case RESOLVE, GUARD, ACTION -> StatesWritten.NONE;
-            case COMMIT -> writing ? StatesWritten.PARTIAL : StatesWritten.NONE;
-            case HOOK, REACTIONS -> StatesWritten.ALL;
-        };
+        // Not a switch: on another class's enum, javac compiles one to a synthetic class with a static initializer,
+        // which assembling a registry cannot name to initialise, as MachineRegistry.staticallyInitialized says.
+        if (phase == CallPhase.COMMIT) {
+            return writing ? StatesWritten.PARTIAL : StatesWritten.NONE;
+        }
+        if (phase == CallPhase.HOOK || phase == CallPhase.REACTIONS) {
+            return StatesWritten.ALL;
+        }
+        return StatesWritten.NONE;
     }
 
     <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> keyFor(Class<? extends Machine<P, Q, U>> facade) {
@@ -745,7 +749,7 @@ final class Transaction {
     private record Holder(SubmachineBinding<?, ?, ?, ?, ?, ?> binding, EntityRef parent, int logAtCheck) { }
 
     /** How a binding holds a child: its parent is in the bound node, or in flight on an edge that leaves it. */
-    private enum Hold { IN_NODE, LEAVING }
+    enum Hold { IN_NODE, LEAVING }
 
     /**
      * The parent that {@code binding}'s parentOf answers for {@code entity}, the child, registered in the unit of
@@ -1345,12 +1349,17 @@ final class Transaction {
         if (depth == 0) {
             return new StepResult.Rejected<>(from, id, reason, kind, guard);
         }
-        String who = switch (kind) {
-            case NO_TRANSITION -> "no such transition";
-            case GUARD -> "guard " + guard.orElseThrow();
-            case DETACHED -> "detached sub-machine";
-            case RESERVED_EXIT -> "reserved exit";
-        };
+        // Not a switch, as in statesWritten.
+        String who;
+        if (kind == RejectionKind.NO_TRANSITION) {
+            who = "no such transition";
+        } else if (kind == RejectionKind.GUARD) {
+            who = "guard " + guard.orElseThrow();
+        } else if (kind == RejectionKind.DETACHED) {
+            who = "detached sub-machine";
+        } else {
+            who = "reserved exit";
+        }
         String inside = exitOf.isPresent() ? "the exit of " + exitOf.get().node().name() : "a cascade";
         throw abort(machine, ref, from, Optional.of(id), to.map((S state) -> (Enum<?>) state), Optional.empty(), depth,
                 "rejected inside " + inside + " by " + who + ": " + reason, Optional.empty());

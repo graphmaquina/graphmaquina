@@ -1,18 +1,31 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.ActionStatus;
+import io.github.graphmaquina.api.CallPhase;
+import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.MachineObserver;
+import io.github.graphmaquina.api.OutcomeCode;
+import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.Reaction;
 import io.github.graphmaquina.api.RecoveryRule;
+import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.StateMachine;
+import io.github.graphmaquina.api.StatesWritten;
 import io.github.graphmaquina.api.SubmachineSpec;
+import io.github.graphmaquina.api.TransitionKind;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.api.WatchSpec;
+import io.github.graphmaquina.error.CallFailedException;
 import io.github.graphmaquina.error.UnknownFacadeException;
 import io.github.graphmaquina.error.UnknownPeerMachineException;
+import io.github.graphmaquina.internal.CallFailureFlows;
+import io.github.graphmaquina.internal.FrozenFlow;
 import io.github.graphmaquina.internal.Interrupts;
+import java.lang.invoke.MethodHandles;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -124,6 +137,7 @@ public final class MachineRegistry implements AutoCloseable {
                         + edge.get() + " implicitly and does not declare asyncTimeout(...)");
             }
         }
+        initializeRuntime();
         MachineRegistry registry = new MachineRegistry(maxCascadeDepth, maxWatchChain, observers);
         for (StateMachines.Builder<?, ?, ?> builder : builders) {
             DefaultStateMachine<?, ?, ?> machine =
@@ -136,6 +150,40 @@ public final class MachineRegistry implements AutoCloseable {
         }
         registry.indexWatchers();
         return registry;
+    }
+
+    /**
+     * Every class that has a static initializer in the packages a call runs through: api, error, internal and runtime.
+     * A static initializer that does not complete, because a StackOverflowError interrupts it at the bottom of a deep
+     * call for one, leaves its class unusable for as long as the class is loaded, and every subclass with it (JLS
+     * 12.4.2): each later use throws NoClassDefFoundError, as every later failure of every call would, had it been
+     * CallFailedException's. A class without one cannot be left so once its superclass is initialized. A test over the
+     * compiled classes keeps this list complete, and keeps those packages free of switches on another class's enum,
+     * whose synthetic holder class has a static initializer that no source can name.
+     */
+    static List<Class<?>> staticallyInitialized() {
+        return List.of(ActionStatus.class, CallPhase.class, CascadePolicy.class, IgnoreReason.class, OutcomeCode.class,
+                OutcomeStatus.class, RejectionKind.class, StatesWritten.class, TransitionKind.class,
+                CallFailedException.class, CallFailureFlows.class, FrozenFlow.class, Await.class, CallLog.class,
+                CommitSummary.class, FlowHandle.Hook.class, Observers.class, Reentrancy.class, Submit.class,
+                Transaction.Hold.class, UnitOfWork.class);
+    }
+
+    /**
+     * Initialises each class of {@link #staticallyInitialized()} now, on the stack that assembles the registry, so
+     * that none of their static initializers runs for the first time inside a call, where a call that overflows its
+     * stack would leave the class unusable. A class already initialized costs a check.
+     */
+    private static void initializeRuntime() {
+        MethodHandles.Lookup lookup = MethodHandles.lookup();
+        for (Class<?> type : staticallyInitialized()) {
+            try {
+                lookup.ensureInitialized(type);
+            } catch (IllegalAccessException unreachable) {
+                // Each class is in this module and accessible from this package.
+                throw new IllegalStateException(unreachable);
+            }
+        }
     }
 
     /** A watch must point to one of the machines being assembled; for a standalone machine, that is itself. */
