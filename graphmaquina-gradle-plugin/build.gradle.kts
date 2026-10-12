@@ -8,7 +8,7 @@ group = "io.github.graphmaquina"
 // so the six lines are repeated here for the same reason the POM metadata below is.
 version = providers.gradleProperty("graphmaquinaVersion").orElse(
     providers.exec {
-        commandLine("git", "describe", "--tags", "--abbrev=0")
+        commandLine("git", "describe", "--tags")
         isIgnoreExitValue = true
     }.standardOutput.asText.map { it.trim().removePrefix("v").ifEmpty { "0.0.0-dev" } }
 ).get()

@@ -40,9 +40,12 @@ type-checks the application; no previously compiled machine is required.
 ## Preparing a Central release
 
 The version comes from git tags: both builds read `-PgraphmaquinaVersion` when a release passes it and
-otherwise derive it from the most recent tag, so no file in the repository states a release version. A
-published version is immutable; the next publication is `2.0.0`, which every module carries at once. The
-[README](guide.md#release-to-maven-central) describes the release, the steps below among them.
+otherwise derive it with `git describe --tags`, so no file in the repository states a release version. That is
+the tag itself on a tagged commit, and on any other commit the most recent tag followed by the commits since it
+and the abbreviated commit, as `1.0.2-553-g03952fd`, so a development build never takes the coordinates of a
+published release; `centralBundle` refuses such a version. A published version is immutable; the next
+publication is `2.0.0`, which every module carries at once. The [README](guide.md#release-to-maven-central)
+describes the release, the steps below among them.
 
 Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD` to its passphrase, then run:
 
@@ -67,12 +70,14 @@ every component, including the Gradle implementation and its marker, from an int
 repository is private and requires authorized access; the published artifacts are public.
 See the [README](guide.md#configure-gradle) for a complete consumer configuration.
 
-To test local changes, publish from an authorized checkout of this repository:
+To test local changes, publish from an authorized checkout of this repository, under a version string of your
+choice, the one the consumer then sets as `graphmaquinaVersion` or `graphmaquina.version`:
 
 ```bash
-./gradlew :graphmaquina-core:publishToMavenLocal :graphmaquina-codegen:publishToMavenLocal \
+./gradlew -PgraphmaquinaVersion=x.y.z \
+          :graphmaquina-core:publishToMavenLocal :graphmaquina-codegen:publishToMavenLocal \
           :graphmaquina-processor:publishToMavenLocal :graphmaquina-maven-plugin:publishToMavenLocal
-./gradlew -p graphmaquina-gradle-plugin publishToMavenLocal      # the plugin jar and its marker
+./gradlew -PgraphmaquinaVersion=x.y.z -p graphmaquina-gradle-plugin publishToMavenLocal  # the plugin jar and its marker
 ```
 
 The second command is a separate invocation because the Gradle adapter is an included build. It installs both

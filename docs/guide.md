@@ -4294,12 +4294,13 @@ private release key and `SIGNING_PASSWORD` with its passphrase, then run:
 ./gradlew --no-daemon centralBundle
 ```
 
-Without `-PgraphmaquinaVersion`, that stages the most recent tag's version, which is already published; pass
-the flag to stage a different one. Maintainers using 1Password CLI can inject both secrets for this command
-without copying them into the checkout or shell history. Replace `<vault>` and `<item>` with the vault and
-signing item's names or IDs; the item must have a `Private PGP key` field containing the armored secret key
-and a `password` field. 1Password shows that field under two names, the id `private_key` and the label
-`Private PGP key`; they are one field, and these examples address it by its label:
+Without `-PgraphmaquinaVersion`, the version is the tag of the commit being built, already published once that tag
+is released; on a commit no tag names, it is derived from the most recent tag, as `1.0.2-553-g03952fd`, which
+`centralBundle` refuses. Pass the flag to stage another version. Maintainers using 1Password CLI can inject both
+secrets for this command without copying them into the checkout or shell history. Replace `<vault>` and `<item>`
+with the vault and signing item's names or IDs; the item must have a `Private PGP key` field containing the
+armored secret key and a `password` field. 1Password shows that field under two names, the id `private_key` and
+the label `Private PGP key`; they are one field, and these examples address it by its label:
 
 ```bash
 SIGNING_KEY='op://<vault>/<item>/Private PGP key' \
