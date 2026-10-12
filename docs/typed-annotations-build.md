@@ -572,13 +572,21 @@ resolved against the directory Maven was started in, as `maven-compiler-plugin` 
 otherwise; an empty `<compileSourceRoots/>` stands for the project's. A source root the execution does not narrow
 is passed to the generator whole, but for the case below; one its `<includes>` or `<excludes>` narrow
 (`<testIncludes>`, `<testExcludes>` or `<testIncrementalExcludes>` for the tests) is passed as the files they
-select, with the patterns matched as the compiler's plexus-utils scanner matches them, `%ant[...]` and `%regex[...]`
-included, and without the files that scanner excludes by default, the list of plexus-utils, which leaves out `._*`
-copies and the directories of version control systems among others. Directories are entered as that scanner enters
-them: only when an include matches the directory and no exclude does, or when an include could match a path below
-it, which an include that starts with a separator never can. Such an include matches a path as if it had no leading
-separator, so `/fx/**` selects the sources under `fx`, a directory it matches, while
-`/io/github/graphmaquina/generated/**` alone selects nothing, since the scanner never enters `io`.
+select, with the patterns matched as the compiler's plexus-utils scanner matches them on the platform the build
+runs on, `%ant[...]` and `%regex[...]` included, and without the files that scanner excludes by default, the list of
+plexus-utils, which leaves out `._*` copies and the directories of version control systems among others. That
+scanner spells a path with the file
+separator of the platform, `/` or `\`, and rewrites the separators of a `%regex[...]` pattern for it: every pair of
+backslashes becomes `/` where the separator is `/`, and every `/` becomes a pair of backslashes, an escaped
+backslash, where it is `\`. So `/` and an escaped backslash stand for the separator on either platform, while an
+expression that escapes a `/`, such as `fx\/drafts\/.*`, selects the drafts only where the separator is `/`.
+Directories are entered as that scanner enters them: only when an include matches the directory and no exclude
+does, or when an include could match a path below it. Where the separator is `/`, an include that starts with a
+separator never can: it matches a path as if it had no leading separator, so `/fx/**` selects the sources under
+`fx`, a directory it matches, while `/io/github/graphmaquina/generated/**` alone selects nothing, since the
+scanner never enters `io`. Where the separator is `\`, as on Windows, plexus-utils also lets the scanner in for
+such an include as if it had no leading separator, so `/io/github/graphmaquina/generated/**` selects the sources
+under `io/github/graphmaquina/generated`.
 
 The generator walks a whole root as Gradle walks a source directory, with Ant's shorter default list: it leaves
 out every directory a default exclude names, with everything inside it. The compiler's scanner leaves out what is
@@ -698,11 +706,12 @@ failure names what to change:
   too. Patterns that leave out the compilation carrier are refused, naming the exclude, or the include list; with
   includes, the remedy is `<include>io/github/graphmaquina/generated/**</include>`. An include that matches the
   carrier leaves it out all the same when the compiler's scanner never enters a directory above it, as
-  `<include>/io/github/graphmaquina/generated/**</include>` does, whose leading separator keeps the scanner out of
-  `io`; the refusal then also names that include and that directory. A main `<incrementalExcludes>` pattern that
-  matches the carrier is refused as well: the compiler leaves what it matches out of its check
-  for stale sources, and the carrier, which has no class file once a compilation completes, is what makes that
-  check compile the module again after the preparation. Includes that hold only empty values, such as
+  `<include>/io/github/graphmaquina/generated/**</include>` does where the file separator is `/`, whose leading
+  separator keeps the scanner out of `io` there; the refusal then also names that include and that directory. Where
+  the separator is `\`, as on Windows, the scanner enters `io` for that include, and it is accepted. A main
+  `<incrementalExcludes>` pattern that matches the carrier is refused as well: the compiler leaves what it matches
+  out of its check for stale sources, and the carrier, which has no class file once a compilation completes, is what
+  makes that check compile the module again after the preparation. Includes that hold only empty values, such as
   `<includes>,</includes>` or a lone `<include/>`, are refused too: Maven turns those values into null,
   `maven-compiler-plugin` then adds no default include, and the compiler would select no source at all.
 - **The manifest argument, per execution.** Every `-Agraphmaquina.annotationManifest=` the two scopes declare

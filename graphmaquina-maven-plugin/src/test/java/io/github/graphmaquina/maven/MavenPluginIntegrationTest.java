@@ -491,14 +491,17 @@ class MavenPluginIntegrationTest {
 
     /**
      * The scanner of maven-compiler-plugin enters a directory only when an include matches it and no exclude does, or
-     * when an include could match a path below it, which an include that starts with a separator never can. So
-     * {@code /io/github/graphmaquina/generated/**} matches the carrier and still leaves it out, since the scanner never
-     * enters {@code io}: javac would compile no carrier. Such includes are refused by the generation, before anything
-     * is retired, naming the include and the directory the scanner never enters.
+     * when an include could match a path below it, which an include that starts with a separator never can where the
+     * file separator is {@code /}. So {@code /io/github/graphmaquina/generated/**} matches the carrier and still leaves
+     * it out, since the scanner never enters {@code io}: javac would compile no carrier. Such includes are refused by
+     * the generation, before anything is retired, naming the include and the directory the scanner never enters. The
+     * test runs only where the file separator is {@code /}: where it is {@code \}, the scanner enters {@code io} for
+     * such an include, and javac compiles the carrier.
      */
     @Test
     void anIncludeThatStartsWithASeparatorAndLeavesTheCarrierOutIsRefusedBeforeAnythingIsRetired()
             throws IOException {
+        assumeTrue(File.separatorChar == '/', "an include that starts with a separator lets the scanner in here");
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
         assertEquals(0, fixture.run("package").exitCode());
         List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
@@ -524,13 +527,15 @@ class MavenPluginIntegrationTest {
 
     /**
      * The generator reads the sources the scanner of maven-compiler-plugin reaches, and that scanner enters an excluded
-     * directory only when an include could match a path below it, which {@code /fx/**} never can: with that include and
-     * the exclude {@code fx/drafts}, which matches the directory and none of the files under it, javac compiles no
-     * draft there, and the generator reads none, although {@code /fx/**} matches the draft's path. The draft does not
-     * even parse.
+     * directory only when an include could match a path below it, which {@code /fx/**} never can where the file
+     * separator is {@code /}: with that include and the exclude {@code fx/drafts}, which matches the directory and none
+     * of the files under it, javac compiles no draft there, and the generator reads none, although {@code /fx/**}
+     * matches the draft's path. The draft does not even parse. The test runs only where the file separator is
+     * {@code /}: where it is {@code \}, the scanner enters {@code fx/drafts} for that include.
      */
     @Test
     void theGeneratorSkipsTheDirectoriesTheCompilersScannerNeverEnters() throws IOException {
+        assumeTrue(File.separatorChar == '/', "an include that starts with a separator lets the scanner in here");
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
         fixture.editPom("<release>21</release>", "<release>21</release>\n"
                 + "          <includes>\n"

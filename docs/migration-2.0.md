@@ -744,11 +744,13 @@ observe. Most items refuse up front what used to fail later, in generated code o
   or `--processor-path` argument, the last one given, that reaches the processor is accepted where
   `<annotationProcessorPaths>`, or without one the dependencies, leave the processor out, which used to be refused;
   an empty `<jdkToolchain/>` selects the first jdk toolchain of the build, as the compiler does, where it used to be
-  ignored; include and exclude patterns match as plexus-utils matches them, `%ant[...]` and `%regex[...]` included,
-  and select only the sources its scanner reaches, which enters no directory for an include that starts with a
-  separator unless that include matches the directory itself; compiler arguments are evaluated as Maven evaluates
-  them, as far as that can be told when the checks run, `${settings.localRepository}` for instance, and one that is
-  a single expression Maven turns into nothing, such as `${project.file}`, is left out, as javac never gets it; an
+  ignored; include and exclude patterns match as plexus-utils matches them on the platform the build runs on,
+  `%ant[...]` and `%regex[...]` included, and select only the sources its scanner reaches, which, where the file
+  separator is `/`, enters no directory for an include that starts with a separator unless that include matches the
+  directory itself, and, where it is `\`, enters one for such an include as if it had no leading separator; compiler
+  arguments are evaluated as Maven evaluates them, as far as that can be told when the checks run,
+  `${settings.localRepository}` for instance, and one that is a single expression Maven turns into nothing, such as
+  `${project.file}`, is left out, as javac never gets it; an
   `-encoding` compiler argument names the encoding the generator reads in wherever javac reads in it: when no
   encoding is configured, and when the compiler forks javac or runs it through `com.sun.tools.javac.Main`, as
   `forceLegacyJavacApi` or `forceJavacCompilerUse` makes it, either of which takes the last `-encoding`; a `--release`

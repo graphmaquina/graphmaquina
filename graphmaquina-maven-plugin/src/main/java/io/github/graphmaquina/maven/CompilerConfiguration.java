@@ -1212,7 +1212,7 @@ final class CompilerConfiguration {
         for (String parameter : excludesParameters()) {
             excludes.addAll(patterns(parameter));
         }
-        return new SourcePatterns(patterns(execution.includesParameter()), excludes);
+        return new SourcePatterns(patterns(execution.includesParameter()), excludes, File.separatorChar);
     }
 
     /**
@@ -1294,9 +1294,11 @@ final class CompilerConfiguration {
      * hold only empty values select no source at all, so javac would not run. The carrier is matched under the very
      * name the generator gives it: {@code GraphCompilation} and the first sixteen hexadecimal digits of the SHA-256
      * of the identity of the compilation, in {@code io/github/graphmaquina/generated/bootstrap}. It is selected as
-     * {@link SourcePatterns#selects} selects a source, so an include that matches it is not enough when the scanner of
-     * the compiler never enters a directory above it, as for {@code /io/github/graphmaquina/generated/**}, whose
-     * leading separator keeps the scanner out of every directory the include does not match itself.
+     * {@link SourcePatterns#selects} selects a source on the platform the build runs on, so an include that matches it
+     * is not enough when the scanner of the compiler never enters a directory above it, as for
+     * {@code /io/github/graphmaquina/generated/**} where the file separator is {@code /}: its leading separator then
+     * keeps the scanner out of every directory the include does not match itself. Where the separator is {@code \},
+     * plexus-utils lets the scanner in for such an include as if it had no leading separator.
      *
      * <p>The main compilation also leaves the sources its {@code <incrementalExcludes>} match out of the check for
      * stale sources that decides whether it runs javac at all, while it still compiles them. The carrier, whose class
@@ -1319,7 +1321,7 @@ final class CompilerConfiguration {
         String remedy = " Change that pattern so it matches nothing under io/github/graphmaquina/generated.";
         for (String parameter : excludesParameters()) {
             for (String exclude : patterns(parameter)) {
-                if (SourcePatterns.matches(exclude, carrier)) {
+                if (SourcePatterns.matches(exclude, carrier, File.separatorChar)) {
                     throw new MojoExecutionException("the <" + parameter + "> pattern " + exclude + compiler
                         + " leaves out " + carrier + consequence + remedy);
                 }
@@ -1327,7 +1329,7 @@ final class CompilerConfiguration {
         }
         if (execution == CompilerExecution.MAIN) {
             for (String exclude : patterns("incrementalExcludes")) {
-                if (SourcePatterns.matches(exclude, carrier)) {
+                if (SourcePatterns.matches(exclude, carrier, File.separatorChar)) {
                     throw new MojoExecutionException("the <incrementalExcludes> pattern " + exclude + compiler
                         + " leaves " + carrier + ", the carrier the StateGraph generator emits for this compilation"
                         + " under " + request.sourcesOutput() + ", out of the check the compiler makes for stale"
@@ -1354,11 +1356,13 @@ final class CompilerConfiguration {
         if (selection.selects(carrier)) {
             return;
         }
-        // An include can match the carrier while the scanner never reaches it, as one that starts with a separator.
+        // An include can match the carrier while the scanner never reaches it, as one that starts with a separator
+        // where the file separator is /. Where it is \, an include that matches the carrier lets the scanner into
+        // every directory above it, so this explanation is never given there.
         String unreached = "";
         Optional<String> skipped = selection.skippedDirectory(carrier);
         Optional<String> matching = includes.stream()
-            .filter((String include) -> SourcePatterns.matches(include, carrier)).findFirst();
+            .filter((String include) -> SourcePatterns.matches(include, carrier, File.separatorChar)).findFirst();
         if (skipped.isPresent() && matching.isPresent()) {
             unreached = " The include " + matching.get() + " matches that path, but the scanner of the compiler never"
                 + " enters " + skipped.get() + ": it enters a directory only when an include matches that directory and"
