@@ -1729,10 +1729,13 @@ final class Transaction {
     /**
      * The rest of cascadeAll once its elements are accepted: the identifier, the machine, then every element. A call
      * that logs at TRACE logs each COLLECT element it rolls back, once the identity of the element was registered,
-     * with the abort that ended its step. A rollback that an identity's equals or hashCode stops is a failure that
-     * leaves the cascade like any other, whatever it threw: the abort of the caller's step that carries it, through
-     * {@link #poisonThrough}, replaces the element's abort as the poison, holds that abort as suppressed, and reaches
-     * the action; a COLLECT that encloses this one collects no such poison, so it stops at once too. When printing the
+     * with the abort that ended its step. An element that fails before its step runs, a cycle or the depth limit,
+     * poisons the call through {@link #poisonAt} before it is rolled back, so its poison is logged as a single
+     * cascade's is; an element whose step aborted poisoned the call inside the step, which logged it. A rollback that
+     * an identity's equals or hashCode stops is a failure that leaves the cascade like any other, whatever it threw:
+     * the abort of the caller's step that carries it, through {@link #poisonThrough}, replaces the element's abort as
+     * the poison, holds that abort as suppressed, and reaches the action; a COLLECT that encloses this one collects no
+     * such poison, so it stops at once too. When printing the
      * entities in flight for the aggregate throws an Error, an
      * aggregate whose path names each entity's machine alone poisons the transaction first, as {@link #poisonWith}
      * says, and then that Error propagates.
@@ -1763,7 +1766,7 @@ final class Transaction {
             } catch (Throwable error) {
                 if (error instanceof TransitionAbortedException abort && owns(abort)
                         && !uow.poisonWrapsAForeignFailure()) {
-                    uow.poison(abort);
+                    poisonAt(caller.contextDepth(), abort);
                     try {
                         uow.rollbackTo(savepoint);
                     } catch (Error fatal) {

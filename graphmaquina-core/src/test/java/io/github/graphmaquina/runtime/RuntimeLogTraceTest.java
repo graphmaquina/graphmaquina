@@ -634,6 +634,69 @@ class RuntimeLogTraceTest {
     }
 
     /**
+     * A COLLECT element whose cascade fails before its step can run, a cycle in the first call and the depth limit in
+     * the second, poisons the call at the depth of the step that asked for it, as a single cascade that cannot start
+     * does, before the element is rolled back and its poison cleared; the aggregate then poisons the call again.
+     */
+    @Test
+    void aCollectElementThatCannotStartTracesItsPoisonBeforeItsRollback() {
+        Doc cyclic = new Doc("c", DRAFT);
+        Doc root = new Doc("r", DRAFT);
+        Doc middle = new Doc("m", DRAFT);
+        Doc deep = new Doc("d", DRAFT);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            if (ctx.entity() == cyclic) {
+                                ctx.cascadeAll(DOCS, List.of(cyclic), SUBMIT, CascadePolicy.COLLECT);
+                            } else if (ctx.entity() == root) {
+                                ctx.cascade(DOCS, middle, SUBMIT);
+                            } else if (ctx.entity() == middle) {
+                                ctx.cascadeAll(DOCS, List.of(deep), SUBMIT, CascadePolicy.COLLECT);
+                            }
+                            return ActionOutcome.ok();
+                        }));
+        try (MachineRegistry registry = MachineRegistry.builder().maxCascadeDepth(1)
+                .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus).identity(Doc::id)).build();
+             LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            CascadeException cycleAggregate = assertThrows(CascadeException.class,
+                    () -> registry.of(DOCS).execute(cyclic, SUBMIT));
+            TransitionAbortedException cycle = cycleAggregate.errors().get(0);
+            CascadeException depthAggregate = assertThrows(CascadeException.class,
+                    () -> registry.of(DOCS).execute(root, SUBMIT));
+            TransitionAbortedException depth = depthAggregate.errors().get(0);
+            assertEquals(List.of(
+                    "FINE call=A start Doc/DocStatus SUBMIT",
+                    "FINER call=A depth=0 resolved Doc/DocStatus#c DRAFT -SUBMIT-> REVIEW kind=ACTION",
+                    "FINER call=A depth=0 action Submit start mode=sync",
+                    "FINER call=A depth=0 cascade Doc/DocStatus#c SUBMIT policy=COLLECT",
+                    "FINER call=A depth=0 poison error=" + cycle,
+                    "FINER call=A depth=0 collect-rollback Doc/DocStatus#c SUBMIT error=" + cycle,
+                    "FINER call=A depth=0 poison error=" + cycleAggregate,
+                    "FINER call=A depth=0 action Submit THREW error=" + cycleAggregate.getClass().getName()
+                            + " elapsed=<us>",
+                    "FINE call=A failed phase=ACTION written=NONE entity=Doc/DocStatus#c error=" + cycleAggregate
+                            + " elapsed=<us>",
+                    "FINE call=B start Doc/DocStatus SUBMIT",
+                    "FINER call=B depth=0 resolved Doc/DocStatus#r DRAFT -SUBMIT-> REVIEW kind=ACTION",
+                    "FINER call=B depth=0 action Submit start mode=sync",
+                    "FINER call=B depth=0 cascade Doc/DocStatus#m SUBMIT",
+                    "FINER call=B depth=1 resolved Doc/DocStatus#m DRAFT -SUBMIT-> REVIEW kind=ACTION",
+                    "FINER call=B depth=1 action Submit start mode=sync",
+                    "FINER call=B depth=1 cascade Doc/DocStatus#d SUBMIT policy=COLLECT",
+                    "FINER call=B depth=1 poison error=" + depth,
+                    "FINER call=B depth=1 collect-rollback Doc/DocStatus#d SUBMIT error=" + depth,
+                    "FINER call=B depth=1 poison error=" + depthAggregate,
+                    "FINER call=B depth=1 action Submit THREW error=" + depthAggregate.getClass().getName()
+                            + " elapsed=<us>",
+                    "FINER call=B depth=0 action Submit THREW error=" + depthAggregate.getClass().getName()
+                            + " elapsed=<us>",
+                    "FINE call=B failed phase=ACTION written=NONE entity=Doc/DocStatus#r error=" + depthAggregate
+                            + " elapsed=<us>"), lines(log));
+        }
+    }
+
+    /**
      * A nested abort poisons the call at the depth of its step; a cascade that cannot start, here to a machine the
      * registry does not hold, poisons it at the depth of the step that asked for it. Neither is traced twice.
      */
