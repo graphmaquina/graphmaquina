@@ -2,6 +2,7 @@ package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.PeerView;
+import java.util.Collection;
 import java.util.Optional;
 import lombok.AccessLevel;
 import lombok.NonNull;
@@ -9,7 +10,8 @@ import lombok.RequiredArgsConstructor;
 
 /**
  * Reads the UnitOfWork first and the entity second: the only consistent view during a transaction.
- * The guard runs before every read, so a view captured in an action cannot outlive its transaction.
+ * The guard runs before every read, so a view captured in an action cannot outlive its transaction. The helpers run it
+ * first too, so they refuse even over an empty collection, which reads no state; noneIn reads through anyIn.
  */
 @RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements PeerView<P, Q, U> {
@@ -45,5 +47,17 @@ final class DefaultPeerView<P, Q extends Enum<Q>, U extends Enum<U>> implements 
             return machine.key().states().cast(pending.get());
         }
         return machine.readState(peer);
+    }
+
+    @Override
+    public boolean allIn(@NonNull Collection<? extends P> peers, @NonNull Q state) {
+        guard.run();
+        return PeerView.super.allIn(peers, state);
+    }
+
+    @Override
+    public boolean anyIn(@NonNull Collection<? extends P> peers, @NonNull Q state) {
+        guard.run();
+        return PeerView.super.anyIn(peers, state);
     }
 }
