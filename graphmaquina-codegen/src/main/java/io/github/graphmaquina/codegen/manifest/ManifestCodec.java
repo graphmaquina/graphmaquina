@@ -33,10 +33,11 @@ import java.util.List;
  * member that is not an exact integer of its range (a fraction, or a value beyond 32 bits for
  * {@code schemaVersion} and 64 bits for an origin's {@code line} and {@code column}), a number anywhere in the
  * document whose exponent lies beyond the range a {@link java.math.BigDecimal} holds, such as
- * {@code 1e99999999999}, a duplicate key at any nesting level, and an inventory path
- * ({@link CompileManifest#ownedSources()}) that no path can spell, that is absolute or has a root, that holds a
- * {@code ..} segment, that names the root itself, as {@code .} does, or that is no Java source, as {@code x} is not,
- * are all rejected with a
+ * {@code 1e99999999999}, a duplicate key at any nesting level, a processor inventory
+ * ({@link CompileManifest#processorInventory()}) that no path can spell, such as one holding the NUL character, and
+ * an inventory path ({@link CompileManifest#ownedSources()}) that no path can spell, that is absolute or has a root,
+ * that holds a {@code ..} segment, that names the root itself, as {@code .} does, or that is no Java source, as
+ * {@code x} is not, are all rejected with a
  * {@link CodegenException} carrying code {@code SG602} and naming the file. A genuine I/O failure
  * (the file cannot be opened, read or written) is reported as an {@link IOException} instead, exactly as declared.
  *
@@ -266,6 +267,7 @@ public final class ManifestCodec {
             .map(element -> readExportIndex(JsonSupport.asObject(element, path), path))
             .toList();
         String processorInventory = JsonSupport.requireString(object, "processorInventory", path);
+        JsonSupport.requireProcessorInventory(processorInventory, path);
         List<String> ownedSources = JsonSupport.requireStringArray(object, "ownedSources", path);
         for (String ownedSource : ownedSources) {
             JsonSupport.requireRelativeInventoryPath(ownedSource, path);
@@ -277,12 +279,13 @@ public final class ManifestCodec {
     /**
      * Writes {@code manifest} to {@code path}, in the canonical order documented on this class.
      *
-     * @throws CodegenException {@code SG602} if {@link #readCompile} would refuse an owned source: one that no path
-     *     can spell, that is absolute or has a root, that holds a {@code ..} segment, that names the root itself or
-     *     that is no Java source; nothing is written then
+     * @throws CodegenException {@code SG602} if {@link #readCompile} would refuse its processor inventory, one that no
+     *     path can spell, or an owned source: one that no path can spell, that is absolute or has a root, that holds a
+     *     {@code ..} segment, that names the root itself or that is no Java source; nothing is written then
      * @throws IOException if {@code path} cannot be written
      */
     public static void writeCompile(Path path, CompileManifest manifest) throws IOException {
+        JsonSupport.requireProcessorInventory(manifest.processorInventory(), path);
         for (String ownedSource : manifest.ownedSources()) {
             JsonSupport.requireRelativeInventoryPath(ownedSource, path);
             JsonSupport.requireJavaSource(ownedSource, path);

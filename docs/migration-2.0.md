@@ -704,7 +704,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   in a manifest or an index is `SG602` naming the file, and so is a `schemaVersion` or a source position that is
   not an exact integer, which used to be truncated. So is an owned source of a manifest that no path can spell,
   such as one holding a NUL character, that has a root, as `\x` and `C:x` have on Windows, that names the
-  directory itself, such as `.`, or that is no `.java` file, such as `x`. A number whose exponent is out of range,
+  directory itself, such as `.`, or that is no `.java` file, such as `x`, and a processor inventory of a manifest that
+  no path can spell, where `complete-compile`, and `prepare-compile` after an interrupted cycle, used to fail with an
+  unchecked `InvalidPathException`. A number whose exponent is out of range,
   such as `1e99999999999`, and a string or a name that escapes a surrogate that is not half of a pair, such as
   `\ud800`, which no UTF-8 file can hold, in the request, a manifest, an index or an inventory a step needs are
   `SG602` too, where an unchecked `NumberFormatException` used to escape and such a surrogate used to be read as it

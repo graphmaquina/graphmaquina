@@ -406,6 +406,39 @@ class CompilationOutputsTest {
         assertTrue(Files.isSymbolicLink(back));
     }
 
+    /**
+     * A manifest whose processor inventory no path can spell, such as one holding the NUL character, is refused with
+     * {@code SG602} naming the manifest, both by a preparation after an interrupted cycle, which reads that inventory,
+     * and by the completion, before either changes an output.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"prepare", "complete"})
+    void refusesAManifestWhoseProcessorInventoryNoPathCanSpell(String step) throws IOException {
+        writeManifest(List.of(CARRIER_SOURCE));
+        CompilationOutputs.prepare(request());
+        writeProvisionalIndex();
+        Path manifest = workDirectory.resolve("annotation-manifest.json");
+        String inventory = workDirectory.resolve("processor-inventory.json").toString()
+                .replace("processor-inventory.json", "processor-inventory\u0000.json");
+        Files.writeString(manifest, Files.readString(manifest, StandardCharsets.UTF_8)
+                .replace("processor-inventory.json", "processor-inventory\\u0000.json"), StandardCharsets.UTF_8);
+        byte[] pending = Files.readAllBytes(workDirectory.resolve(PENDING_INVENTORY));
+
+        Exception failure = assertThrows(Exception.class, () -> {
+            if (step.equals("prepare")) {
+                CompilationOutputs.prepare(request());
+            } else {
+                CompilationOutputs.complete(request());
+            }
+        });
+
+        CodegenException refusal = assertInstanceOf(CodegenException.class, failure);
+        assertEquals("SG602", refusal.code());
+        assertEquals("processor inventory '" + inventory + "' is not a path in " + manifest, refusal.getMessage());
+        assertArrayEquals(pending, Files.readAllBytes(workDirectory.resolve(PENDING_INVENTORY)));
+        assertTrue(Files.exists(classesOutput.resolve(PENDING)));
+    }
+
     @Test
     void refusesToCompleteACompilationThatWasNeverPrepared() throws IOException {
         writeManifest(List.of(CARRIER_SOURCE));

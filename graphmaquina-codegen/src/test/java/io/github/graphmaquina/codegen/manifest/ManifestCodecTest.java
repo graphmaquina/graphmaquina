@@ -511,6 +511,33 @@ class ManifestCodecTest {
         assertEquals("SG602", onRead.code());
     }
 
+    /**
+     * The processor inventory is a file the processor writes and the build reads back, so one that no path can spell,
+     * such as one holding the NUL character, is refused with {@code SG602} naming the manifest, both when a manifest
+     * is written and when it is read, before a step that makes a path of it fails on it.
+     */
+    @Test
+    void refusesAProcessorInventoryThatNoPathCanSpell() throws IOException {
+        String inventory = "work/inventory\u0000.json";
+        Path written = directory.resolve("written.json");
+
+        CodegenException onWrite = assertThrows(CodegenException.class, () -> ManifestCodec.writeCompile(written,
+            new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"), List.of(), inventory,
+                List.of("fx/Valid.java"))));
+
+        assertEquals("SG602", onWrite.code());
+        assertEquals("processor inventory '" + inventory + "' is not a path in " + written, onWrite.getMessage());
+        assertFalse(Files.exists(written));
+        Path valid = directory.resolve("valid.json");
+        ManifestCodec.writeCompile(valid, new CompileManifest(2, "0.3.0-SNAPSHOT", index("fx:demo:main"), List.of(),
+            "work/inventory.json", List.of("fx/Valid.java")));
+        Path read = Files.writeString(directory.resolve("read.json"), Files.readString(valid, StandardCharsets.UTF_8)
+            .replace("work/inventory.json", "work/inventory\\u0000.json"), StandardCharsets.UTF_8);
+        CodegenException onRead = assertThrows(CodegenException.class, () -> ManifestCodec.readCompile(read));
+        assertEquals("SG602", onRead.code());
+        assertEquals("processor inventory '" + inventory + "' is not a path in " + read, onRead.getMessage());
+    }
+
     /** A request round-trips as one flat object, with its sources and its classpath in the order it gives them. */
     @Test
     void generationRequestRoundTripsAsFlatJson() throws IOException {

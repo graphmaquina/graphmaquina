@@ -322,6 +322,18 @@ final class JsonSupport {
     }
 
     /**
+     * Rejects a processor inventory that no path can spell, such as one holding the NUL character: every step that
+     * reads or writes that inventory makes a path of it.
+     */
+    static void requireProcessorInventory(String value, Path file) {
+        try {
+            Path.of(value);
+        } catch (InvalidPathException unspellable) {
+            throw new CodegenException(ERROR_CODE, "processor inventory '" + value + "' is not a path in " + file);
+        }
+    }
+
+    /**
      * Rejects an inventory path that no path can spell, such as one holding the NUL character, one that is absolute
      * or has a root, as {@code \x} and {@code C:x} have on Windows, where resolving one against a directory can give
      * a path outside that directory, one that holds a {@code ..} segment, whether or not that segment leads out of its
