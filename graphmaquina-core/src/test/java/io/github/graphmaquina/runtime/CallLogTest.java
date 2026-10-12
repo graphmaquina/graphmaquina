@@ -211,7 +211,7 @@ class CallLogTest {
     @Test
     void showPrintsTheValueOrAMarkerWhenItsToStringThrows() {
         assertEquals("Doc/DocStatus#7", CallLog.show(new EntityRef(DOCS, "7", new Doc("7", DRAFT))));
-        assertEquals("<toString threw java.lang.IllegalStateException>",
+        assertEquals("Doc/DocStatus#<toString threw java.lang.IllegalStateException>",
                 CallLog.show(new EntityRef(DOCS, new BrokenId("7"), new Doc("7", DRAFT))));
         Object fatal = new Object() {
             @Override
@@ -325,7 +325,7 @@ class CallLogTest {
         log.entity(new EntityRef(DOCS, new BrokenId("1"), new Doc("1", DRAFT)));
         log.failed(new CallFailure(CallPhase.COMMIT, StatesWritten.PARTIAL, new IllegalStateException("disk full")));
         assertEquals(List.of("DEBUG call=" + log.id() + " failed phase=COMMIT written=PARTIAL"
-                        + " entity=<toString threw java.lang.IllegalStateException>"
+                        + " entity=Doc/DocStatus#<toString threw java.lang.IllegalStateException>"
                         + " error=java.lang.IllegalStateException: disk full"),
                 backend.lines.stream().map(CallLogTest::withoutElapsed).toList());
     }

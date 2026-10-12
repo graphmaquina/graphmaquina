@@ -3129,9 +3129,9 @@ selected no edge, or that failed before its edge ran, names none. The identity m
 address used as an identifier, and the reasons, exception messages and visible flow values the lines print may carry
 internal details; treat these logs like any record that carries your identifiers. If the `toString()` of an identity,
 of an exception or of a visible flow value throws a `RuntimeException`, the line prints
-`<toString threw <exception class>>` in its place, and the call goes on; an `Error` propagates. A `toString()` that
-returns `null` prints `<toString returned null>` for an exception or a visible flow value, and `null` after the `#` of
-an identity.
+`<toString threw <exception class>>` in its place, after the machine key and its `#` for an identity, and the call
+goes on; an `Error` propagates. A `toString()` that returns `null` prints `<toString returned null>` for an
+exception or a visible flow value, and `null` after the `#` of an identity.
 
 The runtime asks the logger for its two levels once, when a call starts, and builds no line of a level that is off: a
 level raised while a call runs applies from the next call, a call logged at `DEBUG` alone builds no `TRACE` line, and

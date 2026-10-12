@@ -1032,7 +1032,7 @@ class RuntimeLogTraceTest {
                 .build();
              LibraryLog log = LibraryLog.runtime(Level.FINER)) {
             assertEquals(OutcomeCode.APPLIED, registry.of(DOCS).execute(doc, SUBMIT).code());
-            String marker = "<toString threw java.lang.IllegalStateException>";
+            String marker = "Doc/DocStatus#<toString threw java.lang.IllegalStateException>";
             assertEquals(List.of(
                     "FINE call=A start Doc/DocStatus SUBMIT",
                     "FINER call=A depth=0 resolved " + marker + " DRAFT -SUBMIT-> REVIEW kind=MOVE",

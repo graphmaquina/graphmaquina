@@ -25,7 +25,8 @@ import lombok.NonNull;
  *     chain limit and an abort raised for the caller of a cascade or a peer read, even when that caller is a running
  *     action, and the abort the engine raises when its own code lets a failure through, which names no action even
  *     while one ran
- * @param cascadePath the entities in flight, outermost first
+ * @param cascadePath the entities in flight, outermost first; the engine prints each as {@code key#id}, with
+ *     {@code <toString threw <class name>>} in place of an id whose {@code toString()} throws anything but an Error
  * @param journal the actions that ran, in order, with their status
  */
 public record AbortDetails(@NonNull MachineKey<?, ?, ?> key, @NonNull Object entity, @NonNull Optional<Enum<?>> from,
