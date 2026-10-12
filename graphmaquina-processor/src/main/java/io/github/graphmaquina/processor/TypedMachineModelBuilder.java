@@ -33,15 +33,16 @@ import javax.lang.model.type.TypeMirror;
  * Turns a machine that declares its graph with the vocabulary generated for it into the {@link MachineModel}
  * the generators read, reporting every problem it finds with an SG code.
  *
- * <p>Identity comes first, twice over. The facade must carry the {@code Definition} generated for that very
- * machine, and every other declaration on it must belong to the same vocabulary, so a machine can never be
- * described with the annotations of another one that happens to have the same states. Inside the machine, an
- * edge is identified by its own {@code id}: one method owns one identifier and every annotation it carries
- * must agree on it, while the interface may add further branches of that identifier from other origins. Each
- * state and each identifier is read as the enum constant it is, checked against the machine's own enum, and
- * only then named; each symbol is resolved to the exported member behind it. What the language itself refuses
- * — a constant of another enum, an annotation that omits an element it requires — is left to javac, which has
- * already reported it precisely.</p>
+ * <p>A facade is told what shape it must take, a top-level interface over a concrete entity and two distinct enums,
+ * which no {@code Definition} can make of it, before it is told to apply its {@code Definition}. Identity comes first
+ * among its declarations, twice over. The facade must carry the {@code Definition} generated for that very machine,
+ * and every other declaration on it must belong to the same vocabulary, so a machine can never be described with the
+ * annotations of another one that happens to have the same states. Inside the machine, an edge is identified by its
+ * own {@code id}: one method owns one identifier and every annotation it carries must agree on it, while the interface
+ * may add further branches of that identifier from other origins. Each state and each identifier is read as the enum
+ * constant it is, checked against the machine's own enum, and only then named; each symbol is resolved to the
+ * exported member behind it. What the language itself refuses — a constant of another enum, an annotation that omits
+ * an element it requires — is left to javac, which has already reported it precisely.</p>
  *
  * <p>Everything the model must hold beyond that is a rule about a graph and not about a declaration, so it is
  * asked of {@link StructuralChecks}: the signature of an operation and the full outline of the graph. A key two
@@ -105,13 +106,9 @@ final class TypedMachineModelBuilder {
     Optional<MachineModel> build(TypeElement type, boolean complete) {
         int before = diagnostics.errors();
         List<AnnotationMirror> definitions = own(type, VocabularyKind.DEFINITION, type);
-        if (definitions.isEmpty()) {
-            diagnostics.error(HEADER, type.getSimpleName() + " declares no graph: apply the Definition generated for it"
-                    + ", which is the vocabulary its own name, states and transitions belong to", type);
-            return Optional.empty();
-        }
-        AnnotationMirror definition = definitions.get(0);
-        DiagnosticAnchor header = DiagnosticAnchor.of(type, definition);
+        DiagnosticAnchor header = definitions.isEmpty()
+                ? DiagnosticAnchor.of(type)
+                : DiagnosticAnchor.of(type, definitions.get(0));
         if (!structure.checkTopLevel(type, header)) {
             return Optional.empty();
         }
@@ -135,6 +132,12 @@ final class TypedMachineModelBuilder {
                     + " not be parameterized");
             return Optional.empty();
         }
+        if (definitions.isEmpty()) {
+            diagnostics.error(HEADER, type.getSimpleName() + " declares no graph: apply the Definition generated for it"
+                    + ", which is the vocabulary its own name, states and transitions belong to", type);
+            return Optional.empty();
+        }
+        AnnotationMirror definition = definitions.get(0);
 
         Optional<AnnotationValue> declaredInitial = annotations.find(definition, "initial");
         Optional<AnnotationValue> declaredState = annotations.find(definition, "state");

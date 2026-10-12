@@ -130,6 +130,55 @@ class MachineHeaderErrorsTest {
     }
 
     /**
+     * A nested machine is told that it must be top-level, whether or not it applies the Definition generated for
+     * it. It is never told to apply that Definition first, which would only lead to the same refusal.
+     */
+    @Test
+    void sg502NestedInterfaceIsToldToBeTopLevelWhetherOrNotItAppliesItsDefinition() {
+        String definition = "@HolderInnerGraph.Definition(initial = DRAFT, terminals = ARCHIVED,"
+                + " state = DocRefs.Status.class, id = DocRefs.Id.class)\n";
+        for (String header : List.of("", definition)) {
+            Map<String, String> sources = Fixtures.domain();
+            sources.put("fx.Holder", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.api.Machine;
+                    import static fx.DocStatus.*;
+                    public final class Holder {
+                        @GenerateGraphApi
+                        %s
+                        public interface Inner extends Machine<Doc, DocStatus, DocTransition> { }
+                    }
+                    """.formatted(header));
+
+            Compilation.Result result = Compilation.compileTyped(sources);
+
+            assertFalse(result.success(), result.describe());
+            assertEquals(List.of("[SG502] Inner must be a top-level interface: the generated companion lives next to"
+                    + " it in the package"), result.errors(), result.describe());
+        }
+    }
+
+    /**
+     * A machine declared as a class is told that it must be an interface, whether or not it applies the Definition
+     * generated for it. It is never told to apply that Definition first, which would only lead to the same refusal.
+     */
+    @Test
+    void sg502NotAnInterfaceIsToldSoWhetherOrNotItAppliesItsDefinition() {
+        for (String header : List.of("", Fixtures.DOCS_HEADER)) {
+            Map<String, String> sources = Fixtures.domain();
+            sources.put("fx.Docs", Fixtures.DOCS_IMPORTS + header
+                    + "public abstract class Docs implements Machine<Doc, DocStatus, DocTransition> {\n}\n");
+
+            Compilation.Result result = Compilation.compileTyped(sources);
+
+            assertFalse(result.success(), result.describe());
+            assertEquals(List.of("[SG502] Docs must be an interface extending Machine<E, S, T>"), result.errors(),
+                    result.describe());
+        }
+    }
+
+    /**
      * The machine still declares the vocabulary generated for it, but its own {@code Machine<E, S, T>} no
      * longer resolves to two distinct enums. The declaration itself is valid Java, so it is not SG502: the
      * generics are what contradict, and the catalogue gives that to SG601.
