@@ -2845,6 +2845,36 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * {@code <forceJavacCompilerUse>} or {@code maven.compiler.forceLegacyJavacApi} keeps javac inside Maven but runs it
+     * through {@code com.sun.tools.javac.Main}, which reads and writes every source in the last {@code -encoding} it is
+     * given, as a forked javac does. A project kept in ISO-8859-1 whose {@code project.build.sourceEncoding} says UTF-8
+     * builds with {@code -encoding ISO-8859-1} as a compiler argument, either way: the generator is told ISO-8859-1,
+     * and the accented identifier reaches the generated vocabulary intact.
+     */
+    @Test
+    void aForcedLegacyJavacReadsTheLastEncodingArgumentLikeAForkedOne() throws IOException {
+        MavenFixture configured = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("configured")),
+                fixtureRepository);
+        configured.editPom("<release>21</release>",
+                "<release>21</release><forceJavacCompilerUse>true</forceJavacCompilerUse>");
+        MavenFixture property = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("property")),
+                fixtureRepository);
+
+        for (MavenFixture fixture : List.of(configured, property)) {
+            addMainCompilerArguments(fixture, "<arg>-encoding</arg><arg>ISO-8859-1</arg>");
+            fixture.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
+
+            MavenResult result = fixture == configured
+                    ? fixture.run("package")
+                    : fixture.run("-Dmaven.compiler.forceLegacyJavacApi=true", "package");
+
+            assertEquals(0, result.exitCode(), result.output());
+            assertEquals("ISO-8859-1", fixture.requestValue("main", "encoding"));
+            assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), result.output());
+        }
+    }
+
+    /**
      * A javac that compiles inside Maven reads every source, those the annotation processors generate included, in the
      * encoding maven-compiler-plugin is configured with, but writes the sources an annotation processor generates in
      * the last {@code -encoding} it is given, so it would read them back in another charset than they were written in:

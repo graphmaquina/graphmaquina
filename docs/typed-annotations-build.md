@@ -588,16 +588,19 @@ passes a release that is set ahead of the compiler arguments, so the last `--rel
 `--release N` or `--release=N`, wins over that release; without a release, the compiler passes `-source` and
 `-target`, which javac refuses beside a `--release`. The request also carries the encoding javac reads the sources
 in. The configured encoding is `<encoding>`, else `project.build.sourceEncoding`. A javac that compiles inside Maven
-reads the sources through a file manager `maven-compiler-plugin` opens in the configured encoding, which wins over
-every `-encoding` compiler argument: the encoding is the configured one, else the last `-encoding` compiler
-argument. A javac the compiler forks, as it does when `<fork>` is true and when it compiles with a `jdk` toolchain,
-gets the configured encoding as an `-encoding` ahead of the compiler arguments and takes the last one: the encoding
-is the last `-encoding` compiler argument, else the configured one. The generator parses at that release, reads in
-that encoding and writes the generated sources in it; without an encoding, it reads and writes UTF-8. The companions
-the annotation processor generates hold ASCII only, every other character written as a `\uXXXX` escape, so javac
-writes them alike in any encoding. A javac that compiles inside Maven still writes them in the last `-encoding`
-compiler argument and reads them back in the configured encoding, so `generate` refuses an `-encoding` compiler
-argument that names another charset than the configured one, as listed below.
+through the `javax.tools` API, as it does by default, reads the sources through a file manager
+`maven-compiler-plugin` opens in the configured encoding, which wins over every `-encoding` compiler argument: the
+encoding is the configured one, else the last `-encoding` compiler argument. A javac the compiler forks, as it does
+when `<fork>` is true and when it compiles with a `jdk` toolchain, or runs inside Maven through
+`com.sun.tools.javac.Main`, as it does when `<forceLegacyJavacApi>`, `<forceJavacCompilerUse>` or their
+`maven.compiler.*` property is true, gets the configured encoding as an `-encoding` ahead of the compiler arguments
+and takes the last one: the encoding is the last `-encoding` compiler argument, else the configured one. The
+generator parses at that release, reads in that encoding and writes the generated sources in it; without an
+encoding, it reads and writes UTF-8. The companions the annotation processor generates hold ASCII only, every other
+character written as a `\uXXXX` escape, so javac writes them alike in any encoding. A javac that compiles inside
+Maven through the `javax.tools` API still writes them in the last `-encoding` compiler argument and reads them back
+in the configured encoding, so `generate` refuses an `-encoding` compiler argument that names another charset than
+the configured one, as listed below.
 
 ### Configuration parameters
 
@@ -705,15 +708,15 @@ failure names what to change:
 - **The processor's own generated-sources directory left where GraphMaquina owns it.** A configured
   `<generatedSourcesDirectory>` / `<generatedTestSourcesDirectory>` must match the request's, and so must the
   directory of a last `-s` compiler argument, resolved where javac runs.
-- **One encoding for a javac inside Maven.** A javac that compiles inside Maven reads every source, those
-  annotation processors generate included, in the configured encoding, `<encoding>` or
+- **One encoding for a javac inside Maven.** A javac that compiles inside Maven through the `javax.tools` API reads
+  every source, those annotation processors generate included, in the configured encoding, `<encoding>` or
   `project.build.sourceEncoding`, but writes the sources an annotation processor generates in the last
   `-encoding` it is given. A last `-encoding` compiler argument that names another charset than the configured
   encoding is therefore refused, when this JVM supports both: javac would read those sources back in another
   charset than it wrote them in, which garbles the characters the two encode differently, or fails javac after
   the preparation, as it does for the StateGraph processor's ASCII sources written in UTF-16 and read back in
-  UTF-8. An alias of the configured charset passes, and so does any `-encoding` for a javac the compiler forks,
-  which reads and writes in the last one.
+  UTF-8. An alias of the configured charset passes, and so does any `-encoding` for a javac the compiler forks or
+  runs through `com.sun.tools.javac.Main`, which reads and writes in the last one.
 
 Paths are compared once their symbolic links are resolved, as javac resolves the directories it writes into, so
 naming the project through a link, as `mvn -f <link>/pom.xml` does, or a link inside a configured path, makes no
@@ -785,7 +788,7 @@ inventory it left.
 | "…reads the annotation manifest X…, while the StateGraph generator writes Y" | copy the argument the message prints into that execution. A relative path is resolved where javac runs, so, when javac compiles inside Maven, in a module of a build started from its parent it names another file; the printed argument is absolute. |
 | "…javac write the class files of … without the SourceFile attribute…" (Maven) | a `<debuglevel>` or a `-g:` compiler argument leaves `source` out. Remove that setting, or have one `-g:` option list `source`, as `<debuglevel>lines,vars,source</debuglevel>` does. |
 | "…write its classes …, while StateGraph completes this compilation in …" (Maven) | an `<outputDirectory>`, `maven.compiler.outputDirectory`, `<multiReleaseOutput>true` or a `-d` compiler argument moves the classes. Remove it, or move the project's class output with `<outputDirectory>` or `<testOutputDirectory>` in `<build>`. |
-| "…name two charsets for a javac that compiles inside Maven…" (Maven) | the configured encoding and the last `-encoding` compiler argument name different charsets, and javac would read back the sources annotation processors write in the other one. Remove that `-encoding`, or configure `<encoding>` to the charset it names. |
+| "…name two charsets for a javac that compiles inside Maven through the javax.tools API…" (Maven) | the configured encoding and the last `-encoding` compiler argument name different charsets, and javac would read back the sources annotation processors write in the other one. Remove that `-encoding`, or configure `<encoding>` to the charset it names. |
 | "…runs the executions … of its compile goal for this project, and each of them compiles …" (Maven) | two executions of the compiler would compile the generated vocabulary. Keep one of them, bind the others to the phase `none`, or give them `<compileSourceRoots>` of their own that leave out the generated directory. |
 | "…makes the annotation processor write its sources to …" (Maven) | a `-s` compiler argument names another directory than the processor's generated-sources directory. Remove that argument. |
 | "…the `<compileSourceRoots>` of … replace the source roots of the project and leave out …" (Maven) | add the `<compileSourceRoot>` the message prints, or leave `compileSourceRoots` unset. |

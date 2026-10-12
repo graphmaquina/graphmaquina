@@ -677,7 +677,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `<multiReleaseOutput>true` or last `-d` argument that moves the classes, and a last `-s` argument that moves the
   processor's sources; `<compileSourceRoots>` without the generated directory; a `<testIncrementalExcludes>` or
   main `<incrementalExcludes>` pattern that matches the compilation carrier; and, with a javac that compiles inside
-  Maven, a last `-encoding` argument that names another charset than `<encoding>` or
+  Maven through the `javax.tools` API, a last `-encoding` argument that names another charset than `<encoding>` or
   `project.build.sourceEncoding`, when this JVM supports both, since javac would read back the sources annotation
   processors generate in another charset than it wrote them in.
 - **Maven: the compiler execution that runs.** The checks and the request read the execution of the compiler's
@@ -698,7 +698,8 @@ observe. Most items refuse up front what used to fail later, in generated code o
   them, as far as that can be told when the checks run, `${settings.localRepository}` for instance, and one that is
   a single expression Maven turns into nothing, such as `${project.file}`, is left out, as javac never gets it; an
   `-encoding` compiler argument names the encoding the generator reads in wherever javac reads in it: when no
-  encoding is configured, and when the compiler forks javac, which takes the last `-encoding`; a `--release`
+  encoding is configured, and when the compiler forks javac or runs it through `com.sun.tools.javac.Main`, as
+  `forceLegacyJavacApi` or `forceJavacCompilerUse` makes it, either of which takes the last `-encoding`; a `--release`
   compiler argument beside a configured release is the release checked and passed to the generator, as javac
   takes the last `--release`; and on Windows a
   `javaExecutable` without an extension stands for the `.exe` beside it.
