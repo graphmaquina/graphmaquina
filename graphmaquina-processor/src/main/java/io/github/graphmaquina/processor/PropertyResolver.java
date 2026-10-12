@@ -224,13 +224,13 @@ final class PropertyResolver {
         Predicate<Element> getter = (Element member) -> member.getKind() == ElementKind.METHOD
                 && member.getSimpleName().contentEquals(property.declarationName())
                 && ((ExecutableElement) member).getParameters().isEmpty();
-        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), (TypeElement) entity.asElement(),
-                property.declaringType(), getter.and((Element member) -> annotations.find(member, GraphProperty.class)
-                        .isPresent()));
+        TypeElement declaring = CanonicalNames.declaring(signatures.members(), (TypeElement) entity.asElement(),
+                property.declaringType(), property.declarationName(), getter.and((Element member) ->
+                        annotations.find(member, GraphProperty.class).isPresent()));
         if (declaring == null) {
             return Optional.empty();
         }
-        for (Element member : declaring.getEnclosedElements()) {
+        for (Element member : signatures.members().declared(declaring, property.declarationName())) {
             if (getter.test(member)) {
                 ExecutableElement method = (ExecutableElement) member;
                 return Accessors.isPublicInstance(method)
@@ -244,7 +244,7 @@ final class PropertyResolver {
     /** The member of {@code entity} a call to {@code declaration} runs: itself, or the override that hides it. */
     private ExecutableElement effective(ExecutableElement declaration, DeclaredType entity) {
         TypeElement element = (TypeElement) entity.asElement();
-        for (Element member : signatures.elements().getAllMembers(element)) {
+        for (Element member : signatures.members().all(element, declaration.getSimpleName())) {
             if (member.getKind() != ElementKind.METHOD) {
                 continue;
             }

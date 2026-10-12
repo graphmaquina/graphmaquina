@@ -131,11 +131,11 @@ public final class TypedProcessors {
             Diagnostics diagnostics = new Diagnostics(processingEnv);
             Map<String, SymbolDescriptor> symbols = SymbolResolver.symbols(registry.manifest().orElseThrow());
             MissingExportIndex missingIndex = new MissingExportIndex(elements, processingEnv.getFiler());
+            BoundInvocation invocations = new BoundInvocation(elements, types);
             SymbolResolver methods = new SymbolResolver(symbols, missingIndex, signatures,
-                    new EffectiveMethods(signatures), new Bindings(signatures), diagnostics);
+                    new EffectiveMethods(signatures), new Bindings(signatures), invocations, diagnostics);
             PropertyResolver properties = new PropertyResolver(symbols, missingIndex, signatures,
                     new Accessors(signatures), diagnostics);
-            BoundInvocation invocations = new BoundInvocation(elements, types);
             for (Ask ask : ASKS) {
                 answer(ask, methods, properties, invocations, elements);
             }

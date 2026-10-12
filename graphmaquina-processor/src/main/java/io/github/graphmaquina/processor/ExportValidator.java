@@ -78,7 +78,7 @@ final class ExportValidator {
         for (SymbolDescriptor symbol : manifest.local().model().symbols()) {
             int before = diagnostics.errors();
             boolean holds = true;
-            TypeElement host = CanonicalNames.type(signatures.elements(), symbol.host(),
+            TypeElement host = CanonicalNames.type(signatures.members(), symbol.host(),
                     CanonicalNames.packageOfMemberType(symbol.qualifiedName()));
             if (host == null) {
                 diagnostics.error(INVALID, symbol.qualifiedName() + " exports members of " + symbol.host()
@@ -103,8 +103,8 @@ final class ExportValidator {
      */
     private boolean candidate(SymbolDescriptor symbol, MemberDescriptor candidate, TypeElement host,
             Map<ExecutableElement, Boolean> validated) {
-        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), host, candidate.declaringType(),
-                (Element member) -> marks(member, candidate)
+        TypeElement declaring = CanonicalNames.declaring(signatures.members(), host, candidate.declaringType(),
+                candidate.name(), (Element member) -> marks(member, candidate)
                         && effective.marker((ExecutableElement) member).orElseThrow().role() == candidate.role());
         if (declaring == null) {
             diagnostics.error(INVALID, symbol.qualifiedName() + " exports " + candidate.declaringType() + '.'
@@ -159,7 +159,8 @@ final class ExportValidator {
         if (declaring.getKind().isInterface()) {
             return Optional.of("neither a class nor an interface inherits a static method of an interface");
         }
-        for (ExecutableElement other : ElementFilter.methodsIn(signatures.elements().getAllMembers(host))) {
+        List<ExecutableElement> named = ElementFilter.methodsIn(signatures.members().all(host, method.getSimpleName()));
+        for (ExecutableElement other : named) {
             if (signatures.elements().hides(other, method)) {
                 return Optional.of(((TypeElement) other.getEnclosingElement()).getQualifiedName() + "."
                         + other.getSimpleName() + " hides it");
@@ -194,15 +195,15 @@ final class ExportValidator {
 
     /** The declaration a property was resolved from must still be the kind of declaration it was read as. */
     private void property(SymbolDescriptor symbol, PropertyDescriptor property, TypeElement host) {
-        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), host, property.declaringType(),
-                (Element member) -> reads(member, property)
+        TypeElement declaring = CanonicalNames.declaring(signatures.members(), host, property.declaringType(),
+                property.declarationName(), (Element member) -> reads(member, property)
                         && annotations.find(member, GraphProperty.class).isPresent());
         if (declaring == null) {
             diagnostics.error(INVALID, symbol.qualifiedName() + " exports the property " + property.logicalName()
                     + " of " + property.declaringType() + ", which this compilation does not declare", host);
             return;
         }
-        for (Element member : declaring.getEnclosedElements()) {
+        for (Element member : signatures.members().declared(declaring, property.declarationName())) {
             if (reads(member, property)) {
                 if (property.directGetter()) {
                     reader((ExecutableElement) member, declaring, property);
@@ -270,7 +271,7 @@ final class ExportValidator {
     /** The declarations of {@code declaring} that {@code candidate} names and that carry a role of their own. */
     private List<ExecutableElement> marked(TypeElement declaring, MemberDescriptor candidate) {
         List<ExecutableElement> found = new ArrayList<>();
-        for (Element member : declaring.getEnclosedElements()) {
+        for (Element member : signatures.members().declared(declaring, candidate.name())) {
             if (marks(member, candidate)) {
                 found.add((ExecutableElement) member);
             }

@@ -17,21 +17,34 @@ import javax.lang.model.type.WildcardType;
 import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
-import lombok.RequiredArgsConstructor;
 
-/** Builds the types the bindings must match and compares types. */
-@RequiredArgsConstructor
+/**
+ * Builds the types the bindings must match and compares types. It keeps the {@link MemberIndex} the processor looks
+ * members up through, which the processor forgets at the start of every round.
+ */
 final class Signatures {
 
     private final Elements elements;
     private final Types types;
+    private final MemberIndex members;
+
+    Signatures(Elements elements, Types types) {
+        this.elements = elements;
+        this.types = types;
+        this.members = new MemberIndex(elements);
+    }
+
+    /** The index of the members of the types this round holds, listed once each. */
+    MemberIndex members() {
+        return members;
+    }
 
     /**
      * The type {@code qualifiedName} names, with {@code args} as its type arguments. The type is looked up by its
      * canonical name as {@link CanonicalNames} looks one up for code of a named package.
      */
     DeclaredType declared(String qualifiedName, TypeMirror... args) {
-        TypeElement element = CanonicalNames.type(elements, qualifiedName);
+        TypeElement element = CanonicalNames.type(members, qualifiedName);
         if (element == null) {
             throw new IllegalStateException(qualifiedName + " is not on the classpath");
         }

@@ -53,7 +53,7 @@ final class SymbolResolver {
     private final BoundInvocation invocations;
 
     SymbolResolver(Map<String, SymbolDescriptor> symbols, MissingExportIndex missingIndex, Signatures signatures,
-            EffectiveMethods effective, Bindings bindings, Diagnostics diagnostics) {
+            EffectiveMethods effective, Bindings bindings, BoundInvocation invocations, Diagnostics diagnostics) {
         this.symbols = symbols;
         this.missingIndex = missingIndex;
         this.signatures = signatures;
@@ -61,7 +61,7 @@ final class SymbolResolver {
         this.bindings = bindings;
         this.diagnostics = diagnostics;
         this.annotations = new Annotations(signatures.elements());
-        this.invocations = new BoundInvocation(signatures.elements(), signatures.types());
+        this.invocations = invocations;
     }
 
     /** One symbol type this compilation may use: the manifest entry it belongs to and the host it names. */
@@ -226,9 +226,10 @@ final class SymbolResolver {
                 && member.getSimpleName().contentEquals(candidate.name())
                 && ((ExecutableElement) member).getParameters().size() == candidate.parameterTypes().size()
                 && signatures.elements().overrides(method, (ExecutableElement) member, host);
-        TypeElement declaring = CanonicalNames.declaring(signatures.elements(), host, candidate.declaringType(),
-                overridden);
-        return declaring != null && declaring.getEnclosedElements().stream().anyMatch(overridden);
+        TypeElement declaring = CanonicalNames.declaring(signatures.members(), host, candidate.declaringType(),
+                candidate.name(), overridden);
+        return declaring != null
+                && signatures.members().declared(declaring, candidate.name()).stream().anyMatch(overridden);
     }
 
     private static String describe(SymbolDescriptor descriptor, Bindings.Role role, int fitting) {

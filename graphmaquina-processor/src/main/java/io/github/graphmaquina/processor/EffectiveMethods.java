@@ -12,6 +12,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,6 +38,10 @@ import javax.lang.model.type.TypeMirror;
  * a name and an arity. Two overloads of one name never lend each other a role. The signature is the one
  * {@code Types.asMemberOf} gives in the host, so a contract inherited from a generic base is read with the
  * host's own arguments substituted for the base's type variables.</p>
+ *
+ * <p>The methods of a host are listed once per round, however many references name it: {@link #of} keeps what it
+ * answered for each host, and {@link #forget}, which the processor calls at the start of every round, drops it with
+ * the members javac enters afresh in that round.</p>
  */
 final class EffectiveMethods {
 
@@ -45,6 +50,10 @@ final class EffectiveMethods {
 
     private final Signatures signatures;
     private final Annotations annotations;
+    private final Map<TypeElement, Effective> listed = new HashMap<>();
+
+    /** What {@link #of} answered for a host, with the very type it was asked for. */
+    private record Effective(DeclaredType host, List<Binding> methods) { }
 
     EffectiveMethods(Signatures signatures) {
         this.signatures = signatures;
@@ -61,6 +70,21 @@ final class EffectiveMethods {
      */
     List<Binding> of(DeclaredType host) {
         TypeElement element = (TypeElement) host.asElement();
+        Effective known = listed.get(element);
+        if (known != null && signatures.same(known.host(), host)) {
+            return known.methods();
+        }
+        List<Binding> methods = list(host, element);
+        listed.put(element, new Effective(host, methods));
+        return methods;
+    }
+
+    /** Drops what {@link #of} answered, with the members of the round it listed them in. */
+    void forget() {
+        listed.clear();
+    }
+
+    private List<Binding> list(DeclaredType host, TypeElement element) {
         List<Binding> effective = new ArrayList<>();
         for (Element member : signatures.elements().getAllMembers(element)) {
             if (member.getKind() != ElementKind.METHOD) {
@@ -94,12 +118,12 @@ final class EffectiveMethods {
     List<ExecutableElement> overridden(ExecutableElement method, TypeElement host) {
         List<ExecutableElement> contracts = new ArrayList<>();
         for (TypeElement supertype : supertypes(host)) {
-            for (Element member : supertype.getEnclosedElements()) {
+            for (Element member : signatures.members().declared(supertype, method.getSimpleName())) {
                 if (member.getKind() != ElementKind.METHOD) {
                     continue;
                 }
                 ExecutableElement contract = (ExecutableElement) member;
-                if (contract.getSimpleName().contentEquals(method.getSimpleName()) && marker(contract).isPresent()
+                if (marker(contract).isPresent()
                         && signatures.elements().overrides(method, contract, host)) {
                     contracts.add(contract);
                 }

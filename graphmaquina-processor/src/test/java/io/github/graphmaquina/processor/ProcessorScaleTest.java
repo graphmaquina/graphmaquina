@@ -12,7 +12,8 @@ import org.junit.jupiter.api.Test;
 /**
  * What the processor does more of as a compilation grows. Each test compiles two projects that differ only in size,
  * behind {@link CountingProcessor}, and requires the count of an operation whose cost grows with the whole compilation
- * to stay the same: the scans of a round, which visit every element of it, do not multiply with the machines.
+ * to stay the same: the scans of a round, which visit every element of it, do not multiply with the machines, and the
+ * listings of a host's members, which visit every member, do not multiply with the references to it.
  */
 class ProcessorScaleTest {
 
@@ -28,6 +29,26 @@ class ProcessorScaleTest {
         List<Integer> many = scans(project(16, STATES - 1));
 
         assertEquals(few, many, "scans per round with 4 machines, then with 16");
+    }
+
+    /**
+     * A host is listed once per round, however many edges run an action of it: neither resolving each reference, nor
+     * checking what its companion may name, nor writing each call lists the host's members again.
+     */
+    @Test
+    void listsTheMembersOfAHostAsManyTimesWhateverTheNumberOfReferences() {
+        int few = listings(project(1, 20));
+        int many = listings(project(1, 80));
+
+        assertEquals(few, many, "listings of the members of scale.H0 with 20 edges that run its actions, then 80");
+    }
+
+    private static int listings(Map<String, String> sources) {
+        CountingProcessor.reset();
+        Compilation.Result result = Compilation.compileWithoutLifecycle(Compilation.prepare(sources),
+                List.of("-processor", CountingProcessor.class.getName()));
+        assertTrue(result.success(), result.describe());
+        return CountingProcessor.MEMBER_LISTINGS.getOrDefault("scale.H0", 0);
     }
 
     private static List<Integer> scans(Map<String, String> sources) {

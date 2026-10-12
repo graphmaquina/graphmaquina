@@ -33,7 +33,7 @@ import javax.lang.model.util.Elements;
  *
  * <p>That member type is what the name means where code of the unnamed package spells it, while code of a named
  * package never sees a type of the unnamed package and means a type of the named package. So
- * {@link #type(Elements, String, String)} looks the name up for the package of the code it is read for:</p>
+ * {@link #type(MemberIndex, String, String)} looks the name up for the package of the code it is read for:</p>
  * <ul>
  *   <li>For the unnamed package, the top-level type of that package named like the first segment is looked up first,
  *       then every further segment as a member type that the type found so far declares, by its simple name. That type
@@ -62,15 +62,16 @@ import javax.lang.model.util.Elements;
  * its mark since then is looked for in the first type of the name met, which may be the homonym.</p>
  *
  * <p>Looking a package up makes javac list the names of its files unless it has already, as it does for every package
- * it reads a type of, and read none of them; the members of a package are never asked for here.</p>
+ * it reads a type of, and read none of them; the members of a package are never asked for here. The members of a type
+ * are looked up by their simple name through a {@link MemberIndex}, which lists them once for every lookup.</p>
  */
 final class CanonicalNames {
 
     private CanonicalNames() { }
 
     /** The type {@code canonicalName} names in code of a named package, or {@code null} when no lookup finds one. */
-    static TypeElement type(Elements elements, String canonicalName) {
-        return named(elements, segments(canonicalName));
+    static TypeElement type(MemberIndex members, String canonicalName) {
+        return named(members, segments(canonicalName));
     }
 
     /**
@@ -78,26 +79,28 @@ final class CanonicalNames {
      * package; for the unnamed package, when no type of that package has the name, the type it names in code of a
      * named package. {@code null} when no lookup finds one.
      */
-    static TypeElement type(Elements elements, String canonicalName, String referencingPackage) {
+    static TypeElement type(MemberIndex members, String canonicalName, String referencingPackage) {
         List<String> segments = segments(canonicalName);
         if (referencingPackage.isEmpty()) {
-            TypeElement member = members(topLevel(elements.getTypeElement(segments.get(0)), segments, 0), segments, 0);
+            TypeElement member = members(members,
+                    topLevel(members.elements().getTypeElement(segments.get(0)), segments, 0), segments, 0);
             if (member != null) {
                 return member;
             }
         }
-        return named(elements, segments);
+        return named(members, segments);
     }
 
     /**
-     * The type {@code canonicalName} names as the declaring type of a member of {@code host} that {@code member}
-     * accepts: {@code host} itself or one of its supertypes, direct or not, as javac bound them, met breadth first from
-     * {@code host}, a superclass before the interfaces. That is the first of them whose qualified name it is that
-     * declares an element {@code member} accepts, or, when none of those does, the first of them whose qualified name
-     * it is. When none of them has that name, the type it names in code of the host's package, as
-     * {@link #type(Elements, String, String)} finds it, or {@code null} when there is none.
+     * The type {@code canonicalName} names as the declaring type of a member of {@code host} named {@code name} that
+     * {@code member} accepts: {@code host} itself or one of its supertypes, direct or not, as javac bound them, met
+     * breadth first from {@code host}, a superclass before the interfaces. That is the first of them whose qualified
+     * name it is that declares an element of that name {@code member} accepts, or, when none of those does, the first
+     * of them whose qualified name it is. When none of them has that name, the type it names in code of the host's
+     * package, as {@link #type(MemberIndex, String, String)} finds it, or {@code null} when there is none.
      */
-    static TypeElement declaring(Elements elements, TypeElement host, String canonicalName, Predicate<Element> member) {
+    static TypeElement declaring(MemberIndex members, TypeElement host, String canonicalName, String name,
+            Predicate<Element> member) {
         TypeElement first = null;
         Deque<TypeElement> pending = new ArrayDeque<>(List.of(host));
         Set<TypeElement> seen = new HashSet<>();
@@ -107,7 +110,7 @@ final class CanonicalNames {
                 continue;
             }
             if (type.getQualifiedName().contentEquals(canonicalName)) {
-                for (Element enclosed : type.getEnclosedElements()) {
+                for (Element enclosed : members.declared(type, name)) {
                     if (member.test(enclosed)) {
                         return type;
                     }
@@ -127,7 +130,7 @@ final class CanonicalNames {
         }
         return first != null
                 ? first
-                : type(elements, canonicalName, elements.getPackageOf(host).getQualifiedName().toString());
+                : type(members, canonicalName, members.elements().getPackageOf(host).getQualifiedName().toString());
     }
 
     /**
@@ -142,10 +145,11 @@ final class CanonicalNames {
     }
 
     /** The type {@code segments} name in code of a named package, or {@code null} when no lookup finds one. */
-    private static TypeElement named(Elements elements, List<String> segments) {
+    private static TypeElement named(MemberIndex members, List<String> segments) {
+        Elements elements = members.elements();
         for (int top = segments.size() - 1; top > 0; top--) {
-            TypeElement found = members(topLevel(elements.getTypeElement(prefix(segments, top + 1)), segments, top),
-                    segments, top);
+            TypeElement found = members(members,
+                    topLevel(elements.getTypeElement(prefix(segments, top + 1)), segments, top), segments, top);
             if (found != null) {
                 return found;
             }
@@ -163,7 +167,7 @@ final class CanonicalNames {
             }
             ModuleElement module = elements.getModuleOf(owner);
             String name = prefix(segments, top + 1);
-            TypeElement found = members(topLevel(module == null ? elements.getTypeElement(name)
+            TypeElement found = members(members, topLevel(module == null ? elements.getTypeElement(name)
                     : elements.getTypeElement(module, name), segments, top), segments, top);
             if (found != null) {
                 return found;
@@ -188,22 +192,18 @@ final class CanonicalNames {
      * segment, and {@code null} when {@code type} is {@code null} or one of these types declares no member type of the
      * next segment's name.
      */
-    private static TypeElement members(TypeElement type, List<String> segments, int top) {
+    private static TypeElement members(MemberIndex members, TypeElement type, List<String> segments, int top) {
         TypeElement found = type;
         for (int at = top + 1; found != null && at < segments.size(); at++) {
-            found = member(found, segments.get(at));
+            found = member(members, found, segments.get(at));
         }
         return found;
     }
 
     /** The member type {@code type} declares whose simple name is {@code simple}, {@code null} when there is none. */
-    private static TypeElement member(TypeElement type, String simple) {
-        for (TypeElement member : ElementFilter.typesIn(type.getEnclosedElements())) {
-            if (member.getSimpleName().contentEquals(simple)) {
-                return member;
-            }
-        }
-        return null;
+    private static TypeElement member(MemberIndex members, TypeElement type, String simple) {
+        List<TypeElement> found = ElementFilter.typesIn(members.declared(type, simple));
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** The segments of {@code canonicalName}, the identifiers its dots separate. */

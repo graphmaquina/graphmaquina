@@ -2,10 +2,10 @@ package io.github.graphmaquina.processor.gen;
 
 import io.github.graphmaquina.processor.model.Binding;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import javax.lang.model.element.Element;
-import javax.lang.model.element.ElementKind;
 import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.Modifier;
 import javax.lang.model.element.PackageElement;
@@ -14,6 +14,7 @@ import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.IntersectionType;
 import javax.lang.model.type.TypeMirror;
 import javax.lang.model.type.TypeVariable;
+import javax.lang.model.util.ElementFilter;
 import javax.lang.model.util.Elements;
 import javax.lang.model.util.Types;
 
@@ -29,6 +30,10 @@ import javax.lang.model.util.Types;
  *
  * <p>It also tells which calls the generated lambda making them catches, because they may throw a checked exception,
  * which no functional interface the generated code implements declares.</p>
+ *
+ * <p>The methods of a host are listed once per round and kept by name, however many calls to it are written:
+ * {@link #forget}, which the processor calls at the start of every round, drops them with the members javac enters
+ * afresh in that round.</p>
  */
 public final class BoundInvocation {
 
@@ -40,6 +45,7 @@ public final class BoundInvocation {
 
     private final Elements elements;
     private final Types types;
+    private final Map<TypeElement, Map<String, List<ExecutableElement>>> methods = new HashMap<>();
 
     public BoundInvocation(Elements elements, Types types) {
         this.elements = elements;
@@ -83,22 +89,34 @@ public final class BoundInvocation {
         if (binding.arguments().isEmpty()) {
             return false;
         }
-        for (Element member : elements.getAllMembers(binding.owner())) {
-            if (member.getKind() != ElementKind.METHOD) {
-                continue;
-            }
-            ExecutableElement other = (ExecutableElement) member;
+        for (ExecutableElement other : methods(binding.owner()).getOrDefault(binding.methodName(), List.of())) {
             // Package and protected overloads can also be visible from the generated facade. Considering
             // every non-private candidate is conservative when the facade lives in another package: it may
             // add a cast, but must never let javac select a different accessible overload.
             if (!other.equals(binding.method()) && !other.getModifiers().contains(Modifier.PRIVATE)
-                    && other.getSimpleName().contentEquals(binding.methodName())
                     && other.getParameters().size() == binding.arguments().size()
                     && applies(binding, other)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /** The methods {@code owner} declares or inherits, by name, listed once in this round. */
+    private Map<String, List<ExecutableElement>> methods(TypeElement owner) {
+        return methods.computeIfAbsent(owner, (TypeElement key) -> {
+            Map<String, List<ExecutableElement>> byName = new HashMap<>();
+            for (ExecutableElement method : ElementFilter.methodsIn(elements.getAllMembers(key))) {
+                byName.computeIfAbsent(method.getSimpleName().toString(), (String name) -> new ArrayList<>())
+                        .add(method);
+            }
+            return byName;
+        });
+    }
+
+    /** Drops the methods listed in a round, which the members a later round enters replace. */
+    public void forget() {
+        methods.clear();
     }
 
     /**

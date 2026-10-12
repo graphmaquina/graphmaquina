@@ -105,6 +105,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private ExportValidator exports;
     private ExportIndexWriter indexes;
     private BoundInvocation invocations;
+    private Signatures signatures;
+    private EffectiveMethods effective;
     private LegacyDeclarations legacy;
     private Optional<TypedMachineModelBuilder> typed = Optional.empty();
     private Optional<VocabularyPlacement> placement = Optional.empty();
@@ -152,11 +154,11 @@ public final class StateGraphProcessor extends AbstractProcessor {
         refused = new HashSet<>();
         generated = new LinkedHashSet<>();
         verified = new LinkedHashSet<>();
-        Signatures signatures = new Signatures(env.getElementUtils(), env.getTypeUtils());
+        signatures = new Signatures(env.getElementUtils(), env.getTypeUtils());
         Annotations annotations = new Annotations(env.getElementUtils());
         Accessors accessors = new Accessors(signatures);
         Bindings bindings = new Bindings(signatures);
-        EffectiveMethods effective = new EffectiveMethods(signatures);
+        effective = new EffectiveMethods(signatures);
         exports = new ExportValidator(signatures, effective, diagnostics);
         indexes = new ExportIndexWriter(env);
         invocations = new BoundInvocation(env.getElementUtils(), env.getTypeUtils());
@@ -173,7 +175,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
             PropertyResolver propertyResolver = new PropertyResolver(symbols, missingIndex, signatures, accessors,
                     diagnostics);
             SymbolResolver symbolResolver = new SymbolResolver(symbols, missingIndex, signatures, effective, bindings,
-                    diagnostics);
+                    invocations, diagnostics);
             TypedPairs pairs = new TypedPairs(structure, signatures, diagnostics);
             return new TypedMachineModelBuilder(vocabulary, structure, propertyResolver,
                     new TypedTransitions(structure, symbolResolver, new TypedTimeouts(annotations, diagnostics),
@@ -188,6 +190,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
 
     @Override
     public boolean process(Set<? extends TypeElement> annotationTypes, RoundEnvironment round) {
+        forgetMembers();
         reportManifestFailure();
         scope.checkLaterTypes();
         placement.ifPresent((VocabularyPlacement check) -> withheld.addAll(check.report(annotationTypes, round)));
@@ -248,6 +251,18 @@ public final class StateGraphProcessor extends AbstractProcessor {
             }
         }
         return false;
+    }
+
+    /**
+     * Drops every listing of members an earlier round made, which the members javac enters afresh in this round
+     * replace: the members each type declares and inherits, the effective methods of each host and the methods of
+     * each owner a generated call competes with. Within a round each of them is listed once, however many
+     * declarations name it.
+     */
+    private void forgetMembers() {
+        signatures.members().forget();
+        effective.forget();
+        invocations.forget();
     }
 
     /**
