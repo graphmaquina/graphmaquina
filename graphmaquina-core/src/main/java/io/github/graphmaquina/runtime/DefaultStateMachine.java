@@ -330,7 +330,8 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * and propagates as itself. The trail ends without that failure when the trail's clock throws anything but an
      * Error or answers null as it reads the failure's instant, as Transaction.endWith says. An Error the trail's clock
      * throws while the failure's flow is frozen propagates in place of the failure, and the observers hear of that
-     * Error, in the phase the call reached.
+     * Error, in the phase the call reached; so does an Error that printing the failure throws while the call classifies
+     * it, such as one from a message whose read throws it.
      * The observers hear of the call's start before its log does, and of its end after it: the start line follows
      * onStarted, and the end or failed line comes just before their end event, each inside a try that tells them of
      * an Error, so a backend Error on any of these lines ends the call and is the end event they hear. An execute logs
@@ -405,7 +406,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
             if (thrown instanceof Error fatal) {
                 throw failed(observed, tx, fatal);
             }
-            CallFailedException own = tx.classify(thrown);
+            CallFailedException own;
+            try {
+                own = tx.classify(thrown);
+            } catch (Error fatal) {
+                throw failed(observed, tx, fatal);
+            }
             FlowView flow;
             try {
                 flow = tx.frozenFlow(own);

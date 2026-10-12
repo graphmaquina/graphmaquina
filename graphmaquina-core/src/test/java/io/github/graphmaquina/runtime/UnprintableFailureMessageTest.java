@@ -44,6 +44,7 @@ import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
 import io.github.graphmaquina.fixtures.DocTransition;
 import java.time.Duration;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -53,7 +54,8 @@ import org.junit.jupiter.api.Test;
 /**
  * A failure of the application whose message cannot be read still ends the call as the failure that describes it:
  * the call's exception carries it as its cause and prints {@code <toString threw <class name>>} in its place, the
- * observers hear the end of the call, and nothing the library builds to describe it escapes in its stead.
+ * observers hear the end of the call, and nothing the library builds to describe it escapes in its stead. A message
+ * whose read throws an Error ends the call with that Error, which the observers hear as the call's end.
  */
 class UnprintableFailureMessageTest {
 
@@ -64,6 +66,20 @@ class UnprintableFailureMessageTest {
         @Override
         public String getMessage() {
             throw new IllegalStateException("the message cannot be read");
+        }
+    }
+
+    /** A failure whose message read throws {@link #fatal}. */
+    static final class FatalMessage extends RuntimeException {
+        private final AssertionError fatal;
+
+        FatalMessage(AssertionError fatal) {
+            this.fatal = fatal;
+        }
+
+        @Override
+        public String getMessage() {
+            throw fatal;
         }
     }
 
@@ -294,6 +310,49 @@ class UnprintableFailureMessageTest {
         }
         assertEquals(List.of("started", "failed ACTION TransitionAbortedException"), events);
         assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), peer.status()));
+    }
+
+    @Test
+    void aFailureTheEngineLetsThroughWhoseMessageThrowsAnErrorEndsTheCallWithThatErrorForTheObservers() {
+        Doc root = new Doc("root", DRAFT);
+        Doc peer = new Doc("peer", REVIEW);
+        ArmedId peerId = new ArmedId("peer");
+        AssertionError fatal = new AssertionError("the message read failed");
+        List<String> events = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            ctx.cascade(DOCS, peer, PUBLISH);
+                            peerId.onHash = () -> {
+                                throw new FatalMessage(fatal);
+                            };
+                            return ActionOutcome.failed("route it");
+                        }).onFailure(DISCARD),
+                UnaryOperator.identity(), UnaryOperator.identity());
+        try (MachineRegistry registry = MachineRegistry.builder().observer(recording(events))
+                .add(StateMachines.from(graph).state(Doc::status, Doc::setStatus)
+                        .identity((Doc doc) -> doc == peer ? peerId : doc.id())).build()) {
+            assertSame(fatal, assertThrows(AssertionError.class, () -> registry.of(DOCS).execute(root, SUBMIT)));
+        }
+        assertEquals(List.of("started", "failed ACTION AssertionError"), events);
+        assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), peer.status()));
+    }
+
+    @Test
+    void aTrailClockFailureWhoseMessageThrowsAnErrorEndsTheCallWithThatErrorForTheObservers() {
+        Doc doc = new Doc("1", DRAFT);
+        AssertionError fatal = new AssertionError("the message read failed");
+        List<String> events = new ArrayList<>();
+        InstantSource clock = () -> {
+            throw new FatalMessage(fatal);
+        };
+        try (MachineRegistry registry = MachineRegistry.builder().observer(recording(events))
+                .add(StateMachines.from(plainDocs()).state(Doc::status, Doc::setStatus).identity(Doc::id)
+                        .recordTrail(clock)).build()) {
+            assertSame(fatal, assertThrows(AssertionError.class, () -> registry.of(DOCS).execute(doc, SUBMIT)));
+        }
+        assertEquals(List.of("started", "failed ACTION AssertionError"), events);
+        assertEquals(DRAFT, doc.status());
     }
 
     @Test
