@@ -2367,12 +2367,14 @@ Each setting is checked where it is given: a `maxCascadeDepth` or `maxWatchChain
 
 Both limits count levels that run on the stack of the calling thread: each cascade, sub-machine exit and watch
 reaction runs one level deeper, so that stack bounds them too. As a measure, with trivial actions on JDK 21, a thread
-of 1 MiB holds some hundreds of cascade levels or watch reactions, and one of 8 MiB some thousands; how many exactly
-depends on the JIT and on the frames of your own callbacks. A call that goes deeper than its thread's stack meets a
-`StackOverflowError`, which reaches your actions on its way up, as [cascade a transition](#cascade-a-transition)
-says, and otherwise ends the call; in a watch chain, the root and the reactions before the one that overflowed have
-committed already. The registry and the thread are not left unusable by it: later calls run as before. Keep the
-limits within what the stacks of your threads hold, or run deep calls on threads with a larger stack.
+of 1 MiB held between about 250 and 1,800 cascade levels or watch reactions, and one of 8 MiB between about 2,300 and
+16,000: the fewest over the first calls of a JVM, while the JIT is still compiling the engine's code, and the most
+once it has optimized it. How many exactly depends on the JIT, on the platform and on the frames of your own
+callbacks. A call that goes deeper than its thread's stack meets a `StackOverflowError`, which reaches your actions
+on its way up, as [cascade a transition](#cascade-a-transition) says, and otherwise ends the call; in a watch chain,
+the root and the reactions before the one that overflowed have committed already. The registry and the thread are not
+left unusable by it: later calls run as before. Keep the limits within what the stacks of your threads hold, or run
+deep calls on threads with a larger stack.
 
 Close the set with try-with-resources or your application's shutdown lifecycle. `close()` closes executors
 owned by the set and waits for submitted operations to finish. An executor you supply remains your
