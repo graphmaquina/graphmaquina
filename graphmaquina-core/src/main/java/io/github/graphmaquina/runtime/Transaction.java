@@ -1604,10 +1604,14 @@ final class Transaction {
         }
     }
 
-    /** Refuses an identifier from another machine's catalogue, which only a caller that bypasses generics can pass. */
+    /**
+     * Refuses an identifier from another machine's catalogue, which only a caller that bypasses generics can pass, and
+     * names it by {@code name()}, never through a {@code toString()} that could change or replace the refusal.
+     */
     private static void requireTransition(MachineKey<?, ?, ?> key, Enum<?> id) {
         if (!key.transitions().isInstance(id)) {
-            throw new IllegalArgumentException("transition must belong to " + key.transitions().getName() + ": " + id);
+            throw new IllegalArgumentException(
+                    "transition must belong to " + key.transitions().getName() + ": " + id.name());
         }
     }
 

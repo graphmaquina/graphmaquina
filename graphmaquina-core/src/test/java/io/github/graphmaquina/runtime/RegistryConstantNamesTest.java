@@ -4,13 +4,16 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.api.StateMachine;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -19,9 +22,10 @@ import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
 /**
- * The refusals of a registry's build, and of a call given an identifier of another enum, name the states and
- * identifiers of the application's enums by {@code name()}, never through a {@code toString()} the application may
- * override, as the engine's and the DSL's messages do.
+ * The refusals of a registry's build, and of a call, a cascade, a cascadeAll or a {@code MachineCall} given an
+ * identifier of another enum, name the states and identifiers of the application's enums by {@code name()}, never
+ * through a {@code toString()} the application may override, as the engine's and the DSL's messages do: neither an
+ * overriding {@code toString()} nor one that throws changes the refusal.
  */
 class RegistryConstantNamesTest {
 
@@ -71,9 +75,15 @@ class RegistryConstantNamesTest {
         }
     }
 
-    /** Identifiers of another machine, printed as a display text. */
+    /** Identifiers of another machine, printed as a display text, or not printable at all. */
     enum Foreign {
-        ELSEWHERE;
+        ELSEWHERE,
+        UNPRINTABLE {
+            @Override
+            public String toString() {
+                throw new IllegalStateException("UNPRINTABLE cannot be printed");
+            }
+        };
 
         @Override
         public String toString() {
@@ -177,5 +187,56 @@ class RegistryConstantNamesTest {
                     () -> raw.execute(new Box(), Foreign.ELSEWHERE));
             assertEquals("transition must belong to " + Move.class.getName() + ": ELSEWHERE", error.getMessage());
         }
+    }
+
+    /**
+     * A cascade and a cascadeAll given an identifier of another enum, which only a caller that bypasses generics can
+     * pass, refuse it by name, before anything starts; the action that catches the refusal goes on and the call
+     * commits.
+     */
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void aCascadeOfAnIdentifierOfAnotherEnumIsRefusedByName() {
+        List<String> refusals = new ArrayList<>();
+        GraphDefinition<Box, Stage, Move> graph = StateGraph.define(BOXES).initial(Stage.START).terminal(Stage.END)
+                .statePolicy(Stage.START, "starts").statePolicy(Stage.WAIT, "waits")
+                .transition(Move.GO, Stage.START, Stage.WAIT)
+                    .action("go", (TransitionContext<Box, Stage, Move> ctx) -> {
+                        for (Foreign foreign : Foreign.values()) {
+                            try {
+                                ctx.cascade((MachineKey) BOXES, new Box(), (Enum) foreign);
+                            } catch (RuntimeException refused) {
+                                refusals.add("cascade " + refused);
+                            }
+                            try {
+                                ctx.cascadeAll((MachineKey) BOXES, List.of(new Box()), (Enum) foreign,
+                                        CascadePolicy.FAIL_FAST);
+                            } catch (RuntimeException refused) {
+                                refusals.add("cascadeAll " + refused);
+                            }
+                        }
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(Move.FINISH, Stage.WAIT, Stage.END).endTransition()
+                .build();
+        Box box = new Box();
+        assertEquals(Stage.WAIT, boxMachine(graph).build().execute(box, Move.GO).recordedState());
+        String refusal = IllegalArgumentException.class.getName() + ": transition must belong to "
+                + Move.class.getName() + ": ";
+        assertEquals(List.of("cascade " + refusal + "ELSEWHERE", "cascadeAll " + refusal + "ELSEWHERE",
+                "cascade " + refusal + "UNPRINTABLE", "cascadeAll " + refusal + "UNPRINTABLE"), refusals);
+    }
+
+    /** A {@code MachineCall} refuses an identifier of another enum by name. */
+    @Test
+    void aMachineCallOfAnIdentifierOfAnotherEnumIsRefusedByName() {
+        List<String> refusals = new ArrayList<>();
+        for (Foreign foreign : Foreign.values()) {
+            refusals.add(assertThrows(IllegalArgumentException.class,
+                    () -> new MachineCall(BOXES, new Box(), Optional.of(foreign), false)).getMessage());
+        }
+        assertEquals(List.of("transition must belong to " + Move.class.getName() + ": ELSEWHERE",
+                "transition must belong to " + Move.class.getName() + ": UNPRINTABLE"), refusals);
     }
 }
