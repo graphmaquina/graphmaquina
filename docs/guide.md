@@ -2081,8 +2081,9 @@ that call's `CallFailedException`, or an `Error`. Read the `CallFailedException`
 as [Handle a failed call](#handle-a-failed-call) shows, before deciding whether to retry; an exceptional future is not
 proof that nothing happened. A request refused before it started ran nothing: one an executor refused
 (`RejectedExecutionException`), one for an identifier of another catalogue (`IllegalArgumentException`), and one made
-where no call may start (`ReentrantTransitionException`, possible with an executor that runs tasks inline). A callback
-you attach can also fail independently of the machine operation.
+where no call may start (`ReentrantTransitionException`, possible when the call runs on the thread of the callback that
+submitted it, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks). A
+callback you attach can also fail independently of the machine operation.
 
 Avoid a blanket `exceptionally(error -> ActionOutcome.failed(...))` inside an action unless every covered
 exception truly means a business decline. It would also turn unexpected service/programming errors into a
@@ -2262,7 +2263,19 @@ the stage's own work is a task queued on that pool, another worker has to take i
 starts, or one that frees up. While every other worker is busy, or blocked where the pool cannot see it, as on a
 lock or a plain latch, the wait goes on, up to its timeout. When every other worker is blocked where the pool
 sees it, as in `CompletableFuture`'s `get` or `join` or in another GraphMaquina wait, the pool starts a spare, if
-its size allows. Start roots off `ForkJoinPool` workers, or give asynchronous work its own executor.
+its size allows.
+
+A call submitted through `async(...)` is queued as a plain task, never as one of the asynchronous tasks that
+`CompletableFuture`'s `get` and `join` run on a waiting `ForkJoinPool` worker, so a callback that waits there never
+runs it on its own thread. While such a call is queued on the waiting worker, another worker has to take it, as for a
+stage's task, and so has a `CompletableFuture` task queued behind it: a callback that waits for either waits, under no
+timeout but its own, while every other worker is busy or blocked where the pool cannot see it. Two waits can still run
+a queued call on the waiting thread, where the call fails with `ReentrantTransitionException`: a worker that joins a
+`ForkJoinTask` may run a task queued by another worker that stole work from it, and waiting for a pool to quiesce,
+through `ForkJoinTask.helpQuiesce()` or `ForkJoinPool.awaitQuiescence`, runs the pool's queued tasks on any thread.
+Given `ForkJoinPool.commonPool()` while the common pool's parallelism is below two, a machine runs each call on a new
+thread instead, as `CompletableFuture.supplyAsync` does with that pool. Start roots off `ForkJoinPool` workers, or
+give asynchronous work its own executor.
 
 Multiple virtual threads do not serialize access to a shared entity. Two concurrent operations on the same
 ticket need an application-level concurrency policy. The commit precheck detects some state conflicts; it
@@ -2313,7 +2326,7 @@ not instantiate service classes or discover dependency-injection beans.
 | Builder option | Purpose / default |
 | --- | --- |
 | `asyncTimeout(Machine.class, Duration)` | Override timeout for one asynchronous machine |
-| `asyncExecutor(Executor)` | Supply the executor used by `async` calls; otherwise each machine owns a virtual-thread executor |
+| `asyncExecutor(Executor)` | Supply the executor used by `async` calls, where `ForkJoinPool.commonPool()` with a parallelism below two runs each call on a new thread instead; otherwise each machine owns a virtual-thread executor |
 | `recordTrail()` | Record the [trail](#record-the-calls-trail) of every call of the set on `InstantSource.system()`; off by default |
 | `recordTrail(InstantSource)` | Record that trail on the given clock instead |
 | `maxCascadeDepth(int)` | Bound nested cascades and sub-machine exits; default `10`, minimum `1`, root depth is `0` |
@@ -2417,8 +2430,10 @@ collection once, before any element runs, and never reads it again, so elements 
 change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
 propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
 facade operation from inside an action: nested facade entry points on the action's own thread violate the runtime's
-reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless that executor
-runs tasks inline, in which case the returned future fails with the `ReentrantTransitionException`.
+reentrancy rules. A call submitted through `async(...)` runs separately on the executor's thread, unless it runs on the
+action's own thread, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks,
+as [executors and machine lifetime](#executors-and-machine-lifetime) lists, in which case the returned future fails
+with the `ReentrantTransitionException`.
 
 No declared type accepts an `Error`, a `CancellationException` or a `StateMachineException`. For a throwable that a
 declared type accepts and that an action other than a recovery action throws or completes with, the engine checks the
@@ -2527,8 +2542,9 @@ A reaction failure does not roll back the peer commit that triggered it.
 The watch's `owner` and `peers` readers (`ownerOf` and `peersOf` in the DSL) and its conditions run while the engine
 evaluates the watch, before that root starts, and may not start a transition on their own thread: `execute` or
 `reevaluate` called from one of them throws `ReentrantTransitionException`; a call submitted through `async(...)` runs
-as a separate call on the executor's thread, unless that executor runs tasks inline, in which case the returned future
-fails with that exception as its cause. Inside a reevaluation, a refusal that one of these functions lets through ends
+as a separate call on the executor's thread, unless it runs on the function's own thread, through an executor that
+runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks, in which case the returned future fails with
+that exception as its cause. Inside a reevaluation, a refusal that one of these functions lets through ends
 the reevaluation in a `TransitionAbortedException` of phase `RESOLVE` that carries it: a reaction reports the abort as
 `Reaction.Aborted` and a direct `reevaluate` throws it to its caller. An owner lookup runs before the reevaluation, so
 its reaction carries the refusal itself. A `peers` reader that returns `null` instead of a collection, or an `owner`
@@ -3020,8 +3036,9 @@ backend's, voids for that call the promise of one `onStarted` and exactly one en
 logged on `io.github.graphmaquina` itself: the lines of each call go to its child logger
 `io.github.graphmaquina.runtime`, as [debug a call](#debug-a-call-logs-and-the-calls-flow) describes. An observer cannot
 start a transition on its own thread either: an operation called from an observer throws `ReentrantTransitionException`,
-which is contained. One submitted through `async(...)` runs on the executor's thread as a call of its own, unless that
-executor runs tasks inline, in which case the returned future fails with that exception as its cause. When a failure
+which is contained. One submitted through `async(...)` runs on the executor's thread as a call of its own, unless it
+runs on the observer's own thread, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s
+queued tasks, in which case the returned future fails with that exception as its cause. When a failure
 must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a machine. Observers run on
 the thread of every call, so keep them thread-safe and quick. Add as many as you need: they are notified in the order
 they were added.

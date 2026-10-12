@@ -23,9 +23,10 @@ import java.time.Duration;
  *   library, and voids these guarantees for that call.</li>
  *   <li>Its callbacks run with the thread marked as running a call, so an {@code execute} or {@code reevaluate} it
  *   makes on its own thread throws {@code ReentrantTransitionException}, contained like any other exception; one
- *   submitted through {@code async()} runs as a separate call on the executor's thread, unless that executor runs
- *   tasks inline, in which case the returned future fails with that exception as its cause. To act on a commit, use
- *   a hook or a watch.</li>
+ *   submitted through {@code async()} runs as a separate call on the executor's thread, unless it runs on the
+ *   observer's own thread, through an executor that runs tasks inline or a wait of the observer that runs a
+ *   ForkJoinPool's queued tasks, in which case the returned future fails with that exception as its cause. To act on
+ *   a commit, use a hook or a watch.</li>
  * </ul>
  * Observers are called on the thread of every call, concurrently when calls are, so they must be thread-safe and
  * quick.

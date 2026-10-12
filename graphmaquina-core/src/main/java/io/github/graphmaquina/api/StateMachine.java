@@ -57,14 +57,17 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * The same machine, submitting each call to its executor: a new virtual thread by default, wherever a supplied
-     * executor runs it otherwise. A null argument throws on the calling thread, and a submission the executor refuses
-     * returns a failed future.
+     * executor runs it otherwise, or a new thread when that executor is ForkJoinPool.commonPool() and its parallelism
+     * is below two, as {@code StateMachines.Builder.asyncExecutor} says. A null argument throws on the calling thread,
+     * and a submission the executor refuses returns a failed future.
      */
     AsyncStateMachine<E, S, T> async();
 
     /**
      * Runs {@code call} on the machine's executor; implements {@link Machine#async}. A submission the executor
-     * refuses, as the default one does after close(), returns a failed future.
+     * refuses, as the default one does after close(), returns a failed future. The call completes the returned future
+     * as it would complete the one CompletableFuture.supplyAsync returns, but it is queued as a plain task, which
+     * CompletableFuture's get and join never run on the thread that waits.
      */
     <R> CompletableFuture<R> supplyAsync(Supplier<R> call);
 

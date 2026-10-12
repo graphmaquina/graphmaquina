@@ -14,8 +14,11 @@ import lombok.NonNull;
  * edge without running one. Only an action can move other entities inside the transaction, through its context's
  * cascade. After-commit hooks run once the transaction has released the thread, so they can start transitions; a watch
  * reaction runs the edge its rule selected as a root of its own, once the watch's functions are done. Any of these
- * callbacks that submits a call through {@code async(...)} gets a separate call on the executor's thread, unless that
- * executor runs tasks inline, in which case the returned future fails with this exception as its cause.
+ * callbacks that submits a call through {@code async(...)} gets a separate call on the executor's thread, unless the
+ * call runs on the callback's own thread, in which case the returned future fails with this exception as its cause:
+ * an executor that runs tasks inline runs it there, and so can a wait of the callback that runs a ForkJoinPool's
+ * queued tasks, as joining a ForkJoinTask or waiting for the pool's quiescence does. CompletableFuture's get and join
+ * never run such a call.
  */
 @Getter
 public final class ReentrantTransitionException extends StateMachineException {

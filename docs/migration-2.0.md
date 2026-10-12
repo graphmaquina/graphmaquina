@@ -528,6 +528,12 @@ observe. Most items refuse up front what used to fail later, in generated code o
   worker block now aborts the transition, where its `RejectedExecutionException` used to escape the call. The abort
   carries that exception as its cause, unless a failed cascade has already poisoned the transaction: the call then
   ends in the failure that poisoned it.
+- **A submitted call runs inside no `CompletableFuture` wait.** A call submitted through `async(...)`, or through
+  `AsyncStateMachine`'s `execute` or `reevaluate`, is queued as a plain task, which `CompletableFuture`'s `get` and
+  `join` no longer run on a waiting `ForkJoinPool` worker, a common-pool worker for instance, inside the callback
+  that waits, where it failed with `ReentrantTransitionException`. While such a call is queued on the waiting worker,
+  a callback that waits for it, or for a `CompletableFuture` task queued behind it, now waits for another worker to
+  take that task, as [executors and machine lifetime](guide.md#executors-and-machine-lifetime) describes.
 - **Standalone machines.** `StateMachines.Builder.build()` registers the `as(...)` facade and dispatches the
   machine's own watches; a watch on another machine is refused at `build()`.
 - **Blank reasons are refused.** `StatePolicy` refuses a blank reason for an identifier, as it refused a blank

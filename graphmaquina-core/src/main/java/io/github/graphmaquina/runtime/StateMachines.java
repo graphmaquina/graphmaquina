@@ -91,6 +91,12 @@ public final class StateMachines {
             return this;
         }
 
+        /**
+         * The executor that runs the calls submitted through {@code async(...)}. Given ForkJoinPool.commonPool() while
+         * the common pool's parallelism is below two when the machine is built, the machine runs each call on a new
+         * thread instead, as CompletableFuture.supplyAsync does with that pool: with parallelism 0 the pool starts no
+         * worker, and a call queued there would never run.
+         */
         public Builder<E, S, T> asyncExecutor(Executor executor) {
             requireUnused();
             Objects.requireNonNull(executor, "executor");
@@ -191,7 +197,8 @@ public final class StateMachines {
             validate();
             used = true;
             boolean owns = executor.isEmpty();
-            Executor resolved = executor.isPresent() ? executor.get() : Executors.newVirtualThreadPerTaskExecutor();
+            Executor resolved = executor.isPresent() ? Submit.screen(executor.get())
+                    : Executors.newVirtualThreadPerTaskExecutor();
             return new DefaultStateMachine<>(definition, getter.get(), setter.get(), identity, asyncTimeout, resolved,
                     owns, registry, bindingsAsChild, trail);
         }

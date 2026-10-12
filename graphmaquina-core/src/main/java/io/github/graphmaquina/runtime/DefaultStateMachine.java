@@ -44,7 +44,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -314,11 +313,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     @Override
     public <R> CompletableFuture<R> supplyAsync(Supplier<R> call) {
         Objects.requireNonNull(call, "call");
-        try {
-            return CompletableFuture.supplyAsync(call, executor);
-        } catch (RejectedExecutionException e) {
-            return CompletableFuture.failedFuture(e);
-        }
+        return Submit.supply(executor, call);
     }
 
     /**
