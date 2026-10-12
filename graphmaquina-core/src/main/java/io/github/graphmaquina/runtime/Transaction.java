@@ -1106,9 +1106,9 @@ final class Transaction {
      * throwable they completed with to ActionFailure; the engine reads no message before classification, though the JDK
      * may already have read it, as when {@code supplyAsync} wrapped the throwable in a CompletionException. The
      * engine's own abort of the step, for a null outcome or stage or a wait that timed out, was interrupted or was
-     * refused, leaves as an EngineAbort, which the step poisons the call with once executeAction logged the action's
-     * end. Before it waits for a stage, a call that logs at TRACE logs the budget the wait has left: none when neither
-     * the edge nor the call sets a limit.
+     * refused, leaves as an EngineAbort, which a nested step poisons the call with once executeAction logged the
+     * action's end. Before it waits for a stage, a call that logs at TRACE logs the budget the wait has left: none when
+     * neither the edge nor the call sets a limit.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome invokeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -1227,9 +1227,9 @@ final class Transaction {
 
     /**
      * Waits under the deadline. Timeout, interruption and the refusal of the thread's ForkJoinPool to let it block
-     * are aborts, each caused by what ended the wait, which leave as an EngineAbort that has not poisoned the call: an
-     * action's step poisons the call with it once it logged the action's end, a guard's evaluation as soon as it
-     * catches it. The user's stage is left running.
+     * are aborts, each caused by what ended the wait, which leave as an EngineAbort that has not poisoned the call: a
+     * nested action's step poisons the call with it once it logged the action's end, a nested guard's evaluation as
+     * soon as it catches it. The user's stage is left running.
      */
     private <R> Optional<R> await(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from,
                                   Optional<Enum<?>> id, Optional<Enum<?>> to, Optional<String> action, String what,
