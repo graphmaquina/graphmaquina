@@ -190,9 +190,11 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
      * of its own that maxWatchChain never counts. The marker is released before the selected edge runs as a root.
      * Observers see the whole of it as one call, which ends in RESOLVE if it throws before an edge runs, and so does
      * its log. Such a failure has no transaction. When this machine records its trail, the failure carries a flow
-     * of its own, attached before the observers hear of it: the entity, no value, and a single Failed entry, read
-     * then, as Transaction.endWith says; otherwise it carries the empty flow, and an Error carries none. An Error the
-     * clock throws while it reads that entry's instant propagates in place of the failure, and the observers hear of
+     * of its own, attached before the observers hear of it: the entity, no value, and at most one Failed entry, read
+     * then, as Transaction.endWith says. When the clock throws a RuntimeException or answers null, the entry is
+     * omitted; a distinct clock failure is suppressed on the call's failure. Without a trail it carries the empty
+     * flow, and an Error carries none. An Error the clock throws while it reads that entry's instant propagates in
+     * place of the failure, and the observers hear of
      * that Error. The log's start line names {@code trigger}: the id of the call whose commit triggered this watch
      * reaction, when that call logged, and empty for a reevaluation the application made.
      */

@@ -351,7 +351,8 @@ class FlowDeliveryTest {
     void aCascadesOutcomeCarriesTheEmptyFlow() {
         Doc parent = new Doc("1", DRAFT);
         Doc child = new Doc("2", DRAFT);
-        AtomicReference<Outcome<Doc, DocStatus, DocTransition>> cascaded = new AtomicReference<>();
+        AtomicReference<Optional<Outcome<Doc, DocStatus, DocTransition>>> cascaded =
+                new AtomicReference<>(Optional.empty());
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
                         .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
@@ -361,15 +362,15 @@ class FlowDeliveryTest {
                 (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard
                         .action("Collect", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
                             ctx.flow().put(PARENT, "p");
-                            cascaded.set(ctx.cascade(DOCS, child, SUBMIT));
+                            cascaded.set(Optional.of(ctx.cascade(DOCS, child, SUBMIT)));
                             return ActionOutcome.ok();
                         }));
         Outcome<Doc, DocStatus, DocTransition> outcome;
         try (MachineRegistry registry = registry(graph)) {
             outcome = registry.of(DOCS).execute(parent, DISCARD);
         }
-        assertInstanceOf(Outcome.Applied.class, cascaded.get());
-        assertSame(FlowView.empty(), cascaded.get().flow());
+        assertInstanceOf(Outcome.Applied.class, cascaded.get().orElseThrow());
+        assertSame(FlowView.empty(), cascaded.get().orElseThrow().flow());
         assertEquals(frozen(parent, PARENT, "p", CHILD, "c"), outcome.flow());
     }
 
@@ -813,16 +814,18 @@ class FlowDeliveryTest {
      */
     @Test
     void anotherThreadReadsTheHandedOutFlowAndAKeptHandleIsStale() throws InterruptedException {
-        AtomicReference<FlowContext> kept = new AtomicReference<>();
-        AtomicReference<FlowView> guardView = new AtomicReference<>();
+        AtomicReference<Optional<FlowContext>> kept =
+                new AtomicReference<>(Optional.empty());
+        AtomicReference<Optional<FlowView>> guardView =
+                new AtomicReference<>(Optional.empty());
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
                         .guard("Ready", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
-                            guardView.set(ctx.flow());
+                            guardView.set(Optional.of(ctx.flow()));
                             return GuardResult.pass();
                         })
                         .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
-                            kept.set(ctx.flow());
+                            kept.set(Optional.of(ctx.flow()));
                             ctx.flow().put(BATCH, ctx.entity().id());
                             if (ctx.entity().id().equals("2")) {
                                 throw new IllegalStateException("reviewer unavailable");
@@ -853,12 +856,12 @@ class FlowDeliveryTest {
         Outcome<Doc, DocStatus, DocTransition> async = machine.async().execute(queued, SUBMIT).join();
         assertEquals(frozen(queued, BATCH, "3"), async.flow());
 
-        assertThrows(StaleContextException.class, () -> kept.get().get(BATCH));
-        assertThrows(StaleContextException.class, () -> kept.get().keys());
-        assertThrows(StaleContextException.class, () -> kept.get().entity());
-        assertThrows(StaleContextException.class, () -> kept.get().put(BATCH, "late"));
-        assertThrows(StaleContextException.class, () -> kept.get().remove(BATCH));
-        assertThrows(StaleContextException.class, () -> guardView.get().keys());
+        assertThrows(StaleContextException.class, () -> kept.get().orElseThrow().get(BATCH));
+        assertThrows(StaleContextException.class, () -> kept.get().orElseThrow().keys());
+        assertThrows(StaleContextException.class, () -> kept.get().orElseThrow().entity());
+        assertThrows(StaleContextException.class, () -> kept.get().orElseThrow().put(BATCH, "late"));
+        assertThrows(StaleContextException.class, () -> kept.get().orElseThrow().remove(BATCH));
+        assertThrows(StaleContextException.class, () -> guardView.get().orElseThrow().keys());
         assertEquals(frozen(queued, BATCH, "3"), async.flow());
     }
 }

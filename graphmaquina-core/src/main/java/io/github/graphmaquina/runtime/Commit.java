@@ -17,7 +17,8 @@ import java.util.Optional;
  * stops phase 2 with nothing written. Once the last setter returned, it moves the call on to HOOK, so that whatever
  * fails from then on, before the hooks too, reports every state written. A call that logs at TRACE logs the check,
  * the conflict it found, if any, and each setter before it is called; those lines print what the log already holds and
- * call no getter or identity function.
+ * call no getter or identity function. A retained action context cannot stage a cascade from a commit getter or
+ * setter: it refuses the cascade before adding anything to the log, whose changes phase 2 already fixed.
  */
 final class Commit {
 

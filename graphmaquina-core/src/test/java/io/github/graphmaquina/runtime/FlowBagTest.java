@@ -516,18 +516,21 @@ class FlowBagTest {
     @Test
     void everyOperationOfAnActionsFlowChecksItsThreadAndItsLifetime() {
         Doc doc = new Doc("1", DRAFT);
-        AtomicReference<TransitionContext<Doc, DocStatus, DocTransition>> context = new AtomicReference<>();
-        AtomicReference<FlowContext> captured = new AtomicReference<>();
-        AtomicReference<String> owner = new AtomicReference<>();
+        AtomicReference<Optional<TransitionContext<Doc, DocStatus, DocTransition>>> context =
+                new AtomicReference<>(Optional.empty());
+        AtomicReference<Optional<FlowContext>> captured =
+                new AtomicReference<>(Optional.empty());
+        AtomicReference<Optional<String>> owner =
+                new AtomicReference<>(Optional.empty());
         Map<String, String> offThread = new LinkedHashMap<>();
         List<Object> afterwards = new ArrayList<>();
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Review",
                         (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
-                            owner.set(Thread.currentThread().getName());
-                            context.set(ctx);
+                            owner.set(Optional.of(Thread.currentThread().getName()));
+                            context.set(Optional.of(ctx));
                             FlowContext flow = ctx.flow();
-                            captured.set(flow);
+                            captured.set(Optional.of(flow));
                             offThread.put("flow()", describe(thrownOnAnotherThread(ctx::flow)));
                             operations(flow).forEach((String name, Runnable operation) ->
                                     offThread.put(name, describe(thrownOnAnotherThread(operation))));
@@ -539,12 +542,12 @@ class FlowBagTest {
             assertInstanceOf(Outcome.Applied.class, registry.of(DOCS).execute(doc, SUBMIT));
         }
         Map<String, String> stale = new LinkedHashMap<>();
-        stale.put("flow()", describe(thrownBy(() -> context.get().flow())));
-        operations(captured.get()).forEach((String name, Runnable operation) ->
+        stale.put("flow()", describe(thrownBy(() -> context.get().orElseThrow().flow())));
+        operations(captured.get().orElseThrow()).forEach((String name, Runnable operation) ->
                 stale.put(name, describe(thrownBy(operation))));
         List<String> names = List.of("flow()", "get", "keys", "entity", "entity(Class)", "trail", "put", "remove");
         assertEquals(each(names, "WrongThreadException: the context of Doc/DocStatus can only be used from the thread"
-                + " running process(): " + owner.get()), offThread);
+                + " running process(): " + owner.get().orElseThrow()), offThread);
         assertEquals(each(names, "StaleContextException: the context of Doc/DocStatus is no longer valid: the"
                 + " transaction ended"), stale);
         assertEquals(List.of(Optional.empty(), Set.of()), afterwards);
@@ -554,17 +557,20 @@ class FlowBagTest {
     @Test
     void everyOperationOfAGuardsFlowChecksItsThreadAndItsLifetime() {
         Doc doc = new Doc("1", DRAFT);
-        AtomicReference<GuardContext<Doc, DocStatus, DocTransition>> context = new AtomicReference<>();
-        AtomicReference<FlowView> captured = new AtomicReference<>();
-        AtomicReference<String> owner = new AtomicReference<>();
+        AtomicReference<Optional<GuardContext<Doc, DocStatus, DocTransition>>> context =
+                new AtomicReference<>(Optional.empty());
+        AtomicReference<Optional<FlowView>> captured =
+                new AtomicReference<>(Optional.empty());
+        AtomicReference<Optional<String>> owner =
+                new AtomicReference<>(Optional.empty());
         Map<String, String> offThread = new LinkedHashMap<>();
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("Reads",
                         (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
-                            owner.set(Thread.currentThread().getName());
-                            context.set(ctx);
+                            owner.set(Optional.of(Thread.currentThread().getName()));
+                            context.set(Optional.of(ctx));
                             FlowView flow = ctx.flow();
-                            captured.set(flow);
+                            captured.set(Optional.of(flow));
                             offThread.put("flow()", describe(thrownOnAnotherThread(ctx::flow)));
                             operations(flow).forEach((String name, Runnable operation) ->
                                     offThread.put(name, describe(thrownOnAnotherThread(operation))));
@@ -574,12 +580,12 @@ class FlowBagTest {
             assertInstanceOf(Outcome.Applied.class, registry.of(DOCS).execute(doc, SUBMIT));
         }
         Map<String, String> stale = new LinkedHashMap<>();
-        stale.put("flow()", describe(thrownBy(() -> context.get().flow())));
-        operations(captured.get()).forEach((String name, Runnable operation) ->
+        stale.put("flow()", describe(thrownBy(() -> context.get().orElseThrow().flow())));
+        operations(captured.get().orElseThrow()).forEach((String name, Runnable operation) ->
                 stale.put(name, describe(thrownBy(operation))));
         List<String> names = List.of("flow()", "get", "keys", "entity", "entity(Class)", "trail");
         assertEquals(each(names, "WrongThreadException: the context of Doc/DocStatus can only be used from the thread"
-                + " running test(): " + owner.get()), offThread);
+                + " running test(): " + owner.get().orElseThrow()), offThread);
         assertEquals(each(names, "StaleContextException: the context of Doc/DocStatus is no longer valid: the"
                 + " transaction ended"), stale);
     }
@@ -588,17 +594,18 @@ class FlowBagTest {
     @Test
     void aGuardsFlowCannotWriteEvenWhenCast() {
         Doc doc = new Doc("1", DRAFT);
-        AtomicReference<FlowView> captured = new AtomicReference<>();
+        AtomicReference<Optional<FlowView>> captured =
+                new AtomicReference<>(Optional.empty());
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("Reads",
                         (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
-                            captured.set(ctx.flow());
+                            captured.set(Optional.of(ctx.flow()));
                             return GuardResult.pass();
                         }));
         try (MachineRegistry registry = registry(graph)) {
             registry.of(DOCS).execute(doc, SUBMIT);
         }
-        FlowView view = captured.get();
+        FlowView view = captured.get().orElseThrow();
         assertFalse(view instanceof FlowContext);
         assertThrows(ClassCastException.class, () -> ((FlowContext) view).put(BATCH, "b-1"));
     }
@@ -637,34 +644,38 @@ class FlowBagTest {
      */
     @Test
     void theContextsCheckRunsBeforeTheArgumentChecks() {
-        AtomicReference<FlowView> guard = new AtomicReference<>();
-        AtomicReference<FlowContext> action = new AtomicReference<>();
-        AtomicReference<String> owner = new AtomicReference<>();
+        AtomicReference<Optional<FlowView>> guard =
+                new AtomicReference<>(Optional.empty());
+        AtomicReference<Optional<FlowContext>> action =
+                new AtomicReference<>(Optional.empty());
+        AtomicReference<Optional<String>> owner =
+                new AtomicReference<>(Optional.empty());
         List<String> refused = new ArrayList<>();
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
                         .guard("Reads", (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
-                            owner.set(Thread.currentThread().getName());
-                            guard.set(ctx.flow());
-                            refused.add(describe(thrownOnAnotherThread(() -> guard.get().get(null))));
+                            owner.set(Optional.of(Thread.currentThread().getName()));
+                            guard.set(Optional.of(ctx.flow()));
+                            refused.add(describe(thrownOnAnotherThread(() -> guard.get().orElseThrow().get(null))));
                             return GuardResult.pass();
                         })
                         .action("Review", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
-                            action.set(ctx.flow());
-                            refused.add(describe(thrownOnAnotherThread(() -> action.get().put(null, null))));
+                            action.set(Optional.of(ctx.flow()));
+                            refused.add(describe(thrownOnAnotherThread(() ->
+                                    action.get().orElseThrow().put(null, null))));
                             return ActionOutcome.ok();
                         }));
         try (MachineRegistry registry = registry(graph)) {
             registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT);
         }
-        refused.add(describe(thrownBy(() -> guard.get().get(null))));
-        refused.add(describe(thrownBy(() -> action.get().put(null, null))));
+        refused.add(describe(thrownBy(() -> guard.get().orElseThrow().get(null))));
+        refused.add(describe(thrownBy(() -> action.get().orElseThrow().put(null, null))));
         String stale = "StaleContextException: the context of Doc/DocStatus is no longer valid: the transaction ended";
         assertEquals(List.of(
                 "WrongThreadException: the context of Doc/DocStatus can only be used from the thread running test(): "
-                        + owner.get(),
+                        + owner.get().orElseThrow(),
                 "WrongThreadException: the context of Doc/DocStatus can only be used from the thread running"
-                        + " process(): " + owner.get(),
+                        + " process(): " + owner.get().orElseThrow(),
                 stale, stale), refused);
     }
 

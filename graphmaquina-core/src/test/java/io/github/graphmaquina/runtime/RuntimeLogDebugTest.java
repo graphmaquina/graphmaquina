@@ -876,19 +876,20 @@ class RuntimeLogDebugTest {
     @Test
     void aRequestRefusedBeforeItStartsLogsNothing() {
         Doc doc = new Doc("1", DRAFT);
-        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> machine = new AtomicReference<>();
+        AtomicReference<Optional<StateMachine<Doc, DocStatus, DocTransition>>> machine =
+                new AtomicReference<>(Optional.empty());
         List<Class<?>> refused = new ArrayList<>();
         GraphDefinition<Doc, DocStatus, DocTransition> reentrant = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Again",
                         (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
                             refused.add(assertThrows(ReentrantTransitionException.class,
-                                    () -> machine.get().execute(ctx.entity(), PUBLISH)).getClass());
+                                    () -> machine.get().orElseThrow().execute(ctx.entity(), PUBLISH)).getClass());
                             return ActionOutcome.ok();
                         }));
         try (MachineRegistry registry = registry(reentrant); LibraryLog log = LibraryLog.runtime(Level.FINE)) {
-            machine.set(registry.of(DOCS));
-            assertThrows(NullPointerException.class, () -> machine.get().execute(null, SUBMIT));
-            machine.get().execute(doc, SUBMIT);
+            machine.set(Optional.of(registry.of(DOCS)));
+            assertThrows(NullPointerException.class, () -> machine.get().orElseThrow().execute(null, SUBMIT));
+            machine.get().orElseThrow().execute(doc, SUBMIT);
             assertEquals(List.of(ReentrantTransitionException.class), refused);
             assertEquals(List.of(
                     "FINE call=A start Doc/DocStatus SUBMIT",

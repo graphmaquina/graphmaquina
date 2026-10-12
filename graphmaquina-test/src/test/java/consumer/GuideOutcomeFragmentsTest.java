@@ -11,6 +11,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;
 import javax.tools.JavaCompiler;
@@ -688,24 +689,24 @@ class GuideOutcomeFragmentsTest {
     private static String blockAfter(List<String> guide, String heading, int n) {
         boolean inside = false;
         boolean taking = false;
-        MarkdownFence fence = null;
+        Optional<MarkdownFence> fence = Optional.empty();
         int count = 0;
         StringBuilder block = new StringBuilder();
         for (String line : guide) {
-            if (fence != null) {
-                if (fence.closes(line)) {
+            if (fence.isPresent()) {
+                if (fence.get().closes(line)) {
                     if (taking) {
                         break;
                     }
-                    fence = null;
+                    fence = Optional.empty();
                 } else if (taking) {
                     block.append(line).append('\n');
                 }
                 continue;
             }
-            fence = MarkdownFence.opening(line).orElse(null);
-            if (fence != null) {
-                if (inside && fence.language("java")) {
+            fence = MarkdownFence.opening(line);
+            if (fence.isPresent()) {
+                if (inside && fence.get().language("java")) {
                     count++;
                     taking = count == n;
                 }
@@ -723,19 +724,19 @@ class GuideOutcomeFragmentsTest {
     /** Returns the first java block whose first line starts with the prefix. Fails when there is none. */
     private static String blockStarting(List<String> guide, String prefix) {
         StringBuilder block = new StringBuilder();
-        MarkdownFence fence = null;
+        Optional<MarkdownFence> fence = Optional.empty();
         boolean first = false;
         boolean taking = false;
         for (String line : guide) {
-            if (fence == null) {
-                fence = MarkdownFence.opening(line).orElse(null);
-                first = fence != null && fence.language("java");
-            } else if (fence.closes(line)) {
+            if (fence.isEmpty()) {
+                fence = MarkdownFence.opening(line);
+                first = fence.isPresent() && fence.get().language("java");
+            } else if (fence.get().closes(line)) {
                 if (taking) {
                     break;
                 }
-                fence = null;
-            } else if (fence.language("java")) {
+                fence = Optional.empty();
+            } else if (fence.get().language("java")) {
                 if (first) {
                     first = false;
                     taking = line.startsWith(prefix);

@@ -23,9 +23,12 @@ import io.github.graphmaquina.fixtures.DocTransition;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.ResourceBundle;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * What the registry's observers are notified with, without a machine: an exception an observer throws is logged as a
@@ -34,6 +37,36 @@ import org.junit.jupiter.api.Test;
  * measure from the clock read the call hands in.
  */
 class ObserversTest {
+
+    /** A warning backend that fails either its level check or its write. */
+    static final class BrokenLogger implements System.Logger {
+        private final boolean checking;
+        private final Throwable failure;
+
+        BrokenLogger(boolean checking, Throwable failure) {
+            this.checking = checking;
+            this.failure = Objects.requireNonNull(failure, "failure");
+        }
+
+        private void fail() {
+            if (failure instanceof Error fatal) {
+                throw fatal;
+            }
+            throw (RuntimeException) failure;
+        }
+
+        @Override public String getName() { return "broken"; }
+
+        @Override public boolean isLoggable(Level level) {
+            if (checking) {
+                fail();
+            }
+            return true;
+        }
+
+        @Override public void log(Level level, ResourceBundle bundle, String message, Throwable thrown) { fail(); }
+        @Override public void log(Level level, ResourceBundle bundle, String format, Object... params) { fail(); }
+    }
 
     /** A System.Logger that keeps what it was asked to log. */
     static final class RecordingLogger implements System.Logger {
@@ -88,6 +121,47 @@ class ObserversTest {
 
     private static Outcome<Doc, DocStatus, DocTransition> ignored(Doc entity) {
         return new Outcome.Ignored<Doc, DocStatus, DocTransition>(entity, DRAFT, IgnoreReason.NO_WATCH);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aNonfatalWarningBackendFailureStillNotifiesTheOtherObservers(boolean checking) {
+        List<String> after = new ArrayList<>();
+        MachineObserver next = new MachineObserver() {
+            @Override public void onStarted(MachineCall call) { after.add("started"); }
+            @Override public void onCompleted(MachineCall call, Outcome<?, ?, ?> outcome, Duration elapsed) {
+                after.add("completed");
+            }
+            @Override public void onFailed(MachineCall call, CallFailure failure, Duration elapsed) {
+                after.add("failed");
+            }
+        };
+        Doc entity = new Doc("1", DRAFT);
+        MachineCall call = new MachineCall(DOCS, entity, Optional.of(SUBMIT), false);
+        Observed observed = new Observers(List.of(new Failing(new IllegalStateException("observer failed")), next),
+                new BrokenLogger(checking, new IllegalStateException("warning backend failed")))
+                .started(call, System.nanoTime());
+        observed.completed(ignored(entity));
+        observed.failed(new CallFailure(CallPhase.ACTION, StatesWritten.NONE, new IllegalArgumentException("x")));
+        assertEquals(List.of("started", "completed", "failed"), after);
+        Reentrancy.check(DOCS, entity);
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aFatalWarningBackendFailurePropagatesAndReleasesTheMarker(boolean checking) {
+        AssertionError fatal = new AssertionError("warning backend failed");
+        List<String> after = new ArrayList<>();
+        MachineObserver next = new MachineObserver() {
+            @Override public void onStarted(MachineCall call) { after.add("started"); }
+        };
+        Doc entity = new Doc("1", DRAFT);
+        MachineCall call = new MachineCall(DOCS, entity, Optional.of(SUBMIT), false);
+        Observers observers = new Observers(List.of(new Failing(new IllegalStateException("observer failed")), next),
+                new BrokenLogger(checking, fatal));
+        assertSame(fatal, assertThrows(AssertionError.class, () -> observers.started(call, System.nanoTime())));
+        assertEquals(List.of(), after);
+        Reentrancy.check(DOCS, entity);
     }
 
     @Test

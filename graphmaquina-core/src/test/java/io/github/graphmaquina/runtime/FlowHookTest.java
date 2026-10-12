@@ -287,14 +287,16 @@ class FlowHookTest {
     void theFlowOfAHookIsStaleOnEveryOperationOnceTheHookReturned() {
         Doc parent = new Doc("1", DRAFT);
         Doc child = new Doc("2", DRAFT);
-        AtomicReference<CommitContext<DocStatus, DocTransition>> first = new AtomicReference<>();
-        AtomicReference<CommitContext<DocStatus, DocTransition>> second = new AtomicReference<>();
+        AtomicReference<Optional<CommitContext<DocStatus, DocTransition>>> first =
+                new AtomicReference<>(Optional.empty());
+        AtomicReference<Optional<CommitContext<DocStatus, DocTransition>>> second =
+                new AtomicReference<>(Optional.empty());
         Map<String, String> inTheLaterHook = new LinkedHashMap<>();
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.afterCommitWith("Second",
                         (Doc committed, CommitContext<DocStatus, DocTransition> commit) -> {
-                            second.set(commit);
-                            inTheLaterHook.putAll(outcomes(first.get().flow()));
+                            second.set(Optional.of(commit));
+                            inTheLaterHook.putAll(outcomes(first.get().orElseThrow().flow()));
                         }),
                 (TransitionBuilder<Doc, DocStatus, DocTransition> discard) -> discard
                         .action("Collect", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
@@ -302,33 +304,35 @@ class FlowHookTest {
                             return ActionOutcome.ok();
                         })
                         .afterCommitWith("First", (Doc committed, CommitContext<DocStatus, DocTransition> commit) ->
-                                first.set(commit)));
+                                first.set(Optional.of(commit))));
         try (MachineRegistry registry = registry(graph)) {
             assertInstanceOf(Outcome.Applied.class, registry.of(DOCS).execute(parent, DISCARD));
         }
         assertEquals(each(STALE), inTheLaterHook);
-        assertNotEquals(first.get().flow(), second.get().flow());
-        assertEquals(each(STALE), outcomes(second.get().flow()));
-        StaleContextException stale = assertThrows(StaleContextException.class, () -> second.get().flow().keys());
+        assertNotEquals(first.get().orElseThrow().flow(), second.get().orElseThrow().flow());
+        assertEquals(each(STALE), outcomes(second.get().orElseThrow().flow()));
+        StaleContextException stale = assertThrows(StaleContextException.class,
+                () -> second.get().orElseThrow().flow().keys());
         assertSame(DOCS, stale.key());
         assertSame(child, stale.entity());
-        assertEquals(DRAFT, second.get().from());
-        assertEquals(SUBMIT, second.get().transition());
-        assertEquals(REVIEW, second.get().to());
-        assertEquals(TransitionKind.MOVE, second.get().kind());
+        assertEquals(DRAFT, second.get().orElseThrow().from());
+        assertEquals(SUBMIT, second.get().orElseThrow().transition());
+        assertEquals(REVIEW, second.get().orElseThrow().to());
+        assertEquals(TransitionKind.MOVE, second.get().orElseThrow().kind());
     }
 
     /** Spec R14.3: the flow of a hook that throws goes stale too, on every operation. */
     @Test
     void theFlowOfAHookIsStaleOnEveryOperationOnceTheHookThrew() {
         Doc doc = new Doc("1", DRAFT);
-        AtomicReference<FlowContext> retained = new AtomicReference<>();
+        AtomicReference<Optional<FlowContext>> retained =
+                new AtomicReference<>(Optional.empty());
         IllegalStateException boom = new IllegalStateException("persistence unavailable");
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.afterCommitWith("Persist",
                         (Doc committed, CommitContext<DocStatus, DocTransition> commit) -> {
                             commit.flow().put(BATCH, "b-1");
-                            retained.set(commit.flow());
+                            retained.set(Optional.of(commit.flow()));
                             throw boom;
                         }));
         try (MachineRegistry registry = registry(graph)) {
@@ -336,7 +340,7 @@ class FlowHookTest {
                     () -> registry.of(DOCS).execute(doc, SUBMIT));
             assertSame(boom, error.getCause());
         }
-        assertEquals(each(STALE), outcomes(retained.get()));
+        assertEquals(each(STALE), outcomes(retained.get().orElseThrow()));
     }
 
     /**
@@ -345,16 +349,17 @@ class FlowHookTest {
      */
     @Test
     void theFlowOfAHookChecksItsLifetimeBeforeItsThread() {
-        AtomicReference<FlowContext> retained = new AtomicReference<>();
+        AtomicReference<Optional<FlowContext>> retained =
+                new AtomicReference<>(Optional.empty());
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.afterCommitWith("Persist",
                         (Doc committed, CommitContext<DocStatus, DocTransition> commit) ->
-                                retained.set(commit.flow())));
+                                retained.set(Optional.of(commit.flow()))));
         try (MachineRegistry registry = registry(graph)) {
             assertInstanceOf(Outcome.Applied.class, registry.of(DOCS).execute(new Doc("1", DRAFT), SUBMIT));
         }
         Map<String, String> offThread = new LinkedHashMap<>();
-        operations(retained.get()).forEach((String name, Runnable operation) ->
+        operations(retained.get().orElseThrow()).forEach((String name, Runnable operation) ->
                 offThread.put(name, describe(thrownOnAnotherThread(operation))));
         assertEquals(each(STALE), offThread);
     }
@@ -366,13 +371,14 @@ class FlowHookTest {
     @Test
     void everyOperationOfAHooksFlowRefusesAnotherThread() {
         Doc doc = new Doc("1", DRAFT);
-        AtomicReference<String> owner = new AtomicReference<>();
+        AtomicReference<Optional<String>> owner =
+                new AtomicReference<>(Optional.empty());
         Map<String, String> offThread = new LinkedHashMap<>();
         List<Object> afterwards = new ArrayList<>();
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.afterCommitWith("Persist",
                         (Doc committed, CommitContext<DocStatus, DocTransition> commit) -> {
-                            owner.set(Thread.currentThread().getName());
+                            owner.set(Optional.of(Thread.currentThread().getName()));
                             operations(commit.flow()).forEach((String name, Runnable operation) ->
                                     offThread.put(name, describe(thrownOnAnotherThread(operation))));
                             afterwards.add(commit.flow().get(BATCH));
@@ -382,7 +388,7 @@ class FlowHookTest {
             assertInstanceOf(Outcome.Applied.class, registry.of(DOCS).execute(doc, SUBMIT));
         }
         assertEquals(each("WrongThreadException: the flow of the hook Persist can only be used from the thread"
-                + " running it: " + owner.get()), offThread);
+                + " running it: " + owner.get().orElseThrow()), offThread);
         assertEquals(List.of(Optional.empty(), Set.of()), afterwards);
     }
 
@@ -431,7 +437,8 @@ class FlowHookTest {
     void aHookThatStartsANewCallKeepsTheFlowOfItsOwnCall() {
         Doc outer = new Doc("1", DRAFT);
         Doc inner = new Doc("2", DRAFT);
-        AtomicReference<StateMachine<Doc, DocStatus, DocTransition>> machine = new AtomicReference<>();
+        AtomicReference<Optional<StateMachine<Doc, DocStatus, DocTransition>>> machine =
+                new AtomicReference<>(Optional.empty());
         List<String> seen = new ArrayList<>();
         GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
                 (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit
@@ -442,7 +449,7 @@ class FlowHookTest {
                         .afterCommitWith("Outer", (Doc committed, CommitContext<DocStatus, DocTransition> commit) -> {
                             FlowContext flow = commit.flow();
                             seen.add("outer hook before: " + flow.get(BATCH));
-                            seen.add("nested call: " + machine.get().execute(inner, DISCARD).code());
+                            seen.add("nested call: " + machine.get().orElseThrow().execute(inner, DISCARD).code());
                             seen.add("outer hook after: " + flow.get(BATCH) + " " + flow.entity().orElseThrow());
                             flow.put(NOTE, "after");
                             seen.add("outer hook wrote: " + flow.get(NOTE) + " " + flow.keys());
@@ -458,8 +465,8 @@ class FlowHookTest {
                                 seen.add("inner hook: " + commit.flow().get(BATCH) + " "
                                         + commit.flow().entity().orElseThrow())));
         try (MachineRegistry registry = registry(graph)) {
-            machine.set(registry.of(DOCS));
-            assertInstanceOf(Outcome.Applied.class, machine.get().execute(outer, SUBMIT));
+            machine.set(Optional.of(registry.of(DOCS)));
+            assertInstanceOf(Outcome.Applied.class, machine.get().orElseThrow().execute(outer, SUBMIT));
         }
         assertEquals(List.of(
                 "outer hook before: Optional[outer]",

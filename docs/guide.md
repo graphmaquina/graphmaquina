@@ -2182,6 +2182,10 @@ post-commit hooks run. The flow a hook receives from its `CommitContext` is chec
 running the hook and the hook's own run: it goes stale once the hook returns or throws. The flow the caller receives
 once the call ended, in its outcome or its failure, is a frozen copy without these checks.
 
+Cascades also require that the commit has not begun. A retained action context used for `cascade(...)` or
+`cascadeAll(...)` from a commit getter or setter throws `IllegalStateException` before it stages anything:
+the commit has already fixed the changes it will write. Reading peers or the flow does not stage another hop.
+
 Neither `thenApply` nor `thenApplyAsync` promises to run on that original operation thread. Even a callback
 without the `Async` suffix may run on the service's completion thread. Do not hide a cascade or a write to the flow
 in one of these callbacks. Read peers, write the flow or stage required cascades while on the operation thread;
@@ -2984,7 +2988,9 @@ the call attached before it told the observers.
 
 An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
 `System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
-propagates. That warning is the only record logged on `io.github.graphmaquina` itself: the lines of each call go to
+propagates. The warning is best effort: a `RuntimeException` from its backend is contained too, while an `Error`
+from it propagates unchanged. That warning is the only record logged on `io.github.graphmaquina` itself:
+the lines of each call go to
 its child logger `io.github.graphmaquina.runtime`, as [debug a call](#debug-a-call-logs-and-the-calls-flow)
 describes. An observer cannot start a transition on its own thread either: an operation called from an observer throws
 `ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread as

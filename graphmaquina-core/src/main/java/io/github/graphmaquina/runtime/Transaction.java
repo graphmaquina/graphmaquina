@@ -74,14 +74,14 @@ final class Transaction {
 
     Transaction(MachineRegistry registry, UnitOfWork uow, MachineKey<?, ?, ?> callKey, Object callEntity,
                 Optional<Enum<?>> requested, boolean reaction, Optional<MachineCall> call, CallLog log) {
-        this.registry = registry;
-        this.uow = uow;
-        this.callKey = callKey;
-        this.callEntity = callEntity;
-        this.requested = requested;
+        this.registry = Objects.requireNonNull(registry, "registry");
+        this.uow = Objects.requireNonNull(uow, "uow");
+        this.callKey = Objects.requireNonNull(callKey, "callKey");
+        this.callEntity = Objects.requireNonNull(callEntity, "callEntity");
+        this.requested = Objects.requireNonNull(requested, "requested");
         this.reaction = reaction;
-        this.call = call;
-        this.log = log;
+        this.call = Objects.requireNonNull(call, "call");
+        this.log = Objects.requireNonNull(log, "log");
     }
 
     /** The log of the call this transaction runs. */
@@ -1381,18 +1381,27 @@ final class Transaction {
     /** At depth greater than zero, the failure poisons the UoW: the parent cannot go on as if nothing happened. */
     private <X extends StateMachineException> X poisonIfNested(int depth, X error) {
         if (depth > 0) {
-            tracePoison(depth, error);
-            uow.poison(error);
+            poisonAt(depth, error);
         }
         return error;
     }
 
     /**
-     * Logs at TRACE, at {@code depth}, the failure that is about to poison the unit of work, unless an earlier one
-     * already did: a transaction keeps its first poison.
+     * Stores the first poison before its TRACE line: a backend Error cannot interrupt that bookkeeping.
+     */
+    private void poisonAt(int depth, StateMachineException error) {
+        boolean first = !uow.isPoisoned();
+        uow.poison(error);
+        if (first) {
+            tracePoison(depth, error);
+        }
+    }
+
+    /**
+     * Logs at TRACE, at {@code depth}, the first poison already stored in the unit of work.
      */
     private void tracePoison(int depth, StateMachineException error) {
-        if (log.trace() && !uow.isPoisoned()) {
+        if (log.trace()) {
             log.trace(depth, "poison error=" + CallLog.show(error));
         }
     }
@@ -1439,7 +1448,7 @@ final class Transaction {
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> cascadeKeyFor(
             ContextHandle caller, Class<? extends Machine<P, Q, U>> facade) {
-        checkPoison(caller);
+        checkCascade(caller);
         try {
             return keyFor(facade);
         } catch (StateMachineException e) {
@@ -1466,7 +1475,7 @@ final class Transaction {
      */
     private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascade(
             ContextHandle caller, MachineKey<P, Q, U> key, P peer, U id, Optional<CascadePolicy> policy) {
-        checkPoison(caller);
+        checkCascade(caller);
         requireTransition(key, id);
         try {
             return cascadeOne(caller, key, peer, id, policy);
@@ -1496,16 +1505,16 @@ final class Transaction {
      */
     private CallFailedException poisonWith(ContextHandle caller, String target, Throwable error) {
         if (error instanceof CallFailedException own && owns(own)) {
-            tracePoison(caller.contextDepth(), own);
-            uow.poison(own);
+            poisonAt(caller.contextDepth(), own);
             return own;
         }
         TransitionAbortedException wrapper = new TransitionAbortedException(call(), phase, details(caller),
                 "the cascade to " + target + " failed: " + error, error);
-        if (!(error instanceof Error)) {
+        boolean first = !uow.isPoisoned();
+        uow.poisonWrapping(wrapper);
+        if (first && !(error instanceof Error)) {
             tracePoison(caller.contextDepth(), wrapper);
         }
-        uow.poisonWrapping(wrapper);
         return wrapper;
     }
 
@@ -1597,7 +1606,7 @@ final class Transaction {
                                                                                 MachineKey<P, Q, U> key,
                                                                                 Collection<? extends P> peers, U id,
                                                                                 CascadePolicy policy) {
-        checkPoison(caller);
+        checkCascade(caller);
         List<P> elements = elementsOf(peers);
         return cascadeEach(caller, key, elements, id, policy);
     }
@@ -1610,7 +1619,7 @@ final class Transaction {
     <P, Q extends Enum<Q>, U extends Enum<U>> List<Outcome<P, Q, U>> cascadeAll(
             ContextHandle caller, Class<? extends Machine<P, Q, U>> facade, Collection<? extends P> peers, U id,
             CascadePolicy policy) {
-        checkPoison(caller);
+        checkCascade(caller);
         List<P> elements = elementsOf(peers);
         return cascadeEach(caller, cascadeKeyFor(caller, facade), elements, id, policy);
     }
@@ -1655,13 +1664,14 @@ final class Transaction {
             } catch (Throwable error) {
                 if (error instanceof TransitionAbortedException abort && owns(abort)
                         && !uow.poisonWrapsAForeignFailure()) {
+                    uow.poison(abort);
                     uow.rollbackTo(savepoint);
-                    uow.clearPoison();
                     if (target.isPresent()) {
                         log.trace(caller.contextDepth(), "collect-rollback " + CallLog.show(target.get()) + " "
                                 + id.name() + " error=" + CallLog.show(abort));
                     }
                     errors.add(abort);
+                    uow.clearPoison();
                     continue;
                 }
                 CallFailedException poisoned = poisonWith(caller, key.toString(), error);
@@ -1673,8 +1683,7 @@ final class Transaction {
         }
         if (!errors.isEmpty()) {
             CascadeException aggregate = new CascadeException(call(), details(caller), errors);
-            tracePoison(caller.contextDepth(), aggregate);
-            uow.poison(aggregate);
+            poisonAt(caller.contextDepth(), aggregate);
             throw aggregate;
         }
         return List.copyOf(outcomes);
@@ -1686,6 +1695,14 @@ final class Transaction {
             registry.anyMachineFor(key);
         } catch (StateMachineException e) {
             throw poisonWith(caller, key.toString(), e);
+        }
+    }
+
+    /** A commit callback cannot add a hop after phase 2 has fixed the changes it will write. */
+    private void checkCascade(ContextHandle caller) {
+        checkPoison(caller);
+        if (phase == CallPhase.COMMIT || phase == CallPhase.HOOK || phase == CallPhase.REACTIONS) {
+            throw new IllegalStateException("cascades can only run before the commit");
         }
     }
 

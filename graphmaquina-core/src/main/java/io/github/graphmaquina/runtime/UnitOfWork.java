@@ -353,9 +353,8 @@ final class UnitOfWork {
 
     /**
      * The log grouped into one change per entity, read straight off the log without copying its entries. A log of one
-     * entry skips the grouping map when no action ran: the saved context of an action that ran can still cascade
-     * from an identity's hashCode while the log is grouped, and only the iteration of the general path refuses that
-     * new entry.
+     * entry skips the grouping map when no action ran. The transaction refuses cascades once the commit begins,
+     * including one attempted from an identity's hashCode while this log is grouped.
      */
     CommitSummary commitSummary() {
         if (journal.isEmpty() && log.size() == 1) {
