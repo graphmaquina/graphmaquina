@@ -1101,14 +1101,16 @@ final class Transaction {
      * Sync actions run inline; async ones return a stage that is awaited under the edge's deadline. Whatever the action
      * throws, an Error aside, or completes its stage with, checked exceptions included, which Kotlin or
      * {@code @SneakyThrows} code can throw without declaring them, and library exceptions too, becomes an ActionFailure
-     * that its caller classifies. An Error is never routed: thrown as itself, it propagates; wrapped in
-     * CompletionException or ExecutionException, it is unwrapped and aborts. Exceptional stage completions hand the
-     * throwable they completed with to ActionFailure; the engine reads no message before classification, though the JDK
-     * may already have read it, as when {@code supplyAsync} wrapped the throwable in a CompletionException. The
-     * engine's own abort of the step, for a null outcome or stage or a wait that timed out, was interrupted or was
-     * refused, leaves as an EngineAbort, which a nested step poisons the call with once executeAction logged the
-     * action's end. Before it waits for a stage, a call that logs at TRACE logs the budget the wait has left: none when
-     * neither the edge nor the call sets a limit.
+     * that its caller classifies. An InterruptedException that the action throws on the calling thread, a sync one
+     * or an async one before it returns its stage, interrupts the thread again, since the blocking call that threw it
+     * cleared the interrupt; one that completes the stage leaves the thread as it is. An Error is never routed: thrown
+     * as itself, it propagates; wrapped in CompletionException or ExecutionException, it is unwrapped and aborts.
+     * Exceptional stage completions hand the throwable they completed with to ActionFailure; the engine reads no
+     * message before classification, though the JDK may already have read it, as when {@code supplyAsync} wrapped the
+     * throwable in a CompletionException. The engine's own abort of the step, for a null outcome or stage or a wait
+     * that timed out, was interrupted or was refused, leaves as an EngineAbort, which a nested step poisons the call
+     * with once executeAction logged the action's end. Before it waits for a stage, a call that logs at TRACE logs the
+     * budget the wait has left: none when neither the edge nor the call sets a limit.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> ActionOutcome invokeAction(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition,
@@ -1120,6 +1122,7 @@ final class Transaction {
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     throw new ActionFailure(e);
                 }
             }
@@ -1131,6 +1134,7 @@ final class Transaction {
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     throw new ActionFailure(e);
                 }
                 if (stage == null) {
@@ -1165,8 +1169,10 @@ final class Transaction {
     /**
      * Sync guards run inline; async ones return a stage that is awaited under the transaction's deadline. For whatever
      * the guard throws or completes its stage with, an Error inside the stage included, the engine throws what
-     * {@link #guardFailure} says: a library exception of another call is a cause like any other. An Error thrown as
-     * itself propagates. A verdict is logged at TRACE with the time the guard took; a guard that throws logs none.
+     * {@link #guardFailure} says: a library exception of another call is a cause like any other. An
+     * InterruptedException that the guard throws on the calling thread interrupts the thread again; one that completes
+     * its stage leaves the thread as it is. An Error thrown as itself propagates. A verdict is logged at TRACE with
+     * the time the guard took; a guard that throws logs none.
      */
     private <E, S extends Enum<S>, T extends Enum<T>> GuardResult evaluateGuard(
             DefaultStateMachine<E, S, T> machine, EntityRef ref, TransitionSpec<E, S, T> transition, int depth,
@@ -1181,6 +1187,7 @@ final class Transaction {
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     throw guardFailure(machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
                 }
             }
@@ -1191,6 +1198,7 @@ final class Transaction {
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    Interrupts.keep(e);
                     throw guardFailure(machine, ref, transition, depth, guard, "threw", Unwrap.unwrap(e));
                 }
                 if (stage == null) {

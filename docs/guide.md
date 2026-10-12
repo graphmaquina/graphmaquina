@@ -1503,6 +1503,9 @@ the rule while every other `IOException` goes to the fallback.
   `<getMessage threw <exception class>>`, and the route is taken all the same, with the thread interrupted again when
   what `getMessage()` threw is an `InterruptedException`. `cause()` is the very exception the action threw, once
   unwrapped.
+- An `InterruptedException` that an action or a guard throws interrupts the thread again, whatever the engine then
+  does with it, since the blocking call that threw it cleared the interrupt; one that completes a stage leaves the
+  thread as it is.
 - `explanation()` holds the reason of a returned failure and stays empty when an exception was routed, whichever
   route took it.
 

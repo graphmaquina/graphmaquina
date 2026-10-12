@@ -18,6 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.github.graphmaquina.api.ActionOutcome;
 import io.github.graphmaquina.api.FlowKey;
 import io.github.graphmaquina.api.GraphDefinition;
+import io.github.graphmaquina.api.GuardContext;
+import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
@@ -37,12 +39,14 @@ import io.github.graphmaquina.fixtures.LibraryLog;
 import io.github.graphmaquina.fixtures.Sneaky;
 import io.github.graphmaquina.internal.Texts;
 import java.lang.reflect.UndeclaredThrowableException;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.InstantSource;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.ResourceBundle;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 import java.util.logging.Handler;
@@ -50,6 +54,7 @@ import java.util.logging.Level;
 import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
 /**
  * Where the library contains what a callback or a backend throws instead of letting it through, an
@@ -77,6 +82,22 @@ class InterruptedContainmentTest {
             throw thrown;
         }
         return new Interrupted<>(result, Thread.interrupted());
+    }
+
+    /**
+     * {@code call} run on an interrupted thread, where it must abort, then whether the thread is still interrupted,
+     * cleared afterwards.
+     */
+    private static Interrupted<TransitionAbortedException> abortedOnInterruptedThread(Executable call) {
+        Thread.currentThread().interrupt();
+        TransitionAbortedException thrown;
+        boolean interrupted;
+        try {
+            thrown = assertThrows(TransitionAbortedException.class, call);
+        } finally {
+            interrupted = Thread.interrupted();
+        }
+        return new Interrupted<>(thrown, interrupted);
     }
 
     /** What a body answered on an interrupted thread, and whether the thread was still interrupted then. */
@@ -311,6 +332,105 @@ class InterruptedContainmentTest {
         assertEquals("BlockingMessage: <getMessage threw java.lang.InterruptedException>", failed.reason());
         assertTrue(called.interrupted(), "the thread lost its interrupt");
         assertEquals(ARCHIVED, doc.status());
+    }
+
+    @Test
+    void anActionThatIsInterruptedTakesTheRouteOfItsFailsOnAndKeepsTheInterrupt() {
+        Doc doc = new Doc("1", DRAFT);
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            block();
+                            return ActionOutcome.ok();
+                        }).failsOn(InterruptedException.class).onFailure(DISCARD));
+        Interrupted<Outcome<Doc, DocStatus, DocTransition>> called = onInterruptedThread(
+                () -> StateMachines.from(graph).state(Doc::status, Doc::setStatus).build().execute(doc, SUBMIT));
+        Outcome.Failed<Doc, DocStatus, DocTransition> failed =
+                (Outcome.Failed<Doc, DocStatus, DocTransition>) called.result();
+        assertInstanceOf(InterruptedException.class, failed.cause().orElseThrow());
+        assertTrue(called.interrupted(), "the thread lost its interrupt");
+        assertEquals(ARCHIVED, doc.status());
+    }
+
+    @Test
+    void anActionThatIsInterruptedWithNoRouteAbortsTheCallAndKeepsTheInterrupt() {
+        Doc doc = new Doc("1", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.action("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            block();
+                            return ActionOutcome.ok();
+                        }))).state(Doc::status, Doc::setStatus).build();
+        Interrupted<TransitionAbortedException> called = abortedOnInterruptedThread(() -> machine.execute(doc, SUBMIT));
+        assertInstanceOf(InterruptedException.class, called.result().getCause());
+        assertTrue(called.interrupted(), "the thread lost its interrupt");
+        assertEquals(DRAFT, doc.status());
+    }
+
+    @Test
+    void anAsyncActionThatIsInterruptedBeforeItReturnsItsStageAbortsTheCallAndKeepsTheInterrupt() {
+        Doc doc = new Doc("1", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            block();
+                            return CompletableFuture.completedFuture(ActionOutcome.ok());
+                        }))).state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(5)).build();
+        Interrupted<TransitionAbortedException> called = abortedOnInterruptedThread(() -> machine.execute(doc, SUBMIT));
+        assertInstanceOf(InterruptedException.class, called.result().getCause());
+        assertTrue(called.interrupted(), "the thread lost its interrupt");
+        assertEquals(DRAFT, doc.status());
+    }
+
+    @Test
+    void aGuardThatIsInterruptedAbortsTheCallAndKeepsTheInterrupt() {
+        Doc doc = new Doc("1", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.guard("Ready",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            block();
+                            return GuardResult.pass();
+                        }))).state(Doc::status, Doc::setStatus).build();
+        Interrupted<TransitionAbortedException> called = abortedOnInterruptedThread(() -> machine.execute(doc, SUBMIT));
+        assertInstanceOf(InterruptedException.class, called.result().getCause());
+        assertTrue(called.interrupted(), "the thread lost its interrupt");
+        assertEquals(DRAFT, doc.status());
+    }
+
+    @Test
+    void anAsyncGuardThatIsInterruptedBeforeItReturnsItsStageAbortsTheCallAndKeepsTheInterrupt() {
+        Doc doc = new Doc("1", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncGuard("Ready",
+                        (GuardContext<Doc, DocStatus, DocTransition> ctx) -> {
+                            block();
+                            return CompletableFuture.completedFuture(GuardResult.pass());
+                        }))).state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(5)).build();
+        Interrupted<TransitionAbortedException> called = abortedOnInterruptedThread(() -> machine.execute(doc, SUBMIT));
+        assertInstanceOf(InterruptedException.class, called.result().getCause());
+        assertTrue(called.interrupted(), "the thread lost its interrupt");
+        assertEquals(DRAFT, doc.status());
+    }
+
+    /** An interrupt that completes a stage is no interrupt of the calling thread, which the engine leaves as it is. */
+    @Test
+    void aStageThatCompletesWithAnInterruptLeavesTheCallingThreadUninterrupted() {
+        Doc doc = new Doc("1", DRAFT);
+        StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(docs(
+                (TransitionBuilder<Doc, DocStatus, DocTransition> submit) -> submit.asyncAction("Submit",
+                        (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> CompletableFuture.failedFuture(
+                                new InterruptedException("interrupted elsewhere")))))
+                .state(Doc::status, Doc::setStatus).asyncTimeout(Duration.ofSeconds(5)).build();
+        TransitionAbortedException thrown;
+        boolean interrupted;
+        try {
+            thrown = assertThrows(TransitionAbortedException.class, () -> machine.execute(doc, SUBMIT));
+        } finally {
+            interrupted = Thread.interrupted();
+        }
+        assertInstanceOf(InterruptedException.class, thrown.getCause());
+        assertEquals(false, interrupted);
+        assertEquals(DRAFT, doc.status());
     }
 
     @Test

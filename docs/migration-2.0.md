@@ -480,7 +480,8 @@ observe. Most items refuse up front what used to fail later, in generated code o
   guard, action, hook, state setter or watch function throws without declaring it, as Kotlin or `@SneakyThrows` code
   can, now goes through a recovery rule or `failsOn`, or aborts, becomes `AfterCommitException` or
   `CommitFailedException`, or, in a watch reaction, aborts the reevaluation that `Reaction.Aborted` reports; one an
-  owner lookup throws arrives wrapped in `UndeclaredThrowableException`. It used to escape unchanged.
+  owner lookup throws arrives wrapped in `UndeclaredThrowableException`. It used to escape unchanged. An
+  `InterruptedException` that a guard or an action throws interrupts the thread again.
 - **A failed cascade always poisons.** An `Error`, or a throwable from a callback the engine does not wrap, that leaves
   a cascade poisons the unit of work as an engine failure does, even when the action catches it, and an exception that a
   recovery rule or `failsOn` matches after it no longer takes a failure route. `cascadeAll` refuses a null element
