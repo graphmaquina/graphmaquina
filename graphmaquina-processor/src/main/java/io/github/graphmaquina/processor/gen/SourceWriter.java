@@ -1,5 +1,6 @@
 package io.github.graphmaquina.processor.gen;
 
+import java.util.List;
 import java.util.Locale;
 
 /**
@@ -14,6 +15,13 @@ import java.util.Locale;
  * backslashes come in pairs or start an escape sequence; so no escape written here follows an odd run.</p>
  */
 final class SourceWriter {
+
+    /**
+     * The longest text of a documentation comment written on one line; a longer one, or one with block tags, takes
+     * the multi-line form, wrapped at this width. The bound stays below what one emitted line can hold within 120
+     * columns at the indentation of a member of a nested class.
+     */
+    private static final int DOC_LINE_WIDTH = 100;
 
     private final StringBuilder text = new StringBuilder();
     private int depth;
@@ -41,6 +49,41 @@ final class SourceWriter {
             blank();
         }
         return this;
+    }
+
+    /**
+     * {@code doc} as a documentation comment, then each of {@code tags}, a block tag such as {@code @param} or
+     * {@code @return}, after a blank comment line: on one line when there is no tag and the text is at most
+     * {@code DOC_LINE_WIDTH} characters, else in the multi-line form, each text wrapped at that width. Every public
+     * member of a generated file carries one, with the tags its signature calls for: the author cannot comment a
+     * generated file, and a {@code javadoc} run warns about a member without them.
+     */
+    SourceWriter javadoc(String doc, List<String> tags) {
+        if (tags.isEmpty() && doc.length() <= DOC_LINE_WIDTH) {
+            return line("/** " + doc + " */");
+        }
+        line("/**");
+        wrap(doc);
+        if (!tags.isEmpty()) {
+            line(" *");
+            for (String tag : tags) {
+                wrap(tag);
+            }
+        }
+        return line(" */");
+    }
+
+    /** Writes {@code doc} as lines of a documentation comment, breaking it between words at {@code DOC_LINE_WIDTH}. */
+    private void wrap(String doc) {
+        StringBuilder current = new StringBuilder();
+        for (String word : doc.split(" ")) {
+            if (current.length() > 0 && current.length() + 1 + word.length() > DOC_LINE_WIDTH) {
+                line(" * " + current);
+                current.setLength(0);
+            }
+            current.append(current.length() == 0 ? "" : " ").append(word);
+        }
+        line(" * " + current);
     }
 
     SourceWriter open(String content) {

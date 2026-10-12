@@ -41,6 +41,9 @@ import javax.lang.model.type.TypeMirror;
  * child and what the {@code graph(...)} of each of its parents takes, as the registry requires. The shared timeout
  * goes to the machines {@link SetModel#asynchronous} names, and {@code asyncTimeout(Machine.class, Duration)}
  * accepts those only.</p>
+ *
+ * <p>Every public member it declares, but the methods it overrides, whose comments {@code javadoc} inherits, carries
+ * a documentation comment with the tags its signature calls for, as {@link SourceWriter#javadoc} writes it.</p>
  */
 public final class SetGenerator {
 
@@ -71,13 +74,6 @@ public final class SetGenerator {
             "chain", "observer", "built");
 
     /**
-     * The longest doc text of a {@code Builder} method emitted as a one-line comment; a longer one takes the
-     * multi-line form. The bound stays below what one emitted line can hold within 120 columns at the Builder's
-     * indentation.
-     */
-    private static final int DOC_LINE_WIDTH = 100;
-
-    /**
      * The doc text of the {@code Builder}'s {@code recordTrail(InstantSource)}: what
      * {@code StateMachines.Builder.recordTrail(InstantSource)} says of one machine, said of the set. It never names the
      * parameter: when another variable of the companion holds {@code clock}, the parameter takes another name.
@@ -103,6 +99,9 @@ public final class SetGenerator {
             + " and its trail ends without that entry; an InterruptedException suppressed there interrupts the"
             + " thread again, and an Error propagates. A clock that answers null counts as one that throws a"
             + " NullPointerException. A set built without recordTrail reads no clock and keeps no mark.";
+
+    /** The {@code @return} tag of every {@code Builder} method that answers the builder itself. */
+    private static final String THIS_BUILDER = "@return this builder";
 
     private SetGenerator() { }
 
@@ -182,11 +181,16 @@ public final class SetGenerator {
         out.close();
         out.blank();
         List<String> parameters = new ArrayList<>();
+        List<String> tags = new ArrayList<>();
         for (Map.Entry<String, String> parameter : variables.parameters().entrySet()) {
             parameters.add(names.of(parameter.getKey()) + " " + parameter.getValue());
+            tags.add("@param " + parameter.getValue() + (parameter.getValue().equals(variables.timeout())
+                    ? " the timeout shared by the asynchronous machines"
+                    : " the {@code " + parameter.getKey() + "} whose instance members the machines call"));
         }
-        out.line("/** Every class with instance members the machines use"
-                + (model.hasAsync() ? ", after the timeout shared by the asynchronous machines" : "") + ". */");
+        tags.add("@return a new builder of the set");
+        out.javadoc("Starts a builder of the set over every class with instance members the machines use"
+                + (model.hasAsync() ? ", after the timeout shared by the asynchronous machines" : "") + ".", tags);
         out.open("public static Builder builder(" + String.join(", ", parameters) + ")");
         out.line("return new Builder(" + String.join(", ", variables.parameters().values()) + ");");
         out.close();
@@ -260,8 +264,10 @@ public final class SetGenerator {
         if (model.hasAsync()) {
             String machine = setters.get("machine");
             String timeout = setters.get("timeout");
-            comment(out, "Overrides the shared timeout for one asynchronous machine: one whose own graph has an"
-                    + " asynchronous edge, or whose calls can run one implicitly, such as the exit of a sub-machine.");
+            out.javadoc("Overrides the shared timeout for one asynchronous machine: one whose own graph has an"
+                    + " asynchronous edge, or whose calls can run one implicitly, such as the exit of a sub-machine.",
+                    List.of("@param " + machine + " the facade class of an asynchronous machine of the set",
+                            "@param " + timeout + " the timeout of that machine", THIS_BUILDER));
             out.open("public Builder asyncTimeout(" + names.of(CLASS) + "<? extends " + names.of(MACHINE)
                     + "<?, ?, ?>> " + machine + ", " + names.of(DURATION) + " " + timeout + ")");
             out.line("checkUnused();");
@@ -281,6 +287,10 @@ public final class SetGenerator {
             out.blank();
         }
         String executor = setters.get("executor");
+        out.javadoc("Hands the given executor to the StateMachines.Builder of every machine of the set, whose calls"
+                + " submitted through async(...) then run on it, as StateMachines.Builder.asyncExecutor(Executor)"
+                + " describes.",
+                List.of("@param " + executor + " the executor of those calls", THIS_BUILDER));
         out.open("public Builder asyncExecutor(" + names.of(EXECUTOR) + " " + executor + ")");
         out.line("checkUnused();");
         out.line(objects + ".requireNonNull(" + executor + ", \"executor\");");
@@ -290,9 +300,9 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
-        comment(out, "Records the trail of every call through the set on the system clock, InstantSource.system(), by"
+        out.javadoc("Records the trail of every call through the set on the system clock, InstantSource.system(), by"
                 + " calling recordTrail() on the StateMachines.Builder of every machine of the set, as"
-                + " recordTrail(InstantSource) describes.");
+                + " recordTrail(InstantSource) describes.", List.of(THIS_BUILDER));
         out.open("public Builder recordTrail()");
         out.line("checkUnused();");
         for (MachineAccessor accessor : model.machines()) {
@@ -302,7 +312,7 @@ public final class SetGenerator {
         out.close();
         out.blank();
         String clock = setters.get("clock");
-        comment(out, RECORD_TRAIL);
+        out.javadoc(RECORD_TRAIL, List.of("@param " + clock + " the clock the trail is read on", THIS_BUILDER));
         out.open("public Builder recordTrail(" + names.of(INSTANT_SOURCE) + " " + clock + ")");
         out.line("checkUnused();");
         out.line(objects + ".requireNonNull(" + clock + ", \"clock\");");
@@ -317,15 +327,20 @@ public final class SetGenerator {
                 + " state while its parent was still running the step that entered the bound state, one level below"
                 + " that step. The default is 10, and a value below 1 is refused.",
                 "maxCascadeDepth", "int " + setters.get("depth"),
+                "@param " + setters.get("depth") + " the deepest level a cascade may reach, at least 1",
                 registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
         forward(out, "Bounds how many watch reactions may follow one another; the default is 10, and a value below 1"
                 + " is refused.", "maxWatchChain", "int " + setters.get("chain"),
+                "@param " + setters.get("chain") + " how many watch reactions may follow one another, at least 1",
                 registry + ".maxWatchChain(" + setters.get("chain") + ");");
         forward(out, "Adds an observer of every call of the set; observers add up and are notified in the order they"
                 + " are given.", "observer", names.of(MACHINE_OBSERVER) + " " + setters.get("observer"),
+                "@param " + setters.get("observer") + " the observer to add",
                 registry + ".observer(" + setters.get("observer") + ");");
         String built = setters.get("built");
         String companion = names.of(qualifiedName(model));
+        out.javadoc("Builds the registry of the machines and the set over it, which hands out their facades. Once it"
+                + " succeeds, the builder accepts nothing more.", List.of("@return the set"));
         out.open("public " + names.of(model.type().getQualifiedName().toString()) + " build()");
         out.line("checkUnused();");
         out.line(companion + " " + built + " = new " + companion + "(" + registry + ".build());");
@@ -346,38 +361,17 @@ public final class SetGenerator {
 
     /**
      * One setting the {@code Builder} hands to the registry's builder as soon as it is given, documented by
-     * {@code doc} as {@link #comment} writes it.
+     * {@code doc} and by {@code tag}, the {@code @param} tag of its one parameter.
      */
-    private static void forward(SourceWriter out, String doc, String method, String parameter, String statement) {
-        comment(out, doc);
+    private static void forward(SourceWriter out, String doc, String method, String parameter, String tag,
+                                String statement) {
+        out.javadoc(doc, List.of(tag, THIS_BUILDER));
         out.open("public Builder " + method + "(" + parameter + ")");
         out.line("checkUnused();");
         out.line(statement);
         out.line("return this;");
         out.close();
         out.blank();
-    }
-
-    /**
-     * {@code doc} as a documentation comment: on one line when the text is at most {@code DOC_LINE_WIDTH} characters,
-     * else in the multi-line form, so that no emitted comment line passes 120 columns.
-     */
-    private static void comment(SourceWriter out, String doc) {
-        if (doc.length() <= DOC_LINE_WIDTH) {
-            out.line("/** " + doc + " */");
-            return;
-        }
-        out.line("/**");
-        StringBuilder line = new StringBuilder();
-        for (String word : doc.split(" ")) {
-            if (line.length() > 0 && line.length() + 1 + word.length() > DOC_LINE_WIDTH) {
-                out.line(" * " + line);
-                line.setLength(0);
-            }
-            line.append(line.length() == 0 ? "" : " ").append(word);
-        }
-        out.line(" * " + line);
-        out.line(" */");
     }
 
     /**

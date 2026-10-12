@@ -25,9 +25,13 @@ class SubmachineGenerationTest {
 
         assertTrue(result.success(), result.describe());
         String bookings = result.generated("fx.BookingsRuntime");
-        assertTrue(bookings.contains("/** The definition, built from the annotations of {@link Bookings}. One parameter"
-                + " per machine it binds as a sub-machine, which takes its definition, then one per class with instance"
-                + " members. */"), bookings);
+        String comment = "\n" + " ".repeat(5) + "* ";
+        assertTrue(bookings.contains("/**" + comment + "The definition, built from the annotations of {@link Bookings}."
+                + " One parameter per machine it binds" + comment + "as a sub-machine, which takes its definition, then"
+                + " one per class with instance members.\n" + " ".repeat(5) + "*" + comment + "@param paymentsGraph the"
+                + " definition of {@code fx.Payments}, which the graph binds as a sub-machine" + comment + "@param ledger"
+                + " the {@code fx.Ledger} whose instance members the graph calls" + comment + "@return the definition\n"
+                + " ".repeat(5) + "*/\n"), bookings);
         assertTrue(bookings.contains("public static GraphDefinition<Booking, BookingStatus, BookingTransition> graph("
                 + "GraphDefinition<Payment, PaymentStatus, PaymentTransition> paymentsGraph, Ledger ledger)"),
                 bookings);

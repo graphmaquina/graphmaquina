@@ -41,6 +41,10 @@ import javax.lang.model.util.Elements;
  * an inner class of a generic class, in the sources they own and cannot suppress what a generated file says about
  * it, and a build that compiles that file with {@code -Xlint:all -Werror} fails on such a warning.</p>
  *
+ * <p>Every public member it declares, but the methods it implements, whose comments {@code javadoc} inherits from the
+ * facade, carries a documentation comment with the tags its signature calls for, as {@link SourceWriter#javadoc}
+ * writes it: the key, the constructor and {@code graph(...)}.</p>
+ *
  * <p>Each recovery rule of an edge becomes one {@code recover} call of that edge, in declaration order, after its
  * {@code failsOn} calls and before its hook: {@code recover(K.class, id)} for a rule that lists no throwable type,
  * {@code recover(K.class, id, A.class)} for a rule that lists one, and
@@ -220,11 +224,14 @@ public final class MachineGenerator {
         out.line("@" + names.of(SUPPRESS_WARNINGS) + "({\"deprecation\", \"removal\", \"rawtypes\"})");
         out.open("public final class " + companion + " implements " + facade);
         out.blank();
+        out.javadoc("The key of the machine: its entity, state and transition classes.", List.of());
         out.line("public static final " + key + generics + " KEY = " + names.qualifier(MACHINE_KEY) + ".of(" + e
                 + ".class, " + s + ".class, " + t + ".class);");
         out.blank();
         out.line("private final " + names.of(STATE_MACHINE) + generics + " " + machine + ";");
         out.blank();
+        out.javadoc("Implements the facade over the given state machine, which every method of it calls.",
+                List.of("@param " + machine + " the state machine of the facade"));
         out.open("public " + companion + "(" + names.of(STATE_MACHINE) + generics + " " + machine + ")");
         out.line("this." + machine + " = " + objects + ".requireNonNull(" + machine + ", " + quote(machine) + ");");
         out.close();
@@ -352,24 +359,30 @@ public final class MachineGenerator {
         Map<String, String> parameters = variables.parameters();
         List<String> declarations = new ArrayList<>();
         List<String> declared = new ArrayList<>();
+        List<String> tags = new ArrayList<>();
         for (MachineTypes child : model.children()) {
             String name = variables.definitions().get(child.facade().getQualifiedName().toString());
             declarations.add(definitionType(child, names) + " " + name);
             declared.add(name);
+            tags.add("@param " + name + " the definition of {@code " + child.facade().getQualifiedName()
+                    + "}, which the graph binds as a sub-machine");
         }
         for (TypeElement dependency : model.instanceDependencies()) {
             String name = parameters.get(dependency.getQualifiedName().toString());
             declarations.add(names.of(dependency.getQualifiedName().toString()) + " " + name);
             declared.add(name);
+            tags.add("@param " + name + " the {@code " + dependency.getQualifiedName()
+                    + "} whose instance members the graph calls");
         }
+        tags.add("@return the definition");
         String builder = names.of(GRAPH_BUILDER) + "<" + e + ", " + s + ", " + t + ">";
         String graph = variables.builder();
         List<List<String>> statements = statements(model, names, variables, invocations);
-        out.line("/** The definition, built from the annotations of {@link "
+        out.javadoc("The definition, built from the annotations of {@link "
                 + names.of(model.types().facade().getQualifiedName().toString()) + "}. "
                 + (model.children().isEmpty() ? "One parameter"
                         : "One parameter per machine it binds as a sub-machine, which takes its definition, then one")
-                + " per class with instance members. */");
+                + " per class with instance members.", tags);
         out.open("public static " + names.of(GRAPH_DEFINITION) + "<" + e + ", " + s + ", " + t + "> graph("
                 + String.join(", ", declarations) + ")");
         for (String name : declared) {

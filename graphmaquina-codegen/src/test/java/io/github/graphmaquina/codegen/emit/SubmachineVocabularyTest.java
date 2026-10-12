@@ -125,10 +125,15 @@ class SubmachineVocabularyTest {
                 @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)
                 @java.lang.annotation.Repeatable(OrdersPayments.Submachines.class)
                 public @interface Submachine {
+                    /** {@return the state of the parent that holds the child} */
                     fx.OrderStatus state();
+                    /** {@return the property of the parent that reads the child, at most one; none by default} */
                     java.lang.Class<? extends io.github.graphmaquina.symbol.PropertySymbol>[] child() default {};
+                    /** {@return the property of the child that reads the parent, at most one; none by default} */
                     java.lang.Class<? extends io.github.graphmaquina.symbol.PropertySymbol>[] parent() default {};
+                    /** {@return the lookup that finds the parent of a child, at most one; none by default} */
                     java.lang.Class<? extends io.github.graphmaquina.symbol.LookupSymbol>[] parentLookup() default {};
+                    /** {@return the exits, one per terminal state of the child} */
                     OrdersPayments.Exit[] exits();
                 }
 
@@ -139,6 +144,7 @@ class SubmachineVocabularyTest {
                 @java.lang.annotation.Target(java.lang.annotation.ElementType.TYPE)
                 @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)
                 public @interface Submachines {
+                    /** {@return the repeated declarations} */
                     OrdersPayments.Submachine[] value();
                 }
 
@@ -150,7 +156,9 @@ class SubmachineVocabularyTest {
                 @java.lang.annotation.Target({})
                 @java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.CLASS)
                 public @interface Exit {
+                    /** {@return the terminal state of the child} */
                     fx.PaymentStatus on();
+                    /** {@return the transition of the parent that state selects} */
                     fx.OrderTransition transition();
                 }
             }

@@ -37,8 +37,8 @@ import org.junit.jupiter.api.function.Executable;
 class SetGenerationTest {
 
     /**
-     * The emitted Javadoc of {@code recordTrail(InstantSource)}, its lines joined. It never names the parameter, whose
-     * name depends on the other variables of the companion.
+     * The emitted description of {@code recordTrail(InstantSource)}, its lines joined. It never names the parameter,
+     * whose name depends on the other variables of the companion; only the {@code @param} tag after it does.
      */
     private static final String RECORD_TRAIL_DOC = "Records the trail of every call through the set on the given clock,"
             + " by handing it to the StateMachines.Builder of every machine of the set. The root machine of a call"
@@ -258,8 +258,10 @@ class SetGenerationTest {
                 + "pagesBuilder.recordTrail(clock);" + body + "return this;\n"), source);
         assertEquals("Records the trail of every call through the set on the system clock, InstantSource.system(), by"
                 + " calling recordTrail() on the StateMachines.Builder of every machine of the set, as"
-                + " recordTrail(InstantSource) describes.", doc(source, "public Builder recordTrail()"));
-        assertEquals(RECORD_TRAIL_DOC, doc(source, "public Builder recordTrail(InstantSource clock)"));
+                + " recordTrail(InstantSource) describes. @return this builder",
+                doc(source, "public Builder recordTrail()"));
+        assertEquals(RECORD_TRAIL_DOC + " @param clock the clock the trail is read on @return this builder",
+                doc(source, "public Builder recordTrail(InstantSource clock)"));
     }
 
     /**
@@ -481,7 +483,8 @@ class SetGenerationTest {
         assertTrue(source.contains("public Builder recordTrail(InstantSource clock2) {"), source);
         assertTrue(source.contains("Objects.requireNonNull(clock2, \"clock\");"), source);
         assertTrue(source.contains("clockBuilder.recordTrail(clock2);"), source);
-        assertEquals(RECORD_TRAIL_DOC, doc(source, "public Builder recordTrail(InstantSource clock2)"));
+        assertEquals(RECORD_TRAIL_DOC + " @param clock2 the clock the trail is read on @return this builder",
+                doc(source, "public Builder recordTrail(InstantSource clock2)"));
     }
 
     @Test

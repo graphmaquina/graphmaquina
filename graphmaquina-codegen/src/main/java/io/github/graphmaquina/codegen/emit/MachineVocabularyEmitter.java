@@ -16,6 +16,10 @@ import java.util.Set;
  * names an edge is declared with its own transition enum, so a constant of another machine, or a state written
  * where an identifier belongs, is a javac error before any processor runs.</p>
  *
+ * <p>Every annotation and every element it declares carries a documentation comment, an element's saying what it
+ * holds with {@code {@return}}, so a {@code javadoc} run over the generated sources, under its default doclint or
+ * {@code -Xdoclint:all}, has nothing to warn about in a file the author cannot edit.</p>
+ *
  * <p>Nothing is imported: the enums, the machine, the StateGraph types and even {@code java.lang} types are written
  * with their qualified names, so a type of the machine's own package named {@code Class} or {@code String} cannot
  * shadow a name this file uses, and no name this file claims can collide with an import. The vocabulary suppresses
@@ -114,12 +118,17 @@ final class MachineVocabularyEmitter {
             "the states a cycle may return to, the properties reading the entity's identity and state,",
             "and the default hook edges inherit unless they declare their own.");
         annotation(source, machine, "DEFINITION", TYPE_TARGET, null, "Definition");
-        source.line(state + " initial();");
-        source.line(state + "[] terminals() default {};");
-        source.line(state + "[] allowsCycle() default {};");
-        source.line(symbolClass("PropertySymbol") + " state();");
-        source.line(symbolClass("PropertySymbol") + " id();");
-        source.line("/** Default hook for ACTION/MOVE edges; an edge hook replaces it. Empty inherits on an edge. */");
+        element(source, state + " initial();", "the initial state, from which every state must be reachable");
+        element(source, state + "[] terminals() default {};",
+            "the terminal states, which no edge leaves; none by default");
+        element(source, state + "[] allowsCycle() default {};",
+            "the states that allow a cycle, one of which every cycle must pass through; none by default");
+        element(source, symbolClass("PropertySymbol") + " state();",
+            "the property that reads and writes the state of the entity");
+        element(source, symbolClass("PropertySymbol") + " id();", "the property that reads the identity of the entity");
+        source.javadoc("Default hook for ACTION/MOVE edges; an edge hook replaces it. Empty inherits on an edge.",
+            "",
+            "@return the default hook, at most one; none by default");
         source.line(symbolClass("HookSymbol") + "[] afterCommit() default {};");
         close(source);
     }
@@ -129,8 +138,9 @@ final class MachineVocabularyEmitter {
             "no edge for is refused with.");
         annotation(source, machine, "STATE_POLICY", TYPE_TARGET, vocabulary + ".StatePolicies",
             "StatePolicy");
-        source.line(state + " state();");
-        source.line("java.lang.String otherwise();");
+        element(source, state + " state();", "the state whose refusals the policy words");
+        element(source, "java.lang.String otherwise();",
+            "the reason an identifier with no edge from that state is refused with");
         close(source);
     }
 
@@ -138,7 +148,7 @@ final class MachineVocabularyEmitter {
         describe(source, "Holds the repeated {@link " + vocabulary + ".StatePolicy} declarations of {@link "
             + machine + "}.");
         annotation(source, machine, "STATE_POLICIES", TYPE_TARGET, null, "StatePolicies");
-        source.line(vocabulary + ".StatePolicy[] value();");
+        element(source, vocabulary + ".StatePolicy[] value();", "the repeated declarations");
         close(source);
     }
 
@@ -147,22 +157,31 @@ final class MachineVocabularyEmitter {
         describe(source, "Declares one edge of {@link " + machine + "}, identified by {@code id} from each of",
             "its origins. An absent {@code action} makes the edge a move; a single action makes it an action.");
         annotation(source, machine, "TRANSITION", EDGE_TARGETS, vocabulary + ".Transitions", "Transition");
-        source.line(transition + " id();");
-        source.line(state + "[] from();");
-        source.line(state + " to();");
-        source.line(symbolClass("ActionSymbol") + "[] action() default {};");
-        source.line(symbolClass("GuardSymbol") + "[] guards() default {};");
-        source.line(transition + "[] onFailure() default {};");
-        source.line("java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};");
+        element(source, transition + " id();", "the identifier of the edge");
+        element(source, state + "[] from();", "the states the edge leaves, at least one");
+        element(source, state + " to();", "the state the edge enters");
+        element(source, symbolClass("ActionSymbol") + "[] action() default {};",
+            "the action of the edge, at most one; none makes the edge a move");
+        element(source, symbolClass("GuardSymbol") + "[] guards() default {};",
+            "the guards of the edge, run in declaration order; none by default");
+        element(source, transition + "[] onFailure() default {};",
+            "the fallback transition of a failure no recovery rule takes, at most one; none by default");
+        element(source, "java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};",
+            "the throwable types of the action admitted as failures, for {@code onFailure}; none by default");
         source.javadoc("The recovery rules of this edge, each a {@link " + vocabulary + ".Recovery}, which need"
                 + " an action.",
             "A failed outcome or a throwable of the action takes the transition of the rule that selects",
             "it, the most specific declared type winning across the rules and {@code failsOn}, and",
             "{@code onFailure} stays the fallback. Each transition is resolved from the edge's origin and",
-            "entered without its guards or any recovery of its own.");
+            "entered without its guards or any recovery of its own.",
+            "",
+            "@return the recovery rules, none by default");
         source.line(vocabulary + ".Recovery[] recoveries() default {};");
-        source.line("io.github.graphmaquina.annotation.Timeout[] timeout() default {};");
-        source.line(symbolClass("HookSymbol") + "[] afterCommit() default {};");
+        element(source, "io.github.graphmaquina.annotation.Timeout[] timeout() default {};",
+            "the timeout of the asynchronous action, at most one; none by default");
+        element(source, symbolClass("HookSymbol") + "[] afterCommit() default {};",
+            "the hook run after the edge commits, at most one; none inherits the default hook of the"
+                + " {@code Definition}");
         close(source);
     }
 
@@ -170,7 +189,7 @@ final class MachineVocabularyEmitter {
         describe(source, "Holds the repeated {@link " + vocabulary + ".Transition} declarations of {@link "
             + machine + "}.");
         annotation(source, machine, "TRANSITIONS", EDGE_TARGETS, null, "Transitions");
-        source.line(vocabulary + ".Transition[] value();");
+        element(source, vocabulary + ".Transition[] value();", "the repeated declarations");
         close(source);
     }
 
@@ -189,9 +208,12 @@ final class MachineVocabularyEmitter {
             "origin of the declaring edge. Entered as a recovery, that edge runs without its guards and",
             "applies no rule or fallback of its own: a recovery never chains.</p>");
         annotation(source, machine, "RECOVERY", "{}", null, "Recovery");
-        source.line("java.lang.Class<? extends io.github.graphmaquina.api.FailureKind> kind();");
-        source.line(transition + " transition();");
-        source.line("java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};");
+        element(source, "java.lang.Class<? extends io.github.graphmaquina.api.FailureKind> kind();",
+            "the failure kind the rule takes");
+        element(source, transition + " transition();",
+            "the transition the rule takes, resolved from the origin the entity is in");
+        element(source, "java.lang.Class<? extends java.lang.Throwable>[] failsOn() default {};",
+            "the throwable types of the action the rule takes; none by default");
         close(source);
     }
 
@@ -200,9 +222,9 @@ final class MachineVocabularyEmitter {
         describe(source, "Refuses one identifier of {@link " + machine + "} from one state, with an explicit",
             "reason that overrides that state's policy.");
         annotation(source, machine, "REJECT", TYPE_TARGET, vocabulary + ".Rejects", "Reject");
-        source.line(state + " from();");
-        source.line(transition + " transition();");
-        source.line("java.lang.String reason();");
+        element(source, state + " from();", "the state the identifier is refused from");
+        element(source, transition + " transition();", "the identifier refused");
+        element(source, "java.lang.String reason();", "the reason the identifier is refused with");
         close(source);
     }
 
@@ -210,7 +232,7 @@ final class MachineVocabularyEmitter {
         describe(source, "Holds the repeated {@link " + vocabulary + ".Reject} declarations of {@link " + machine
             + "}.");
         annotation(source, machine, "REJECTS", TYPE_TARGET, null, "Rejects");
-        source.line(vocabulary + ".Reject[] value();");
+        element(source, vocabulary + ".Reject[] value();", "the repeated declarations");
         close(source);
     }
 
@@ -232,6 +254,16 @@ final class MachineVocabularyEmitter {
         }
         source.line("public @interface " + name + " {");
         source.indent();
+    }
+
+    /**
+     * Writes one element of a nested annotation, {@code declaration}, after the documentation comment that says what
+     * it holds, {@code returns}, which every public member of a generated file carries: the author cannot comment a
+     * generated file, and a {@code javadoc} run warns about an element without one.
+     */
+    static void element(JavaSource source, String declaration, String returns) {
+        source.line("/** {@return " + returns + "} */");
+        source.line(declaration);
     }
 
     /** The type of an element naming a generated symbol of {@code category}, a StateGraph symbol interface. */

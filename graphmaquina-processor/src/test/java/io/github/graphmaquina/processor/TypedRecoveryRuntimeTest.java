@@ -133,17 +133,28 @@ class TypedRecoveryRuntimeTest {
             @SuppressWarnings({"deprecation", "removal", "rawtypes"})
             public final class DocsRuntime implements Docs {
 
+                /** The key of the machine: its entity, state and transition classes. */
                 public static final MachineKey<Doc, DocStatus, DocTransition> KEY = MachineKey.of(Doc.class, \
             DocStatus.class, DocTransition.class);
 
                 private final StateMachine<Doc, DocStatus, DocTransition> stateMachine;
 
+                /**
+                 * Implements the facade over the given state machine, which every method of it calls.
+                 *
+                 * @param stateMachine the state machine of the facade
+                 */
                 public DocsRuntime(StateMachine<Doc, DocStatus, DocTransition> stateMachine) {
                     this.stateMachine = Objects.requireNonNull(stateMachine, "stateMachine");
                 }
 
-                /** The definition, built from the annotations of {@link Docs}. One parameter per class with instance \
-            members. */
+                /**
+                 * The definition, built from the annotations of {@link Docs}. One parameter per class with instance
+                 * members.
+                 *
+                 * @param docActions the {@code fx.DocActions} whose instance members the graph calls
+                 * @return the definition
+                 */
                 public static GraphDefinition<Doc, DocStatus, DocTransition> graph(DocActions docActions) {
                     Objects.requireNonNull(docActions, "docActions");
                     GraphBuilder<Doc, DocStatus, DocTransition> graph = StateGraph.define(KEY);
@@ -226,6 +237,8 @@ class TypedRecoveryRuntimeTest {
                      * it, the most specific declared type winning across the rules and {@code failsOn}, and
                      * {@code onFailure} stays the fallback. Each transition is resolved from the edge's origin and
                      * entered without its guards or any recovery of its own.
+                     *
+                     * @return the recovery rules, none by default
                      */
             """;
 
