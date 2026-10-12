@@ -121,7 +121,9 @@ public final class Bootstrap {
      * machine by its canonical name alone, so two machines that share one, one of a named package and a member type
      * of a class of the unnamed package, are refused. A local or anonymous class marked with {@code @GenerateGraphApi}
      * or {@code @StateGraphs} is refused too: the processor, which refuses a machine or a set that is not top-level,
-     * never sees such a class, so the marker would generate nothing without a word.
+     * never sees such a class, so the marker would generate nothing without a word. An annotation whose name a member
+     * type of a class between takes over is another annotation, and one below a class whose supertype the generator
+     * cannot resolve is let through, as {@link DeclarationIndex#marksInLocalClass} tells.
      *
      * @throws CodegenException {@code SG603} naming both machines, anchored at the one read first, or
      *     {@code SG502} anchored at the first marker written on a local or anonymous class
@@ -130,13 +132,13 @@ public final class Bootstrap {
         List<TypeHeader> declarations = new ArrayList<>(index.sourceHeaders());
         declarations.sort(Comparator.comparing(TypeHeader::canonicalName));
         for (TypeHeader declaration : declarations) {
-            for (TypeHeader.Marker marker : declaration.localMarkers()) {
-                if (index.marks(declaration, marker, GENERATE_GRAPH_API) || index.marks(declaration, marker,
-                        STATE_GRAPHS)) {
-                    throw new CodegenException(HEADER, "the marker @" + marker.name() + " is written on a local or"
-                            + " anonymous class of " + declaration.canonicalName() + ", but a machine or a set must be"
-                            + " a top-level interface: the generated companion lives next to it in the package",
-                            marker.origin().orElseThrow());
+            for (TypeHeader.LocalMarker local : declaration.localMarkers()) {
+                if (index.marksInLocalClass(declaration, local, GENERATE_GRAPH_API)
+                        || index.marksInLocalClass(declaration, local, STATE_GRAPHS)) {
+                    throw new CodegenException(HEADER, "the marker @" + local.marker().name() + " is written on a"
+                            + " local or anonymous class of " + declaration.canonicalName() + ", but a machine or a set"
+                            + " must be a top-level interface: the generated companion lives next to it in the package",
+                            local.marker().origin().orElseThrow());
                 }
             }
         }

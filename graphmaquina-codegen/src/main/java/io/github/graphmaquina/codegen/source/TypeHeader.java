@@ -12,8 +12,9 @@ import javax.lang.model.element.Modifier;
  * The header of one type declaration, read from an original source or materialized from a classpath binary.
  * A header keeps the canonical identity of the declaration, the type parameters it declares, its direct
  * supertypes, its members, the annotations written on it and, for an enum, its constants in declaration
- * order. Of a body, only the annotations written in the local and anonymous classes it declares are read, so
- * nothing here depends on attributing an expression.
+ * order. Of a body, only the local and anonymous classes it declares are read: the annotations written in them, and
+ * the member types and supertypes that decide what those annotations name, so nothing here depends on attributing
+ * an expression.
  *
  * @param canonicalName the canonical name of the declaration, for example {@code fx.Holder.Status}
  * @param kind the declaration kind, one of {@code CLASS}, {@code INTERFACE}, {@code ENUM}, {@code RECORD} or
@@ -28,15 +29,15 @@ import javax.lang.model.element.Modifier;
  *     members of a header
  * @param markers the annotations written on the declaration, unresolved until a caller needs one
  * @param localMarkers the annotations written in a local or anonymous class the declaration's own body declares, at
- *     any depth, on the class or on one of its methods and fields, unresolved like {@code markers}; always empty for
- *     a classpath header
+ *     any depth, on the class or on one of its methods and fields, unresolved like {@code markers}, each with the
+ *     class bodies that decide what its name means; always empty for a classpath header
  * @param constants the enum constants in declaration order, empty for every other kind
  * @param scope the lexical context this header's spelled names resolve in
  * @param origin the declaration's position in its original source, absent for a classpath header
  */
 public record TypeHeader(String canonicalName, ElementKind kind, Set<Modifier> modifiers,
         List<String> typeParameters, List<TypeUse> supertypes, List<Member> members,
-        List<Marker> markers, List<Marker> localMarkers, List<String> constants, Scope scope,
+        List<Marker> markers, List<LocalMarker> localMarkers, List<String> constants, Scope scope,
         Optional<SourceLocation> origin) {
 
     public TypeHeader {
@@ -106,6 +107,46 @@ public record TypeHeader(String canonicalName, ElementKind kind, Set<Modifier> m
             Objects.requireNonNull(name, "name");
             Objects.requireNonNull(origin, "origin");
             classLiterals = List.copyOf(classLiterals);
+        }
+    }
+
+    /**
+     * One annotation written in a local or anonymous class that a member of a source declaration declares, with what
+     * javac reads its name against before the body of that declaration: the bodies of the classes between the member
+     * and the annotation, and the local classes the member declares.
+     *
+     * @param marker the annotation as written
+     * @param scopes the bodies of the classes that enclose the annotation inside the member, innermost first: for an
+     *     annotation on one of their methods or fields, the class that declares it comes first; for one on a class
+     *     itself, which javac reads outside that class's body, the class that encloses it does
+     * @param localTypes the simple names of every local class the member declares, in any block: one of them may be
+     *     what a name means where the annotation is written
+     */
+    public record LocalMarker(Marker marker, List<LocalScope> scopes, Set<String> localTypes) {
+
+        public LocalMarker {
+            Objects.requireNonNull(marker, "marker");
+            scopes = List.copyOf(scopes);
+            localTypes = Set.copyOf(localTypes);
+        }
+    }
+
+    /**
+     * The body of a class declared inside a member of a source declaration, a local or anonymous class or a member
+     * class of one, as far as it decides what a name written in it means: a member type it declares, or inherits from
+     * one of its supertypes, takes that name over.
+     *
+     * @param memberTypes the simple names of the member types the class declares
+     * @param supertypes the supertypes the class spells, without their type arguments; empty when the source cannot
+     *     tell them, for an anonymous class created through a qualified instance creation, whose supertype is a
+     *     member of the type of an expression. The supertype of the class body of an enum constant is its enum, whose
+     *     body is the next one out, so such a body spells none.
+     */
+    public record LocalScope(List<String> memberTypes, Optional<List<String>> supertypes) {
+
+        public LocalScope {
+            memberTypes = List.copyOf(memberTypes);
+            supertypes = supertypes.map(List::copyOf);
         }
     }
 

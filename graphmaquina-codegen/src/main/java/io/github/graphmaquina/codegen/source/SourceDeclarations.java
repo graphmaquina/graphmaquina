@@ -14,6 +14,7 @@ import com.sun.source.tree.MemberSelectTree;
 import com.sun.source.tree.MethodTree;
 import com.sun.source.tree.ModifiersTree;
 import com.sun.source.tree.NewArrayTree;
+import com.sun.source.tree.NewClassTree;
 import com.sun.source.tree.ParameterizedTypeTree;
 import com.sun.source.tree.PrimitiveTypeTree;
 import com.sun.source.tree.Tree;
@@ -53,9 +54,10 @@ import javax.tools.ToolProvider;
 
 /**
  * Reads the consumer's original sources with {@link JavacTask#parse()} only. The declarations, modifiers,
- * types and annotations of a unit are read syntactically; a body is visited only for the annotations written in
- * the local and anonymous classes it declares, and no expression is evaluated, so a source may name a type this
- * generator has not produced yet. javac still parses every body,
+ * types and annotations of a unit are read syntactically; a body is visited only for the local and anonymous classes
+ * it declares, the annotations written in them and the member types and supertypes that decide what those annotations
+ * name, and no expression is evaluated, so a source may name a type this generator has not produced yet. javac still
+ * parses every body,
  * so the sources are parsed at the release and in the encoding the compilation that follows reads them with:
  * a source may use the syntax of that release anywhere, and characters of that encoding.
  */
@@ -220,11 +222,11 @@ public final class SourceDeclarations {
         }
 
         List<TypeHeader.Member> members = new ArrayList<>();
-        List<TypeHeader.Marker> localMarkers = new ArrayList<>();
+        List<TypeHeader.LocalMarker> localMarkers = new ArrayList<>();
         List<String> constants = new ArrayList<>();
         for (Tree member : type.getMembers()) {
             if (!(member instanceof ClassTree)) {
-                localMarkers.addAll(localMarkers(unit, positions, member));
+                localMarkers.addAll(localMarkers(unit, positions, type, member));
             }
             if (member instanceof ClassTree nested) {
                 read(unit, positions, scope, canonicalName, Optional.of(kind(type)), nested, variables, headers);
@@ -247,26 +249,23 @@ public final class SourceDeclarations {
     }
 
     /**
-     * The annotations written in the local and anonymous classes {@code member} declares, at any depth, in its body,
-     * its initializer or, for an enum constant, its class body: on such a class and on its methods and fields.
-     * Nothing else of the member is read.
+     * The annotations written in the local and anonymous classes {@code member} of {@code owner} declares, at any
+     * depth, in its body, its initializer or, for an enum constant, its class body: on such a class and on its methods
+     * and fields. Each keeps the class bodies between {@code member} and it, and the local classes {@code member}
+     * declares, which decide what its name means. Nothing else of the member is read.
      */
-    private static List<TypeHeader.Marker> localMarkers(SourceUnit unit, SourcePositions positions, Tree member) {
-        List<TypeHeader.Marker> found = new ArrayList<>();
-        new TreeScanner<Void, Void>() {
-            @Override
-            public Void visitClass(ClassTree local, Void unused) {
-                found.addAll(markers(unit, positions, local.getModifiers()));
-                for (Tree declared : local.getMembers()) {
-                    if (declared instanceof MethodTree method) {
-                        found.addAll(markers(unit, positions, method.getModifiers()));
-                    } else if (declared instanceof VariableTree field) {
-                        found.addAll(markers(unit, positions, field.getModifiers()));
-                    }
-                }
-                return super.visitClass(local, unused);
-            }
-        }.scan(member, null);
+    private static List<TypeHeader.LocalMarker> localMarkers(SourceUnit unit, SourcePositions positions,
+            ClassTree owner, Tree member) {
+        LocalClasses classes = new LocalClasses(unit, positions);
+        if (member instanceof VariableTree field && isEnumConstant(owner, field)) {
+            classes.constant((NewClassTree) field.getInitializer(), List.of());
+        } else {
+            classes.scan(member, List.of());
+        }
+        List<TypeHeader.LocalMarker> found = new ArrayList<>();
+        for (int at = 0; at < classes.markers.size(); at++) {
+            found.add(new TypeHeader.LocalMarker(classes.markers.get(at), classes.scopes.get(at), classes.names));
+        }
         return found;
     }
 
@@ -531,5 +530,110 @@ public final class SourceDeclarations {
     /** {@code path} with every {@code separator} of the file system it was read from replaced by a forward slash. */
     static String portable(String path, String separator) {
         return path.replace(separator, "/");
+    }
+
+    /**
+     * Reads the local and anonymous classes of one member, each scan given the class bodies that enclose the trees it
+     * reads, innermost first: every annotation written on such a class or on one of its methods and fields, with the
+     * class bodies that enclose it, and the name of every local class, whatever block declares it.
+     */
+    private static final class LocalClasses extends TreeScanner<Void, List<TypeHeader.LocalScope>> {
+
+        private final SourceUnit unit;
+        private final SourcePositions positions;
+        private final List<TypeHeader.Marker> markers = new ArrayList<>();
+        /** The class bodies that enclose each of {@link #markers}, at the same position. */
+        private final List<List<TypeHeader.LocalScope>> scopes = new ArrayList<>();
+        private final Set<String> names = new LinkedHashSet<>();
+
+        private LocalClasses(SourceUnit unit, SourcePositions positions) {
+            this.unit = unit;
+            this.positions = positions;
+        }
+
+        @Override
+        public Void visitClass(ClassTree local, List<TypeHeader.LocalScope> enclosing) {
+            names.add(local.getSimpleName().toString());
+            body(local, Optional.of(supertypes(local)), enclosing);
+            return null;
+        }
+
+        @Override
+        public Void visitNewClass(NewClassTree creation, List<TypeHeader.LocalScope> enclosing) {
+            if (creation.getClassBody() == null) {
+                return super.visitNewClass(creation, enclosing);
+            }
+            scan(creation.getEnclosingExpression(), enclosing);
+            scan(creation.getArguments(), enclosing);
+            body(creation.getClassBody(), creation.getEnclosingExpression() == null
+                    ? Optional.of(List.of(erasure(creation.getIdentifier())))
+                    : Optional.empty(), enclosing);
+            return null;
+        }
+
+        /** The arguments and the class body of an enum constant, which spells no supertype of its own. */
+        private void constant(NewClassTree creation, List<TypeHeader.LocalScope> enclosing) {
+            scan(creation.getArguments(), enclosing);
+            if (creation.getClassBody() != null) {
+                body(creation.getClassBody(), Optional.of(List.of()), enclosing);
+            }
+        }
+
+        /**
+         * One class and everything it declares: the annotations on the class, read in {@code enclosing}, then the
+         * ones on its methods and fields and the classes its members declare, read in its own body too.
+         */
+        private void body(ClassTree type, Optional<List<String>> supertypes, List<TypeHeader.LocalScope> enclosing) {
+            add(type.getModifiers(), enclosing);
+            List<String> memberTypes = new ArrayList<>();
+            for (Tree declared : type.getMembers()) {
+                if (declared instanceof ClassTree nested) {
+                    memberTypes.add(nested.getSimpleName().toString());
+                }
+            }
+            List<TypeHeader.LocalScope> inside = new ArrayList<>();
+            inside.add(new TypeHeader.LocalScope(memberTypes, supertypes));
+            inside.addAll(enclosing);
+            for (Tree declared : type.getMembers()) {
+                if (declared instanceof MethodTree method) {
+                    add(method.getModifiers(), inside);
+                } else if (declared instanceof VariableTree field) {
+                    add(field.getModifiers(), inside);
+                }
+            }
+            for (Tree declared : type.getMembers()) {
+                if (declared instanceof ClassTree nested) {
+                    body(nested, Optional.of(supertypes(nested)), inside);
+                } else if (declared instanceof VariableTree field && isEnumConstant(type, field)) {
+                    constant((NewClassTree) field.getInitializer(), inside);
+                } else {
+                    scan(declared, inside);
+                }
+            }
+        }
+
+        private void add(ModifiersTree modifiers, List<TypeHeader.LocalScope> enclosing) {
+            for (TypeHeader.Marker marker : markers(unit, positions, modifiers)) {
+                markers.add(marker);
+                scopes.add(List.copyOf(enclosing));
+            }
+        }
+
+        /** The supertypes {@code type} spells in its extends and implements clauses, without type arguments. */
+        private static List<String> supertypes(ClassTree type) {
+            List<String> supertypes = new ArrayList<>();
+            if (type.getExtendsClause() != null) {
+                supertypes.add(erasure(type.getExtendsClause()));
+            }
+            for (Tree implemented : type.getImplementsClause()) {
+                supertypes.add(erasure(implemented));
+            }
+            return supertypes;
+        }
+
+        /** {@code tree} as spelled without type arguments, so {@code Outer<String>.Inner} as {@code Outer.Inner}. */
+        private static String erasure(Tree tree) {
+            return type(tree, Map.of()) instanceof TypeUse.Declared declared ? declared.name() : spell(tree);
+        }
     }
 }

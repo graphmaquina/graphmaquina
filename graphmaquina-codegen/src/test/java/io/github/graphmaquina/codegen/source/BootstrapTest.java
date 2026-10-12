@@ -2,6 +2,7 @@ package io.github.graphmaquina.codegen.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
@@ -161,6 +162,51 @@ class BootstrapTest {
                     + " fx.Holder, but a machine or a set must be a top-level interface: the generated companion lives"
                     + " next to it in the package", failure.getMessage());
             assertEquals(8L, failure.location().orElseThrow().line());
+        }
+    }
+
+    /**
+     * In the body of a local or anonymous class, javac reads a name as a member type of that class first, declared
+     * or inherited from a supertype it spells. A local interface marked with an annotation that such a member type
+     * names is no machine and no set, however the file's imports read that name, so the walk refuses nothing.
+     */
+    @Test
+    void acceptsALocalInterfaceMarkedWithAMemberTypeNamedLikeAMachineMarker() {
+        Map<String, String> declarations = Map.of(
+                "GenerateGraphApi", """
+                    Object notes = new Lib() {
+                        @GenerateGraphApi interface Notes {}
+                    };
+                    """,
+                "StateGraphs", """
+                    class Local extends Lib {
+                        @StateGraphs interface Shelf {}
+                    }
+                    """);
+        for (Map.Entry<String, String> declaration : declarations.entrySet()) {
+            Path root = project.resolve(declaration.getKey());
+            List<Path> files = SourceFiles.write(root, Map.of(
+                    "fx.Lib", """
+                    package fx;
+                    public class Lib {
+                        public @interface GenerateGraphApi {}
+                        public @interface StateGraphs {}
+                    }
+                    """,
+                    "fx.Holder", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.*;
+                    public final class Holder {
+                        static void declare() {
+                            %s
+                        }
+                    }
+                    """.formatted(declaration.getValue())));
+            SourceFiles.Compilation compilation =
+                    SourceFiles.compileStrict(files, project.resolve("classes-" + declaration.getKey()));
+            assertTrue(compilation.success(), declaration.getKey() + ": " + compilation.messages());
+
+            assertEquals(List.of(), Bootstrap.read(request(List.of(root))).model().graphs(), declaration.getKey());
         }
     }
 

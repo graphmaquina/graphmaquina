@@ -956,6 +956,151 @@ class ExportDeclarationsTest {
     }
 
     /**
+     * In the body of a local or anonymous class, javac reads a name as a member type of that class first, declared
+     * or inherited, then of each class enclosing it there, and only then as the file's imports read it. A marker
+     * spelled like a StateGraph marker that such a member type takes over is another annotation, so nothing is
+     * refused and the file still exports its real marker. A supertype the generator cannot resolve, such as one of a
+     * library missing from its classpath or a local class, may declare such a member type too, so a marker below it
+     * is let through. A marker on a local class itself is read outside its body, where its own supertypes declare
+     * nothing in scope, and is still refused, as is one in the class body of a constant of a local enum, whose
+     * supertype is that enum.
+     */
+    @Test
+    void readsAMarkerNameInALocalOrAnonymousClassAsAMemberTypeItTakesOver() {
+        String lib = """
+                package fx;
+                public class Lib {
+                    public @interface GraphAction {}
+                    public @interface GraphBindings {}
+                    public static class Holder {
+                        public @interface GraphGuard {}
+                    }
+                    public class Part extends Holder {}
+                }
+                """;
+        String shop = """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.annotation.GraphBindings;
+                import io.github.graphmaquina.annotation.GraphGuard;
+                public class Shop {
+                    @GraphAction
+                    public void archive(Order order) {}
+                    public static Object handlers() {
+                %s
+                    }
+                }
+                """;
+        Map<String, String> bodies = new LinkedHashMap<>();
+        bodies.put("an anonymous class of a type that declares it", """
+                        return new Lib() {
+                            @GraphAction
+                            void run() {}
+                        };
+                """);
+        bodies.put("an anonymous class of a type that inherits it", """
+                        return new Base() {
+                            @GraphBindings
+                            void run() {}
+                        };
+                """);
+        bodies.put("an anonymous class of a member class of a local class", """
+                        class Handlers {
+                            class Holder extends Lib {}
+                            Object inner() {
+                                return new Holder() {
+                                    @GraphAction
+                                    void run() {}
+                                };
+                            }
+                        }
+                        return new Handlers();
+                """);
+        bodies.put("a local class in a local class that inherits it", """
+                        class Outer extends Lib {
+                            Object inner() {
+                                class Inner {
+                                    @GraphAction
+                                    void run() {}
+                                }
+                                return new Inner();
+                            }
+                        }
+                        return new Outer();
+                """);
+        bodies.put("a supertype a local class takes over", """
+                        class Outer extends Lib {
+                            Object inner() {
+                                return new Holder() {
+                                    @GraphGuard
+                                    void run() {}
+                                };
+                            }
+                        }
+                        return new Outer();
+                """);
+        bodies.put("a local class named like a type of the package", """
+                        class Holder extends Lib.Holder {}
+                        return new Holder() {
+                            @GraphGuard
+                            void run() {}
+                        };
+                """);
+        bodies.put("an anonymous class of a member of the type of an expression", """
+                        return new Lib().new Part() {
+                            @GraphGuard
+                            void run() {}
+                        };
+                """);
+        int compiled = 0;
+        for (Map.Entry<String, String> body : bodies.entrySet()) {
+            List<Path> files = SourceFiles.write(directory, Map.of("fx.Order", ORDER, "fx.Lib", lib,
+                    "fx.Base", "package fx; public class Base extends Lib {}", "fx.Holder",
+                    "package fx; public class Holder {}", "fx.Part", "package fx; public class Part {}",
+                    "fx.Shop", shop.formatted(body.getValue())));
+            SourceFiles.Compilation compilation =
+                    SourceFiles.compileStrict(files, directory.resolve("classes-" + compiled++));
+            assertTrue(compilation.success(), body.getKey() + ": " + compilation.messages());
+
+            assertEquals(List.of("fx.ShopRefs.Archive"),
+                    collect(files).stream().map(SymbolDescriptor::qualifiedName).toList(), body.getKey());
+        }
+
+        assertEquals(List.of("fx.ShopRefs.Archive"), collect(Map.of("fx.Order", ORDER, "fx.Shop", shop.formatted("""
+                        return new Generated() {
+                            @GraphAction
+                            void run() {}
+                        };
+                """))).stream().map(SymbolDescriptor::qualifiedName).toList());
+
+        Map<String, String> refused = new LinkedHashMap<>();
+        refused.put("GraphBindings", """
+                        @GraphBindings
+                        class Handlers extends Lib {}
+                        return new Handlers();
+                """);
+        refused.put("GraphAction", """
+                        enum Kind {
+                            OPEN {
+                                @GraphAction
+                                void run() {}
+                            }
+                        }
+                        return Kind.OPEN;
+                """);
+        for (Map.Entry<String, String> body : refused.entrySet()) {
+            CodegenException failure = assertThrows(CodegenException.class, () -> collect(Map.of("fx.Order", ORDER,
+                    "fx.Lib", lib, "fx.Shop", shop.formatted(body.getValue()))), body.getKey());
+
+                assertEquals("SG604", failure.code());
+            assertEquals("the marker @" + body.getKey() + " is written in a local or anonymous class of fx.Shop, which"
+                    + " no references container can name, so it exports nothing: mark a member of a top-level or"
+                    + " member class instead", failure.getMessage());
+            assertEquals(body.getKey().equals("GraphBindings") ? 9L : 11L, failure.location().orElseThrow().line());
+        }
+    }
+
+    /**
      * The references container is a top-level type of the host's package and names its host by a class
      * literal, so a host that is private, or nested in a private type, is refused at the host. A host that is
      * only package-private, or a member of an interface, is still accessible there.

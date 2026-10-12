@@ -101,14 +101,17 @@ public final class ExportDeclarations {
     /**
      * Refuses with {@code SG604} the first export marker, or {@code @GraphBindings}, written in a local or anonymous
      * class that {@code declaration} declares in its body: such a class has no canonical name, so it can be no host,
-     * and the marker would otherwise export nothing without a word.
+     * and the marker would otherwise export nothing without a word. An annotation whose name a member type of a class
+     * between takes over is another annotation, and one below a class whose supertype the generator cannot resolve is
+     * let through, as {@link DeclarationIndex#marksInLocalClass} tells.
      */
     private static void requireNoLocalMarker(DeclarationIndex index, TypeHeader declaration) {
         List<String> markers = new ArrayList<>(ROLES.keySet());
         markers.add(BINDINGS);
-        for (TypeHeader.Marker marker : declaration.localMarkers()) {
+        for (TypeHeader.LocalMarker local : declaration.localMarkers()) {
+            TypeHeader.Marker marker = local.marker();
             for (String annotationType : markers) {
-                if (index.marks(declaration, marker, annotationType)) {
+                if (index.marksInLocalClass(declaration, local, annotationType)) {
                     throw new CodegenException(INVALID_ROLE, "the marker @" + marker.name() + " is written in a local"
                         + " or anonymous class of " + declaration.canonicalName() + ", which no references container"
                         + " can name, so it exports nothing: mark a member of a top-level or member class instead",
