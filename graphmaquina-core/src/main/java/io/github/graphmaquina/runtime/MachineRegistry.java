@@ -562,7 +562,9 @@ public final class MachineRegistry implements AutoCloseable {
 
         /**
          * Bounds how many watch reactions may follow one another; the default is 10, and a value below 1 is
-         * refused.
+         * refused. A call that an after-commit hook starts is a new root, which this bound never counts: the watch
+         * reactions it triggers begin a chain of their own, so hooks that keep starting calls recur until the stack of
+         * the thread overflows, as the class description says.
          */
         public Builder maxWatchChain(int chain) {
             requireUnused();

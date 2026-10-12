@@ -3028,7 +3028,11 @@ of the flow throws `StaleContextException`, and on another thread `WrongThreadEx
 threw, its flow no longer holds the call, so a retained context keeps none of the call's values in memory. Each hook
 gets a handle of its own on the flow, so a later hook cannot use the one an earlier hook kept. A hook that takes the
 entity alone does not see the flow. A hook can start a new call: that call has a flow of its own, and once it returns,
-the hook's flow still reads and writes the flow of the call that ran the hook.
+the hook's flow still reads and writes the flow of the call that ran the hook. That call is a new root, which
+`maxWatchChain` never counts: the watch reactions it triggers begin a chain of their own. A hook whose call runs that
+same hook again, directly or through other calls, therefore recurs until the thread's stack overflows, each call having
+committed before its hooks ran, as [build and manage machine sets](#build-and-manage-machine-sets) says of a
+`StackOverflowError`.
 
 To call a contextual hook by hand, in a unit test, build its context with the five-argument constructor,
 `new CommitContext<>(from, transition, to, kind, isTerminal)`. Its flow belongs to no call: it starts empty, has no
