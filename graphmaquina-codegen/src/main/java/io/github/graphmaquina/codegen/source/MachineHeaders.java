@@ -53,7 +53,8 @@ public final class MachineHeaders {
      * {@link #resolve(DeclarationIndex, String)} for the declaration {@code header} itself, which a type of the other
      * package of its canonical name, named or unnamed, cannot stand in for. The entity and the enums are the types the
      * type arguments of {@code Machine} name where they are spelled, as the header spelling each resolves it, and the
-     * peers the types the class literals of {@code @GraphPeers} name; a name no header resolves is unresolved.
+     * peers the types the class literals of {@code @GraphPeers} name; a name no header resolves is unresolved, and
+     * a peer named twice is refused with {@code SG608}.
      */
     static Resolved resolveDeclaration(DeclarationIndex index, TypeHeader header) {
         String facade = header.canonicalName();
@@ -252,7 +253,14 @@ public final class MachineHeaders {
         return new Binding(bound, types);
     }
 
-    /** The types the class literals of the {@code @GraphPeers} of {@code header} name, in declaration order. */
+    /**
+     * The types the class literals of the {@code @GraphPeers} of {@code header} name, in declaration order. A type
+     * named twice, which is one declaration whatever the spelling of its literals, would generate the vocabulary of
+     * one pair twice, so it is refused with the code the annotation processor reports it with.
+     *
+     * @throws CodegenException {@code SG601} naming a literal no header resolves; {@code SG608} naming a peer
+     *     declared twice
+     */
     private static List<TypeHeader> peers(DeclarationIndex index, TypeHeader header, SourceLocation origin) {
         List<TypeHeader> peers = new ArrayList<>();
         for (TypeHeader.Marker marker : header.markers()) {
@@ -260,10 +268,15 @@ public final class MachineHeaders {
                 continue;
             }
             for (String literal : marker.classLiterals()) {
-                peers.add(index.resolveInHeader(header, literal)
+                TypeHeader peer = index.resolveInHeader(header, literal)
                         .orElseThrow(() -> new CodegenException(UNRESOLVED, "the peer machine " + literal
                                 + " declared by " + header.canonicalName() + " is unresolved",
-                                marker.origin().orElse(origin))));
+                                marker.origin().orElse(origin)));
+                if (peers.stream().anyMatch((TypeHeader declared) -> declared == peer)) {
+                    throw new CodegenException(UNUSABLE_PEER, peer.canonicalName() + " is declared twice as a peer of "
+                            + header.canonicalName(), marker.origin().orElse(origin));
+                }
+                peers.add(peer);
             }
         }
         return peers;

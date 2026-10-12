@@ -2,8 +2,10 @@ package io.github.graphmaquina.processor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.codegen.CodegenException;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -153,9 +155,25 @@ class TypedWatchTest {
     }
 
     /**
-     * A peer declared twice generates the vocabulary of that pair twice, which the generator itself refuses
-     * before javac runs; the duplicate is written here after the generation, so the processor is the one that
-     * has to answer for it.
+     * A peer declared twice would generate the vocabulary of that pair twice, so the generator refuses it before
+     * javac runs, with the code the processor reports it with, rather than as two declarations that claim one
+     * generated type.
+     */
+    @Test
+    void refusesAPeerDeclaredTwiceBeforeJavacRuns() {
+        Map<String, String> sources = TypedFixtures.watching("@GraphPeers({Pages.class, Pages.class})\n",
+                TypedFixtures.WATCH);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> Compilation.prepare(sources));
+
+        assertEquals("SG608", failure.code());
+        assertEquals("fx.Pages is declared twice as a peer of fx.Docs", failure.getMessage());
+        assertEquals("originals/fx/Docs.java", failure.location().orElseThrow().path());
+    }
+
+    /**
+     * The generator refuses a peer declared twice, so the duplicate is written here after the generation, as an
+     * edit between the two stages does, and the processor is the one that has to answer for it.
      */
     @Test
     void reportsAPeerDeclaredTwice() {

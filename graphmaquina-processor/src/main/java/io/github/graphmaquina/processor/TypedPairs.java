@@ -27,8 +27,9 @@ import javax.lang.model.type.TypeMirror;
  * inferred from the states, which two machines may well share.</p>
  *
  * <p>The declaration of the pairs and their uses must agree in both directions. A peer that no watch and no
- * sub-machine uses is a declaration that generated vocabulary for nothing, and a peer declared twice generates it
- * twice; both are refused as {@code SG608} rather than silently ignored.</p>
+ * sub-machine uses is a declaration that generated vocabulary for nothing, and a peer declared twice would generate it
+ * twice; both are refused as {@code SG608} rather than silently ignored. The generator refuses the second already, with
+ * that code, so the processor meets it only in a declaration edited since the generation ran.</p>
  */
 final class TypedPairs {
 

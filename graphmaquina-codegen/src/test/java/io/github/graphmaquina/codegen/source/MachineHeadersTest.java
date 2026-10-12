@@ -105,6 +105,39 @@ class MachineHeadersTest {
         }
     }
 
+    /**
+     * A peer named twice, here once by its simple name and once by its canonical name, would generate the
+     * vocabulary of one pair twice, so it is refused as the duplicated peer it is, at the annotation that names it.
+     */
+    @Test
+    void refusesAPeerDeclaredTwice() {
+        Map<String, String> sources = new LinkedHashMap<>(Map.of(
+                "fx.Status", "package fx; public enum Status { NEW, DONE }",
+                "fx.DocTransition", TRANSITION,
+                "fx.Order", "package fx; public class Order {}",
+                "fx.Base", BASE,
+                "fx.Bills", "package fx; public interface Bills extends Base<Order, Status, DocTransition> {}",
+                "fx.Orders", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GenerateGraphApi;
+                    import io.github.graphmaquina.annotation.GraphPeers;
+                    @GenerateGraphApi
+                    @GraphPeers({Bills.class, fx.Bills.class})
+                    public interface Orders extends Base<Order, Status, DocTransition> {}
+                    """));
+        List<Path> files = SourceFiles.write(directory, sources);
+        List<SourceUnit> units = SourceDeclarations.parse(directory, files);
+        try (DeclarationIndex index = DeclarationIndex.open(units, SourceFiles.classpath())) {
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> MachineHeaders.resolve(index, "fx.Orders"));
+
+            assertEquals("SG608", failure.code());
+            assertEquals("fx.Bills is declared twice as a peer of fx.Orders", failure.getMessage());
+            assertEquals("fx/Orders.java", failure.location().orElseThrow().path());
+            assertEquals(5L, failure.location().orElseThrow().line());
+        }
+    }
+
     @Test
     void resolvesThePackageOfAFacadeWhoseSegmentsAreNotAllLowerCase() {
         Map<String, String> sources = Map.of(
