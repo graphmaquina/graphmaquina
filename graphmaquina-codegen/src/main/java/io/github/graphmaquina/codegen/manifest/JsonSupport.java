@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.function.Supplier;
 
 /**
  * Strict JSON tree plumbing shared by {@link ManifestCodec} and {@link GenerationModelJson}: reading a document
@@ -128,7 +129,7 @@ final class JsonSupport {
                 reader.beginObject();
                 JsonObject object = new JsonObject();
                 while (reader.hasNext()) {
-                    String name = paired(reader.nextName(), reader.getPath(), file);
+                    String name = paired(reader.nextName(), reader::getPath, file);
                     if (object.has(name)) {
                         throw new CodegenException(ERROR_CODE, "duplicate key '" + name + "' in " + file);
                     }
@@ -146,7 +147,7 @@ final class JsonSupport {
                 reader.endArray();
                 yield array;
             }
-            case STRING -> new JsonPrimitive(paired(reader.nextString(), reader.getPreviousPath(), file));
+            case STRING -> new JsonPrimitive(paired(reader.nextString(), reader::getPreviousPath, file));
             case NUMBER -> {
                 String text = reader.nextString();
                 try {
@@ -167,17 +168,18 @@ final class JsonSupport {
     }
 
     /**
-     * {@code text}, a string or a name read at {@code path}, refused when it holds a surrogate that is not half of a
-     * pair: strict JSON can escape one, but no UTF-8 file can hold it, so the tools could not write it back. The
-     * place is named with such a surrogate escaped, as the message itself must be text.
+     * {@code text}, a string or a name read at the place {@code path} describes, refused when it holds a surrogate
+     * that is not half of a pair: strict JSON can escape one, but no UTF-8 file can hold it, so the tools could not
+     * write it back. The place is named with such a surrogate escaped, as the message itself must be text. It is
+     * asked for only then, before the reader moves on, since the reader builds a new text each time it describes one.
      */
-    private static String paired(String text, String path, Path file) {
+    private static String paired(String text, Supplier<String> path, Path file) {
         int index = 0;
         while (index < text.length()) {
             int codePoint = text.codePointAt(index);
             if (Character.charCount(codePoint) == 1 && Character.isSurrogate((char) codePoint)) {
                 throw new CodegenException(ERROR_CODE, "malformed JSON in " + file + ": an unpaired surrogate "
-                    + escaped(Character.toString(codePoint)) + " at path " + escaped(path));
+                    + escaped(Character.toString(codePoint)) + " at path " + escaped(path.get()));
             }
             index += Character.charCount(codePoint);
         }
