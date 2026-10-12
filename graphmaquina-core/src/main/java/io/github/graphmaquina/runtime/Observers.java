@@ -14,8 +14,9 @@ import java.util.function.Consumer;
  * The observers of a registry, notified in the order they were added. Each callback runs with the reentrancy marker
  * set, so an observer cannot start a transition on its own thread. A throwable that is not an Error, a checked
  * exception included, is logged as a warning that names the observer, the callback and the call, never the entity, and
- * the next observer is still notified. A RuntimeException of the warning backend is contained too. An Error from
- * the callback or the backend propagates unchanged, and the marker is released whatever throws.
+ * the next observer is still notified. Anything but an Error that the warning backend throws, a checked exception
+ * included, is contained too. An Error from the callback or the backend propagates unchanged, and the marker is
+ * released whatever throws.
  */
 final class Observers {
 
@@ -67,7 +68,9 @@ final class Observers {
                 try {
                     logger.log(Level.WARNING, () -> "the observer " + observer.getClass().getName() + " threw in "
                             + callback + " for " + call, e);
-                } catch (RuntimeException backend) {
+                } catch (Error fatal) {
+                    throw fatal;
+                } catch (Throwable backend) {
                     // A warning is best effort; the next observer must still receive the event.
                 }
             } finally {

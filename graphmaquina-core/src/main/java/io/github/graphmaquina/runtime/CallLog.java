@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.Reaction;
+import io.github.graphmaquina.internal.Texts;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.util.List;
@@ -26,8 +27,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *       the entity in the flow under a visible key, whose {@code flow-put} and {@code hook-flow-put} lines print the
  *       value's {@code toString()}. The enum constants a line names are printed by {@code name()}; a reason or an
  *       error is printed as it was given.</li>
- *   <li>A RuntimeException that the backend throws never reaches the call: a level it was asked about counts as off,
- *       and a line it was given is dropped. An Error propagates.</li>
+ *   <li>Anything but an Error that the backend throws, a checked exception included, never reaches the call: a level
+ *       it was asked about counts as off, and a line it was given is dropped. An Error propagates.</li>
  * </ul>
  */
 final class CallLog {
@@ -76,11 +77,13 @@ final class CallLog {
         return new CallLog(logger, debug, trace, IDS.incrementAndGet(), System.nanoTime(), trigger);
     }
 
-    /** Whether {@code level} is loggable; a backend that throws a RuntimeException is taken as saying no. */
+    /** Whether {@code level} is loggable; a backend that throws anything but an Error is taken as saying no. */
     private static boolean loggable(Logger logger, Level level) {
         try {
             return logger.isLoggable(level);
-        } catch (RuntimeException backend) {
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable backend) {
             return false;
         }
     }
@@ -119,7 +122,9 @@ final class CallLog {
     private void emit(Level level, String line) {
         try {
             logger.log(level, line);
-        } catch (RuntimeException backend) {
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable backend) {
             // a backend that fails never changes the call: the line is dropped
         }
     }
@@ -187,16 +192,12 @@ final class CallLog {
     }
 
     /**
-     * {@code String.valueOf(value)}, {@code <toString returned null>} when its {@code toString()} answers null, or
-     * {@code <toString threw <class name>>} when it throws a RuntimeException; an Error propagates.
+     * {@code value.toString()}, {@code <toString returned null>} when that answers null, or
+     * {@code <toString threw <class name>>} when it throws anything but an Error, a checked exception included, as
+     * {@link Texts#shown} prints it; an Error propagates.
      */
     static String show(Object value) {
-        try {
-            String text = String.valueOf(value);
-            return text != null ? text : "<toString returned null>";
-        } catch (RuntimeException e) {
-            return "<toString threw " + e.getClass().getName() + ">";
-        }
+        return Texts.shown(value);
     }
 
     /** {@code nanos} as whole microseconds: {@code <n>us}. */

@@ -2990,16 +2990,15 @@ the call attached before it told the observers.
 
 An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
 `System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
-propagates. The warning is best effort: a `RuntimeException` from its backend is contained too, while an `Error`
-from it propagates unchanged. That warning is the only record logged on `io.github.graphmaquina` itself:
-the lines of each call go to
-its child logger `io.github.graphmaquina.runtime`, as [debug a call](#debug-a-call-logs-and-the-calls-flow)
-describes. An observer cannot start a transition on its own thread either: an operation called from an observer throws
-`ReentrantTransitionException`, which is contained. One submitted through `async(...)` runs on the executor's thread as
-a call of its own, unless that executor runs tasks inline, in which case the returned future fails with that exception
-as its cause. When a failure must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a
-machine. Observers run on the thread of every call, so keep them thread-safe and quick. Add as many as you need: they
-are notified in the order they were added.
+propagates. The warning is best effort: anything but an `Error` from its backend, a checked exception included, is
+contained too, while an `Error` from it propagates unchanged. That warning is the only record logged on
+`io.github.graphmaquina` itself: the lines of each call go to its child logger `io.github.graphmaquina.runtime`, as
+[debug a call](#debug-a-call-logs-and-the-calls-flow) describes. An observer cannot start a transition on its own thread
+either: an operation called from an observer throws `ReentrantTransitionException`, which is contained. One submitted
+through `async(...)` runs on the executor's thread as a call of its own, unless that executor runs tasks inline, in
+which case the returned future fails with that exception as its cause. When a failure must fail the call, write a hook,
+or a `Definition.afterCommit` default for every edge of a machine. Observers run on the thread of every call, so keep
+them thread-safe and quick. Add as many as you need: they are notified in the order they were added.
 
 ## Debug a call: logs and the call's flow
 
@@ -3130,18 +3129,19 @@ the entity's `toString()`, unless your code puts the entity in the flow under a 
 selected no edge, or that failed before its edge ran, names none. The identity may be personal data, such as an e-mail
 address used as an identifier, and the reasons, exception messages and visible flow values the lines print may carry
 internal details; treat these logs like any record that carries your identifiers. If the `toString()` of an identity,
-of an exception or of a visible flow value throws a `RuntimeException`, the line prints
+of an exception or of a visible flow value throws anything but an `Error`, a checked exception included, the line prints
 `<toString threw <exception class>>` in its place, after the machine key and its `#` for an identity, and the call
 goes on; an `Error` propagates. A `toString()` that returns `null` prints `<toString returned null>` for an
 exception or a visible flow value, and `null` after the `#` of an identity.
 
 The runtime asks the logger for its two levels once, when a call starts, and builds no line of a level that is off: a
-level raised while a call runs applies from the next call, a call logged at `DEBUG` alone builds no `TRACE` line, and
-a call that logs nothing pays for no line. A `RuntimeException` from the logging backend loses the line and changes
-nothing in the call; an `Error` propagates. An `Error` on a `committed`, `started`, `end` or `failed` line ends the
-call with that `Error`, which the [observers](#observers) receive as the call's end event, in the phase the call
-reached: the `committed` and `started` lines come once every setter returned, in `HOOK`. An `Error` that ends a call
-is not a `CallFailedException` and gets no `failed` line: the lines logged before it stay, and none follows them.
+level raised while a call runs applies from the next call, a call logged at `DEBUG` alone builds no `TRACE` line, and a
+call that logs nothing pays for no line. Anything but an `Error` from the logging backend, a checked exception included,
+loses the line and changes nothing in the call; an `Error` propagates. An `Error` on a `committed`, `started`, `end` or
+`failed` line ends the call with that `Error`, which the [observers](#observers) receive as the call's end event, in the
+phase the call reached: the `committed` and `started` lines come once every setter returned, in `HOOK`. An `Error` that
+ends a call is not a `CallFailedException` and gets no `failed` line: the lines logged before it stay, and none follows
+them.
 
 ### The call's flow
 
@@ -3409,14 +3409,14 @@ A call that records its trail creates its flow when its step starts, so it hands
 the trail even when no step or hook wrote to it, a rejected call included. Two such outcomes are equal only when their
 trails are, `at()` included.
 
-`recordTrail()` reads `InstantSource.system()`. `recordTrail(InstantSource clock)` reads `clock` instead, on the
-thread running the call, once per entry: a test can pass `InstantSource.fixed(...)`, a `Clock`, or a clock of its own
-that advances on each read. A clock that throws a `RuntimeException` fails the call, as an identity function that
-throws does: the entry it could not mark stays out of the trail. When it throws while the call reads the instant of
-the `Failed` entry that ends a failed call, whatever failed the call, the call's `CallFailedException` carries what
-it threw as suppressed, unless it threw that very exception, and its trail ends without that entry. A clock that
-answers `null` counts as one that throws a `NullPointerException`. A call whose root machine was built without
-`recordTrail` reads no clock and stores no time.
+`recordTrail()` reads `InstantSource.system()`. `recordTrail(InstantSource clock)` reads `clock` instead, on the thread
+running the call, once per entry: a test can pass `InstantSource.fixed(...)`, a `Clock`, or a clock of its own that
+advances on each read. A clock that throws anything but an `Error`, a checked exception included, fails the call, as an
+identity function that throws does: the entry it could not mark stays out of the trail. When it throws while the call
+reads the instant of the `Failed` entry that ends a failed call, whatever failed the call, the call's
+`CallFailedException` carries what it threw as suppressed, unless it threw that very exception, and its trail ends
+without that entry. A clock that answers `null` counts as one that throws a `NullPointerException`. A call whose root
+machine was built without `recordTrail` reads no clock and stores no time.
 
 The trail records what the call took and how it ended; the [`TRACE` lines](#logs) show each step on the way, its
 guards and its action included. To assert the flow and its trail in a test, see

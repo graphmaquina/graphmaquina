@@ -109,23 +109,23 @@ public final class StateMachines {
         }
 
         /**
-         * Records the trail of every root call this machine starts, on {@code clock}: the flow the call hands out,
-         * in its outcome or in its failure, lists in {@code trail()} each hop and each sub-machine start the call
-         * took, each at the instant {@code clock} read right after the call took it, then the rejection or the
-         * failure that ended the call, at the instant it ended. The root machine decides for the whole call, as it
-         * does with asyncTimeout: the hops of the peers it cascades to and of the exits its steps run are recorded
-         * whatever those machines declare, and a call that a machine without a trail starts records nothing, even
-         * when it cascades into one with a trail. A watch reaction is a root call of its own, decided by its own
-         * machine. A call that records its trail creates its flow when its step starts, so it hands out its flow,
-         * with the root entity and the trail, even when none of its steps or hooks wrote to it; a reevaluation that
-         * selects no edge runs no step, and its ignored outcome hands out the empty flow. The clock is read on the
-         * thread running the call, once per entry; a test can pass a clock it controls, such as a
-         * {@link java.time.Clock}. A RuntimeException the clock throws fails the call as one an identity function
-         * throws does: the entry it could not mark is left out of the trail. When it throws while the call reads the
-         * instant of the Failed entry that ends a failed call, whatever failed the call, the call's
-         * {@code CallFailedException} carries what it threw as suppressed, unless it threw that very exception, and
-         * its trail ends without that entry; an Error propagates. A clock that answers null counts as one that throws
-         * a NullPointerException. A machine that does not call this reads no clock and keeps no mark.
+         * Records the trail of every root call this machine starts, on {@code clock}: the flow the call hands out, in
+         * its outcome or in its failure, lists in {@code trail()} each hop and each sub-machine start the call took,
+         * each at the instant {@code clock} read right after the call took it, then the rejection or the failure that
+         * ended the call, at the instant it ended. The root machine decides for the whole call, as it does with
+         * asyncTimeout: the hops of the peers it cascades to and of the exits its steps run are recorded whatever those
+         * machines declare, and a call that a machine without a trail starts records nothing, even when it cascades
+         * into one with a trail. A watch reaction is a root call of its own, decided by its own machine. A call that
+         * records its trail creates its flow when its step starts, so it hands out its flow, with the root entity and
+         * the trail, even when none of its steps or hooks wrote to it; a reevaluation that selects no edge runs no
+         * step, and its ignored outcome hands out the empty flow. The clock is read on the thread running the call,
+         * once per entry; a test can pass a clock it controls, such as a {@link java.time.Clock}. Anything but an Error
+         * that the clock throws, a checked exception included, fails the call as what an identity function throws does:
+         * the entry it could not mark is left out of the trail. When it throws while the call reads the instant of the
+         * Failed entry that ends a failed call, whatever failed the call, the call's {@code CallFailedException}
+         * carries what it threw as suppressed, unless it threw that very exception, and its trail ends without that
+         * entry; an Error propagates. A clock that answers null counts as one that throws a NullPointerException. A
+         * machine that does not call this reads no clock and keeps no mark.
          */
         public Builder<E, S, T> recordTrail(InstantSource clock) {
             requireUnused();
