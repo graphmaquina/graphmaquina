@@ -18,9 +18,11 @@ import java.util.concurrent.TimeoutException;
  * failure says the test stopped waiting, never that the engine timed out, and the stage is left exactly as it
  * was — neither wait ever cancels a stage it was handed. A stage is awaited through a callback of its own, as
  * the engine awaits one, so even a stage that refuses {@link CompletionStage#toCompletableFuture()} can be
- * handed in. Neither the wait nor that callback prints the throwable a stage ended with, so one whose message
- * cannot be read is reported or handed on like any other, and the thread that completes the stage never
- * receives an exception from the callback.
+ * handed in. Neither the wait nor that callback prints the throwable a stage ended with, so {@link #awaitFailure}
+ * hands one whose message cannot be read on like any other, and {@link #await} reports it as
+ * {@link GraphAssertionError} reports a value it cannot print: an {@link Error} that printing it throws
+ * propagates out of {@link #await}, as it propagates out of that error's constructor. The thread that completes
+ * the stage never receives an exception from the callback.
  *
  * <p>The two entry points split the two things a stage can do. {@link #await} expects a result and reports
  * anything else — an exceptional completion, a cancellation, an expired budget — as a
