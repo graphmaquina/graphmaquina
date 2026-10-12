@@ -31,23 +31,28 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
  */
 class SourcePatternsTest {
 
-    /** The files of the tree the differential tests scan, their names separated by {@code /}. */
+    /**
+     * The files of the tree the differential tests scan, their names separated by {@code /}: among them a name that
+     * holds a surrogate pair, two characters to plexus-utils, and one that holds a line terminator.
+     */
     private static final List<String> TREE = List.of("Root.java", "fx/Orders.java", "fx/drafts/Draft.java",
             "fx/drafts/deeper/Deep.java", "other/Other.java", "io/Io.java",
             "io/github/graphmaquina/generated/bootstrap/GraphCompilation0123456789abcdef.java", "fx/._Junk.java",
-            "fx/.git/Junk.java", "a b/Space.java");
+            "fx/.git/Junk.java", "a b/Space.java", "fx/\uD83D\uDE00.java", "fx/a\nb.java");
 
     /**
      * The includes the differential tests try, one at a time: separators leading, doubled, trailing and of either
-     * kind, the spellings {@code %ant[...]} and {@code %regex[...]}, too short ones among them, and regular
-     * expressions whose separators plexus-utils rewrites differently for each platform.
+     * kind, the spellings {@code %ant[...]} and {@code %regex[...]}, too short ones among them, regular expressions
+     * whose separators plexus-utils rewrites differently for each platform, and wildcards that meet a surrogate pair
+     * or a line terminator.
      */
     private static final List<String> INCLUDES = List.of("**/*.java", "**", "fx/**", "/fx/**", "\\fx\\**",
             "/io/github/graphmaquina/generated/**", "io/github/graphmaquina/generated/**", "/**/*.java",
             "/*/Orders.java", "fx/drafts/", "/fx/drafts/", "fx\\", "%ant[/fx/**]", "%ant[fx/drafts/]", "%ant[*]",
             "%ant[**]", "%regex[fx/drafts/.*]", "%regex[fx\\\\drafts\\\\.*]", "%regex[fx\\/drafts\\/.*]",
             "%regex[[^/]*\\.java]", "%regex[\\]", "%regex[/]", "%regex[a/", "%regex[.*]", " fx/** ", "FX/**",
-            "fx/Draft?.java", "io/**", "/io/**", "//fx//**", "*/*", "/*", "io/*/graphmaquina/**", "a b/**");
+            "fx/Draft?.java", "io/**", "/io/**", "//fx//**", "*/*", "/*", "io/*/graphmaquina/**", "a b/**",
+            "fx/?.java", "fx/??.java", "fx/a?b.java", "fx/*");
 
     /** The excludes the differential tests try, one at a time, beside each include and beside none. */
     private static final List<String> EXCLUDES = List.of("fx/drafts", "fx/drafts/**", "/fx/drafts/**", "io/github",

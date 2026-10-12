@@ -25,10 +25,11 @@ import java.util.regex.Pattern;
  * they are given, which the build gives as {@link java.io.File#separatorChar}.</p>
  *
  * <p>A pattern is matched against the path of a source relative to its source root, one name at a time and
- * case-sensitively: {@code *} stands for any run of characters within a name, {@code ?} for one character, a
- * whole name {@code **} for any number of names, none included, and a pattern that ends with a separator for
- * everything below it; either separator is accepted, and empty names, a leading separator included, are
- * ignored. A pattern spelled {@code %regex[...]} is a regular expression over the whole relative path, its names
+ * case-sensitively: {@code *} stands for any run of characters within a name, line terminators included, {@code ?}
+ * for one character, a whole name {@code **} for any number of names, none included, and a pattern that ends with a
+ * separator for everything below it. A character is one UTF-16 {@code char}, as plexus-utils counts it, so a
+ * surrogate pair takes two {@code ?}. Either separator is accepted, and empty names, a leading separator included,
+ * are ignored. A pattern spelled {@code %regex[...]} is a regular expression over the whole relative path, its names
  * separated by the file separator. plexus-utils rewrites it first: where the separator is {@code /}, every pair of
  * backslashes becomes {@code /}; where it is {@code \}, every {@code /} becomes a pair of backslashes, which the
  * expression reads as one backslash. So {@code /} and a pair of backslashes stand for the separator on either
@@ -367,16 +368,34 @@ final class SourcePatterns {
                 && matches(pattern, next + 1, path, at + 1);
     }
 
-    /** Whether one name of a path matches one name of a pattern, where {@code *} and {@code ?} are wildcards. */
+    /**
+     * Whether one name of a path matches one name of a pattern, as {@code SelectorUtils.match} of plexus-utils
+     * matches it, one {@code char} at a time: {@code *} stands for any run of chars, line terminators included, and
+     * {@code ?} for one char, so a character outside the Basic Multilingual Plane, a surrogate pair, takes two.
+     */
     private static boolean matchesName(String pattern, String name) {
-        StringBuilder regex = new StringBuilder();
-        for (char character : pattern.toCharArray()) {
-            switch (character) {
-                case '*' -> regex.append(".*");
-                case '?' -> regex.append('.');
-                default -> regex.append(Pattern.quote(String.valueOf(character)));
+        int next = 0;
+        int at = 0;
+        int star = -1;
+        int resumed = 0;
+        while (at < name.length()) {
+            if (next < pattern.length() && pattern.charAt(next) == '*') {
+                star = next++;
+                resumed = at;
+            } else if (next < pattern.length()
+                    && (pattern.charAt(next) == '?' || pattern.charAt(next) == name.charAt(at))) {
+                next++;
+                at++;
+            } else if (star >= 0) {
+                next = star + 1;
+                at = ++resumed;
+            } else {
+                return false;
             }
         }
-        return name.matches(regex.toString());
+        while (next < pattern.length() && pattern.charAt(next) == '*') {
+            next++;
+        }
+        return next == pattern.length();
     }
 }
