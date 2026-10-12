@@ -172,7 +172,7 @@ public final class MachineRegistry implements AutoCloseable {
                 OutcomeStatus.class, RejectionKind.class, StatesWritten.class, TransitionKind.class,
                 CallFailedException.class, CallFailureFlows.class, FrozenFlow.class, Await.class, CallLog.class,
                 CommitSummary.class, FlowHandle.Hook.class, Observers.class, Reentrancy.class, Submit.class,
-                Transaction.Hold.class, UnitOfWork.class);
+                Transaction.Hold.class, UnitOfWork.class, Watcher.NoOwner.class);
     }
 
     /**
@@ -471,8 +471,9 @@ public final class MachineRegistry implements AutoCloseable {
      * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException, and an
      * InterruptedException interrupts the thread again. Each lookup runs with the reentrancy marker set, so one that
      * calls execute or reevaluate ends that way too. {@code log} is the log of the call whose commit is dispatched: at
-     * TRACE it logs each lookup once, with the owner it found, once that owner is a target, or what it threw, and when
-     * that call logs, each reaction's log names its id as the trigger.
+     * TRACE it logs each lookup once, with what it found, the owner in the watched state once that owner is a target,
+     * the state of an owner outside it, or no owner, or with what it threw, and when that call logs, each reaction's
+     * log names its id as the trigger.
      */
     List<Reaction> dispatchWatches(CommitSummary summary, int chain, CallLog log) {
         if (watchers.isEmpty()) {
@@ -484,13 +485,13 @@ public final class MachineRegistry implements AutoCloseable {
         for (EntityRef moved : summary.movedEntities()) {
             for (Watcher<?, ?, ?, ?, ?, ?> watcher : watchers.getOrDefault(moved.key(), List.of())) {
                 try {
-                    Optional<EntityRef> owner = watcher.ownerToReevaluate(moved.instance());
-                    if (owner.isPresent()) {
-                        targets.putIfAbsent(owner.get(), watcher);
+                    Watcher.Lookup lookup = watcher.lookUpOwner(moved.instance());
+                    if (lookup instanceof Watcher.Watched watched) {
+                        targets.putIfAbsent(watched.owner(), watcher);
                     }
                     if (log.trace()) {
-                        log.trace("watch watcher=" + watcher.machine().key() + " moved=" + CallLog.show(moved)
-                                + " owner=" + (owner.isPresent() ? CallLog.show(owner.get()) : "none"));
+                        log.trace("watch watcher=" + watcher.machine().key() + " moved=" + CallLog.show(moved) + " "
+                                + traced(lookup));
                     }
                 } catch (RuntimeException e) {
                     traceLookupThrew(log, watcher, moved, e);
@@ -509,6 +510,20 @@ public final class MachineRegistry implements AutoCloseable {
             reactions.add(entry.getValue().react(entry.getKey().instance(), chain + 1, trigger));
         }
         return List.copyOf(reactions);
+    }
+
+    /**
+     * How the TRACE line of an owner lookup names what it found: {@code owner=} and the owner in the watched state,
+     * {@code owner-state=} and the state of an owner outside it, or {@code owner=none} when it found no owner.
+     */
+    private static String traced(Watcher.Lookup lookup) {
+        if (lookup instanceof Watcher.Watched watched) {
+            return "owner=" + CallLog.show(watched.owner());
+        }
+        if (lookup instanceof Watcher.Unwatched unwatched) {
+            return "owner-state=" + unwatched.state().name();
+        }
+        return "owner=none";
     }
 
     /** Logs at TRACE that the lookup of {@code watcher} threw {@code error} for the moved entity {@code moved}. */

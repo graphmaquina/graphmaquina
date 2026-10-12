@@ -14,11 +14,13 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
     }
 
     /**
-     * Owner of the moved peer, if any, and exactly in the watched state. ownerOf, the state read and the identity
-     * function run with the reentrancy marker set, so none of them can start a transition on this thread. An ownerOf
-     * that returns null instead of an Optional is refused with a NullPointerException that says so.
+     * What the owner lookup of the moved peer found: no owner, an owner outside the watched state, or an owner exactly
+     * in it, the one to reevaluate. ownerOf, the state read and the identity function run with the reentrancy marker
+     * set, so none of them can start a transition on this thread; the identity function runs only for an owner in the
+     * watched state. An ownerOf that returns null instead of an Optional is refused with a NullPointerException that
+     * says so.
      */
-    Optional<EntityRef> ownerToReevaluate(Object movedInstance) {
+    Lookup lookUpOwner(Object movedInstance) {
         P peer = spec.peer().entity().cast(movedInstance);
         boolean[] marker = Reentrancy.enter(spec.peer(), peer);
         try {
@@ -28,13 +30,14 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
                         "the ownerOf of " + machine.key() + "." + spec.state().name() + " returned null");
             }
             if (owner.isEmpty()) {
-                return Optional.empty();
+                return NoOwner.INSTANCE;
             }
             E entity = owner.get();
-            if (machine.readState(entity) != spec.state()) {
-                return Optional.empty();
+            S state = machine.readState(entity);
+            if (state != spec.state()) {
+                return new Unwatched(state);
             }
-            return Optional.of(machine.refOf(entity));
+            return new Watched(machine.refOf(entity));
         } finally {
             marker[0] = false;
         }
@@ -54,4 +57,20 @@ record Watcher<E, S extends Enum<S>, T extends Enum<T>, P, Q extends Enum<Q>, U 
             return new Reaction.Aborted(machine.key(), entity, e);
         }
     }
+
+    /** What an owner lookup found: {@link NoOwner}, {@link Unwatched} or {@link Watched}. */
+    sealed interface Lookup permits NoOwner, Unwatched, Watched { }
+
+    /** The lookup found no owner. */
+    record NoOwner() implements Lookup {
+
+        /** The only instance, so that a lookup that finds no owner allocates nothing. */
+        static final NoOwner INSTANCE = new NoOwner();
+    }
+
+    /** The lookup found an owner in {@code state}, which is not the watched state, so no reaction reevaluates it. */
+    record Unwatched(Enum<?> state) implements Lookup { }
+
+    /** The lookup found {@code owner} in the watched state, which a reaction reevaluates. */
+    record Watched(EntityRef owner) implements Lookup { }
 }

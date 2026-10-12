@@ -810,7 +810,7 @@ class RuntimeLogTraceTest {
                     "FINE call=A committed Order/OrderStatus#o1 NEW -CANCEL-> CANCELLED depth=0",
                     "FINE call=A committed Item/ItemStatus#i1 PENDING -START_PACKING-> PACKING depth=1",
                     "FINE call=A committed Item/ItemStatus#i1 PACKING -PACK-> PACKED depth=1",
-                    "FINER call=A watch watcher=Order/OrderStatus moved=Item/ItemStatus#i1 owner=none",
+                    "FINER call=A watch watcher=Order/OrderStatus moved=Item/ItemStatus#i1 owner-state=CANCELLED",
                     "FINE call=A end code=APPLIED state=CANCELLED entity=Order/OrderStatus#o1 records=3 starts=0"
                             + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
         }
@@ -882,8 +882,8 @@ class RuntimeLogTraceTest {
                     "FINE call=A committed Order/OrderStatus#o1 NEW -CANCEL-> CANCELLED depth=0",
                     "FINE call=A committed Item/ItemStatus#i1 PENDING -CANCEL-> CANCELLED depth=1",
                     "FINE call=A committed Item/ItemStatus#i2 PENDING -CANCEL-> CANCELLED depth=1",
-                    "FINER call=A watch watcher=Order/OrderStatus moved=Item/ItemStatus#i1 owner=none",
-                    "FINER call=A watch watcher=Order/OrderStatus moved=Item/ItemStatus#i2 owner=none",
+                    "FINER call=A watch watcher=Order/OrderStatus moved=Item/ItemStatus#i1 owner-state=CANCELLED",
+                    "FINER call=A watch watcher=Order/OrderStatus moved=Item/ItemStatus#i2 owner-state=CANCELLED",
                     "FINE call=A end code=APPLIED state=CANCELLED entity=Order/OrderStatus#o1 records=3 starts=0"
                             + " reactions=0 aborted=0 elapsed=<us>"), lines(log));
         }
@@ -1265,6 +1265,29 @@ class RuntimeLogTraceTest {
                     "FINER call=B depth=0 cascade Doc/DocStatus#c2 SUBMIT policy=COLLECT",
                     "FINER call=B depth=1 resolved Doc/DocStatus#c2 DRAFT -SUBMIT-> REVIEW kind=ACTION",
                     "FINER call=B depth=1 action Review start mode=sync"), lines(log));
+        }
+    }
+
+    /**
+     * A lookup that finds an owner outside the watched state names that owner's state, and only a lookup that finds no
+     * owner at all says none: neither runs a reaction.
+     */
+    @Test
+    void aWatchTellsAnOwnerOutsideTheWatchedStateFromNoOwner() {
+        Item owned = new Item("i1", ItemStatus.PENDING, Optional.of(new Order("o1", OrderStatus.NEW)));
+        Item orphan = new Item("i2", ItemStatus.PENDING, Optional.empty());
+        try (MachineRegistry registry = orders(new Probe<>()); LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            registry.of(ITEMS).execute(owned, ItemTransition.START_PACKING);
+            registry.of(ITEMS).execute(orphan, ItemTransition.START_PACKING);
+            List<String> watch = new ArrayList<>();
+            for (String line : lines(log)) {
+                if (line.contains(" watch ")) {
+                    watch.add(line);
+                }
+            }
+            assertEquals(List.of(
+                    "FINER call=A watch watcher=Order/OrderStatus moved=Item/ItemStatus#i1 owner-state=NEW",
+                    "FINER call=B watch watcher=Order/OrderStatus moved=Item/ItemStatus#i2 owner=none"), watch);
         }
     }
 

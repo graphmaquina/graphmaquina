@@ -3234,7 +3234,7 @@ Square brackets below mark the parts a line may leave out.
 | `TRACE` | `call=<id> hook <hook> <ref> <T>` | The hook `<hook>` is about to run for the committed hop `<T>` of `<ref>`. |
 | `TRACE` | `call=<id> hook-flow-put <hook> <key>[=<value>]` | The hook `<hook>` put a value in [the call's flow](#the-calls-flow). `<key>` and `<value>` print as in `flow-put`. |
 | `TRACE` | `call=<id> hook-flow-remove <hook> <key>` | The hook `<hook>` removed the value of `<key>` from the call's flow. |
-| `TRACE` | `call=<id> watch watcher=<machine> moved=<ref> owner=<ref\|none>` / `call=<id> watch-lookup-threw watcher=<machine> moved=<ref> error=<error>` | The watch of `<machine>` looked up the owner of the entity the call moved: the owner it found in the watched state, which a reaction reevaluates, or `none` when it found none; or the lookup threw `<error>`, which aborts that reaction. |
+| `TRACE` | `call=<id> watch watcher=<machine> moved=<ref> owner=<ref\|none>` / `call=<id> watch watcher=<machine> moved=<ref> owner-state=<state>` / `call=<id> watch-lookup-threw watcher=<machine> moved=<ref> error=<error>` | The watch of `<machine>` looked up the owner of the entity the call moved: the owner it found in the watched state, which a reaction reevaluates, or `none` when it found no owner; `owner-state=` and the state of an owner it found in another state, which no reaction reevaluates; or the lookup threw `<error>`, which aborts that reaction. |
 
 The `committed` and `started` lines follow the order the call took its hops and starts, and come after the commit,
 before the hooks: a call whose commit fails logs none. A watch reaction is a call of its own, whose lines come between
