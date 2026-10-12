@@ -2392,7 +2392,8 @@ step, a cycle or the depth limit, reaches your action as it is. The `TransitionA
 abort of a nested step goes. Anything else reaches your action as a `TransitionAbortedException` that names the cascade
 and carries the failure as its cause: an engine exception that describes no call, such as an unknown machine or an
 ambiguous identity, or a throwable other than an `Error` from a callback the engine does not wrap, such as an identity
-function. An `Error` poisons through such an abort too, but reaches your action as itself. Catching it in your action
+function. An `Error` poisons through such an abort too, but reaches your action as itself, with any `Error` that
+printing it threw as suppressed. Catching it in your action
 does not make the transaction safe to commit. Once the engine has your action's outcome, it throws the failure that
 poisoned the transaction instead of applying it. It does the same for a failure of the call that your action throws or
 completes its stage with, and, unless the action is a recovery action, for a throwable that its `failsOn` or one of its

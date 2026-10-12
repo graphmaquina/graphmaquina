@@ -1566,7 +1566,9 @@ final class Transaction {
      * without a TRACE line: the cascade rethrows it as itself, and no line follows an Error that ends a call. The abort
      * prints the failure and the entities in flight through {@link Texts#shown} and {@link EntityRef#toString()}, so
      * one that cannot be printed shows a marker; when printing them throws an Error, the transaction is first poisoned
-     * by an abort that names the failure's class and each entity's machine alone, and then that Error propagates.
+     * by an abort that names the failure's class and each entity's machine alone, and then that Error propagates,
+     * unless the failure is itself an Error: that failure then propagates as itself, with the Error of printing it as
+     * suppressed.
      */
     private CallFailedException poisonWith(ContextHandle caller, String target, Throwable error) {
         if (error instanceof CallFailedException own && owns(own)) {
@@ -1581,6 +1583,12 @@ final class Transaction {
         } catch (Error fatal) {
             uow.poisonWrapping(new TransitionAbortedException(call(), phase, bareDetails(caller),
                     cascade + error.getClass().getName(), error));
+            if (error instanceof Error original) {
+                if (original != fatal) {
+                    original.addSuppressed(fatal);
+                }
+                throw original;
+            }
             throw fatal;
         }
         boolean first = !uow.isPoisoned();

@@ -44,7 +44,8 @@ import org.junit.jupiter.params.provider.ValueSource;
  * A failed cascade poisons the transaction even when printing the failure or an entity in flight throws: the poison is
  * stored before anything reaches the action, so an action that catches what it receives cannot commit the root.
  * Printing that throws anything but an Error puts a marker in the abort's text; an Error first leaves a poison that
- * names the failure's class and each entity's machine alone, then propagates.
+ * names the failure's class and each entity's machine alone, then propagates, unless the failure is itself an Error,
+ * which reaches the action as itself with the Error of printing it suppressed.
  */
 class UnprintableFailurePoisonTest {
 
@@ -67,6 +68,20 @@ class UnprintableFailurePoisonTest {
         @Override
         public String getMessage() {
             throw fatal;
+        }
+    }
+
+    /** An Error whose message read throws {@link #printing}. */
+    static final class UnprintableError extends Error {
+        private final AssertionError printing;
+
+        UnprintableError(AssertionError printing) {
+            this.printing = printing;
+        }
+
+        @Override
+        public String getMessage() {
+            throw printing;
         }
     }
 
@@ -195,6 +210,36 @@ class UnprintableFailurePoisonTest {
             assertEquals(StatesWritten.NONE, thrown.statesWritten());
         }
         assertEquals(List.of(fatal), caught);
+        assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), peer.status()));
+    }
+
+    @Test
+    void anErrorThatCannotBePrintedStillReachesTheActionAsItself() {
+        Doc root = new Doc("root", DRAFT);
+        Doc peer = new Doc("peer", REVIEW);
+        AssertionError printing = new AssertionError("printing the failure failed");
+        UnprintableError failure = new UnprintableError(printing);
+        List<Throwable> caught = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = docs(
+                catching((TransitionContext<Doc, DocStatus, DocTransition> ctx) -> ctx.cascade(DOCS, peer, PUBLISH),
+                        caught),
+                UnaryOperator.identity());
+        try (MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(graph).state((Doc doc) -> {
+            if (doc == peer) {
+                throw failure;
+            }
+            return doc.status();
+        }, Doc::setStatus).identity(Doc::id)).build()) {
+            TransitionAbortedException thrown = assertThrows(TransitionAbortedException.class,
+                    () -> registry.of(DOCS).execute(root, SUBMIT));
+            // Comparisons by identity with fixed messages: printing the failure throws.
+            assertTrue(thrown.getCause() == failure, "the poison carries the failure");
+            String named = "the cascade to Doc/DocStatus failed: " + UnprintableError.class.getName();
+            assertTrue(thrown.getMessage().contains(named), thrown.getMessage());
+        }
+        assertTrue(caught.size() == 1 && caught.get(0) == failure, "the action receives the Error as itself");
+        assertTrue(failure.getSuppressed().length == 1 && failure.getSuppressed()[0] == printing,
+                "the Error carries the Error of printing it as suppressed");
         assertEquals(List.of(DRAFT, REVIEW), List.of(root.status(), peer.status()));
     }
 
