@@ -37,6 +37,7 @@ import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UnhandledFailureException;
 import io.github.graphmaquina.internal.FrozenFlow;
 import io.github.graphmaquina.internal.Texts;
+import java.time.Instant;
 import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -68,7 +69,10 @@ final class Transaction {
      */
     private CallPhase phase = CallPhase.RESOLVE;
     private boolean writing;
-    /** The state the root's own step read and the edge it selected, recorded when that step throws; empty before. */
+    /**
+     * The state the root's own step read, its identifier and the destination of the edge it selected, recorded when
+     * that step throws or when the clock cannot date its rejection; empty before.
+     */
     private Optional<RootStep> rootStep = Optional.empty();
     /** The log of the call: {@link CallLog#OFF} when the call found both levels off. */
     private final CallLog log;
@@ -149,15 +153,23 @@ final class Transaction {
      * The call's flow as a rejected outcome hands it out: as {@link #frozenFlow(List, List)} says, the trail built
      * from the log and ended by the {@code Rejected} entry of {@code rejected}, at the instant the clock reads now. A
      * clock that throws, or answers null as {@link CallFlow#now} refuses, fails the call, which classifies the
-     * exception.
+     * exception: its abort names the state the step read, its identifier and the destination of the edge it selected,
+     * as {@link #rejectedStep} says.
      */
     FlowView frozenFlow(StepResult.Rejected<?, ?> rejected) {
         if (!uow.recordsTrail()) {
             return frozen(List.of());
         }
         List<FlowEntry> trail = uow.trailOf(uow.records(), uow.starts());
+        Instant at;
+        try {
+            at = CallFlow.now(uow.clock());
+        } catch (Throwable undated) {
+            rootStep = Optional.of(rejectedStep(rejected));
+            throw undated;
+        }
         trail.add(new FlowEntry.Rejected(callKey, callEntity, rejected.from(), rejected.transition(), rejected.kind(),
-                rejected.reason(), rejected.guard(), CallFlow.now(uow.clock())));
+                rejected.reason(), rejected.guard(), at));
         return frozen(trail);
     }
 
@@ -317,28 +329,52 @@ final class Transaction {
             throw fatal;
         } catch (Throwable e) {
             if (depth == 0) {
-                rootStep = Optional.of(new RootStep(from, selectedEdge(machine, from, id)));
+                rootStep = Optional.of(new RootStep(from, id, selectedDestination(machine, from, id)));
             }
             throw e;
         }
     }
 
     /**
-     * The edge a root step that threw had selected for {@code (from, id)}, looked up again for its abort: a definition
-     * answers the same edge for the same key every time. Empty when the definition declares none, and when the lookup
-     * itself throws, as it does for a state of another enum, which only a getter that broke its type returns.
+     * The destination of the edge a root step that threw had selected for {@code (from, id)}, looked up again for its
+     * abort: a definition answers the same edge for the same key every time. Empty when the definition declares none,
+     * and when the lookup itself throws, as it does for a state of another enum, which only a getter that broke its
+     * type returns.
      */
-    private static <E, S extends Enum<S>, T extends Enum<T>> Optional<? extends TransitionSpec<?, ?, ?>> selectedEdge(
+    private static <E, S extends Enum<S>, T extends Enum<T>> Optional<Enum<?>> selectedDestination(
             DefaultStateMachine<E, S, T> machine, S from, T id) {
         try {
-            return machine.definition().findTransition(from, id);
+            Optional<TransitionSpec<E, S, T>> edge = machine.definition().findTransition(from, id);
+            return edge.isPresent() ? Optional.of(edge.get().to()) : Optional.empty();
         } catch (RuntimeException lookup) {
             return Optional.empty();
         }
     }
 
-    /** What the root's own step had read and selected when it threw; {@code edge} is empty when it selected none. */
-    private record RootStep(Enum<?> from, Optional<? extends TransitionSpec<?, ?, ?>> edge) { }
+    /**
+     * What the root's own step had read and selected when it threw or when the clock could not date its rejection: the
+     * state it read, the identifier it resolved, and the destination of the edge it selected, empty when it selected
+     * none.
+     */
+    private record RootStep(Enum<?> from, Enum<?> id, Optional<Enum<?>> to) { }
+
+    /**
+     * What the root's own step had read and selected before {@code rejected}: a guard and a reserved exit refuse the
+     * edge the step selected, so its destination is named; a request that matched no edge and a sub-machine that no
+     * parent holds selected none.
+     */
+    private RootStep rejectedStep(StepResult.Rejected<?, ?> rejected) {
+        boolean selected = rejected.kind() == RejectionKind.GUARD || rejected.kind() == RejectionKind.RESERVED_EXIT;
+        return new RootStep(rejected.from(), rejected.transition(), selected
+                ? destinationOf(registry.anyMachineFor(callKey), rejected.from(), rejected.transition())
+                : Optional.empty());
+    }
+
+    /** {@link #selectedDestination} for the machine of the call, whose types the rejection no longer carries. */
+    private static <E, S extends Enum<S>, T extends Enum<T>> Optional<Enum<?>> destinationOf(
+            DefaultStateMachine<E, S, T> machine, Enum<?> from, Enum<?> id) {
+        return selectedDestination(machine, machine.key().states().cast(from), machine.key().transitions().cast(id));
+    }
 
     /**
      * The exit a {@link #step} runs: the bound node it leaves, which is its source, and the child whose terminal state
@@ -445,7 +481,7 @@ final class Transaction {
             throw fatal;
         } catch (Throwable e) {
             if (depth == 0) {
-                rootStep = Optional.of(new RootStep(from, selectedEdge(machine, from, id)));
+                rootStep = Optional.of(new RootStep(from, id, selectedDestination(machine, from, id)));
             }
             throw e;
         }
@@ -1373,8 +1409,9 @@ final class Transaction {
      * engine code that calls into the application can let through before the commit, an identity's hashCode while
      * the log is rolled back for instance, an abort of the call in its current phase with it as cause. The commit,
      * the hooks and the reactions classify every failure of their own where it happens, so a phase after ACTION never
-     * reaches the abort. The abort names what the root's own step recorded when it threw: the state it read, and the
-     * edge it selected with that edge's identifier and destination, or else the identifier the call requested.
+     * reaches the abort. The abort names what the root's own step recorded when it threw, or when the clock could
+     * not date its rejection: the state it read, the identifier it resolved and the destination of the edge it
+     * selected; before the step read its state, it names the identifier the call requested.
      */
     CallFailedException classify(Throwable error) {
         if (error instanceof CallFailedException failure && owns(failure)) {
@@ -1382,10 +1419,8 @@ final class Transaction {
         }
         uow.markRunningAsThrew();
         Optional<Enum<?>> from = rootStep.map(RootStep::from);
-        Optional<? extends TransitionSpec<?, ?, ?>> edge =
-                rootStep.isPresent() ? rootStep.get().edge() : Optional.empty();
-        Optional<Enum<?>> transition = edge.isPresent() ? Optional.of(edge.get().transition()) : requested;
-        Optional<Enum<?>> to = edge.isPresent() ? Optional.of(edge.get().to()) : Optional.empty();
+        Optional<Enum<?>> transition = rootStep.isPresent() ? Optional.of(rootStep.get().id()) : requested;
+        Optional<Enum<?>> to = rootStep.isPresent() ? rootStep.get().to() : Optional.empty();
         AbortDetails details = new AbortDetails(callKey, callEntity, from, transition, to, Optional.empty(),
                 uow.path(), uow.journal());
         return new TransitionAbortedException(call(), phase, details,
