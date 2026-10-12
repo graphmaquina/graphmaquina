@@ -2087,10 +2087,13 @@ is cancelled, either method can throw `CancellationException` directly. When the
 that call's `CallFailedException`, or an `Error`. Read the `CallFailedException`'s `statesWritten()` and `journal()`,
 as [Handle a failed call](#handle-a-failed-call) shows, before deciding whether to retry; an exceptional future is not
 proof that nothing happened. A request refused before it started ran nothing: one an executor refused
-(`RejectedExecutionException`), one for an identifier of another catalogue (`IllegalArgumentException`), and one made
-where no call may start (`ReentrantTransitionException`, possible when the call runs on the thread of the callback that
-submitted it, through an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks). A
-callback you attach can also fail independently of the machine operation.
+(`RejectedExecutionException`), one with a null argument (`NullPointerException`, whose message names that parameter),
+one for an identifier of another catalogue (`IllegalArgumentException`), and one made where no call may start
+(`ReentrantTransitionException`, possible when the call runs on the thread of the callback that submitted it, through
+an executor that runs tasks inline or a wait that runs a `ForkJoinPool`'s queued tasks). A null argument fails the
+future only when the operation you submit receives it: `async(null)` itself, and a null argument of a low-level
+`StateMachine`'s `async().execute(...)` or `async().reevaluate(...)`, throw their `NullPointerException` on the calling
+thread before anything is submitted. A callback you attach can also fail independently of the machine operation.
 
 Avoid a blanket `exceptionally(error -> ActionOutcome.failed(...))` inside an action unless every covered
 exception truly means a business decline. It would also turn unexpected service/programming errors into a
