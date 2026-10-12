@@ -101,6 +101,19 @@ class RuntimeLogTraceTest {
         }
     }
 
+    /** An identity value whose {@code hashCode()} throws: it can be printed, never put in a hash table. */
+    private record UnhashableId(String id) {
+        @Override
+        public int hashCode() {
+            throw new IllegalStateException("unhashable identity");
+        }
+
+        @Override
+        public String toString() {
+            return id;
+        }
+    }
+
     /** An identity value whose {@code toString()} throws. */
     private record BrokenId(String id) {
         @Override
@@ -957,6 +970,46 @@ class RuntimeLogTraceTest {
                     "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
                     "FINER call=A watch-lookup-threw watcher=Doc/DocStatus moved=Doc/DocStatus#1"
                             + " error=java.lang.IllegalStateException: no owner index",
+                    "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=1"
+                            + " aborted=1 elapsed=<us>"), lines(log));
+        }
+    }
+
+    /**
+     * A lookup that finds an owner logs it only once the owner is taken as a target: an owner whose identity cannot be
+     * hashed makes the lookup throw instead, and the lookup is logged once, as one that threw.
+     */
+    @Test
+    void aWatchLookupWhoseOwnerCannotBeHashedIsTracedOnceAsOneThatThrew() {
+        Doc doc = new Doc("1", DRAFT);
+        Doc owner = new Doc("owner", DRAFT);
+        GraphDefinition<Doc, DocStatus, DocTransition> watching = StateGraph.define(DOCS)
+                .initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "a draft is submitted").statePolicy(REVIEW, "a review is published")
+                .statePolicy(PUBLISHED, "a publication is archived")
+                .transition(SUBMIT, DRAFT, REVIEW).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED).endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .watch(DRAFT, DOCS, (Doc watcher) -> List.of(doc), (Doc moved) -> Optional.of(owner))
+                    .when("always", (Doc watcher, Collection<? extends Doc> peers,
+                            PeerView<Doc, DocStatus, DocTransition> view) -> true)
+                        .execute(SUBMIT)
+                    .endWatch()
+                .build();
+        try (MachineRegistry registry = MachineRegistry.builder().add(StateMachines.from(watching)
+                .state(Doc::status, Doc::setStatus)
+                .identity((Doc target) -> target == owner ? new UnhashableId("owner") : target.id())).build();
+             LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            Outcome<Doc, DocStatus, DocTransition> outcome = registry.of(DOCS).execute(doc, SUBMIT);
+            assertInstanceOf(Reaction.Aborted.class, outcome.reactions().get(0));
+            assertEquals(List.of(
+                    "FINE call=A start Doc/DocStatus SUBMIT",
+                    "FINER call=A depth=0 resolved Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW kind=MOVE",
+                    "FINER call=A commit-check entities=1 hops=1",
+                    "FINER call=A setter Doc/DocStatus#1 DRAFT -> REVIEW entries=1",
+                    "FINE call=A committed Doc/DocStatus#1 DRAFT -SUBMIT-> REVIEW depth=0",
+                    "FINER call=A watch-lookup-threw watcher=Doc/DocStatus moved=Doc/DocStatus#1"
+                            + " error=java.lang.IllegalStateException: unhashable identity",
                     "FINE call=A end code=APPLIED state=REVIEW entity=Doc/DocStatus#1 records=1 starts=0 reactions=1"
                             + " aborted=1 elapsed=<us>"), lines(log));
         }

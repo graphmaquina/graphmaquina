@@ -403,8 +403,9 @@ public final class MachineRegistry implements AutoCloseable {
      * reading which entities moved, which is what most transactions pay. An owner lookup that throws a throwable that
      * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException. Each lookup runs
      * with the reentrancy marker set, so one that calls execute or reevaluate ends that way too. {@code log} is the
-     * log of the call whose commit is dispatched: at TRACE it logs each lookup, with the owner it found or what it
-     * threw, and when that call logs, each reaction's log names its id as the trigger.
+     * log of the call whose commit is dispatched: at TRACE it logs each lookup once, with the owner it found, once
+     * that owner is a target, or what it threw, and when that call logs, each reaction's log names its id as the
+     * trigger.
      */
     List<Reaction> dispatchWatches(CommitSummary summary, int chain, CallLog log) {
         if (watchers.isEmpty()) {
@@ -417,12 +418,12 @@ public final class MachineRegistry implements AutoCloseable {
             for (Watcher<?, ?, ?, ?, ?, ?> watcher : watchers.getOrDefault(moved.key(), List.of())) {
                 try {
                     Optional<EntityRef> owner = watcher.ownerToReevaluate(moved.instance());
+                    if (owner.isPresent()) {
+                        targets.putIfAbsent(owner.get(), watcher);
+                    }
                     if (log.trace()) {
                         log.trace("watch watcher=" + watcher.machine().key() + " moved=" + CallLog.show(moved)
                                 + " owner=" + (owner.isPresent() ? CallLog.show(owner.get()) : "none"));
-                    }
-                    if (owner.isPresent()) {
-                        targets.putIfAbsent(owner.get(), watcher);
                     }
                 } catch (RuntimeException e) {
                     traceLookupThrew(log, watcher, moved, e);
