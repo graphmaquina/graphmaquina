@@ -38,24 +38,37 @@ class FlowEntryTest {
         Doc doc = new Doc("1", DRAFT);
         CallFailure failure = new CallFailure(CallPhase.ACTION, StatesWritten.NONE, new IllegalStateException("x"));
         Map<String, Executable> calls = new LinkedHashMap<>();
-        calls.put("hop", () -> new FlowEntry.Hop(null, Optional.empty(), AT));
-        calls.put("recovery", () -> new FlowEntry.Hop(record(doc), null, AT));
-        calls.put("at", () -> new FlowEntry.Hop(record(doc), Optional.empty(), null));
-        calls.put("failed", () -> new FlowEntry.Recovery(null, "r", Optional.empty(), Optional.empty()));
-        calls.put("reason", () -> new FlowEntry.Recovery(SUBMIT, null, Optional.empty(), Optional.empty()));
-        calls.put("cause", () -> new FlowEntry.Recovery(SUBMIT, "r", null, Optional.empty()));
-        calls.put("kind", () -> new FlowEntry.Recovery(SUBMIT, "r", Optional.empty(), null));
-        calls.put("start", () -> new FlowEntry.Start(null, AT));
-        calls.put("key", () -> new FlowEntry.Rejected(null, doc, DRAFT, SUBMIT, RejectionKind.NO_TRANSITION, "r",
-                Optional.empty(), AT));
-        calls.put("entity", () -> new FlowEntry.Rejected(DOCS, null, DRAFT, SUBMIT, RejectionKind.NO_TRANSITION, "r",
-                Optional.empty(), AT));
-        calls.put("guard", () -> new FlowEntry.Rejected(DOCS, doc, DRAFT, SUBMIT, RejectionKind.NO_TRANSITION, "r",
-                null, AT));
-        calls.put("failure", () -> new FlowEntry.Failed(null, AT));
+        calls.put("Hop.hop", () -> new FlowEntry.Hop(null, Optional.empty(), AT));
+        calls.put("Hop.recovery", () -> new FlowEntry.Hop(record(doc), null, AT));
+        calls.put("Hop.at", () -> new FlowEntry.Hop(record(doc), Optional.empty(), null));
+        calls.put("Recovery.failed", () -> new FlowEntry.Recovery(null, "r", Optional.empty(), Optional.empty()));
+        calls.put("Recovery.reason", () -> new FlowEntry.Recovery(SUBMIT, null, Optional.empty(), Optional.empty()));
+        calls.put("Recovery.cause", () -> new FlowEntry.Recovery(SUBMIT, "r", null, Optional.empty()));
+        calls.put("Recovery.kind", () -> new FlowEntry.Recovery(SUBMIT, "r", Optional.empty(), null));
+        calls.put("Start.start", () -> new FlowEntry.Start(null, AT));
+        calls.put("Start.at", () -> new FlowEntry.Start(start(doc, new Doc("2", DRAFT)), null));
+        calls.put("Rejected.key", () -> new FlowEntry.Rejected(null, doc, DRAFT, SUBMIT, RejectionKind.NO_TRANSITION,
+                "r", Optional.empty(), AT));
+        calls.put("Rejected.entity", () -> new FlowEntry.Rejected(DOCS, null, DRAFT, SUBMIT,
+                RejectionKind.NO_TRANSITION, "r", Optional.empty(), AT));
+        calls.put("Rejected.from", () -> new FlowEntry.Rejected(DOCS, doc, null, SUBMIT, RejectionKind.NO_TRANSITION,
+                "r", Optional.empty(), AT));
+        calls.put("Rejected.transition", () -> new FlowEntry.Rejected(DOCS, doc, DRAFT, null,
+                RejectionKind.NO_TRANSITION, "r", Optional.empty(), AT));
+        calls.put("Rejected.kind", () -> new FlowEntry.Rejected(DOCS, doc, DRAFT, SUBMIT, null, "r", Optional.empty(),
+                AT));
+        calls.put("Rejected.reason", () -> new FlowEntry.Rejected(DOCS, doc, DRAFT, SUBMIT,
+                RejectionKind.NO_TRANSITION, null, Optional.empty(), AT));
+        calls.put("Rejected.guard", () -> new FlowEntry.Rejected(DOCS, doc, DRAFT, SUBMIT,
+                RejectionKind.NO_TRANSITION, "r", null, AT));
+        calls.put("Rejected.at", () -> new FlowEntry.Rejected(DOCS, doc, DRAFT, SUBMIT, RejectionKind.NO_TRANSITION,
+                "r", Optional.empty(), null));
+        calls.put("Failed.failure", () -> new FlowEntry.Failed(null, AT));
+        calls.put("Failed.at", () -> new FlowEntry.Failed(failure, null));
         for (Map.Entry<String, Executable> call : calls.entrySet()) {
+            String component = call.getKey().substring(call.getKey().indexOf('.') + 1);
             NullPointerException error = assertThrows(NullPointerException.class, call.getValue(), call.getKey());
-            assertTrue(error.getMessage().startsWith(call.getKey() + " "), error.getMessage());
+            assertTrue(error.getMessage().startsWith(component + " "), call.getKey() + ": " + error.getMessage());
         }
     }
 

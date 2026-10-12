@@ -45,6 +45,7 @@ import io.github.graphmaquina.fixtures.LibraryLog;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -57,6 +58,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.UnaryOperator;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -66,6 +69,9 @@ import org.junit.jupiter.api.Test;
  * check first. Each write is logged at TRACE.
  */
 class FlowBagTest {
+
+    private static final Pattern CALL_ID = Pattern.compile("(call|trigger)=(\\d+)");
+    private static final Pattern ELAPSED = Pattern.compile(" elapsed=\\d+us$");
 
     private static final FlowKey<String> BATCH = FlowKey.of("batch", String.class);
     private static final FlowKey<String> NOTE = FlowKey.visible("note", String.class);
@@ -785,12 +791,25 @@ class FlowBagTest {
         assertEquals(REVIEW, child.status());
     }
 
-    /** Each record as {@code LEVEL message}, the call id replaced by A and the elapsed time that ends a line by us. */
+    /**
+     * Each record as {@code LEVEL message}, every call id replaced by a letter in order of first appearance, A for the
+     * first, so the lines of another call never read as this call's, and the elapsed time that ends a line by us.
+     */
     private static List<String> lines(LibraryLog log) {
+        Map<String, String> letters = new HashMap<>();
         List<String> lines = new ArrayList<>();
         for (LogRecord record : log.records()) {
-            lines.add(record.getLevel().getName() + " " + record.getMessage().replaceFirst("^call=\\d+ ", "call=A ")
-                    .replaceFirst(" elapsed=\\d+us$", " elapsed=<us>"));
+            Matcher ids = CALL_ID.matcher(record.getMessage());
+            StringBuilder line = new StringBuilder(record.getLevel().getName()).append(' ');
+            while (ids.find()) {
+                String id = ids.group(2);
+                if (!letters.containsKey(id)) {
+                    letters.put(id, String.valueOf((char) ('A' + letters.size())));
+                }
+                ids.appendReplacement(line, ids.group(1) + "=" + letters.get(id));
+            }
+            ids.appendTail(line);
+            lines.add(ELAPSED.matcher(line).replaceFirst(" elapsed=<us>"));
         }
         return lines;
     }
