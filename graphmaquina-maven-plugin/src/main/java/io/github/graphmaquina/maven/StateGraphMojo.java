@@ -14,7 +14,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileSystemLoopException;
 import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -78,6 +77,13 @@ public abstract class StateGraphMojo extends AbstractMojo {
     private static final Set<String> WALK_EXCLUDED_NAMES = Set.of("CVS", ".cvsignore", "SCCS", "vssver.scc", ".svn",
         ".git", ".gitattributes", ".gitignore", ".gitmodules", ".hg", ".hgignore", ".hgsub", ".hgsubstate", ".hgtags",
         ".bzr", ".bzrignore", ".DS_Store");
+
+    /**
+     * The directories the generator's walk of a whole root leaves out that the scanner of the compiler leaves out with
+     * everything inside them as well, since an exclude ending in {@code /**} names each: those of the version control
+     * systems both lists name. Nothing below one is read on either side.
+     */
+    private static final Set<String> PRUNED_ALIKE = Set.of("CVS", "SCCS", ".svn", ".bzr", ".hg", ".git");
 
     /** The project this compilation belongs to; injected from {@code ${project}}. */
     private MavenProject project;
@@ -155,7 +161,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
      *
      * @return the request the generator reads for the main source set
      * @throws MojoExecutionException if Maven has not resolved the compile classpath of the project, or a source
-     *     root the compiler narrows cannot be read
+     *     root this plugin hands over file by file, or a directory below it, cannot be walked
      */
     protected final Request mainRequest() throws MojoExecutionException {
         Path build = buildDirectory();
@@ -184,7 +190,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
      *
      * @return the request the generator reads for the test source set
      * @throws MojoExecutionException if Maven has not resolved the test classpath of the project, or a source
-     *     root the compiler narrows cannot be read
+     *     root this plugin hands over file by file, or a directory below it, cannot be walked
      */
     protected final Request testRequest() throws MojoExecutionException {
         Path build = buildDirectory();
@@ -538,11 +544,13 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * one the scanner of the compiler selects inside a directory whose name a default exclude of Ant names, such as
      * {@code old~} or {@code .gitignore}. plexus-utils enters such a directory and leaves out only the files those
      * patterns name, while the generator's walk, like Gradle's, leaves the directory out with everything inside it.
+     * A directory both leave out with everything inside it, such as {@code .git}, is not entered, and a directory
+     * that cannot be listed is skipped, as plexus-utils skips it, so the walk fails on none.
      *
      * @param root a source root of the compilation
      * @param patterns the includes and excludes of the compiler execution, which narrow no root
      * @return {@code true} if javac compiles such a source
-     * @throws IOException if the root, or a directory below it, cannot be walked
+     * @throws IOException never, since the walk skips whatever it cannot read; {@link Files#walkFileTree} declares it
      */
     private static boolean compilesWhatTheWalkLeavesOut(Path root, SourcePatterns patterns) throws IOException {
         if (!Files.isDirectory(root)) {
@@ -551,6 +559,13 @@ public abstract class StateGraphMojo extends AbstractMojo {
         List<Path> leftOut = new ArrayList<>();
         Files.walkFileTree(root, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE,
             new SimpleFileVisitor<Path>() {
+
+                @Override
+                public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attributes) {
+                    return !directory.equals(root) && PRUNED_ALIKE.contains(directory.getFileName().toString())
+                        ? FileVisitResult.SKIP_SUBTREE
+                        : FileVisitResult.CONTINUE;
+                }
 
                 @Override
                 public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
@@ -570,11 +585,13 @@ public abstract class StateGraphMojo extends AbstractMojo {
                 }
 
                 @Override
-                public FileVisitResult visitFileFailed(Path file, IOException failure) throws IOException {
-                    if (failure instanceof FileSystemLoopException) {
-                        return FileVisitResult.CONTINUE;
-                    }
-                    throw failure;
+                public FileVisitResult visitFileFailed(Path file, IOException failure) {
+                    return FileVisitResult.CONTINUE;
+                }
+
+                @Override
+                public FileVisitResult postVisitDirectory(Path directory, IOException failure) {
+                    return FileVisitResult.CONTINUE;
                 }
             });
         return !leftOut.isEmpty();

@@ -26,6 +26,7 @@ import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.nio.file.attribute.FileTime;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -33,6 +34,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -3245,6 +3247,27 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * The directory of a version control system, such as {@code .git}, holds nothing javac compiles, and the
+     * generator never enters it: neither does this plugin when it looks for a source the generator would miss, so a
+     * directory inside it that cannot be listed, as {@code .git/objects} can be, fails nothing.
+     */
+    @Test
+    void aDirectoryInsideTheDirectoryOfAVersionControlSystemThatCannotBeListedFailsNothing() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.writeFile("src/main/java/fx/.git/objects/Junk.java", new byte[0]);
+        Path objects = fixture.projectDirectory().resolve("src/main/java/fx/.git/objects");
+        forbidListing(objects);
+        try {
+            MavenResult result = fixture.run("package");
+
+            assertEquals(0, result.exitCode(), result.output());
+            assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        } finally {
+            allowListing(objects);
+        }
+    }
+
+    /**
      * Includes or excludes make this plugin hand the generator the files they select, one by one. A hand-written
      * type that only shares the file name of a generated source, in a package that merely ends like the
      * generated one's, is no collision there either: a listed file stands where its package declaration puts it.
@@ -3801,6 +3824,26 @@ class MavenPluginIntegrationTest {
                     + ':' + text(dependency, "version"));
         }
         return dependencies;
+    }
+
+    /**
+     * Takes every permission on {@code directory} away, so that it cannot be listed, and aborts the test where it still
+     * can be, as for a user who may read anything or on a file system without POSIX permissions.
+     */
+    private static void forbidListing(Path directory) throws IOException {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
+                "the file system has no POSIX permissions");
+        Files.setPosixFilePermissions(directory, Set.of());
+        boolean listed = directory.toFile().list() != null;
+        if (listed) {
+            allowListing(directory);
+        }
+        assumeTrue(!listed, "this user lists a directory it has no permission on");
+    }
+
+    /** Gives the owner of {@code directory} back every permission on it, so the temporary directory can be deleted. */
+    private static void allowListing(Path directory) throws IOException {
+        Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwx------"));
     }
 
     /** The descriptor packaged inside {@code jar}, which is what Maven reads to find a goal. */
