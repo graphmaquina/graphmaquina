@@ -545,12 +545,26 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `GraphView.terminals()` keep the declared order; `MachineOutlineValidator` no longer takes two names that
   contain `/` for one key; and a context's `peer(Class)` reports a wrong thread, a stale context or a poisoned
   transaction before an unknown facade, as its other calls do.
+- **A watch's lookups must answer.** A `peersOf` that returns null instead of a collection, and an `ownerOf` that
+  returns null instead of an `Optional`, are refused with a `NullPointerException` that says it returned null,
+  before any condition runs: a null collection used to reach the watch's conditions, and a null owner failed inside
+  the engine. An owner lookup's `InterruptedException`, which its `Reaction.Aborted` carries, interrupts the thread
+  again.
+- **A context's peer view refuses even over an empty collection.** `allIn`, `anyIn` and `noneIn` of a view a
+  context's `peer(...)` gave throw `StaleContextException` once the transaction ended, and `WrongThreadException`
+  on another thread, whatever collection they are given; over an empty one they used to answer.
+- **Values refuse what no call could use.** `MachineKey` refuses a primitive class token as its entity type, which
+  every call failed to cast its entity to, and `StatePolicy.reasonFor` and `MachineOutline.outgoing` refuse null.
 
 ### Graph declarations
 
 - **New DSL refusals.** `SG507` for an edge never closed with `endTransition()`, which used to be dropped, and
   for an edge that declares more than one action, `onFailure` or `timeout`, where the last one used to win.
   `SG404` for a `when(...)` that no `execute(...)` follows, and an `execute(...)` with no pending `when(...)`.
+- **Messages name constants by `name()`.** The DSL's problems and refusals, the refusals of `TransitionSpec`,
+  `RecoveryRule`, `StatePolicy` and `WatchSpec`, the refusals of a registry's build, and a call's refusal of an
+  identifier of another enum name states and identifiers by `name()`, never through a `toString()` the application
+  overrides, which used to change their text or, when it threw, replace the refusal, or refuse a valid declaration.
 - **`failsOn`.** `SG302` also refuses a `CancellationException` or one of its subtypes, and
   `CompletionException` and `ExecutionException` themselves, in the DSL and in the processor. A cancellation
   never matched, and the two wrappers are unwrapped before matching whenever they carry a cause.
