@@ -23,6 +23,7 @@ import javax.inject.Inject;
 import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -50,13 +51,44 @@ public abstract class GenerateGraphApi extends DefaultTask {
      * changes the original Java sources javac compiles, the plugin refuses the generation before the generator runs,
      * and the preparation refuses the compilation when the generation is up to date. They are what the generator
      * parses, so the task is out of date whenever any of them changes, and it runs after every task those directories
-     * are built by.
+     * are built by. Each is fingerprinted relative to the directory it lies in, which keeps where that directory lies
+     * out of the fingerprint; {@link #getSourcePaths()} tracks where each source lies in the project.
      *
      * @return the original sources of this source set
      */
     @InputFiles
     @PathSensitive(PathSensitivity.RELATIVE)
     public abstract ConfigurableFileCollection getSources();
+
+    /**
+     * The path of every original source relative to the project directory, sorted and written with forward slashes on
+     * every platform, as the generator publishes the origin of a declaration; a source the project directory cannot
+     * be relativized against, such as one on another drive, keeps its absolute path, as it does there.
+     *
+     * <p>{@link #getSources()} fingerprints every source relative to its own source directory, which cannot tell one
+     * directory of the source set from another. This list does, so a source moved unchanged from one directory of the
+     * source set to another puts the task out of date, and an incremental build publishes the origin a clean build
+     * publishes.</p>
+     *
+     * @return the paths of the original sources, relative to the project directory
+     */
+    @Input
+    public List<String> getSourcePaths() {
+        Path project = getProjectDirectory().get().getAsFile().toPath().toAbsolutePath().normalize();
+        List<String> paths = new ArrayList<>();
+        for (File source : getSources().getAsFileTree()) {
+            Path target = source.toPath().toAbsolutePath().normalize();
+            Path shown;
+            try {
+                shown = project.relativize(target);
+            } catch (IllegalArgumentException differentRoot) {
+                shown = target;
+            }
+            paths.add(shown.toString().replace(shown.getFileSystem().getSeparator(), "/"));
+        }
+        paths.sort(Comparator.naturalOrder());
+        return paths;
+    }
 
     /**
      * The compile classpath of the source set, without its own class output.

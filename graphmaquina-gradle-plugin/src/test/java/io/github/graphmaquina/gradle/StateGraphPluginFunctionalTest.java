@@ -219,6 +219,42 @@ class StateGraphPluginFunctionalTest {
         assertTrue(published.contains("fx.Orders"));
     }
 
+    /**
+     * The generator publishes the origin of every declaration relative to the project directory, while the generation
+     * fingerprints each original source relative to its own source directory. A machine's source moved unchanged from
+     * one populated source directory of the source set to another still regenerates, so the incremental build
+     * publishes the origin a clean build publishes, and a build after it changes nothing.
+     */
+    @Test
+    void movingASourceToAnotherSourceDirectoryPublishesItsNewOrigin() throws IOException {
+        PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);
+        fixture.appendToBuildScript("""
+                sourceSets { main { java.srcDir("src/extra/java") } }
+                """);
+        fixture.writeFile("src/extra/java/fx/Extra.java", """
+                package fx;
+
+                /** A plain class that keeps the second source directory populated. */
+                final class Extra {
+
+                    private Extra() {
+                    }
+                }
+                """);
+        fixture.run("jar");
+        assertEquals("src/main/java/fx/Orders.java", fixture.publishedOrigin("fx.Orders"));
+        Path project = fixture.projectDirectory();
+        Files.move(project.resolve("src/main/java/fx/Orders.java"), project.resolve("src/extra/java/fx/Orders.java"));
+
+        BuildResult moved = fixture.run("jar");
+        BuildResult again = fixture.run("jar");
+
+        assertEquals(TaskOutcome.SUCCESS, moved.task(":generateStateGraphApi").getOutcome());
+        assertEquals("src/extra/java/fx/Orders.java", fixture.publishedOrigin("fx.Orders"));
+        assertEquals(TaskOutcome.UP_TO_DATE, again.task(":generateStateGraphApi").getOutcome());
+        assertEquals(TaskOutcome.UP_TO_DATE, again.task(":compileJava").getOutcome());
+    }
+
     @Test
     void deletingLastExportPublishesEmptyIndex() throws IOException {
         PluginFixture fixture = PluginFixture.basic(tempDirectory, FIXTURE_REPOSITORY);

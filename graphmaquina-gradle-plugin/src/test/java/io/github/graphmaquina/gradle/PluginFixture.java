@@ -1334,6 +1334,24 @@ public final class PluginFixture {
         return exportsOf(readJson(directory.resolve(relativePath)));
     }
 
+    /**
+     * The {@code origin.path} the index the project's jar publishes gives the machine {@code facade}: the path of its
+     * source, relative to the project directory.
+     *
+     * @param facade the qualified name of the machine's facade
+     * @return the published origin path
+     * @throws IllegalStateException if that index declares no such machine
+     */
+    public String publishedOrigin(String facade) {
+        for (JsonElement graph : readJarJson(EXPORTS).getAsJsonObject("model").getAsJsonArray("graphs")) {
+            JsonObject machine = graph.getAsJsonObject();
+            if (facade.equals(machine.get("facade").getAsString())) {
+                return machine.getAsJsonObject("origin").get("path").getAsString();
+            }
+        }
+        throw new IllegalStateException("the index the jar publishes declares no machine " + facade);
+    }
+
     private static List<String> exportsOf(JsonObject index) {
         JsonObject model = index.getAsJsonObject("model");
         List<String> exports = new ArrayList<>();
