@@ -144,7 +144,7 @@ public final class MachineRegistry implements AutoCloseable {
         for (S state : definition.key().states().getEnumConstants()) {
             Optional<WatchSpec<E, S, T, ?, ?, ?>> watch = definition.watch(state);
             if (watch.isPresent() && !keys.contains(watch.get().peer())) {
-                throw new IllegalStateException("the watch of " + definition.key() + "." + state + " points to "
+                throw new IllegalStateException("the watch of " + definition.key() + "." + state.name() + " points to "
                         + watch.get().peer() + ", which is not in the registry");
             }
         }
@@ -167,11 +167,11 @@ public final class MachineRegistry implements AutoCloseable {
             SubmachineSpec<E, S, T, ?, ?, ?> spec = submachine.get();
             Optional<StateMachines.Builder<?, ?, ?>> child = Optional.ofNullable(builders.get(spec.childKey()));
             if (child.isEmpty()) {
-                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state + " is "
+                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state.name() + " is "
                         + spec.childKey() + ", which is not in the registry");
             }
             if (child.get().definition() != spec.child()) {
-                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state
+                throw new IllegalStateException("the sub-machine of " + definition.key() + "." + state.name()
                         + " was built from another definition of " + spec.childKey() + " than the registered machine");
             }
             bindings.computeIfAbsent(spec.childKey(), (MachineKey<?, ?, ?> key) -> new ArrayList<>())
@@ -194,7 +194,7 @@ public final class MachineRegistry implements AutoCloseable {
 
         /** {@code <Key>.<FROM> -<ID>->}, which names the edge in its graph. */
         String describe() {
-            return graph.key() + "." + edge.from() + " -" + edge.transition() + "->";
+            return graph.key() + "." + edge.from().name() + " -" + edge.transition().name() + "->";
         }
     }
 

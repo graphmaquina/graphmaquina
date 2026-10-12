@@ -172,7 +172,7 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     void requireTransition(T transition) {
         if (!key().transitions().isInstance(transition)) {
             throw new IllegalArgumentException(
-                    "transition must belong to " + key().transitions().getName() + ": " + transition);
+                    "transition must belong to " + key().transitions().getName() + ": " + transition.name());
         }
     }
 
