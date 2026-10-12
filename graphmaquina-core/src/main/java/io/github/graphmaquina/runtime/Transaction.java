@@ -1672,7 +1672,9 @@ final class Transaction {
     /**
      * The rest of cascadeAll once its elements are accepted: the identifier, the machine, then every element. A call
      * that logs at TRACE logs each COLLECT element it rolls back, once the identity of the element was registered,
-     * with the abort that ended its step. When printing the entities in flight for the aggregate throws an Error, an
+     * with the abort that ended its step. A rollback that an identity's equals or hashCode stops reaches the action
+     * as any other failure that leaves the cascade does, through {@link #poisonWith}, and the call keeps the
+     * element's abort as its poison. When printing the entities in flight for the aggregate throws an Error, an
      * aggregate whose path names each entity's machine alone poisons the transaction first, as {@link #poisonWith}
      * says, and then that Error propagates.
      */
@@ -1703,7 +1705,13 @@ final class Transaction {
                 if (error instanceof TransitionAbortedException abort && owns(abort)
                         && !uow.poisonWrapsAForeignFailure()) {
                     uow.poison(abort);
-                    uow.rollbackTo(savepoint);
+                    try {
+                        uow.rollbackTo(savepoint);
+                    } catch (Error fatal) {
+                        throw fatal;
+                    } catch (Throwable stopped) {
+                        throw poisonWith(caller, key.toString(), stopped);
+                    }
                     if (target.isPresent()) {
                         log.trace(caller.contextDepth(), "collect-rollback " + CallLog.show(target.get()) + " "
                                 + id.name() + " error=" + CallLog.show(abort));
