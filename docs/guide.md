@@ -2639,7 +2639,9 @@ no parent: every binding is declared on the parent's side, so one machine can be
 machines. Three rules make the contract:
 
 - An edge that enters a bound state starts the child at the initial state of the child's graph, in the same unit of
-  work as that edge.
+  work as that edge. Its `childOf` must answer a child then: an empty answer aborts the step that enters before its
+  action runs, with a `TransitionAbortedException` such as `Booking/BookingStatus entered DEPOSIT with no
+  Payment/PaymentStatus`, and the call commits nothing.
 - A parent holds its child while it is in the bound state, or leaving it, and its `childOf` answers that very child.
   A call to a child is refused as `DETACHED` when a binding finds its parent but no parent holds it: the parent has
   left the state, or holds another child or none there. A child for which no binding finds a parent is a free machine
@@ -4030,7 +4032,9 @@ that behavior is required.
 
 `submachine(state, child, childOf, parentOf)` binds another machine to a state: `child` is that machine's own
 `GraphDefinition`, `childOf` returns the child entity of a parent and `parentOf` the parent of a child, both as an
-`Optional`. `submachine(state, child)` binds a machine over the same entity, whose lookups return the entity itself.
+`Optional`. An edge that enters `state` while `childOf` answers empty aborts its step before the action runs, as
+[compose machines](#compose-machines) says. `submachine(state, child)` binds a machine over the same entity, whose
+lookups return the entity itself.
 `exit(terminal, id)` maps a terminal state of the child to an identifier of the parent, its exit, and
 `endSubmachine()` returns to the graph. `build()` checks the bindings (`SG801` to `SG805`), and the definition's
 `submachine(state)` returns the binding of a state. A registry that holds the parent must hold the child's machine
