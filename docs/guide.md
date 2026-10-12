@@ -1276,8 +1276,8 @@ A failure route is an ordinary edge, declared from the origin of the edge that m
 
 When `register` fails, the runtime discards the `SUBMIT` edge's pending changes, resolves `DECLINE` from
 `OPEN` — the origin, never the destination it was heading for — and commits it. It returns `Outcome.Failed`,
-whose `transition()` is `SUBMIT`, whose `hasTarget` was `REVIEW`, whose `failureTransition()` is `DECLINE`
-and whose `movedTo()` is `FAILED`.
+whose `transition()` is `SUBMIT`, whose `to()` is `REVIEW`, the destination it did not reach, whose
+`failureTransition()` is `DECLINE` and whose `movedTo()` is `FAILED`.
 
 `onFailure` names an identifier, so a route may legitimately reach the same destination as the edge it
 recovers: identity, not the destination, distinguishes them. Naming the failing edge's own key is `SG301`, as
