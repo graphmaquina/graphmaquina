@@ -8,10 +8,12 @@ import io.github.graphmaquina.api.TransitionRecord;
 import io.github.graphmaquina.api.TransitionSpec;
 import io.github.graphmaquina.error.AmbiguousIdentityException;
 import io.github.graphmaquina.error.StateMachineException;
+import io.github.graphmaquina.internal.JournalSnapshot;
 import java.time.Instant;
 import java.time.InstantSource;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.HashMap;
@@ -27,9 +29,10 @@ import java.util.Optional;
  * entity with its states and puts it back entry by entry with its undo, so a rollback never rebuilds it. pending is
  * built from the log by the first lookup that finds it non-empty, and append maintains it from then on, so a root
  * that never reads a pending state after its first append allocates none of it. journal answers which actions
- * actually ran and is never reverted. flow is the call's flow, created at the start of the call when its root machine
- * records its trail, and otherwise by the first write, a put or a remove, that a step or a hook of the call makes; a
- * read never creates it. A call that writes nothing and records no trail
+ * actually ran and is never reverted; the call's failures share its entries, as {@link #journal()} says. flow is the
+ * call's flow, created at the start of the call when its root machine records its trail, and otherwise by the first
+ * write, a put or a remove, that a step or a hook of the call makes; a read never creates it. A call that writes
+ * nothing and records no trail
  * pays two empty fields, and every rollback reverts the flow's writes with the log. No rollback follows the commit,
  * so nothing reverts what a hook writes. A call that records its trail marks each entry of the log on its clock,
  * right after the entry is in the log, and every rollback truncates the marks with the log; a call that does not
@@ -37,13 +40,22 @@ import java.util.Optional;
  */
 final class UnitOfWork {
 
+    private static final ActionRecord[] NO_ACTIONS = new ActionRecord[0];
+
     private final List<LogEntry> log = new ArrayList<>();
     /**
      * Created from the log by the first lookup that finds it non-empty: a root that appends and never reads a
      * pending state back must not pay for the index.
      */
     private Optional<PendingIndex> pending = Optional.empty();
-    private final List<ActionRecord> journal = new ArrayList<>();
+    /**
+     * The journal, in its first journalSize slots, grown as an ArrayList grows. An entry is only appended, and its
+     * status changes once, from RUNNING. The slots below journalShared, the size of the latest snapshot of this array,
+     * are never written again: a status that would change one is written to a copy of the array.
+     */
+    private ActionRecord[] journal = NO_ACTIONS;
+    private int journalSize;
+    private int journalShared;
     // Sized for a root and two nested cascades: a default-sized deque costs every call 56 more bytes.
     private final Deque<InFlight> inFlight = new ArrayDeque<>(3);
     private final Map<EntityRef, EntityRef> known = new HashMap<>();
@@ -290,18 +302,49 @@ final class UnitOfWork {
         return Optional.empty();
     }
 
+    /** Appends the entry; a full array is replaced by a larger copy, which no snapshot shares yet. */
     int appendJournal(ActionRecord record) {
-        journal.add(record);
-        return journal.size() - 1;
+        if (journalSize == journal.length) {
+            journal = Arrays.copyOf(journal, journalSize == 0 ? 10 : journalSize + (journalSize >> 1));
+            journalShared = 0;
+        }
+        journal[journalSize] = record;
+        return journalSize++;
     }
 
+    /**
+     * Sets the status of an entry. Its own status again changes nothing: an action that an abort marked THREW while it
+     * ran ends THREW, the abort having poisoned the call. The engine never changes an entry a snapshot holds, since no
+     * snapshot it takes holds a running action: an abort marks each one THREW first, and none runs once the commit
+     * begins. Should a status change such an entry all the same, it is written to a copy of the array, and every
+     * snapshot keeps the entry it holds.
+     */
     void journalStatus(int index, ActionStatus status) {
-        ActionRecord old = journal.get(index);
-        journal.set(index, new ActionRecord(old.key(), old.entity(), old.from(), old.transition(), old.to(),
-                old.action(), old.depth(), status));
+        ActionRecord old = journal[index];
+        if (old.status() == status) {
+            return;
+        }
+        if (index < journalShared) {
+            journal = journal.clone();
+            journalShared = 0;
+        }
+        journal[index] = new ActionRecord(old.key(), old.entity(), old.from(), old.transition(), old.to(),
+                old.action(), old.depth(), status);
     }
 
-    List<ActionRecord> journal() { return List.copyOf(journal); }
+    /**
+     * The journal so far, unmodifiable: the shared empty list before any action ran, then a {@link JournalSnapshot}
+     * that reads the array in place. Later snapshots share that array until it grows, so the aborts of a COLLECT over
+     * many failing elements, each with the journal as it stood when its element failed, hold memory linear in the
+     * journal's length rather than a copy of it each.
+     */
+    List<ActionRecord> journal() {
+        if (journalSize == 0) {
+            return List.of();
+        }
+        journalShared = journalSize;
+        return new JournalSnapshot(journal, journalSize);
+    }
 
     /**
      * A nested abort condemns every action in flight: the poison keeps the parent from finishing as if nothing
@@ -309,8 +352,8 @@ final class UnitOfWork {
      * the final one.
      */
     void markRunningAsThrew() {
-        for (int i = 0; i < journal.size(); i++) {
-            if (journal.get(i).status() == ActionStatus.RUNNING) {
+        for (int i = 0; i < journalSize; i++) {
+            if (journal[i].status() == ActionStatus.RUNNING) {
                 journalStatus(i, ActionStatus.THREW);
             }
         }
@@ -381,7 +424,7 @@ final class UnitOfWork {
      * including one attempted from an identity's hashCode while this log is grouped.
      */
     CommitSummary commitSummary() {
-        if (journal.isEmpty() && log.size() == 1) {
+        if (journalSize == 0 && log.size() == 1) {
             return CommitSummary.single(log.get(0));
         }
         return CommitSummary.from(log);

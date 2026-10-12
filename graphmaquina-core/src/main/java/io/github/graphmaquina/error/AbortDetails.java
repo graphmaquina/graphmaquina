@@ -2,6 +2,7 @@ package io.github.graphmaquina.error;
 
 import io.github.graphmaquina.api.ActionRecord;
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.internal.JournalSnapshot;
 import java.util.List;
 import java.util.Optional;
 import lombok.NonNull;
@@ -37,7 +38,8 @@ public record AbortDetails(@NonNull MachineKey<?, ?, ?> key, @NonNull Object ent
 
     public AbortDetails {
         cascadePath = List.copyOf(cascadePath);
-        journal = List.copyOf(journal);
+        // The runtime's snapshot of a journal never changes: the aborts of a call share it instead of copying it.
+        journal = journal instanceof JournalSnapshot ? journal : List.copyOf(journal);
     }
 
     /**
