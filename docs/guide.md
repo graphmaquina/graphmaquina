@@ -3966,7 +3966,9 @@ executors.
 Read the full compiler message, including the source location and member it identifies. A wrong enum type or
 symbol category may be an ordinary javac error rather than an `SG` diagnostic: writing a state where an
 identifier belongs, or a constant of another machine's catalogue, is refused by javac before any GraphMaquina
-code runs.
+code runs. A mistyped generated symbol, such as `DocActionsRefs.Publsh.class`, is javac's alone to refuse too, as
+`cannot find symbol` once annotation processing is over: the processor still reports every other problem of that
+machine's declarations, but none about its graph as a whole, and generates no companion for it.
 
 ### Graph and declaration diagnostics
 

@@ -33,9 +33,12 @@ import javax.lang.model.SourceVersion;
 import javax.lang.model.element.AnnotationMirror;
 import javax.lang.model.element.AnnotationValue;
 import javax.lang.model.element.Element;
+import javax.lang.model.element.ExecutableElement;
 import javax.lang.model.element.NestingKind;
 import javax.lang.model.element.TypeElement;
+import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
+import javax.lang.model.type.TypeMirror;
 
 /**
  * Entry point. Claims the annotations {@link ManifestRegistry} enumerates for this compilation, the fixed ones
@@ -69,6 +72,12 @@ import javax.lang.model.type.DeclaredType;
  * <p>Only a machine some round hands to this processor gets a companion. javac hands none of the sources it
  * compiles implicitly, from the source path, so a set that holds such a machine of this compilation is reported
  * and gets no companion either, and an index that names one is not published.</p>
+ *
+ * <p>A value javac could not resolve, such as a class literal that names no type, is javac's alone to refuse. javac
+ * hands it to the processor unread and reports it once processing is over. A machine whose declarations, on the
+ * facade or on one of its members, hold such a value is built like a machine whose vocabulary is misplaced: every
+ * other problem of its declarations is reported, but nothing is concluded from its graph as a whole, which misses
+ * what that value declares, and it gets no companion; nor is the index, which names it, published.</p>
  */
 public final class StateGraphProcessor extends AbstractProcessor {
 
@@ -89,6 +98,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private Map<String, MachineModel> models;
     private Set<String> failed;
     private Set<String> withheld;
+    private Set<String> handed;
     private Set<String> refused;
     private Set<String> generated;
     private Set<String> verified;
@@ -117,6 +127,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
         models = new LinkedHashMap<>();
         failed = new HashSet<>();
         withheld = new HashSet<>();
+        handed = new HashSet<>();
         refused = new HashSet<>();
         generated = new LinkedHashSet<>();
         verified = new LinkedHashSet<>();
@@ -160,6 +171,7 @@ public final class StateGraphProcessor extends AbstractProcessor {
         validateRuntimeNames(round);
         failed.addAll(legacy.report(round));
         for (Element element : round.getElementsAnnotatedWith(GenerateGraphApi.class)) {
+            handed.add(((TypeElement) element).getQualifiedName().toString());
             resolve((TypeElement) element, round);
         }
         for (Element element : round.getElementsAnnotatedWith(StateGraphs.class)) {
@@ -326,6 +338,53 @@ public final class StateGraphProcessor extends AbstractProcessor {
         return false;
     }
 
+    /**
+     * Whether a declaration of {@code type}, on the facade or on one of its members, holds a value javac could not
+     * resolve, nested annotations and arrays included. javac hands such a value to the processor as the text of an
+     * error, a string where its element declares something else, and reports it once processing is over.
+     */
+    private static boolean holdsUnresolvedValue(TypeElement type) {
+        if (unresolved(type)) {
+            return true;
+        }
+        for (Element member : type.getEnclosedElements()) {
+            if (unresolved(member)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean unresolved(Element element) {
+        for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
+            if (unresolved(mirror)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean unresolved(AnnotationMirror mirror) {
+        for (Map.Entry<? extends ExecutableElement, ? extends AnnotationValue> value
+                : mirror.getElementValues().entrySet()) {
+            if (unresolved(value.getKey().getReturnType(), value.getValue())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean unresolved(TypeMirror declared, AnnotationValue value) {
+        return switch (value.getValue()) {
+            case String text -> !(declared instanceof DeclaredType type
+                    && ((TypeElement) type.asElement()).getQualifiedName().contentEquals("java.lang.String"));
+            case AnnotationMirror nested -> unresolved(nested);
+            case List<?> values -> declared instanceof ArrayType array && values.stream()
+                    .anyMatch((Object item) -> unresolved(array.getComponentType(), (AnnotationValue) item));
+            default -> false;
+        };
+    }
+
     private boolean names(Element element) {
         for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
             if (names(mirror)) {
@@ -384,7 +443,9 @@ public final class StateGraphProcessor extends AbstractProcessor {
      * set that holds it. A machine whose vocabulary is written where no builder reads it, or on the facade of
      * another machine, is still built, so every other problem of its declarations is reported, but without the
      * checks of its graph as a whole, which misses that vocabulary, and it is never generated. Nor is a machine
-     * whose companion name was refused, which is still built and checked like every other machine of the round.
+     * whose companion name was refused, which is still built and checked like every other machine of the round,
+     * nor a machine whose declarations hold a value javac could not resolve, which is built as one whose vocabulary
+     * is misplaced is: javac refuses that value.
      */
     private Optional<MachineModel> resolve(TypeElement type, RoundEnvironment round) {
         String name = type.getQualifiedName().toString();
@@ -395,8 +456,9 @@ public final class StateGraphProcessor extends AbstractProcessor {
             failed.add(name);
             return Optional.empty();
         }
-        Optional<MachineModel> model = build(type, !withheld.contains(name));
-        if (model.isEmpty() || withheld.contains(name) || refused.contains(name)) {
+        boolean unresolved = holdsUnresolvedValue(type);
+        Optional<MachineModel> model = build(type, !withheld.contains(name) && !unresolved);
+        if (model.isEmpty() || withheld.contains(name) || refused.contains(name) || unresolved) {
             failed.add(name);
             return Optional.empty();
         }
@@ -421,8 +483,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
     /**
      * The model of {@code type}, read with the vocabulary generated for it; {@code complete} is false for a machine
      * whose graph misses vocabulary of its own: written where no builder reads it, or on the facade of another
-     * machine, whose builder refuses it. A compilation whose manifest could not be trusted has no vocabulary to read
-     * anything with, and has already said so once as {@code SG602}.
+     * machine, whose builder refuses it, or holding a value javac could not resolve. A compilation whose manifest
+     * could not be trusted has no vocabulary to read anything with, and has already said so once as {@code SG602}.
      */
     private Optional<MachineModel> build(TypeElement type, boolean complete) {
         return typed.flatMap((TypedMachineModelBuilder builder) -> builder.build(type, complete));
@@ -432,14 +494,15 @@ public final class StateGraphProcessor extends AbstractProcessor {
      * Publishes the provisional index of this compilation, once, in the round that ends it, unless this processor
      * reported an error or {@code round.errorRaised()} says the round before raised one: what a compilation that
      * failed exports is not known. An error javac reports once processing is over, such as one in a generated
-     * source, comes after the publication and does not undo it.
+     * source, comes after the publication and does not undo it; one in a machine some round handed to the processor
+     * kept that machine from being verified, which keeps the index from being published.
      */
     private void publish(RoundEnvironment round) {
         if (!round.processingOver() || round.errorRaised() || diagnostics.errors() > 0) {
             return;
         }
         manifests.manifest().ifPresent((CompileManifest manifest) ->
-                indexes.publish(manifest, Set.copyOf(verified), Set.copyOf(generated)));
+                indexes.publish(manifest, Set.copyOf(verified), Set.copyOf(handed), Set.copyOf(generated)));
     }
 
     /**

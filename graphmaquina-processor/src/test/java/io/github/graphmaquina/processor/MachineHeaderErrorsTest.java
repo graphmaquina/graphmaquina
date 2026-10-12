@@ -9,6 +9,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -47,6 +49,59 @@ class MachineHeaderErrorsTest {
             assertTrue(result.errors().stream().anyMatch(error -> error.contains("cannot find symbol")),
                     result::describe);
         }
+    }
+
+    /**
+     * A generated symbol or a class named in a declaration is javac's to refuse when its name is mistyped, as a
+     * constant is, with every source of the compilation handed to javac. The processor reads such a value as one
+     * javac already refused: it does not report the machine as one the compilation never processed ({@code SG602}),
+     * nor an edge whose action it cannot read as an edge without one ({@code SG507}), nor anything else.
+     */
+    @Test
+    void aMistypedSymbolIsRefusedByJavacAlone() {
+        List<String[]> typos = List.of(
+                new String[] {"state = DocRefs.Status.class", "state = DocRefs.Statuss.class"},
+                new String[] {"id = DocRefs.Id.class", "id = DocRefs.Ids.class"},
+                new String[] {"action = DocActionsRefs.Publish.class", "action = DocActionsRefs.Publsh.class"},
+                new String[] {"guards = DocActionsRefs.Approved.class", "guards = DocActionsRefs.Aproved.class"},
+                new String[] {"afterCommit = DocActionsRefs.Notify.class", "afterCommit = DocActionsRefs.Notfy.class"},
+                new String[] {"action = DocActionsRefs.ArchiveAsync.class", "action = DocActionsRefs.ArchivAsync.class"},
+                new String[] {"kind = Unavailable.class", "kind = Unavailabl.class"},
+                new String[] {"failsOn = Broken.class", "failsOn = Brokn.class"},
+                new String[] {"peers = DocRefs.Pages.class", "peers = DocRefs.Pags.class"},
+                new String[] {"owner = PageRefs.Doc.class", "owner = PageRefs.Dc.class"});
+        String publish = """
+                    failsOn = Broken.class, recoveries = @DocsGraph.Recovery(kind = Unavailable.class, transition = RETURN),
+                    onFailure = RETURN,""";
+        Map<String, String> valid = Fixtures.withLibrary(Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH,
+                Fixtures.DOCS_BODY.replace("onFailure = RETURN,", publish), Fixtures.LIBRARY);
+        valid.put("fx.Unavailable", """
+                package fx;
+                import io.github.graphmaquina.api.FailureKind;
+                public record Unavailable() implements FailureKind { }
+                """);
+        valid.put("fx.Broken", """
+                package fx;
+                public final class Broken extends RuntimeException {
+                    private static final long serialVersionUID = 1L;
+                }
+                """);
+        Compilation.Result accepted = Compilation.compileTyped(valid);
+        assertTrue(accepted.success(), accepted.describe());
+        List<String> offenders = new ArrayList<>();
+        for (String[] typo : typos) {
+            Map<String, String> sources = new LinkedHashMap<>(valid);
+            assertTrue(sources.get("fx.Docs").contains(typo[0]), typo[0]);
+            sources.put("fx.Docs", sources.get("fx.Docs").replace(typo[0], typo[1]));
+
+            Compilation.Result result = Compilation.compileTyped(sources);
+
+            if (result.success() || result.errors().stream().anyMatch(error -> error.contains("[SG"))
+                    || result.errors().stream().noneMatch(error -> error.contains("cannot find symbol"))) {
+                offenders.add(typo[1] + "\n" + result.describe());
+            }
+        }
+        assertTrue(offenders.isEmpty(), String.join("\n", offenders));
     }
 
     @Test

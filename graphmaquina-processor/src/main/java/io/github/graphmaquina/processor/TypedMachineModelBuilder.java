@@ -97,9 +97,10 @@ final class TypedMachineModelBuilder {
     /**
      * Empty when the machine has an error this processor reports, or a value javac refused that the model cannot do
      * without; nothing is generated for it then. {@code complete} is false when part of the machine's vocabulary is
-     * written where no builder reads it, or on the facade of another machine, whose builder refuses it: every
-     * declaration is still checked, but no conclusion is drawn from the graph as a whole, nor from the classes it
-     * binds, since that graph misses what the author declared.
+     * written where no builder reads it, or on the facade of another machine, whose builder refuses it, or when a
+     * declaration holds a value javac could not resolve: every declaration is still checked, but no conclusion is
+     * drawn from the graph as a whole, nor from the classes it binds, since that graph misses what the author
+     * declared.
      */
     Optional<MachineModel> build(TypeElement type, boolean complete) {
         int before = diagnostics.errors();
