@@ -38,7 +38,7 @@ import java.util.stream.Stream;
  *
  * <p>Only the files the previous manifest and the pending one listed are removed, so a hand-written file that
  * happens to live under the generated source root is never touched, and a generated type an original source already
- * declares, in the file it would overwrite or in a file of another name, is refused instead. So is one whose file or
+ * declares, at the generated file's path or in a file of another name, is refused instead. So is one whose file or
  * class file a volume that does not tell names apart by case would take for an original's, and so are two generated
  * types whose files or class files such a volume would take for one another's. The original sources it
  * is checked against are the ones the generator read, as the one walk of {@link Bootstrap} read them; below every
@@ -336,14 +336,12 @@ public final class GenerationOutput {
         for (Path directory : directories) {
             Path original = directory.resolve(relative);
             if (Files.isRegularFile(original)) {
-                throw new CodegenException(COLLISION, "the generated type " + qualifiedName
-                    + " would overwrite the original source " + original);
+                throw new CodegenException(COLLISION, sharedPath(qualifiedName, relative, original.toString()));
             }
         }
         for (Bootstrap.OriginalSource original : standing) {
             if (original.path().equals(relative)) {
-                throw new CodegenException(COLLISION, "the generated type " + qualifiedName
-                    + " would overwrite the original source " + original.file());
+                throw new CodegenException(COLLISION, sharedPath(qualifiedName, relative, original.file().toString()));
             }
         }
         String fileName = relative.substring(relative.lastIndexOf('/') + 1);
@@ -355,8 +353,8 @@ public final class GenerationOutput {
             }
             Path underGeneratedName = original.file().resolveSibling(fileName);
             if (Files.exists(underGeneratedName) && Files.isSameFile(underGeneratedName, original.file())) {
-                throw new CodegenException(COLLISION, "the generated type " + qualifiedName
-                    + " would overwrite the original source " + original.file().toRealPath());
+                throw new CodegenException(COLLISION, sharedPath(qualifiedName, relative,
+                    original.file().toRealPath().toString()) + " on a volume that does not tell names apart by case");
             }
         }
         for (Declared declared : declaring) {
@@ -371,6 +369,17 @@ public final class GenerationOutput {
                 + " from " + declared.type() + ", which the original source " + declared.origin() + " declares,"
                 + " and the volume of the class output " + classesOutput + " does not tell their class files apart");
         }
+    }
+
+    /**
+     * Says that the generated type {@code qualifiedName} would stand at {@code relative} below the generated source
+     * root, where {@code original} stands below its own source root. The generated source root never overlaps a
+     * source root, so the generated file would overwrite nothing; javac would report a duplicate class where the
+     * original declares the generated type.
+     */
+    private static String sharedPath(String qualifiedName, String relative, String original) {
+        return "the generated type " + qualifiedName + " would stand at " + relative + " below the generated source"
+            + " root, where the original source " + original + " stands below its own";
     }
 
     /**

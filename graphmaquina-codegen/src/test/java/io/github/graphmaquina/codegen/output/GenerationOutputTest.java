@@ -45,7 +45,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 /**
  * Verifies that one generation is published as a coherent set: the manifest describes exactly the files on disk,
  * a run that changes nothing rewrites the same bytes, deleting a reference retires the file it owned, a file the
- * generation does not own is left alone, and a type that would overwrite an original source is refused.
+ * generation does not own is left alone, and a type that an original source declares, or whose file would stand where
+ * an original source stands, is refused.
  */
 class GenerationOutputTest {
 
@@ -237,6 +238,11 @@ class GenerationOutputTest {
         assertEquals(originalBefore, Files.readString(sources().resolve("fx/Outer.java")));
     }
 
+    /**
+     * The generated file goes below the generated source root, which never overlaps a source root, so it would
+     * overwrite nothing: javac would compile both files and report a duplicate class. The refusal says where each
+     * file stands.
+     */
     @Test
     void refusesAGeneratedTypeAnOriginalSourceAlreadyDeclares() throws IOException {
         SourceFiles.write(sources(), ORIGINALS);
@@ -246,9 +252,9 @@ class GenerationOutputTest {
                 assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
         assertEquals("SG603", failure.code());
-        assertTrue(failure.getMessage().contains("fx.DocsGraph"), failure.getMessage());
-        assertTrue(failure.getMessage().contains(sources().resolve("fx/DocsGraph.java").toString()),
-                failure.getMessage());
+        assertEquals("the generated type fx.DocsGraph would stand at fx/DocsGraph.java below the generated source"
+                + " root, where the original source " + sources().resolve("fx/DocsGraph.java")
+                + " stands below its own", failure.getMessage());
         assertFalse(Files.exists(directory.resolve("work").resolve("annotation-manifest.json")));
     }
 
@@ -669,8 +675,9 @@ class GenerationOutputTest {
         CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
 
         assertEquals("SG603", failure.code());
-        assertTrue(failure.getMessage().contains("fx.DocsGraph would overwrite the original source "
-                + original.resolveSibling("DocsGraph.java")), failure.getMessage());
+        assertTrue(failure.getMessage().contains("fx.DocsGraph would stand at fx/DocsGraph.java below the generated"
+                + " source root, where the original source " + original.resolveSibling("DocsGraph.java")
+                + " stands below its own"), failure.getMessage());
     }
 
     /** A listed source that stands exactly where a generated source goes is refused, as one of a directory is. */
@@ -686,8 +693,8 @@ class GenerationOutputTest {
                 assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(withSources(listed)));
 
         assertEquals("SG603", failure.code());
-        assertTrue(failure.getMessage().contains("would overwrite the original source "
-                + sources().resolve("fx/DocsGraph.java")), failure.getMessage());
+        assertTrue(failure.getMessage().contains("where the original source " + sources().resolve("fx/DocsGraph.java")
+                + " stands below its own"), failure.getMessage());
     }
 
     /**
@@ -709,8 +716,9 @@ class GenerationOutputTest {
                 assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(withSources(listed)));
 
         assertEquals("SG603", failure.code());
-        assertTrue(failure.getMessage().contains("fx.DocsGraph would overwrite the original source "
-                + original.toRealPath()), failure.getMessage());
+        assertTrue(failure.getMessage().contains("fx.DocsGraph would stand at fx/DocsGraph.java below the generated"
+                + " source root, where the original source " + original.toRealPath() + " stands below its own on a"
+                + " volume that does not tell names apart by case"), failure.getMessage());
     }
 
     /**
