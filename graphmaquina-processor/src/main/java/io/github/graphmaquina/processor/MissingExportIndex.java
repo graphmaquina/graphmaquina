@@ -1,5 +1,10 @@
 package io.github.graphmaquina.processor;
 
+import io.github.graphmaquina.codegen.CodegenException;
+import io.github.graphmaquina.codegen.manifest.ExportIndex;
+import io.github.graphmaquina.codegen.manifest.ManifestCodec;
+import io.github.graphmaquina.codegen.model.GraphDescriptor;
+import io.github.graphmaquina.codegen.model.SymbolDescriptor;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.FileSystem;
@@ -16,24 +21,31 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardLocation;
 
 /**
- * Finds the dependency a type was read from when that dependency carries no export index.
+ * Finds the dependency a type was read from when that dependency's export index is missing or does not list it.
  *
  * <p>A producer publishes {@code META-INF/graphmaquina/exports.json} beside its classes, and the generator reads the
  * index of every classpath entry into the manifest of this compilation, which is how the processor knows the
  * machines, the vocabulary and the symbols of a dependency. A jar or a directory of classes that lost its index, as
  * an assembly step that drops {@code META-INF/graphmaquina} leaves it, still carries the types that index listed,
- * and no index this compilation reads lists them. A use of one of them is reported as that missing index, rather
- * than as a symbol or a machine the author got wrong.</p>
+ * and no index this compilation reads lists them. So does one whose index is stale, or another build's, as an
+ * assembly step that overwrites {@code META-INF/graphmaquina} leaves it: that index does not list every type the
+ * classes beside it carry. A use of such a type is reported as that missing or stale index, rather than as a symbol
+ * or a machine the author got wrong.</p>
  *
  * <p>The dependency is the classpath entry javac read the type's class file from, a jar or a directory of classes,
- * and it is named only when its missing index can be verified. A type read from a source has none, and neither has
- * one read from this compilation's own class output, whose index the generator never reads as a dependency's, or
- * from a file javac does not keep at a path of the default file system.</p>
+ * and it is named only when what its index says can be verified: that there is none, or that the one there, read
+ * with the codec the generator reads it with, lists no machine and no symbol of that name. A type read from a source has none, and
+ * neither has one read from this compilation's own class output, whose index the generator never reads as a
+ * dependency's, or from a file javac does not keep at a path of the default file system.</p>
  */
 final class MissingExportIndex {
 
     /** Where a producer publishes its export index, beside its classes. */
     private static final String INDEX = "META-INF/graphmaquina/exports.json";
+
+    /** What a diagnostic about a missing or stale index asks for. */
+    private static final String REMEDY = ": package the index the producer's StateGraph build publishes with its"
+            + " classes, or rebuild the producer through the complete lifecycle";
 
     private final Elements elements;
     private final Filer filer;
@@ -44,23 +56,16 @@ final class MissingExportIndex {
     }
 
     /**
-     * The jar or the directory of classes javac read {@code type} from, when it carries no export index and is not
-     * the class output of this compilation; empty otherwise, and whenever that cannot be told.
+     * What a diagnostic says after naming {@code type} when the jar or the directory of classes javac read it from,
+     * which is not the class output of this compilation, carries no export index, or one that lists no machine and
+     * no symbol named like {@code type}: that entry, what its index lacks and the remedy. Empty otherwise, and
+     * whenever that cannot be told.
      */
-    Optional<Path> entryOf(TypeElement type) {
+    Optional<String> unlisted(TypeElement type) {
         Optional<Path> classOutput = classOutput();
         return entry(type)
                 .filter((Path entry) -> classOutput.filter((Path output) -> sameFile(output, entry)).isEmpty())
-                .filter(MissingExportIndex::lacksIndex);
-    }
-
-    /**
-     * What a diagnostic says after naming a type read from {@code entry}, a dependency that carries no export index.
-     */
-    static String unlisted(Path entry) {
-        return " comes from " + entry + ", which carries no export index " + INDEX + ", so no index this compilation"
-                + " reads lists it: package the index the producer's StateGraph build publishes with its classes, or"
-                + " rebuild the producer through the complete lifecycle";
+                .flatMap((Path entry) -> unlisted(entry, type.getQualifiedName().toString()));
     }
 
     /**
@@ -129,20 +134,44 @@ final class MissingExportIndex {
     }
 
     /**
-     * Whether {@code entry}, a directory of classes or a jar, carries no export index, as the generator reads one;
-     * false when that cannot be told.
+     * What a diagnostic says after naming {@code name}, which {@code entry}, a directory of classes or a jar,
+     * carries, when the export index of {@code entry} is missing or does not list it; empty when it lists it, and
+     * when that cannot be told.
      */
-    private static boolean lacksIndex(Path entry) {
+    private static Optional<String> unlisted(Path entry, String name) {
         if (Files.isDirectory(entry)) {
-            return !Files.isRegularFile(entry.resolve(INDEX));
+            return unlisted(entry, entry.resolve(INDEX), name);
         }
         if (!Files.isRegularFile(entry)) {
-            return false;
+            return Optional.empty();
         }
         try (FileSystem archive = FileSystems.newFileSystem(entry)) {
-            return !Files.isRegularFile(archive.getPath(INDEX));
+            return unlisted(entry, archive.getPath(INDEX), name);
         } catch (IOException | ProviderNotFoundException unreadable) {
-            return false;
+            return Optional.empty();
         }
+    }
+
+    /**
+     * The same, for the index {@code entry} carries at {@code index}, read with the codec the generator reads it
+     * with: an index there lists {@code name} when one of its machines or one of its symbols is named so.
+     */
+    private static Optional<String> unlisted(Path entry, Path index, String name) {
+        if (!Files.isRegularFile(index)) {
+            return Optional.of(" comes from " + entry + ", which carries no export index " + INDEX + ", so no index"
+                    + " this compilation reads lists it" + REMEDY);
+        }
+        ExportIndex published;
+        try {
+            published = ManifestCodec.readExports(index);
+        } catch (IOException | CodegenException unreadable) {
+            return Optional.empty();
+        }
+        boolean listed = published.model().graphs().stream()
+                .anyMatch((GraphDescriptor graph) -> graph.facade().equals(name))
+                || published.model().symbols().stream()
+                        .anyMatch((SymbolDescriptor symbol) -> symbol.qualifiedName().equals(name));
+        return listed ? Optional.empty() : Optional.of(" comes from " + entry + ", whose export index " + INDEX
+                + " does not list it, so that index is stale or another build's" + REMEDY);
     }
 }

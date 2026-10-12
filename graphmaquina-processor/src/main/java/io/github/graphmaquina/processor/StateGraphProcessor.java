@@ -466,7 +466,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
      * that no round handed to this processor, which is what javac does with a source it compiles implicitly, from
      * the source path, has no companion, and the set's companion could not build it without one: that is reported
      * as {@code SG602} at the set, whose companion is not generated either. So is a machine that no index lists and
-     * that comes from a dependency that carries no export index: its vocabulary is read only where an index lists it.
+     * that comes from a dependency whose export index is missing or does not list it: its vocabulary is read only
+     * where an index lists it.
      */
     private Optional<MachineModel> held(TypeElement machine, TypeElement set, RoundEnvironment round) {
         String name = machine.getQualifiedName().toString();
@@ -476,10 +477,10 @@ public final class StateGraphProcessor extends AbstractProcessor {
                     + " implicitly, from the source path, so pass every source of the compilation to javac", set);
             return Optional.empty();
         }
-        Optional<Path> unindexed = isListed(name) ? Optional.empty() : missingIndex.entryOf(machine);
-        if (unindexed.isPresent()) {
-            diagnostics.error("SG602", set.getQualifiedName() + " holds " + name + ", but " + name
-                    + MissingExportIndex.unlisted(unindexed.get()), set);
+        Optional<String> unlisted = isListed(name) ? Optional.empty() : missingIndex.unlisted(machine);
+        if (unlisted.isPresent()) {
+            diagnostics.error("SG602", set.getQualifiedName() + " holds " + name + ", but " + name + unlisted.get(),
+                    set);
             return Optional.empty();
         }
         return resolve(machine, round);

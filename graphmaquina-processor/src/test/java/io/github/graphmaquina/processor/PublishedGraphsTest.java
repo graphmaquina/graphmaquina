@@ -351,6 +351,60 @@ class PublishedGraphsTest {
                 + " classes, or rebuild the producer through the complete lifecycle";
     }
 
+    /**
+     * A producer jar whose export index is an older build's, which lists neither the machine nor the action symbol
+     * the classes beside it carry, is reported as that stale index wherever the consumer uses what it leaves out: at
+     * the action a machine binds and at the set that holds the machine. The symbols the older index lists still
+     * resolve.
+     */
+    @Test
+    void reportsAProducerJarWhoseExportIndexIsStaleWhereTheConsumerUsesWhatItLeavesOut() throws IOException {
+        String older = publishedIndex(olderProducer());
+        Path jar = publish(producer(), directory.resolve("producer.jar"), (String current) -> older);
+
+        Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(jar)));
+
+        assertEquals(List.of(
+                "[SG602] prod.BillActionsRefs.Cancel" + stale(jar),
+                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + stale(jar)), result.errors(),
+                result.describe());
+        assertFalse(result.hasGenerated("cons.ArchivesRuntime"), result.describe());
+        assertFalse(result.hasGenerated("cons.ShelfRuntime"), result.describe());
+    }
+
+    /** The same producer compiled into a directory of classes, whose export index an older build's replaced. */
+    @Test
+    void reportsAProducerDirectoryWhoseExportIndexIsStaleWhereTheConsumerUsesWhatItLeavesOut() throws IOException {
+        String older = publishedIndex(olderProducer());
+        Compilation.Prepared producer = Compilation.prepare(producer());
+        Compilation.Result produced = Compilation.compilePrepared(producer);
+        assertTrue(produced.success(), produced.describe());
+        Path classes = producer.request().classesOutput().toRealPath();
+        Files.writeString(classes.resolve(PUBLISHED), older, StandardCharsets.UTF_8);
+
+        Compilation.Result result = Compilation.compilePrepared(Compilation.prepare(consumer(), List.of(classes)));
+
+        assertEquals(List.of(
+                "[SG602] prod.BillActionsRefs.Cancel" + stale(classes),
+                "[SG602] cons.Shelf holds prod.Bills, but prod.Bills" + stale(classes)), result.errors(),
+                result.describe());
+    }
+
+    /** What a diagnostic says after naming a type that {@code entry} carries but its export index does not list. */
+    private static String stale(Path entry) {
+        return " comes from " + entry + ", whose export index " + PUBLISHED + " does not list it, so that index is"
+                + " stale or another build's: package the index the producer's StateGraph build publishes with its"
+                + " classes, or rebuild the producer through the complete lifecycle";
+    }
+
+    /** The export index a compilation of {@code sources} publishes. */
+    private static String publishedIndex(Map<String, String> sources) throws IOException {
+        Compilation.Prepared prepared = Compilation.prepare(sources);
+        Compilation.Result result = Compilation.compilePrepared(prepared);
+        assertTrue(result.success(), result.describe());
+        return Files.readString(prepared.request().classesOutput().resolve(PUBLISHED), StandardCharsets.UTF_8);
+    }
+
     @Test
     void refusesAProducerWhosePublishedIndexCannotBeRead() throws IOException {
         Path jar = publish(producer(), directory.resolve("corrupt.jar"),
@@ -452,6 +506,19 @@ class PublishedGraphsTest {
                     Bills bills();
                 }
                 """);
+        return sources;
+    }
+
+    /**
+     * {@link #producer()} as an older build declared it: the same entity, whose properties it exports, and an action
+     * host that exports settle alone, without the machine and the set.
+     */
+    private static Map<String, String> olderProducer() {
+        Map<String, String> sources = producer();
+        sources.remove("prod.Bills");
+        sources.remove("prod.Ledger");
+        sources.put("prod.BillActions", sources.get("prod.BillActions")
+                .replace("@GraphAction public ActionOutcome cancel", "public ActionOutcome cancel"));
         return sources;
     }
 

@@ -114,7 +114,7 @@ final class PropertyResolver {
     /**
      * The property {@code symbol} names on the entity of {@code host}, or empty after reporting {@code SG605}
      * when it is not a property symbol of this compilation or names another entity, and {@code SG602} when it comes
-     * from a dependency that carries no export index.
+     * from a dependency whose export index is missing or does not list it.
      */
     private Optional<PropertyDescriptor> declaration(TypeMirror symbol, MachineTypes host, DiagnosticAnchor anchor) {
         Optional<SymbolResolver.Reference> reference = SymbolResolver.reference(symbol, SymbolKind.PROPERTY,

@@ -9,7 +9,6 @@ import io.github.graphmaquina.codegen.model.SymbolDescriptor;
 import io.github.graphmaquina.processor.gen.BoundInvocation;
 import io.github.graphmaquina.processor.model.Binding;
 import io.github.graphmaquina.processor.model.MachineTypes;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -85,11 +84,12 @@ final class SymbolResolver {
     /**
      * The method {@code symbol} names when it is used as {@code role} by {@code machine}, or empty after
      * reporting {@code SG605} when the type is not a symbol of this compilation or does not export that role,
-     * {@code SG602} when it comes from a dependency that carries no export index, and {@code SG505} when no exported
-     * declaration of that role fits the machine, when more than one does, or when the one that fits makes the
-     * machine's companion name a type its package cannot access. An instance member of a generic host is never a
-     * candidate: the symbol names the host by its raw class, and generated code could only call such a member on a
-     * raw parameter, so it is refused as such rather than as a member whose signature does not fit.
+     * {@code SG602} when it comes from a dependency whose export index is missing or does not list it, and
+     * {@code SG505} when no exported declaration of that role fits the machine, when more than one does, or when the
+     * one that fits makes the machine's companion name a type its package cannot access. An instance member of a
+     * generic host is never a candidate: the symbol names the host by its raw class, and generated code could only
+     * call such a member on a raw parameter, so it is refused as such rather than as a member whose signature does
+     * not fit.
      */
     Optional<Binding> resolve(TypeMirror symbol, Bindings.Role role, MachineTypes machine,
             Optional<MachineTypes> peer, DiagnosticAnchor anchor) {
@@ -161,8 +161,8 @@ final class SymbolResolver {
      * The manifest entry {@code symbol} belongs to, or empty after reporting {@code SG605}. A type that
      * carries the generator's own metadata but is not listed by the manifest of this compilation is refused
      * like any other type: the metadata is a claim, and only the manifest makes it one this compilation owns.
-     * When such a type comes from a dependency that carries no export index, which is what would list it, it is
-     * refused as {@code SG602} instead, naming that dependency.
+     * When such a type comes from a dependency whose export index, which is what would list it, is missing or does
+     * not list it, it is refused as {@code SG602} instead, naming that dependency.
      */
     static Optional<Reference> reference(TypeMirror symbol, SymbolKind kind, DiagnosticAnchor anchor,
             Map<String, SymbolDescriptor> symbols, MissingExportIndex missingIndex, Annotations annotations,
@@ -175,9 +175,9 @@ final class SymbolResolver {
         Optional<AnnotationMirror> metadata = annotations.find(element, GeneratedSymbol.class);
         SymbolDescriptor descriptor = symbols.get(name);
         if (metadata.isEmpty() || descriptor == null) {
-            Optional<Path> unindexed = metadata.isEmpty() ? Optional.empty() : missingIndex.entryOf(element);
-            if (unindexed.isPresent()) {
-                anchor.report(diagnostics, MISSING_INDEX, name + MissingExportIndex.unlisted(unindexed.get()));
+            Optional<String> unlisted = metadata.isEmpty() ? Optional.empty() : missingIndex.unlisted(element);
+            if (unlisted.isPresent()) {
+                anchor.report(diagnostics, MISSING_INDEX, name + unlisted.get());
             } else {
                 anchor.report(diagnostics, UNKNOWN_SYMBOL, name + " is not a symbol this compilation exports"
                         + " or depends on; use one of the generated <Host>Refs types");
