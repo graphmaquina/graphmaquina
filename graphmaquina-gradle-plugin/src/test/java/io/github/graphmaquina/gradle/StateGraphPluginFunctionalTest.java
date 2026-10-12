@@ -2145,10 +2145,10 @@ class StateGraphPluginFunctionalTest {
     }
 
     /**
-     * Gradle leaves out of every source directory the files the Ant-style default excludes name, such as the
-     * AppleDouble companion {@code ._Orders.java} a copy from macOS leaves beside a source, or anything inside
-     * the directory of a version control system. The generator leaves them out too, whether the source set hands
-     * it a filtered directory file by file or a whole directory to walk.
+     * A build that keeps Gradle's default excludes leaves out of every source directory the files the Ant-style
+     * default excludes name, such as the AppleDouble companion {@code ._Orders.java} a copy from macOS leaves beside
+     * a source, or anything inside the directory of a version control system. The generator leaves them out too,
+     * whether the source set hands it a filtered directory file by file or a whole directory to walk.
      */
     @Test
     void skipsTheFilesABuildExcludesByDefault() throws IOException {
