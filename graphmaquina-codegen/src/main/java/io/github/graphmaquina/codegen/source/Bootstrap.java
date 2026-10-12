@@ -41,7 +41,9 @@ import java.util.Set;
 public final class Bootstrap {
 
     private static final String GENERATE_GRAPH_API = "io.github.graphmaquina.annotation.GenerateGraphApi";
+    private static final String STATE_GRAPHS = "io.github.graphmaquina.annotation.StateGraphs";
     private static final String COLLISION = "SG603";
+    private static final String HEADER = "SG502";
 
     /**
      * The directories of a version control system that Ant's default excludes leave out of a source directory with
@@ -115,11 +117,27 @@ public final class Bootstrap {
     /**
      * The original declarations marked with {@code @GenerateGraphApi}, ordered by canonical name. A manifest knows a
      * machine by its canonical name alone, so two machines that share one, one of a named package and a member type
-     * of a class of the unnamed package, are refused.
+     * of a class of the unnamed package, are refused. A local or anonymous class marked with {@code @GenerateGraphApi}
+     * or {@code @StateGraphs} is refused too: the processor, which refuses a machine or a set that is not top-level,
+     * never sees such a class, so the marker would generate nothing without a word.
      *
-     * @throws CodegenException {@code SG603} naming both machines, anchored at the one read first
+     * @throws CodegenException {@code SG603} naming both machines, anchored at the one read first, or
+     *     {@code SG502} anchored at the first marker written on a local or anonymous class
      */
     private static List<TypeHeader> machines(DeclarationIndex index) {
+        List<TypeHeader> declarations = new ArrayList<>(index.sourceHeaders());
+        declarations.sort(Comparator.comparing(TypeHeader::canonicalName));
+        for (TypeHeader declaration : declarations) {
+            for (TypeHeader.Marker marker : declaration.localMarkers()) {
+                if (index.marks(declaration, marker, GENERATE_GRAPH_API) || index.marks(declaration, marker,
+                        STATE_GRAPHS)) {
+                    throw new CodegenException(HEADER, "the marker @" + marker.name() + " is written on a local or"
+                            + " anonymous class of " + declaration.canonicalName() + ", but a machine or a set must be"
+                            + " a top-level interface: the generated companion lives next to it in the package",
+                            marker.origin().orElseThrow());
+                }
+            }
+        }
         List<TypeHeader> facades = new ArrayList<>();
         for (TypeHeader header : index.sourceHeaders()) {
             for (TypeHeader.Marker marker : header.markers()) {

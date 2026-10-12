@@ -1,7 +1,9 @@
 package io.github.graphmaquina.codegen.source;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -124,6 +126,42 @@ class BootstrapTest {
 
         assertEquals(List.of("second/bb/Middle.java", "first/aa/First.java", "first/zz/Last.java"),
                 sources.stream().map(Bootstrap.OriginalSource::origin).toList());
+    }
+
+    /**
+     * A machine and a set are top-level interfaces, which the processor demands of a member interface with
+     * {@code SG502}. It never sees a local one, so the walk refuses a local interface marked as either, which would
+     * otherwise generate nothing without a word.
+     */
+    @Test
+    void refusesAMachineOrASetDeclaredAsALocalInterface() {
+        Map<String, String> declarations = Map.of(
+                "GenerateGraphApi", "@GenerateGraphApi interface Notes extends Machine<Object, State, Id> {}",
+                "StateGraphs", "@StateGraphs interface Shelf extends Machines {}");
+        for (Map.Entry<String, String> declaration : declarations.entrySet()) {
+            Path root = project.resolve(declaration.getKey());
+            SourceFiles.write(root, Map.of("fx.Holder", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.*;
+                    import io.github.graphmaquina.api.*;
+                    public final class Holder {
+                        enum State { OPEN }
+                        enum Id { CLOSE }
+                        static void declare() {
+                            %s
+                        }
+                    }
+                    """.formatted(declaration.getValue())));
+
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> Bootstrap.read(request(List.of(root))));
+
+            assertEquals("SG502", failure.code());
+            assertEquals("the marker @" + declaration.getKey() + " is written on a local or anonymous class of"
+                    + " fx.Holder, but a machine or a set must be a top-level interface: the generated companion lives"
+                    + " next to it in the package", failure.getMessage());
+            assertEquals(8L, failure.location().orElseThrow().line());
+        }
     }
 
     /** A request over {@code sources} whose outputs share nothing with them. */
