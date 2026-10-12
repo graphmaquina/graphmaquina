@@ -100,8 +100,7 @@ class GraphOnlyRuntimeTest {
             for (Optional<?> input : seen) assertSame(payload, input.orElseThrow());
             seen.clear();
             registry.of(KEY).execute(new Ticket(2, REVIEW), FAIL);
-            registry.of(KEY).execute(new Ticket(3, REVIEW), FAIL, null);
-            assertEquals(List.of(Optional.empty(), Optional.empty()), seen);
+            assertEquals(List.of(Optional.empty()), seen);
         }
     }
 

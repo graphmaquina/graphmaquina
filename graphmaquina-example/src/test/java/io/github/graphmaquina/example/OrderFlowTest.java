@@ -5,6 +5,7 @@ import static io.github.graphmaquina.api.OutcomeStatus.IGNORED;
 import static io.github.graphmaquina.test.GraphAssertions.assertThat;
 import static io.github.graphmaquina.test.GraphAssertions.captureFailure;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionStatus;
@@ -164,14 +165,17 @@ class OrderFlowTest {
         }
     }
 
-    /** A cancellation whose caller passed no batch restocks its items in the manual one. */
+    /** A cancellation names its batch: a null one is refused before the call starts, so nothing is cancelled. */
     @Test
-    void aCancellationWithoutABatchRestocksInTheManualOne() {
+    void aCancellationWithoutABatchIsRefusedBeforeTheCallStarts() {
         Order order = new Order("o1");
         Item item = new Item("i1", Optional.of(order));
 
-        assertThat(orders.cancel(order, null)).isApplied().flow().hasValue(ShopFlow.CANCELLATION, "manual");
-        assertEquals(Optional.of("manual"), item.restockedIn());
+        NullPointerException refused = assertThrows(NullPointerException.class, () -> orders.cancel(order, null));
+        assertEquals("cancellationId", refused.getMessage());
+        assertEquals(OrderStatus.NEW, order.status());
+        assertEquals(ItemStatus.PENDING, item.status());
+        assertEquals(Optional.empty(), item.restockedIn());
     }
 
     /**

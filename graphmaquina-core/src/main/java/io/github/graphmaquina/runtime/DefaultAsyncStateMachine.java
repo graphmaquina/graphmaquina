@@ -20,13 +20,16 @@ final class DefaultAsyncStateMachine<E, S extends Enum<S>, T extends Enum<T>> im
 
     @Override
     public CompletableFuture<Outcome<E, S, T>> execute(E entity, T transition) {
-        return execute(entity, transition, null);
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(transition, "transition");
+        return submit(() -> machine.execute(entity, transition));
     }
 
     @Override
     public CompletableFuture<Outcome<E, S, T>> execute(E entity, T transition, Object input) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(transition, "transition");
+        Objects.requireNonNull(input, "input");
         return submit(() -> machine.execute(entity, transition, input));
     }
 

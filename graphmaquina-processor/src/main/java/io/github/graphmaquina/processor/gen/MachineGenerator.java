@@ -94,9 +94,10 @@ import javax.lang.model.util.Elements;
  * keyword, is taken by another variable in scope, or is an identifier the file writes at the head of a type reference
  * gets the smallest numeric suffix from {@code 2} that frees it: a host {@code Default} is taken as {@code default2}.
  * So does a declared parameter of an operation whose name the companion already uses, as its field's or that of a
- * variable of another of its methods: a parameter {@code stateMachine} is taken as {@code stateMachine2}. The
- * {@code NullPointerException} with which an operation refuses a null entity names the parameter as the facade
- * declares it. So no variable the companion declares obscures a type or a package it names.</p>
+ * variable of another of its methods: a parameter {@code stateMachine} is taken as {@code stateMachine2}. An
+ * operation refuses a null entity, and a null input of a reference type, with a {@code NullPointerException} that
+ * names the parameter as the facade declares it. So no variable the companion declares obscures a type or a package
+ * it names.</p>
  *
  * <p>A bound method or an accessor the companion calls may declare a checked exception, which no functional
  * interface of the DSL declares. The lambda then makes the call in a block that catches what it throws, as
@@ -252,6 +253,10 @@ public final class MachineGenerator {
             out.line(override);
             out.open("public " + outcome + generics + " " + operation.name() + "(" + e + " " + target + declaration + ")");
             out.line(objects + ".requireNonNull(" + target + ", " + quote(operation.entityParameter()) + ");");
+            if (operation.inputType().filter((TypeMirror type) -> !type.getKind().isPrimitive()).isPresent()) {
+                out.line(objects + ".requireNonNull(" + input.orElseThrow() + ", "
+                        + quote(operation.inputParameter().orElseThrow()) + ");");
+            }
             out.line("return " + machine + ".execute(" + target + ", "
                     + constant(names, model.types().transitionsElement(), operation.transitionId()) + argument + ");");
             out.close();

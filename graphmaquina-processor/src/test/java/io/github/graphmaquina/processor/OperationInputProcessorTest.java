@@ -34,6 +34,10 @@ class OperationInputProcessorTest {
         return src;
     }
 
+    /**
+     * Every supported type of payload compiles and is handed on as declared. A payload of a reference type is
+     * refused when null, as the entity is, with a message that names its parameter; a primitive one cannot be null.
+     */
     @Test
     void preservesEachSupportedInputType() {
         for (String type : List.of("external.Verdict", "external.Types.Nested", "String",
@@ -44,6 +48,9 @@ class OperationInputProcessorTest {
             String generated = result.generated("fx.DocsRuntime");
             assertTrue(generated.contains(
                     "return stateMachine.execute(doc, DocTransition.PUBLISH, value);"), generated);
+            boolean primitive = type.equals("int") || type.equals("boolean");
+            assertEquals(!primitive, generated.contains("Objects.requireNonNull(value, \"value\");"),
+                    () -> type + "\n" + generated);
         }
     }
 
@@ -65,9 +72,10 @@ class OperationInputProcessorTest {
      * The compiled consumer runs both operations through the generated facade and reads back what the guard
      * and the action received: an operation that declares no payload carries none, the payload of an
      * invocation reaches guard and action even when the call is made on a worker thread of
-     * {@code async(...)}, an explicit {@code null} is the very same invocation as one with no payload at all,
-     * and a guard that reads the payload can still refuse it. The whole matrix runs twice, once with an
-     * ACTION edge and once with a MOVE, because a payload belongs to the invocation and not to the edge.
+     * {@code async(...)}, an explicit {@code null} is refused before the call starts with a
+     * {@code NullPointerException} that names the parameter, and a guard that reads the payload can still refuse it.
+     * The whole matrix runs twice, once with an ACTION edge and once with a MOVE, because a payload belongs to the
+     * invocation and not to the edge.
      */
     @Test
     void generatedFacadeCarriesTheInputOfTheInvocationThatDeclaresOne() throws Exception {
@@ -160,13 +168,19 @@ class OperationInputProcessorTest {
                                     || !actions.guardHadInput || actions.guardSeen != value
                                     || (move ? actions.actionSeen != null : actions.actionSeen != value)) { return false; }
 
-                            // An explicit null is the very same invocation as one with no payload at all.
-                            actions.guardHadInput = true;
-                            actions.guardSeen = value;
+                            // An explicit null is refused before the call starts: no guard or action runs.
+                            actions.guardHadInput = false;
+                            actions.guardSeen = null;
                             actions.actionSeen = null;
                             Doc nulled = new Doc();
-                            if (!(docs.publish(nulled, null) instanceof Outcome.Applied) || actions.guardHadInput
-                                    || actions.guardSeen != null || actions.actionSeen != null) { return false; }
+                            try {
+                                docs.publish(nulled, null);
+                                return false;
+                            } catch (NullPointerException refused) {
+                                if (!"value".equals(refused.getMessage()) || actions.guardHadInput
+                                        || actions.guardSeen != null || actions.actionSeen != null
+                                        || nulled.status() != DocStatus.DRAFT) { return false; }
+                            }
 
                             // A guard that reads the payload can still refuse it.
                             Doc denied = new Doc();

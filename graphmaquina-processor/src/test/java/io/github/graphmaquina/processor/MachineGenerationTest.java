@@ -257,7 +257,7 @@ class MachineGenerationTest {
 
     /**
      * An operation of the companion takes its parameters under the names the facade's method declares, and the
-     * NullPointerException it throws for a null entity names that parameter as declared. A declared name the
+     * NullPointerException it throws for a null entity or input names that parameter as declared. A declared name the
      * companion already uses, here that of its field {@code stateMachine}, is suffixed in the source only.
      */
     @Test
@@ -280,7 +280,7 @@ class MachineGenerationTest {
                                 .state(Doc::status, Doc::status).build());
                         List<String> messages = new ArrayList<>();
                         for (Runnable call : List.<Runnable>of(() -> docs.publish(null, "late"),
-                                () -> docs.autoPublish(null))) {
+                                () -> docs.publish(new Doc(), null), () -> docs.autoPublish(null))) {
                             try {
                                 call.run();
                                 messages.add("accepted");
@@ -299,13 +299,14 @@ class MachineGenerationTest {
         String source = result.generated("fx.DocsRuntime");
         assertTrue(source.contains("publish(Doc theDocument, java.lang.String theReason) {"), source);
         assertTrue(source.contains("Objects.requireNonNull(theDocument, \"theDocument\");"), source);
+        assertTrue(source.contains("Objects.requireNonNull(theReason, \"theReason\");"), source);
         assertTrue(source.contains("return stateMachine.execute(theDocument, DocTransition.PUBLISH, theReason);"),
                 source);
         assertTrue(source.contains("autoPublish(Doc stateMachine2) {"), source);
         assertTrue(source.contains("Objects.requireNonNull(stateMachine2, \"stateMachine\");"), source);
         assertTrue(source.contains("return stateMachine.execute(stateMachine2, DocTransition.AUTO_PUBLISH);"),
                 source);
-        assertEquals(List.of("theDocument", "stateMachine"),
+        assertEquals(List.of("theDocument", "theReason", "stateMachine"),
                 result.load("fx.Consumer").getMethod("refusals").invoke(null));
     }
 

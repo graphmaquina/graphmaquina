@@ -54,11 +54,10 @@ class ProbeInputTest {
             registry.of(KEY).execute(new Entity("first", State.NEW), Id.PREPARE, first);
             registry.of(KEY).execute(new Entity("second", State.NEW), Id.PREPARE, second);
             registry.of(KEY).execute(new Entity("empty", State.NEW), Id.PREPARE);
-            registry.of(KEY).execute(new Entity("null", State.NEW), Id.PREPARE, null);
         }
         assertSame(first, guard.calls().snapshot().get(0).input(Object.class).orElseThrow());
         assertSame(second, action.calls().snapshot().get(1).input().orElseThrow());
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 3; i++) {
             assertSame(guard.calls().snapshot().get(i), trace.events().get(i * 2).call());
             assertSame(action.calls().snapshot().get(i), trace.events().get(i * 2 + 1).call());
             assertEquals(Id.PREPARE, guard.calls().snapshot().get(i).transition());
@@ -66,10 +65,8 @@ class ProbeInputTest {
         }
         assertThat(action.calls().snapshot().get(0)).hasInputSameAs(first);
         assertThat(guard.calls().snapshot().get(1)).hasInputSameAs(second);
-        for (int i : new int[] {2, 3}) {
-            assertThat(guard.calls().snapshot().get(i)).hasNoInput();
-            assertThat(action.calls().snapshot().get(i)).hasNoInput();
-        }
+        assertThat(guard.calls().snapshot().get(2)).hasNoInput();
+        assertThat(action.calls().snapshot().get(2)).hasNoInput();
     }
 
     @Test

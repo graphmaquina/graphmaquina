@@ -156,6 +156,15 @@ class AsyncRecoveryTest {
         return call;
     }
 
+    /** Starts and retains the facade's future of a call without input; executor ownership stays with the test. */
+    private CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> start(
+            StateMachine<Ticket, TicketState, TicketChange> machine, Ticket ticket) {
+        CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
+                machine.async().execute(ticket, TicketChange.PUBLISH);
+        calls.add(call);
+        return call;
+    }
+
     /** The fixture's five-second root budget with test-owned async workers and counted state writes. */
     private StateMachine<Ticket, TicketState, TicketChange> machine(
             GraphDefinition<Ticket, TicketState, TicketChange> graph) {
@@ -267,6 +276,12 @@ class AsyncRecoveryTest {
     private Outcome<Ticket, TicketState, TicketChange> viaFacade(
             StateMachine<Ticket, TicketState, TicketChange> machine, Ticket ticket, Object input) throws Exception {
         return start(machine, ticket, input).get(WAIT_SECONDS, TimeUnit.SECONDS);
+    }
+
+    /** Publishes {@code ticket} without input through the async facade of {@code machine} and waits for it. */
+    private Outcome<Ticket, TicketState, TicketChange> viaFacade(
+            StateMachine<Ticket, TicketState, TicketChange> machine, Ticket ticket) throws Exception {
+        return start(machine, ticket).get(WAIT_SECONDS, TimeUnit.SECONDS);
     }
 
     /**
@@ -536,7 +551,7 @@ class AsyncRecoveryTest {
                                 .recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
                                         UnreadableFailure.class)
                                 .onFailure(TicketChange.MARK_INTEGRATION_FAILED)));
-                CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call = start(machine, root, null);
+                CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call = start(machine, root);
                 TransitionAbortedException poison = poisoned.get(WAIT_SECONDS, TimeUnit.SECONDS);
                 if (!alreadyCompleted) {
                     stage.awaitPendingRegistration();
@@ -759,7 +774,7 @@ class AsyncRecoveryTest {
                                     InterruptedException.class)));
             Ticket ticket = new Ticket("t1");
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
-                    start(machine, ticket, null);
+                    start(machine, ticket);
             ExecutionException failure = assertThrows(ExecutionException.class,
                     () -> call.get(WAIT_SECONDS, TimeUnit.SECONDS));
             TransitionAbortedException error = assertInstanceOf(TransitionAbortedException.class, failure.getCause());
@@ -851,7 +866,7 @@ class AsyncRecoveryTest {
         Ticket ticket = new Ticket("t1");
         try {
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
-                    start(machine, ticket, null);
+                    start(machine, ticket);
             ExecutionException failure = assertThrows(ExecutionException.class,
                     () -> call.get(WAIT_SECONDS, TimeUnit.SECONDS));
             TransitionAbortedException error = assertInstanceOf(TransitionAbortedException.class, failure.getCause());
@@ -882,7 +897,7 @@ class AsyncRecoveryTest {
                             CompletableFuture.completedFuture(
                                     ActionOutcome.failed(PublicationFailures.Rejected.class, "content rejected"))));
             Ticket ticket = new Ticket("t1");
-            Outcome<Ticket, TicketState, TicketChange> outcome = viaFacade(machine, ticket, null);
+            Outcome<Ticket, TicketState, TicketChange> outcome = viaFacade(machine, ticket);
             assertEquals("FAILURE_ROUTED RECORD_REJECTION to REJECTED_BY_PROVIDER, kind Rejected, no cause;"
                     + " ticket REJECTED_BY_PROVIDER after 1 write(s)", routed(ticket, null, outcome));
             assertEquals(List.of("READY -RECORD_REJECTION-> REJECTED_BY_PROVIDER MOVE no action at depth 0"),
@@ -909,7 +924,7 @@ class AsyncRecoveryTest {
                             })));
             Ticket asyncTicket = new Ticket("async");
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
-                    start(asyncMachine, asyncTicket, null);
+                    start(asyncMachine, asyncTicket);
             retried.awaitPendingRegistration();
             retried.complete(ActionOutcome.ok());
             Outcome<Ticket, TicketState, TicketChange> async = call.get(WAIT_SECONDS, TimeUnit.SECONDS);
@@ -1078,7 +1093,7 @@ class AsyncRecoveryTest {
                                                     + " after " + ticket.stateWrites + " write(s)"))));
             Ticket ticket = new Ticket("t1");
             CompletableFuture<Outcome<Ticket, TicketState, TicketChange>> call =
-                    start(machine, ticket, null);
+                    start(machine, ticket);
             stage.awaitPendingRegistration();
             stage.completeExceptionally(new ServiceUnavailableException("provider down"));
             assertEquals(OutcomeCode.FAILURE_ROUTED, call.get(WAIT_SECONDS, TimeUnit.SECONDS).code());

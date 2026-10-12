@@ -152,17 +152,27 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
 
     @Override
     public Outcome<E, S, T> execute(E entity, T transition) {
-        return execute(entity, transition, null);
+        Objects.requireNonNull(entity, "entity");
+        Objects.requireNonNull(transition, "transition");
+        return executeRoot(entity, transition, Optional.empty());
     }
 
     @Override
     public Outcome<E, S, T> execute(E entity, T transition, Object input) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(transition, "transition");
+        Objects.requireNonNull(input, "input");
+        return executeRoot(entity, transition, Optional.of(input));
+    }
+
+    /**
+     * Runs the root call of {@code execute} over arguments already checked for null; {@code operationInput} is empty
+     * for the overload that takes no input.
+     */
+    private Outcome<E, S, T> executeRoot(E entity, T transition, Optional<Object> operationInput) {
         requireTransition(transition);
         Reentrancy.check(key(), entity);
         Optional<Enum<?>> requested = presentTransitions.get(transition.ordinal());
-        Optional<Object> operationInput = Optional.ofNullable(input);
         CallLog log = CallLog.open(Optional.empty());
         Optional<Observed> observed = observe(entity, requested, false, log);
         return runRoot(entity, requested, false, observed, log,

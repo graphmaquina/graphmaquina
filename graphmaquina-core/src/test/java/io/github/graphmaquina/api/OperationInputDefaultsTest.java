@@ -1,5 +1,6 @@
 package io.github.graphmaquina.api;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -14,7 +15,10 @@ import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
-/** The SPI defaults: a third-party implementation keeps working, and never silently drops a payload. */
+/**
+ * The SPI defaults: a third-party implementation keeps working, never silently drops a payload, and refuses a null one
+ * instead of reading it as absent.
+ */
 class OperationInputDefaultsTest {
     /** The single state of the fixture machine. */
     enum S { OPEN }
@@ -112,11 +116,13 @@ class OperationInputDefaultsTest {
         assertThrows(ClassCastException.class, () -> guard.input(Integer.class));
         assertThrows(ClassCastException.class, () -> action.input(Integer.class));
     }
-    @Test void theSpiDelegatesAbsenceButNeverDropsPayload() {
+    @Test void theSpiRefusesANullInputAndNeverDropsPayload() {
         Object e = new Object();
         PlainMachine machine = new PlainMachine();
-        assertSame(e, machine.execute(e, T.GO, null).entity());
-        assertSame(e, machine.async().execute(e, T.GO, null).join().entity());
+        assertEquals("input",
+                assertThrows(NullPointerException.class, () -> machine.execute(e, T.GO, null)).getMessage());
+        assertEquals("input",
+                assertThrows(NullPointerException.class, () -> machine.async().execute(e, T.GO, null)).getMessage());
         assertThrows(UnsupportedOperationException.class, () -> machine.execute(e, T.GO, "value"));
         CompletableFuture<Outcome<Object, S, T>> future = machine.async().execute(e, T.GO, "value");
         assertInstanceOf(UnsupportedOperationException.class,

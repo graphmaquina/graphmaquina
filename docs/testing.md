@@ -449,8 +449,8 @@ assertThat(action.calls().single()).inputSatisfies(CharSequence.class, value -> 
 `hasInput` compares by equality, `hasInputSameAs` checks identity, and `hasNoInput` requires absence.
 `inputSatisfies` checks presence and assignability before invoking the typed assertion; an absent or wrong
 input produces an inspectable `GraphAssertionError`. Null expected values are programming errors; use
-`hasNoInput()` to check a null operation argument. `CallInputAssert.assertThat(call)` is also available
-without the `GraphAssertions` facade.
+`hasNoInput()` to check a call that carried no operation argument, since the engine refuses a null one before the
+call starts. `CallInputAssert.assertThat(call)` is also available without the `GraphAssertions` facade.
 
 The recorded `input(Class)` follows the context contract: empty remains empty, supertypes are supported,
 and incompatible present values throw `ClassCastException`. A null type token throws `NullPointerException`;

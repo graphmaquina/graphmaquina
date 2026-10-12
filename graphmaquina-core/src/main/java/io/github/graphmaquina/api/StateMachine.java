@@ -77,18 +77,17 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
 
     /**
      * Same as the two-argument {@code execute}, carrying a second, operation-specific value that guards and
-     * actions read back through their context's {@code input} accessors. A {@code null} input delegates to that
-     * overload; this default rejects any other value instead of silently dropping it.
+     * actions read back through their context's {@code input} accessors. A {@code null} input is refused before the
+     * call starts, as a {@code null} entity is; a call that carries no input is the two-argument {@code execute}.
+     * This default rejects every input instead of silently dropping it.
      *
-     * @throws NullPointerException if {@code entity} or {@code transition} is null
-     * @throws UnsupportedOperationException if {@code input} is not null and this machine does not support it
+     * @throws NullPointerException if {@code entity}, {@code transition} or {@code input} is null
+     * @throws UnsupportedOperationException if this machine does not support operation input
      */
     default Outcome<E, S, T> execute(E entity, T transition, Object input) {
         Objects.requireNonNull(entity, "entity");
         Objects.requireNonNull(transition, "transition");
-        if (input == null) {
-            return execute(entity, transition);
-        }
+        Objects.requireNonNull(input, "input");
         throw new UnsupportedOperationException("this StateMachine does not support operation input");
     }
 }

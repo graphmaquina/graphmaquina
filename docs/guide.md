@@ -1266,10 +1266,11 @@ peer access, the same `input` accessors and a read-only `flow()`. It has no casc
 and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. Guard code should be free of
 mutations and external side effects.
 
-Without an input, or when the caller passes null, the optional is empty. A value of an incompatible class
-throws `ClassCastException`; absence and a wrong type are different conditions. Primitive operation
-arguments are boxed; read them with wrapper tokens such as `Integer.class`. Class tokens cannot validate
-erased generic arguments. Input operations do not support method type parameters or varargs.
+Without an input the optional is empty. A null input is refused before the call starts, as a null entity is, with a
+`NullPointerException` that names the parameter. A value of an incompatible class throws `ClassCastException`;
+absence and a wrong type are different conditions. Primitive operation arguments are boxed; read them with wrapper
+tokens such as `Integer.class`. Class tokens cannot validate erased generic arguments. Input operations do not
+support method type parameters or varargs.
 
 The same input reaches the transition's guards, action and handled failure action. Cascades, the exits of
 sub-machines, watch reactions and reevaluation have no input of their own and receive an empty optional. A shared
@@ -3318,13 +3319,13 @@ current value.
 A cascaded step and the exit of a sub-machine receive no `input()`. When they need a value the caller passed, the
 action that received it copies it into the flow before it cascades. The shop's `Orders` facade declares
 `cancel(Order order, String cancellationId)`, whose identifier names the batch the order's items go back to stock in.
-The order's `cancel` action copies it into the flow, or `manual` when the caller passed none, for each item it
-cancels:
+The order's `cancel` action copies it into the flow for each item it cancels. The operation refuses a null
+identifier before the call starts, so the action always finds one:
 
 ```java
 @GraphAction
 public ActionOutcome cancel(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {
-    ctx.flow().put(ShopFlow.CANCELLATION, ctx.input(String.class).orElse("manual"));
+    ctx.flow().put(ShopFlow.CANCELLATION, ctx.input(String.class).orElseThrow());
     ctx.cascadeAll(Items.class, ctx.entity().items(), ItemTransition.CANCEL, CascadePolicy.COLLECT);
     return ActionOutcome.ok();
 }
