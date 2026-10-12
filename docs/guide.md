@@ -1751,15 +1751,21 @@ call wrote up to the failure:
   except what a rollback removed earlier. A step whose failure its edge expects, a failure its action returned or a
   throwable of a type the edge declares, is rolled back whether a route takes the failure or not: an
   `UnhandledFailureException` therefore lacks the writes of its step and of the steps that step cascaded to. Each
-  `COLLECT` element that aborted is rolled back too, so a `CascadeException` lacks their writes.
+  `COLLECT` element that aborted is rolled back too, so a `CascadeException` lacks their writes. Once a failed
+  cascade poisoned the call, a step whose action still returns or throws such a failure is not rolled back: the call
+  throws the failure that poisoned it, which keeps that step's writes and its hop.
 - A `CommitFailedException` holds everything the steps wrote.
 - An `AfterCommitException` also holds what the hooks wrote, the failing hook's writes before it threw included.
 - When the call records its trail, its flow also lists the hops and starts the call took up to the failure, except
-  those a rollback removed, then a `FlowEntry.Failed` entry with the failure, unless the trail's clock threw when
+  those a rollback removed and the last one when the clock could not read its instant, which is then what failed the
+  call, followed by a `FlowEntry.Failed` entry with the failure, unless the trail's clock threw when
   the call read that entry's instant, as [record the call's trail](#record-the-calls-trail) shows.
 - A `reevaluate` that fails before it runs an edge, while it reads the state, evaluates its watch or exceeds the
   limit of a watch chain, hands out `FlowView.empty()`, unless its machine records its trail: its flow then holds the
   entity, no value, and the `Failed` entry alone, or no entry when the clock threw while it read the entry's instant.
+- Only the failure the call throws carries the call's flow: a failure of the call nested in it, such as an element of
+  the `errors()` of a `CascadeException` or the `original()` of a `PoisonedUnitOfWorkException`, holds
+  `FlowView.empty()`.
   A call that records no trail and whose steps and hooks wrote
   nothing to its flow hands out `FlowView.empty()` too.
 - An `Error` carries no flow: it propagates as itself.
@@ -3227,12 +3233,13 @@ public ActionOutcome restock(TransitionContext<Item, ItemStatus, ItemTransition>
 ```
 
 An action's write is undone with the step that made it. When a step fails with a failure its edge expects, one its
-action returns or a throwable of a type the edge declares, the call drops every write made since that step took its
-hop, its action's and those of the steps it cascaded to, and keeps what earlier steps wrote: the recovery action of
-its route then writes anew, and without a route the step aborts with `UnhandledFailureException`. A `COLLECT` element
-whose step aborts is dropped the same way, its writes with it, before the next element runs. No other abort undoes a
-write: a call that aborts commits nothing, and the flow its failure hands out keeps what its steps wrote. A hook
-writes after the commit, and nothing undoes its writes.
+action returns or a throwable of a type the edge declares, the call drops every write made since that step took its hop,
+its action's and those of the steps it cascaded to, and keeps what earlier steps wrote: the recovery action of its route
+then writes anew, and without a route the step aborts with `UnhandledFailureException`. A `COLLECT` element whose step
+aborts is dropped the same way, its writes with it, before the next element runs. A failed cascade that already poisoned
+the call keeps even those writes: the call throws its failure without dropping that step. No other abort undoes a write:
+a call that aborts commits nothing, and the flow its failure hands out keeps what its steps wrote. A hook writes after
+the commit, and nothing undoes its writes.
 
 Values are stored by reference, never copied, and a rollback drops the write, not what was done to the object. An
 action that puts a list, adds an element to it and then fails into its route leaves the recovery action without a

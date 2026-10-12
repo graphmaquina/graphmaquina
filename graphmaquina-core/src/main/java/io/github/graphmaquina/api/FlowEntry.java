@@ -5,15 +5,16 @@ import java.util.Optional;
 import lombok.NonNull;
 
 /**
- * One entry of the trail of a call, {@link FlowView#trail()}, which a call records when its root machine was built
- * with {@code recordTrail}. The trail lists what the call took, in order: a {@link Hop} for each hop and a
- * {@link Start} for each sub-machine start, those of cascaded steps and of the exits of sub-machines included, then,
- * when the call ends in a rejection or in a failure, a final {@link Rejected} or {@link Failed}, unless the clock
- * throws or answers null when that entry's instant is read; an Error ends a call without one. A hop or a start that
- * a rollback dropped, the failed step of a failure route or a {@code COLLECT} element that aborted, leaves the trail
- * with it. {@link #at()} is read on the clock the root machine was built with: for a hop or a start, right after it
- * was logged, before its action runs; for the final entry, when the call ended. Each entry is a value, compared by
- * its components.
+ * One entry of the trail of a call, {@link FlowView#trail()}, which a call records when its root machine was built with
+ * {@code recordTrail}. The trail lists what the call took, in order: a {@link Hop} for each hop and a {@link Start} for
+ * each sub-machine start, those of cascaded steps and of the exits of sub-machines included, then, when the call ends
+ * in a failure, a final {@link Failed}, unless the clock throws or answers null when that entry's instant is read, and
+ * when it ends in a rejection, a final {@link Rejected}; a clock that cannot date that {@link Rejected} fails the call
+ * instead, whose trail then ends as a failed call's. A hop or a start whose instant the clock could not read, which
+ * fails the call, is left out. An Error ends a call without a final entry. A hop or a start that a rollback dropped,
+ * the failed step of a failure route or a {@code COLLECT} element that aborted, leaves the trail with it. {@link #at()}
+ * is read on the clock the root machine was built with: for a hop or a start, right after it was logged, before its
+ * action runs; for the final entry, when the call ended. Each entry is a value, compared by its components.
  */
 public sealed interface FlowEntry permits FlowEntry.Hop, FlowEntry.Start, FlowEntry.Rejected, FlowEntry.Failed {
 

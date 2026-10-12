@@ -831,7 +831,8 @@ Each key reads its own field, so `changes()` reports a moved state under its own
 
 ### The call's flow and its trail
 
-`flow()` opens [the call's flow](guide.md#the-calls-flow) on every outcome view and on every call-failure view.
+`flow()` opens [the call's flow](guide.md#the-calls-flow) on every outcome view and on the view of the failure a call
+throws; a failure of the call nested in it, such as `error(i)` of a cascade abort, holds the empty flow.
 `hasEntitySameAs` compares the entity of the root call by reference, `hasValue` compares the value of a key with
 `equals`, `hasNoValue` expects no value under a key, and `hasKeysExactly` compares the keys that hold a value, in the
 order of the writes that set them. A key that holds no value fails `hasValue` with `Optional.empty` as its actual

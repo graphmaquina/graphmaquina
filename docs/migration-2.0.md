@@ -513,8 +513,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   hook failed.
 - **Call failures share `CallFailedException`.** `TransitionAbortedException`, `CommitFailedException` and
   `AfterCommitException` extend it and report, as values, the call that failed, its phase, how far it got in
-  writing states and the actions that ran, and they hand out the call's flow, `flow()`
-  ([the call's flow](guide.md#the-calls-flow)). Their constructors take the `MachineCall`.
+  writing states and the actions that ran, and the one a call throws hands out the call's flow, `flow()`
+  ([the call's flow](guide.md#the-calls-flow)); one nested in it holds the empty flow. Their constructors take the
+  `MachineCall`.
 - **Unbounded timeouts.** An `asyncTimeout` or edge timeout of `Duration.ofNanos(Long.MAX_VALUE)` or more means
   no limit, and the other limit stays in charge. Such budgets used to overflow, into `ArithmeticException` or a
   deadline silently switched off, and an `asyncTimeout` above that left its thread refusing every later
@@ -709,7 +710,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   included, `records()` reads every hop the call committed, and `starts()` every sub-machine it started.
 - **`CallFailureAssert`**, reached through `isCallFailure()`, and every narrowed view of a call failure expect a call
   failure's `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` and `flow()`, the call's
-  flow, are available on all of them.
+  flow, which a failure nested in the one the call threw holds empty, are available on all of them.
 - **`AbortAssert.atUnreadState(key, entity[, transition])`** is new: it locates an abort raised before the entity's
   state was read. `at`, `atUnresolved` and `atUnread` now compare `from` as an `Optional`, so a mismatch reports
   `Optional[...]` on both sides, or `Optional.empty` for an abort that read no state.

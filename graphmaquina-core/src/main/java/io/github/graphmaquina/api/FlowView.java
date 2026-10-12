@@ -27,7 +27,8 @@ public interface FlowView {
      * The view without values, without an entity and without a trail, immutable and readable from any thread: what a
      * call hands out when it records no trail and none of its steps or hooks wrote to its flow, what an ignored outcome
      * and any outcome a cascade returned answer, and what a {@code CallFailedException} holds until the root of its
-     * call attaches the call's own flow. It is equal to every handed-out view that holds no value, no entity and no
+     * call attaches the call's own flow to the failure the call throws, so what a failure of the call nested in that
+     * one keeps. It is equal to every handed-out view that holds no value, no entity and no
      * trail entry.
      */
     static FlowView empty() {
@@ -55,7 +56,8 @@ public interface FlowView {
      * which its context's {@code entity()} gives, and so does the hook of any hop of the call, whose own entity is
      * its first argument. A change made to it is immediate and never undone, not even when the call fails. Present in
      * the flow every step and every hook of a call receives, and in the flow a call hands out once a step or a hook
-     * wrote to it or when the call records its trail and runs a step; empty in {@link #empty()}, which a call that
+     * wrote to it or when the call records its trail and runs a step, and in the flow of a reevaluation that records
+     * its trail and failed before it ran an edge; empty in {@link #empty()}, which a call that
      * records no trail and wrote nothing to its flow hands out, and so does an ignored reevaluation, and in a flow that
      * belongs to no call, such as the one the five-argument constructor of {@link CommitContext} gives.
      */
@@ -74,8 +76,10 @@ public interface FlowView {
     /**
      * The trail of the call: what it took, in order, one {@link FlowEntry} per hop and per sub-machine start, those of
      * cascaded steps and of the exits of sub-machines included, each at the instant it was logged; a rollback drops
-     * the entries of what it undoes. Once the call ended, a rejection or a failure adds its final entry, unless the
-     * clock throws or answers null when that entry's instant is read; an Error adds none. Empty unless the root
+     * the entries of what it undoes. Once the call ended, a failure adds its final Failed entry, unless the clock
+     * throws or answers null when that entry's instant is read, and a rejection its Rejected entry, but a clock that
+     * cannot date that one fails the call, whose trail then ends as a failed call's; an Error adds none. A hop or a
+     * start whose instant the clock could not read, which fails the call, is left out. Empty unless the root
      * machine of the call was built with {@code recordTrail}: the root machine decides for the whole call, whatever
      * the machines its steps cascade to or exit into, and a watch reaction, a call of its own, is decided by its own
      * machine. Read during the call, it lists what the call took so far. The list is unmodifiable and does not follow

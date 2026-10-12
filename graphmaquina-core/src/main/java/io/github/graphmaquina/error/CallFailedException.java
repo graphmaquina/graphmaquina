@@ -64,19 +64,24 @@ public abstract class CallFailedException extends StateMachineException {
      * failure: the root call's entity and the values present then, each under the key that put it. They are what the
      * steps wrote up to the failure, minus the writes of each step whose failure its edge expects, a failure it
      * returned or a throwable of a declared type, which the engine rolls back whether a route takes it or the step
-     * aborts with {@link UnhandledFailureException}, and of each {@code COLLECT} element that aborted. No other abort
-     * undoes a write, so the step that aborted keeps its writes, and so do the steps it cascaded to. After the commit,
-     * they also hold what the hooks wrote, a failing hook's writes before it threw included. The view is immutable,
-     * any thread can read it for as long as it is kept, and it compares by value; its values are the very objects
-     * that were put. When the root machine records its trail, {@link FlowView#trail()} lists the hops and the
-     * sub-machine starts the call took up to the failure, those a rollback dropped left out, then a
-     * {@link io.github.graphmaquina.api.FlowEntry.Failed} entry with this failure, read when the root caught it,
-     * unless the trail's clock throws or answers null then, which leaves the entry out; a reevaluation that failed
-     * before it ran an edge, reading the state, a chain of watch reactions over its limit, or a watch function that
-     * threw, has the entity, no value and at most that entry. Without the trail, the flow is
-     * {@link FlowView#empty()}, without an entity, when no step or hook of the call wrote to it, since reading never
-     * creates it, and for such a reevaluation. A failure of another call that is the cause of this one keeps the flow
-     * of its own call. An Error that ends a call carries no flow.
+     * aborts with {@link UnhandledFailureException}, and of each {@code COLLECT} element that aborted. A step whose
+     * action returns or throws such a failure after a failed cascade poisoned the call is not rolled back: the call
+     * throws the failure that poisoned it, and that step keeps its writes and its hop. No other abort undoes a write,
+     * so the step that aborted keeps its writes, and so do the steps it cascaded to. After the commit, they also hold
+     * what the hooks wrote, a failing hook's writes before it threw included. The view is immutable, any thread can
+     * read it for as long as it is kept, and it compares by value; its values are the very objects that were put. When
+     * the root machine records its trail, {@link FlowView#trail()} lists the hops and the sub-machine starts the call
+     * took up to the failure, those a rollback dropped left out, and the last one too when the clock could not read its
+     * instant, which is then what failed the call, followed by a {@link io.github.graphmaquina.api.FlowEntry.Failed}
+     * entry with this failure, read when the root caught it, unless the trail's clock throws or answers null then,
+     * which leaves the entry out; a reevaluation that failed before it ran an edge, reading the state, a chain of watch
+     * reactions over its limit, or a watch function that threw, has the entity, no value and at most that entry.
+     * Without the trail, the flow is {@link FlowView#empty()}, without an entity, when no step or hook of the call
+     * wrote to it, since reading never creates it, and for such a reevaluation. A failure of another call that is the
+     * cause of this one keeps the flow of its own call. Only the failure the call throws carries the call's flow: a
+     * failure of the call nested in it, such as an element of the {@code errors()} of a {@code CascadeException} or the
+     * {@code original()} of a {@code PoisonedUnitOfWorkException}, holds {@link FlowView#empty()}. An Error that ends a
+     * call carries no flow.
      */
     public FlowView flow() {
         return flow;

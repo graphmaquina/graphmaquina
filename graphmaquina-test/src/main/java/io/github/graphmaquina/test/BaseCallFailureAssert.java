@@ -55,7 +55,8 @@ public abstract class BaseCallFailureAssert<SELF extends BaseCallFailureAssert<S
      * The flow of the failed call, as {@link CallFailedException#flow()} describes it: what the call's steps and hooks
      * left there up to the failure, its root entity and, when its root machine records it, its trail. A failed call
      * that wrote nothing to its flow and records no trail hands out
-     * {@link io.github.graphmaquina.api.FlowView#empty()}, which holds no entity.
+     * {@link io.github.graphmaquina.api.FlowView#empty()}, which holds no entity, and so does a failure of the call
+     * nested in the one it threw, such as an element of a cascade abort.
      */
     public FlowAssert flow() {
         return new FlowAssert(context + ".flow", Optional.of(failure.flow()));
