@@ -20,6 +20,7 @@ public final class Order {
     @Getter
     private OrderStatus status = OrderStatus.NEW;
     private final List<Item> items = new ArrayList<>();
+    private final List<Item> restocked = new ArrayList<>();
     @Getter
     private int paymentAttempts;
 
@@ -39,6 +40,16 @@ public final class Order {
 
     public void countAttempt() {
         paymentAttempts++;
+    }
+
+    /** The items its cancellation put back in stock, in the order their hooks ran. */
+    public List<Item> restocked() {
+        return List.copyOf(restocked);
+    }
+
+    /** Only called by the hook of an item's cancellation, once the call committed. */
+    public void restocked(@NonNull Item item) {
+        restocked.add(item);
     }
 
     @Override

@@ -318,7 +318,7 @@ inventing one was how a caller could end up believing a route existed.
 | `onFailure(state)` routes to the cell `(origin, state)`. | `onFailure(transition)` names the recovering edge and resolves it from the failing edge's origin. A route may legitimately share the destination of the edge it recovers, because identity removes the old ambiguity. Its guards are still skipped and its own route is still not chained. |
 | `TransitionAbortedException.to()` always reports a destination. | `transition()` and `to()` are `Optional`: an abort before an edge is resolved reports the requested identifier and no destination, and one raised before any identifier was read, such as a watch chain over its limit, reports neither. Messages read `FROM -ID-> TO`, `FROM -ID-> ?` when no edge was resolved, or `FROM` when no identifier was read. |
 | `ActionRecord` and `TransitionRecord` identify a hop by its endpoints and action name. | Both carry the transition identity as well, so two actions with the same name and endpoints stay distinguishable. |
-| `CommitContext<S>` carries `from`, `to`, `EdgeKind` and `isTerminal`; `HookRef<E>` takes only the entity. | `CommitContext<S, T>` adds the committed identifier and uses `TransitionKind`. `HookRef<E, S, T>.run(entity, context)` receives the context of the edge that committed; `HookRef.of(name, consumer)` adapts a one-argument hook. |
+| `CommitContext<S>` carries `from`, `to`, `EdgeKind` and `isTerminal`; `HookRef<E>` takes only the entity. | `CommitContext<S, T>` adds the committed identifier and `flow()`, the call's flow, which the hook reads and writes while it runs ([the call's flow](guide.md#the-calls-flow)), and uses `TransitionKind`. `HookRef<E, S, T>.run(entity, context)` receives the context of the edge that committed; `HookRef.of(name, consumer)` adapts a one-argument hook. |
 | A watch rule moves to a state: `.when(c).goTo(state)`. | A watch rule executes a transition of the owner: `.when(c).execute(transition)`. The rule runs that very edge, never another one reaching the same state. |
 | `allowedFrom(state)` returns reachable destinations. | `transitionsFrom(state)` returns the identifiers declared from the state. Destinations are inspected through `outgoingFrom(state)`. |
 | `GraphDefinition.render()` prints the matrix, and `toString()` delegates to it. | `render()` is gone with the matrix. `toString()` is a summary of name and counts, and DOT lives in `GraphvizExporter`. |
@@ -513,7 +513,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   hook failed.
 - **Call failures share `CallFailedException`.** `TransitionAbortedException`, `CommitFailedException` and
   `AfterCommitException` extend it and report, as values, the call that failed, its phase, how far it got in
-  writing states and the actions that ran. Their constructors take the `MachineCall`.
+  writing states and the actions that ran, and the one a call throws hands out the call's flow, `flow()`
+  ([the call's flow](guide.md#the-calls-flow)); one nested in it holds the empty flow. Their constructors take the
+  `MachineCall`.
 - **Unbounded timeouts.** An `asyncTimeout` or edge timeout of `Duration.ofNanos(Long.MAX_VALUE)` or more means
   no limit, and the other limit stays in charge. Such budgets used to overflow, into `ArithmeticException` or a
   deadline silently switched off, and an `asyncTimeout` above that left its thread refusing every later
@@ -707,7 +709,8 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `at(key, entity, from, transition, to)` compares the committed hop the failing hook ran for, its identifier
   included, `records()` reads every hop the call committed, and `starts()` every sub-machine it started.
 - **`CallFailureAssert`**, reached through `isCallFailure()`, and every narrowed view of a call failure expect a call
-  failure's `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` is available on all of them.
+  failure's `hasPhase(...)`, `hasStatesWritten(...)` and `hasCallSameAs(...)`; `journal()` and `flow()`, the call's
+  flow, which a failure nested in the one the call threw holds empty, are available on all of them.
 - **`AbortAssert.atUnreadState(key, entity[, transition])`** is new: it locates an abort raised before the entity's
   state was read. `at`, `atUnresolved` and `atUnread` now compare `from` as an `Optional`, so a mismatch reports
   `Optional[...]` on both sides, or `Optional.empty` for an abort that read no state.
@@ -727,8 +730,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   the system properties are read.
 - **Failure reports.** A view opened from another one names the path it came from; a value whose `toString()`
   throws a runtime exception or returns null is still reported; a throwable reported as the actual value is the
-  error's cause; and a null element of a list no longer raises `NullPointerException`: an exact comparison reports
-  it, and a search skips it.
+  error's cause; and a null element of a journal or of a list of reactions no longer raises `NullPointerException`:
+  an exact comparison of a journal reports it, and a search skips it. A list of transition records, of sub-machine
+  starts or of trail entries refuses one with that exception when its view is built.
 - **Other fixes.** `GraphDiff.render` escapes a quote inside a value; `AsyncAssertions` waits on a stage that
   cannot be converted to a `CompletableFuture`, without converting or cancelling it; and the outcome of a done
   reaction or of a recorded callback is refused with `IllegalArgumentException` when its recovery identifier

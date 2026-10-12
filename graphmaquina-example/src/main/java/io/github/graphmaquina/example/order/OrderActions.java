@@ -9,6 +9,7 @@ import io.github.graphmaquina.api.CommitContext;
 import io.github.graphmaquina.api.GuardContext;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.TransitionContext;
+import io.github.graphmaquina.example.ShopFlow;
 import io.github.graphmaquina.example.item.ItemStatus;
 import io.github.graphmaquina.example.item.ItemTransition;
 import io.github.graphmaquina.example.item.Items;
@@ -66,13 +67,15 @@ public final class OrderActions {
     }
 
     /**
-     * Single gate for cancellation: the cascade to items lives in one place. It names the item's own
-     * {@code CANCEL} identifier, not the {@code CANCELLED} state, because a cascade selects an edge. It uses
-     * {@code COLLECT}, so every item is tried and one that cannot be cancelled aborts the order's cancellation with
-     * all the item failures aggregated.
+     * Single gate for cancellation: the cascade to items lives in one place. A cascaded step receives no input, so
+     * it first copies the batch its caller passed into the call's flow, or {@code manual} when the caller passed
+     * none, for the items' {@code restock}. It names the item's own {@code CANCEL} identifier, not the
+     * {@code CANCELLED} state, because a cascade selects an edge. It uses {@code COLLECT}, so every item is tried
+     * and one that cannot be cancelled aborts the order's cancellation with all the item failures aggregated.
      */
     @GraphAction
     public ActionOutcome cancel(TransitionContext<Order, OrderStatus, OrderTransition> ctx) {
+        ctx.flow().put(ShopFlow.CANCELLATION, ctx.input(String.class).orElse("manual"));
         ctx.cascadeAll(Items.class, ctx.entity().items(), ItemTransition.CANCEL, CascadePolicy.COLLECT);
         return ActionOutcome.ok();
     }

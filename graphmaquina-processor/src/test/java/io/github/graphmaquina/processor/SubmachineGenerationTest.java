@@ -14,7 +14,8 @@ import org.junit.jupiter.api.Test;
  * {@code Payments} in two states, finding the parent through a static lookup in one and an instance lookup in the
  * other; {@code Orders} binds the same {@code Payments} through a property of each entity, and {@code Reviews}, a
  * machine over the orders themselves. The set builds the definition of each child once and hands it to every parent,
- * and it treats as asynchronous exactly the machines the registry requires a timeout of.
+ * it treats as asynchronous exactly the machines the registry requires a timeout of, and, built with
+ * {@code recordTrail}, it lists the exits and the starts a call runs in that call's trail.
  */
 class SubmachineGenerationTest {
 
@@ -119,6 +120,40 @@ class SubmachineGenerationTest {
                         return "submit " + describe(submitted) + " | approve " + describe(approved) + " | capture "
                                 + describe(captured) + " | " + order.status() + " " + order.review() + " "
                                 + payment.status();
+                        """));
+    }
+
+    /**
+     * A set built with {@code recordTrail(clock)} records the trail of a deposit's capture on that clock: the
+     * capture, the exit it runs on its booking and the start of the balance that exit enters, in the order the call
+     * took them.
+     */
+    @Test
+    void aSetThatRecordsItsTrailListsTheExitAndTheStartACaptureRuns() throws Exception {
+        String noon = "2026-10-10T12:00:00Z";
+        assertEquals("PENDING-CAPTURE->CAPTURED@" + noon + " DEPOSIT-DEPOSIT_PAID->BALANCE@" + noon
+                        + " BALANCE:PENDING@" + noon,
+                run(billing(), "builder(ledger).recordTrail(java.time.InstantSource.fixed(java.time.Instant.parse(\""
+                        + noon + "\")))", """
+                        Payment deposit = new Payment("deposit");
+                        Booking booking = new Booking("booking", deposit, new Payment("balance"));
+                        BookingLookups.register(booking);
+                        ledger.register(booking);
+                        billing.bookings().book(booking);
+                        Outcome<Payment, PaymentStatus, PaymentTransition> captured =
+                                billing.payments().capture(deposit);
+                        StringBuilder text = new StringBuilder();
+                        for (io.github.graphmaquina.api.FlowEntry entry : captured.flow().trail()) {
+                            if (entry instanceof io.github.graphmaquina.api.FlowEntry.Hop hop) {
+                                text.append(' ').append(hop.hop().from()).append('-')
+                                        .append(hop.hop().transition()).append("->").append(hop.hop().to());
+                            } else if (entry instanceof io.github.graphmaquina.api.FlowEntry.Start start) {
+                                text.append(' ').append(start.start().node()).append(':')
+                                        .append(start.start().initial());
+                            }
+                            text.append('@').append(entry.at());
+                        }
+                        return text.toString().strip();
                         """));
     }
 

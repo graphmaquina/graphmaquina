@@ -7,7 +7,8 @@ import java.time.Duration;
 
 /**
  * A call that its registry's observers are watching: the observers, the call, and the clock read just before they
- * were told it started, which the end event measures its elapsed time from.
+ * were told it started, which the end event measures its elapsed time from. A call that logs shares that read with its
+ * log.
  */
 record Observed(Observers observers, MachineCall call, long startNanos) {
 

@@ -29,5 +29,14 @@ tasks.test {
     systemProperty("graphmaquina.goldens.root",
         layout.projectDirectory.dir("src/test/resources").asFile.absolutePath)
     outputs.upToDateWhen { !updateGoldens.get() }
+    // GuideCopiesTest reads the guides that quote the shop and the shop's sources, so a change to either reruns it.
+    val docs = rootProject.layout.projectDirectory.dir("docs")
+    systemProperty("graphmaquina.docs", docs.asFile.absolutePath)
+    systemProperty("graphmaquina.example.sources",
+        layout.projectDirectory.dir("src/main/java/io/github/graphmaquina/example").asFile.absolutePath)
+    systemProperty("graphmaquina.example.tests",
+        layout.projectDirectory.dir("src/test/java/io/github/graphmaquina/example").asFile.absolutePath)
+    inputs.files(docs.file("guide.md"), docs.file("testing.md")).withPropertyName("guides")
+    inputs.dir(layout.projectDirectory.dir("src")).withPropertyName("exampleSources")
     outputs.doNotCacheIf("Golden update writes source resources") { updateGoldens.get() }
 }

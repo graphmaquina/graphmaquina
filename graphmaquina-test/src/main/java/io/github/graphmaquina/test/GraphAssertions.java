@@ -1,6 +1,7 @@
 package io.github.graphmaquina.test;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.GuardResult;
 import io.github.graphmaquina.api.Outcome;
@@ -17,11 +18,11 @@ import java.util.function.Function;
  * <p>Entity and state views keep the entity and state types of their subjects, which is what makes a chain typed:
  * the state enum of the machine under test is the only one the compiler accepts anywhere along it.
  *
- * <p>Four shapes are deliberately absent. A list of transition records, a list of reactions, a list of sub-machine
- * starts and a journal of action records all erase to the same parameter, so one facade cannot carry all four; every
- * one of them keeps its own factory, {@link TransitionRecordsAssert#assertThat(java.util.List)},
- * {@link ReactionsAssert#assertThat(java.util.List)}, {@link StartsAssert#assertThat(java.util.List)} and
- * {@link JournalAssert#assertThat(java.util.List)}.
+ * <p>Five shapes are deliberately absent. A list of transition records, a list of reactions, a list of sub-machine
+ * starts, a journal of action records and the trail of a call all erase to the same parameter, so one facade cannot
+ * carry all five; every one of them keeps its own factory, {@link TransitionRecordsAssert#assertThat(java.util.List)},
+ * {@link ReactionsAssert#assertThat(java.util.List)}, {@link StartsAssert#assertThat(java.util.List)},
+ * {@link JournalAssert#assertThat(java.util.List)} and {@link TrailAssert#assertThat(java.util.List)}.
  * Probes, snapshots, goldens and bounded waits are not subjects to assert over but tools to build one, and
  * stay where they are — {@link AsyncAssertions}, {@link GraphSnapshots}, {@link GraphGoldens} and the
  * {@code probe} package. Recorded guard and action calls are subjects for {@link CallInputAssert}.
@@ -71,6 +72,14 @@ public final class GraphAssertions {
 
     public static InvalidGraphAssert assertThat(InvalidGraphException actual) {
         return InvalidGraphAssert.assertThat(actual);
+    }
+
+    /**
+     * The flow of a call, held on its own: for instance the flow of a {@code CommitContext} a test built to call a hook
+     * by hand. The flow of an outcome or of a failure is also reached from its own view, with {@code flow()}.
+     */
+    public static FlowAssert assertThat(FlowView actual) {
+        return FlowAssert.assertThat(actual);
     }
 
     /** The state an entity is observed to be in, read through {@code getter} when the expectation runs. */

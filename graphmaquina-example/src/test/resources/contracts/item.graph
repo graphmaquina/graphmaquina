@@ -19,9 +19,12 @@ graphmaquina-snapshot-v2
 /states/count	4
 /terminals/CANCELLED	true
 /terminals/PACKED	true
+/transitions/PACKING/CANCEL/action/async	false
+/transitions/PACKING/CANCEL/action/name	restock
+/transitions/PACKING/CANCEL/afterCommit	applyRestock
 /transitions/PACKING/CANCEL/failsOn/count	0
 /transitions/PACKING/CANCEL/guards/count	0
-/transitions/PACKING/CANCEL/kind	MOVE
+/transitions/PACKING/CANCEL/kind	ACTION
 /transitions/PACKING/CANCEL/to	CANCELLED
 /transitions/PACKING/PACK/action/async	false
 /transitions/PACKING/PACK/action/name	pack
@@ -29,9 +32,12 @@ graphmaquina-snapshot-v2
 /transitions/PACKING/PACK/guards/count	0
 /transitions/PACKING/PACK/kind	ACTION
 /transitions/PACKING/PACK/to	PACKED
+/transitions/PENDING/CANCEL/action/async	false
+/transitions/PENDING/CANCEL/action/name	restock
+/transitions/PENDING/CANCEL/afterCommit	applyRestock
 /transitions/PENDING/CANCEL/failsOn/count	0
 /transitions/PENDING/CANCEL/guards/count	0
-/transitions/PENDING/CANCEL/kind	MOVE
+/transitions/PENDING/CANCEL/kind	ACTION
 /transitions/PENDING/CANCEL/to	CANCELLED
 /transitions/PENDING/START_PACKING/failsOn/count	0
 /transitions/PENDING/START_PACKING/guards/count	0

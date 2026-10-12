@@ -5,6 +5,7 @@ import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import io.github.graphmaquina.runtime.StateMachines;
+import java.time.InstantSource;
 import java.util.Optional;
 import java.util.function.Consumer;
 
@@ -116,6 +117,15 @@ public final class Checkout {
     public MachineRegistry registry() {
         return MachineRegistry.builder()
                 .add(StateMachines.from(orders).state(Order::state, Order::setState).identity(Order::id))
+                .add(StateMachines.from(payments).state(Payment::state, Payment::setState).identity(Payment::id))
+                .build();
+    }
+
+    /** The same machines, the order machine recording the trail of every call it starts on {@code clock}. */
+    public MachineRegistry registry(InstantSource clock) {
+        return MachineRegistry.builder()
+                .add(StateMachines.from(orders).state(Order::state, Order::setState).identity(Order::id)
+                        .recordTrail(clock))
                 .add(StateMachines.from(payments).state(Payment::state, Payment::setState).identity(Payment::id))
                 .build();
     }

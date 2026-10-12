@@ -9,8 +9,8 @@ import java.util.Optional;
 
 /**
  * Chainable assertion over a {@link TransitionAbortedException}: the transaction was discarded, so nothing
- * moved and there are no committed hops to read — only what was being attempted, how far the cascade had
- * gone, and which actions had already run. The cascade route is compared as the list of literal strings the
+ * moved and there are no committed hops to read. This view reads what was being attempted, how far the cascade
+ * had gone, and which actions had already run. The cascade route is compared as the list of literal strings the
  * engine wrote; no expectation here takes it apart to recover a state or an identity.
  *
  * <p>{@link #at(MachineKey, Object, Enum, Enum, Enum)} describes an abort that had already resolved its

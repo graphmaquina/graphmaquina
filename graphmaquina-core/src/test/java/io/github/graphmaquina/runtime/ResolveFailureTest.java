@@ -35,7 +35,6 @@ import io.github.graphmaquina.fixtures.DocTransition;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -452,9 +451,9 @@ class ResolveFailureTest {
         assertEquals(0, hooks.get());
     }
 
-    /** An action's saved context can append a peer during grouping, which still fails on the general path. */
+    /** Grouping refuses a retained context's cascade before it can add a peer to the planned changes. */
     @Test
-    void anActionArmedGroupingHashCascadeFailsBeforeWritesAndListsBothPlannedEntities() {
+    void anActionArmedGroupingHashCascadeIsRefusedBeforeItStagesThePeer() {
         HashCallbackKey identity = new HashCallbackKey("root");
         AtomicInteger writes = new AtomicInteger();
         AtomicInteger hooks = new AtomicInteger();
@@ -482,14 +481,13 @@ class ResolveFailureTest {
                 .build()) {
             CommitFailedException error = assertThrows(CommitFailedException.class,
                     () -> registry.of(DOCS).execute(root, SUBMIT));
-            assertInstanceOf(ConcurrentModificationException.class, error.getCause());
+            assertInstanceOf(IllegalStateException.class, error.getCause());
             assertEquals(CallPhase.COMMIT, error.phase());
             assertEquals(StatesWritten.NONE, error.statesWritten());
             assertEquals(List.of(), error.applied());
             assertEquals(Optional.empty(), error.failedEntity());
-            assertEquals(2, error.pending().size());
+            assertEquals(1, error.pending().size());
             assertSame(root, error.pending().get(0));
-            assertSame(peer, error.pending().get(1));
             assertEquals(1, error.journal().size());
             assertEquals("Submit", error.journal().get(0).action());
             assertEquals(ActionStatus.OK, error.journal().get(0).status());

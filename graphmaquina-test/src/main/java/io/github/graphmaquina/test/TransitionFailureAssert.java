@@ -76,7 +76,7 @@ public final class TransitionFailureAssert extends BaseFailureAssert<TransitionF
         return new AfterCommitAssert("after-commit failure", narrow(AfterCommitException.class));
     }
 
-    /** Any failure of a call, read through what every kind shares: phase, states written, call and journal. */
+    /** Any failure of a call, read through what every kind shares: phase, states written, call, journal and flow. */
     public CallFailureAssert isCallFailure() {
         return new CallFailureAssert("call failure", narrow(CallFailedException.class));
     }

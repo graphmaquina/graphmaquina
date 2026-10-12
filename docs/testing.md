@@ -2,7 +2,8 @@
 
 `graphmaquina-test` is a test-scoped module of typed assertions, probes and graph snapshots for machines
 built with GraphMaquina. It asserts over the runtime's own values — definitions, edges,
-node policies, outcomes, transition records, reactions, sub-machine starts, engine exceptions — and reports every unmet
+node policies, outcomes, transition records, reactions, sub-machine starts, engine exceptions, the flow of a call and
+its trail — and reports every unmet
 expectation as a `GraphAssertionError` carrying the context, the property, the expected value and the actual
 one.
 
@@ -21,8 +22,9 @@ example module is.
 - [Maintaining test support](#maintaining-test-support)
 
 Every Java sample below runs in this repository. Most are copied verbatim out of a test; the samples of
-[failure kinds and recovery rules](#failure-kinds-and-recovery-rules) and of [sub-machines](#sub-machines) go the
-other way, cut out of this page and run by a test. Each section names the test file.
+[failure kinds and recovery rules](#failure-kinds-and-recovery-rules), of [sub-machines](#sub-machines) and of
+[the call's flow and its trail](#the-calls-flow-and-its-trail) go the other way, cut out of this page and run by a
+test. Each section names the test file.
 
 ## Install
 
@@ -69,25 +71,30 @@ itself and needs no declaration. Inside this repository no publication is needed
 
 The machines under test are built exactly as the application builds them: a real registry, real entities,
 and test doubles only where the domain reaches outside the process. A `TransitionRecorder` is a
-`MachineObserver`, so it is installed the way any observer is. From
+`MachineObserver`, so it is installed the way any observer is, and `recordTrail()` makes every call of the set
+record its [trail](#the-calls-flow-and-its-trail). From
 [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
 
 ```java
 final FakeGateway gateway = new FakeGateway();
 final FakeCarrier carrier = new FakeCarrier();
 final TransitionRecorder recorder = TransitionRecorder.create();
-final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier), new ItemActions())
+final ShopMachines shop = ShopMachinesRuntime.builder(Duration.ofSeconds(10), new OrderActions(gateway, carrier),
+                new ItemActions())
         .observer(recorder)
+        .recordTrail()
         .build();
 final Orders orders = shop.orders();
 final Items items = shop.items();
 ```
 
 One static import, `io.github.graphmaquina.test.GraphAssertions.assertThat`, reaches the views for every
-subject a test holds directly: a definition, an outcome, an action or guard result, a throwable, an entity.
-A bare list of transition records, of reactions or of sub-machine starts would need overloads with the same
-erasure, so each keeps its own factory, `TransitionRecordsAssert.assertThat`, `ReactionsAssert.assertThat` and
-`StartsAssert.assertThat`; inside a chain they are reached as `records()`, `reactions()` and `starts()`. The overload
+subject a test holds directly: a definition, an outcome, an action or guard result, a throwable, an entity, the flow
+of a call.
+A bare list of transition records, of reactions, of sub-machine starts, of journal entries or of trail entries would
+need overloads with the same erasure, so each keeps its own factory, `TransitionRecordsAssert.assertThat`,
+`ReactionsAssert.assertThat`, `StartsAssert.assertThat`, `JournalAssert.assertThat` and `TrailAssert.assertThat`;
+inside a chain they are reached as `records()`, `reactions()`, `starts()`, `journal()` and `trail()`. The overload
 is chosen from the subject's static type, and the chain keeps the entity, state and transition types of that
 subject, so the two enums of the machine under test are the only ones the compiler accepts along it:
 
@@ -117,15 +124,17 @@ constant of another machine's catalogue does not compile inside it.
 | A watched state | `assertThat(definition).watch(state)` | the peer machine and the ordered watch rules, each naming the identifier it executes |
 | A bound state | `assertThat(definition).submachine(state, childKey)` | that the state holds that child machine, and its exits in declaration order, each the identifier of the parent that a terminal state of the child selects |
 | Reachability | `assertThat(definition).topology()` | nodes, successors, reachable set, an explicit walk, the shortest path, absence of a path, cycles |
-| Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()`, `reactions()` and `starts()` |
+| Outcome | `assertThat(outcome)` | the variant, then `from`, the requested identifier, recorded state, live entity state, entity identity, `hasStatus`, `hasCode`, `hasExplanation` or `hasNoExplanation`, plus `records()`, `reactions()`, `starts()` and `flow()` |
 | Applied outcome | `assertThat(outcome).isApplied()` | `movedTo` |
 | Failed outcome | `assertThat(outcome).isFailed()` | `hasTarget`, `hasFailureTransition`, `movedTo`, failure kind, reason, cause |
 | Rejected outcome | `assertThat(outcome).isRejected()` | reason, `hasNoTransition()` for `RejectionKind.NO_TRANSITION`, `isRejectedByGuardNamed` for `GUARD`, `isDetached()` for `DETACHED` and `isReservedExit()` for `RESERVED_EXIT` |
 | Ignored outcome | `assertThat(outcome).isIgnored()` | `hasReason(IgnoreReason.NO_WATCH)` or `NO_RULE_MATCHED` |
-| Transition records | `.records()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
+| Transition records | `.records()`, a trail's `.hops()`, or `TransitionRecordsAssert.assertThat(list)` | size, exact content, and per entity: from, transition, to, kind, action, depth |
 | Reactions | `.reactions()`, or `ReactionsAssert.assertThat(list)` | size, absence of aborts directly or recursively, and per entity: `isDone()` with its nested outcome, or `isAborted()` with its cause |
 | Sub-machine starts | `.starts()`, or `StartsAssert.assertThat(list)` | size, and per child: the state it started at, its state before, the parent and the bound state that started it, and the depth |
-| Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal; phase, states written and the failing call; the hops and starts of an after-commit failure |
+| The call's flow | `.flow()`, or `assertThat(flow)` | the root entity by reference, the value of a key by equality, the absence of a value, the keys in the order of their writes, plus `trail()` |
+| The call's trail | `.trail()`, or `TrailAssert.assertThat(list)` | size, the class of every entry in order, the identifier of every hop in order, that no instant goes back, and the kind of the final rejection or the phase of the final failure, plus `hops()`, the records of its hops |
+| Engine failure | `assertThat(captureFailure(() -> ...))` | abort, cascade abort, commit failure, after-commit failure, invalid graph; cause identity or type; cascade path; journal; phase, states written and the failing call; the hops and starts of an after-commit failure; the call's flow |
 | Action result, guard result | `assertThat(actionOutcome)`, `assertThat(guardResult)` | ok or failed, pass or rejected, the reason, and the failure kind of a failed action |
 | Live entity | `assertThat(entity, Order::status)` | the state the getter reads at that moment |
 | Completed calls | `TransitionRecorder.assertRecorded()` | size, the sequence of machine keys, the sequence of outcome statuses, and the outcome sequence of one entity |
@@ -216,11 +225,11 @@ One identifier can leave several states. Each `(from, id)` pair is its own edge,
 assertThat(items.definition())
         .transition(ItemStatus.PENDING, ItemTransition.CANCEL)
         .hasTarget(ItemStatus.CANCELLED)
-        .isMove();
+        .isAction().hasActionNamed("restock").hasHookNamed("applyRestock");
 assertThat(items.definition())
         .transition(ItemStatus.PACKING, ItemTransition.CANCEL)
         .hasTarget(ItemStatus.CANCELLED)
-        .isMove();
+        .isAction().hasActionNamed("restock").hasHookNamed("applyRestock");
 ```
 
 A terminal is asserted by the absence of everything, not by a kind:
@@ -282,21 +291,45 @@ not the same question: a route may legitimately reach the state another edge als
 
 An aborted transition throws rather than returning an outcome, so the subject is the throwable.
 `captureFailure` runs the operation and hands back what it threw; it catches no `Error`, so an
-`AssertionError` raised inside the body still fails the test the way it should. From
+`AssertionError` raised inside the body still fails the test the way it should. The order below has a `PACKED`
+item, which has no `CANCEL` edge, and a `PENDING` one. From
 [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java):
 
 ```java
-assertThat(captureFailure(() -> orders.cancel(order))).isCascadeAbort()
+Throwable failure = captureFailure(() -> orders.cancel(order, "B-7"));
+
+assertThat(failure).isCascadeAbort()
         .hasErrorCount(1).hasPhase(CallPhase.ACTION).hasStatesWritten(StatesWritten.NONE)
-        .journal().hasActionsExactly("cancel").hasStatusesExactly(ActionStatus.THREW);
+        .journal().hasActionsExactly("cancel", "restock")
+        .hasStatusesExactly(ActionStatus.THREW, ActionStatus.OK);
+assertThat(failure).isCascadeAbort().flow()
+        .hasValue(ShopFlow.CANCELLATION, "B-7")
+        .hasNoValue(ShopFlow.restockOf(packed))
+        .hasValue(ShopFlow.restockOf(pending), new Restock("B-7", order))
+        .trail()
+        .hasEntryTypesExactly(FlowEntry.Hop.class, FlowEntry.Hop.class, FlowEntry.Failed.class)
+        .hasHopsExactly(OrderTransition.CANCEL, ItemTransition.CANCEL)
+        .endsWithFailure(CallPhase.ACTION)
+        .hops().forEntity(ItemsRuntime.KEY, pending).single()
+        .from(ItemStatus.PENDING).hasTransition(ItemTransition.CANCEL).to(ItemStatus.CANCELLED);
 assertThat(order, Order::status).isIn(OrderStatus.NEW);
 assertThat(packed, Item::status).isIn(ItemStatus.PACKED);
 assertThat(pending, Item::status).isIn(ItemStatus.PENDING);
+assertEquals(Optional.empty(), packed.restockedIn());
+assertEquals(Optional.empty(), pending.restockedIn());
+assertEquals(List.of(), order.restocked());
 ```
+
+The journal lists the actions that ran: `cancel`, which threw the aggregate of its `COLLECT` cascade, and the
+`restock` of the pending item, which completed. The flow keeps what the steps wrote, the batch and the pending item's
+restock, while its trail holds the order's hop and that item's, then the failure. No hook ran, so no entity holds the
+restock: the shop applies it in a hook, as
+[set a field only when the call commits](guide.md#set-a-field-only-when-the-call-commits) explains.
 
 `isCallFailure()` reads any failure of a call through what every kind shares, and the four call-failure views offer
 the same expectations: `hasPhase(...)`, `hasStatesWritten(...)`, `hasCallSameAs(...)`, which compares by reference
-with the `MachineCall` an observer received, and `journal()`.
+with the `MachineCall` an observer received, `journal()`, and `flow()`, which
+[the call's flow and its trail](#the-calls-flow-and-its-trail) describes.
 
 ### The call recorder
 
@@ -318,6 +351,12 @@ A registry accepts any number of observers, so a test adds its own beside the re
 moving after its call completes, so if the assertion must see the entity as it was, record a projection with
 `TransitionRecorder.projecting(...)` instead of the live outcome.
 
+Each outcome carries the call's flow, `outcome.flow()`, so the recorder also retains every flow it records: the
+root entity and the values the call's steps and hooks left there, and, for a call whose root machine records its
+trail, the entries of the trail, which hold the call's entities and the throwable a failure route took, all by
+reference, for as long as the recorder is kept. It stores the outcome beside a projection too, so projecting releases
+neither.
+
 ### Tracked entity state
 
 A `StateSnapshot` reports only the entities it was given, so an entity the test does not name may move
@@ -337,7 +376,7 @@ private StateSnapshot track(Order order, Item first, Item second) {
 ```java
 StateSnapshot before = track(order, packed, pending);
 
-assertThat(captureFailure(() -> orders.cancel(order))).isCascadeAbort().hasErrorCount(1);
+assertThat(captureFailure(() -> orders.cancel(order, "B-7"))).isCascadeAbort().hasErrorCount(1);
 
 before.assertUnchanged();
 ```
@@ -790,6 +829,118 @@ assertThat(order, (Order value) -> value.charge).isIn(PaymentState.CAPTURED);
 
 Each key reads its own field, so `changes()` reports a moved state under its own key, even for one entity.
 
+### The call's flow and its trail
+
+`flow()` opens [the call's flow](guide.md#the-calls-flow) on every outcome view and on the view of the failure a call
+throws; a failure of the call nested in it, such as `error(i)` of a cascade abort, holds the empty flow.
+`hasEntitySameAs` compares the entity of the root call by reference, `hasValue` compares the value of a key with
+`equals`, `hasNoValue` expects no value under a key, and `hasKeysExactly` compares the keys that hold a value, in the
+order of the writes that set them. A key that holds no value fails `hasValue` with `Optional.empty` as its actual
+value, and a key that holds another value with `Optional[...]` of that value.
+
+`trail()` opens the trail, which a call records when its root machine was built with
+[`recordTrail`](guide.md#record-the-calls-trail). `hasEntryTypesExactly` compares the class of every entry, in order.
+`hasHopsExactly` compares the identifier of every hop, in order, and skips the sub-machine starts and the final entry,
+so with no argument it expects a trail without a hop. `hops()` opens the records of those hops, in the view that
+`records()` opens on an outcome: `forEntity(key, entity)` and `containsExactly(records)` read which machine and entity
+took each hop and from which state to which, on the trail of a call that failed before its hooks too, whose exception
+lists no `records()`.
+`isInTimeOrder` checks that no entry's `at()` is earlier than
+the one of the entry before it, so equal instants pass. `endsWithRejection(kind)` and `endsWithFailure(phase)` read
+the final entry. Build the machine on a clock the test controls.
+
+These samples use the `graph(action)` helper, the publication types and their machine key `KEY` of
+[failure kinds and recovery rules](#failure-kinds-and-recovery-rules), and build their machine here.
+[TestingGuideFragmentsTest](../graphmaquina-test/src/test/java/consumer/TestingGuideFragmentsTest.java) writes out
+that helper and those types, cuts the samples out of this page, compiles them against the published jars and runs
+them, the four in one method.
+
+The action of `PUBLISH` puts a receipt into the call's flow, and throws for a publication whose id starts with `x`.
+Each call has a flow of its own: the second call, rejected because the article is already published, finds no
+receipt, and its trail holds the rejection alone:
+
+```java
+FlowKey<String> receipt = FlowKey.of("receipt", String.class);
+StateMachine<Publication, PublicationState, PublicationChange> traced = StateMachines.from(graph(
+                (TransitionContext<Publication, PublicationState, PublicationChange> ctx) -> {
+                    ctx.flow().put(receipt, "receipt of " + ctx.entity().id);
+                    if (ctx.entity().id.startsWith("x")) {
+                        throw new IllegalStateException("the outbox is closed");
+                    }
+                    return ActionOutcome.ok();
+                }))
+        .state((Publication publication) -> publication.state,
+                (Publication publication, PublicationState state) -> publication.state = state)
+        .recordTrail(InstantSource.fixed(Instant.parse("2026-10-10T09:00:00Z")))
+        .build();
+Publication article = new Publication("p6");
+
+assertThat(traced.execute(article, PublicationChange.PUBLISH)).isApplied().flow()
+        .hasEntitySameAs(article)
+        .hasValue(receipt, "receipt of p6")
+        .hasKeysExactly(receipt)
+        .trail()
+        .hasEntryTypesExactly(FlowEntry.Hop.class)
+        .hasHopsExactly(PublicationChange.PUBLISH)
+        .isInTimeOrder();
+assertThat(traced.execute(article, PublicationChange.PUBLISH)).isRejected().flow()
+        .hasNoValue(receipt)
+        .trail()
+        .hasHopsExactly()
+        .endsWithRejection(RejectionKind.NO_TRANSITION);
+```
+
+A call that throws hands its flow out on its failure. The action throws a type its edge does not declare, so its
+step aborts and nothing rolls it back: the flow keeps the receipt the action put before it threw, and the trail ends
+with the failure. Its hop, read through `hops()`, says where the
+aborted step was going:
+
+```java
+Publication refused = new Publication("x1");
+assertThat(captureFailure(() -> traced.execute(refused, PublicationChange.PUBLISH))).isAbort()
+        .hasPhase(CallPhase.ACTION)
+        .flow()
+        .hasEntitySameAs(refused)
+        .hasValue(receipt, "receipt of x1")
+        .trail()
+        .hasEntryTypesExactly(FlowEntry.Hop.class, FlowEntry.Failed.class)
+        .hasHopsExactly(PublicationChange.PUBLISH)
+        .endsWithFailure(CallPhase.ACTION)
+        .hops().forEntity(KEY, refused).single()
+        .from(PublicationState.READY).hasTransition(PublicationChange.PUBLISH).to(PublicationState.PUBLISHED);
+```
+
+`assertThat` also takes a flow on its own, such as the flow of a `CommitContext` built with its five-argument
+constructor to call a hook by hand. That flow belongs to no call: it holds what the hook wrote, no entity and no
+trail:
+
+```java
+HookRef<Publication, PublicationState, PublicationChange> announce = new HookRef<>("announce",
+        (Publication publication, CommitContext<PublicationState, PublicationChange> commit) ->
+                commit.flow().put(receipt, "announced " + publication.id));
+CommitContext<PublicationState, PublicationChange> commit = new CommitContext<>(PublicationState.READY,
+        PublicationChange.PUBLISH, PublicationState.PUBLISHED, TransitionKind.ACTION, true);
+announce.run(new Publication("p7"), commit);
+
+assertThat(commit.flow()).hasValue(receipt, "announced p7").hasKeysExactly(receipt).trail().isEmpty();
+```
+
+A watch reaction is a call of its own: `isDone().outcome().flow()` reads the reaction's flow. A reaction whose
+reevaluation threw has that reevaluation's `CallFailedException` as its cause, which hands out the reaction's own
+flow and which `assertThat(cause).isCallFailure().flow()` reads; a reaction whose owner lookup threw ran no call.
+
+A trail held as a list, such as the one `trail()` of a flow returns, has its own factory:
+
+```java
+List<FlowEntry> entries = traced.execute(new Publication("p8"), PublicationChange.PUBLISH).flow().trail();
+TrailAssert.assertThat(entries).hasSize(1).hasHopsExactly(PublicationChange.PUBLISH).isInTimeOrder();
+```
+
+The shop's [OrderFlowTest](../graphmaquina-example/src/test/java/io/github/graphmaquina/example/OrderFlowTest.java)
+asserts the flow and the trail of a cancellation that commits, and those of one that aborts, which
+[failures and the journal](#failures-and-the-journal) shows. Its set is built with `recordTrail()`, on the system
+clock, so it asserts the entries of a trail and their order, never their instants.
+
 ## Goldens and structural snapshots
 
 Machine contracts and visual output have separate tests. Do not use a graphical export to validate machine
@@ -937,6 +1088,8 @@ A test that needs no properties at all can pass options explicitly —
 | `isRejected().hasNoTransition()`: nothing was keyed by `(from, id)` | that the entity cannot move at all. Another identifier may well have an edge from the same state. |
 | `calls().assertCount(n)`: a callback was entered n times | that the machine wrote a state. Only `StateWriteProbe.writes()` sees the setter. |
 | `journal()`: which actions the aborted attempt entered, and how each ended | that the entities were put back. `StateSnapshot.assertUnchanged()` is the expectation that asserts the rollback. |
+| `flow().hasValue(key, value)`: the flow holds a value equal to that one | that it is the object a step put. The flow keeps values by reference, and `get(key)` returns that very object. |
+| `trail().hasHopsExactly(ids…)`: the identifiers of the hops the call took, in order | which machine or entity took each hop, or the states it joined. `trail().hops()` compares those field by field, on the trail of a failed call too. |
 | the recorder: the outcome of every call that completed | anything about a call that threw, such as one whose step aborts, whose commit fails, whose hook throws, or whose reaction raises an `Error`. The recorder keeps completed calls only; capture the throwable instead. |
 | `AsyncAssertions.await(stage, budget)`: the engine's transition finished | that work the action started in the background ended. Neither wait ever cancels a stage it was handed. |
 | that budget: how long the test is willing to wait | the engine's deadline. That is `asyncTimeout(...)` on the machine and `hasTimeout(...)` on the edge, and an expired engine deadline leaves the user's stage alive. |
@@ -972,8 +1125,9 @@ A test that needs no properties at all can pass options explicitly —
   that asserts only the destination cannot tell which action ran; assert the action name, or observe it.
 - **Entities are selected by reference.** `forEntity(key, entity)` and `forChild(key, child)` match on identity, so
   two entities that carry the same id are two different subjects.
-- **`hasTerminalsExactly` compares as a set; records, guards, reactions and starts keep order and multiplicity, and
-  `hasExitsExactly` keeps the declaration order of the exits.**
+- **`hasTerminalsExactly` compares as a set; records, guards, reactions, starts and the entries and hops of a trail
+  keep order and multiplicity, `hasKeysExactly` keeps the order of the writes, and `hasExitsExactly` keeps the
+  declaration order of the exits.**
 - **Assert on the fields, not the type.** A `GraphAssertionError` carries `context()`, `property()`,
   `expected()` and `actual()`. A test that only checks that something was thrown cannot tell a real
   rejection from an incidental failure. When the actual value is a throwable, it is the error's cause as well,

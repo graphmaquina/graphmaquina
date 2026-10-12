@@ -7,10 +7,12 @@ import java.util.Objects;
  * checked plus the expected and actual values, so a failure is inspectable without parsing its message.
  * When two distinct instances render the same text — the usual shape of an identity mismatch — the
  * message also names both instances, so it never ends at {@code expected <X> but was <X>}. A value whose
- * {@code toString()} throws a {@link RuntimeException}, as a lazily loaded entity's does outside its
- * session, or returns null is shown by its class and identity together with what the call did, so a failed
- * check over it still ends here. An {@link Error} thrown by {@code toString()} is not caught: it propagates
- * out of the constructor, and so out of the check, instead. Advice passed to the five-argument constructor
+ * {@code toString()} throws anything but an {@link Error}, a checked exception included, as a lazily loaded
+ * entity's does outside its session, or returns null is shown by its class and identity together with what
+ * the call did: what it threw as that prints itself, or by its class when printing it throws too. So a failed
+ * check over it still ends here, and an {@link InterruptedException} it threw interrupts the thread again. An
+ * {@link Error} thrown by {@code toString()}, or by printing what it threw, is not caught: it propagates out
+ * of the constructor, and so out of the check, instead. Advice passed to the five-argument constructor
  * travels in the message alone: no field stores it, so it never reaches {@link #actual()}, which holds the
  * value as the caller gave it.
  *
@@ -67,17 +69,45 @@ public final class GraphAssertionError extends AssertionError {
 
     /**
      * What a message shows of a value: its rendering, or its class and identity when its {@code toString()}
-     * throws a {@link RuntimeException} or returns null, which {@link String#valueOf(Object)} passes on as
-     * null. An {@link Error} is not caught.
+     * throws anything but an {@link Error} or returns null, which {@link String#valueOf(Object)} passes on as
+     * null. An {@link InterruptedException} it threw interrupts the thread again. An {@link Error} is not
+     * caught.
      */
     private static String describe(Object value) {
         String shown;
         try {
             shown = String.valueOf(value);
-        } catch (RuntimeException failure) {
-            return instanceOf(value) + " (toString() threw " + failure + ")";
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable failure) {
+            keepInterrupt(failure);
+            return instanceOf(value) + " (toString() threw " + printed(failure) + ")";
         }
         return shown == null ? instanceOf(value) + " (toString() returned null)" : shown;
+    }
+
+    /**
+     * {@code failure} as it prints itself, or its class name when printing it throws anything but an
+     * {@link Error} or answers null; an {@link InterruptedException} that printing it throws interrupts the
+     * thread again. An {@link Error} is not caught.
+     */
+    private static String printed(Throwable failure) {
+        try {
+            String text = failure.toString();
+            return text != null ? text : failure.getClass().getName();
+        } catch (Error fatal) {
+            throw fatal;
+        } catch (Throwable unprintable) {
+            keepInterrupt(unprintable);
+            return failure.getClass().getName();
+        }
+    }
+
+    /** Interrupts the thread again when {@code contained} is an {@link InterruptedException}. */
+    private static void keepInterrupt(Throwable contained) {
+        if (contained instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     private static String instanceOf(Object value) {

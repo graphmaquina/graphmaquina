@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="830" viewBox="0 0 1440 830" role="img" aria-labelledby="title desc">
-<title id="title">Transition and commit lifecycle</title><desc id="desc">The engine evaluates guards and runs actions, staging the state changes of the root, its cascades and its sub-machines, the starts of those its hops enter and the exits of those its steps end, in a shared unit of work. Commit checks and writes state. Hooks and watch reactions run afterward, then the observers learn how the call ended; external side effects are not rolled back automatically.</desc>
+<title id="title">Transition and commit lifecycle</title><desc id="desc">The engine evaluates guards and runs actions, staging the state changes of the root, its cascades and its sub-machines, the starts of those its hops enter and the exits of those its steps end, in a shared unit of work. Commit checks and writes state. Hooks and watch reactions run afterward, then the observers learn how the call ended, and the call returns its outcome with its frozen flow and its reactions; external side effects are not rolled back automatically.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
@@ -49,7 +49,7 @@
 <text x="799" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Observe outcome</text>
 <rect x="1096" y="627" width="292" height="99" rx="14" fill="#131f32" stroke="#2b3c54" stroke-width="2" />
 <text x="1118" y="666" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="650" fill="#55e0c0" text-anchor="start">Return</text>
-<text x="1118" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome + reactions</text>
+<text x="1118" y="700" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="19" font-weight="400" fill="#a9b8ce" text-anchor="start">Outcome, flow, reactions</text>
 <path d="M 318 676 L 385 676" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 375 669 L 385 676 L 375 683" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 704 676 L 771 676" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>

@@ -8,12 +8,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.FlowEntry;
+import io.github.graphmaquina.api.FlowKey;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.IgnoreReason;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.OutcomeStatus;
 import io.github.graphmaquina.api.RejectionKind;
 import io.github.graphmaquina.api.TransitionContext;
@@ -29,10 +32,12 @@ import io.github.graphmaquina.test.fixtures.TestDomain;
 import io.github.graphmaquina.test.fixtures.TestDomain.Entity;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -436,6 +441,61 @@ class TransitionRecorderTest {
         shipment.setStatus(ShipmentStatus.OPEN);
         assertEquals(List.of(Optional.of(ShipmentStatus.SENT), Optional.of(ParcelStatus.LOADED)),
                 recorder.snapshot().stream().map(RecordedTransition::projection).toList());
+    }
+
+    /**
+     * Each recorded outcome keeps the call's flow: the recorder retains the values the call's steps put, by reference,
+     * and the root entity, also when it projects the outcome.
+     */
+    @Test
+    void theRecorderRetainsTheFlowOfEveryOutcomeItRecords() {
+        FlowKey<StringBuilder> notes = FlowKey.of("notes", StringBuilder.class);
+        StringBuilder prepared = new StringBuilder("prepared");
+        TransitionRecorder recorder = TransitionRecorder.projecting(
+                (MachineKey<?, ?, ?> key, Outcome<?, ?, ?> outcome) -> outcome.code());
+        Entity entity = new Entity("e", State.NEW);
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(5),
+                (TransitionContext<Entity, State, Id> ctx) -> {
+                    ctx.flow().put(notes, prepared);
+                    return CompletableFuture.completedFuture(ActionOutcome.ok());
+                });
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(graph).state(Entity::state, Entity::setState).identity(Entity::id)
+                        .asyncTimeout(Duration.ofSeconds(5)))
+                .observer(recorder)
+                .build()) {
+            registry.of(TestDomain.KEY).execute(entity, Id.PREPARE);
+        }
+        RecordedTransition recorded = recorder.snapshot().get(0);
+        assertEquals(Optional.of(OutcomeCode.APPLIED), recorded.projection());
+        assertSame(prepared, recorded.outcome().flow().get(notes).orElseThrow());
+        assertSame(entity, recorded.outcome().flow().entity().orElseThrow());
+    }
+
+    /**
+     * A call whose root machine records its trail: each recorded outcome keeps the trail of its flow, whose hop is the
+     * very record the outcome lists and holds the entity and the throwable the failure route took, by reference.
+     */
+    @Test
+    void theRecorderRetainsTheTrailOfEveryOutcomeItRecords() {
+        IOException down = new IOException("gateway down");
+        TransitionRecorder recorder = TransitionRecorder.create();
+        Entity entity = new Entity("e", State.NEW);
+        GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(5),
+                (TransitionContext<Entity, State, Id> ctx) -> CompletableFuture.failedFuture(down));
+        try (MachineRegistry registry = MachineRegistry.builder()
+                .add(StateMachines.from(graph).state(Entity::state, Entity::setState).identity(Entity::id)
+                        .asyncTimeout(Duration.ofSeconds(5)).recordTrail())
+                .observer(recorder)
+                .build()) {
+            registry.of(TestDomain.KEY).execute(entity, Id.PREPARE);
+        }
+        Outcome<?, ?, ?> outcome = recorder.snapshot().get(0).outcome();
+        FlowEntry.Hop hop = (FlowEntry.Hop) outcome.flow().trail().get(0);
+        assertSame(outcome.records().get(0), hop.hop());
+        assertSame(entity, hop.hop().entity());
+        assertEquals(Id.RECOVER, hop.hop().transition());
+        assertSame(down, hop.recovery().orElseThrow().cause().orElseThrow());
     }
 
     /**

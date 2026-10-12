@@ -15,10 +15,12 @@ import java.time.Duration;
  * <ul>
  *   <li>A throwable that is not an Error, a checked exception included, changes neither the call nor what the other
  *   observers are told. It is logged as a warning through {@code System.getLogger("io.github.graphmaquina")}, naming
- *   the observer, the callback and the call, never the entity.</li>
+ *   the observer, the callback and the call, never the entity. Anything but an Error that the warning's backend
+ *   throws, a checked exception included, is contained too; an Error from it propagates unchanged. An
+ *   InterruptedException from the observer or from that backend, once contained, interrupts the thread again.</li>
  *   <li>An observer whose {@code onStarted} threw still receives its end event.</li>
- *   <li>An Error it throws propagates unchanged, as everywhere in the library, and voids these guarantees for that
- *   call.</li>
+ *   <li>An Error it throws, or that the backend of its warning throws, propagates unchanged, as everywhere in the
+ *   library, and voids these guarantees for that call.</li>
  *   <li>Its callbacks run with the thread marked as running a call, so an {@code execute} or {@code reevaluate} it
  *   makes on its own thread throws {@code ReentrantTransitionException}, contained like any other exception; one
  *   submitted through {@code async()} runs as a separate call on the executor's thread, unless that executor runs
@@ -34,7 +36,8 @@ public interface MachineObserver {
     default void onStarted(MachineCall call) { }
 
     /**
-     * The call returned {@code outcome}, the very instance its caller receives, whatever its status.
+     * The call returned {@code outcome}, the very instance its caller receives, whatever its status, with the call's
+     * frozen {@link Outcome#flow()}.
      *
      * @param elapsed from just before {@link #onStarted} was notified until just before this event
      */
@@ -42,8 +45,8 @@ public interface MachineObserver {
 
     /**
      * The call threw {@code failure.error()}, the very throwable its caller receives: a {@code CallFailedException} of
-     * this call, whose phase and states written {@code failure} repeats, or an Error, with the phase the call was in
-     * and how far it got in writing states.
+     * this call, whose phase and states written {@code failure} repeats and whose {@code flow()} already holds the
+     * call's frozen flow, or an Error, with the phase the call was in and how far it got in writing states.
      *
      * @param elapsed from just before {@link #onStarted} was notified until just before this event
      */

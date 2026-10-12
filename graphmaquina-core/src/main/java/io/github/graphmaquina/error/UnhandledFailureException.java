@@ -5,7 +5,12 @@ import io.github.graphmaquina.api.MachineCall;
 import java.util.Objects;
 import lombok.Getter;
 
-/** Domain failure without a declared onFailure. */
+/**
+ * Domain failure without a declared onFailure: the action returned a failure, or threw a throwable that a type its
+ * edge declares accepts, and no route takes it. The engine rolls the step back before it finds that no route takes the
+ * failure, so {@link #flow()} lacks the writes of that step and of the steps it cascaded to, and their hops and starts
+ * in its trail.
+ */
 @Getter
 public final class UnhandledFailureException extends TransitionAbortedException {
 

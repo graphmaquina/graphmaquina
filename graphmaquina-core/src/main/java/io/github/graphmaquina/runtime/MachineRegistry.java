@@ -55,6 +55,9 @@ import lombok.RequiredArgsConstructor;
  *       and the exits selected by its terminal initial descendants.</li>
  * </ul>
  * A cascade that an action requests is explicit, so neither it nor what its steps run asks anything of the kind.
+ * The root machine decides the trail of its call the same way: the hops and starts of every peer and every exit of
+ * the call are in the trail when the root machine was built with {@code recordTrail}, whatever the peers' builders
+ * declare, and in none otherwise.
  * Nothing serializes two roots on one entity. The pre-check of phase 2 refuses a state that changed while a root
  * ran, but it catches only the interleavings that leave a different state behind, so concurrent calls on one entity
  * are the application's to serialize. Its observers see every call of its machines, as
@@ -399,12 +402,16 @@ public final class MachineRegistry implements AutoCloseable {
      * re-evaluated only once even if several of its peers moved. A registry that indexed no watcher answers before
      * reading which entities moved, which is what most transactions pay. An owner lookup that throws a throwable that
      * is not an Error is an aborted reaction, a checked one wrapped in UndeclaredThrowableException. Each lookup runs
-     * with the reentrancy marker set, so one that calls execute or reevaluate ends that way too.
+     * with the reentrancy marker set, so one that calls execute or reevaluate ends that way too. {@code log} is the
+     * log of the call whose commit is dispatched: at TRACE it logs each lookup once, with the owner it found, once
+     * that owner is a target, or what it threw, and when that call logs, each reaction's log names its id as the
+     * trigger.
      */
-    List<Reaction> dispatchWatches(CommitSummary summary, int chain) {
+    List<Reaction> dispatchWatches(CommitSummary summary, int chain, CallLog log) {
         if (watchers.isEmpty()) {
             return List.of();
         }
+        Optional<Long> trigger = log.id() > 0 ? Optional.of(log.id()) : Optional.empty();
         Map<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> targets = new LinkedHashMap<>();
         List<Reaction> reactions = new ArrayList<>();
         for (EntityRef moved : summary.movedEntities()) {
@@ -414,20 +421,35 @@ public final class MachineRegistry implements AutoCloseable {
                     if (owner.isPresent()) {
                         targets.putIfAbsent(owner.get(), watcher);
                     }
+                    if (log.trace()) {
+                        log.trace("watch watcher=" + watcher.machine().key() + " moved=" + CallLog.show(moved)
+                                + " owner=" + (owner.isPresent() ? CallLog.show(owner.get()) : "none"));
+                    }
                 } catch (RuntimeException e) {
+                    traceLookupThrew(log, watcher, moved, e);
                     reactions.add(new Reaction.Aborted(moved.key(), moved.instance(), e));
                 } catch (Error fatal) {
                     throw fatal;
                 } catch (Throwable e) {
+                    traceLookupThrew(log, watcher, moved, e);
                     reactions.add(new Reaction.Aborted(moved.key(), moved.instance(),
                             new UndeclaredThrowableException(e)));
                 }
             }
         }
         for (Map.Entry<EntityRef, Watcher<?, ?, ?, ?, ?, ?>> entry : targets.entrySet()) {
-            reactions.add(entry.getValue().react(entry.getKey().instance(), chain + 1));
+            reactions.add(entry.getValue().react(entry.getKey().instance(), chain + 1, trigger));
         }
         return List.copyOf(reactions);
+    }
+
+    /** Logs at TRACE that the lookup of {@code watcher} threw {@code error} for the moved entity {@code moved}. */
+    private static void traceLookupThrew(CallLog log, Watcher<?, ?, ?, ?, ?, ?> watcher, EntityRef moved,
+                                         Throwable error) {
+        if (log.trace()) {
+            log.trace("watch-lookup-threw watcher=" + watcher.machine().key() + " moved=" + CallLog.show(moved)
+                    + " error=" + CallLog.show(error));
+        }
     }
 
     /**

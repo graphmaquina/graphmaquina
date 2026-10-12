@@ -77,9 +77,10 @@ class GeneratedScopeTest {
     }
 
     /**
-     * The set's package declares a {@code Class}, an {@code IllegalArgumentException} and the action host
-     * {@code Builder}, which the set companion's own nested {@code Builder} hides. The companion still compiles,
-     * and it still throws the JDK's exception for a machine that is not one of its asynchronous ones.
+     * The set's package declares a {@code Class}, an {@code IllegalArgumentException}, an {@code InstantSource} and
+     * the action host {@code Builder}, which the set companion's own nested {@code Builder} hides. The companion still
+     * compiles, it still throws the JDK's exception for a machine that is not one of its asynchronous ones, and its
+     * {@code recordTrail} still takes the JDK's clock.
      */
     @Test
     void theTypesOfTheSetsPackageAndItsOwnBuilderCaptureNothing() throws Exception {
@@ -110,6 +111,11 @@ class GeneratedScopeTest {
                     public IllegalArgumentException(String message) { super(message); }
                 }
                 """);
+        sources.put("app.InstantSource", """
+                package app;
+                /** The application's own InstantSource, whose simple name clashes with java.time.InstantSource. */
+                public record InstantSource(String zone) { }
+                """);
         sources.put("app.Shop", """
                 package app;
                 import io.github.graphmaquina.annotation.StateGraphs;
@@ -130,6 +136,8 @@ class GeneratedScopeTest {
         InvocationTargetException refused = assertThrows(InvocationTargetException.class, () -> builder.getClass()
                 .getMethod("asyncTimeout", Class.class, Duration.class).invoke(builder, Machine.class, Duration.ofSeconds(1)));
         assertEquals(java.lang.IllegalArgumentException.class, refused.getCause().getClass());
+        assertEquals(builder, builder.getClass().getMethod("recordTrail", java.time.InstantSource.class)
+                .invoke(builder, java.time.InstantSource.system()));
     }
 
     /**

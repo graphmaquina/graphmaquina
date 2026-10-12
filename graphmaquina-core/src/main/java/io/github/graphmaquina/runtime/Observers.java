@@ -4,6 +4,7 @@ import io.github.graphmaquina.api.CallFailure;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineObserver;
 import io.github.graphmaquina.api.Outcome;
+import io.github.graphmaquina.internal.Interrupts;
 import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
@@ -14,8 +15,10 @@ import java.util.function.Consumer;
  * The observers of a registry, notified in the order they were added. Each callback runs with the reentrancy marker
  * set, so an observer cannot start a transition on its own thread. A throwable that is not an Error, a checked
  * exception included, is logged as a warning that names the observer, the callback and the call, never the entity, and
- * the next observer is still notified. An Error propagates unchanged, and the marker is released whatever the callback
- * throws.
+ * the next observer is still notified. Anything but an Error that the warning backend throws, a checked exception
+ * included, is contained too, and either containment interrupts the thread again when what it contains is an
+ * InterruptedException. An Error from the callback or the backend propagates unchanged, and the marker is released
+ * whatever throws.
  */
 final class Observers {
 
@@ -39,9 +42,11 @@ final class Observers {
         return observers.isEmpty();
     }
 
-    /** Reads the clock every end event of the call measures from, then notifies onStarted. */
-    Observed started(MachineCall call) {
-        long startNanos = System.nanoTime();
+    /**
+     * Notifies onStarted of a call whose clock was read at {@code startNanos}, the {@code System.nanoTime()} every end
+     * event of the call measures from; the caller reads it just before.
+     */
+    Observed started(MachineCall call, long startNanos) {
         notifyEach(call, "onStarted", (MachineObserver observer) -> observer.onStarted(call));
         return new Observed(this, call, startNanos);
     }
@@ -62,8 +67,16 @@ final class Observers {
             } catch (Error fatal) {
                 throw fatal;
             } catch (Throwable e) {
-                logger.log(Level.WARNING, () -> "the observer " + observer.getClass().getName() + " threw in "
-                        + callback + " for " + call, e);
+                Interrupts.keep(e);
+                try {
+                    logger.log(Level.WARNING, () -> "the observer " + observer.getClass().getName() + " threw in "
+                            + callback + " for " + call, e);
+                } catch (Error fatal) {
+                    throw fatal;
+                } catch (Throwable backend) {
+                    // A warning is best effort; the next observer must still receive the event.
+                    Interrupts.keep(backend);
+                }
             } finally {
                 Reentrancy.exit();
             }

@@ -39,13 +39,20 @@ import org.junit.jupiter.api.Test;
  */
 class TransactionClassifyTest {
 
+    @Test
+    void aTransactionRefusesAnAbsentRegistryAtConstruction() {
+        assertThrows(NullPointerException.class, () -> new Transaction(null, new UnitOfWork(10, Long.MAX_VALUE),
+                DOCS, new Doc("1", DRAFT), Optional.of(SUBMIT), false, Optional.empty(), CallLog.OFF));
+    }
+
     private static Transaction transaction(Doc doc) {
         return transaction(doc, SUBMIT);
     }
 
     private static Transaction transaction(Doc doc, DocTransition requested) {
-        return new Transaction(null, new UnitOfWork(10, Long.MAX_VALUE), DOCS, doc, Optional.of(requested), false,
-                Optional.empty());
+        return new Transaction(MachineRegistry.builder().build(), new UnitOfWork(10, Long.MAX_VALUE),
+                DOCS, doc, Optional.of(requested), false,
+                Optional.empty(), CallLog.OFF);
     }
 
     /**

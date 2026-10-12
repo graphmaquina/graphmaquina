@@ -1,5 +1,6 @@
 package io.github.graphmaquina.runtime;
 
+import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.error.CommitFailedException;
 import java.util.ArrayList;
@@ -13,7 +14,11 @@ import java.util.Optional;
  * behind. A setter that throws any throwable that is not an Error, a checked exception included, stops phase 2 where it
  * stood. It tells the transaction before each setter call, so that a failure during phase 2 is known to have written
  * some states or none. Whatever throws before the first setter, the state read of the check or the grouping of the log,
- * stops phase 2 with nothing written.
+ * stops phase 2 with nothing written. Once the last setter returned, it moves the call on to HOOK, so that whatever
+ * fails from then on, before the hooks too, reports every state written. A call that logs at TRACE logs the check,
+ * the conflict it found, if any, and each setter before it is called; those lines print what the log already holds and
+ * call no getter or identity function. A retained action context cannot stage a cascade from a commit getter or
+ * setter: it refuses the cascade before adding anything to the log, whose changes phase 2 already fixed.
  */
 final class Commit {
 
@@ -33,12 +38,24 @@ final class Commit {
             throw new CommitFailedException(tx.call(), uow.journal(), plannedEntities(uow), e);
         }
         List<CommitSummary.Change> changes = summary.changes();
+        CallLog log = tx.log();
+        List<LogEntry> entries = log.trace() ? uow.entries() : List.of();
+        if (log.trace()) {
+            log.trace("commit-check entities=" + changes.size() + " hops=" + hops(entries));
+            if (conflict.isPresent()) {
+                log.trace("commit-conflict reason=\"" + conflict.get() + "\"");
+            }
+        }
         if (conflict.isPresent()) {
             throw new CommitFailedException(tx.call(), uow.journal(), instancesOf(changes), conflict.get());
         }
         for (int index = 0; index < changes.size(); index++) {
             CommitSummary.Change change = changes.get(index);
             DefaultStateMachine<?, ?, ?> machine = registry.anyMachineFor(change.ref().key());
+            if (log.trace()) {
+                log.trace("setter " + CallLog.show(change.ref()) + " " + change.first().from().name() + " -> "
+                        + change.last().to().name() + " entries=" + entriesOf(entries, change.ref()));
+            }
             tx.writing();
             try {
                 machine.writeState(change.ref().instance(), change.last().to());
@@ -49,6 +66,7 @@ final class Commit {
                         change.ref().instance(), instancesOf(changes.subList(index + 1, changes.size())), e);
             }
         }
+        tx.enter(CallPhase.HOOK);
         return summary;
     }
 
@@ -60,8 +78,9 @@ final class Commit {
             Enum<?> expected = change.first().from();
             if (current.isEmpty() || current.get() != expected) {
                 return Optional.of("the state of " + change.ref() + " changed during the transaction: expected "
-                        + expected + " but is " + current.map(Enum::name).orElse("null") + "; an action called the"
-                        + " setter, or a concurrent transition on the same entity wrote it first");
+                        + expected.name() + " but is " + current.map(Enum::name).orElse("null")
+                        + "; an action called the setter, or a concurrent transition on the same entity wrote it"
+                        + " first");
             }
         }
         return Optional.empty();
@@ -85,6 +104,31 @@ final class Commit {
             }
         }
         return entities;
+    }
+
+    /** How many of {@code entries} are hops; the starts of sub-machines are not. */
+    private static int hops(List<LogEntry> entries) {
+        int hops = 0;
+        for (int index = 0; index < entries.size(); index++) {
+            if (entries.get(index) instanceof LogEntry.Hop) {
+                hops++;
+            }
+        }
+        return hops;
+    }
+
+    /**
+     * How many of {@code entries} move the entity of {@code ref}: those that carry that very reference, which the unit
+     * of work registered once per entity, so no identity's equals is called.
+     */
+    private static int entriesOf(List<LogEntry> entries, EntityRef ref) {
+        int count = 0;
+        for (int index = 0; index < entries.size(); index++) {
+            if (entries.get(index).ref() == ref) {
+                count++;
+            }
+        }
+        return count;
     }
 
     /** The entities of {@code changes}, in order. */

@@ -10,7 +10,7 @@ import java.util.Objects;
  * child only in the node it enters. The engine raises it while it checks the bindings of a child's step, and the
  * call's abort carries it as cause: in RESOLVE for the root's own step, in ACTION for a cascaded step or an exit, which
  * also poisons the transaction. The message names the child machine and both bindings by their parent machine and
- * node; it never prints an entity.
+ * the {@code name()} of their node; it never prints an entity.
  */
 public final class AmbiguousParentException extends StateMachineException {
 
@@ -22,9 +22,9 @@ public final class AmbiguousParentException extends StateMachineException {
                                     MachineKey<?, ?, ?> secondParent, Enum<?> secondNode) {
         super(Objects.requireNonNull(child, "child") + " is bound to two active parents: "
                 + Objects.requireNonNull(firstParent, "firstParent") + " in "
-                + Objects.requireNonNull(firstNode, "firstNode") + " and "
+                + Objects.requireNonNull(firstNode, "firstNode").name() + " and "
                 + Objects.requireNonNull(secondParent, "secondParent") + " in "
-                + Objects.requireNonNull(secondNode, "secondNode"));
+                + Objects.requireNonNull(secondNode, "secondNode").name());
         this.child = child;
         this.parents = List.of(firstParent, secondParent);
         this.nodes = List.of(firstNode, secondNode);

@@ -17,9 +17,11 @@ import io.github.graphmaquina.test.OutcomeAssert;
 import io.github.graphmaquina.test.fixtures.TestDomain.Id;
 import io.github.graphmaquina.test.fixtures.TestDomain.State;
 import io.github.graphmaquina.test.internal.Checks;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.List;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -271,6 +273,51 @@ class ValueAssertionsTest {
                 message);
     }
 
+    @Test
+    void aValueWhoseToStringThrowsACheckedExceptionStillFailsAsAnAssertion() {
+        Rendered expected = new Rendered(() -> {
+            throw ValueAssertionsTest.<RuntimeException>sneaky(new IOException("disk gone"));
+        });
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> Checks.same("entity", "identity", expected, new Rendered(() -> "actual")));
+        assertSame(expected, error.expected());
+        assertTrue(error.getMessage().contains("toString() threw java.io.IOException: disk gone"), error.getMessage());
+    }
+
+    @Test
+    void aValueWhoseToStringThrowsAFailureThatCannotBePrintedEitherStillFailsAsAnAssertion() {
+        Rendered expected = new Rendered(() -> {
+            throw new UnprintableFailure();
+        });
+        GraphAssertionError error = assertThrows(GraphAssertionError.class,
+                () -> Checks.same("entity", "identity", expected, new Rendered(() -> "actual")));
+        assertTrue(error.getMessage().contains(Rendered.class.getName() + "@"
+                + Integer.toHexString(System.identityHashCode(expected)) + " (toString() threw "
+                + UnprintableFailure.class.getName() + ")"), error.getMessage());
+    }
+
+    @Test
+    void aValueWhoseToStringIsInterruptedStillFailsAsAnAssertionAndKeepsTheInterrupt() {
+        Rendered expected = new Rendered(() -> {
+            if (Thread.interrupted()) {
+                throw ValueAssertionsTest.<RuntimeException>sneaky(new InterruptedException("interrupted"));
+            }
+            return "expected";
+        });
+        Thread.currentThread().interrupt();
+        GraphAssertionError error;
+        boolean interrupted;
+        try {
+            error = assertThrows(GraphAssertionError.class,
+                    () -> Checks.same("entity", "identity", expected, new Rendered(() -> "actual")));
+        } finally {
+            interrupted = Thread.interrupted();
+        }
+        assertTrue(error.getMessage().contains("toString() threw java.lang.InterruptedException: interrupted"),
+                error.getMessage());
+        assertTrue(interrupted, "the thread lost its interrupt");
+    }
+
     /**
      * {@code String.valueOf(value)} is null when {@code value.toString()} returns null, so a rendering that
      * trusted it threw a {@link NullPointerException} while it compared the two renderings of a failed check.
@@ -350,6 +397,35 @@ class ValueAssertionsTest {
         @Override
         public String toString() {
             return null;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <X extends Throwable> RuntimeException sneaky(Throwable thrown) throws X {
+        throw (X) thrown;
+    }
+
+    /** A value that renders as its supplier answers or throws. */
+    private static final class Rendered {
+
+        private final Supplier<String> text;
+
+        Rendered(Supplier<String> text) {
+            this.text = text;
+        }
+
+        @Override
+        public String toString() {
+            return text.get();
+        }
+    }
+
+    /** A failure whose own rendering fails, since its message cannot be read. */
+    private static final class UnprintableFailure extends RuntimeException {
+
+        @Override
+        public String getMessage() {
+            throw new IllegalStateException("the message cannot be read");
         }
     }
 

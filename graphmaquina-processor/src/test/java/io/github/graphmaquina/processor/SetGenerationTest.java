@@ -3,9 +3,12 @@ package io.github.graphmaquina.processor;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.graphmaquina.api.FlowEntry;
+import io.github.graphmaquina.api.FlowView;
 import io.github.graphmaquina.api.Machine;
 import io.github.graphmaquina.api.MachineCall;
 import io.github.graphmaquina.api.MachineObserver;
@@ -15,6 +18,8 @@ import io.github.graphmaquina.api.Reaction;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.InstantSource;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,11 +30,35 @@ import org.junit.jupiter.api.function.Executable;
 
 /**
  * The companion generated for a {@code @StateGraphs} set: its builder, whose signature follows the dependencies and
- * the asynchronous machines of the set and which refuses what the builders it mirrors refuse; which methods are
- * accessors; the machines it holds and runs; and the names it keeps apart. A set with a machine that failed is not
- * generated.
+ * the asynchronous machines of the set, which refuses what the builders it mirrors refuse and which records the trail
+ * of every machine of the set when asked to; which methods are accessors; the machines it holds and runs; and the
+ * names it keeps apart. A set with a machine that failed is not generated.
  */
 class SetGenerationTest {
+
+    /**
+     * The emitted Javadoc of {@code recordTrail(InstantSource)}, its lines joined. It never names the parameter, whose
+     * name depends on the other variables of the companion.
+     */
+    private static final String RECORD_TRAIL_DOC = "Records the trail of every call through the set on the given clock,"
+            + " by handing it to the StateMachines.Builder of every machine of the set. The root machine of a call"
+            + " decides for the whole call, so every root call made through the set records its trail, the peers it"
+            + " cascades to and the exits of sub-machines its steps run included, and so does each watch reaction, a"
+            + " call of its own that its own machine, one of the set, decides. The flow such a call hands out, in its"
+            + " outcome or in its failure, lists in trail() each hop and each sub-machine start the call took, each at"
+            + " the instant that clock read right after the call took it, then the rejection or the failure that"
+            + " ended the call, at the instant it ended. A call that records its trail creates its flow when its step"
+            + " starts, so it hands out its flow, with the root entity and the trail, even when none of its steps or"
+            + " hooks wrote to it; a reevaluation that selects no edge runs no step, and its ignored outcome hands out"
+            + " the empty flow. The clock is read on the thread running the call, once per entry; a test can pass a"
+            + " clock it controls, such as a java.time.Clock. Anything but an Error that the clock throws, a checked"
+            + " exception included, fails the call as what an identity function throws does: the entry it could not"
+            + " mark is left out of the trail. When it throws"
+            + " while the call reads the instant of the Failed entry that ends a failed call, whatever failed the call,"
+            + " the call's CallFailedException carries what it threw as suppressed, unless it threw that very"
+            + " exception, and its trail ends without that entry; an InterruptedException suppressed there"
+            + " interrupts the thread again, and an Error propagates. A clock that answers null counts as one that"
+            + " throws a NullPointerException. A set built without recordTrail reads no clock and keeps no mark.";
 
     @Test
     void builderSignatureFollowsTheDependenciesAndAsyncness() {
@@ -157,7 +186,8 @@ class SetGenerationTest {
 
     /**
      * The generated Builder mirrors MachineRegistry.Builder and StateMachines.Builder: a setting is refused when
-     * it is given, observers add up instead of replacing one another, and the builder is single-use, so
+     * it is given, a null clock by name, and a refused setting configures nothing, so a set whose clock was refused
+     * records no trail; observers add up instead of replacing one another, and the builder is single-use, so
      * once build() succeeded, build() itself and every setting fail loudly, each with valid arguments. The Builder
      * refuses them itself, naming itself: the builders it hands its settings to would refuse them too, naming
      * builders the author never wrote.
@@ -175,6 +205,8 @@ class SetGenerationTest {
         Method chain = builder.getClass().getMethod("maxWatchChain", int.class);
         Method timeout = builder.getClass().getMethod("asyncTimeout", Class.class, Duration.class);
         Method executor = builder.getClass().getMethod("asyncExecutor", Executor.class);
+        Method trail = builder.getClass().getMethod("recordTrail");
+        Method clock = builder.getClass().getMethod("recordTrail", InstantSource.class);
         Method build = builder.getClass().getMethod("build");
         MachineObserver first = new MachineObserver() { };
         MachineObserver second = new MachineObserver() { };
@@ -186,16 +218,136 @@ class SetGenerationTest {
                 assertThrows(InvocationTargetException.class, () -> depth.invoke(builder, 0)).getCause());
         assertInstanceOf(IllegalArgumentException.class,
                 assertThrows(InvocationTargetException.class, () -> chain.invoke(builder, -3)).getCause());
+        NullPointerException noClock = assertInstanceOf(NullPointerException.class,
+                assertThrows(InvocationTargetException.class, () -> clock.invoke(builder, (Object) null)).getCause());
+        assertEquals("clock", noClock.getMessage());
 
         try (Machines library = (Machines) build.invoke(builder)) {
             assertInstanceOf(Machine.class, library.getClass().getMethod("docs").invoke(library));
+            assertSame(FlowView.empty(), submit(result, library).flow());
             refusedAsUsed(() -> build.invoke(builder));
             refusedAsUsed(() -> observer.invoke(builder, second));
             refusedAsUsed(() -> depth.invoke(builder, 3));
             refusedAsUsed(() -> chain.invoke(builder, 3));
             refusedAsUsed(() -> timeout.invoke(builder, result.load("fx.Docs"), Duration.ofSeconds(1)));
             refusedAsUsed(() -> executor.invoke(builder, direct));
+            refusedAsUsed(() -> trail.invoke(builder));
+            refusedAsUsed(() -> clock.invoke(builder, InstantSource.system()));
         }
+    }
+
+    /**
+     * The Builder offers the trail of the set in two methods, each documented in the companion: one on the system
+     * clock and one on a clock of the caller's, both handed to the builder of every machine of the set after the
+     * checks of the Builder itself.
+     */
+    @Test
+    void theBuilderHandsRecordTrailToEveryMachineAndDocumentsIt() {
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        assertTrue(result.success(), result.describe());
+        String source = result.generated("fx.LibraryRuntime");
+        String body = "\n" + " ".repeat(12);
+        assertTrue(source.contains("    public Builder recordTrail() {" + body + "checkUnused();" + body
+                + "docsBuilder.recordTrail();" + body + "pagesBuilder.recordTrail();" + body + "return this;\n"),
+                source);
+        assertTrue(source.contains("    public Builder recordTrail(InstantSource clock) {" + body + "checkUnused();"
+                + body + "Objects.requireNonNull(clock, \"clock\");" + body + "docsBuilder.recordTrail(clock);" + body
+                + "pagesBuilder.recordTrail(clock);" + body + "return this;\n"), source);
+        assertEquals("Records the trail of every call through the set on the system clock, InstantSource.system(), by"
+                + " calling recordTrail() on the StateMachines.Builder of every machine of the set, as"
+                + " recordTrail(InstantSource) describes.", doc(source, "public Builder recordTrail()"));
+        assertEquals(RECORD_TRAIL_DOC, doc(source, "public Builder recordTrail(InstantSource clock)"));
+    }
+
+    /**
+     * The text of the documentation comment the companion emits right above {@code signature}, its lines joined by a
+     * space; every line of it stays within 120 columns.
+     */
+    private static String doc(String source, String signature) {
+        String before = source.substring(0, source.indexOf(signature));
+        String comment = before.substring(before.lastIndexOf("/**"), before.lastIndexOf("*/"));
+        List<String> words = new ArrayList<>();
+        for (String line : comment.split("\n")) {
+            assertTrue(line.length() <= 120, line);
+            String text = line.strip().replaceFirst("^/\\*\\*", "").replaceFirst("^\\*", "").strip();
+            if (!text.isEmpty()) {
+                words.add(text);
+            }
+        }
+        return String.join(" ", words);
+    }
+
+    /**
+     * {@code recordTrail(clock)} reaches every machine of the set: a root call of each machine records its trail on
+     * that clock, and so does the watch reaction a page's call triggers, a call of its own that its own machine,
+     * one of the set, decides.
+     */
+    @Test
+    void recordTrailRecordsTheTrailOfEveryMachineOfTheSet() throws Exception {
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        assertTrue(result.success(), result.describe());
+        Instant noon = Instant.parse("2026-10-10T12:00:00Z");
+        Object builder = libraryBuilder(result);
+        assertSame(builder, builder.getClass().getMethod("recordTrail", InstantSource.class)
+                .invoke(builder, InstantSource.fixed(noon)));
+        try (Machines library = (Machines) builder.getClass().getMethod("build").invoke(builder)) {
+            Outcome<?, ?, ?> submitted = submit(result, library);
+            Class<?> pageClass = result.load("fx.Page");
+            Object page = pageClass.getConstructor(String.class, result.load("fx.Doc"))
+                    .newInstance("p1", submitted.entity());
+            Object pages = library.getClass().getMethod("pages").invoke(library);
+            Outcome<?, ?, ?> finished =
+                    (Outcome<?, ?, ?>) pages.getClass().getMethod("finish", pageClass).invoke(pages, page);
+
+            assertEquals(List.of("SUBMIT@" + noon), hops(submitted.flow()));
+            assertEquals(List.of("FINISH@" + noon), hops(finished.flow()));
+            Reaction.Done reaction = assertInstanceOf(Reaction.Done.class, finished.reactions().get(0));
+            assertEquals(List.of("PUBLISH@" + noon), hops(reaction.outcome().flow()));
+        }
+    }
+
+    /** {@code recordTrail()} reads the system clock: the instant of the entry lies within the call. */
+    @Test
+    void recordTrailWithoutAClockReadsTheSystemClock() throws Exception {
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY, Fixtures.LIBRARY));
+        assertTrue(result.success(), result.describe());
+        Object builder = libraryBuilder(result);
+        assertSame(builder, builder.getClass().getMethod("recordTrail").invoke(builder));
+        try (Machines library = (Machines) builder.getClass().getMethod("build").invoke(builder)) {
+            Instant before = Instant.now();
+            Outcome<?, ?, ?> submitted = submit(result, library);
+            Instant after = Instant.now();
+            Instant at = submitted.flow().trail().get(0).at();
+            assertTrue(!at.isBefore(before) && !at.isAfter(after), before + " " + at + " " + after);
+        }
+    }
+
+    /** A new LibraryRuntime.Builder, with a five-second shared timeout and a new DocActions. */
+    private static Object libraryBuilder(Compilation.Result result) throws Exception {
+        Class<?> docActions = result.load("fx.DocActions");
+        return result.load("fx.LibraryRuntime").getMethod("builder", Duration.class, docActions)
+                .invoke(null, Duration.ofSeconds(5), docActions.getConstructor().newInstance());
+    }
+
+    /** Submits a new doc through the docs machine of {@code library}. */
+    private static Outcome<?, ?, ?> submit(Compilation.Result result, Machines library) throws Exception {
+        Object docs = library.getClass().getMethod("docs").invoke(library);
+        Class<?> docClass = result.load("fx.Doc");
+        Object doc = docClass.getConstructor(String.class).newInstance("d1");
+        return (Outcome<?, ?, ?>) docs.getClass().getMethod("submit", docClass).invoke(docs, doc);
+    }
+
+    /** Each entry of the trail of {@code flow}, every one a hop, as its transition and its instant. */
+    private static List<String> hops(FlowView flow) {
+        List<String> hops = new ArrayList<>();
+        for (FlowEntry entry : flow.trail()) {
+            FlowEntry.Hop hop = assertInstanceOf(FlowEntry.Hop.class, entry);
+            hops.add(hop.hop().transition() + "@" + hop.at());
+        }
+        return hops;
     }
 
     /** Asserts that {@code call}, a call of the generated LibraryRuntime.Builder, is refused because it was used. */
@@ -309,6 +461,25 @@ class SetGenerationTest {
                 """);
         Compilation.Result result = Compilation.compileTyped(sources);
         assertTrue(result.success(), result.describe());
+    }
+
+    /**
+     * An accessor named {@code clock} names the field that keeps its facade, so the parameter of
+     * {@code recordTrail(InstantSource)} takes another name, as every variable of the companion does, and its Javadoc,
+     * which names no parameter, stays the same.
+     */
+    @Test
+    void anAccessorNamedClockLeavesRecordTrailAParameterOfAnotherName() {
+        Compilation.Result result = Compilation.compileTyped(Fixtures.withLibrary(
+                Fixtures.DOCS_HEADER + Fixtures.DOCS_WATCH, Fixtures.DOCS_BODY,
+                Fixtures.LIBRARY.replace("    Pages pages();\n", "    Pages clock();\n")));
+        assertTrue(result.success(), result.describe());
+        String source = result.generated("fx.LibraryRuntime");
+        assertTrue(source.contains("private final Pages clock;"), source);
+        assertTrue(source.contains("public Builder recordTrail(InstantSource clock2) {"), source);
+        assertTrue(source.contains("Objects.requireNonNull(clock2, \"clock\");"), source);
+        assertTrue(source.contains("clockBuilder.recordTrail(clock2);"), source);
+        assertEquals(RECORD_TRAIL_DOC, doc(source, "public Builder recordTrail(InstantSource clock2)"));
     }
 
     @Test

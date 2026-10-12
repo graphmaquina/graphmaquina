@@ -5,14 +5,19 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Context handed to a {@link TransitionAction} or an {@link AsyncTransitionAction}: the edge, the depth, peer views and
- * cascades. A cascade runs the peer's step in this transaction and returns Applied or Failed; once its arguments are
- * accepted, whatever else it ends in poisons the transaction, so the root cannot commit even if the action catches it:
- * the action receives a failure of the call as it is, anything else as an abort of the call that carries it, and an
- * Error as itself. {@code cascadeAll} copies its collection before any element runs and never reads it again: a change
- * made to the collection while the cascade runs, by an element's action for instance, changes neither which elements
- * run nor their order. Peer views and cascades work only on the thread that called {@code process()} and only until the
- * root transaction ends: elsewhere they throw {@code WrongThreadException}, afterwards {@code StaleContextException}.
+ * Context handed to a {@link TransitionAction} or an {@link AsyncTransitionAction}: the edge, the depth, peer views,
+ * cascades and the call's flow. A cascade runs the peer's step in this transaction and returns Applied or Failed; once
+ * its arguments are accepted, whatever else it ends in poisons the transaction, so the root cannot commit even if the
+ * action catches it: the action receives a failure of the call as it is, anything else as an abort of the call that
+ * carries it, and an Error as itself. {@code cascadeAll} copies its collection before any element runs and never
+ * reads it again: a change made to the collection while the cascade runs, by an element's action for instance,
+ * changes neither which elements run nor their order. Peer views, cascades and the call's {@link #flow()} work only
+ * on the thread that called {@code process()} and only until the root transaction ends: elsewhere they throw
+ * {@code WrongThreadException}, afterwards {@code StaleContextException}.
+ * Cascades must also run before the commit begins, and not while a step is rolled back: a retained context used to
+ * cascade from a commit getter or setter, or from an identity's {@code equals} or {@code hashCode} that a rollback
+ * calls, throws {@code IllegalStateException} before it stages anything, since the commit has fixed its changes and
+ * the rollback is undoing them.
  * What the action throws, or completes its stage with, once unwrapped from CompletionException and ExecutionException,
  * is its own failure. A throwable of the edge's action, other than a recovery action, that a type its edge declares
  * accepts, in {@link TransitionSpec#failsOn()} or in one of its {@link TransitionSpec#recoveryRules()}, takes the route
@@ -78,6 +83,29 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
 
     <P, Q extends Enum<Q>, U extends Enum<U>, M extends Machine<P, Q, U>> List<Outcome<P, Q, U>> cascadeAll(
             Class<M> peer, Collection<? extends P> peers, U transition, CascadePolicy policy);
+
+    /**
+     * The flow of this call: typed values that every step of the call shares, the root call's entity, which
+     * {@link FlowView#entity()} describes, and, when the root machine records its trail, what the call took so far,
+     * this step's hop included, as {@link FlowView#trail()} describes. A write is undone with the step that made it:
+     * when this step fails with a failure its edge expects, one it returns or a throwable of a type the edge declares,
+     * whether a route takes it or the step aborts with {@code UnhandledFailureException}, and when this step is an
+     * element of a {@code COLLECT} cascade and aborts, the call drops every write made since this step took its hop,
+     * this action's and those of the steps it cascaded to, and keeps what earlier steps wrote; the recovery action of a
+     * route writes again. An identity's {@code equals} or {@code hashCode} that throws while a {@code COLLECT} element
+     * is rolled back stops that rollback, which leaves what it had not undone. Once a failed cascade poisoned the
+     * call, a failure this step's edge expects rolls nothing back: this step ends in the failure that poisoned the
+     * call and keeps its writes, unless a {@code COLLECT} collects that failure, which drops the writes of the whole
+     * element this step ran in. No other abort undoes a write. The caller receives the flow as the call
+     * ended, frozen, from {@link Outcome#flow()} or from the {@code flow()} of the failure the call throws. A cascaded
+     * step and the exit of a sub-machine receive no {@link #input()}: copy what they need from the input into the flow
+     * first. Like peer views and cascades, {@code flow()} and every operation of the flow it returns work only on the
+     * thread that called {@code process()} and only until the root transaction ends: elsewhere they throw
+     * {@code WrongThreadException}, afterwards {@code StaleContextException}. Cascades additionally require that the
+     * commit has not begun and that no step is being rolled back. An asynchronous action writes before it returns its
+     * stage, never in a callback of the stage, which may run on another thread.
+     */
+    FlowContext flow();
 
     /**
      * The value passed as this operation's second argument, if any; empty when called with one argument or an

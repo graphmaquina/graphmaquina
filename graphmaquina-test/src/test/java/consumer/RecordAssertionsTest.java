@@ -353,23 +353,18 @@ class RecordAssertionsTest {
 
     // --- a subject built by hand may hold a null element --------------------------------------------
 
-    /**
-     * A list the engine produced never holds a null, but a subject built by hand may. A view neither crashes
-     * when it is built nor when it reads the element: a selection by entity skips the null, and an expectation
-     * that compares the list reports it as a discrepancy.
-     */
+    /** A list the engine produced never holds a null; a list of records built by hand that holds one is refused. */
     @Test
-    void aNullRecordInTheSubjectIsADiscrepancyAndNeverACrash() {
+    void aNullRecordInTheSubjectIsRefusedWhenTheViewIsBuilt() {
         Entity entity = new Entity("e", State.NEW);
-        TransitionRecord<Entity, State, Id> hop = hop(entity, State.NEW, State.READY, 0);
-        TransitionRecordsAssert view =
-                TransitionRecordsAssert.assertThat(new ArrayList<>(Arrays.asList(hop, null)));
-        assertSame(view, view.hasSize(2));
-        view.forEntity(TestDomain.KEY, entity).single().hasTransition(Id.PREPARE);
-        assertFailure(assertThrows(GraphAssertionError.class, () -> view.containsExactly(List.of(hop, hop))),
-                "transition records[1]", "record", hop, null);
+        List<TransitionRecord<?, ?, ?>> withNull = Arrays.asList(hop(entity, State.NEW, State.READY, 0), null);
+        assertThrows(NullPointerException.class, () -> TransitionRecordsAssert.assertThat(withNull));
     }
 
+    /**
+     * A journal built by hand may hold a null. Its view neither crashes when it is built nor when it reads the
+     * element: a search skips the null, and an expectation that compares the list reports it as a discrepancy.
+     */
     @Test
     void aNullEntryInTheJournalIsADiscrepancyAndNeverACrash() {
         Entity entity = new Entity("e", State.NEW);

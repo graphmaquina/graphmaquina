@@ -131,11 +131,11 @@ class TestingApiTest {
         assertThat(items.definition())
                 .transition(ItemStatus.PENDING, ItemTransition.CANCEL)
                 .hasTarget(ItemStatus.CANCELLED)
-                .isMove();
+                .isAction().hasActionNamed("restock").hasHookNamed("applyRestock");
         assertThat(items.definition())
                 .transition(ItemStatus.PACKING, ItemTransition.CANCEL)
                 .hasTarget(ItemStatus.CANCELLED)
-                .isMove();
+                .isAction().hasActionNamed("restock").hasHookNamed("applyRestock");
     }
 
     @Test
@@ -147,7 +147,7 @@ class TestingApiTest {
         items.pack(packed);
         StateSnapshot before = track(order, packed, pending);
 
-        assertThat(captureFailure(() -> orders.cancel(order))).isCascadeAbort().hasErrorCount(1);
+        assertThat(captureFailure(() -> orders.cancel(order, "B-7"))).isCascadeAbort().hasErrorCount(1);
 
         before.assertUnchanged();
     }
@@ -160,7 +160,7 @@ class TestingApiTest {
         Item i2 = new Item("i2", Optional.of(order));
         StateSnapshot before = track(order, i1, i2);
 
-        assertThat(orders.cancel(order)).isApplied().movedTo(OrderStatus.CANCELLED);
+        assertThat(orders.cancel(order, "B-7")).isApplied().movedTo(OrderStatus.CANCELLED);
 
         assertEquals(List.of(
                         new StateChange(OrdersRuntime.KEY, order, OrderStatus.NEW, OrderStatus.CANCELLED),

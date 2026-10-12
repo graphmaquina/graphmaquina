@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="810" viewBox="0 0 1440 810" role="img" aria-labelledby="title desc">
-<title id="title">Safe context use across async callbacks</title><desc id="desc">Read transaction-aware peers and stage cascades only on the operation thread while its transaction is alive. Capture immutable inputs before starting async service work. Completion callbacks translate values rather than using the live transaction context.</desc>
+<title id="title">Safe context use across async callbacks</title><desc id="desc">Read transaction-aware peers, use the call's flow and stage cascades only on the operation thread while its transaction is alive. Capture immutable inputs before starting async service work. Completion callbacks translate values rather than using the live transaction context.</desc>
 <defs>
   <linearGradient id="back" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#15263e"/><stop offset="1" stop-color="#0b1220"/></linearGradient>
   <linearGradient id="glow"><stop stop-color="#55e0c0" stop-opacity=".12"/><stop offset="1" stop-color="#7aafff" stop-opacity=".03"/></linearGradient>
@@ -22,7 +22,7 @@
 <text x="807" y="308" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Receive the service response</text>
 <text x="807" y="357" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Map it to ActionOutcome or GuardResult</text>
 <text x="807" y="406" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="25" font-weight="400" fill="#f2f6fc" text-anchor="start">Return the value to the engine</text>
-<text x="807" y="502" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="600" fill="#ff8998" text-anchor="start">No ctx.peer / cascade / cascadeAll here.</text>
+<text x="807" y="502" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="23" font-weight="600" fill="#ff8998" text-anchor="start">No ctx.peer / cascade / cascadeAll / flow here.</text>
 <text x="807" y="536" font-family="Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif" font-size="22" font-weight="400" fill="#ff8998" text-anchor="start">No retained PeerView for another thread.</text>
 <path d="M 664 389 L 779 389" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
 <path d="M 769 382 L 779 389 L 769 396" fill="none" stroke="#55e0c0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
