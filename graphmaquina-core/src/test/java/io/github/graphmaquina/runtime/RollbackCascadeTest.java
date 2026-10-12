@@ -14,11 +14,13 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.graphmaquina.api.ActionOutcome;
+import io.github.graphmaquina.api.CascadePolicy;
 import io.github.graphmaquina.api.GraphDefinition;
 import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.OutcomeCode;
 import io.github.graphmaquina.api.TransitionContext;
 import io.github.graphmaquina.dsl.StateGraph;
+import io.github.graphmaquina.error.CascadeException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.fixtures.Doc;
 import io.github.graphmaquina.fixtures.DocStatus;
@@ -208,6 +210,51 @@ class RollbackCascadeTest {
         assertEquals(List.of(REVIEW), seen);
         assertEquals(List.of(DRAFT, DRAFT, REVIEW, DRAFT),
                 List.of(root.status(), nested.status(), first.status(), second.status()));
+    }
+
+    @Test
+    void aCascadeAttemptedWhileACollectRollsAnElementBackIsRefusedTheSameWay() {
+        Doc root = new Doc("root", DRAFT);
+        Doc element = new Doc("element", REVIEW);
+        Doc other = new Doc("other", REVIEW);
+        ArmedId elementId = new ArmedId("element");
+        List<String> refusals = new ArrayList<>();
+        List<TransitionContext<Doc, DocStatus, DocTransition>> retained = new ArrayList<>();
+        GraphDefinition<Doc, DocStatus, DocTransition> graph = StateGraph.define(DOCS).initial(DRAFT).terminal(ARCHIVED)
+                .statePolicy(DRAFT, "a draft is submitted or discarded").statePolicy(REVIEW, "a review is published")
+                .statePolicy(PUBLISHED, "a publication is archived")
+                .transition(SUBMIT, DRAFT, REVIEW)
+                    .action("Submit", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        retained.add(ctx);
+                        try {
+                            ctx.cascadeAll(DOCS, List.of(element), PUBLISH, CascadePolicy.COLLECT);
+                        } catch (CascadeException collected) {
+                            // the call stays poisoned by the aggregate
+                        }
+                        return ActionOutcome.ok();
+                    })
+                    .endTransition()
+                .transition(DISCARD, DRAFT, ARCHIVED).endTransition()
+                .transition(PUBLISH, REVIEW, PUBLISHED)
+                    .action("Publish", (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        elementId.onHash = () -> {
+                            elementId.onHash = () -> { };
+                            try {
+                                retained.get(0).cascade(DOCS, other, PUBLISH);
+                            } catch (RuntimeException refused) {
+                                refusals.add(refused.getClass().getSimpleName() + ": " + refused.getMessage());
+                            }
+                        };
+                        throw new IllegalArgumentException("the element failed");
+                    })
+                    .endTransition()
+                .transition(ARCHIVE, PUBLISHED, ARCHIVED).endTransition()
+                .build();
+        try (MachineRegistry registry = registry(graph, element, elementId)) {
+            assertThrows(CascadeException.class, () -> registry.of(DOCS).execute(root, SUBMIT));
+        }
+        assertEquals(List.of("IllegalStateException: " + REFUSAL), refusals);
+        assertEquals(List.of(DRAFT, REVIEW, REVIEW), List.of(root.status(), element.status(), other.status()));
     }
 
     @Test

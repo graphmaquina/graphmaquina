@@ -1800,13 +1800,15 @@ final class Transaction {
 
     /**
      * A commit callback cannot add a hop after phase 2 has fixed the changes it will write, and an identity's equals
-     * or hashCode cannot add one while a rollback undoes the log, as {@link UnitOfWork#rollbackTo} says.
+     * or hashCode cannot add one while a rollback undoes the log, as {@link UnitOfWork#rollbackTo} says. The rollback is
+     * checked before the poison: COLLECT rolls an aborted element back with the call poisoned, and that refusal is the
+     * same as the one a failure route's rollback gives.
      */
     private void checkCascade(ContextHandle caller) {
-        checkPoison(caller);
         if (uow.rollingBack()) {
             throw new IllegalStateException("cascades cannot run while the call rolls back a step");
         }
+        checkPoison(caller);
         if (phase == CallPhase.COMMIT || phase == CallPhase.HOOK || phase == CallPhase.REACTIONS) {
             throw new IllegalStateException("cascades can only run before the commit");
         }
