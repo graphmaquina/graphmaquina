@@ -1512,7 +1512,9 @@ The engine keeps the boundary between domain failures and technical ones:
   class the root entity is not an instance of, and `WrongThreadException` when the context or its flow is used from
   another thread than the one running the action. They are not library exceptions: if the action lets one through and a
   declared type accepts it, a rule or `failsOn` routes it like the adapter's own exceptions. None of them is an
-  `IllegalStateException`. Declare the narrowest types the adapter throws.
+  `IllegalStateException`. The context does throw one for a cascade attempted once the commit has begun or while a
+  step is rolled back, but only a retained context, called from a getter, a setter or an identity's `equals` or
+  `hashCode`, can attempt that, never your running action. Declare the narrowest types the adapter throws.
 - Checked exceptions are classified like the others, however they arrive: thrown by a synchronous action without
   being declared, declared by an annotated action method and rethrown unchanged by the generated companion, or
   completing a stage, inside an exact `CompletionException` too.
@@ -2194,7 +2196,7 @@ Cascades also require that the commit has not begun and that no step is being ro
 used for `cascade(...)` or `cascadeAll(...)` from a commit getter or setter, or from an identity's `equals` or
 `hashCode` while a rollback calls it, throws `IllegalStateException` before it stages anything: the commit has already
 fixed the changes it will write, and the rollback is undoing them. Reading peers or the flow does not stage another
-hop.
+hop, and a write to the flow from a commit getter or setter lands in the flow the call hands out.
 
 Neither `thenApply` nor `thenApplyAsync` promises to run on that original operation thread. Even a callback
 without the `Async` suffix may run on the service's completion thread. Do not hide a cascade or a write to the flow
@@ -2400,7 +2402,8 @@ outcome or stage or a wait that timed out, was interrupted or was refused, also 
 transaction. Your action can still end the call in another failure, such as an abort that carries a throwable no
 declared type accepts, or an `Error` it throws as itself. A cascade that names an unknown machine poisons too, by key or
 by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
-`cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue. `cascadeAll` copies its
+`cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue, and neither does a
+cascade refused because the commit has begun or a step is being rolled back. `cascadeAll` copies its
 collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
 change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
 propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
@@ -2877,7 +2880,7 @@ The runtime's normal root execution follows this sequence:
 1. Read the effective entity state and resolve the single edge keyed by `(state, requested identifier)`.
 2. Evaluate guards and run actions, including any nested cascades, the starts of the sub-machines whose state an
    edge enters and the exits of those that end, against a shared unit of work.
-3. Before commit, verify that participating entities still have their expected original states.
+3. Begin the commit: verify that participating entities still have their expected original states.
 4. Write each participating entity's final state through its setter.
 5. Invalidate transition contexts and release the root reentrancy marker.
 6. Run hooks for the committed hops, in log order.
@@ -3000,14 +3003,16 @@ the call attached before it told the observers.
 An observer watches without taking part. A throwable that is not an `Error` is logged as a warning through
 `System.getLogger("io.github.graphmaquina")` and changes neither the call nor the other observers; an `Error`
 propagates. The warning is best effort: anything but an `Error` from its backend, a checked exception included, is
-contained too, while an `Error` from it propagates unchanged. That warning is the only record logged on
-`io.github.graphmaquina` itself: the lines of each call go to its child logger `io.github.graphmaquina.runtime`, as
-[debug a call](#debug-a-call-logs-and-the-calls-flow) describes. An observer cannot start a transition on its own thread
-either: an operation called from an observer throws `ReentrantTransitionException`, which is contained. One submitted
-through `async(...)` runs on the executor's thread as a call of its own, unless that executor runs tasks inline, in
-which case the returned future fails with that exception as its cause. When a failure must fail the call, write a hook,
-or a `Definition.afterCommit` default for every edge of a machine. Observers run on the thread of every call, so keep
-them thread-safe and quick. Add as many as you need: they are notified in the order they were added.
+contained too, while an `Error` from it propagates unchanged. Either `Error`, the observer's own or its warning
+backend's, voids for that call the promise of one `onStarted` and exactly one end event. That warning is the only record
+logged on `io.github.graphmaquina` itself: the lines of each call go to its child logger
+`io.github.graphmaquina.runtime`, as [debug a call](#debug-a-call-logs-and-the-calls-flow) describes. An observer cannot
+start a transition on its own thread either: an operation called from an observer throws `ReentrantTransitionException`,
+which is contained. One submitted through `async(...)` runs on the executor's thread as a call of its own, unless that
+executor runs tasks inline, in which case the returned future fails with that exception as its cause. When a failure
+must fail the call, write a hook, or a `Definition.afterCommit` default for every edge of a machine. Observers run on
+the thread of every call, so keep them thread-safe and quick. Add as many as you need: they are notified in the order
+they were added.
 
 ## Debug a call: logs and the call's flow
 
@@ -3104,7 +3109,7 @@ Square brackets below mark the parts a line may leave out.
 | `TRACE` | `call=<id> depth=<d> unhandled <failed T> reason="<reason>"` | The failure of `<failed T>` has no route: the step dropped the hops and starts it took and its writes to the call's flow, and the call throws `UnhandledFailureException`, or, inside a cascade or an exit, aborts. |
 | `TRACE` | `call=<id> depth=<d> cascade <ref> <T>[ policy=<policy>]` | An action cascades `<T>` to the peer `<ref>`, at the action's depth; each element of `cascadeAll` adds its `CascadePolicy`. The lines of the cascaded step follow, one depth deeper. |
 | `TRACE` | `call=<id> depth=<d> cascade-result <ref> <T> code=<code>` | The cascaded step returned its outcome, with its `code()`. |
-| `TRACE` | `call=<id> depth=<d> collect-rollback <ref> <T> error=<error>` | Under `COLLECT`, the step of the element `<ref>` aborted with `<error>`: the element was rolled back, the poison it left was cleared, and the next element runs. |
+| `TRACE` | `call=<id> depth=<d> collect-rollback <ref> <T> error=<error>` | Under `COLLECT`, the step of the element `<ref>` aborted with `<error>` and was rolled back. The call stays poisoned while the line is written; then the poison the element left is cleared and the next element runs. |
 | `TRACE` | `call=<id> depth=<d> submachine-start <ref> <previous> -> <initial> parent=<ref> node=<node>` | A hop entered `<node>`, which starts its sub-machine: the child moves from `<previous>` to its initial state, at the depth of the entering step. |
 | `TRACE` | `call=<id> depth=<d> submachine-exit <ref> terminal=<state> parent=<ref> exit=<T>` | The child `<ref>` stands in `<state>`, a terminal state of its graph, which selects the exit `<T>` of its parent. The step of the exit follows, one depth deeper. |
 | `TRACE` | `call=<id> depth=<d> poison error=<error>` | A failure poisoned the call, which then commits nothing: the abort of a step at a depth above 0, a cascade that failed before its step could run, such as a cycle or a machine the registry does not hold, or the aggregate of a `COLLECT`. A failure that finds the call already poisoned logs no line, since the call keeps its first poison. `COLLECT` clears the poison of each element it rolls back, so one call can log the poison of several elements, then that of the aggregate. An `Error` that leaves a cascade poisons the call without a line. |

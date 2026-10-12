@@ -18,8 +18,8 @@ import java.time.Duration;
  *   the observer, the callback and the call, never the entity. Anything but an Error that the warning's backend
  *   throws, a checked exception included, is contained too; an Error from it propagates unchanged.</li>
  *   <li>An observer whose {@code onStarted} threw still receives its end event.</li>
- *   <li>An Error it throws propagates unchanged, as everywhere in the library, and voids these guarantees for that
- *   call.</li>
+ *   <li>An Error it throws, or that the backend of its warning throws, propagates unchanged, as everywhere in the
+ *   library, and voids these guarantees for that call.</li>
  *   <li>Its callbacks run with the thread marked as running a call, so an {@code execute} or {@code reevaluate} it
  *   makes on its own thread throws {@code ReentrantTransitionException}, contained like any other exception; one
  *   submitted through {@code async()} runs as a separate call on the executor's thread, unless that executor runs
