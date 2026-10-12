@@ -1,36 +1,39 @@
 package io.github.graphmaquina.maven;
 
 /**
- * The two javac executions Maven's default lifecycle runs, and the names each of them is configured and
- * skipped by.
+ * The two compilations of a project, the goal of {@code maven-compiler-plugin} that runs each of them, and the names
+ * each of them is configured and skipped by.
  *
- * <p>A StateGraph goal always belongs to exactly one of them: the {@code main} goals surround
- * {@code default-compile} and the test goals surround {@code default-testCompile}. Reading the configuration of
- * the right execution is what lets a goal say that the compiler is going to read the manifest the generator is
- * about to write, rather than assume it.</p>
+ * <p>A StateGraph goal always belongs to exactly one of them: the {@code main} goals surround the execution of
+ * {@code compiler:compile} that compiles the generated vocabulary, which the lifecycle of a {@code jar} names
+ * {@code default-compile}, and the test goals surround that of {@code compiler:testCompile}, by default
+ * {@code default-testCompile}. Reading the configuration of the execution that runs is what lets a goal say that the
+ * compiler is going to read the manifest the generator is about to write, rather than assume it.</p>
  */
 enum CompilerExecution {
 
     /** The compilation of {@code src/main/java}, which {@code compiler:compile} runs. */
-    MAIN("main", "default-compile", "skipMain", "maven.main.skip", "generatedSourcesDirectory", "includes",
+    MAIN("main", "compile", "compile", "skipMain", "maven.main.skip", "generatedSourcesDirectory", "includes",
         "excludes"),
 
     /** The compilation of {@code src/test/java}, which {@code compiler:testCompile} runs. */
-    TEST("test", "default-testCompile", "skip", "maven.test.skip", "generatedTestSourcesDirectory",
+    TEST("test", "testCompile", "test-compile", "skip", "maven.test.skip", "generatedTestSourcesDirectory",
         "testIncludes", "testExcludes");
 
     private final String sourceSet;
-    private final String id;
+    private final String goal;
+    private final String defaultPhase;
     private final String skipParameter;
     private final String skipProperty;
     private final String generatedSourcesParameter;
     private final String includesParameter;
     private final String excludesParameter;
 
-    CompilerExecution(String sourceSet, String id, String skipParameter, String skipProperty,
+    CompilerExecution(String sourceSet, String goal, String defaultPhase, String skipParameter, String skipProperty,
             String generatedSourcesParameter, String includesParameter, String excludesParameter) {
         this.sourceSet = sourceSet;
-        this.id = id;
+        this.goal = goal;
+        this.defaultPhase = defaultPhase;
         this.skipParameter = skipParameter;
         this.skipProperty = skipProperty;
         this.generatedSourcesParameter = generatedSourcesParameter;
@@ -48,12 +51,22 @@ enum CompilerExecution {
     }
 
     /**
-     * The identity Maven gives this execution in the project model.
+     * The goal of {@code maven-compiler-plugin} that runs this compilation.
      *
-     * @return the execution id
+     * @return {@code compile} or {@code testCompile}
      */
-    String id() {
-        return id;
+    String goal() {
+        return goal;
+    }
+
+    /**
+     * The phase maven-compiler-plugin 3.15.0 binds {@link #goal()} to by default, which is the phase of an execution
+     * of that goal that declares none.
+     *
+     * @return {@code compile} or {@code test-compile}
+     */
+    String defaultPhase() {
+        return defaultPhase;
     }
 
     /**

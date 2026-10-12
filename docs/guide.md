@@ -599,9 +599,14 @@ to process, debug settings that leave out the `SourceFile` attribute, classes or
 than the project keeps them, as `<outputDirectory>`, `<multiReleaseOutput>`, `-d` or `-s` can,
 `<compileSourceRoots>` without the generated directory, divergent main/test manifests, compiler includes or
 excludes, incremental excludes included, that leave out the compilation carrier the generator emits, and includes
-that hold only empty values. A compilation the build switches off is skipped instead: `maven.main.skip` or
+that hold only empty values. It checks the execution of the compiler's `compile` or `testCompile` goal that the
+lifecycle runs and that compiles the generated vocabulary, whatever its id, so a build may bind `default-compile`
+to the phase `none` and compile through an execution of its own, as `kotlin-maven-plugin` asks a mixed Kotlin and
+Java build to do; declare `maven-compiler-plugin` before this plugin then. Two running executions that both compile
+the vocabulary are refused. A compilation the build switches off is skipped instead: `maven.main.skip` or
 `<skipMain>` makes the three main goals log that and do nothing, `maven.test.skip` or `<skip>` the three test goals,
-and a project packaged as `pom` skips all six. Run the normal lifecycle when generating graphs.
+a compilation the lifecycle runs no execution of the compiler's goal for is skipped the same way, and a project
+packaged as `pom` skips all six. Run the normal lifecycle when generating graphs.
 
 | Optional property | Meaning |
 | --- | --- |

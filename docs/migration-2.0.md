@@ -680,6 +680,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
   Maven, a last `-encoding` argument that names another charset than `<encoding>` or
   `project.build.sourceEncoding`, when this JVM supports both, since javac would read back the sources annotation
   processors generate in another charset than it wrote them in.
+- **Maven: the compiler execution that runs.** The checks and the request read the execution of the compiler's
+  `compile` or `testCompile` goal that the lifecycle runs and that compiles the generated vocabulary, whatever its
+  id, where they used to read `default-compile` and `default-testCompile` even when bound to the phase `none`; a
+  compilation no execution of the goal runs is skipped, where its previous outputs used to be retired; and two
+  running executions that both compile the vocabulary are refused, where javac used to fail on the second.
 - **Maven: settings read as the compiler applies them.** `<testIncrementalExcludes>` narrow the test sources the
   generator reads, so it no longer fails with `SG601` on a source javac never compiles; the compiler's
   `<compileSourceRoots>` are the roots the generator parses, an empty element standing for the project's; an

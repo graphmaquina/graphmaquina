@@ -2,6 +2,7 @@ package io.github.graphmaquina.maven;
 
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.lifecycle.DefaultLifecycles;
 import org.apache.maven.model.Plugin;
 import org.apache.maven.model.PluginExecution;
 import org.apache.maven.plugin.MojoExecution;
@@ -48,6 +49,16 @@ import java.util.regex.Pattern;
  * plan Maven already built, every goal reads the effective configuration of the compiler execution it belongs
  * to, and the {@code generate} and {@code generate-test} goals refuse to run when the two disagree, naming both
  * sides and the configuration that would fix it.</p>
+ *
+ * <p>That execution is the one of the compiler's goal, {@code compile} or {@code testCompile}, that the lifecycle of
+ * the project runs and that compiles the vocabulary the generator writes, whatever its id. An execution runs when it
+ * is bound to a phase of a lifecycle, the phase it declares or else the default phase of its goal, so one bound to
+ * {@code none}, as kotlin-maven-plugin asks of {@code default-compile} and {@code default-testCompile} in a build
+ * that compiles its Java sources through executions of its own, never runs and is never read. It compiles the
+ * vocabulary unless it declares {@code <compileSourceRoots>} of its own that leave out the directory the generator
+ * writes into, as an execution that compiles another source root into a multi-release jar does; such an execution
+ * runs untouched. A compilation no execution runs is skipped, and one that two running executions compile the
+ * vocabulary of is refused.</p>
  *
  * <p>A setting is read the way Maven itself resolves a parameter: the effective configuration of the compiler
  * execution first — the one Maven merged the configuration the plugin declares for all of its executions into,
@@ -130,6 +141,16 @@ final class CompilerConfiguration {
     private static final String GENERATED_INCLUDE = "io/github/graphmaquina/generated/**";
 
     private final CompilerExecution execution;
+
+    /** The id of the execution of the compiler this configuration is read from, as the project model names it. */
+    private final String id;
+
+    /**
+     * The ids of the running executions of the compiler goal that compile the vocabulary the generator writes, this
+     * one among them unless none does.
+     */
+    private final List<String> compiling;
+
     private final Xpp3Dom configuration;
     private final Path basedir;
     private final List<Properties> properties;
@@ -137,9 +158,11 @@ final class CompilerConfiguration {
     /** Maven's own evaluator of plugin parameters, over the session of this build. */
     private final PluginParameterExpressionEvaluator evaluator;
 
-    private CompilerConfiguration(CompilerExecution execution, Xpp3Dom configuration, Path basedir,
-            List<Properties> properties, MavenSession session) {
+    private CompilerConfiguration(CompilerExecution execution, String id, List<String> compiling,
+            Xpp3Dom configuration, Path basedir, List<Properties> properties, MavenSession session) {
         this.execution = execution;
+        this.id = id;
+        this.compiling = List.copyOf(compiling);
         this.configuration = configuration;
         this.basedir = basedir;
         this.properties = properties;
@@ -150,34 +173,126 @@ final class CompilerConfiguration {
     }
 
     /**
-     * Reads the effective configuration of {@code execution} from {@code project} and {@code session}.
+     * Reads the effective configuration of the execution of the compiler that runs {@code execution} for
+     * {@code project}: of the running executions of its goal, the one that compiles {@code generatedSources}, else the
+     * first of them; when several compile it, the first of those, which {@link #requireOneCompilingExecution} then
+     * refuses.
      *
      * @param project the project being built
      * @param session the session, which carries the properties the command line and the JVM set
-     * @param execution the compiler execution the calling goal belongs to
-     * @return the configuration, which reads only properties when the project model carries no compiler plugin
+     * @param execution the compilation the calling goal belongs to
+     * @param lifecycles the lifecycles of this build, whose phases an execution must be bound to to run
+     * @param generatedSources the directory the generator writes the vocabulary of this compilation into
+     * @return the configuration, empty when the lifecycle runs no execution of the goal, as {@link #idle} reports
      */
-    static CompilerConfiguration of(MavenProject project, MavenSession session, CompilerExecution execution) {
-        Plugin compiler = project.getPlugin(COMPILER);
-        Xpp3Dom configuration = null;
-        if (compiler != null) {
-            // Maven has already merged the configuration the plugin declares for all of its executions into the
-            // configuration of each execution, and an element the execution declares itself — a whole list
-            // included — wins over the plugin's. Reading the plugin's again would read arguments javac never
-            // receives, so it is read on its own only when the model carries no such execution at all.
-            configuration = configuration(compiler.getConfiguration());
-            for (PluginExecution candidate : compiler.getExecutions()) {
-                if (execution.id().equals(candidate.getId())) {
-                    configuration = configuration(candidate.getConfiguration());
-                }
-            }
-        }
+    static Optional<CompilerConfiguration> of(MavenProject project, MavenSession session, CompilerExecution execution,
+            DefaultLifecycles lifecycles, Path generatedSources) {
         // The order is the one Maven evaluates the expression of a compiler parameter in: the properties of the
         // session — the command line, then the JVM the build runs in — before the properties of the project.
         List<Properties> properties = List.of(session.getUserProperties(), session.getSystemProperties(),
             project.getProperties());
-        return new CompilerConfiguration(execution, configuration, project.getBasedir().toPath(), properties,
-            session);
+        Path basedir = project.getBasedir().toPath();
+        // Maven has already merged the configuration the plugin declares for all of its executions into the
+        // configuration of each execution, and an element the execution declares itself — a whole list included —
+        // wins over the plugin's, so the configuration of the execution is all there is to read.
+        List<CompilerConfiguration> running = new ArrayList<>();
+        for (PluginExecution candidate : running(project, execution, lifecycles)) {
+            running.add(new CompilerConfiguration(execution, candidate.getId(), List.of(),
+                configuration(candidate.getConfiguration()), basedir, properties, session));
+        }
+        if (running.isEmpty()) {
+            return Optional.empty();
+        }
+        List<CompilerConfiguration> compilingOnes = running.stream()
+            .filter((CompilerConfiguration candidate) -> candidate.compilesDirectory(generatedSources)).toList();
+        CompilerConfiguration chosen = compilingOnes.isEmpty() ? running.get(0) : compilingOnes.get(0);
+        List<String> ids = compilingOnes.stream().map((CompilerConfiguration candidate) -> candidate.id).toList();
+        return Optional.of(new CompilerConfiguration(execution, chosen.id, ids, chosen.configuration, basedir,
+            properties, session));
+    }
+
+    /**
+     * Why the lifecycle of {@code project} runs no execution of the compiler goal of {@code execution}, which makes
+     * this compilation one the build switches off.
+     *
+     * @param project the project being built
+     * @param execution the compilation the calling goal belongs to
+     * @param lifecycles the lifecycles of this build
+     * @return the reason, naming every execution of the goal and the phase it is bound to; empty when one runs
+     */
+    static Optional<String> idle(MavenProject project, CompilerExecution execution, DefaultLifecycles lifecycles) {
+        if (!running(project, execution, lifecycles).isEmpty()) {
+            return Optional.empty();
+        }
+        List<String> bindings = new ArrayList<>();
+        Plugin compiler = project.getPlugin(COMPILER);
+        if (compiler != null) {
+            for (PluginExecution candidate : compiler.getExecutions()) {
+                if (candidate.getGoals().contains(execution.goal())) {
+                    bindings.add(candidate.getId() + " is bound to " + phase(candidate, execution)
+                        + ", which is no phase of a lifecycle");
+                }
+            }
+        }
+        return Optional.of("maven-compiler-plugin runs no execution of its " + execution.goal() + " goal for this"
+            + " project" + (bindings.isEmpty() ? "" : ", as " + String.join(", and ", bindings)));
+    }
+
+    /**
+     * The executions of the compiler goal of {@code execution} that the lifecycle of {@code project} runs, in the
+     * order of the project model: those bound to a phase of one of {@code lifecycles}. Maven runs no execution bound
+     * to anything else, {@code none} included, and binds one that names no phase to the default phase of its goal.
+     */
+    private static List<PluginExecution> running(MavenProject project, CompilerExecution execution,
+            DefaultLifecycles lifecycles) {
+        Plugin compiler = project.getPlugin(COMPILER);
+        List<PluginExecution> running = new ArrayList<>();
+        if (compiler == null) {
+            return running;
+        }
+        for (PluginExecution candidate : compiler.getExecutions()) {
+            if (candidate.getGoals().contains(execution.goal())
+                    && lifecycles.get(phase(candidate, execution)) != null) {
+                running.add(candidate);
+            }
+        }
+        return running;
+    }
+
+    /** The phase {@code candidate} is bound to: the one it declares, else the default phase of the goal. */
+    private static String phase(PluginExecution candidate, CompilerExecution execution) {
+        return candidate.getPhase() == null ? execution.defaultPhase() : candidate.getPhase();
+    }
+
+    /**
+     * The id of the execution of the compiler this configuration is read from.
+     *
+     * @return the execution id, as the project model names it
+     */
+    String id() {
+        return id;
+    }
+
+    /**
+     * Refuses a compilation whose vocabulary two running executions of the compiler goal compile, naming them. The
+     * generator describes one compilation in one request, read from one execution, and a second javac over the same
+     * sources and the same class output fails on the classes the first one wrote, after the preparation retired the
+     * outputs of the previous compilation.
+     *
+     * @param request the request the calling goal generates for
+     * @throws MojoExecutionException naming the executions and how to keep one of them
+     */
+    void requireOneCompilingExecution(StateGraphMojo.Request request) throws MojoExecutionException {
+        if (compiling.size() < 2) {
+            return;
+        }
+        throw new MojoExecutionException("maven-compiler-plugin runs the executions "
+            + String.join(" and ", compiling) + " of its " + execution.goal() + " goal for this project, and each of"
+            + " them compiles " + request.sourcesOutput() + ", the vocabulary the StateGraph generator writes for this"
+            + " compilation, which StateGraph supports for one javac only: the later one would fail on the classes the"
+            + " earlier one wrote, after the preparation retired the outputs of the previous compilation. Keep one of"
+            + " them, bind the others to the phase none, or give them <compileSourceRoots> of their own that leave out"
+            + " that directory.");
     }
 
     /** The configuration of a plugin or of one of its executions, which the model carries as an XML tree. */
@@ -200,7 +315,7 @@ final class CompilerConfiguration {
         requireSupportedRelease();
         Javac javac = javac(toolchains, session);
         if (!Jdk.same(javac.home(), Jdk.home(generatorJava, basedir))) {
-            throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin "
+            throw new MojoExecutionException("the " + id + " execution of maven-compiler-plugin "
                 + javac.description() + ", while the StateGraph generator runs under " + generatorJava + ". The two"
                 + " must be the same JDK, or the vocabulary the generator emits is not the vocabulary javac compiles."
                 + " Configure <javaExecutable> of this plugin to the java of the JDK javac compiles with, or have"
@@ -251,7 +366,7 @@ final class CompilerConfiguration {
         Optional<Setting> target = testSetting("testTarget", "maven.compiler.testTarget")
             .or(() -> setting("target", "maven.compiler.target"));
         if (source.isEmpty() && target.isEmpty()) {
-            throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin"
+            throw new MojoExecutionException("the " + id + " execution of maven-compiler-plugin"
                 + " configures no release, so it compiles at the default source and target of that plugin,"
                 + " which is below Java " + MINIMUM_RELEASE + "; the vocabulary the StateGraph generator emits"
                 + " needs Java " + MINIMUM_RELEASE + " or later. Configure <release>" + MINIMUM_RELEASE
@@ -264,7 +379,7 @@ final class CompilerConfiguration {
             requireSupported(target.get(), configure("release"));
         }
         if (source.isEmpty() || target.isEmpty()) {
-            throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin"
+            throw new MojoExecutionException("the " + id + " execution of maven-compiler-plugin"
                 + " configures " + (source.isEmpty() ? target.get() : source.get()) + " and leaves the other"
                 + " of source and target at the default of that plugin, which is below Java "
                 + MINIMUM_RELEASE + ". Configure <release>" + MINIMUM_RELEASE + "</release> for that"
@@ -281,7 +396,7 @@ final class CompilerConfiguration {
     private void requireSupported(Setting setting, String remedy) throws MojoExecutionException {
         int feature = featureVersion(setting.value());
         if (feature > 0 && feature < MINIMUM_RELEASE) {
-            throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin"
+            throw new MojoExecutionException("the " + id + " execution of maven-compiler-plugin"
                 + " compiles with " + setting + ", but the vocabulary the StateGraph generator emits needs"
                 + " Java " + MINIMUM_RELEASE + " or later. " + remedy);
         }
@@ -374,7 +489,7 @@ final class CompilerConfiguration {
                 || Charset.forName(configured.get().value()).equals(Charset.forName(argument.get().value()))) {
             return;
         }
-        throw new MojoExecutionException(configured.get() + " and " + argument.get() + " of the " + execution.id()
+        throw new MojoExecutionException(configured.get() + " and " + argument.get() + " of the " + id
             + " execution of maven-compiler-plugin name two charsets for a javac that compiles inside Maven: it reads"
             + " every source in the configured encoding, those annotation processors generate included, while it writes"
             + " the sources an annotation processor generates in the last -encoding it is given, so it would read them"
@@ -534,7 +649,7 @@ final class CompilerConfiguration {
         boolean listed = requireProcessorListed();
         Optional<Setting> modulePath = lastOption(List.of(PROCESSOR_MODULE_PATH));
         if (modulePath.isPresent()) {
-            throw new MojoExecutionException(modulePath.get() + " of the " + execution.id() + " execution of"
+            throw new MojoExecutionException(modulePath.get() + " of the " + id + " execution of"
                 + " maven-compiler-plugin makes javac look for annotation processors on a module path, which"
                 + " StateGraph does not support: it reads the processor path javac takes. Remove that argument, and"
                 + " declare " + PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT + " in <annotationProcessorPaths> of that"
@@ -545,7 +660,7 @@ final class CompilerConfiguration {
             if (pathArgument.get().value().contains("${") || holdsProcessor(pathArgument.get().value(), javac)) {
                 return;
             }
-            throw new MojoExecutionException(pathArgument.get() + " of the " + execution.id() + " execution of"
+            throw new MojoExecutionException(pathArgument.get() + " of the " + id + " execution of"
                 + " maven-compiler-plugin gives javac the processor path it takes, the only place it then looks for"
                 + " annotation processors, and that path reaches no " + PROCESSOR_FILE + ", so javac would compile the"
                 + " generated vocabulary and publish no index of what it accepted, and the preparation that follows"
@@ -563,7 +678,7 @@ final class CompilerConfiguration {
                     return;
                 }
             }
-            throw missingProcessor("the <annotationProcessorPaths> of the " + execution.id()
+            throw missingProcessor("the <annotationProcessorPaths> of the " + id
                 + " execution of maven-compiler-plugin");
         }
         for (Artifact artifact : project.getArtifacts()) {
@@ -574,7 +689,7 @@ final class CompilerConfiguration {
                 int release = Jdk.release(javac.home());
                 if (release >= REQUESTED_PROCESSING_RELEASE && !requested) {
                     throw new MojoExecutionException(PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT + " is only a"
-                        + " dependency of this project, and the " + execution.id() + " execution of"
+                        + " dependency of this project, and the " + id + " execution of"
                         + " maven-compiler-plugin, which declares no path in <annotationProcessorPaths>, "
                         + javac.description() + ", a JDK of Java " + release + ": from Java "
                         + REQUESTED_PROCESSING_RELEASE + " on, javac runs no annotation processor it finds on the class"
@@ -587,7 +702,7 @@ final class CompilerConfiguration {
                 return;
             }
         }
-        throw missingProcessor("the dependencies of this project, and the " + execution.id()
+        throw missingProcessor("the dependencies of this project, and the " + id
             + " execution of maven-compiler-plugin declares no path in <annotationProcessorPaths>");
     }
 
@@ -645,7 +760,7 @@ final class CompilerConfiguration {
 
     private MojoExecutionException noProcessing(String setting) {
         return new MojoExecutionException(setting + " switches annotation processing off for the "
-            + execution.id() + " execution of maven-compiler-plugin, which StateGraph does not support: "
+            + id + " execution of maven-compiler-plugin, which StateGraph does not support: "
             + PROCESSOR_GROUP + ':' + PROCESSOR_ARTIFACT + " is what publishes the index of what javac"
             + " accepted, so this build would retire the index of the previous compilation and publish"
             + " nothing in its place. Run with annotation processing on.");
@@ -673,7 +788,7 @@ final class CompilerConfiguration {
         String removal;
         if (option >= 0 && option + 1 < arguments.size()) {
             list = arguments.get(option + 1);
-            gives = "the compiler argument " + PROCESSOR_LIST + " of the " + execution.id()
+            gives = "the compiler argument " + PROCESSOR_LIST + " of the " + id
                 + " execution of maven-compiler-plugin gives";
             removal = "remove that argument";
         } else {
@@ -682,7 +797,7 @@ final class CompilerConfiguration {
                 return false;
             }
             list = String.join(",", declared.get());
-            gives = "the <annotationProcessors> of the " + execution.id() + " execution of maven-compiler-plugin give";
+            gives = "the <annotationProcessors> of the " + id + " execution of maven-compiler-plugin give";
             removal = "remove that list, so javac runs every processor on its processor path";
         }
         String[] names = list.split(",");
@@ -726,7 +841,7 @@ final class CompilerConfiguration {
         Optional<Setting> failOnError = setting("failOnError", "maven.compiler.failOnError");
         if (failOnError.isPresent() && !Boolean.parseBoolean(failOnError.get().value())) {
             throw new MojoExecutionException(failOnError.get() + " lets the build continue past a compilation the "
-                + execution.id() + " execution of maven-compiler-plugin rejects, which StateGraph does not"
+                + id + " execution of maven-compiler-plugin rejects, which StateGraph does not"
                 + " support: the preparation would retire the outputs of the previous compilation, and the"
                 + " completion would find no classes to publish in their place. Leave failOnError at its default,"
                 + " true.");
@@ -748,7 +863,7 @@ final class CompilerConfiguration {
         Optional<Setting> incremental = setting("useIncrementalCompilation",
             "maven.compiler.useIncrementalCompilation");
         if (incremental.isPresent() && !Boolean.parseBoolean(incremental.get().value())) {
-            throw new MojoExecutionException(incremental.get() + " makes the " + execution.id() + " execution of"
+            throw new MojoExecutionException(incremental.get() + " makes the " + id + " execution of"
                 + " maven-compiler-plugin compile only the sources whose class file is missing or older than the"
                 + " source, which StateGraph does not support: the preparation retires only the outputs the previous"
                 + " cycle owned, so over a previous build javac would compile the generated vocabulary without the"
@@ -799,7 +914,7 @@ final class CompilerConfiguration {
         }
         boolean one = settings.size() == 1;
         throw new MojoExecutionException(String.join(" and ", settings) + (one ? " makes" : " make")
-            + " javac write the class files of the " + execution.id() + " execution of maven-compiler-plugin without"
+            + " javac write the class files of the " + id + " execution of maven-compiler-plugin without"
             + " the SourceFile attribute, which javac writes only when it is given no -g: option or one that lists"
             + " source. StateGraph does not support that: the completion attributes each class file to the source it"
             + " was compiled from through that attribute, so it would find no class of this compilation to publish,"
@@ -852,7 +967,7 @@ final class CompilerConfiguration {
             + " the project: the completion would find no class of this compilation to publish there, after the"
             + " preparation retired the outputs of the previous compilation.";
         if (directory.isPresent() && !canonical(absolute(directory.get().value())).equals(canonical(expected))) {
-            throw new MojoExecutionException(directory.get() + " makes the " + execution.id() + writes + "to "
+            throw new MojoExecutionException(directory.get() + " makes the " + id + writes + "to "
                 + absolute(directory.get().value()) + consequence + " Leave outputDirectory unset for that execution,"
                 + " or move the class output of the project itself with <" + (main ? "outputDirectory"
                 : "testOutputDirectory") + "> in the <build> of the POM.");
@@ -861,7 +976,7 @@ final class CompilerConfiguration {
         if (versioned.isPresent() && Boolean.parseBoolean(versioned.get().value())) {
             Path versions = expected.resolve("META-INF").resolve("versions");
             Optional<Setting> release = setting("release", "maven.compiler.release");
-            throw new MojoExecutionException(versioned.get() + " makes the " + execution.id() + writes
+            throw new MojoExecutionException(versioned.get() + " makes the " + id + writes
                 + (release.isPresent() ? "to " + versions.resolve(release.get().value()) : "below " + versions)
                 + consequence + " Remove multiReleaseOutput from that execution.");
         }
@@ -869,7 +984,7 @@ final class CompilerConfiguration {
         if (destination.isPresent()) {
             Path written = whereJavacRuns(destination.get().value(), javac);
             if (!canonical(written).equals(canonical(expected))) {
-                throw new MojoExecutionException(destination.get() + " of the " + execution.id() + " execution of"
+                throw new MojoExecutionException(destination.get() + " of the " + id + " execution of"
                     + " maven-compiler-plugin makes javac write its classes to " + written + consequence
                     + " Remove that argument from the configuration of that execution.");
             }
@@ -877,7 +992,7 @@ final class CompilerConfiguration {
     }
 
     private MojoExecutionException compilesNothing(String setting, String remedy) {
-        return new MojoExecutionException(setting + " makes the " + execution.id() + " execution of"
+        return new MojoExecutionException(setting + " makes the " + id + " execution of"
             + " maven-compiler-plugin run the annotation processors and compile nothing, which StateGraph does"
             + " not support: the preparation would retire the outputs of the previous compilation, and javac"
             + " would write no classes in their place. " + remedy);
@@ -915,7 +1030,7 @@ final class CompilerConfiguration {
             }
         }
         if (declared.isEmpty()) {
-            throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin"
+            throw new MojoExecutionException("the " + id + " execution of maven-compiler-plugin"
                 + " declares no annotation manifest, so javac would compile without the vocabulary the"
                 + " StateGraph generator wrote. Add this compiler argument to that execution: " + option);
         }
@@ -926,7 +1041,7 @@ final class CompilerConfiguration {
                     ? ", which javac, forked in the project directory, resolves to " + read
                     : ", which javac, compiling inside the JVM running Maven, resolves against the directory Maven"
                         + " was started in, to " + read;
-                throw new MojoExecutionException("the " + execution.id() + " execution of"
+                throw new MojoExecutionException("the " + id + " execution of"
                     + " maven-compiler-plugin reads the annotation manifest " + value + resolved
                     + ", while the StateGraph generator writes " + expected
                     + ". Declare exactly this compiler argument for that execution: " + option);
@@ -951,7 +1066,7 @@ final class CompilerConfiguration {
         Optional<String> configured = value(parameter);
         Path expected = Path.of(request.processorSourcesOutput()).toAbsolutePath().normalize();
         if (configured.isPresent() && !canonical(absolute(configured.get())).equals(canonical(expected))) {
-            throw new MojoExecutionException("the " + execution.id() + " execution of maven-compiler-plugin"
+            throw new MojoExecutionException("the " + id + " execution of maven-compiler-plugin"
                 + " writes the sources of the annotation processor to " + configured.get()
                 + ", while StateGraph owns and retires " + expected + ". Configure <" + parameter + '>'
                 + expected + "</" + parameter + "> for that execution, or leave it unset.");
@@ -960,7 +1075,7 @@ final class CompilerConfiguration {
         if (sources.isPresent()) {
             Path written = whereJavacRuns(sources.get().value(), javac);
             if (!canonical(written).equals(canonical(expected))) {
-                throw new MojoExecutionException(sources.get() + " of the " + execution.id() + " execution of"
+                throw new MojoExecutionException(sources.get() + " of the " + id + " execution of"
                     + " maven-compiler-plugin makes the annotation processor write its sources to " + written
                     + ", while StateGraph owns and retires " + expected + ". Remove that argument from the"
                     + " configuration of that execution.");
@@ -1014,6 +1129,18 @@ final class CompilerConfiguration {
     }
 
     /**
+     * Whether javac compiles the sources under {@code directory} in this execution: it does unless the execution
+     * declares {@code <compileSourceRoots>} of its own that leave that directory out, since otherwise it compiles the
+     * source roots of the project, the one this plugin adds included. A root is that directory when both name it once
+     * their symbolic links are resolved, as {@link #canonical} compares them.
+     */
+    private boolean compilesDirectory(Path directory) {
+        Optional<List<String>> roots = compileSourceRoots();
+        return roots.isEmpty() || roots.get().stream()
+            .anyMatch((String root) -> canonical(Path.of(root)).equals(canonical(directory)));
+    }
+
+    /**
      * Refuses {@code <compileSourceRoots>} that leave out the directory the generator writes into. They replace the
      * source roots of the project for javac, the one this plugin adds included, so javac would compile the sources of
      * this compilation without the vocabulary they use, and the completion would find nothing of this compilation to
@@ -1024,11 +1151,9 @@ final class CompilerConfiguration {
      * @throws MojoExecutionException naming the directory the compiler leaves out
      */
     void requireGeneratedSourcesCompiled(StateGraphMojo.Request request) throws MojoExecutionException {
-        Optional<List<String>> roots = compileSourceRoots();
         Path generated = Path.of(request.sourcesOutput()).toAbsolutePath().normalize();
-        if (roots.isPresent() && roots.get().stream()
-                .noneMatch((String root) -> canonical(Path.of(root)).equals(canonical(generated)))) {
-            throw new MojoExecutionException("the <compileSourceRoots> of the " + execution.id() + " execution of"
+        if (!compilesDirectory(generated)) {
+            throw new MojoExecutionException("the <compileSourceRoots> of the " + id + " execution of"
                 + " maven-compiler-plugin replace the source roots of the project and leave out " + generated
                 + ", where the StateGraph generator writes the vocabulary of this compilation, so javac would compile"
                 + " the sources of this compilation without it, and the completion would find nothing of this"
@@ -1073,7 +1198,7 @@ final class CompilerConfiguration {
      */
     void requireCarrierSelected(StateGraphMojo.Request request) throws MojoExecutionException {
         String carrier = CARRIER_PACKAGE + "/GraphCompilation" + carrierDigest(request.compilationId()) + ".java";
-        String compiler = " of the " + execution.id() + " execution of maven-compiler-plugin";
+        String compiler = " of the " + id + " execution of maven-compiler-plugin";
         String consequence = ", the carrier the StateGraph generator emits for this compilation under "
             + request.sourcesOutput() + ": the compiler applies its patterns to that directory too, so javac would"
             + " compile the generated vocabulary without its carrier and the completion would find nothing to"

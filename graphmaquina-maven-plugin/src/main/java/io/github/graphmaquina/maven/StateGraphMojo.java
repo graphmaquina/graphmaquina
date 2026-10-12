@@ -3,6 +3,7 @@ package io.github.graphmaquina.maven;
 import org.apache.maven.artifact.Artifact;
 import org.apache.maven.artifact.DependencyResolutionRequiredException;
 import org.apache.maven.execution.MavenSession;
+import org.apache.maven.lifecycle.DefaultLifecycles;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.project.MavenProject;
@@ -85,6 +86,12 @@ public abstract class StateGraphMojo extends AbstractMojo {
     private ToolchainManager toolchainManager;
 
     /**
+     * The lifecycles of the build, injected as a descriptor requirement: an execution of the compiler runs only when
+     * it is bound to one of their phases.
+     */
+    private DefaultLifecycles lifecycles;
+
+    /**
      * The project this goal runs for.
      *
      * @return the project being built
@@ -96,11 +103,12 @@ public abstract class StateGraphMojo extends AbstractMojo {
     /**
      * Whether this build compiles nothing for {@code execution}, in which case the calling goal does nothing and
      * says so at info level. That is a project packaged as {@code pom}, which binds no compiler at all — the
-     * parent of a multi-module build runs the executions its modules inherit from it — and a compilation the
-     * build switched off the way maven-compiler-plugin skips its own goal: by {@code maven.main.skip} or
-     * {@code <skipMain>} for the main one, by {@code maven.test.skip} or {@code <skip>} for the test one.
-     * Nothing is generated, retired or published then, so the outputs of the previous cycle stay exactly as the
-     * compiler leaves them.
+     * parent of a multi-module build runs the executions its modules inherit from it — a compilation for which the
+     * lifecycle runs no execution of the compiler's goal, as when {@code default-compile} is bound to the phase
+     * {@code none} and nothing else compiles the main sources, and a compilation the build switched off the way
+     * maven-compiler-plugin skips its own goal: by {@code maven.main.skip} or {@code <skipMain>} for the main one, by
+     * {@code maven.test.skip} or {@code <skip>} for the test one. Nothing is generated, retired or published then, so
+     * the outputs of the previous cycle stay exactly as the compiler leaves them.
      *
      * @param execution the compiler execution the calling goal belongs to
      * @return {@code true} if the calling goal must return without doing anything
@@ -109,12 +117,15 @@ public abstract class StateGraphMojo extends AbstractMojo {
         String reason;
         if ("pom".equals(project.getPackaging())) {
             reason = "the project is packaged as pom, which compiles no Java";
+        } else if (CompilerConfiguration.idle(project, execution, lifecycles).isPresent()) {
+            reason = CompilerConfiguration.idle(project, execution, lifecycles).get();
         } else {
-            Optional<String> skip = CompilerConfiguration.of(project, session, execution).skip();
+            CompilerConfiguration compiler = compiler(execution);
+            Optional<String> skip = compiler.skip();
             if (skip.isEmpty()) {
                 return false;
             }
-            reason = skip.get() + " switches the " + execution.id() + " compilation off";
+            reason = skip.get() + " switches the " + compiler.id() + " compilation off";
         }
         getLog().info("StateGraph skips " + compilationId(execution.sourceSet()) + ": " + reason);
         return true;
@@ -132,10 +143,10 @@ public abstract class StateGraphMojo extends AbstractMojo {
      */
     protected final Request mainRequest() throws MojoExecutionException {
         Path build = buildDirectory();
-        Path sourcesOutput = build.resolve("generated-sources").resolve(WORK);
+        Path sourcesOutput = generatedSources(CompilerExecution.MAIN);
         Path processorSourcesOutput = build.resolve("generated-sources").resolve("annotations");
         Path classesOutput = absolute(project.getBuild().getOutputDirectory());
-        CompilerConfiguration compiler = CompilerConfiguration.of(project, session, CompilerExecution.MAIN);
+        CompilerConfiguration compiler = compiler(CompilerExecution.MAIN);
         return new Request(
             project.getBasedir().getAbsolutePath(),
             originalSources(CompilerExecution.MAIN,
@@ -161,10 +172,10 @@ public abstract class StateGraphMojo extends AbstractMojo {
      */
     protected final Request testRequest() throws MojoExecutionException {
         Path build = buildDirectory();
-        Path sourcesOutput = build.resolve("generated-test-sources").resolve(WORK);
+        Path sourcesOutput = generatedSources(CompilerExecution.TEST);
         Path processorSourcesOutput = build.resolve("generated-test-sources").resolve("test-annotations");
         Path classesOutput = absolute(project.getBuild().getTestOutputDirectory());
-        CompilerConfiguration compiler = CompilerConfiguration.of(project, session, CompilerExecution.TEST);
+        CompilerConfiguration compiler = compiler(CompilerExecution.TEST);
         return new Request(
             project.getBasedir().getAbsolutePath(),
             originalSources(CompilerExecution.TEST,
@@ -181,16 +192,16 @@ public abstract class StateGraphMojo extends AbstractMojo {
     }
 
     /**
-     * Refuses to generate for a compilation the compiler is not going to run the way this request describes:
-     * under another JDK, under a release the generated vocabulary does not compile with, with annotation
-     * processing off, without the annotation processor on the processor path or in the {@code -processor} list
-     * javac takes, with a processor module path, with the annotation processor only on the class path of a javac
-     * that would not run it, without writing its classes or past a failure of javac, writing its classes without the
-     * {@code SourceFile} attribute or anywhere but the class output of the project, over source roots that leave out
-     * the directory the generator writes into, over only part of the module, with includes or excludes that leave out
-     * the carrier of the compilation, over another annotation manifest, writing the sources of the annotation
-     * processor somewhere this plugin does not own, or, inside Maven, writing them in another charset than it reads
-     * them back in. Nothing has been written when this fails.
+     * Refuses to generate for a compilation the compiler is not going to run the way this request describes: in two
+     * running executions of its goal that both compile the generated vocabulary, under another JDK, under a release the
+     * generated vocabulary does not compile with, with annotation processing off, without the annotation processor on
+     * the processor path or in the {@code -processor} list javac takes, with a processor module path, with the
+     * annotation processor only on the class path of a javac that would not run it, without writing its classes or past
+     * a failure of javac, writing its classes without the {@code SourceFile} attribute or anywhere but the class output
+     * of the project, over source roots that leave out the directory the generator writes into, over only part of the
+     * module, with includes or excludes that leave out the carrier of the compilation, over another annotation
+     * manifest, writing the sources of the annotation processor somewhere this plugin does not own, or, inside Maven,
+     * writing them in another charset than it reads them back in. Nothing has been written when this fails.
      *
      * @param execution the compiler execution this generation belongs to
      * @param request the request the generator is about to run over
@@ -198,7 +209,8 @@ public abstract class StateGraphMojo extends AbstractMojo {
      */
     protected final void verifyCompiler(CompilerExecution execution, Request request)
             throws MojoExecutionException {
-        CompilerConfiguration compiler = CompilerConfiguration.of(project, session, execution);
+        CompilerConfiguration compiler = compiler(execution);
+        compiler.requireOneCompilingExecution(request);
         CompilerConfiguration.Javac javac = compiler.requireAgreementWith(javaExecutable(), toolchainManager,
             session);
         compiler.requireAnnotationProcessor(project, javac);
@@ -440,6 +452,23 @@ public abstract class StateGraphMojo extends AbstractMojo {
         return absolute(project.getBuild().getDirectory());
     }
 
+    /** The directory the generator writes the vocabulary of {@code execution} into, as an absolute path. */
+    private Path generatedSources(CompilerExecution execution) {
+        return buildDirectory().resolve(execution == CompilerExecution.MAIN ? "generated-sources"
+            : "generated-test-sources").resolve(WORK);
+    }
+
+    /**
+     * The configuration of the execution of the compiler that compiles {@code execution}, as
+     * {@link CompilerConfiguration#of} picks it. Every goal asks {@link #skips} first, which skips a compilation no
+     * execution runs, so there is one.
+     */
+    private CompilerConfiguration compiler(CompilerExecution execution) {
+        return CompilerConfiguration.of(project, session, execution, lifecycles, generatedSources(execution))
+            .orElseThrow(() -> new IllegalStateException("maven-compiler-plugin runs no execution of its "
+                + execution.goal() + " goal for this project, which the goal should have skipped"));
+    }
+
     /**
      * The sources the generator parses: every source root javac compiles — the {@code <compileSourceRoots>} of the
      * compiler execution when it declares them, which replace the source roots of the project, else those — except
@@ -452,7 +481,8 @@ public abstract class StateGraphMojo extends AbstractMojo {
      */
     private List<String> originalSources(CompilerExecution execution, List<String> roots, Path sourcesOutput,
             Path processorSourcesOutput) throws MojoExecutionException {
-        SourcePatterns patterns = CompilerConfiguration.of(project, session, execution).sourcePatterns();
+        CompilerConfiguration compiler = compiler(execution);
+        SourcePatterns patterns = compiler.sourcePatterns();
         Set<Path> generated = Set.of(CompilerConfiguration.canonical(sourcesOutput),
             CompilerConfiguration.canonical(processorSourcesOutput));
         Path projectDirectory = Path.of(project.getBasedir().getAbsolutePath()).normalize();
@@ -475,7 +505,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
                 }
             } catch (IOException failure) {
                 throw new MojoExecutionException("cannot read the sources under " + source
-                    + " that the includes and excludes of the " + execution.id() + " execution select", failure);
+                    + " that the includes and excludes of the " + compiler.id() + " execution select", failure);
             }
         }
         return List.copyOf(sources);

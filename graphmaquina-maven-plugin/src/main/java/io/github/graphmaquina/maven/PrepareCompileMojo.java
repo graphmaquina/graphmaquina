@@ -11,8 +11,9 @@ import org.apache.maven.plugin.MojoExecutionException;
  * <p>It then dates the carrier of this generation past the newest file the class output held before the
  * retirement, a safeguard for a compiler that decides by timestamps alone: maven-compiler-plugin 3.15.0 recompiles
  * the module without it, since the preparation leaves the carrier without a class file. It retires nothing at
- * all, and says so, when the build compiles no main sources: in a project packaged as {@code pom}, or when
- * {@code maven.main.skip} or {@code <skipMain>} switches the main compilation off.</p>
+ * all, and says so, when the build compiles no main sources: in a project packaged as {@code pom}, when the
+ * lifecycle runs no execution of {@code compiler:compile}, or when {@code maven.main.skip} or {@code <skipMain>}
+ * switches the main compilation off.</p>
  */
 public final class PrepareCompileMojo extends StateGraphMojo {
 

@@ -1655,6 +1655,137 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * A build may compile its sources through executions of its own and bind {@code default-compile} and
+     * {@code default-testCompile} to the phase {@code none}, which Maven never runs, as kotlin-maven-plugin asks a
+     * mixed Kotlin and Java build to do. The checks read the executions Maven runs, here {@code java-compile} and
+     * {@code java-test-compile}, which carry the manifest arguments, and not the two it never runs, whose missing
+     * manifest and {@code <proc>none</proc>} would be refused if they ran. Both compilations build and publish.
+     */
+    @Test
+    void theChecksReadTheCompilerExecutionsMavenRunsAndNotTheDefaultOnesBoundToNoPhase() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        compileThroughExecutionsOfTheirOwn(fixture);
+        for (Map.Entry<String, String> source : testDomain().entrySet()) {
+            fixture.writeTestSource(source.getKey(), source.getValue());
+        }
+
+        MavenResult result = fixture.run("package");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("--- compiler:3.15.0:compile (java-compile)"), result.output());
+        assertTrue(result.output().contains("--- compiler:3.15.0:testCompile (java-test-compile)"), result.output());
+        assertFalse(result.output().contains("(default-compile)"), result.output());
+        assertTrue(fixture.inventoryIsSealed("main"));
+        assertTrue(fixture.localExports().contains("fx.Orders"), result.output());
+        assertTrue(fixture.inventoryIsSealed("test"));
+        assertTrue(fixture.localExportsOf(TEST_EXPORTS).contains("fxt.Tickets"), result.output());
+    }
+
+    /**
+     * The settings the generation refuses are refused on the execution that compiles, whatever its id: with the main
+     * sources compiled by {@code java-compile}, its
+     * {@code <useIncrementalCompilation>false</useIncrementalCompilation>} is refused by the generation before
+     * anything is retired, naming that execution.
+     */
+    @Test
+    void aRefusedSettingOfTheExecutionThatCompilesIsRefusedWhateverItsId() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        compileThroughExecutionsOfTheirOwn(fixture);
+        assertEquals(0, fixture.run("compile").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        String compiling = "<goals><goal>compile</goal></goals>\n            <configuration>";
+        fixture.editPom(compiling, compiling + "\n              <useIncrementalCompilation>false"
+                + "</useIncrementalCompilation>");
+
+        MavenResult result = fixture.run("compile");
+
+        assertNotEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("<useIncrementalCompilation>false</useIncrementalCompilation> makes the"
+                + " java-compile execution of maven-compiler-plugin compile only the sources"), result.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * A compilation no execution of the compiler runs, here because {@code default-compile} is bound to the phase
+     * {@code none} and nothing else compiles the main sources, is skipped like one {@code maven.main.skip} switches
+     * off: the main goals do nothing and say so, and the index and the sealed inventory of the previous build stay as
+     * they were.
+     */
+    @Test
+    void aCompilationNoCompilerExecutionRunsIsSkipped() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        assertEquals(0, fixture.run("compile").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        fixture.editPom("<id>default-compile</id>", "<id>default-compile</id>\n            <phase>none</phase>");
+
+        MavenResult result = fixture.run("compile");
+
+        assertEquals(0, result.exitCode(), result.output());
+        assertTrue(result.output().contains("StateGraph skips fx.build:fixture:main: maven-compiler-plugin runs no"
+                + " execution of its compile goal for this project, as default-compile is bound to none, which is no"
+                + " phase of a lifecycle"), result.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
+     * A build may run more than one execution of the compile goal, as a multi-release jar does through one of its own
+     * that compiles another source root into {@code META-INF/versions}. The execution that compiles the vocabulary the
+     * generator writes, here {@code default-compile}, is the main compilation the checks read, and the other one, whose
+     * {@code <compileSourceRoots>} leave that vocabulary out and whose {@code <multiReleaseOutput>} would be refused
+     * on the main compilation, runs untouched, build after build. A third execution that compiles the vocabulary as
+     * well would make javac compile it twice, and the generation refuses it naming both, before anything is retired.
+     */
+    @Test
+    void theExecutionThatCompilesTheVocabularyIsTheMainCompilationAmongSeveral() throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.editPom("<id>default-testCompile</id>", """
+                <id>versioned</id>
+                            <goals><goal>compile</goal></goals>
+                            <configuration>
+                              <multiReleaseOutput>true</multiReleaseOutput>
+                              <compileSourceRoots>
+                                <compileSourceRoot>${project.basedir}/src/main/java21</compileSourceRoot>
+                              </compileSourceRoots>
+                            </configuration>
+                          </execution>
+                          <execution>
+                            <id>default-testCompile</id>""".strip());
+        fixture.writeFile("src/main/java21/fx/Versioned.java", """
+                package fx;
+
+                /** A class of release 21 of a multi-release jar. */
+                public final class Versioned {
+
+                    private Versioned() {
+                    }
+                }
+                """.getBytes(StandardCharsets.UTF_8));
+
+        MavenResult first = fixture.run("package");
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        MavenResult second = fixture.run("package");
+
+        for (MavenResult result : List.of(first, second)) {
+            assertEquals(0, result.exitCode(), result.output());
+            assertTrue(result.output().contains("--- compiler:3.15.0:compile (versioned)"), result.output());
+        }
+        assertTrue(fixture.jarContains("META-INF/versions/21/fx/Versioned.class"));
+        assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        assertEquals(published, fixture.localExportsOf(MAIN_EXPORTS));
+        assertTrue(published.contains("fx.Orders"), published::toString);
+
+        fixture.editPom("<id>versioned</id>", "<id>again</id><goals><goal>compile</goal></goals></execution>"
+                + "<execution><id>versioned</id>");
+
+        MavenResult twice = fixture.run("package");
+
+        assertNotEquals(0, twice.exitCode(), twice.output());
+        assertTrue(twice.output().contains("maven-compiler-plugin runs the executions default-compile and again of"
+                + " its compile goal for this project, and each of them compiles "), twice.output());
+        assertNothingWasRetired(fixture, published);
+    }
+
+    /**
      * A compilation that can end without the classes the completion publishes is refused by the generation,
      * before the preparation retires anything: {@code failOnError=false} carries the build on past a
      * compilation javac rejected, and {@code proc=only}, as a parameter or as a compiler argument, runs the
@@ -2431,9 +2562,11 @@ class MavenPluginIntegrationTest {
         assertEquals(List.of("io.github.graphmaquina:graphmaquina-codegen:runtime"), scopedDependencies(pom));
         assertEquals(List.of("io.github.graphmaquina:graphmaquina-codegen:" + VERSION), dependencies(descriptor));
 
-        // The goals resolve toolchains through the public component alone; the private one is Maven internals
-        // this plugin has no reason to require.
-        assertEquals(List.of("org.apache.maven.toolchain.ToolchainManager"), requirements(descriptor));
+        // The goals resolve toolchains through the public component alone, the private one being Maven internals
+        // this plugin has no reason to require, and the phases an execution of the compiler can run in through the
+        // lifecycles Maven exports from its core.
+        assertEquals(List.of("org.apache.maven.toolchain.ToolchainManager",
+                "org.apache.maven.lifecycle.DefaultLifecycles"), requirements(descriptor));
     }
 
     @Test
@@ -3005,6 +3138,33 @@ class MavenPluginIntegrationTest {
                 """);
         sources.put("fx.Orders", MavenFixture.orders("Orders", "ApproveRésumé", "approveRésumé"));
         return sources;
+    }
+
+    /**
+     * Has the executions {@code java-compile} and {@code java-test-compile} compile the main and the test sources with
+     * the configuration the fixture gives {@code default-compile} and {@code default-testCompile}, and binds those two
+     * to the phase {@code none}, configured with {@code <proc>none</proc>} and no manifest argument, as
+     * kotlin-maven-plugin asks a mixed Kotlin and Java build to do.
+     */
+    private static void compileThroughExecutionsOfTheirOwn(MavenFixture fixture) throws IOException {
+        moveCompilation(fixture, "default-compile", "java-compile", "compile", "compile");
+        moveCompilation(fixture, "default-testCompile", "java-test-compile", "testCompile", "test-compile");
+    }
+
+    /**
+     * Binds the execution {@code defaultId} to the phase {@code none}, and gives the configuration it had to a new
+     * execution {@code id} of {@code goal}, bound to {@code phase}.
+     */
+    private static void moveCompilation(MavenFixture fixture, String defaultId, String id, String goal, String phase)
+            throws IOException {
+        fixture.editPom("<id>" + defaultId + "</id>", "<id>" + defaultId + "</id>\n"
+                + "            <phase>none</phase>\n"
+                + "            <configuration><proc>none</proc></configuration>\n"
+                + "          </execution>\n"
+                + "          <execution>\n"
+                + "            <id>" + id + "</id>\n"
+                + "            <phase>" + phase + "</phase>\n"
+                + "            <goals><goal>" + goal + "</goal></goals>");
     }
 
     /** Adds {@code arguments}, as {@code <arg>} elements, to the compiler arguments of the main compilation. */

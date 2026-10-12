@@ -488,9 +488,10 @@ The goal prefix is `graphmaquina`, so a goal can also be invoked directly, for e
 
 A goal does nothing, and says so at info level (`StateGraph skips <compilationId>: …`), for a compilation the
 build switches off the way `maven-compiler-plugin` skips its own goal: `maven.main.skip` or `<skipMain>` for
-the three main goals, `maven.test.skip` or `<skip>` for the three test goals. Nothing is generated, retired or
-published then. All six do nothing in a project packaged as `pom`, such as the parent of a multi-module build
-whose modules inherit the executions.
+the three main goals, `maven.test.skip` or `<skip>` for the three test goals. So does it for a compilation the
+lifecycle runs no execution of the compiler's goal for, as when `default-compile` is bound to the phase `none`
+and nothing else compiles the main sources. Nothing is generated, retired or published then. All six do nothing in
+a project packaged as `pom`, such as the parent of a multi-module build whose modules inherit the executions.
 
 The observed order of a `mvn test-compile`, which the plugin's own suite asserts from real Maven output:
 
@@ -507,8 +508,25 @@ compiler:testCompile (default-testCompile)
 graphmaquina:complete-test (sg-complete-test)
 ```
 
-Declaration order in the POM does not matter: Maven injects the lifecycle's `maven-compiler-plugin` before the
-plugins a POM adds, and a POM declaration of a lifecycle plugin keeps that injected position.
+Declaration order in the POM does not matter for `default-compile` and `default-testCompile`: Maven runs the
+executions the lifecycle binds before those a POM adds to the same phase. An execution of the compiler a POM adds
+itself, as below, runs among the others of its phase in the order their plugins are declared, so declare
+`maven-compiler-plugin` before `graphmaquina-maven-plugin`, or `complete` runs before that javac.
+
+### The compiler execution the goals read
+
+The checks and the request read the execution of the `compile` goal of `maven-compiler-plugin`, `testCompile`
+for the test goals, that the lifecycle runs and that compiles the vocabulary the generator writes, whatever its
+id. An execution runs when it is bound to a phase of a lifecycle: the phase it declares, else the default phase
+of its goal, `compile` or `test-compile`. One bound to anything else, `none` included, never runs and is never
+read, so a build may bind `default-compile` and `default-testCompile` to `none` and compile its Java sources
+through executions of its own, as `kotlin-maven-plugin` asks a mixed Kotlin and Java build to do; the manifest
+argument and every setting the adapter checks then belong to those executions. An execution compiles the
+vocabulary unless its own `<compileSourceRoots>` leave out the directory the generator writes into; one that
+compiles another source root into a multi-release jar, with `<multiReleaseOutput>` and roots of its own, runs
+untouched beside the main compilation. When no execution of the goal runs, the compilation is skipped, as above.
+Two running executions that both compile the vocabulary are refused, naming both: javac would compile it twice
+into one class output, and the later run fails on the classes of the earlier one.
 
 ### Outputs
 
@@ -591,7 +609,11 @@ argument that names another charset than the configured one, as listed below.
 ### What the Maven adapter requires, and refuses
 
 Every one of these is checked by `generate`, and by `generate-test` for the test compilation, before anything is
-written or retired, and every failure names what to change:
+written or retired, on the compiler execution [the goals read](#the-compiler-execution-the-goals-read), and every
+failure names what to change:
+
+- **One execution compiling the vocabulary.** Two running executions of the compiler's goal that both compile the
+  directory the generator writes into are refused, naming both.
 
 - **A release of 21 or later.** Resolved from the execution's configuration, the plugin's configuration,
   `maven.compiler.release`, `source`/`target` or their properties, a property given on the command line winning
@@ -764,6 +786,7 @@ inventory it left.
 | "…javac write the class files of … without the SourceFile attribute…" (Maven) | a `<debuglevel>` or a `-g:` compiler argument leaves `source` out. Remove that setting, or have one `-g:` option list `source`, as `<debuglevel>lines,vars,source</debuglevel>` does. |
 | "…write its classes …, while StateGraph completes this compilation in …" (Maven) | an `<outputDirectory>`, `maven.compiler.outputDirectory`, `<multiReleaseOutput>true` or a `-d` compiler argument moves the classes. Remove it, or move the project's class output with `<outputDirectory>` or `<testOutputDirectory>` in `<build>`. |
 | "…name two charsets for a javac that compiles inside Maven…" (Maven) | the configured encoding and the last `-encoding` compiler argument name different charsets, and javac would read back the sources annotation processors write in the other one. Remove that `-encoding`, or configure `<encoding>` to the charset it names. |
+| "…runs the executions … of its compile goal for this project, and each of them compiles …" (Maven) | two executions of the compiler would compile the generated vocabulary. Keep one of them, bind the others to the phase `none`, or give them `<compileSourceRoots>` of their own that leave out the generated directory. |
 | "…makes the annotation processor write its sources to …" (Maven) | a `-s` compiler argument names another directory than the processor's generated-sources directory. Remove that argument. |
 | "…the `<compileSourceRoots>` of … replace the source roots of the project and leave out …" (Maven) | add the `<compileSourceRoot>` the message prints, or leave `compileSourceRoots` unset. |
 | "…the `<incrementalExcludes>` pattern … leaves … out of the check the compiler makes for stale sources…" (Maven) | change that pattern so it matches nothing under `io/github/graphmaquina/generated`. |
