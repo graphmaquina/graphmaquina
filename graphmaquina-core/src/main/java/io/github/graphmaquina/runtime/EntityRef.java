@@ -1,6 +1,7 @@
 package io.github.graphmaquina.runtime;
 
 import io.github.graphmaquina.api.MachineKey;
+import io.github.graphmaquina.internal.Texts;
 import java.util.Objects;
 
 /** Identity of an entity within a transaction: (machine, id). The instance does not take part in equals. */
@@ -23,12 +24,6 @@ record EntityRef(MachineKey<?, ?, ?> key, Object id, Object instance) {
      */
     @Override
     public String toString() {
-        try {
-            return key + "#" + id;
-        } catch (Error fatal) {
-            throw fatal;
-        } catch (Throwable unprintable) {
-            return key + "#<toString threw " + unprintable.getClass().getName() + ">";
-        }
+        return key + "#" + Texts.identity(id);
     }
 }
