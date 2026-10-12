@@ -4,8 +4,13 @@ import io.github.graphmaquina.api.CallPhase;
 import io.github.graphmaquina.api.MachineKey;
 import io.github.graphmaquina.error.CommitFailedException;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Phase 2: pre-read of each entity and a single setter per entity with the to of its last entry. The pre-read refuses a
@@ -40,6 +45,7 @@ final class Commit {
         List<CommitSummary.Change> changes = summary.changes();
         CallLog log = tx.log();
         List<LogEntry> entries = log.trace() ? uow.entries() : List.of();
+        Map<EntityRef, Integer> entryCounts = log.trace() ? entryCounts(entries, changes.size()) : Map.of();
         if (log.trace()) {
             log.trace("commit-check entities=" + changes.size() + " hops=" + hops(entries));
             if (conflict.isPresent()) {
@@ -54,7 +60,7 @@ final class Commit {
             DefaultStateMachine<?, ?, ?> machine = registry.anyMachineFor(change.ref().key());
             if (log.trace()) {
                 log.trace("setter " + CallLog.show(change.ref()) + " " + change.first().from().name() + " -> "
-                        + change.last().to().name() + " entries=" + entriesOf(entries, change.ref()));
+                        + change.last().to().name() + " entries=" + entryCounts.getOrDefault(change.ref(), 0));
             }
             tx.writing();
             try {
@@ -88,19 +94,17 @@ final class Commit {
 
     /**
      * Every entity the log moves, in order of first appearance, told apart by machine and by reference rather than by
-     * the identities, whose equals or hashCode may be what failed.
+     * the identities, whose equals or hashCode may be what failed, or by the entities' own: one identity set of the
+     * entities seen per machine key, which compares by reference and hashes by {@link System#identityHashCode}.
      */
     private static List<Object> plannedEntities(UnitOfWork uow) {
         List<Object> entities = new ArrayList<>();
-        List<MachineKey<?, ?, ?>> keys = new ArrayList<>();
+        Map<MachineKey<?, ?, ?>, Set<Object>> seen = new HashMap<>();
         for (LogEntry entry : uow.entries()) {
-            boolean seen = false;
-            for (int index = 0; index < entities.size() && !seen; index++) {
-                seen = entities.get(index) == entry.ref().instance() && keys.get(index).equals(entry.ref().key());
-            }
-            if (!seen) {
+            Set<Object> instances = seen.computeIfAbsent(entry.ref().key(),
+                    (MachineKey<?, ?, ?> key) -> Collections.newSetFromMap(new IdentityHashMap<>()));
+            if (instances.add(entry.ref().instance())) {
                 entities.add(entry.ref().instance());
-                keys.add(entry.ref().key());
             }
         }
         return entities;
@@ -118,17 +122,17 @@ final class Commit {
     }
 
     /**
-     * How many of {@code entries} move the entity of {@code ref}: those that carry that very reference, which the unit
-     * of work registered once per entity, so no identity's equals is called.
+     * How many of {@code entries} move each entity, in one pass: those that carry the very reference of the entity,
+     * which the unit of work registered once per entity. The map, sized for the {@code entities} the log moves,
+     * compares references and hashes them by {@link System#identityHashCode}, so no identity's equals or hashCode is
+     * called.
      */
-    private static int entriesOf(List<LogEntry> entries, EntityRef ref) {
-        int count = 0;
+    private static Map<EntityRef, Integer> entryCounts(List<LogEntry> entries, int entities) {
+        Map<EntityRef, Integer> counts = new IdentityHashMap<>(entities);
         for (int index = 0; index < entries.size(); index++) {
-            if (entries.get(index).ref() == ref) {
-                count++;
-            }
+            counts.merge(entries.get(index).ref(), 1, Integer::sum);
         }
-        return count;
+        return counts;
     }
 
     /** The entities of {@code changes}, in order. */

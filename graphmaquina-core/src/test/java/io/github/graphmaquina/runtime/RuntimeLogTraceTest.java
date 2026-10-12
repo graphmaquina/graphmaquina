@@ -555,6 +555,42 @@ class RuntimeLogTraceTest {
         }
     }
 
+    /**
+     * Each setter line counts the entries of its own entity, wherever they stand in the log: the hops of four
+     * entities interleaved, two of them moved twice, are counted entity by entity, in the order of first appearance.
+     */
+    @Test
+    void eachSetterLineCountsTheEntriesOfItsOwnEntityWhereverTheyStandInTheLog() {
+        Order order = new Order("o1", OrderStatus.NEW);
+        Item first = new Item("i1", ItemStatus.PENDING, Optional.of(order));
+        Item second = new Item("i2", ItemStatus.PENDING, Optional.of(order));
+        Item third = new Item("i3", ItemStatus.PENDING, Optional.of(order));
+        Probe<Order, OrderStatus, OrderTransition> cancel = new Probe<>();
+        cancel.behaviour = (TransitionContext<Order, OrderStatus, OrderTransition> ctx) -> {
+            ctx.cascade(ITEMS, first, ItemTransition.START_PACKING);
+            ctx.cascade(ITEMS, second, ItemTransition.START_PACKING);
+            ctx.cascade(ITEMS, first, ItemTransition.PACK);
+            ctx.cascade(ITEMS, third, ItemTransition.CANCEL);
+            ctx.cascade(ITEMS, second, ItemTransition.CANCEL);
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry registry = orders(cancel); LibraryLog log = LibraryLog.runtime(Level.FINER)) {
+            registry.of(ORDERS).execute(order, OrderTransition.CANCEL);
+            List<String> commit = new ArrayList<>();
+            for (String line : lines(log)) {
+                if (line.contains(" commit-check ") || line.contains(" setter ")) {
+                    commit.add(line);
+                }
+            }
+            assertEquals(List.of(
+                    "FINER call=A commit-check entities=4 hops=6",
+                    "FINER call=A setter Order/OrderStatus#o1 NEW -> CANCELLED entries=1",
+                    "FINER call=A setter Item/ItemStatus#i1 PENDING -> PACKED entries=2",
+                    "FINER call=A setter Item/ItemStatus#i2 PENDING -> CANCELLED entries=2",
+                    "FINER call=A setter Item/ItemStatus#i3 PENDING -> CANCELLED entries=1"), commit);
+        }
+    }
+
     @Test
     void cascadeAllTracesItsPolicyForEachElement() {
         Order order = new Order("o1", OrderStatus.NEW);
