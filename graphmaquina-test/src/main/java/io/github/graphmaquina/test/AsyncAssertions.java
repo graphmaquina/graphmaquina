@@ -82,9 +82,9 @@ public final class AsyncAssertions {
      * cancelled. The throwable a stage ended with is never printed, since printing it may throw: the callback
      * returns normally, so the stage constructs no CompletionException around it on the thread that completes it,
      * and the wait reads it back through another handle, not through get, which constructs its ExecutionException
-     * from the throwable's string. It ends the wait as get would: a CancellationException as itself, any other
-     * throwable as the cause of an ExecutionException, once unwrapped from a CompletionException that carries a
-     * cause.
+     * from the throwable's string. It ends the wait as get does on JDK 21: a CancellationException as itself, where
+     * JDK 25's get throws a new one caused by it, and any other throwable as the cause of an ExecutionException, once
+     * unwrapped from a CompletionException that carries a cause.
      */
     private static <T> T join(CompletionStage<? extends T> stage, long nanos)
             throws InterruptedException, ExecutionException, TimeoutException {
