@@ -413,6 +413,16 @@ For graph declarations under `src/test/java`, add to the same `dependencies` blo
 testAnnotationProcessor("io.github.graphmaquina:graphmaquina-processor:$graphmaquinaVersion")
 ```
 
+The build script above compiles every source set under `-Xlint:all` and `-Werror`. The processor claims only
+GraphMaquina's own annotations, so in a test source set that declares it, javac warns that no processor claimed
+JUnit's `@Test`, and that warning fails `compileTestJava`. Turn javac's `processing` lint off there:
+
+```kotlin
+tasks.compileTestJava {
+    options.compilerArgs.add("-Xlint:-processing")
+}
+```
+
 If test entities use Lombok, add its test compile-only and annotation-processor dependencies, preserving order.
 
 | Task | Purpose |
@@ -502,7 +512,7 @@ internal repository, configure both dependency and plugin repositories as shown 
             <configuration>
               <compilerArgs>
                 <arg>-Agraphmaquina.annotationManifest=${project.build.directory}/graphmaquina/test/annotation-manifest.json</arg>
-                <arg>-Xlint:all,-serial</arg>
+                <arg>-Xlint:all,-serial,-processing</arg>
                 <arg>-Werror</arg>
               </compilerArgs>
             </configuration>
@@ -550,6 +560,13 @@ internal repository, configure both dependency and plugin repositories as shown 
   </build>
 </project>
 ```
+
+The test compilation turns javac's `processing` lint off. `<annotationProcessorPaths>` applies to both
+compilations, so the GraphMaquina processor runs over the test sources too, and it claims only GraphMaquina's own
+annotations: under `-Xlint:all`, javac warns that no processor claimed JUnit's `@Test`, and `-Werror` fails the
+test compilation as soon as it holds a test. The main compilation keeps the lint, since the processor claims every
+annotation the ticket's main sources carry; turn it off there too once they carry annotations no processor claims,
+such as Spring's or Jakarta's.
 
 Run from the application directory:
 
@@ -4187,7 +4204,7 @@ API contract.
 | Generation task skips | That source set does not declare `graphmaquina-processor` on its annotation-processor configuration. |
 | Async graph cannot be built | Supply a positive default timeout through the generated set builder. |
 | Watch never triggers | Check relationship accessors, owner state, first-match rules, the named edge's guards and whether a peer transition actually committed. |
-| Strict lint reports unclaimed third-party annotations | Inspect the application's processor setup. GraphMaquina claims its own declarations; it is not a wildcard processor for Spring, Jakarta or test annotations. It does not claim `javax.annotation.processing.Generated` either, so another tool's `@Generated` that no processor claims gets javac's own `-Xlint:processing` warning that no processor claimed it, which `-Werror` turns into an error. GraphMaquina's companions carry its own `@GeneratedCompanion` instead. |
+| Strict lint reports unclaimed third-party annotations | javac's `processing` lint, which `-Xlint:all` turns on, warns, in a compilation that runs annotation processors, about the annotations of its sources that no processor claims, the platform's own such as `@Override` aside, and `-Werror` turns the warning into an error. GraphMaquina's processor claims only GraphMaquina's own annotations; it is not a wildcard processor for Spring, Jakarta or test annotations, such as JUnit's `@Test` in a test compilation it runs in. It does not claim `javax.annotation.processing.Generated` either, so another tool's `@Generated` that no processor claims gets that warning too; GraphMaquina's companions carry its own `@GeneratedCompanion` instead. Turn the lint off for that compilation with `-Xlint:-processing`, or `-processing` in its `-Xlint:` list, as the [Maven POM](#pomxml) does for its test compilation. |
 | Strict lint reports, in generated code, an auxiliary class accessed from outside its own source file | A host, or the class it is nested in, is declared in a source file named after another type, and generated code, such as the host's references container, names it from another file. javac's `auxiliaryclass` lint, which `-Xlint:all` turns on, warns about that, and `-Werror` turns the warning into an error. Give that class a file of its own, or turn the lint off with `-Xlint:-auxiliaryclass`. |
 
 For a reproducible issue, include JDK/build-tool versions, relevant build configuration, the minimal graph and
