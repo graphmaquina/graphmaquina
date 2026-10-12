@@ -21,6 +21,10 @@ import java.util.function.Supplier;
  * supplyAsync submits a CompletableFuture.AsynchronousCompletionTask instead, which CompletableFuture's get and join
  * run on a ForkJoinPool worker that waits while the task is queued on it: the call would run inside the callback that
  * waits, on a thread marked as running a transition, and fail with ReentrantTransitionException.
+ * A task submitted to a machine's default executor marks its thread with that executor for as long as it runs, the
+ * completion of its future and the dependents that completion runs included, so that {@link #runsTaskOf} tells
+ * MachineRegistry.close() not to close that executor from its own task, which would wait for itself forever. A task of
+ * an executor the application supplied marks nothing.
  */
 final class Submit {
 
@@ -29,6 +33,17 @@ final class Submit {
      * two.
      */
     private static final Executor THREAD_PER_TASK = (Runnable task) -> new Thread(task).start();
+
+    /** What a thread's cell holds while it runs no task of a default executor: an executor that refuses every task. */
+    private static final Executor NO_TASK = (Runnable task) -> {
+        throw new RejectedExecutionException("no task runs on this executor");
+    };
+
+    /**
+     * The thread's cell: its only element is the default executor whose task the thread runs, or {@link #NO_TASK}.
+     * The thread keeps it, so that marking the thread and releasing it are stores into it, as Reentrancy's are.
+     */
+    private static final ThreadLocal<Executor[]> TASK_OF = ThreadLocal.withInitial(() -> new Executor[] {NO_TASK});
 
     private Submit() { }
 
@@ -47,15 +62,37 @@ final class Submit {
         return executor;
     }
 
-    /** A submission the executor refuses returns a failed future. */
-    static <R> CompletableFuture<R> supply(Executor executor, Supplier<R> call) {
+    /**
+     * A submission the executor refuses returns a failed future. {@code owned} says that {@code executor} is a
+     * machine's default executor, which the task marks its thread with while it runs.
+     */
+    static <R> CompletableFuture<R> supply(Executor executor, boolean owned, Supplier<R> call) {
         CompletableFuture<R> future = new CompletableFuture<>();
         try {
-            executor.execute(() -> run(future, call));
+            executor.execute(owned ? () -> runMarked(executor, future, call) : () -> run(future, call));
         } catch (RejectedExecutionException e) {
             return CompletableFuture.failedFuture(e);
         }
         return future;
+    }
+
+    /** Whether the current thread runs a task of {@code executor}, a default executor, as {@link #supply} marks it. */
+    static boolean runsTaskOf(Executor executor) {
+        return TASK_OF.get()[0] == executor;
+    }
+
+    /**
+     * Runs the task with its thread marked with {@code executor}. A default executor runs each task on a thread of its
+     * own, so the mark it replaces is {@link #NO_TASK}, which the first statement of the finally stores back.
+     */
+    private static <R> void runMarked(Executor executor, CompletableFuture<R> future, Supplier<R> call) {
+        Executor[] cell = TASK_OF.get();
+        cell[0] = executor;
+        try {
+            run(future, call);
+        } finally {
+            cell[0] = NO_TASK;
+        }
     }
 
     private static <R> void run(CompletableFuture<R> future, Supplier<R> call) {

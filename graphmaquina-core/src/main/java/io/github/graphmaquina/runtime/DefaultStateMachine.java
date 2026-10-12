@@ -62,7 +62,6 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     private final Optional<Function<? super E, ?>> identity;
     @Getter
     private final Optional<Duration> asyncTimeout;
-    @Getter
     private final Executor executor;
     private final boolean ownsExecutor;
     private final MachineRegistry registry;
@@ -332,7 +331,12 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
     @Override
     public <R> CompletableFuture<R> supplyAsync(Supplier<R> call) {
         Objects.requireNonNull(call, "call");
-        return Submit.supply(executor, call);
+        return submit(call);
+    }
+
+    /** Submits {@code call} to this machine's executor through {@link Submit}, which marks a default one's thread. */
+    <R> CompletableFuture<R> submit(Supplier<R> call) {
+        return Submit.supply(executor, ownsExecutor, call);
     }
 
     /**
@@ -606,6 +610,17 @@ final class DefaultStateMachine<E, S extends Enum<S>, T extends Enum<T>> impleme
         }
         long budget = Await.budgetNanos(asyncTimeout.get());
         return budget == Long.MAX_VALUE ? Long.MAX_VALUE : System.nanoTime() + budget;
+    }
+
+    /**
+     * Refuses to close this machine's default executor from a task of its own, which ExecutorService.close() would
+     * wait for forever: the task that is calling. Checked for every machine before the registry closes any.
+     */
+    void refuseCloseFromOwnTask() {
+        if (ownsExecutor && Submit.runsTaskOf(executor)) {
+            throw new IllegalStateException("close() was called from a task of the default executor of " + key()
+                    + ", which it would wait for forever: close the registry from another thread");
+        }
     }
 
     void closeIfOwned() {

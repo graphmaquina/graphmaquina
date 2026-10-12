@@ -40,6 +40,6 @@ final class DefaultAsyncStateMachine<E, S extends Enum<S>, T extends Enum<T>> im
     }
 
     private CompletableFuture<Outcome<E, S, T>> submit(Supplier<Outcome<E, S, T>> body) {
-        return Submit.supply(machine.executor(), body);
+        return machine.submit(body);
     }
 }

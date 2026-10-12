@@ -2294,10 +2294,14 @@ not by the machine set. With the defaults, closing a set closes its owned execut
 submitted work. An interrupt of the thread that closes the set, before or while it waits, reaches every owned
 executor the set has not finished closing, not only the one it waits for: each interrupts the threads of its
 operations, so a call waiting for a stage aborts as interrupted, and `close()` still waits for them to end, then
-returns with the thread interrupted. With a custom executor, the caller owns shutdown and must keep the machines
-and any service dependencies alive until operations finish. Closing the registry is not a general cancellation
-barrier for synchronous calls or work submitted through a still-running custom executor. A rejected submission yields
-an exceptionally completed future.
+returns with the thread interrupted. Closing an owned executor from one of its own operations would wait for that
+operation forever, so `close()` throws `IllegalStateException`, before it closes anything, on a thread that runs
+such an operation, an asynchronous call or the supplier given to `async(...)`, whatever calls it there: an action, a
+hook or a watch reaction of the call, a call a hook starts, or a dependent that completing the operation's future runs
+on that thread. The set stays open; close it from another thread. With a custom executor, the caller owns shutdown
+and must keep the machines and any service dependencies alive until operations finish. Closing the registry is not a
+general cancellation barrier for synchronous calls or work submitted through a still-running custom executor. A
+rejected submission yields an exceptionally completed future.
 
 Avoid using the same small fixed executor for operation workers and service completions scheduled by
 those operations. If every worker is blocked waiting for a service stage whose completion is queued behind
@@ -2400,9 +2404,9 @@ deep calls on threads with a larger stack.
 
 Close the set with try-with-resources or your application's shutdown lifecycle. `close()` closes executors
 owned by the set and waits for submitted operations to finish. An interrupt of the closing thread interrupts the
-operations of every owned executor the set has not finished closing, as
-[executors and machine lifetime](#executors-and-machine-lifetime) says. An executor you supply remains your
-responsibility. Avoid sharing a short-lived set across requests that outlive its scope.
+operations of every owned executor the set has not finished closing, and `close()` refuses to run on the thread of
+one of those operations, as [executors and machine lifetime](#executors-and-machine-lifetime) says. An executor you
+supply remains your responsibility. Avoid sharing a short-lived set across requests that outlive its scope.
 
 For dependency injection, register the generated set as an application-managed component using your existing
 `OrderActions` and `ItemActions` instances, then inject its facades into services. Arrange for `close()` at
