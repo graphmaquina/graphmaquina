@@ -28,7 +28,10 @@ import javax.lang.model.element.Modifier;
  * Discovers the members and properties the original sources export, one symbol per host and member name.
  *
  * <p>A host exports its own marked declarations; a host that also carries {@code @GraphBindings} exports the
- * marked declarations it inherits, from a source or a binary supertype, under its own name. Every marked method
+ * marked declarations it inherits, from a source or a binary supertype, under its own name. Generated code calls a
+ * static binding through the host, so a static method the host does not inherit is not exported through it: a
+ * static method of an interface, which no type inherits, or one that the host or a superclass between hides with a
+ * method of the same name and the same erased parameter types. Every marked method
  * is kept as its own candidate, with the type that declares it, the role that declaration spells and its own
  * origin, or the host's for one read from a binary. A property keeps only the first declaration of its logical
  * name, the host's own before inherited ones, and two the host declares itself are refused with {@code SG603}.
@@ -142,7 +145,8 @@ public final class ExportDeclarations {
 
     /**
      * The marked declarations {@code host} exports, its own first and, when it carries {@code @GraphBindings},
-     * the inherited ones in the order its hierarchy declares them. A declaration reached twice through a
+     * the inherited ones in the order its hierarchy declares them, without the static methods it does not inherit,
+     * as {@link #inherits} tells them. A declaration reached twice through a
      * diamond is kept once; that deduplication is not a second local declaration. The hierarchy can hold two types of
      * one canonical name, a type of a named package and a type of the unnamed package. The declarations of each are
      * exported, but a member both declare with one name and with parameter types of the same canonical names is kept
@@ -151,19 +155,23 @@ public final class ExportDeclarations {
     private static List<Declaration> declarations(DeclarationIndex index, TypeHeader host) {
         List<Declaration> declarations = new ArrayList<>();
         Set<String> signatures = new LinkedHashSet<>();
-        declare(index, host, host, true, declarations, signatures);
+        declare(index, host, host, true, declarations, signatures, List.of());
         if (host.markers().stream()
                 .anyMatch((TypeHeader.Marker marker) -> index.marksInHeader(host, marker, BINDINGS))) {
+            List<TypeHeader> superclasses = superclasses(index, host);
             for (TypeHeader ancestor : ancestors(index, host)) {
-                declare(index, host, ancestor, false, declarations, signatures);
+                declare(index, host, ancestor, false, declarations, signatures, superclasses);
             }
         }
         return declarations;
     }
 
     private static void declare(DeclarationIndex index, TypeHeader host, TypeHeader declaring, boolean local,
-            List<Declaration> declarations, Set<String> signatures) {
+            List<Declaration> declarations, Set<String> signatures, List<TypeHeader> superclasses) {
         for (TypeHeader.Member member : declaring.members()) {
+            if (!local && !inherits(index, declaring, member, superclasses)) {
+                continue;
+            }
             Optional<SymbolKind> role = role(index, host, declaring, member);
             if (role.isPresent() && signatures.add(signature(index, declaring, member))) {
                 declarations.add(new Declaration(declaring, member, role.get(), local));
@@ -189,6 +197,90 @@ public final class ExportDeclarations {
                     member.origin().orElseGet(() -> origin(host)));
         }
         return declared.isEmpty() ? Optional.empty() : Optional.of(declared.get(0));
+    }
+
+    /**
+     * Whether the host whose superclass chain {@code superclasses} is, nearest first and the host included, inherits
+     * {@code member} of its supertype {@code declaring}, as far as the headers tell. An instance member is inherited,
+     * or overridden by a member that keeps its role. A static method is not inherited when an interface declares it,
+     * since neither a class nor an interface inherits a static method of an interface, nor when a type of the chain
+     * below {@code declaring} declares a method of its name whose parameter types have the same erasures, which hides
+     * it. A parameter whose erasure a header does not tell, a type variable, matches none, so such a method is still
+     * exported and the processor, which knows its bounds, refuses it if it is hidden.
+     */
+    private static boolean inherits(DeclarationIndex index, TypeHeader declaring, TypeHeader.Member member,
+            List<TypeHeader> superclasses) {
+        if (member.kind() != ElementKind.METHOD || !member.modifiers().contains(Modifier.STATIC)) {
+            return true;
+        }
+        if (declaring.kind() == ElementKind.INTERFACE) {
+            return false;
+        }
+        List<Optional<String>> erasures = erasures(index, declaring, member);
+        for (TypeHeader below : superclasses) {
+            if (below == declaring) {
+                return true;
+            }
+            for (TypeHeader.Member other : below.members()) {
+                if (other.kind() == ElementKind.METHOD && other.name().equals(member.name())
+                        && sameKnownErasures(erasures, erasures(index, below, other))) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /** {@code host} and its superclasses, nearest first, as far as a header declares each of them. */
+    private static List<TypeHeader> superclasses(DeclarationIndex index, TypeHeader host) {
+        List<TypeHeader> chain = new ArrayList<>();
+        Set<TypeHeader> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+        Optional<TypeHeader> current = Optional.of(host);
+        while (current.isPresent() && visited.add(current.get())) {
+            TypeHeader type = current.get();
+            chain.add(type);
+            current = type.supertypes().stream()
+                    .filter((TypeUse supertype) -> supertype instanceof TypeUse.Declared)
+                    .map((TypeUse supertype) -> index.resolveInHeader(type, ((TypeUse.Declared) supertype).name()))
+                    .flatMap(Optional::stream)
+                    .filter((TypeHeader supertype) -> supertype.kind() == ElementKind.CLASS)
+                    .findFirst();
+        }
+        return chain;
+    }
+
+    /** The erasure of each parameter type of {@code member}, empty where a header does not tell it. */
+    private static List<Optional<String>> erasures(DeclarationIndex index, TypeHeader declaring,
+            TypeHeader.Member member) {
+        List<Optional<String>> erasures = new ArrayList<>();
+        for (TypeUse parameter : member.parameterTypes()) {
+            erasures.add(erasure(index.canonicalize(declaring, parameter)));
+        }
+        return erasures;
+    }
+
+    /** The erasure of a canonical use: its class or primitive, with its array dimensions; empty for a variable. */
+    private static Optional<String> erasure(TypeUse use) {
+        return switch (use) {
+            case TypeUse.Declared declared -> Optional.of(declared.name());
+            case TypeUse.Array array -> erasure(array.component()).map((String component) -> component + "[]");
+            case TypeUse.Primitive primitive -> Optional.of(primitive.name());
+            case TypeUse.Variable variable -> Optional.empty();
+            case TypeUse.Wildcard wildcard -> Optional.empty();
+        };
+    }
+
+    /** Whether two parameter lists have the same length and the same erasures, every one of them known. */
+    private static boolean sameKnownErasures(List<Optional<String>> first, List<Optional<String>> second) {
+        if (first.size() != second.size()) {
+            return false;
+        }
+        for (int at = 0; at < first.size(); at++) {
+            if (first.get(at).isEmpty() || !first.get(at).equals(second.get(at))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

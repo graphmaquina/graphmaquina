@@ -167,6 +167,68 @@ class ExportDeclarationsTest {
                 risky.candidates().get(1).origin().path());
     }
 
+    /**
+     * A host marked {@code @GraphBindings} exports the marked static methods it inherits and no other, since
+     * generated code calls a static binding through the host: never a static method of an interface, which no type
+     * inherits, nor one that the host or a superclass between hides with a method of the same name and parameter
+     * types, raw or parameterized, which is exported in its place when it is marked itself.
+     */
+    @Test
+    void exportsOnlyTheStaticMethodsTheHostInherits() {
+        List<SymbolDescriptor> symbols = collect(Map.of(
+                "fx.Order", ORDER,
+                "fx.Hooks", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphHook;
+                    public interface Hooks {
+                        @GraphHook
+                        static void announced(Order order) {}
+                    }
+                    """,
+                "fx.BaseActions", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphAction;
+                    import java.util.List;
+                    public class BaseActions {
+                        @GraphAction
+                        public static void archive(Order order) {}
+                        @GraphAction
+                        public static void approve(Order order) {}
+                        @GraphAction
+                        public static void sort(List<Order> orders) {}
+                        @GraphAction
+                        public static void keep(Order order) {}
+                    }
+                    """,
+                "fx.MiddleActions", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphAction;
+                    public class MiddleActions extends BaseActions {
+                        @GraphAction
+                        public static void approve(Order order) {}
+                    }
+                    """,
+                "fx.Host", """
+                    package fx;
+                    import io.github.graphmaquina.annotation.GraphBindings;
+                    import java.util.List;
+                    @GraphBindings
+                    public class Host extends MiddleActions implements Hooks {
+                        public static void archive(Order order) {}
+                        @SuppressWarnings("rawtypes")
+                        public static void sort(List orders) {}
+                    }
+                    """));
+
+        assertEquals(List.of("fx.HostRefs.Approve", "fx.HostRefs.Keep"), symbols.stream()
+                .map(SymbolDescriptor::qualifiedName).filter((String name) -> name.startsWith("fx.HostRefs.")).toList());
+        assertEquals(List.of("fx.MiddleActions"), symbol(symbols, "fx.HostRefs.Approve").candidates().stream()
+                .map(MemberDescriptor::declaringType).toList());
+        assertEquals(List.of("fx.BaseActions"), symbol(symbols, "fx.HostRefs.Keep").candidates().stream()
+                .map(MemberDescriptor::declaringType).toList());
+        assertEquals(Set.of(SymbolKind.HOOK), symbol(symbols, "fx.HooksRefs.Announced").kinds());
+    }
+
     @Test
     void exportsMarkedMembersInheritedFromABinaryBase() {
         Path jar = SourceFiles.compileToJar(directory.resolve("build"),
