@@ -69,9 +69,9 @@ public interface StateMachine<E, S extends Enum<S>, T extends Enum<T>> {
      * as it would complete the one CompletableFuture.supplyAsync returns, but it is queued as a plain task, which
      * CompletableFuture's get and join never run on the thread that waits, and anything it throws, an Error included,
      * fails the future, wrapped in a CompletionException unless it is one, so that nothing escapes on the executor's
-     * thread. That holds even for a throwable whose printing throws, which leaves the future of supplyAsync pending:
-     * the message of the CompletionException is then {@code <toString threw <class name>>} in place of the
-     * throwable's string.
+     * thread. That holds even for a throwable whose printing throws, which leaves the future of supplyAsync pending on
+     * JDK 21 and fails it with an empty message on JDK 25: the message of the CompletionException is then
+     * {@code <toString threw <class name>>} in place of the throwable's string.
      */
     <R> CompletableFuture<R> supplyAsync(Supplier<R> call);
 

@@ -545,7 +545,8 @@ observe. Most items refuse up front what used to fail later, in generated code o
   a callback that waits for it, or for a `CompletableFuture` task queued behind it, now waits for another worker to
   take that task, as [executors and machine lifetime](guide.md#executors-and-machine-lifetime) describes. Such a call
   now fails its future too when what it throws cannot be printed, because its `getMessage()` or `toString()` throws,
-  where it left the future pending.
+  with a `CompletionException` whose message is `<toString threw <exception class>>`: it left the future pending on
+  JDK 21, and failed it with an empty message on JDK 25.
 - **Standalone machines.** `StateMachines.Builder.build()` registers the `as(...)` facade and dispatches the
   machine's own watches; a watch on another machine is refused at `build()`.
 - **Blank reasons are refused.** `StatePolicy` refuses a blank reason for an identifier, as it refused a blank

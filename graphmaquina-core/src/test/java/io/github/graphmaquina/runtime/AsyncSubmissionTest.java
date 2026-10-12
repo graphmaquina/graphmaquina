@@ -49,13 +49,14 @@ import org.junit.jupiter.api.Test;
 
 /**
  * How a call submitted through {@code async(...)} is queued: StateMachine.supplyAsync, which every generated facade's
- * {@code async} goes through, and AsyncStateMachine's execute and reevaluate. Each call is a plain task that completes
- * its future the way CompletableFuture.supplyAsync completes the one it returns, save that a throwable whose printing
- * throws still fails it, never one of the asynchronous tasks that CompletableFuture's get and join run on a waiting
- * ForkJoinPool worker: run there, the call would run inside the call that waits, find the thread marked as running a
- * transition, and fail with ReentrantTransitionException. With ForkJoinPool.commonPool() as the executor and a common
- * pool whose parallelism is below two, each call runs on a new thread, as CompletableFuture.supplyAsync sends a task
- * meant for that pool.
+ * {@code async} goes through, and AsyncStateMachine's execute and reevaluate. Each call is a plain task, never one of
+ * the asynchronous tasks that CompletableFuture's get and join run on a waiting ForkJoinPool worker: run there, the
+ * call would run inside the call that waits, find the thread marked as running a transition, and fail with
+ * ReentrantTransitionException. The task completes its future the way CompletableFuture.supplyAsync completes the one
+ * it returns, save that a throwable whose printing throws still fails it, with the message
+ * {@code <toString threw <class name>>}, where supplyAsync leaves its future pending on JDK 21 and fails it with an
+ * empty message on JDK 25. With ForkJoinPool.commonPool() as the executor and a common pool whose parallelism is below
+ * two, each call runs on a new thread, as CompletableFuture.supplyAsync sends a task meant for that pool.
  *
  * <p>The first two tests run calls on the common pool while its other workers wait, so that a call queued on the
  * one free worker has no idle worker to steal it. On JDK 21 that takes a common pool of parallelism 2 or more: below
@@ -178,6 +179,21 @@ class AsyncSubmissionTest {
     /** What {@code future} failed with, as a dependent stage sees it, or a TimeoutException after ten seconds. */
     private static <R> Throwable failureOf(CompletableFuture<R> future) throws Exception {
         return future.handle((R value, Throwable error) -> error).get(10, TimeUnit.SECONDS);
+    }
+
+    /**
+     * {@code thrown} described without printing {@code cause}, which may not be printable: its class and message,
+     * whether its cause is {@code cause}, and the classes of what it suppressed.
+     */
+    private static String described(Throwable thrown, Throwable cause) {
+        List<String> suppressed = new ArrayList<>();
+        for (Throwable each : thrown.getSuppressed()) {
+            suppressed.add(each.getClass().getName());
+        }
+        String causedBy = thrown.getCause() == cause ? "that cause"
+                : thrown.getCause() == null ? "nothing" : thrown.getCause().getClass().getName();
+        return thrown.getClass().getName() + " [" + thrown.getMessage() + "] caused by " + causedBy + ", suppressing "
+                + suppressed;
     }
 
     /**
@@ -342,11 +358,12 @@ class AsyncSubmissionTest {
 
     /**
      * A throwable whose message cannot be read still fails the future of the call that threw it, where
-     * CompletableFuture.supplyAsync would leave its future pending: an Error an action throws through
+     * CompletableFuture.supplyAsync leaves its future pending on JDK 21: an Error an action throws through
      * async().execute, and a runtime exception a call submitted through supplyAsync throws. Each future fails with a
      * CompletionException caused by that throwable, whose message is {@code <toString threw <class name>>}, join
-     * throws that CompletionException, and nothing escapes on the executor's thread. get throws what reading the
-     * message throws, as it constructs its ExecutionException from the throwable's string, which the guide says.
+     * throws that CompletionException, and nothing escapes on the executor's thread. get throws what get throws on a
+     * plain CompletableFuture failed with such a CompletionException on the running JDK, as the guide says: what
+     * reading the message throws on JDK 21, and an ExecutionException caused by the throwable on JDK 25.
      */
     @Test
     void aThrowableWhoseMessageCannotBeReadStillFailsItsFuture() throws Exception {
@@ -375,8 +392,11 @@ class AsyncSubmissionTest {
             assertSame(failure, suppliedFailure.getCause());
             assertEquals("<toString threw java.lang.IllegalStateException>", suppliedFailure.getMessage());
             assertSame(suppliedFailure, assertThrows(CompletionException.class, supplied::join));
-            assertEquals("the message cannot be read",
-                    assertThrows(IllegalStateException.class, supplied::get).getMessage());
+            CompletableFuture<String> plain = new CompletableFuture<>();
+            plain.completeExceptionally(
+                    new CompletionException("<toString threw java.lang.IllegalStateException>", failure));
+            assertEquals(described(assertThrows(Throwable.class, plain::get), failure),
+                    described(assertThrows(Throwable.class, supplied::get), failure));
             executor.submit(() -> { }).get(10, TimeUnit.SECONDS);
             assertEquals(List.of(), escaped);
         } finally {

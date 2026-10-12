@@ -2093,8 +2093,10 @@ Keep or return the relevant future to the caller. `join()` wraps an exceptional 
 is cancelled, either method can throw `CancellationException` directly. When the call ran and failed, the cause is
 that call's `CallFailedException`, or an `Error`. The future fails even when that cause cannot be printed, because
 its `getMessage()` or `toString()` throws: the `CompletionException`'s message is then
-`<toString threw <exception class>>`, naming what printing threw, and `join()` throws it, while `get()` throws what
-printing the cause throws, as it builds its `ExecutionException` from the cause's string. Read the
+`<toString threw <exception class>>`, naming what printing threw, and `join()` throws it. `get()` throws what a
+`CompletableFuture`'s `get()` throws for such a cause on the JDK it runs on: on JDK 21, what printing the cause
+throws, as it builds its `ExecutionException` from the cause's string; on JDK 25, an `ExecutionException` caused by
+it, whose message is empty and which carries what printing threw as a suppressed exception. Read the
 `CallFailedException`'s `statesWritten()` and `journal()`, as [Handle a failed call](#handle-a-failed-call) shows,
 before deciding whether to retry; an exceptional future is not proof that nothing happened. A request refused before
 it started ran nothing: one an executor refused
