@@ -24,7 +24,10 @@ import java.util.function.Supplier;
  */
 final class Submit {
 
-    /** Runs each task on a new thread, as CompletableFuture does when the common pool's parallelism is below two. */
+    /**
+     * Runs each task on a new thread, as CompletableFuture does on JDK 21 when the common pool's parallelism is below
+     * two.
+     */
     private static final Executor THREAD_PER_TASK = (Runnable task) -> new Thread(task).start();
 
     private Submit() { }
@@ -32,8 +35,10 @@ final class Submit {
     /**
      * The executor that runs what a machine submits to {@code executor}: a new thread per call when it is
      * ForkJoinPool.commonPool() and the common pool's parallelism is below two, as CompletableFuture.supplyAsync does
-     * with that pool, and {@code executor} itself otherwise. A common pool whose parallelism is set to 0 starts no
-     * worker, so a plain task queued there would never run.
+     * with that pool on JDK 21, and {@code executor} itself otherwise. A common pool whose parallelism is set to 0
+     * starts no worker, so a plain task queued there would never run. JDK 25's CompletableFuture runs its tasks on the
+     * common pool whatever the pool's parallelism, and raises that parallelism from 0 to 2 when its class is
+     * initialized, after which the parallelism read here is 2.
      */
     static Executor screen(Executor executor) {
         if (executor == ForkJoinPool.commonPool() && ForkJoinPool.getCommonPoolParallelism() <= 1) {

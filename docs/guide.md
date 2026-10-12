@@ -2310,8 +2310,9 @@ a queued call on the waiting thread, where the call fails with `ReentrantTransit
 `ForkJoinTask` may run a task queued by another worker that stole work from it, and waiting for a pool to quiesce,
 through `ForkJoinTask.helpQuiesce()` or `ForkJoinPool.awaitQuiescence`, runs the pool's queued tasks on any thread.
 Given `ForkJoinPool.commonPool()` while the common pool's parallelism is below two, a machine runs each call on a new
-thread instead, as `CompletableFuture.supplyAsync` does with that pool. Start roots off `ForkJoinPool` workers, or
-give asynchronous work its own executor.
+thread instead, as `CompletableFuture.supplyAsync` does with that pool on JDK 21. On JDK 25, `CompletableFuture`
+raises the common pool's parallelism from 0 to 2 when its class is initialized, so a machine built after that runs
+its calls on the pool. Start roots off `ForkJoinPool` workers, or give asynchronous work its own executor.
 
 Multiple virtual threads do not serialize access to a shared entity. Two concurrent operations on the same
 ticket need an application-level concurrency policy. The commit precheck detects some state conflicts; it

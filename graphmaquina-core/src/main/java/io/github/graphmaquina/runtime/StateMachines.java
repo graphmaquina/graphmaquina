@@ -94,8 +94,10 @@ public final class StateMachines {
         /**
          * The executor that runs the calls submitted through {@code async(...)}. Given ForkJoinPool.commonPool() while
          * the common pool's parallelism is below two when the machine is built, the machine runs each call on a new
-         * thread instead, as CompletableFuture.supplyAsync does with that pool: with parallelism 0 the pool starts no
-         * worker, and a call queued there would never run.
+         * thread instead, as CompletableFuture.supplyAsync does with that pool on JDK 21: with parallelism 0 the pool
+         * starts no worker, and a call queued there would never run. On JDK 25, CompletableFuture raises the common
+         * pool's parallelism from 0 to 2 when its class is initialized, so a machine built after that runs its calls
+         * on the pool.
          */
         public Builder<E, S, T> asyncExecutor(Executor executor) {
             requireUnused();

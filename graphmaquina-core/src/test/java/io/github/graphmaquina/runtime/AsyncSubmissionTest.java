@@ -56,7 +56,7 @@ import org.junit.jupiter.api.Test;
  * it returns, save that a throwable whose printing throws still fails it, with the message
  * {@code <toString threw <class name>>}, where supplyAsync leaves its future pending on JDK 21 and fails it with an
  * empty message on JDK 25. With ForkJoinPool.commonPool() as the executor and a common pool whose parallelism is below
- * two, each call runs on a new thread, as CompletableFuture.supplyAsync sends a task meant for that pool.
+ * two, each call runs on a new thread, as CompletableFuture.supplyAsync sends a task meant for that pool on JDK 21.
  *
  * <p>The first two tests run calls on the common pool while its other workers wait, so that a call queued on the
  * one free worker has no idle worker to steal it. On JDK 21 that takes a common pool of parallelism 2 or more: below
@@ -470,9 +470,10 @@ class AsyncSubmissionTest {
     /**
      * With ForkJoinPool.commonPool() as the executor and the common pool's parallelism set to 0 or to 1, a call
      * submitted through async().execute and one submitted through supplyAsync each run on a new thread, never on a
-     * common-pool worker, as CompletableFuture.supplyAsync sends a task meant for that pool: with parallelism 0 the
-     * pool starts no worker, and a call queued there would never run. Each setting runs in a JVM of its own, since the
-     * common pool reads it once; that JVM bounds each of its waits to ten seconds.
+     * common-pool worker, as CompletableFuture.supplyAsync sends a task meant for that pool on JDK 21: with
+     * parallelism 0 the pool starts no worker, and a call queued there would never run. Each setting runs in a JVM of
+     * its own, since the common pool reads it once; that JVM bounds each of its waits to ten seconds, and builds the
+     * machine before it initializes CompletableFuture, whose class raises the parallelism from 0 to 2 on JDK 25.
      */
     @Test
     void aCommonPoolOfFewerThanTwoThreadsRunsEachCallOnANewThread() throws Exception {
