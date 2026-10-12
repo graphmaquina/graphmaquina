@@ -19,7 +19,9 @@ import java.util.function.UnaryOperator;
  * {@link io.github.graphmaquina.error.AbortDetails} keeps one as it is, where it copies any other list. Like the list
  * {@link List#copyOf} returns, it is a random-access list whose mutators, and those of its sub-lists and of its
  * reversed view, throw UnsupportedOperationException, even when the call would change nothing, and it compares, hashes
- * and prints as the list of its entries. Not part of the API.
+ * and prints as the list of its entries. Unlike that list, it answers {@code contains(null)} with false and
+ * {@code indexOf(null)} and {@code lastIndexOf(null)} with -1, as the contract of List allows, instead of throwing
+ * NullPointerException. Not part of the API.
  */
 public final class JournalSnapshot extends AbstractList<ActionRecord> implements RandomAccess {
 
