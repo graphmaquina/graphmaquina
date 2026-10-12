@@ -419,10 +419,11 @@ the DSL builds, and validates them with `MachineOutlineValidator`. What it gener
 | SG703 | New. Two annotations of one method name different identifiers, or two methods claim the same identifier. A `TYPE`-level `Transition` may add further branches of an identifier a method owns, as long as their keys are disjoint. |
 | SG609 | The retired annotations are recognised by their qualified names — `io.github.graphmaquina.annotation.StateGraph`, `Row`, `Rows`, `Cell`, `Cells`, `Forbid`, `Forbids`, `Action`, `Move`, `Watch`, `Watches`, `When` — and are reported wherever a compilation still resolves them from an older release. They are not kept loadable for the sake of the diagnostic. |
 
-If a source still *imports* one of those twelve types, javac refuses the import before any processor runs and
-SG609 is never reached. The replacement of each one is the table in *Generated vocabulary and build artefacts*
-above: `Row`→`StatePolicy`, `Cell`/`Action`/`Move`→`Transition`, `Forbid`→`Reject`, and the per-pair
-`Watch`/`Watches`/`When` generated for each `@GraphPeers` declaration. Mark the bound members with
+If a source still *imports* one of those twelve types and no older release supplies it, javac reports the import it
+cannot resolve as its own `cannot find symbol` error and SG609 is never reached: the processor still runs over the
+other sources, and the compilation fails on that error. The replacement of each one is the table in *Generated
+vocabulary and build artefacts* above: `Row`→`StatePolicy`, `Cell`/`Action`/`Move`→`Transition`, `Forbid`→`Reject`,
+and the per-pair `Watch`/`Watches`/`When` generated for each `@GraphPeers` declaration. Mark the bound members with
 `@GraphAction`, `@GraphGuard`, `@GraphHook`, `@GraphCondition` or `@GraphProperty`, and name each of them as
 `<Host>Refs.<Member>.class`.
 
