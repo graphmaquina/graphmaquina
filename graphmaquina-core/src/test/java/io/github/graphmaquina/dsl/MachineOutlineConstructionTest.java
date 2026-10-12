@@ -278,4 +278,12 @@ class MachineOutlineConstructionTest {
         NullPointerException error = assertThrows(NullPointerException.class, call);
         assertTrue(error.getMessage().startsWith(parameter), error.getMessage());
     }
+
+    @Test
+    void outgoingRefusesANullState() {
+        MachineOutline outline = new MachineOutline(NAME, STATES, CATALOG, "A", Set.of("B"), Set.of(),
+                List.of(edge("A", "Z", "B")), List.of(), List.of());
+        NullPointerException error = assertThrows(NullPointerException.class, () -> outline.outgoing(null));
+        assertTrue(error.getMessage().startsWith("state"), error.getMessage());
+    }
 }
