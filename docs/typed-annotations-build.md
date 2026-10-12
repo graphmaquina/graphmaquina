@@ -862,7 +862,9 @@ what javac actually accepted, so:
   `UP-TO-DATE`; Maven rewrites identical artifacts);
 - renaming or deleting a machine, an action, a property or a state removes the generated symbols and facades
   of the old names from the next jar, **without `clean`**;
-- deleting the last graph declaration leaves an empty index and a jar with no generated class in it;
+- deleting the last graph declaration together with every marker that exports a symbol, such as `@GraphAction`
+  or `@GraphProperty`, leaves an empty index and a jar with no generated class in it; while such markers remain,
+  the index lists their symbols and the jar keeps the references containers generated for them;
 - a javac failure leaves the pending inventory behind, seals nothing and publishes no index, so a broken
   compilation can never ship the index of the previous one.
 
