@@ -151,12 +151,14 @@ class ResolveFailureTest {
                     () -> watching(failing, boom).reevaluate(new Doc("1", PUBLISHED)));
             assertSame(boom, error.getCause());
             assertEquals(Optional.empty(), error.call().transition());
-            ends.add(failing + ": " + error.phase() + ", from " + error.from() + ", " + error.statesWritten());
+            ends.add(failing + ": " + error.phase() + ", from " + error.from() + ", " + error.statesWritten() + ", "
+                    + error.getMessage().substring(0, error.getMessage().indexOf(':')));
         }
         assertEquals(List.of(
-                "getter: RESOLVE, from Optional.empty, NONE",
-                "peersOf: RESOLVE, from Optional[PUBLISHED], NONE",
-                "condition: RESOLVE, from Optional[PUBLISHED], NONE"), ends);
+                "getter: RESOLVE, from Optional.empty, NONE, transition aborted in Doc/DocStatus ?",
+                "peersOf: RESOLVE, from Optional[PUBLISHED], NONE, transition aborted in Doc/DocStatus PUBLISHED",
+                "condition: RESOLVE, from Optional[PUBLISHED], NONE, transition aborted in Doc/DocStatus PUBLISHED"),
+                ends);
     }
 
     /** A condition that joins another machine's failing call aborts the reevaluation in RESOLVE. */
