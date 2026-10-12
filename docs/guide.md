@@ -2483,7 +2483,9 @@ transaction. Your action can still end the call in another failure, such as an a
 declared type accepts, or an `Error` it throws as itself. A cascade that names an unknown machine poisons too, by key or
 by facade type, even over an empty collection. A refused argument poisons nothing: a null peer, a null element, which
 `cascadeAll` refuses before any element runs, or an identifier from another machine's catalogue, and neither does a
-cascade refused because the commit has begun or a step is being rolled back. `cascadeAll` copies its
+cascade refused because the commit has begun or a step is being rolled back. A `VirtualMachineError`, such as a
+`StackOverflowError`, that strikes while these checks run poisons nothing either: the cascade has not started.
+`cascadeAll` copies its
 collection once, before any element runs, and never reads it again, so elements added or removed while the cascade runs
 change neither which elements run nor their order; an exception or an `Error` the collection throws while it is copied
 propagates as it is and poisons nothing, even when the machine is unknown. Use `ctx.cascade` instead of calling another
