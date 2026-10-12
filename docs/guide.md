@@ -3797,8 +3797,9 @@ the original application or require its generated annotation classes. It parses 
 compilation's release and in its source encoding, which the build adapters pass in the request, and it writes
 the generated sources in that encoding too. It resolves the headers and exported members needed for
 generation, then emits vocabulary plus a manifest. The processor verifies that the manifest matches the
-declarations javac accepted, resolves bindings, checks the graph and emits facades. Completion publishes the
-validated export index and records ownership of generated outputs.
+declarations javac accepted, resolves bindings, checks the graph and emits facades, in ASCII only: every other
+character of a name or a text is written as a `\uXXXX` escape, so javac writes them alike in any encoding.
+Completion publishes the validated export index and records ownership of generated outputs.
 
 ### Generated files
 

@@ -9,6 +9,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -141,8 +142,22 @@ final class Compilation {
         return prepare(project, sources, List.of());
     }
 
+    /**
+     * The same, for a compilation whose sources are written and read in {@code encoding}: the request names it, so
+     * the generator reads and writes the sources in it, and javac is given it as {@code -encoding}, so it reads them
+     * and its {@code Filer} writes what the processor generates in it too.
+     */
+    static Prepared prepare(Map<String, String> sources, Charset encoding) {
+        return prepare(temporaryProject(), sources, List.of(), encoding);
+    }
+
     private static Prepared prepare(Path project, Map<String, String> sources, List<Path> extraClasspath) {
-        GenerationRequest request = materialize(project, sources, extraClasspath);
+        return prepare(project, sources, extraClasspath, GenerationRequest.DEFAULT_ENCODING);
+    }
+
+    private static Prepared prepare(Path project, Map<String, String> sources, List<Path> extraClasspath,
+            Charset encoding) {
+        GenerationRequest request = materialize(project, sources, extraClasspath, encoding);
         try {
             return new Prepared(request, StateGraphCodegen.generate(request));
         } catch (IOException e) {
@@ -252,22 +267,26 @@ final class Compilation {
      * option, so a test can observe what the processor reports when it has no manifest at all.
      */
     static Result compileRaw(Map<String, String> sources, List<String> extra) {
-        GenerationRequest request = materialize(temporaryProject(), sources, List.of());
+        GenerationRequest request = materialize(temporaryProject(), sources, List.of(),
+                GenerationRequest.DEFAULT_ENCODING);
         List<String> options = new ArrayList<>(standardOptions(request));
         options.addAll(extra);
         return run(javaFiles(request.sources().get(0)), options, request);
     }
 
-    /** Writes {@code sources} under {@code project} and describes the compilation they belong to. */
+    /**
+     * Writes {@code sources} under {@code project} in {@code encoding} and describes the compilation they belong
+     * to, which reads them in that encoding.
+     */
     private static GenerationRequest materialize(Path project, Map<String, String> sources,
-            List<Path> extraClasspath) {
+            List<Path> extraClasspath, Charset encoding) {
         try {
-            Path originals = write(project.resolve("originals"), sources);
+            Path originals = write(project.resolve("originals"), sources, encoding);
             List<Path> classpath = new ArrayList<>(classpath());
             classpath.addAll(extraClasspath);
             return new GenerationRequest(project, List.of(originals), List.copyOf(classpath),
                     project.resolve("bootstrap"), project.resolve("processor"), project.resolve("classes"),
-                    project.resolve("work"), COMPILATION_ID);
+                    project.resolve("work"), COMPILATION_ID, GenerationRequest.DEFAULT_RELEASE, encoding);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -314,6 +333,7 @@ final class Compilation {
                 "-classpath", String.join(File.pathSeparator, entries),
                 "-d", request.classesOutput().toString(),
                 "-s", request.processorSourcesOutput().toString(),
+                "-encoding", request.encoding().name(),
                 "-Xlint:all,-serial", "-Werror");
     }
 
@@ -323,7 +343,8 @@ final class Compilation {
         try {
             Path classes = Files.createDirectories(request.classesOutput());
             Path generated = Files.createDirectories(request.processorSourcesOutput());
-            try (StandardJavaFileManager manager = compiler.getStandardFileManager(collector, null, StandardCharsets.UTF_8)) {
+            try (StandardJavaFileManager manager = compiler.getStandardFileManager(collector, null,
+                    request.encoding())) {
                 manager.setLocationFromPaths(StandardLocation.CLASS_OUTPUT, List.of(classes));
                 manager.setLocationFromPaths(StandardLocation.SOURCE_OUTPUT, List.of(generated));
                 boolean success = Boolean.TRUE.equals(compiler.getTask(null, manager, collector, options, null,
@@ -338,16 +359,16 @@ final class Compilation {
     }
 
     /**
-     * Writes each source at the package path its qualified name implies and returns {@code root}, which is
-     * emptied first: a source a test no longer declares must be gone, as it is after an edit.
+     * Writes each source at the package path its qualified name implies, in {@code encoding}, and returns
+     * {@code root}, which is emptied first: a source a test no longer declares must be gone, as it is after an edit.
      */
-    private static Path write(Path root, Map<String, String> sources) throws IOException {
+    private static Path write(Path root, Map<String, String> sources, Charset encoding) throws IOException {
         deleteRecursively(root);
         Files.createDirectories(root);
         for (Map.Entry<String, String> source : sources.entrySet()) {
             Path file = root.resolve(source.getKey().replace('.', File.separatorChar) + ".java");
             Files.createDirectories(file.getParent());
-            Files.writeString(file, source.getValue(), StandardCharsets.UTF_8);
+            Files.writeString(file, source.getValue(), encoding);
         }
         return root;
     }

@@ -250,9 +250,11 @@ javac reads them in: with Gradle's own compiler, in process or in its compiler d
 the last `-encoding` of `options.compilerArgs`; with a javac Gradle starts from the command line, as it does
 when `options.fork` is set with `forkOptions.javaHome` or `forkOptions.executable`, the last `-encoding`, else
 `options.encoding`. The generated sources are written in that encoding, a character it cannot represent as a
-`\uXXXX` escape; without an encoding, the generator reads and writes UTF-8. The generation never runs the compile
-task's argument providers, which may need files that other tasks write first; `prepare-compile` refuses providers
-that change the release or the encoding.
+`\uXXXX` escape; without an encoding, the generator reads and writes UTF-8. The companions the annotation
+processor generates hold ASCII only: javac writes them in that encoding too, so the processor writes every other
+character, of a name or of a text such as a policy's `otherwise`, as a `\uXXXX` escape. The generation never runs
+the compile task's argument providers, which may need files that other tasks write first; `prepare-compile`
+refuses providers that change the release or the encoding.
 
 ### What the plugin does to the compilation
 
@@ -541,7 +543,9 @@ into a directory being walked is skipped.
 The request also carries the release the compiler compiles at, `<release>`, else `<target>`, or their
 properties, with the test settings for the test compilation, and the encoding it reads the sources in,
 `<encoding>`, else `project.build.sourceEncoding`. The generator parses at that release, reads in that encoding
-and writes the generated sources in it; without an encoding, it reads and writes UTF-8.
+and writes the generated sources in it; without an encoding, it reads and writes UTF-8. The companions the
+annotation processor generates hold ASCII only, every other character written as a `\uXXXX` escape, so javac
+writes them alike in any encoding.
 
 ### Configuration parameters
 
