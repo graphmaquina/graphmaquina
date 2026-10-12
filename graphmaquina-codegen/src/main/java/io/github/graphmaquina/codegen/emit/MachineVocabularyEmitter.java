@@ -16,9 +16,11 @@ import java.util.Set;
  * names an edge is declared with its own transition enum, so a constant of another machine, or a state written
  * where an identifier belongs, is a javac error before any processor runs.</p>
  *
- * <p>Every annotation and every element it declares carries a documentation comment, an element's saying what it
- * holds with {@code {@return}}, so a {@code javadoc} run over the generated sources, under its default doclint or
- * {@code -Xdoclint:all}, has nothing to warn about in a file the author cannot edit.</p>
+ * <p>Every annotation and every element it declares carries a documentation comment. An element's says what the
+ * element holds: in an inline {@code {@return}} tag, or, for {@code Definition.afterCommit} and
+ * {@code Transition.recoveries}, in a {@code @return} block tag after a description of the element. A {@code javadoc}
+ * run over the generated sources, under its default doclint or {@code -Xdoclint:all}, therefore has nothing to warn
+ * about in a file the author cannot edit.</p>
  *
  * <p>Nothing is imported: the enums, the machine, the StateGraph types and even {@code java.lang} types are written
  * with their qualified names, so a type of the machine's own package named {@code Class} or {@code String} cannot

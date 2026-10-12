@@ -611,9 +611,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
   the hosts, machines and enums they name, as the companions do, so deprecating one, even for removal, no longer
   fails a `-Werror` build inside a generated file.
 - **Generated sources are documented.** Every public member of a vocabulary, a companion and a set carries a
-  documentation comment with the `@param` and `@return` tags its signature calls for, but the methods a companion or
-  a set implements, whose comments `javadoc` inherits, so a `javadoc` run over the generated sources, under its
-  default doclint or `-Xdoclint:all`, no longer warns about a file the author cannot edit.
+  documentation comment with the `@param` and `@return` tags its signature calls for, most vocabulary elements in
+  the inline form `{@return ...}`, but the methods a companion or a set implements, whose comments `javadoc`
+  inherits, so a `javadoc` run over the generated sources, under its default doclint or `-Xdoclint:all`, no longer
+  warns about a file the author cannot edit.
 - **One problem no longer hides the others.** A failed export check (`SG604`) or a refused companion name no
   longer stops the rest of the compilation from being checked, and javac rerun over the previous companions
   reports them as stale output (`SG602`) instead of a collision (`SG603`).

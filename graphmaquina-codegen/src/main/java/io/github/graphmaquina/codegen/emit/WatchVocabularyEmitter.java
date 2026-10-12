@@ -21,7 +21,8 @@ import java.util.Set;
  * machine vocabulary, nothing is imported and every name this file does not declare itself is written qualified,
  * so the pair's name can never collide with an import, as {@code RetentionPolicy} would, and the deprecation and
  * removal warnings of the machines and the enums it names are suppressed, as {@link JavaSource#SUPPRESS_DEPRECATION}
- * explains. Its annotations and their elements are documented as those of the machine vocabulary are.</p>
+ * explains. Its annotations carry documentation comments as those of the machine vocabulary do, and each of their
+ * elements says what it holds in an inline {@code {@return}} tag.</p>
  *
  * <p>Each name is still read through its first segment, and any type in scope here under that simple name takes the
  * name over: an annotation nested here shadows a type of that name (JLS 6.4.1) and obscures a package of that name,
