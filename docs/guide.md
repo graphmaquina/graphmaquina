@@ -2116,7 +2116,8 @@ AsyncTicketMachines machines = AsyncTicketMachinesRuntime.builder(
 
 Close `machines` when its work is finished. The override is accepted only for an asynchronous machine in the
 set; any other class throws `IllegalArgumentException`. A synchronous-only set such as `TicketMachines` has no
-timeout builder argument, even when you use its `async(...)` method to submit a synchronous operation.
+timeout builder argument and no `asyncTimeout(Machine.class, Duration)` method, even when you use its `async(...)`
+method to submit a synchronous operation.
 
 Any positive duration is accepted. One of `Duration.ofNanos(Long.MAX_VALUE)` or more means no limit, for a
 machine's budget and for an action's `@Timeout` alike.
@@ -2335,7 +2336,7 @@ not instantiate service classes or discover dependency-injection beans.
 
 | Builder option | Purpose / default |
 | --- | --- |
-| `asyncTimeout(Machine.class, Duration)` | Override timeout for one asynchronous machine |
+| `asyncTimeout(Machine.class, Duration)` | Override timeout for one asynchronous machine; generated only for a set that has one, as is the timeout argument of `builder(...)` |
 | `asyncExecutor(Executor)` | Supply the executor used by `async` calls, where `ForkJoinPool.commonPool()` with a parallelism below two runs each call on a new thread instead; otherwise each machine owns a virtual-thread executor |
 | `recordTrail()` | Record the [trail](#record-the-calls-trail) of every call of the set on `InstantSource.system()`; off by default |
 | `recordTrail(InstantSource)` | Record that trail on the given clock instead |
