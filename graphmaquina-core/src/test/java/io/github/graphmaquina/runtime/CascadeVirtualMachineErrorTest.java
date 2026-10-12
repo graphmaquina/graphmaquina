@@ -58,9 +58,9 @@ import org.junit.jupiter.api.Test;
  * that carries no cause, before it reads or stores any other poison, so an action that catches the Error cannot make
  * the call commit, a later peer read or cascade of that action is refused with that abort as the original failure,
  * COLLECT does not collect it, and an earlier poison stays first. Where no callback can throw such an Error that
- * nothing records, a test reads the bytecode instead: what a cascadeAll runs once it accepted its identifier, between
- * two elements too. The last test runs real overflows on a thread of a small stack, where even recording an ordinary
- * failure can overflow, and checks that nothing commits.
+ * nothing records, two tests read the bytecode instead: what a cascadeAll runs once it accepted its identifier,
+ * between two elements too, and the poisoning of an unknown facade. The last test runs real overflows on a thread of
+ * a small stack, where even recording an ordinary failure can overflow, and checks that nothing commits.
  */
 class CascadeVirtualMachineErrorTest {
 
@@ -430,6 +430,19 @@ class CascadeVirtualMachineErrorTest {
         }
         assertTrue(accepted, "cascadeEach no longer checks the identifier through requireTransition");
         assertEquals(List.of(), outside);
+    }
+
+    /**
+     * The catch that poisons the call for an unknown facade condemns it first, as the catch of every cascade does, so
+     * the call stays poisoned when an Error strikes while that poison is recorded, before it is stored.
+     */
+    @Test
+    void theCatchThatPoisonsTheCallForAnUnknownFacadeCondemnsItFirst() throws Exception {
+        MethodCode code = MethodCode.of(Transaction.class, "cascadeKeyFor");
+        List<String> handlers = code.handlers().stream().map((Handler handler) -> handler.type()
+                + (code.condemnsFirst(handler) ? " condemns the call first" : " records the poison first")).toList();
+        assertEquals(List.of("Class io/github/graphmaquina/error/StateMachineException condemns the call first"),
+                handlers);
     }
 
     /**

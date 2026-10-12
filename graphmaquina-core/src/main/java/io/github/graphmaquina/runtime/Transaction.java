@@ -1618,8 +1618,11 @@ final class Transaction {
     }
 
     /**
-     * Resolves the facade a cascade names inside the poisoning scope: an unknown facade poisons, as an unknown key
-     * does once the cascade looks its machine up, and the action receives the abort that carries it.
+     * Resolves the facade a cascade names: an unknown facade poisons, as an unknown key does once the cascade looks its
+     * machine up, and the action receives the abort that carries it. The catch condemns the call first, as a cascade's
+     * does, so the call stays poisoned when an Error strikes while that poison is recorded. A VirtualMachineError that
+     * strikes while the facade resolves poisons nothing: the identifier is checked next, so the cascade has not
+     * accepted its arguments yet.
      */
     <P, Q extends Enum<Q>, U extends Enum<U>> MachineKey<P, Q, U> cascadeKeyFor(
             ContextHandle caller, Class<? extends Machine<P, Q, U>> facade) {
@@ -1627,6 +1630,8 @@ final class Transaction {
         try {
             return keyFor(facade);
         } catch (StateMachineException e) {
+            // First a store, as in cascade: the call stays condemned if an Error strikes while its poison is recorded.
+            condemned = true;
             throw poisonWith(caller, facade.getSimpleName(), e);
         }
     }
