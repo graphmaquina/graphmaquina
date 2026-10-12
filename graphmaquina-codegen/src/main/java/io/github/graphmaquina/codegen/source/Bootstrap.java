@@ -194,8 +194,9 @@ public final class Bootstrap {
      * {@code BitKeeper}, {@code ChangeSet}, {@code _darcs}, {@code .metadata}, {@code .arch-ids} and
      * {@code .darcsrepo} and the files {@code -darcs-backup*} too. The Maven plugin applies that list itself whenever
      * it lists files. It hands a root the execution does not narrow to the generator whole unless javac compiles a
-     * source below it inside a directory this walk leaves out, and lists its files otherwise; a root handed whole is
-     * walked as described here, not with plexus-utils' longer list.</p>
+     * source below it inside a directory this walk leaves out, or this walk would fail on a directory that cannot be
+     * listed, which plexus-utils reads as an empty one, and lists its files otherwise; a root handed whole is walked
+     * as described here, not with plexus-utils' longer list.</p>
      */
     private static List<Reached> sources(GenerationRequest request) {
         List<Reached> files = new ArrayList<>();

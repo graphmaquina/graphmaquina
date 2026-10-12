@@ -26,7 +26,6 @@ import java.nio.file.StandardWatchEventKinds;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.nio.file.attribute.FileTime;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,7 +33,6 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -103,6 +101,10 @@ class MavenPluginIntegrationTest {
                         </path>
                       </annotationProcessorPaths>
             """.strip();
+
+    /** Why a test that locks a directory is aborted where {@link MavenFixture#forbidListing} cannot lock it. */
+    private static final String UNLOCKABLE =
+            "this user lists a directory it has no permission on, or the file system has no POSIX permissions";
 
     /** The file repository the Gradle build published every StateGraph artifact of this version to. */
     private final Path fixtureRepository = Path.of(requireProperty("graphmaquina.fixtureRepository"));
@@ -3198,8 +3200,8 @@ class MavenPluginIntegrationTest {
      * which Ant's default excludes name as well, whether this plugin hands it the files that includes and excludes
      * select or a whole root to walk. Not every file the compiler leaves out is left out of a whole root: a root the
      * execution does not narrow is handed to the generator whole, unless javac compiles a source under it that the
-     * generator's walk leaves out, and the generator walks it with Ant's default excludes, not with plexus-utils'
-     * longer list.
+     * generator's walk leaves out or that walk would fail on a directory it cannot list, and the generator walks it
+     * with Ant's default excludes, not with plexus-utils' longer list.
      */
     @Test
     void theGeneratorSkipsTheFilesTheCompilerExcludesByDefault() throws IOException {
@@ -3256,14 +3258,45 @@ class MavenPluginIntegrationTest {
         MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
         fixture.writeFile("src/main/java/fx/.git/objects/Junk.java", new byte[0]);
         Path objects = fixture.projectDirectory().resolve("src/main/java/fx/.git/objects");
-        forbidListing(objects);
+        assumeTrue(MavenFixture.forbidListing(objects), UNLOCKABLE);
         try {
             MavenResult result = fixture.run("package");
 
             assertEquals(0, result.exitCode(), result.output());
             assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
         } finally {
-            allowListing(objects);
+            MavenFixture.allowListing(objects);
+        }
+    }
+
+    /**
+     * The scanner of maven-compiler-plugin reads a directory it cannot list as an empty one, an ordinary directory as
+     * well as the directory of a version control system itself, so javac compiles the sources beside it and nothing
+     * inside it. The generator, which would fail on such a directory walking the root whole, is handed the files the
+     * compiler selects instead, and reads just those.
+     */
+    @Test
+    void aDirectoryTheCompilerCannotListLeavesTheSourcesBesideItToTheGenerator() throws IOException {
+        byte[] junk = {0x00, 0x05, 0x16, 0x07, 0x00, 0x02, 0x00, 0x00, 'M', 'a', 'c', ' ', 'O', 'S', ' ', 'X',
+            (byte) 0xff, (byte) 0xfe, 0x00, 0x01, '{', '}', (byte) 0x80};
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.writeFile("src/main/java/fx/locked/Junk.java", junk);
+        fixture.writeFile("src/main/java/fx/.svn/Junk.java", junk);
+        List<Path> locked = List.of(fixture.projectDirectory().resolve("src/main/java/fx/locked"),
+                fixture.projectDirectory().resolve("src/main/java/fx/.svn"));
+        try {
+            for (Path directory : locked) {
+                assumeTrue(MavenFixture.forbidListing(directory), UNLOCKABLE);
+            }
+
+            MavenResult result = fixture.run("package");
+
+            assertEquals(0, result.exitCode(), result.output());
+            assertTrue(fixture.jarContains("fx/OrdersGraph.class"));
+        } finally {
+            for (Path directory : locked) {
+                MavenFixture.allowListing(directory);
+            }
         }
     }
 
@@ -3824,26 +3857,6 @@ class MavenPluginIntegrationTest {
                     + ':' + text(dependency, "version"));
         }
         return dependencies;
-    }
-
-    /**
-     * Takes every permission on {@code directory} away, so that it cannot be listed, and aborts the test where it still
-     * can be, as for a user who may read anything or on a file system without POSIX permissions.
-     */
-    private static void forbidListing(Path directory) throws IOException {
-        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"),
-                "the file system has no POSIX permissions");
-        Files.setPosixFilePermissions(directory, Set.of());
-        boolean listed = directory.toFile().list() != null;
-        if (listed) {
-            allowListing(directory);
-        }
-        assumeTrue(!listed, "this user lists a directory it has no permission on");
-    }
-
-    /** Gives the owner of {@code directory} back every permission on it, so the temporary directory can be deleted. */
-    private static void allowListing(Path directory) throws IOException {
-        Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwx------"));
     }
 
     /** The descriptor packaged inside {@code jar}, which is what Maven reads to find a goal. */

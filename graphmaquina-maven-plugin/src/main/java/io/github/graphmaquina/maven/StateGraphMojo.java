@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystemLoopException;
 import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -161,7 +162,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
      *
      * @return the request the generator reads for the main source set
      * @throws MojoExecutionException if Maven has not resolved the compile classpath of the project, or a source
-     *     root this plugin hands over file by file, or a directory below it, cannot be walked
+     *     root, or a directory below it, fails while it is being listed
      */
     protected final Request mainRequest() throws MojoExecutionException {
         Path build = buildDirectory();
@@ -190,7 +191,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
      *
      * @return the request the generator reads for the test source set
      * @throws MojoExecutionException if Maven has not resolved the test classpath of the project, or a source
-     *     root this plugin hands over file by file, or a directory below it, cannot be walked
+     *     root, or a directory below it, fails while it is being listed
      */
     protected final Request testRequest() throws MojoExecutionException {
         Path build = buildDirectory();
@@ -501,10 +502,11 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * their names lead through. A root the execution does not narrow is handed to the generator whole, and the
      * generator walks it with Ant's default excludes, not with plexus-utils' longer list; {@code SourcePatterns}
      * describes what that leaves in. That walk leaves out, as Gradle does, every directory whose name one of those
-     * excludes names, with everything inside it, where the scanner of the compiler enters it, so a root under which
-     * javac compiles a source inside such a directory is handed over as the files the compiler selects instead. A
-     * root the includes or excludes of the compiler narrow is handed over as the very files they select, with the
-     * compiler's own default excludes left out. Either is handed over under the name
+     * excludes names, with everything inside it, where the scanner of the compiler enters it, and fails on a directory
+     * it cannot list, which that scanner reads as an empty one, so a root under which javac compiles a source inside
+     * such a directory, or the walk would fail, is handed over as the files the compiler selects instead. A root the
+     * includes or excludes of the compiler narrow is handed over as the very files they select, with the compiler's
+     * own default excludes left out. Either is handed over under the name
      * {@link #spelling} gives it, which anchors the origins the generator publishes to the project directory.
      */
     private List<String> originalSources(CompilerExecution execution, List<String> roots, Path sourcesOutput,
@@ -524,7 +526,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
             }
             Path source = spelling(declared, canonicalRoot, projectDirectory, canonicalProject);
             try {
-                if (!patterns.narrow() && !compilesWhatTheWalkLeavesOut(source, patterns)) {
+                if (!patterns.narrow() && !walkedOtherwise(source, patterns)) {
                     sources.add(source.toString());
                     continue;
                 }
@@ -540,23 +542,24 @@ public abstract class StateGraphMojo extends AbstractMojo {
     }
 
     /**
-     * Whether javac compiles a source under {@code root} that the generator, handed {@code root} whole, leaves out:
-     * one the scanner of the compiler selects inside a directory whose name a default exclude of Ant names, such as
-     * {@code old~} or {@code .gitignore}. plexus-utils enters such a directory and leaves out only the files those
-     * patterns name, while the generator's walk, like Gradle's, leaves the directory out with everything inside it.
-     * A directory both leave out with everything inside it, such as {@code .git}, is not entered, and a directory
-     * that cannot be listed is skipped, as plexus-utils skips it, so the walk fails on none.
+     * Whether the generator, handed {@code root} whole, would walk it otherwise than the scanner of the compiler does:
+     * whether javac compiles a source under it that the walk leaves out, one the scanner selects inside a directory
+     * whose name a default exclude of Ant names, such as {@code old~} or {@code .gitignore}, or the walk would fail on
+     * a directory it cannot list, which the scanner reads as an empty one. plexus-utils enters a directory such a name
+     * names and leaves out only the files those patterns name, while the generator's walk, like Gradle's, leaves the
+     * directory out with everything inside it; that walk opens every directory it reaches, such a one included. A
+     * directory both leave out with everything inside it, such as {@code .git}, is not entered.
      *
      * @param root a source root of the compilation
      * @param patterns the includes and excludes of the compiler execution, which narrow no root
-     * @return {@code true} if javac compiles such a source
-     * @throws IOException never, since the walk skips whatever it cannot read; {@link Files#walkFileTree} declares it
+     * @return {@code true} if javac compiles such a source or the walk would fail on such a directory
+     * @throws IOException if a directory fails while it is being listed
      */
-    private static boolean compilesWhatTheWalkLeavesOut(Path root, SourcePatterns patterns) throws IOException {
+    private static boolean walkedOtherwise(Path root, SourcePatterns patterns) throws IOException {
         if (!Files.isDirectory(root)) {
             return false;
         }
-        List<Path> leftOut = new ArrayList<>();
+        List<Path> differences = new ArrayList<>();
         Files.walkFileTree(root, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE,
             new SimpleFileVisitor<Path>() {
 
@@ -572,13 +575,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
                     if (!attributes.isRegularFile() || !file.getFileName().toString().endsWith(".java")) {
                         return FileVisitResult.CONTINUE;
                     }
-                    List<String> names = new ArrayList<>();
-                    for (Path name : root.relativize(file)) {
-                        names.add(name.toString());
-                    }
-                    if (names.subList(0, names.size() - 1).stream().anyMatch(StateGraphMojo::walkExcludes)
-                        && patterns.selects(String.join("/", names))) {
-                        leftOut.add(file);
+                    List<String> names = names(root, file);
+                    if (insideWhatTheWalkExcludes(names) && patterns.selects(String.join("/", names))) {
+                        differences.add(file);
                         return FileVisitResult.TERMINATE;
                     }
                     return FileVisitResult.CONTINUE;
@@ -586,15 +585,31 @@ public abstract class StateGraphMojo extends AbstractMojo {
 
                 @Override
                 public FileVisitResult visitFileFailed(Path file, IOException failure) {
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult postVisitDirectory(Path directory, IOException failure) {
-                    return FileVisitResult.CONTINUE;
+                    if (failure instanceof FileSystemLoopException || insideWhatTheWalkExcludes(names(root, file))) {
+                        return FileVisitResult.CONTINUE;
+                    }
+                    differences.add(file);
+                    return FileVisitResult.TERMINATE;
                 }
             });
-        return !leftOut.isEmpty();
+        return !differences.isEmpty();
+    }
+
+    /** The names of the path from {@code root} to {@code path}; a single empty name for {@code root} itself. */
+    private static List<String> names(Path root, Path path) {
+        List<String> names = new ArrayList<>();
+        for (Path name : root.relativize(path)) {
+            names.add(name.toString());
+        }
+        return names;
+    }
+
+    /**
+     * Whether the path of {@code names} lies inside a directory the generator's walk of a whole root leaves out:
+     * whether one of the names before its last one is.
+     */
+    private static boolean insideWhatTheWalkExcludes(List<String> names) {
+        return names.subList(0, names.size() - 1).stream().anyMatch(StateGraphMojo::walkExcludes);
     }
 
     /**

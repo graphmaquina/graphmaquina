@@ -589,16 +589,19 @@ separator never can: it matches a path as if it had no leading separator, so `/f
 `fx`, a directory it matches, while `/io/github/graphmaquina/generated/**` alone selects nothing, since the
 scanner never enters `io`. Where the separator is `\`, as on Windows, plexus-utils also lets the scanner in for
 such an include as if it had no leading separator, so `/io/github/graphmaquina/generated/**` selects the sources
-under `io/github/graphmaquina/generated`.
+under `io/github/graphmaquina/generated`. A directory that cannot be listed is read as an empty one, as that scanner
+reads it.
 
 The generator walks a whole root as Gradle walks a source directory, with Ant's shorter default list: it leaves
 out every directory a default exclude names, with everything inside it. The compiler's scanner leaves out what is
 inside a directory only when an exclude ending in `/**` names it, as one names each directory of a version control
 system, so a root under which javac compiles a source inside a directory named like an excluded file, `old~` or
-`.gitignore` for instance, is passed as the files the compiler selects, as a narrowed one is. Under a root passed
-whole, a `.java` file inside an `RCS`, `BitKeeper`, `ChangeSet`, `_darcs`, `.metadata`, `.arch-ids` or
-`.darcsrepo` directory, or one named `-darcs-backup*`, is read by the generator although javac never compiles it.
-Symbolic links are followed, and a link that leads back into a directory being walked is skipped.
+`.gitignore` for instance, is passed as the files the compiler selects, as a narrowed one is. So is a root that holds
+a directory the generator's walk would open but cannot list: the walk would fail on it, while the compiler's scanner,
+and so the files passed in its place, read it as an empty one. Under a root passed whole, a `.java` file inside an
+`RCS`, `BitKeeper`, `ChangeSet`, `_darcs`, `.metadata`, `.arch-ids` or `.darcsrepo` directory, or one named
+`-darcs-backup*`, is read by the generator although javac never compiles it. Symbolic links are followed, and a
+link that leads back into a directory being walked is skipped.
 
 The request also carries the release javac compiles at, `<release>`, else `<target>`, or their properties, with the
 test settings for the test compilation. javac takes the last `--release` it is given, and `maven-compiler-plugin`

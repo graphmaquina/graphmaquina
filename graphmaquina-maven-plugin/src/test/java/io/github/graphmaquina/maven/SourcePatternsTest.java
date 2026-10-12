@@ -342,8 +342,9 @@ class SourcePatternsTest {
      * so the files these patterns select leave out, as javac leaves them out, an AppleDouble companion, an editor's
      * lock file, a darcs backup and anything inside the directory of a version control system, plexus-utils' longer
      * list of them included. A root the execution does not narrow is selected this way only when javac compiles a
-     * source under it that the generator's walk leaves out; otherwise it is handed to the generator whole, and the
-     * generator walks it with Ant's default excludes, not with plexus-utils' longer list.
+     * source under it that the generator's walk leaves out or that walk would fail on a directory it cannot list;
+     * otherwise it is handed to the generator whole, and the generator walks it with Ant's default excludes, not with
+     * plexus-utils' longer list.
      */
     @Test
     void leavesOutWhatTheDefaultExcludesName(@TempDir Path root) throws IOException {
@@ -383,6 +384,28 @@ class SourcePatternsTest {
         SourcePatterns patterns = new SourcePatterns(List.of(), List.of("fx/drafts/**"), '/');
 
         assertEquals(List.of(orders), patterns.select(root));
+    }
+
+    /**
+     * The scanner of the compiler reads a directory it cannot list as an empty one, so such a directory fails no
+     * selection: the sources beside it are selected, and none inside it. The test is aborted where the directory can
+     * still be listed, as by a user who may read anything.
+     */
+    @Test
+    void skipsADirectoryThatCannotBeListed(@TempDir Path root) throws IOException {
+        Path orders = root.resolve("fx/Orders.java");
+        Path locked = Files.createDirectories(root.resolve("fx/locked"));
+        Files.writeString(orders, "", StandardCharsets.UTF_8);
+        Files.writeString(locked.resolve("Locked.java"), "", StandardCharsets.UTF_8);
+        try {
+            assumeTrue(MavenFixture.forbidListing(locked), "the directory can still be listed here");
+
+            SourcePatterns patterns = new SourcePatterns(List.of(), List.of("fx/drafts/**"), '/');
+
+            assertEquals(List.of(orders), patterns.select(root));
+        } finally {
+            MavenFixture.allowListing(locked);
+        }
     }
 
     /** The empty list, followed by a list of each of {@code patterns} alone. */

@@ -13,13 +13,16 @@ import java.io.Reader;
 import java.io.UncheckedIOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
@@ -1342,6 +1345,37 @@ public final class MavenFixture {
     }
 
     /** Removes {@code root} and everything below it, deepest entry first; an absent root is nothing to do. */
+    /**
+     * Takes every permission on {@code directory} away, so that it cannot be listed, and tells whether it no longer can
+     * be: a user who may read anything still lists it, and a file system without POSIX permissions changes nothing.
+     * Where it still can be listed, its permissions are given back at once.
+     *
+     * @param directory the directory to lock
+     * @return {@code true} if the directory can no longer be listed
+     * @throws IOException if its permissions cannot be changed
+     */
+    public static boolean forbidListing(Path directory) throws IOException {
+        if (!FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+            return false;
+        }
+        Files.setPosixFilePermissions(directory, Set.of());
+        if (directory.toFile().list() == null) {
+            return true;
+        }
+        allowListing(directory);
+        return false;
+    }
+
+    /**
+     * Gives the owner of {@code directory} back every permission on it, so that it can be listed and deleted again.
+     *
+     * @param directory a directory {@link #forbidListing} may have locked
+     * @throws IOException if its permissions cannot be changed
+     */
+    public static void allowListing(Path directory) throws IOException {
+        Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwx------"));
+    }
+
     private static void deleteRecursively(Path root) throws IOException {
         if (!Files.exists(root)) {
             return;

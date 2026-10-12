@@ -1,7 +1,6 @@
 package io.github.graphmaquina.maven;
 
 import java.io.IOException;
-import java.nio.file.FileSystemLoopException;
 import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -71,7 +70,8 @@ import java.util.regex.Pattern;
  * <p>Those extra entries only take effect when this plugin lists files. A root the execution does not narrow is
  * handed to the generator whole, unless javac compiles a source under it inside a directory whose name a default
  * exclude names, such as {@code old~}, which this scanner enters while the generator's walk leaves it out with
- * everything inside it. The generator walks a root handed whole with Ant's default excludes, not with plexus-utils'
+ * everything inside it, or the generator's walk would fail on a directory that cannot be listed, which this scanner
+ * reads as an empty one. The generator walks a root handed whole with Ant's default excludes, not with plexus-utils'
  * longer list: a file under such a root inside one of those directories, or named {@code -darcs-backup*}, is read
  * by the generator although javac never compiles it.</p>
  */
@@ -114,9 +114,9 @@ final class SourcePatterns {
     /**
      * Whether these patterns narrow the sources of a root at all. When they do not, javac compiles every Java
      * source under the root that the default excludes of its scanner leave. A root the execution does not narrow
-     * is handed to the generator whole, unless javac compiles a source under it that the generator's walk leaves out,
-     * and the generator walks it with Ant's default excludes, not with plexus-utils' longer list; the class
-     * description says what that leaves in.
+     * is handed to the generator whole, unless javac compiles a source under it that the generator's walk leaves out
+     * or that walk would fail on a directory it cannot list, and the generator walks it with Ant's default excludes,
+     * not with plexus-utils' longer list; the class description says what that leaves in.
      *
      * @return {@code true} if the execution declares includes or excludes
      */
@@ -132,11 +132,12 @@ final class SourcePatterns {
      * <p>A link that leads back into a directory the walk is already inside is skipped, as the generator's own walk
      * skips it, so the walk ends. The scanner of the compiler follows such a link instead, again and again until
      * the file system refuses to resolve the path, and so lists the files below it once more under every longer
-     * path. javac reads a file once whatever paths name it, so both select the same files.</p>
+     * path. javac reads a file once whatever paths name it, so both select the same files. A directory that cannot be
+     * listed, the root included, is read as an empty one, as the scanner of the compiler reads it.</p>
      *
      * @param root a source root of the compilation
      * @return the selected files, none when the root does not exist
-     * @throws IOException if the root, or a directory below it, cannot be walked
+     * @throws IOException if the root, or a directory below it, fails while it is being listed
      */
     List<Path> select(Path root) throws IOException {
         if (!Files.isDirectory(root)) {
@@ -163,11 +164,8 @@ final class SourcePatterns {
                     }
 
                     @Override
-                    public FileVisitResult visitFileFailed(Path file, IOException failure) throws IOException {
-                        if (failure instanceof FileSystemLoopException) {
-                            return FileVisitResult.CONTINUE;
-                        }
-                        throw failure;
+                    public FileVisitResult visitFileFailed(Path file, IOException failure) {
+                        return FileVisitResult.CONTINUE;
                     }
                 });
         selected.sort(Comparator.<Path>naturalOrder());
