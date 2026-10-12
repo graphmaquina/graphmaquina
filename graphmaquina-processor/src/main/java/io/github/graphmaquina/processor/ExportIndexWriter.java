@@ -39,8 +39,8 @@ import javax.tools.StandardLocation;
  * would name a declaration this compilation never processed, which is published not at all; the writer runs
  * after everything else, so nothing reads a count of errors afterwards. Nor is an index published that would name
  * a machine this compilation was handed but did not verify, and that says nothing: when this processor reported no
- * error, only a value javac refuses once processing is over leaves such a machine unverified, and javac reports
- * that value itself.</p>
+ * error, only a value of that machine's own declarations that no round resolved leaves it unverified, and javac
+ * refuses that value itself once processing is over.</p>
  */
 final class ExportIndexWriter {
 
@@ -63,7 +63,7 @@ final class ExportIndexWriter {
      * One that is not among {@code handedMachines} either, the machines some round handed to the processor, is
      * reported as {@code SG602}: such a declaration was never processed, which is what happens to a source javac
      * compiles implicitly, from the source path, instead of being handed it. One that was handed is reported by
-     * javac, which refuses a value of it once processing is over.
+     * javac, which refuses, once processing is over, a value of its declarations that no round resolved.
      */
     void publish(CompileManifest manifest, Set<String> verifiedLocalTypes, Set<String> handedMachines,
             Set<String> generatedQualifiedNames) {

@@ -22,6 +22,7 @@ import java.nio.file.FileSystemNotFoundException;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -43,6 +44,7 @@ import javax.lang.model.element.TypeElement;
 import javax.lang.model.type.ArrayType;
 import javax.lang.model.type.DeclaredType;
 import javax.lang.model.type.TypeMirror;
+import javax.lang.model.util.ElementFilter;
 import javax.tools.FileObject;
 import javax.tools.StandardLocation;
 
@@ -58,9 +60,9 @@ import javax.tools.StandardLocation;
  *
  * <p>What the processor learns is kept for the whole compilation, not for one round: a machine is resolved
  * once, its companion is handed to the {@code Filer} once, and a machine that failed is not built again by the
- * set that holds it. Each declaration is handled in the round it appears in, and the round that ends the
- * compilation publishes what the compilation verified, unless this processor reported an error or javac says the
- * round before raised one.</p>
+ * set that holds it. Each declaration is handled in the round it appears in, unless it waits for a later round as
+ * the last paragraph says, and the round that ends the compilation publishes what the compilation verified, unless
+ * this processor reported an error or javac says the round before raised one.</p>
  *
  * <p>Every round reports the generated vocabulary written where no builder reads it, and the machine that
  * vocabulary belongs to is not generated, nor is a machine whose vocabulary sits on the facade of another machine,
@@ -80,11 +82,17 @@ import javax.tools.StandardLocation;
  * compiles implicitly, from the source path, so a set that holds such a machine of this compilation is reported
  * and gets no companion either, and an index that names one is not published.</p>
  *
- * <p>A value javac could not resolve, such as a class literal that names no type, is javac's alone to refuse. javac
- * hands it to the processor unread and reports it once processing is over. A machine whose declarations, on the
- * facade or on one of its members, hold such a value is built like a machine whose vocabulary is misplaced: every
- * other problem of its declarations is reported, but nothing is concluded from its graph as a whole, which misses
- * what that value declares, and it gets no companion; nor is the index, which names it, published.</p>
+ * <p>A class literal javac could not resolve yet may name a type a later round brings: one another processor
+ * generates, or a companion this one writes. javac hands such a value to the processor unread, resolves it in the
+ * round that brings that type, and reports it once processing is over only if no round did. The values of an
+ * annotation this processor does not claim, the application's or another tool's, are never read, so they never
+ * hold a machine back, even where they name its own companion. A machine some round handed whose own
+ * declarations, on the facade or on one of its members, hold such a value waits instead, by name, for the first
+ * round that resolves it, and is built and generated in that round; so does a set that holds it. A value the round
+ * that ends processing still finds unresolved is javac's alone to refuse: that machine is then built like a machine
+ * whose vocabulary is misplaced, every other problem of its declarations is reported, but nothing is concluded from
+ * its graph as a whole, which misses what that value declares, and neither it nor a set that holds it gets a
+ * companion; nor is the index, which names it, published.</p>
  */
 public final class StateGraphProcessor extends AbstractProcessor {
 
@@ -107,6 +115,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
     private Set<String> failed;
     private Set<String> withheld;
     private Set<String> handed;
+    private Set<String> deferred;
+    private Set<String> deferredSets;
     private Set<String> refused;
     private Set<String> generated;
     private Set<String> verified;
@@ -137,6 +147,8 @@ public final class StateGraphProcessor extends AbstractProcessor {
         failed = new HashSet<>();
         withheld = new HashSet<>();
         handed = new HashSet<>();
+        deferred = new LinkedHashSet<>();
+        deferredSets = new LinkedHashSet<>();
         refused = new HashSet<>();
         generated = new LinkedHashSet<>();
         verified = new LinkedHashSet<>();
@@ -182,12 +194,20 @@ public final class StateGraphProcessor extends AbstractProcessor {
         validateExports();
         validateRuntimeNames(round);
         failed.addAll(legacy.report(round));
+        for (TypeElement type : waited(deferred)) {
+            resolve(type, round);
+        }
         for (Element element : round.getElementsAnnotatedWith(GenerateGraphApi.class)) {
             handed.add(((TypeElement) element).getQualifiedName().toString());
             resolve((TypeElement) element, round);
         }
-        for (Element element : round.getElementsAnnotatedWith(StateGraphs.class)) {
-            TypeElement type = (TypeElement) element;
+        List<TypeElement> declaredSets = waited(deferredSets);
+        declaredSets.addAll(ElementFilter.typesIn(round.getElementsAnnotatedWith(StateGraphs.class)));
+        for (TypeElement type : declaredSets) {
+            if (holdsDeferred(type)) {
+                deferredSets.add(type.getQualifiedName().toString());
+                continue;
+            }
             Optional<SetModel> set = sets.build(type, (TypeElement machine) -> held(machine, type, round));
             Optional<Emitted> companion = set
                     .filter((SetModel model) -> !refused.contains(type.getQualifiedName().toString()))
@@ -199,6 +219,35 @@ public final class StateGraphProcessor extends AbstractProcessor {
         }
         publish(round);
         return true;
+    }
+
+    /**
+     * The declarations {@code names} kept waiting for a later round, looked up again by name, since javac enters
+     * every source again in each round and only the elements of that round see the types it brought. {@code names}
+     * is emptied: a declaration that must wait still is put back in it.
+     */
+    private List<TypeElement> waited(Set<String> names) {
+        List<TypeElement> types = new ArrayList<>();
+        for (String name : names) {
+            types.add(processingEnv.getElementUtils().getTypeElement(name));
+        }
+        names.clear();
+        return types;
+    }
+
+    /**
+     * Whether a method the set {@code type} declares returns a machine that waits for a later round, so that the
+     * set, whose companion could not build that machine yet, waits with it.
+     */
+    private boolean holdsDeferred(TypeElement type) {
+        for (ExecutableElement method : ElementFilter.methodsIn(type.getEnclosedElements())) {
+            if (method.getReturnType() instanceof DeclaredType returned
+                    && returned.asElement() instanceof TypeElement machine
+                    && deferred.contains(machine.getQualifiedName().toString())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -387,11 +436,13 @@ public final class StateGraphProcessor extends AbstractProcessor {
     }
 
     /**
-     * Whether a declaration of {@code type}, on the facade or on one of its members, holds a value javac could not
-     * resolve, nested annotations and arrays included. javac hands such a value to the processor as the text of an
-     * error, a string where its element declares something else, and reports it once processing is over.
+     * Whether a declaration of {@code type}, on the facade or on one of its members, holds a value of an annotation
+     * this processor claims that javac has not resolved, nested annotations and arrays included. javac hands such a
+     * value to the processor as the text of an error, a string where its element declares something else, enters
+     * every source again in the next round, where the value names a type that round brought, and reports it once
+     * processing is over if none did. The values of any other annotation are never read: no model is built from them.
      */
-    private static boolean holdsUnresolvedValue(TypeElement type) {
+    private boolean holdsUnresolvedValue(TypeElement type) {
         if (unresolved(type)) {
             return true;
         }
@@ -403,9 +454,11 @@ public final class StateGraphProcessor extends AbstractProcessor {
         return false;
     }
 
-    private static boolean unresolved(Element element) {
+    private boolean unresolved(Element element) {
         for (AnnotationMirror mirror : element.getAnnotationMirrors()) {
-            if (unresolved(mirror)) {
+            if (mirror.getAnnotationType().asElement() instanceof TypeElement annotation
+                    && manifests.supportedAnnotationTypes().contains(annotation.getQualifiedName().toString())
+                    && unresolved(mirror)) {
                 return true;
             }
         }
@@ -504,15 +557,17 @@ public final class StateGraphProcessor extends AbstractProcessor {
     }
 
     /**
-     * A machine's model, built once for the whole compilation. Only a machine that is a root element of the round
+     * A machine's model, built once for the whole compilation. Only a machine some round handed to the processor
      * gets its companion generated, and only such a machine counts as verified for the index; one that is not, a
      * machine from the classpath, which carries its companion in its own jar already, is built on demand for the
-     * set that holds it. A machine whose vocabulary is written where no builder reads it, or on the facade of
-     * another machine, is still built, so every other problem of its declarations is reported, but without the
-     * checks of its graph as a whole, which misses that vocabulary, and it is never generated. Nor is a machine
-     * whose companion name was refused, which is still built and checked like every other machine of the round,
-     * nor a machine whose declarations hold a value javac could not resolve, which is built as one whose vocabulary
-     * is misplaced is: javac refuses that value.
+     * set that holds it. A handed machine whose declarations hold a value javac has not resolved is not built yet:
+     * it waits for a later round, which may bring the type that value names, and is built in the first round that
+     * resolves it. One that the round ending processing still finds unresolved, like a machine from the classpath
+     * whose declarations hold such a value, is built as a machine whose vocabulary is misplaced is: javac refuses
+     * that value. A machine whose vocabulary is written where no builder reads it, or on the facade of another
+     * machine, is still built, so every other problem of its declarations is reported, but without the checks of
+     * its graph as a whole, which misses that vocabulary, and it is never generated. Nor is a machine whose
+     * companion name was refused, which is still built and checked like every other machine of the round.
      */
     private Optional<MachineModel> resolve(TypeElement type, RoundEnvironment round) {
         String name = type.getQualifiedName().toString();
@@ -524,13 +579,16 @@ public final class StateGraphProcessor extends AbstractProcessor {
             return Optional.empty();
         }
         boolean unresolved = holdsUnresolvedValue(type);
+        if (unresolved && handed.contains(name) && !round.processingOver()) {
+            deferred.add(name);
+            return Optional.empty();
+        }
         Optional<MachineModel> model = build(type, !withheld.contains(name) && !unresolved);
         if (model.isEmpty() || withheld.contains(name) || refused.contains(name) || unresolved) {
             failed.add(name);
             return Optional.empty();
         }
-        boolean rootThisRound = round.getRootElements().contains(type);
-        Optional<Emitted> companion = rootThisRound
+        Optional<Emitted> companion = handed.contains(name)
                 ? Optional.of(MachineGenerator.emit(model.get(), invocations)) : Optional.empty();
         if (companion.isPresent() && !scope.admits(type, SymbolNames.runtimeName(model.get().facadeName()), Set.of(),
                 MachineGenerator.FIXED_FIELDS, companion.get().written())) {
@@ -550,8 +608,9 @@ public final class StateGraphProcessor extends AbstractProcessor {
     /**
      * The model of {@code type}, read with the vocabulary generated for it; {@code complete} is false for a machine
      * whose graph misses vocabulary of its own: written where no builder reads it, or on the facade of another
-     * machine, whose builder refuses it, or holding a value javac could not resolve. A compilation whose manifest
-     * could not be trusted has no vocabulary to read anything with, and has already said so once as {@code SG602}.
+     * machine, whose builder refuses it, or holding a value of its own declarations that javac did not resolve. A
+     * compilation whose manifest could not be trusted has no vocabulary to read anything with, and has already said
+     * so once as {@code SG602}.
      */
     private Optional<MachineModel> build(TypeElement type, boolean complete) {
         return typed.flatMap((TypedMachineModelBuilder builder) -> builder.build(type, complete));
@@ -561,8 +620,9 @@ public final class StateGraphProcessor extends AbstractProcessor {
      * Publishes the provisional index of this compilation, once, in the round that ends it, unless this processor
      * reported an error or {@code round.errorRaised()} says the round before raised one: what a compilation that
      * failed exports is not known. An error javac reports once processing is over, such as one in a generated
-     * source, comes after the publication and does not undo it; one in a machine some round handed to the processor
-     * kept that machine from being verified, which keeps the index from being published.
+     * source or in a value of an annotation this processor does not claim, comes after the publication and does not
+     * undo it; a value of a handed machine's own declarations that no round resolved kept that machine from being
+     * verified, which keeps the index from being published.
      */
     private void publish(RoundEnvironment round) {
         if (!round.processingOver() || round.errorRaised() || diagnostics.errors() > 0) {

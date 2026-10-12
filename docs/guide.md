@@ -4018,7 +4018,10 @@ symbol category may be an ordinary javac error rather than an `SG` diagnostic: w
 identifier belongs, or a constant of another machine's catalogue, is refused by javac before any GraphMaquina
 code runs. A mistyped generated symbol, such as `DocActionsRefs.Publsh.class`, is javac's alone to refuse too, as
 `cannot find symbol` once annotation processing is over: the processor still reports every other problem of that
-machine's declarations, but none about its graph as a whole, and generates no companion for it.
+machine's declarations, but none about its graph as a whole, and generates no companion for it. A class another
+annotation processor generates can still be named, such as an exception in `failsOn`: the processor builds that
+machine, and a set that holds it, in the round that brings the class. The values of annotations GraphMaquina does not
+own are left to javac, so an annotation of your own on a facade may even name the machine's companion.
 
 ### Graph and declaration diagnostics
 
