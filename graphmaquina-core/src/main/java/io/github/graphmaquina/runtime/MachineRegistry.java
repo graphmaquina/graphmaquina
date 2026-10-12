@@ -489,8 +489,10 @@ public final class MachineRegistry implements AutoCloseable {
         }
 
         /**
-         * Bounds how deep a cascade may go, the root being at depth 0 and the exit of a sub-machine one level deeper
-         * than the step that ended it; the default is 10, and a value below 1 is refused.
+         * Bounds how deep a cascade may go, the root being at depth 0. The exit of a sub-machine counts at its own
+         * depth: one level below the step that ended the child or, when the child stood in a terminal state while its
+         * parent was still running the step that entered the bound state, one level below that step. The default is
+         * 10, and a value below 1 is refused.
          */
         public Builder maxCascadeDepth(int depth) {
             requireUnused();

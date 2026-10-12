@@ -69,8 +69,10 @@ class SubmachineGenerationTest {
         assertEquals(1, set.split("PaymentsRuntime\\.graph\\(", -1).length - 1, set);
         assertFalse(set.contains("asyncTimeout"), set);
         String comment = "\n" + " ".repeat(9) + "* ";
-        assertTrue(set.contains(comment + "Bounds how deep a cascade may go, the root being at depth 0 and the exit"
-                + " of a sub-machine one level" + comment + "deeper than the step that ended it; the default is 10, and"
+        assertTrue(set.contains(comment + "Bounds how deep a cascade may go, the root being at depth 0. The exit of"
+                + " a sub-machine counts at its" + comment + "own depth: one level below the step that ended the child"
+                + " or, when the child stood in a terminal" + comment + "state while its parent was still running the"
+                + " step that entered the bound state, one level below that" + comment + "step. The default is 10, and"
                 + " a value below 1 is refused.\n"), set);
     }
 

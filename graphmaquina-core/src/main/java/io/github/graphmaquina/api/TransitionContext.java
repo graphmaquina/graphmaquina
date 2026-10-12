@@ -59,8 +59,9 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
     S to();
 
     /**
-     * 0 at the root transition; n at the n-th level of cascade, where the exit of a sub-machine is one level deeper
-     * than the step that ended it.
+     * 0 at the root transition; n at the n-th level of cascade. The exit of a sub-machine runs one level below the step
+     * that ended the child, unless the child stood in a terminal state while its parent was still running the step that
+     * entered the bound state: that exit runs once that step is over, one level below it.
      */
     int depth();
 

@@ -2596,11 +2596,11 @@ machines. Three rules make the contract:
   left the state, or holds another child or none there. A child for which no binding finds a parent is a free machine
   and runs as usual.
 - When a step of a bound child ends in one of its terminal states, that state selects the parent's exit. The exit runs
-  in the same unit of work, one level deeper, and commits with the child. The binding is judged when the child's step
-  begins: when the step ends, the exit runs unless the parent is in flight, or the step itself, through its action,
-  moved the parent out of the bound state or entered it again. The parent's state and `childOf` are not read again,
-  so replacing the parent's child during the child's own action does not cancel the exit; to keep it from running,
-  move the parent out of the state, or restart it there, from that action.
+  in the same unit of work, one level below that step, and commits with the child. The binding is judged when the
+  child's step begins: when the step ends, the exit runs unless the parent is in flight, or the step itself, through
+  its action, moved the parent out of the bound state or entered it again. The parent's state and `childOf` are not
+  read again, so replacing the parent's child during the child's own action does not cancel the exit; to keep it from
+  running, move the parent out of the state, or restart it there, from that action.
 
 ### Declare a sub-machine
 
@@ -2745,7 +2745,8 @@ which binds a payment too. Capturing the balance then exits through `BALANCE_PAI
 the calls that ran them: an observer sees three calls in all, the booking's `book` and the two captures. When an exit
 leaves a parent in a terminal state that a binding of its own parent maps, the next exit runs one more level up. Each
 level counts for `maxCascadeDepth`. A child that ends while its parent is still running the edge that entered the
-state, as when that edge's action captures the payment, exits once that edge's step is over.
+state, as when that edge's action captures the payment, exits once that edge's step is over. That exit runs one level
+below the edge's step, at the same depth as the capture, and counts for `maxCascadeDepth` at that depth.
 
 An exit is an ordinary edge of the parent, so its failure routes apply as on any edge. When the desk answers that no
 room is left, `holdRoom` fails: the booking takes the route `NO_ROOM` to `CANCELLED`, the whole call commits, and the

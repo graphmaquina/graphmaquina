@@ -19,8 +19,9 @@ import java.util.Optional;
  * @param from the state the entity was in when the action was entered
  * @param transition the identifier that selected the edge being executed
  * @param to the state the transition was heading for
- * @param depth 0 at the root transition, n at the n-th level of cascade, where the exit of a sub-machine is one level
- *     deeper than the step that ended it
+ * @param depth 0 at the root transition, n at the n-th level of cascade; the exit of a sub-machine runs one level
+ *     below the step that ended the child, unless the child stood in a terminal state while its parent was still
+ *     running the step that entered the bound state: that exit runs once that step is over, one level below it
  * @param input the operation argument, or empty when none was provided
  * @param <E> the entity type of the machine
  * @param <S> the state enum of the machine

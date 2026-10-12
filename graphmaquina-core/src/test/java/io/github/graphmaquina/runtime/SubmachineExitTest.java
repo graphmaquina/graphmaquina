@@ -55,6 +55,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -206,6 +207,17 @@ class SubmachineExitTest {
                                                                                            Booking booking, int depth) {
         return new SubmachineStart<>(PAYMENTS, balance, PaymentStatus.AUTHORIZING, PaymentStatus.AUTHORIZING, BOOKINGS,
                 booking, BookingStatus.BALANCE, depth);
+    }
+
+    /** A booking action whose CANCEL cascades the capture of {@code deposit}; every other edge just succeeds. */
+    private static Function<TransitionContext<Booking, BookingStatus, BookingTransition>, ActionOutcome>
+            cancellingCaptures(Payment deposit) {
+        return (TransitionContext<Booking, BookingStatus, BookingTransition> ctx) -> {
+            if (ctx.transition() == BookingTransition.CANCEL) {
+                ctx.cascade(PAYMENTS, deposit, PaymentTransition.CAPTURE);
+            }
+            return ActionOutcome.ok();
+        };
     }
 
     /**
@@ -419,6 +431,90 @@ class SubmachineExitTest {
             assertEquals(List.of(new SubmachineStart<>(PAYMENTS, deposit, PaymentStatus.VOIDED,
                     PaymentStatus.AUTHORIZING, BOOKINGS, booking, BookingStatus.DEPOSIT, 0),
                     balanceStart(balance, booking, 1)), outcome.starts());
+            assertEquals(BookingStatus.BALANCE, booking.status());
+            assertEquals(PaymentStatus.CAPTURED, deposit.status());
+        }
+    }
+
+    /**
+     * A direct exit runs one level below the child's step that ended the child: cancelling another booking, at depth 0,
+     * cascades the capture of the deposit, at depth 1, and the exit DEPOSIT_PAID runs at depth 2, which a
+     * maxCascadeDepth of 2 still admits. The contexts of both actions report those depths.
+     */
+    @Test
+    void aDirectExitRunsOneLevelBelowTheChildStepThatEndedTheChild() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Booking owner = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit)
+                .attachBalance(new Payment("d2", PaymentStatus.AUTHORIZING));
+        Booking booking = new Booking("b2", BookingStatus.REQUESTED);
+        billing.bookingActions.behaviour = cancellingCaptures(deposit);
+        try (MachineRegistry registry = MachineRegistry.builder().maxCascadeDepth(2).add(billing.bookingMachine())
+                .add(billing.paymentMachine()).build()) {
+            Outcome<Booking, BookingStatus, BookingTransition> outcome =
+                    registry.of(BOOKINGS).execute(booking, BookingTransition.CANCEL);
+            assertEquals(OutcomeCode.APPLIED, outcome.code());
+            assertEquals(List.of("Booking#b2:REQUESTED-CANCEL>CANCELLED@0", "Payment#d1:AUTHORIZING-CAPTURE>CAPTURED@1",
+                    "Booking#b1:DEPOSIT-DEPOSIT_PAID>BALANCE@2"), described(outcome.records()));
+            assertEquals(List.of("Payment#d1:AUTHORIZING-CAPTURE>CAPTURED@1"), billing.paymentActions.calls);
+            assertEquals(List.of("Booking#b2:REQUESTED-CANCEL>CANCELLED@0",
+                    "Booking#b1:DEPOSIT-DEPOSIT_PAID>BALANCE@2"), billing.bookingActions.calls);
+            assertEquals(BookingStatus.BALANCE, owner.status());
+        }
+    }
+
+    /**
+     * The same direct exit under a maxCascadeDepth of 1: its depth, 2, exceeds the bound, so the call aborts with the
+     * capture that ended the deposit, the exit's action never runs, and nothing is written.
+     */
+    @Test
+    void aDirectExitBelowACascadedChildExceedsTheCascadeDepth() {
+        Payment deposit = new Payment("d1", PaymentStatus.AUTHORIZING);
+        Booking owner = new Booking("b1", BookingStatus.DEPOSIT).attachDeposit(deposit)
+                .attachBalance(new Payment("d2", PaymentStatus.AUTHORIZING));
+        Booking booking = new Booking("b2", BookingStatus.REQUESTED);
+        billing.bookingActions.behaviour = cancellingCaptures(deposit);
+        try (MachineRegistry registry = MachineRegistry.builder().maxCascadeDepth(1).add(billing.bookingMachine())
+                .add(billing.paymentMachine()).build()) {
+            StateMachine<Booking, BookingStatus, BookingTransition> bookings = registry.of(BOOKINGS);
+            CascadeDepthExceededException error = assertThrows(CascadeDepthExceededException.class,
+                    () -> bookings.execute(booking, BookingTransition.CANCEL));
+            assertEquals(1, error.maxDepth());
+            assertEquals("transition aborted in Payment/PaymentStatus AUTHORIZING -CAPTURE-> CAPTURED: the cascade"
+                    + " exceeds maxCascadeDepth = 1 [route Booking/BookingStatus#b2]", error.getMessage());
+            assertEquals(List.of("Booking#b2:REQUESTED-CANCEL>CANCELLED@0"), billing.bookingActions.calls);
+            assertEquals(PaymentStatus.AUTHORIZING, deposit.status());
+            assertEquals(BookingStatus.DEPOSIT, owner.status());
+            assertEquals(BookingStatus.REQUESTED, booking.status());
+        }
+    }
+
+    /**
+     * A deferred exit runs once the step that entered the node is over, one level below that step, whatever the depth
+     * of the child's step that ended the child: BOOK, at depth 0, captures the deposit at depth 1 while the booking is
+     * in flight, and the exit DEPOSIT_PAID then runs at depth 1 as well, so a maxCascadeDepth of 1 admits it and the
+     * call commits. The contexts of both actions report depth 1.
+     */
+    @Test
+    void aDeferredExitRunsOneLevelBelowTheStepThatEnteredTheNode() {
+        Payment deposit = new Payment("d1", PaymentStatus.VOIDED);
+        Booking booking = new Booking("b1", BookingStatus.REQUESTED).attachDeposit(deposit)
+                .attachBalance(new Payment("d2", PaymentStatus.AUTHORIZING));
+        billing.bookingActions.behaviour = (TransitionContext<Booking, BookingStatus, BookingTransition> ctx) -> {
+            if (ctx.transition() == BookingTransition.BOOK) {
+                ctx.cascade(PAYMENTS, deposit, PaymentTransition.CAPTURE);
+            }
+            return ActionOutcome.ok();
+        };
+        try (MachineRegistry registry = MachineRegistry.builder().maxCascadeDepth(1).add(billing.bookingMachine())
+                .add(billing.paymentMachine()).build()) {
+            Outcome<Booking, BookingStatus, BookingTransition> outcome =
+                    registry.of(BOOKINGS).execute(booking, BookingTransition.BOOK);
+            assertEquals(OutcomeCode.APPLIED, outcome.code());
+            assertEquals(List.of("Booking#b1:REQUESTED-BOOK>DEPOSIT@0", "Payment#d1:AUTHORIZING-CAPTURE>CAPTURED@1",
+                    "Booking#b1:DEPOSIT-DEPOSIT_PAID>BALANCE@1"), described(outcome.records()));
+            assertEquals(List.of("Payment#d1:AUTHORIZING-CAPTURE>CAPTURED@1"), billing.paymentActions.calls);
+            assertEquals(List.of("Booking#b1:REQUESTED-BOOK>DEPOSIT@0", "Booking#b1:DEPOSIT-DEPOSIT_PAID>BALANCE@1"),
+                    billing.bookingActions.calls);
             assertEquals(BookingStatus.BALANCE, booking.status());
             assertEquals(PaymentStatus.CAPTURED, deposit.status());
         }

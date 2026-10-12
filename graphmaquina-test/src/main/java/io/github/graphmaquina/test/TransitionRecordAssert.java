@@ -66,8 +66,10 @@ public final class TransitionRecordAssert<E, S extends Enum<S>, T extends Enum<T
     }
 
     /**
-     * 0 at the root transition and n at the n-th level of cascade, where the exit of a sub-machine is one level
-     * deeper than the step that ended it, exactly as the engine recorded it.
+     * 0 at the root transition and n at the n-th level of cascade, exactly as the engine recorded it. The exit of a
+     * sub-machine runs one level below the step that ended the child, unless the child stood in a terminal state while
+     * its parent was still running the step that entered the bound state: that exit runs once that step is over, one
+     * level below it.
      */
     public TransitionRecordAssert<E, S, T> hasDepth(int expected) {
         Checks.equal(context, "depth", expected, actual.depth());

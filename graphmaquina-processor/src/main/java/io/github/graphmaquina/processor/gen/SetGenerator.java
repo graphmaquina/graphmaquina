@@ -309,8 +309,10 @@ public final class SetGenerator {
         out.line("return this;");
         out.close();
         out.blank();
-        forward(out, "Bounds how deep a cascade may go, the root being at depth 0 and the exit of a sub-machine one"
-                + " level deeper than the step that ended it; the default is 10, and a value below 1 is refused.",
+        forward(out, "Bounds how deep a cascade may go, the root being at depth 0. The exit of a sub-machine counts at"
+                + " its own depth: one level below the step that ended the child or, when the child stood in a terminal"
+                + " state while its parent was still running the step that entered the bound state, one level below"
+                + " that step. The default is 10, and a value below 1 is refused.",
                 "maxCascadeDepth", "int " + setters.get("depth"),
                 registry + ".maxCascadeDepth(" + setters.get("depth") + ");");
         forward(out, "Bounds how many watch reactions may follow one another; the default is 10, and a value below 1"
