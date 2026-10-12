@@ -20,7 +20,9 @@ import java.time.Duration;
  *   InterruptedException from the observer or from that backend, once contained, interrupts the thread again.</li>
  *   <li>An observer whose {@code onStarted} threw still receives its end event.</li>
  *   <li>An Error it throws, or that the backend of its warning throws, propagates unchanged, as everywhere in the
- *   library, and voids these guarantees for that call.</li>
+ *   library, and voids these guarantees for that call. So does a VirtualMachineError, a StackOverflowError for one,
+ *   that strikes again while the call notifies its observers, as it can when the call ended in one: notifying them
+ *   can need the stack or the memory that ran out, so they are notified best effort, and that Error propagates.</li>
  *   <li>Its callbacks run with the thread marked as running a call, so an {@code execute} or {@code reevaluate} it
  *   makes on its own thread throws {@code ReentrantTransitionException}, contained like any other exception; one
  *   submitted through {@code async()} runs as a separate call on the executor's thread, unless it runs on the

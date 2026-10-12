@@ -79,6 +79,12 @@ import lombok.RequiredArgsConstructor;
  * {@link #close()} closes the default executors of the registry's machines. A standalone machine runs in a registry
  * of its own too, but that registry is internal and unreachable, so nothing can close it, and the machine's default
  * executor is never closed.
+ *
+ * <p>A cascade, the exit of a sub-machine and a watch reaction each run one level deeper on the stack of the calling
+ * thread, so that stack bounds maxCascadeDepth and maxWatchChain too. A call that outgrows it meets a
+ * StackOverflowError, which reaches the actions on its way up, as {@link io.github.graphmaquina.api.TransitionContext}
+ * says, and otherwise ends the call; in a watch chain, the root and the reactions before the one that overflowed have
+ * committed already. Neither the registry nor the thread is left unusable by it: later calls run as before.
  */
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class MachineRegistry implements AutoCloseable {

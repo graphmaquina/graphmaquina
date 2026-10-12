@@ -2365,6 +2365,15 @@ Each setting is checked where it is given: a `maxCascadeDepth` or `maxWatchChain
 `IllegalArgumentException`. The builder is single-use: once `build()` succeeds, every method throws
 `IllegalStateException`.
 
+Both limits count levels that run on the stack of the calling thread: each cascade, sub-machine exit and watch
+reaction runs one level deeper, so that stack bounds them too. As a measure, with trivial actions on JDK 21, a thread
+of 1 MiB holds some hundreds of cascade levels or watch reactions, and one of 8 MiB some thousands; how many exactly
+depends on the JIT and on the frames of your own callbacks. A call that goes deeper than its thread's stack meets a
+`StackOverflowError`, which reaches your actions on its way up, as [cascade a transition](#cascade-a-transition)
+says, and otherwise ends the call; in a watch chain, the root and the reactions before the one that overflowed have
+committed already. The registry and the thread are not left unusable by it: later calls run as before. Keep the
+limits within what the stacks of your threads hold, or run deep calls on threads with a larger stack.
+
 Close the set with try-with-resources or your application's shutdown lifecycle. `close()` closes executors
 owned by the set and waits for submitted operations to finish. An executor you supply remains your
 responsibility. Avoid sharing a short-lived set across requests that outlive its scope.
@@ -3066,7 +3075,10 @@ An observer watches without taking part. A throwable that is not an `Error` is l
 propagates. The warning is best effort: anything but an `Error` from its backend, a checked exception included, is
 contained too, while an `Error` from it propagates unchanged. An `InterruptedException` that the observer or that
 backend throws, once contained, interrupts the thread again. Either `Error`, the observer's own or its warning
-backend's, voids for that call the promise of one `onStarted` and exactly one end event. That warning is the only record
+backend's, voids for that call the promise of one `onStarted` and exactly one end event, and so does a
+`StackOverflowError` or another `VirtualMachineError` that strikes again while the call tells its observers, as it
+can when the call ended in one: telling them can need the stack or the memory that ran out, so they are told best
+effort, and that `Error` propagates. That warning is the only record
 logged on `io.github.graphmaquina` itself: the lines of each call go to its child logger
 `io.github.graphmaquina.runtime`, as [debug a call](#debug-a-call-logs-and-the-calls-flow) describes. An observer cannot
 start a transition on its own thread either: an operation called from an observer throws `ReentrantTransitionException`,
