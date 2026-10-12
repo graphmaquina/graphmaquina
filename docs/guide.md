@@ -2277,10 +2277,13 @@ try (ExecutorService operations = Executors.newVirtualThreadPerTaskExecutor();
 
 The example waits before closing. The executor is closed by the application's try-with-resources statement,
 not by the machine set. With the defaults, closing a set closes its owned executors and waits for their
-submitted work. With a custom executor, the caller owns shutdown and must keep the machines and any service
-dependencies alive until operations finish. Closing the registry is not a general cancellation barrier for
-synchronous calls or work submitted through a still-running custom executor. A rejected submission yields an
-exceptionally completed future.
+submitted work. An interrupt of the thread that closes the set, before or while it waits, reaches every owned
+executor the set has not finished closing, not only the one it waits for: each interrupts the threads of its
+operations, so a call waiting for a stage aborts as interrupted, and `close()` still waits for them to end, then
+returns with the thread interrupted. With a custom executor, the caller owns shutdown and must keep the machines
+and any service dependencies alive until operations finish. Closing the registry is not a general cancellation
+barrier for synchronous calls or work submitted through a still-running custom executor. A rejected submission yields
+an exceptionally completed future.
 
 Avoid using the same small fixed executor for operation workers and service completions scheduled by
 those operations. If every worker is blocked waiting for a service stage whose completion is queued behind
@@ -2381,7 +2384,9 @@ left unusable by it: later calls run as before. Keep the limits within what the 
 deep calls on threads with a larger stack.
 
 Close the set with try-with-resources or your application's shutdown lifecycle. `close()` closes executors
-owned by the set and waits for submitted operations to finish. An executor you supply remains your
+owned by the set and waits for submitted operations to finish. An interrupt of the closing thread interrupts the
+operations of every owned executor the set has not finished closing, as
+[executors and machine lifetime](#executors-and-machine-lifetime) says. An executor you supply remains your
 responsibility. Avoid sharing a short-lived set across requests that outlive its scope.
 
 For dependency injection, register the generated set as an application-managed component using your existing

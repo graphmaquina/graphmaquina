@@ -389,7 +389,10 @@ public final class MachineRegistry implements AutoCloseable {
 
     /**
      * Closes only the default executors of its machines, blocking until the operations they already accepted end.
-     * An executor the application supplied is neither closed nor awaited.
+     * An executor the application supplied is neither closed nor awaited. An interrupt of the calling thread, before
+     * or during the wait, reaches every default executor not yet closed, not only the one awaited: each interrupts the
+     * threads of its operations, so a call waiting for a stage aborts as interrupted, and this method still waits for
+     * them to end, then returns with the thread interrupted.
      */
     @Override
     public void close() {
