@@ -602,11 +602,13 @@ excludes, incremental excludes included, that leave out the compilation carrier 
 that hold only empty values. It checks the execution of the compiler's `compile` or `testCompile` goal that the
 lifecycle runs and that compiles the generated vocabulary, whatever its id, so a build may bind `default-compile`
 to the phase `none` and compile through an execution of its own, as `kotlin-maven-plugin` asks a mixed Kotlin and
-Java build to do; declare `maven-compiler-plugin` before this plugin then. Two running executions that both compile
-the vocabulary are refused. A compilation the build switches off is skipped instead: `maven.main.skip` or
-`<skipMain>` makes the three main goals log that and do nothing, `maven.test.skip` or `<skip>` the three test goals,
-a compilation the lifecycle runs no execution of the compiler's goal for is skipped the same way, and a project
-packaged as `pom` skips all six. Run the normal lifecycle when generating graphs.
+Java build to do; declare `maven-compiler-plugin` before this plugin then, since an execution of its own runs in
+declaration order within its phase, and the opposite order, which would run `complete` before that javac, is
+refused. Two running executions that both compile the vocabulary are refused. A compilation the build switches
+off is skipped instead: `maven.main.skip` or `<skipMain>` makes the three main goals log that and do nothing,
+`maven.test.skip` or `<skip>` the three test goals, a compilation the lifecycle runs no execution of the
+compiler's goal for is skipped the same way, and a project packaged as `pom` skips all six. Run the normal
+lifecycle when generating graphs.
 
 | Optional property | Meaning |
 | --- | --- |

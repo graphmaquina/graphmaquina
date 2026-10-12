@@ -1706,6 +1706,77 @@ class MavenPluginIntegrationTest {
     }
 
     /**
+     * Maven runs the executions the lifecycle binds, such as {@code default-compile}, before the others of their phase,
+     * and the executions a POM adds to one phase in the order their plugins are declared. A compilation run through an
+     * execution of its own therefore needs maven-compiler-plugin declared before graphmaquina-maven-plugin, or
+     * {@code complete} runs before javac, and {@code complete-test} before the test javac, and fails after the
+     * preparation retired the previous outputs. The generation refuses that order before anything is retired, for
+     * the main compilation and for the test one, and so it does for a compiling execution bound to a phase that runs
+     * before the preparation. The executions the lifecycle binds run first whatever the order, so a build of
+     * {@code default-compile} and {@code default-testCompile} that declares graphmaquina-maven-plugin first builds.
+     */
+    @Test
+    void aCompilerExecutionThatRunsOutsideThePreparationAndTheCompletionIsRefused() throws IOException {
+        MavenFixture main = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("main")),
+                fixtureRepository);
+        compileThroughExecutionsOfTheirOwn(main);
+        assertEquals(0, main.run("compile").exitCode());
+        List<String> published = main.localExportsOf(MAIN_EXPORTS);
+        declareStateGraphPluginFirst(main);
+
+        MavenResult mainFirst = main.run("compile");
+
+        assertNotEquals(0, mainFirst.exitCode(), mainFirst.output());
+        assertTrue(mainFirst.output().contains("the java-compile execution of maven-compiler-plugin, bound to compile,"
+                + " runs after the sg-complete execution of graphmaquina-maven-plugin, bound to compile, which"
+                + " completes this compilation"), mainFirst.output());
+        assertTrue(mainFirst.output().contains("Declare maven-compiler-plugin before graphmaquina-maven-plugin in the"
+                + " <plugins> of the build."), mainFirst.output());
+        assertNothingWasRetired(main, published);
+
+        MavenFixture test = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("test")),
+                fixtureRepository);
+        moveCompilation(test, "default-testCompile", "java-test-compile", "testCompile", "test-compile");
+        for (Map.Entry<String, String> source : testDomain().entrySet()) {
+            test.writeTestSource(source.getKey(), source.getValue());
+        }
+        assertEquals(0, test.run("test-compile").exitCode());
+        List<String> testPublished = test.localExportsOf(TEST_EXPORTS);
+        declareStateGraphPluginFirst(test);
+
+        MavenResult testFirst = test.run("test-compile");
+
+        assertNotEquals(0, testFirst.exitCode(), testFirst.output());
+        assertTrue(testFirst.output().contains("the java-test-compile execution of maven-compiler-plugin, bound to"
+                + " test-compile, runs after the sg-complete-test execution of graphmaquina-maven-plugin"),
+                testFirst.output());
+        assertTrue(test.inventoryIsSealed("test"));
+        assertEquals(testPublished, test.localExportsOf(TEST_EXPORTS));
+
+        MavenFixture early = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("early")),
+                fixtureRepository);
+        moveCompilation(early, "default-compile", "java-compile", "compile", "process-sources");
+
+        MavenResult beforePreparation = early.run("compile");
+
+        assertNotEquals(0, beforePreparation.exitCode(), beforePreparation.output());
+        assertTrue(beforePreparation.output().contains("the java-compile execution of maven-compiler-plugin, bound to"
+                + " process-sources, runs before the sg-prepare execution of graphmaquina-maven-plugin, bound to"
+                + " process-sources, which prepares this compilation"), beforePreparation.output());
+        assertNothingWasRetiredOrPublished(early);
+
+        MavenFixture defaults = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("defaults")),
+                fixtureRepository);
+        declareStateGraphPluginFirst(defaults);
+
+        MavenResult lifecycleFirst = defaults.run("test-compile");
+
+        assertEquals(0, lifecycleFirst.exitCode(), lifecycleFirst.output());
+        assertTrue(defaults.inventoryIsSealed("main"));
+        assertTrue(defaults.inventoryIsSealed("test"));
+    }
+
+    /**
      * A compilation no execution of the compiler runs, here because {@code default-compile} is bound to the phase
      * {@code none} and nothing else compiles the main sources, is skipped like one {@code maven.main.skip} switches
      * off: the main goals do nothing and say so, and the index and the sealed inventory of the previous build stay as
@@ -3195,6 +3266,17 @@ class MavenPluginIntegrationTest {
                 + "            <id>" + id + "</id>\n"
                 + "            <phase>" + phase + "</phase>\n"
                 + "            <goals><goal>" + goal + "</goal></goals>");
+    }
+
+    /** Moves the declaration of graphmaquina-maven-plugin ahead of that of maven-compiler-plugin in the fixture POM. */
+    private static void declareStateGraphPluginFirst(MavenFixture fixture) throws IOException {
+        String pom = Files.readString(fixture.projectDirectory().resolve("pom.xml"), StandardCharsets.UTF_8);
+        String compiler = "      <plugin>\n        <groupId>org.apache.maven.plugins</groupId>";
+        int start = pom.indexOf("      <plugin>\n        <groupId>io.github.graphmaquina</groupId>");
+        String end = "      </plugin>\n";
+        String stateGraph = pom.substring(start, pom.indexOf(end, start) + end.length());
+        fixture.editPom(stateGraph, "");
+        fixture.editPom(compiler, stateGraph + compiler);
     }
 
     /** Adds {@code arguments}, as {@code <arg>} elements, to the compiler arguments of the main compilation. */

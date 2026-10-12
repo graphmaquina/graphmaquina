@@ -193,15 +193,16 @@ public abstract class StateGraphMojo extends AbstractMojo {
 
     /**
      * Refuses to generate for a compilation the compiler is not going to run the way this request describes: in two
-     * running executions of its goal that both compile the generated vocabulary, under another JDK, under a release the
-     * generated vocabulary does not compile with, with annotation processing off, without the annotation processor on
-     * the processor path or in the {@code -processor} list javac takes, with a processor module path, with the
-     * annotation processor only on the class path of a javac that would not run it, without writing its classes or past
-     * a failure of javac, writing its classes without the {@code SourceFile} attribute or anywhere but the class output
-     * of the project, over source roots that leave out the directory the generator writes into, over only part of the
-     * module, with includes or excludes that leave out the carrier of the compilation, over another annotation
-     * manifest, writing the sources of the annotation processor somewhere this plugin does not own, or, inside Maven,
-     * writing them in another charset than it reads them back in. Nothing has been written when this fails.
+     * running executions of its goal that both compile the generated vocabulary, before the preparation or after the
+     * completion of this compilation, under another JDK, under a release the generated vocabulary does not compile
+     * with, with annotation processing off, without the annotation processor on the processor path or in the
+     * {@code -processor} list javac takes, with a processor module path, with the annotation processor only on the
+     * class path of a javac that would not run it, without writing its classes or past a failure of javac, writing its
+     * classes without the {@code SourceFile} attribute or anywhere but the class output of the project, over source
+     * roots that leave out the directory the generator writes into, over only part of the module, with includes or
+     * excludes that leave out the carrier of the compilation, over another annotation manifest, writing the sources of
+     * the annotation processor somewhere this plugin does not own, or, inside Maven, writing them in another charset
+     * than it reads them back in. Nothing has been written when this fails.
      *
      * @param execution the compiler execution this generation belongs to
      * @param request the request the generator is about to run over
@@ -211,6 +212,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
             throws MojoExecutionException {
         CompilerConfiguration compiler = compiler(execution);
         compiler.requireOneCompilingExecution(request);
+        compiler.requireCompilerBetweenPreparationAndCompletion(project, lifecycles);
         CompilerConfiguration.Javac javac = compiler.requireAgreementWith(javaExecutable(), toolchainManager,
             session);
         compiler.requireAnnotationProcessor(project, javac);

@@ -511,7 +511,8 @@ graphmaquina:complete-test (sg-complete-test)
 Declaration order in the POM does not matter for `default-compile` and `default-testCompile`: Maven runs the
 executions the lifecycle binds before those a POM adds to the same phase. An execution of the compiler a POM adds
 itself, as below, runs among the others of its phase in the order their plugins are declared, so declare
-`maven-compiler-plugin` before `graphmaquina-maven-plugin`, or `complete` runs before that javac.
+`maven-compiler-plugin` before `graphmaquina-maven-plugin`: otherwise `complete` would run before that javac, and
+`generate` refuses the build before anything is retired, naming both executions.
 
 ### The compiler execution the goals read
 
@@ -617,6 +618,14 @@ failure names what to change:
 
 - **One execution compiling the vocabulary.** Two running executions of the compiler's goal that both compile the
   directory the generator writes into are refused, naming both.
+- **javac between `prepare` and `complete`.** The compiling execution must run after every execution of `prepare`
+  and before every execution of `complete` (`prepare-test` and `complete-test` for the tests), in the order Maven
+  runs them: phase by phase, and within a phase the executions the lifecycle of the packaging binds, such as
+  `default-compile`, first, then the others in the order their plugins are declared. An execution of the compiler
+  a POM adds itself and binds to the phase of `complete` is refused when `graphmaquina-maven-plugin` is declared
+  first, and one bound to a phase that runs before `prepare`, or to its phase with `maven-compiler-plugin` declared
+  first, is refused too: the completion would find nothing javac compiled, after the preparation retired the
+  previous outputs.
 
 - **A release of 21 or later.** Resolved from the execution's configuration, the plugin's configuration,
   `maven.compiler.release`, `source`/`target` or their properties, a property given on the command line winning
@@ -789,6 +798,7 @@ inventory it left.
 | "…javac write the class files of … without the SourceFile attribute…" (Maven) | a `<debuglevel>` or a `-g:` compiler argument leaves `source` out. Remove that setting, or have one `-g:` option list `source`, as `<debuglevel>lines,vars,source</debuglevel>` does. |
 | "…write its classes …, while StateGraph completes this compilation in …" (Maven) | an `<outputDirectory>`, `maven.compiler.outputDirectory`, `<multiReleaseOutput>true` or a `-d` compiler argument moves the classes. Remove it, or move the project's class output with `<outputDirectory>` or `<testOutputDirectory>` in `<build>`. |
 | "…name two charsets for a javac that compiles inside Maven through the javax.tools API…" (Maven) | the configured encoding and the last `-encoding` compiler argument name different charsets, and javac would read back the sources annotation processors write in the other one. Remove that `-encoding`, or configure `<encoding>` to the charset it names. |
+| "…execution of maven-compiler-plugin, bound to …, runs after the … execution of graphmaquina-maven-plugin, …, which completes this compilation…", "…runs before the … execution of graphmaquina-maven-plugin, …, which prepares this compilation…" (Maven) | declare `maven-compiler-plugin` before `graphmaquina-maven-plugin` in `<plugins>`, and bind the compiling execution to the phase of `complete`, as the message says. |
 | "…runs the executions … of its compile goal for this project, and each of them compiles …" (Maven) | two executions of the compiler would compile the generated vocabulary. Keep one of them, bind the others to the phase `none`, or give them `<compileSourceRoots>` of their own that leave out the generated directory. |
 | "…makes the annotation processor write its sources to …" (Maven) | a `-s` compiler argument names another directory than the processor's generated-sources directory. Remove that argument. |
 | "…the `<compileSourceRoots>` of … replace the source roots of the project and leave out …" (Maven) | add the `<compileSourceRoot>` the message prints, or leave `compileSourceRoots` unset. |
