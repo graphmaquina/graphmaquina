@@ -3466,14 +3466,15 @@ the trail even when no step or hook wrote to it, a rejected call included. Two s
 trails are, `at()` included.
 
 `recordTrail()` reads `InstantSource.system()`. `recordTrail(InstantSource clock)` reads `clock` instead, on the thread
-running the call, once per entry: a test can pass `InstantSource.fixed(...)`, a `Clock`, or a clock of its own that
-advances on each read. A clock that throws anything but an `Error`, a checked exception included, fails the call, as an
-identity function that throws does: the entry it could not mark stays out of the trail. When it throws while the call
-reads the instant of the `Failed` entry that ends a failed call, whatever failed the call, the call's
-`CallFailedException` carries what it threw as suppressed, unless it threw that very exception, and its trail ends
-without that entry; an `InterruptedException` suppressed there interrupts the thread again. A clock that answers `null`
-counts as one that throws a `NullPointerException`. A call whose root
-machine was built without `recordTrail` reads no clock and stores no time.
+running the call, once per entry the call appends, an entry that a rollback later drops included: a test can pass
+`InstantSource.fixed(...)`, a `Clock`, or a clock of its own that advances on each read, which then leaves a gap for
+each dropped entry, such as the failed hop of a failure route. A clock that throws anything but an `Error`, a checked
+exception included, fails the call, as an identity function that throws does: the entry it could not mark stays out of
+the trail. When it throws while the call reads the instant of the `Failed` entry that ends a failed call, whatever
+failed the call, the call's `CallFailedException` carries what it threw as suppressed, unless it threw that very
+exception, and its trail ends without that entry; an `InterruptedException` suppressed there interrupts the thread
+again. A clock that answers `null` counts as one that throws a `NullPointerException`. A call whose root machine was
+built without `recordTrail` reads no clock and stores no time.
 
 The trail records what the call took and how it ended; the [`TRACE` lines](#logs) show each step on the way, its
 guards and its action included. To assert the flow and its trail in a test, see
