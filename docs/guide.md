@@ -2390,8 +2390,11 @@ public interface ShopMachines extends Machines {
 ```
 
 The generated builder takes the instance binding hosts used by the machines. Its signature is generated from
-the set's declarations; inspect the generated method or completion when dependencies change. GraphMaquina does
-not instantiate service classes or discover dependency-injection beans.
+the set's declarations; inspect the generated method or completion when dependencies change. It takes the hosts in
+the order of the set's accessors, after the shared timeout when it has one, a host at the first accessor whose machine
+uses it: `ShopMachines` above gets `builder(Duration, OrderActions, ItemActions)`. Reordering the accessors can
+therefore reorder its parameters, a source-incompatible change for every caller of `builder(...)`. GraphMaquina
+does not instantiate service classes or discover dependency-injection beans.
 
 | Builder option | Purpose / default |
 | --- | --- |
