@@ -6,6 +6,7 @@ import io.github.graphmaquina.codegen.GenerationResult;
 import io.github.graphmaquina.codegen.manifest.CompileManifest;
 import io.github.graphmaquina.codegen.manifest.ManifestCodec;
 import io.github.graphmaquina.codegen.model.GeneratedSource;
+import io.github.graphmaquina.codegen.model.SymbolDescriptor;
 import io.github.graphmaquina.codegen.source.Bootstrap;
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -19,6 +20,7 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -38,7 +40,8 @@ import java.util.stream.Stream;
  * <p>Only the files the previous manifest and the pending one listed are removed, so a hand-written file that
  * happens to live under the generated source root is never touched, and a generated type an original source already
  * declares, in the file it would overwrite or in a file of another name, is refused instead. So is one whose file or
- * class file a volume that does not tell names apart by case would take for an original's. The original sources it
+ * class file a volume that does not tell names apart by case would take for an original's, and so are two generated
+ * types whose files or class files such a volume would take for one another's. The original sources it
  * is checked against are the ones the generator read, as the one walk of {@link Bootstrap} read them; below every
  * directory the request names, a file standing where a generated file would stand is refused as well. A listed file
  * is removed only below the generated source root: one whose path does not resolve below it, or whose directory, by
@@ -77,11 +80,11 @@ public final class GenerationOutput {
      * an archive.
      *
      * @throws CodegenException {@code SG603} if a generated type is already declared by an original source, or
-     *     takes the name of one where the volume does not tell names apart by case, would shadow a class of the
-     *     classpath, would overwrite a file the previous generation did not own or would be written through a
-     *     symbolic link inside the generated source output that leads out of it; {@code SG602} if a previous
-     *     manifest cannot be read, which leaves that manifest in place; {@code SG601} if javac cannot read or parse
-     *     an original source, as when the file may not be read
+     *     takes the name of one, or of another generated type, where the volume does not tell names apart by case,
+     *     would shadow a class of the classpath, would overwrite a file the previous generation did not own or
+     *     would be written through a symbolic link inside the generated source output that leads out of it;
+     *     {@code SG602} if a previous manifest cannot be read, which leaves that manifest in place; {@code SG601} if
+     *     javac cannot read or parse an original source, as when the file may not be read
      * @throws java.io.UncheckedIOException if a source directory, or a directory below it, cannot be walked, or the
      *     file manager javac read the original sources with cannot be closed
      * @throws IOException if the work directory, the manifests or the staged sources in it, or the published files
@@ -105,10 +108,10 @@ public final class GenerationOutput {
      *     {@link Bootstrap#read} and {@link Bootstrap#originals} report them
      * @return the published sources and the manifest
      * @throws CodegenException {@code SG603} if a generated type is already declared by an original source, or
-     *     takes the name of one where the volume does not tell names apart by case, would shadow a class of the
-     *     classpath, would overwrite a file the previous generation did not own or would be written through a
-     *     symbolic link inside the generated source output that leads out of it; {@code SG602} if a previous
-     *     manifest cannot be read, which leaves that manifest in place
+     *     takes the name of one, or of another generated type, where the volume does not tell names apart by case,
+     *     would shadow a class of the classpath, would overwrite a file the previous generation did not own or
+     *     would be written through a symbolic link inside the generated source output that leads out of it;
+     *     {@code SG602} if a previous manifest cannot be read, which leaves that manifest in place
      * @throws IOException if the work directory, the manifests or the staged sources in it, or the published files
      *     cannot be handled, a file of the classpath cannot be read, or the original sources and the class output
      *     the collision check looks up cannot be examined
@@ -137,6 +140,7 @@ public final class GenerationOutput {
         try {
             delete(staging);
             requireNoClasspathCollision(request, sources);
+            requireDistinctInCase(request, sources, manifest.local().model().symbols());
             List<Path> staged = stage(request, sources, staging, previouslyOwned, originals);
             Path output = Files.createDirectories(request.sourcesOutput().toAbsolutePath());
             Set<String> publishing = new TreeSet<>(previouslyOwned);
@@ -358,6 +362,56 @@ public final class GenerationOutput {
                 + " from " + declared.type() + ", which the original source " + declared.origin() + " declares,"
                 + " and the volume of the class output " + classesOutput + " does not tell their class files apart");
         }
+    }
+
+    /**
+     * Refuses two generated types whose names differ only in case where a volume that holds their files does not
+     * tell names apart by case, which would keep one file of the two. Two top-level types are refused where the
+     * volume of the generated sources, of the work directory their sources are staged in or of the class output does
+     * not, and two symbol types of one references container, whose class files alone are files of their own, where
+     * the volume of the class output does not. The symbols are the ones of this compilation, in the order the local
+     * index of the manifest lists them; a refusal of two of them names both of their members and is anchored at the
+     * second.
+     *
+     * @throws CodegenException {@code SG603} naming both generated types and the volume
+     * @throws IOException if an output directory, or a directory above it, cannot be examined
+     */
+    private static void requireDistinctInCase(GenerationRequest request, List<GeneratedSource> sources,
+            List<SymbolDescriptor> symbols) throws IOException {
+        Map<String, String> types = new HashMap<>();
+        for (GeneratedSource source : sources) {
+            String previous = types.putIfAbsent(caseKey(source.qualifiedName()), source.qualifiedName());
+            if (previous == null || previous.equals(source.qualifiedName())) {
+                continue;
+            }
+            Map<String, Path> volumes = new LinkedHashMap<>();
+            volumes.put("the generated sources ", request.sourcesOutput());
+            volumes.put("the work directory ", request.workDirectory());
+            volumes.put("the class output ", request.classesOutput());
+            for (Map.Entry<String, Path> volume : volumes.entrySet()) {
+                if (foldsCase(volume.getValue())) {
+                    throw new CodegenException(COLLISION, "the generated types " + previous + " and "
+                        + source.qualifiedName() + " differ only in case, and the volume of " + volume.getKey()
+                        + volume.getValue() + " does not tell their files apart");
+                }
+            }
+        }
+        Map<String, SymbolDescriptor> nested = new HashMap<>();
+        for (SymbolDescriptor symbol : symbols) {
+            SymbolDescriptor previous = nested.putIfAbsent(caseKey(symbol.qualifiedName()), symbol);
+            if (previous != null && !previous.qualifiedName().equals(symbol.qualifiedName())
+                    && foldsCase(request.classesOutput())) {
+                throw new CodegenException(COLLISION, "the generated symbols " + previous.qualifiedName() + ", of "
+                    + member(previous) + ", and " + symbol.qualifiedName() + ", of " + member(symbol)
+                    + ", differ only in case, and the volume of the class output " + request.classesOutput()
+                    + " does not tell their class files apart", symbol.origin());
+            }
+        }
+    }
+
+    /** The member {@code symbol} names, with its host and where it is declared. */
+    private static String member(SymbolDescriptor symbol) {
+        return symbol.host() + '#' + symbol.member() + " at " + symbol.origin().path() + ':' + symbol.origin().line();
     }
 
     /** The directories of {@code path}, a path separated by {@code /}, with the last separator; empty for none. */

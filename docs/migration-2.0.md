@@ -592,10 +592,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
   classpath, and a facade, enum, host or peer that the generated code cannot access (`SG601`, `SG604`, `SG608`);
   a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or
   like a `java.lang` type (`SG603`); a generated type that an original source declares in a file of another
-  name, or that differs from one only in case where the volume does not tell names apart (`SG603`); and an
-  inventory entry whose file the generator's steps would remove through a symbolic link inside its output root
-  that leads out of it, a generated source that would be written through such a link, and an inventory entry
-  that no path can spell, such as one holding a NUL character (`SG603`).
+  name, or that differs from one, or from another generated type, only in case where the volume does not tell
+  names apart (`SG603`); and an inventory entry whose file the generator's steps would remove through a symbolic
+  link inside its output root that leads out of it, a generated source that would be written through such a link,
+  and an inventory entry that no path can spell, such as one holding a NUL character (`SG603`).
 - **Declarations the generator misread.** An inner class that extends a sibling inner class, which overflowed the
   stack, a member class of a generic interface, a type named in a declaration's header like a member type the
   declaration declares or inherits, an on-demand import of a type the source cannot access, and a sibling type in

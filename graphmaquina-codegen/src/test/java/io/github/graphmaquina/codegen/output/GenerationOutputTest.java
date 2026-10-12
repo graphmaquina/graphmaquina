@@ -89,6 +89,35 @@ class GenerationOutputTest {
         return Map.copyOf(sources);
     }
 
+    /** Two hosts whose references containers, {@code OuterInnerRefs} and {@code OuterinnerRefs}, differ only in case. */
+    private static final Map<String, String> CASE_TWINS_OF_TYPES = Map.of("fx.Outer", """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphAction;
+            public class Outer {
+                public static class Inner {
+                    @GraphAction
+                    public Doc one(Doc doc) { return doc; }
+                }
+            }
+            """, "fx.Outerinner", """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphAction;
+            public class Outerinner {
+                @GraphAction
+                public Doc two(Doc doc) { return doc; }
+            }
+            """);
+
+    /** A host whose two members, {@code approveId} and {@code approveID}, differ only in case. */
+    private static final Map<String, String> CASE_TWINS_OF_SYMBOLS = Map.of("fx.Reviews", """
+            package fx;
+            import io.github.graphmaquina.annotation.GraphAction;
+            public class Reviews {
+                @GraphAction public Doc approveId(Doc doc) { return doc; }
+                @GraphAction public Doc approveID(Doc doc) { return doc; }
+            }
+            """);
+
     @Test
     void publishesEverySourceAndAManifestThatDescribesThem() throws IOException {
         SourceFiles.write(sources(), ORIGINALS);
@@ -687,6 +716,73 @@ class GenerationOutputTest {
 
         assertTrue(Files.isRegularFile(output().resolve("fx/DocsGraph.java")));
         assertTrue(Files.isRegularFile(output().resolve("fx/DocRefs.java")));
+    }
+
+    /**
+     * The nested host {@code Outer.Inner} and the top-level host {@code Outerinner} have references containers whose
+     * names differ only in case, {@code OuterInnerRefs} and {@code OuterinnerRefs}, while their own files,
+     * {@code Outer.java} and {@code Outerinner.java}, coexist on any volume. A volume that does not tell names apart
+     * by case holds the two generated files, and the two class files javac compiles from them, as one file, so the
+     * generation refuses them there, naming both, before it publishes anything.
+     */
+    @Test
+    void refusesGeneratedTypesThatDifferOnlyInCaseOnACaseInsensitiveVolume() throws IOException {
+        assumeTrue(caseInsensitive(directory), "only a case-insensitive volume holds two such files as one");
+        SourceFiles.write(sources(), ORIGINALS);
+        SourceFiles.write(sources(), CASE_TWINS_OF_TYPES);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertEquals("the generated types fx.OuterInnerRefs and fx.OuterinnerRefs differ only in case, and the volume"
+                + " of the generated sources " + directory.resolve("generated") + " does not tell their files apart",
+                failure.getMessage());
+        assertFalse(Files.exists(output().resolve("fx")));
+        assertFalse(Files.exists(directory.resolve("work").resolve("annotation-manifest.json")));
+    }
+
+    /**
+     * Two members of one host whose names differ only in case, {@code approveId} and {@code approveID}, have symbol
+     * types of distinct names, {@code ApproveId} and {@code ApproveID}, in one container, whose class files a class
+     * output that does not tell names apart by case holds as one: javac would keep one of them without a word. The
+     * generation refuses them there, naming both members, in the order of their symbols' names, and anchored at the
+     * second of them.
+     */
+    @Test
+    void refusesSymbolTypesThatDifferOnlyInCaseOnACaseInsensitiveClassOutput() throws IOException {
+        assumeTrue(caseInsensitive(directory), "only a case-insensitive volume holds two such class files as one");
+        SourceFiles.write(sources(), ORIGINALS);
+        SourceFiles.write(sources(), CASE_TWINS_OF_SYMBOLS);
+
+        CodegenException failure = assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
+
+        assertEquals("SG603", failure.code());
+        assertEquals("the generated symbols fx.ReviewsRefs.ApproveID, of fx.Reviews#approveID at"
+                + " sources/fx/Reviews.java:5, and fx.ReviewsRefs.ApproveId, of fx.Reviews#approveId at"
+                + " sources/fx/Reviews.java:4, differ only in case, and the volume of the class output "
+                + directory.resolve("classes") + " does not tell their class files apart", failure.getMessage());
+        assertEquals(4, failure.location().orElseThrow().line(), failure.getMessage());
+        assertFalse(Files.exists(output().resolve("fx")));
+    }
+
+    /**
+     * On a volume that tells names apart by case, generated types and symbol types whose names differ only in case
+     * are other files and other class files, so neither pair is a collision.
+     */
+    @Test
+    void acceptsGeneratedNamesThatDifferOnlyInCaseOnACaseSensitiveVolume() throws IOException {
+        assumeFalse(caseInsensitive(directory), "only a case-sensitive volume tells both names apart");
+        SourceFiles.write(sources(), ORIGINALS);
+        SourceFiles.write(sources(), CASE_TWINS_OF_TYPES);
+        SourceFiles.write(sources(), CASE_TWINS_OF_SYMBOLS);
+
+        StateGraphCodegen.generate(request());
+
+        assertTrue(Files.isRegularFile(output().resolve("fx/OuterInnerRefs.java")));
+        assertTrue(Files.isRegularFile(output().resolve("fx/OuterinnerRefs.java")));
+        String container = Files.readString(output().resolve("fx/ReviewsRefs.java"), StandardCharsets.UTF_8);
+        assertTrue(container.contains("public static final class ApproveId "), container);
+        assertTrue(container.contains("public static final class ApproveID "), container);
     }
 
     /**
