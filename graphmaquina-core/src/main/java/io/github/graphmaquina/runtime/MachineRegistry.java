@@ -89,7 +89,17 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
 public final class MachineRegistry implements AutoCloseable {
 
+    /**
+     * How many machines {@link #anyMachineFor} scans for the very key instance asked for before it hashes the key: a
+     * registry that holds more hashes it at once. A call asks with the machines' own key instances for its root, the
+     * entities it logged and its sub-machine bindings, and a few comparisons cost less than one hash; another instance
+     * of a registered key, which an application may pass, and a key of no machine resolve through the map.
+     */
+    private static final int REFERENCE_SCAN_LIMIT = 8;
+
     private final Map<MachineKey<?, ?, ?>, DefaultStateMachine<?, ?, ?>> machines = new LinkedHashMap<>();
+    /** The machines in the order they joined, for the scan of {@link #REFERENCE_SCAN_LIMIT}. */
+    private final List<DefaultStateMachine<?, ?, ?>> assembled = new ArrayList<>();
     private final Map<MachineKey<?, ?, ?>, List<Watcher<?, ?, ?, ?, ?, ?>>> watchers = new LinkedHashMap<>();
     private final Map<Class<?>, MachineKey<?, ?, ?>> facades = new LinkedHashMap<>();
     private final int maxCascadeDepth;
@@ -149,6 +159,7 @@ public final class MachineRegistry implements AutoCloseable {
             DefaultStateMachine<?, ?, ?> machine =
                     builder.build(registry, List.copyOf(bindings.getOrDefault(builder.key(), List.of())));
             registry.machines.put(machine.key(), machine);
+            registry.assembled.add(machine);
             Optional<? extends Class<?>> facade = builder.facade();
             if (facade.isPresent()) {
                 registry.facades.put(facade.get(), machine.key());
@@ -425,6 +436,14 @@ public final class MachineRegistry implements AutoCloseable {
     }
 
     DefaultStateMachine<?, ?, ?> anyMachineFor(MachineKey<?, ?, ?> key) {
+        if (assembled.size() <= REFERENCE_SCAN_LIMIT) {
+            for (int index = 0; index < assembled.size(); index++) {
+                DefaultStateMachine<?, ?, ?> registered = assembled.get(index);
+                if (registered.key() == key) {
+                    return registered;
+                }
+            }
+        }
         DefaultStateMachine<?, ?, ?> machine = machines.get(key);
         if (machine == null) {
             throw new UnknownPeerMachineException(key, machines.keySet());
