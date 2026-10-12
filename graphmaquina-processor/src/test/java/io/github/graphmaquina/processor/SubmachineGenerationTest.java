@@ -32,11 +32,11 @@ class SubmachineGenerationTest {
                 + "GraphDefinition<Payment, PaymentStatus, PaymentTransition> paymentsGraph, Ledger ledger)"),
                 bookings);
         String chain = " ".repeat(16);
-        assertTrue(bookings.contains(chain + ".submachine(BookingStatus.DEPOSIT, paymentsGraph, (Booking booking) ->"
-                + " booking.deposit(), (Payment payment) -> BookingLookups.depositOf(payment))\n"
-                + chain + "    .exit(PaymentStatus.CAPTURED, BookingTransition.DEPOSIT_PAID)\n"
-                + chain + "    .exit(PaymentStatus.DECLINED, BookingTransition.DECLINE)\n"
-                + chain + "    .endSubmachine()\n"), bookings);
+        assertTrue(bookings.contains(" ".repeat(8) + "graph = graph.submachine(BookingStatus.DEPOSIT, paymentsGraph,"
+                + " (Booking booking) -> booking.deposit(), (Payment payment) -> BookingLookups.depositOf(payment))\n"
+                + chain + ".exit(PaymentStatus.CAPTURED, BookingTransition.DEPOSIT_PAID)\n"
+                + chain + ".exit(PaymentStatus.DECLINED, BookingTransition.DECLINE)\n"
+                + chain + ".endSubmachine();\n"), bookings);
         assertTrue(bookings.contains(".submachine(BookingStatus.BALANCE, paymentsGraph, (Booking booking) ->"
                 + " booking.balance(), (Payment payment) -> ledger.balanceOf(payment))"), bookings);
         String orders = result.generated("fx.OrdersRuntime");
