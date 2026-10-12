@@ -17,6 +17,7 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 import javax.lang.model.SourceVersion;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -328,7 +329,9 @@ final class CompilerConfiguration {
      *
      * <p>A javac that compiles inside Maven reads the sources through a file manager the compiler opens in the
      * configured encoding, which then wins over every {@code -encoding} javac is given: the encoding is the configured
-     * one, else the value of the last {@code -encoding} compiler argument. A javac the compiler forks gets the
+     * one, else the value of the last {@code -encoding} compiler argument. There, javac still writes the sources
+     * annotation processors generate in the last {@code -encoding} it is given, so {@link #requireOneSourceEncoding}
+     * refuses one that names another charset than the configured encoding. A javac the compiler forks gets the
      * configured encoding as an {@code -encoding} ahead of the compiler arguments, and takes the last {@code -encoding}
      * it is given: the encoding is the value of the last {@code -encoding} compiler argument, else the configured
      * one.</p>
@@ -341,13 +344,61 @@ final class CompilerConfiguration {
      *     generator reads UTF-8.
      */
     Optional<String> encoding(ToolchainManager toolchains, MavenSession session) {
-        Optional<Setting> configured = setting("encoding", "encoding")
-            .or(() -> property("project.build.sourceEncoding"));
+        Optional<Setting> configured = configuredEncoding();
         Optional<Setting> argument = lastOption(List.of(ENCODING));
         Optional<Setting> read = javac(toolchains, session).forked()
             ? argument.or(() -> configured)
             : configured.or(() -> argument);
         return read.map(Setting::value);
+    }
+
+    /**
+     * Refuses, for a javac that compiles inside Maven, a last {@code -encoding} compiler argument that names another
+     * charset than the configured encoding, when this JVM supports both. That javac reads every source, those the
+     * annotation processors generate included, through a file manager the compiler opens in the configured encoding,
+     * but writes the sources an annotation processor generates in the last {@code -encoding} it is given, so it would
+     * read them back in another charset than they were written in. That garbles the characters the two charsets
+     * encode differently, or fails javac after the preparation has retired the outputs of the previous compilation, as
+     * it does for the sources of the StateGraph processor, which are ASCII, when one of the two charsets encodes ASCII
+     * otherwise, as UTF-16 does. A javac the compiler forks reads and writes in the last {@code -encoding}, and an
+     * alias of the configured charset names that very charset, so neither is refused.
+     *
+     * @param javac the javac this compilation runs, as {@link #requireAgreementWith} resolves it
+     * @throws MojoExecutionException naming the configured encoding, the compiler argument and what reconciles them
+     */
+    void requireOneSourceEncoding(Javac javac) throws MojoExecutionException {
+        Optional<Setting> configured = configuredEncoding();
+        Optional<Setting> argument = lastOption(List.of(ENCODING));
+        if (javac.forked() || configured.isEmpty() || argument.isEmpty() || !supported(configured.get().value())
+                || !supported(argument.get().value())
+                || Charset.forName(configured.get().value()).equals(Charset.forName(argument.get().value()))) {
+            return;
+        }
+        throw new MojoExecutionException(configured.get() + " and " + argument.get() + " of the " + execution.id()
+            + " execution of maven-compiler-plugin name two charsets for a javac that compiles inside Maven: it reads"
+            + " every source in the configured encoding, those annotation processors generate included, while it writes"
+            + " the sources an annotation processor generates in the last -encoding it is given, so it would read them"
+            + " back in another charset than they were written in, which garbles the characters the two charsets encode"
+            + " differently or fails the compilation after the preparation retired the outputs of the previous one."
+            + " Remove that -encoding from the compiler arguments of that execution, or configure <encoding>"
+            + argument.get().value() + "</encoding> for it.");
+    }
+
+    /**
+     * The encoding this compilation is configured with: {@code <encoding>} or the {@code encoding} property, else
+     * {@code project.build.sourceEncoding}, the default maven-compiler-plugin gives that parameter.
+     */
+    private Optional<Setting> configuredEncoding() {
+        return setting("encoding", "encoding").or(() -> property("project.build.sourceEncoding"));
+    }
+
+    /** Whether this JVM supports a charset of the name {@code name}. */
+    private static boolean supported(String name) {
+        try {
+            return Charset.isSupported(name);
+        } catch (IllegalArgumentException illegal) {
+            return false;
+        }
     }
 
     /** The feature release {@code value} names, {@code 0} when it is not a release this plugin understands. */

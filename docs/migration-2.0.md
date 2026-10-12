@@ -659,8 +659,11 @@ observe. Most items refuse up front what used to fail later, in generated code o
   then runs no processor it finds on the class path; a `<debuglevel>` or `-g:` arguments that leave out `source`,
   which drops the `SourceFile` attribute; an `<outputDirectory>`, `maven.compiler.outputDirectory`,
   `<multiReleaseOutput>true` or last `-d` argument that moves the classes, and a last `-s` argument that moves the
-  processor's sources; `<compileSourceRoots>` without the generated directory; and a `<testIncrementalExcludes>` or
-  main `<incrementalExcludes>` pattern that matches the compilation carrier.
+  processor's sources; `<compileSourceRoots>` without the generated directory; a `<testIncrementalExcludes>` or
+  main `<incrementalExcludes>` pattern that matches the compilation carrier; and, with a javac that compiles inside
+  Maven, a last `-encoding` argument that names another charset than `<encoding>` or
+  `project.build.sourceEncoding`, when this JVM supports both, since javac would read back the sources annotation
+  processors generate in another charset than it wrote them in.
 - **Maven: settings read as the compiler applies them.** `<testIncrementalExcludes>` narrow the test sources the
   generator reads, so it no longer fails with `SG601` on a source javac never compiles; the compiler's
   `<compileSourceRoots>` are the roots the generator parses, an empty element standing for the project's; an

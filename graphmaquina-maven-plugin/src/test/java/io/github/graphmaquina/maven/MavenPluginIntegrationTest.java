@@ -2684,11 +2684,9 @@ class MavenPluginIntegrationTest {
      * A javac that compiles inside Maven reads the sources through a file manager maven-compiler-plugin opens in the
      * encoding it is configured with, which then wins over every {@code -encoding} compiler argument, and without one
      * in the last {@code -encoding} compiler argument. The generator is told the encoding javac reads in either way: an
-     * accented identifier of a project kept in ISO-8859-1 that names no encoding and passes
-     * {@code -encoding ISO-8859-1} reaches the generated vocabulary intact, and a project kept in ISO-8859-1 that names
-     * that encoding and passes {@code -encoding UTF-8} is read in ISO-8859-1. Its accented letters stay in a comment:
-     * javac writes the sources annotation processors generate in the last {@code -encoding} and reads them back in the
-     * configured encoding, so an accented identifier would fail javac there.
+     * accented identifier of a project kept in ISO-8859-1 reaches the generated vocabulary intact, whether the project
+     * names no encoding and passes {@code -encoding ISO-8859-1}, or names ISO-8859-1 and passes {@code -encoding latin1},
+     * an alias of that charset, the request then naming the configured ISO-8859-1.
      */
     @Test
     void aJavacInsideMavenReadsTheConfiguredEncodingElseTheLastEncodingArgument() throws IOException {
@@ -2696,33 +2694,58 @@ class MavenPluginIntegrationTest {
                 fixtureRepository);
         argument.editPom("<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>", "");
         addMainCompilerArguments(argument, "<arg>-encoding</arg><arg>ISO-8859-1</arg>");
-        argument.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
         MavenFixture configured = MavenFixture.basic(Files.createDirectories(tempDirectory.resolve("configured")),
                 fixtureRepository);
         configured.editPom("<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>",
                 "<project.build.sourceEncoding>ISO-8859-1</project.build.sourceEncoding>");
-        addMainCompilerArguments(configured, "<arg>-encoding</arg><arg>UTF-8</arg>");
-        Map<String, String> sources = MavenFixture.domainSources();
-        sources.put("fx.Notes", """
-                package fx;
+        addMainCompilerArguments(configured, "<arg>-encoding</arg><arg>latin1</arg>");
 
-                /** Notes about an order, kept beside its résumé. */
-                public final class Notes {
+        for (MavenFixture fixture : List.of(argument, configured)) {
+            fixture.writeSources(accentedDomain(), StandardCharsets.ISO_8859_1);
 
-                    private Notes() {
-                    }
-                }
-                """);
-        configured.writeSources(sources, StandardCharsets.ISO_8859_1);
+            MavenResult result = fixture.run("package");
 
-        MavenResult fromArgument = argument.run("package");
-        MavenResult fromConfiguration = configured.run("package");
+            assertEquals(0, result.exitCode(), result.output());
+            assertEquals("ISO-8859-1", fixture.requestValue("main", "encoding"));
+            assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), result.output());
+        }
+    }
 
-        assertEquals(0, fromArgument.exitCode(), fromArgument.output());
-        assertEquals("ISO-8859-1", argument.requestValue("main", "encoding"));
-        assertTrue(argument.localExports().contains("fx.ActionsRefs.ApproveRésumé"), fromArgument.output());
-        assertEquals(0, fromConfiguration.exitCode(), fromConfiguration.output());
-        assertEquals("ISO-8859-1", configured.requestValue("main", "encoding"));
+    /**
+     * A javac that compiles inside Maven reads every source, those the annotation processors generate included, in the
+     * encoding maven-compiler-plugin is configured with, but writes the sources an annotation processor generates in
+     * the last {@code -encoding} it is given, so it would read them back in another charset than they were written in:
+     * here the StateGraph processor's sources, written in UTF-16 and read back in UTF-8, would fail javac after the
+     * preparation retired the previous outputs. An {@code -encoding} compiler argument that names another charset than
+     * the configured encoding is therefore refused by the generation, before anything is retired, while one that names
+     * an alias of the configured charset builds.
+     */
+    @Test
+    void anEncodingArgumentThatDisagreesWithTheConfiguredEncodingInsideMavenIsRefusedBeforeAnythingIsRetired()
+            throws IOException {
+        MavenFixture fixture = MavenFixture.basic(tempDirectory, fixtureRepository);
+        fixture.writeSources(accentedDomain(), StandardCharsets.UTF_8);
+        assertEquals(0, fixture.run("package").exitCode());
+        List<String> published = fixture.localExportsOf(MAIN_EXPORTS);
+        addMainCompilerArguments(fixture, "<arg>-encoding</arg><arg>UTF-16</arg>");
+
+        MavenResult refused = fixture.run("package");
+
+        assertNotEquals(0, refused.exitCode(), refused.output());
+        assertTrue(refused.output().contains("project.build.sourceEncoding=UTF-8 and the compiler argument -encoding"
+                + " UTF-16 of the default-compile execution of maven-compiler-plugin name two charsets for a javac that"
+                + " compiles inside Maven"), refused.output());
+        assertTrue(refused.output().contains("Remove that -encoding from the compiler arguments of that execution, or"
+                + " configure <encoding>UTF-16</encoding> for it."), refused.output());
+        assertNothingWasRetired(fixture, published);
+
+        fixture.editPom("<arg>UTF-16</arg>", "<arg>utf8</arg>");
+
+        MavenResult alias = fixture.run("package");
+
+        assertEquals(0, alias.exitCode(), alias.output());
+        assertEquals("UTF-8", fixture.requestValue("main", "encoding"));
+        assertTrue(fixture.localExports().contains("fx.ActionsRefs.ApproveRésumé"), alias.output());
     }
 
     /**

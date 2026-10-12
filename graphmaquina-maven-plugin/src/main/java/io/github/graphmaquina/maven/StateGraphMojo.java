@@ -188,8 +188,9 @@ public abstract class StateGraphMojo extends AbstractMojo {
      * that would not run it, without writing its classes or past a failure of javac, writing its classes without the
      * {@code SourceFile} attribute or anywhere but the class output of the project, over source roots that leave out
      * the directory the generator writes into, over only part of the module, with includes or excludes that leave out
-     * the carrier of the compilation, over another annotation manifest, or writing the sources of the annotation
-     * processor somewhere this plugin does not own. Nothing has been written when this fails.
+     * the carrier of the compilation, over another annotation manifest, writing the sources of the annotation
+     * processor somewhere this plugin does not own, or, inside Maven, writing them in another charset than it reads
+     * them back in. Nothing has been written when this fails.
      *
      * @param execution the compiler execution this generation belongs to
      * @param request the request the generator is about to run over
@@ -209,6 +210,7 @@ public abstract class StateGraphMojo extends AbstractMojo {
         compiler.requireCarrierSelected(request);
         compiler.requireManifestArgument(request, javac);
         compiler.requireProcessorSourcesOutput(request, javac);
+        compiler.requireOneSourceEncoding(javac);
     }
 
     /**
