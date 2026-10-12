@@ -337,6 +337,36 @@ class CascadeVirtualMachineErrorTest {
     }
 
     /**
+     * A nested action that catches the Error of its cascade and then returns null, which the engine aborts on its own,
+     * ends the call in the abort of its step that the lost Error left, recorded first, not in the engine's abort for
+     * the null outcome.
+     */
+    @Test
+    void anActionThatCatchesTheErrorAndReturnsNullEndsInTheAbortOfItsStep() {
+        archive.behaviour = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+            throw new StackOverflowError();
+        };
+        publish.behaviour = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+            try {
+                ctx.cascade(DOCS, new Doc("q", PUBLISHED), ARCHIVE);
+            } catch (StackOverflowError swallowed) {
+                // The action goes on, and gives up.
+            }
+            return null;
+        };
+        submit.behaviour = (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+            ctx.cascade(DOCS, new Doc("peer", REVIEW), PUBLISH);
+            return ActionOutcome.ok();
+        };
+        Doc doc = new Doc("root", DRAFT);
+        TransitionAbortedException abort =
+                assertThrows(TransitionAbortedException.class, () -> machine().execute(doc, SUBMIT));
+        assertEquals("Doc/DocStatus REVIEW -PUBLISH-> PUBLISHED of Doc#peer, cause null, lost cascade",
+                described(abort));
+        assertEquals(DRAFT, doc.status());
+    }
+
+    /**
      * A poison stored before the Error stays the poison: the nested action caught the abort of its own cascade, then
      * threw the Error, which the root's action caught; the call ends in that first abort.
      */
