@@ -144,7 +144,9 @@ final class FlowHandle implements FlowContext {
      * <ul>
      *   <li>Every operation checks the handle's own lifetime, then its owner thread, the thread that made it, which
      *       runs the hook. {@link #invalidate()} ends the lifetime once the hook returned or threw: from then on every
-     *       operation throws StaleContextException with the machine key and the entity of the hop.</li>
+     *       operation throws StaleContextException with the machine key and the entity of the hop, and the handle
+     *       lets go of the call's unit of work, so a CommitContext kept after its hook keeps neither the call nor
+     *       its flow reachable.</li>
      *   <li>It does not create the call's flow, and neither does a read: before the call's first write, a read
      *       answers empty, and the entity needs no flow. Its first write that passes its checks creates the flow, if
      *       no step of the call wrote and the call does not record its trail. A hook that never writes costs this
@@ -160,49 +162,49 @@ final class FlowHandle implements FlowContext {
      */
     static final class Hook implements FlowContext {
 
-        private final UnitOfWork uow;
+        /** The unit of work of the call while the hook runs; empty once the hook returned or threw. */
+        private Optional<UnitOfWork> uow;
         private final Object rootEntity;
         private final CallLog log;
         private final String hook;
         private final EntityRef hop;
         private final Thread owner = Thread.currentThread();
-        private boolean stale;
 
         private Hook(UnitOfWork uow, Object rootEntity, CallLog log, String hook, EntityRef hop) {
-            this.uow = uow;
+            this.uow = Optional.of(uow);
             this.rootEntity = rootEntity;
             this.log = log;
             this.hook = hook;
             this.hop = hop;
         }
 
-        /** Ends the lifetime of this handle: its hook returned or threw. */
+        /** Ends the lifetime of this handle, which lets go of the call's unit of work: its hook returned or threw. */
         void invalidate() {
-            stale = true;
+            uow = Optional.empty();
         }
 
-        /** Only from the thread running the hook, and only while it runs. */
-        private void check() {
-            if (stale) {
+        /** The call's unit of work, only from the thread running the hook, and only while it runs. */
+        private UnitOfWork check() {
+            if (uow.isEmpty()) {
                 throw new StaleContextException(hop.key(), hop.instance());
             }
             if (Thread.currentThread() != owner) {
                 throw new WrongThreadException("the flow of the hook " + hook
                         + " can only be used from the thread running it: " + owner.getName());
             }
+            return uow.get();
         }
 
         @Override
         public <V> Optional<V> get(FlowKey<V> key) {
-            check();
+            UnitOfWork unit = check();
             Objects.requireNonNull(key, "key");
-            return read(uow, key);
+            return read(unit, key);
         }
 
         @Override
         public Set<FlowKey<?>> keys() {
-            check();
-            return keysOf(uow);
+            return keysOf(check());
         }
 
         @Override
@@ -223,17 +225,16 @@ final class FlowHandle implements FlowContext {
 
         @Override
         public List<FlowEntry> trail() {
-            check();
-            return uow.trail();
+            return check().trail();
         }
 
         @Override
         public <V> void put(FlowKey<V> key, V value) {
-            check();
+            UnitOfWork unit = check();
             Objects.requireNonNull(key, "key");
             Objects.requireNonNull(value, "value");
             V checked = key.type().cast(value);
-            uow.flow(rootEntity).put(key, checked, uow.savepoint());
+            unit.flow(rootEntity).put(key, checked, unit.savepoint());
             if (log.trace()) {
                 log.trace("hook-flow-put " + hook + " " + key + (key.visible() ? "=" + CallLog.show(checked) : ""));
             }
@@ -241,9 +242,9 @@ final class FlowHandle implements FlowContext {
 
         @Override
         public void remove(FlowKey<?> key) {
-            check();
+            UnitOfWork unit = check();
             Objects.requireNonNull(key, "key");
-            uow.flow(rootEntity).remove(key, uow.savepoint());
+            unit.flow(rootEntity).remove(key, unit.savepoint());
             if (log.trace()) {
                 log.trace("hook-flow-remove " + hook + " " + key);
             }

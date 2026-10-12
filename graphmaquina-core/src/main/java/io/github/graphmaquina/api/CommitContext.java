@@ -9,7 +9,9 @@ import lombok.NonNull;
  * In a cascade the entity may already hold a later state; {@code from} and {@code to} still describe
  * this hop. The context may be retained after the hook returns, and its metadata stays readable, but the flow the
  * runtime hands a hook works only while that hook runs and only on the thread running it: afterwards every operation
- * of that flow throws {@code StaleContextException}, and on another thread {@code WrongThreadException}. A hook
+ * of that flow throws {@code StaleContextException}, and on another thread {@code WrongThreadException}. Once the hook
+ * returned or threw, that flow no longer holds the call, so a retained context keeps none of the call's values in
+ * memory. A hook
  * declared with the entity alone, through {@link HookRef#of}, never sees the context, so never the flow. Two contexts
  * are equal when their components are: the flow the runtime hands a hook is equal only to itself, and two flows of the
  * five-argument constructor are equal when they hold equal values.

@@ -2927,14 +2927,15 @@ public void committed(Ticket ticket, CommitContext<TicketState, TicketTransition
 flag on the state enum. In a multi-hop cascade, `commit.to()` can differ from the entity's final state. Hooks on
 handled failure routes receive the recovering edge's context.
 
-`flow()` is [the call's flow](#the-calls-flow), which every hook of the call shares: the hook reads what the steps
-of the call put, and can put and remove values, which the later hooks of the call read. Nothing undoes those writes:
-the call committed before its hooks run. The context can be retained, and its endpoints, identifier, kind and
-terminality stay readable, but its flow works only while the hook runs and only on the thread running it:
-afterwards each operation of the flow throws `StaleContextException`, and on another thread `WrongThreadException`.
-Each hook gets a handle of its own on the flow, so a later hook cannot use the one an earlier hook kept. A hook that
-takes the entity alone does not see the flow. A hook can start a new call: that call has a flow of its own, and once
-it returns, the hook's flow still reads and writes the flow of the call that ran the hook.
+`flow()` is [the call's flow](#the-calls-flow), which every hook of the call shares: the hook reads what the steps of
+the call put, and can put and remove values, which the later hooks of the call read. Nothing undoes those writes: the
+call committed before its hooks run. The context can be retained, and its endpoints, identifier, kind and terminality
+stay readable, but its flow works only while the hook runs and only on the thread running it: afterwards each operation
+of the flow throws `StaleContextException`, and on another thread `WrongThreadException`. Once the hook returned or
+threw, its flow no longer holds the call, so a retained context keeps none of the call's values in memory. Each hook
+gets a handle of its own on the flow, so a later hook cannot use the one an earlier hook kept. A hook that takes the
+entity alone does not see the flow. A hook can start a new call: that call has a flow of its own, and once it returns,
+the hook's flow still reads and writes the flow of the call that ran the hook.
 
 To call a contextual hook by hand, in a unit test, build its context with the five-argument constructor,
 `new CommitContext<>(from, transition, to, kind, isTerminal)`. Its flow belongs to no call: it starts empty, has no
