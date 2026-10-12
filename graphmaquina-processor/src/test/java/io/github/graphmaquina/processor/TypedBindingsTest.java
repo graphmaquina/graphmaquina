@@ -135,6 +135,48 @@ class TypedBindingsTest {
                 && error.contains("TransitionContext<Note, NoteStatus, NoteTransition>")), result::describe);
     }
 
+    /**
+     * A raw {@code CompletionStage} is no {@code CompletionStage<ActionOutcome>} nor
+     * {@code CompletionStage<GuardResult>}, which only an unchecked conversion would make it, so an action or a guard
+     * returning one fits no machine, and the refusal names the results that would.
+     */
+    @Test
+    void refusesARawCompletionStageAsTheResultOfAnActionOrAGuard() {
+        Map<String, String> sources = hosts();
+        sources.put("fx.Stages", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                import io.github.graphmaquina.annotation.GraphGuard;
+                import io.github.graphmaquina.api.GuardContext;
+                import io.github.graphmaquina.api.TransitionContext;
+                import java.util.concurrent.CompletionStage;
+                @SuppressWarnings("rawtypes")
+                public final class Stages {
+                    @GraphAction
+                    public CompletionStage publish(TransitionContext<Doc, DocStatus, DocTransition> context) {
+                        return null;
+                    }
+                    @GraphGuard public CompletionStage approved(GuardContext<Doc, DocStatus, DocTransition> context) {
+                        return null;
+                    }
+                }
+                """);
+        TypedProcessors.Resolving.reset();
+        String machine = "fx.Doc/fx.DocStatus/fx.DocTransition";
+        TypedProcessors.Resolving.method("fx.StagesRefs.Publish", Bindings.Role.ACTION, machine);
+        TypedProcessors.Resolving.method("fx.StagesRefs.Approved", Bindings.Role.GUARD, machine);
+
+        Compilation.Result result = resolve(sources);
+
+        assertEquals(List.of("[SG505] no exported action named publish on fx.Stages has the signature this machine"
+                        + " needs; expected ActionOutcome publish(TransitionContext<Doc, DocStatus, DocTransition>) or"
+                        + " CompletionStage<ActionOutcome> publish(TransitionContext<Doc, DocStatus, DocTransition>)",
+                "[SG505] no exported guard named approved on fx.Stages has the signature this machine needs;"
+                        + " expected GuardResult approved(GuardContext<Doc, DocStatus, DocTransition>) or"
+                        + " CompletionStage<GuardResult> approved(GuardContext<Doc, DocStatus, DocTransition>)"),
+                result.errors(), result.describe());
+    }
+
     /** An entity, a peer, and a marked condition an unmarked overload of the same arity competes with. */
     private static Map<String, String> competing() {
         Map<String, String> sources = new LinkedHashMap<>();

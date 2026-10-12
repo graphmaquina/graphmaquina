@@ -258,10 +258,13 @@ final class ExportValidator {
         };
     }
 
-    /** A result the engine understands: the verdict itself, or the completion stage that will carry it. */
+    /**
+     * A result the engine understands: the verdict itself, or the completion stage that will carry it, never a raw
+     * completion stage, which only an unchecked conversion would make one.
+     */
     private boolean result(TypeMirror returned, String verdict) {
         return signatures.same(returned, signatures.declared(verdict))
-                || signatures.assignable(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(verdict)));
+                || signatures.subtypeOf(returned, signatures.declared(COMPLETION_STAGE, signatures.declared(verdict)));
     }
 
     /** The declarations of {@code declaring} that {@code candidate} names and that carry a role of their own. */

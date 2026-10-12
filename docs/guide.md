@@ -1222,6 +1222,9 @@ transition types; `P/Q/U` refer to the peer's: the watched machine's for a condi
 | `@GraphCondition` | `boolean method(E owner, Collection<? extends P> peers, PeerView<P, Q, U> view)` |
 | `@GraphLookup` | `Optional<E> method(P child)` |
 
+A raw `CompletionStage` is no asynchronous result: an action or a guard that returns one is refused where it is
+declared (`SG604`).
+
 Static bindings are called statically. Instance bindings become constructor/builder dependencies. For example,
 using three instance members of `OrderActions` adds one `OrderActions` dependency, not three instances. A class
 used only through static members needs no builder argument.
