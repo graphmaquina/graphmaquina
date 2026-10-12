@@ -591,9 +591,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
   threw: vocabulary on a default, static or private method, or anywhere but a facade and its abstract operations
   (`SG504`, `SG606`); an abstract method a facade or set inherits from another interface (`SG504`, `SG510`); an
   operation that overrides a `Machine` method, or a redeclaration of one with a result the companion cannot
-  return (`SG504`); a parameterized entity (`SG601`, `SG509`); an instance binding of a generic host, and a type
-  the companion's package cannot access (`SG505`, `SG509`, `SG510`); two machines of one set that write the
-  same entity and state enum (`SG510`); an instance method, declared or inherited, abstract or default, with the
+  return (`SG504`); a parameterized entity, `Store<String>.Doc` included (`SG601`, `SG509`); an instance binding
+  of a generic host or of an inner class of one, and a type the companion's package cannot access (`SG505`,
+  `SG509`, `SG510`); two machines of one set that write the same entity and state enum (`SG510`); an instance
+  method, declared or inherited, abstract or default, with the
   signature of the companion's static `graph(...)` on a facade (`SG504`) or `builder(...)` on a set (`SG510`),
   the former reported once the facade's declarations have no other error and none of its vocabulary is misplaced,
   the latter only once the set's accessors and machines have no other error; a name the companion writes whose first
@@ -602,8 +603,8 @@ observe. Most items refuse up front what used to fail later, in generated code o
   case used to publish nothing and report nothing.
 - **Companions that javac refused now compile:** in the unnamed package, beside a type of their package or a member
   type of the facade named like a type they write, with parameter names that would have been keywords, with
-  deprecated bound members, a raw operation input or an entity that is an inner class of a generic class under
-  `-Werror`, with a cast whose type annotations name enum constants, beside static overloads of the state and
+  deprecated bound members, a raw operation input or an entity that is an inner class of a generic class, used raw,
+  under `-Werror`, with a cast whose type annotations name enum constants, beside static overloads of the state and
   identity accessors, in a set with an accessor named `machineRegistry`, and for a bound member or accessor that
   declares a checked exception, which is now handled as the same exception thrown undeclared would be. The
   vocabularies and the references containers the generator writes suppress the deprecation and removal warnings of

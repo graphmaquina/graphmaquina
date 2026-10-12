@@ -113,12 +113,28 @@ final class StructuralChecks {
     }
 
     /**
-     * Whether the entity of {@code types} is a parameterized type. Generated code names the entity by its class,
+     * Whether the entity of {@code types} is a parameterized type, through its own type arguments or through those of
+     * a class it is an inner class of, as {@code Store<String>.Doc} is. Generated code names the entity by its class,
      * as a class literal and as the host of its property symbols, whose class literals are raw, so it could only
      * ever compare and name it raw; such a machine is refused where it is declared.
      */
     static boolean hasParameterizedEntity(MachineTypes types) {
-        return !types.entity().getTypeArguments().isEmpty();
+        return hasTypeArguments(types.entity());
+    }
+
+    /**
+     * Whether {@code type} has type arguments, its own or those of a class it is an inner class of: a static nested
+     * class has no enclosing type, so the type arguments of the class it is nested in never count.
+     */
+    static boolean hasTypeArguments(TypeMirror type) {
+        TypeMirror current = type;
+        while (current instanceof DeclaredType declared) {
+            if (!declared.getTypeArguments().isEmpty()) {
+                return true;
+            }
+            current = declared.getEnclosingType();
+        }
+        return false;
     }
 
     /** SG502 unless {@code type} is top-level: the generated companion lives next to it in its package. */

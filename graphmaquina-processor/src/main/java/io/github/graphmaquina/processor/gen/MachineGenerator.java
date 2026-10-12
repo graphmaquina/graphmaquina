@@ -38,8 +38,8 @@ import javax.lang.model.util.Elements;
  * <p>The companion is marked {@code @GeneratedCompanion}, which this processor owns, and suppresses the
  * {@code deprecation} and {@code removal} warnings of the members it calls and the {@code rawtypes} warnings of the
  * types it writes back: the author deprecates a bound member, or declares a raw operation input or an entity that is
- * an inner class of a generic class, in the sources they own and cannot suppress what a generated file says about
- * it, and a build that compiles that file with {@code -Xlint:all -Werror} fails on such a warning.</p>
+ * an inner class of a generic class, used raw, in the sources they own and cannot suppress what a generated file says
+ * about it, and a build that compiles that file with {@code -Xlint:all -Werror} fails on such a warning.</p>
  *
  * <p>Every public member it declares, but the methods it implements, whose comments {@code javadoc} inherits from the
  * facade, carries a documentation comment with the tags its signature calls for, as {@link SourceWriter#javadoc}

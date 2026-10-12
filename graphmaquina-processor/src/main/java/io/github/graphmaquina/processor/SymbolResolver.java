@@ -87,9 +87,9 @@ final class SymbolResolver {
      * {@code SG602} when it comes from a dependency whose export index is missing or does not list it, and
      * {@code SG505} when no exported declaration of that role fits the machine, when more than one does, or when the
      * one that fits makes the machine's companion name a type its package cannot access. An instance member of a
-     * generic host is never a candidate: the symbol names the host by its raw class, and generated code could only
-     * call such a member on a raw parameter, so it is refused as such rather than as a member whose signature does
-     * not fit.
+     * generic host, or of an inner class of a generic class, is never a candidate: the symbol names the host by its
+     * raw class, and generated code could only call such a member on a raw parameter, so it is refused as such rather
+     * than as a member whose signature does not fit.
      */
     Optional<Binding> resolve(TypeMirror symbol, Bindings.Role role, MachineTypes machine,
             Optional<MachineTypes> peer, DiagnosticAnchor anchor) {
@@ -101,7 +101,8 @@ final class SymbolResolver {
         }
         SymbolDescriptor descriptor = reference.get().descriptor();
         DeclaredType host = reference.get().host();
-        boolean generic = !((TypeElement) host.asElement()).getTypeParameters().isEmpty();
+        TypeElement hostElement = (TypeElement) host.asElement();
+        boolean generic = StructuralChecks.hasTypeArguments(hostElement.asType());
         boolean genericInstance = false;
         List<Binding> fitting = new ArrayList<>();
         for (Binding member : effective.of(host)) {
@@ -120,8 +121,9 @@ final class SymbolResolver {
         }
         if (fitting.isEmpty() && genericInstance) {
             anchor.report(diagnostics, NO_BINDING, "the exported " + role.name().toLowerCase(Locale.ROOT) + " "
-                    + descriptor.member() + " is an instance member of " + descriptor.host() + ", a generic class,"
-                    + " which generated code could only declare and call raw: export it from a non-generic subclass"
+                    + descriptor.member() + " is an instance member of " + descriptor.host() + ", " + (hostElement
+                            .getTypeParameters().isEmpty() ? "an inner class of a generic class" : "a generic class")
+                    + ", which generated code could only declare and call raw: export it from a non-generic subclass"
                     + " marked @GraphBindings, or make it static");
             return Optional.empty();
         }
