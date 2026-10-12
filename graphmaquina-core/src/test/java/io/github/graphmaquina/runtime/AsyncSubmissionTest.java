@@ -50,11 +50,12 @@ import org.junit.jupiter.api.Test;
 /**
  * How a call submitted through {@code async(...)} is queued: StateMachine.supplyAsync, which every generated facade's
  * {@code async} goes through, and AsyncStateMachine's execute and reevaluate. Each call is a plain task that completes
- * its future the way CompletableFuture.supplyAsync completes the one it returns, never one of the asynchronous tasks
- * that CompletableFuture's get and join run on a waiting ForkJoinPool worker: run there, the call would run inside the
- * call that waits, find the thread marked as running a transition, and fail with ReentrantTransitionException. With
- * ForkJoinPool.commonPool() as the executor and a common pool whose parallelism is below two, each call runs on a new
- * thread, as CompletableFuture.supplyAsync sends a task meant for that pool.
+ * its future the way CompletableFuture.supplyAsync completes the one it returns, save that a throwable whose printing
+ * throws still fails it, never one of the asynchronous tasks that CompletableFuture's get and join run on a waiting
+ * ForkJoinPool worker: run there, the call would run inside the call that waits, find the thread marked as running a
+ * transition, and fail with ReentrantTransitionException. With ForkJoinPool.commonPool() as the executor and a common
+ * pool whose parallelism is below two, each call runs on a new thread, as CompletableFuture.supplyAsync sends a task
+ * meant for that pool.
  *
  * <p>The first two tests run calls on the common pool while its other workers wait, so that a call queued on the
  * one free worker has no idle worker to steal it. On JDK 21 that takes a common pool of parallelism 2 or more: below
@@ -150,6 +151,35 @@ class AsyncSubmissionTest {
         }
     }
 
+    /** A runtime exception whose message cannot be read, so its string cannot be printed either. */
+    private static final class UnreadableFailure extends RuntimeException {
+        @Override
+        public String getMessage() {
+            throw new IllegalStateException("the message cannot be read");
+        }
+    }
+
+    /** An Error whose message cannot be read, so its string cannot be printed either. */
+    private static final class UnreadableError extends Error {
+        @Override
+        public String getMessage() {
+            throw new IllegalStateException("the message cannot be read");
+        }
+    }
+
+    /** A runtime exception whose string cannot be printed, because toString throws an Error. */
+    private static final class FatallyUnprintableFailure extends RuntimeException {
+        @Override
+        public String toString() {
+            throw new AssertionError("the string cannot be printed");
+        }
+    }
+
+    /** What {@code future} failed with, as a dependent stage sees it, or a TimeoutException after ten seconds. */
+    private static <R> Throwable failureOf(CompletableFuture<R> future) throws Exception {
+        return future.handle((R value, Throwable error) -> error).get(10, TimeUnit.SECONDS);
+    }
+
     /**
      * A single-thread executor whose thread records what escapes a task into {@code escaped}, as the thread's
      * uncaught exception handler.
@@ -242,7 +272,7 @@ class AsyncSubmissionTest {
     /**
      * A call that throws fails its future as CompletableFuture.supplyAsync fails the one it returns: join throws a
      * CompletionException and get an ExecutionException, each caused by what the call threw, and a dependent stage
-     * sees the CompletionException.
+     * sees the CompletionException, whose message is the string of what the call threw.
      */
     @Test
     void aCallThatThrowsFailsItsFutureAsSupplyAsyncDoes() throws Exception {
@@ -257,6 +287,7 @@ class AsyncSubmissionTest {
             Throwable seen = future.handle((String value, Throwable error) -> error).get(10, TimeUnit.SECONDS);
             assertInstanceOf(CompletionException.class, seen);
             assertSame(thrown, seen.getCause());
+            assertEquals("java.lang.IllegalStateException: thrown", seen.getMessage());
         } finally {
             executor.close();
         }
@@ -303,6 +334,75 @@ class AsyncSubmissionTest {
             assertSame(thrown, assertThrows(CompletionException.class, future::join).getCause());
             Thread next = executor.submit(Thread::currentThread).get(10, TimeUnit.SECONDS);
             assertSame(ranOn.get(), next);
+            assertEquals(List.of(), escaped);
+        } finally {
+            executor.close();
+        }
+    }
+
+    /**
+     * A throwable whose message cannot be read still fails the future of the call that threw it, where
+     * CompletableFuture.supplyAsync would leave its future pending: an Error an action throws through
+     * async().execute, and a runtime exception a call submitted through supplyAsync throws. Each future fails with a
+     * CompletionException caused by that throwable, whose message is {@code <toString threw <class name>>}, join
+     * throws that CompletionException, and nothing escapes on the executor's thread. get throws what reading the
+     * message throws, as it constructs its ExecutionException from the throwable's string, which the guide says.
+     */
+    @Test
+    void aThrowableWhoseMessageCannotBeReadStillFailsItsFuture() throws Exception {
+        UnreadableError error = new UnreadableError();
+        UnreadableFailure failure = new UnreadableFailure();
+        List<Throwable> escaped = new CopyOnWriteArrayList<>();
+        ExecutorService executor = single(escaped);
+        try {
+            StateMachine<Doc, DocStatus, DocTransition> machine = StateMachines.from(graph(
+                    (TransitionContext<Doc, DocStatus, DocTransition> ctx) -> {
+                        throw error;
+                    },
+                    (Doc doc) -> { })).state(Doc::status, Doc::setStatus).asyncExecutor(executor).build();
+            CompletableFuture<Outcome<Doc, DocStatus, DocTransition>> executed =
+                    machine.async().execute(new Doc("a", DRAFT), SUBMIT);
+            CompletableFuture<String> supplied = machine.supplyAsync(() -> {
+                throw failure;
+            });
+            Throwable executedFailure = failureOf(executed);
+            Throwable suppliedFailure = failureOf(supplied);
+            assertInstanceOf(CompletionException.class, executedFailure);
+            assertSame(error, executedFailure.getCause());
+            assertEquals("<toString threw java.lang.IllegalStateException>", executedFailure.getMessage());
+            assertSame(executedFailure, assertThrows(CompletionException.class, executed::join));
+            assertInstanceOf(CompletionException.class, suppliedFailure);
+            assertSame(failure, suppliedFailure.getCause());
+            assertEquals("<toString threw java.lang.IllegalStateException>", suppliedFailure.getMessage());
+            assertSame(suppliedFailure, assertThrows(CompletionException.class, supplied::join));
+            assertEquals("the message cannot be read",
+                    assertThrows(IllegalStateException.class, supplied::get).getMessage());
+            executor.submit(() -> { }).get(10, TimeUnit.SECONDS);
+            assertEquals(List.of(), escaped);
+        } finally {
+            executor.close();
+        }
+    }
+
+    /**
+     * A throwable whose toString throws an Error still fails the future of the call that threw it, with a
+     * CompletionException caused by that throwable whose message is {@code <toString threw <class name>>}, naming
+     * the Error; neither the throwable nor that Error escapes on the executor's thread.
+     */
+    @Test
+    void aThrowableWhoseToStringThrowsAnErrorStillFailsItsFuture() throws Exception {
+        FatallyUnprintableFailure thrown = new FatallyUnprintableFailure();
+        List<Throwable> escaped = new CopyOnWriteArrayList<>();
+        ExecutorService executor = single(escaped);
+        try {
+            CompletableFuture<String> future = idle(executor).supplyAsync(() -> {
+                throw thrown;
+            });
+            Throwable seen = failureOf(future);
+            assertInstanceOf(CompletionException.class, seen);
+            assertSame(thrown, seen.getCause());
+            assertEquals("<toString threw java.lang.AssertionError>", seen.getMessage());
+            executor.submit(() -> { }).get(10, TimeUnit.SECONDS);
             assertEquals(List.of(), escaped);
         } finally {
             executor.close();

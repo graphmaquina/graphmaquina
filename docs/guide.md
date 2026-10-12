@@ -2091,9 +2091,13 @@ handled.whenComplete((Void unused, Throwable error) -> {
 Keep or return the relevant future to the caller. `join()` wraps an exceptional completion in
 `CompletionException`; `get()` uses `ExecutionException` and can be interrupted. If the outer future itself
 is cancelled, either method can throw `CancellationException` directly. When the call ran and failed, the cause is
-that call's `CallFailedException`, or an `Error`. Read the `CallFailedException`'s `statesWritten()` and `journal()`,
-as [Handle a failed call](#handle-a-failed-call) shows, before deciding whether to retry; an exceptional future is not
-proof that nothing happened. A request refused before it started ran nothing: one an executor refused
+that call's `CallFailedException`, or an `Error`. The future fails even when that cause cannot be printed, because
+its `getMessage()` or `toString()` throws: the `CompletionException`'s message is then
+`<toString threw <exception class>>`, naming what printing threw, and `join()` throws it, while `get()` throws what
+printing the cause throws, as it builds its `ExecutionException` from the cause's string. Read the
+`CallFailedException`'s `statesWritten()` and `journal()`, as [Handle a failed call](#handle-a-failed-call) shows,
+before deciding whether to retry; an exceptional future is not proof that nothing happened. A request refused before
+it started ran nothing: one an executor refused
 (`RejectedExecutionException`), one with a null argument (`NullPointerException`, whose message names that parameter),
 one for an identifier of another catalogue (`IllegalArgumentException`), and one made where no call may start
 (`ReentrantTransitionException`, possible when the call runs on the thread of the callback that submitted it, through

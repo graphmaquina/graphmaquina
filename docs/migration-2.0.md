@@ -543,7 +543,9 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `join` no longer run on a waiting `ForkJoinPool` worker, a common-pool worker for instance, inside the callback
   that waits, where it failed with `ReentrantTransitionException`. While such a call is queued on the waiting worker,
   a callback that waits for it, or for a `CompletableFuture` task queued behind it, now waits for another worker to
-  take that task, as [executors and machine lifetime](guide.md#executors-and-machine-lifetime) describes.
+  take that task, as [executors and machine lifetime](guide.md#executors-and-machine-lifetime) describes. Such a call
+  now fails its future too when what it throws cannot be printed, because its `getMessage()` or `toString()` throws,
+  where it left the future pending.
 - **Standalone machines.** `StateMachines.Builder.build()` registers the `as(...)` facade and dispatches the
   machine's own watches; a watch on another machine is refused at `build()`.
 - **Blank reasons are refused.** `StatePolicy` refuses a blank reason for an identifier, as it refused a blank
