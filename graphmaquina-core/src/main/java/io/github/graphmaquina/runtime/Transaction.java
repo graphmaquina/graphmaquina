@@ -787,7 +787,6 @@ final class Transaction {
     private <A, B extends Enum<B>, C extends Enum<C>, P, Q extends Enum<Q>, U extends Enum<U>> Optional<EntityRef>
             findParent(DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Object entity, Enum<?> from, Enum<?> id,
                        int depth, SubmachineBinding<A, B, C, P, Q, U> binding) {
-        String name = binding.parentKey() + "." + binding.spec().state().name();
         Optional<A> parent;
         try {
             parent = binding.spec().parentOf().apply(binding.spec().childKey().entity().cast(entity));
@@ -797,11 +796,11 @@ final class Transaction {
             Interrupts.keep(e);
             Throwable cause = Unwrap.unwrap(e);
             throw bindingAbort(machine, ref, from, id, depth,
-                    "the parentOf of " + name + " threw " + Texts.shown(cause), Optional.of(cause));
+                    "the parentOf of " + bindingName(binding) + " threw " + Texts.shown(cause), Optional.of(cause));
         }
         if (parent == null) {
-            throw bindingAbort(machine, ref, from, id, depth, "the parentOf of " + name + " returned null",
-                    Optional.empty());
+            throw bindingAbort(machine, ref, from, id, depth,
+                    "the parentOf of " + bindingName(binding) + " returned null", Optional.empty());
         }
         if (parent.isEmpty()) {
             return Optional.empty();
@@ -812,7 +811,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw bindingReadAbort(machine, ref, from, id, depth, name, e);
+            throw bindingReadAbort(machine, ref, from, id, depth, binding, e);
         }
     }
 
@@ -828,7 +827,6 @@ final class Transaction {
             DefaultStateMachine<?, ?, ?> machine, EntityRef ref, Enum<?> from, Enum<?> id, int depth,
             SubmachineBinding<A, B, C, P, Q, U> binding, EntityRef parentRef) {
         SubmachineSpec<A, B, C, P, Q, U> spec = binding.spec();
-        String name = binding.parentKey() + "." + spec.state().name();
         A parent = binding.parentKey().entity().cast(parentRef.instance());
         Optional<P> child;
         try {
@@ -838,12 +836,12 @@ final class Transaction {
         } catch (Throwable e) {
             Interrupts.keep(e);
             Throwable cause = Unwrap.unwrap(e);
-            throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " threw " + Texts.shown(cause),
-                    Optional.of(cause));
+            throw bindingAbort(machine, ref, from, id, depth,
+                    "the childOf of " + bindingName(binding) + " threw " + Texts.shown(cause), Optional.of(cause));
         }
         if (child == null) {
-            throw bindingAbort(machine, ref, from, id, depth, "the childOf of " + name + " returned null",
-                    Optional.empty());
+            throw bindingAbort(machine, ref, from, id, depth,
+                    "the childOf of " + bindingName(binding) + " returned null", Optional.empty());
         }
         if (child.isEmpty()) {
             return Optional.empty();
@@ -861,7 +859,7 @@ final class Transaction {
         } catch (Error fatal) {
             throw fatal;
         } catch (Throwable e) {
-            throw bindingReadAbort(machine, ref, from, id, depth, name, e);
+            throw bindingReadAbort(machine, ref, from, id, depth, binding, e);
         }
         if (state == spec.state()) {
             return Optional.of(Hold.IN_NODE);
@@ -886,18 +884,18 @@ final class Transaction {
     }
 
     /**
-     * An abort of a child's step for what reading the parent or the child threw while checking the binding
-     * {@code name}: an identity function or a state getter that threw, a null state or an ambiguous identity, the
-     * cause as it is. At the root it is an abort like those of {@link #bindingAbort}. Nested, it poisons as a failure
-     * that is no failure of the call, as the same failure of a cascaded entity's own identity or state does, so COLLECT
-     * never collects it and stops at once. The first poison is stored before its TRACE line, as in {@link #poisonAt}.
+     * An abort of a child's step for what reading the parent or the child threw while checking {@code binding}: an
+     * identity function or a state getter that threw, a null state or an ambiguous identity, the cause as it is. At the
+     * root it is an abort like those of {@link #bindingAbort}. Nested, it poisons as a failure that is no failure of
+     * the call, as the same failure of a cascaded entity's own identity or state does, so COLLECT never collects it and
+     * stops at once. The first poison is stored before its TRACE line, as in {@link #poisonAt}.
      */
     private TransitionAbortedException bindingReadAbort(DefaultStateMachine<?, ?, ?> machine, EntityRef ref,
-                                                        Enum<?> from, Enum<?> id, int depth, String name,
-                                                        Throwable thrown) {
+                                                        Enum<?> from, Enum<?> id, int depth,
+                                                        SubmachineBinding<?, ?, ?, ?, ?, ?> binding, Throwable thrown) {
         Interrupts.keep(thrown);
         TransitionAbortedException abort = unpoisonedAbort(machine, ref, from, Optional.of(id), Optional.empty(),
-                Optional.empty(), "checking the binding " + name + " threw " + Texts.shown(thrown),
+                Optional.empty(), "checking the binding " + bindingName(binding) + " threw " + Texts.shown(thrown),
                 Optional.of(thrown));
         if (depth > 0) {
             boolean first = !uow.isPoisoned();
@@ -907,6 +905,14 @@ final class Transaction {
             }
         }
         return abort;
+    }
+
+    /**
+     * How the messages of a binding check's aborts name {@code binding}, {@code <parent key>.<node>}: only an abort
+     * builds it, so a check that passes concatenates nothing.
+     */
+    private static String bindingName(SubmachineBinding<?, ?, ?, ?, ?, ?> binding) {
+        return binding.parentKey() + "." + binding.spec().state().name();
     }
 
     /**
