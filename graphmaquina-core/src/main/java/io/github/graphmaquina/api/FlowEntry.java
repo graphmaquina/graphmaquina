@@ -65,7 +65,8 @@ public sealed interface FlowEntry permits FlowEntry.Hop, FlowEntry.Start, FlowEn
      * @param key the machine of the root call
      * @param entity the entity of the root call
      * @param from the state the request was refused in
-     * @param transition the identifier that was requested
+     * @param transition the identifier the caller asked for, or the one the watch selected in a reevaluation, whose
+     *     call requested none
      * @param kind why the request was refused
      * @param reason the reason of the rejection
      * @param guard the guard that rejected, for a {@link RejectionKind#GUARD} rejection
