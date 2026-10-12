@@ -873,6 +873,89 @@ class ExportDeclarationsTest {
     }
 
     /**
+     * A local or anonymous class has no canonical name, so no references container can name it as a host: a marker
+     * written in one, on one of its members or on the class itself, is refused where it is written, as one in a
+     * private class is, wherever the class is declared, and even in a class that nothing marked encloses.
+     */
+    @Test
+    void refusesAMarkerWrittenInALocalOrAnonymousClass() {
+        Map<String, Long> lines = new LinkedHashMap<>();
+        Map<String, String> shops = new LinkedHashMap<>();
+        shops.put("GraphAction", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphAction;
+                public class Shop {
+                    public static Object handlers() {
+                        class Handlers {
+                            @GraphAction
+                            public void archive(Order order) {}
+                        }
+                        return new Handlers();
+                    }
+                }
+                """);
+        lines.put("GraphAction", 6L);
+        shops.put("io.github.graphmaquina.annotation.GraphGuard", """
+                package fx;
+                public class Shop {
+                    private final Object handlers = new Object() {
+                        @io.github.graphmaquina.annotation.GraphGuard
+                        public void approved(Order order) {}
+                    };
+                }
+                """);
+        lines.put("io.github.graphmaquina.annotation.GraphGuard", 4L);
+        shops.put("GraphProperty", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphProperty;
+                public enum Shop {
+                    OPEN {
+                        @GraphProperty
+                        public String label() { return "open"; }
+                    };
+                }
+                """);
+        lines.put("GraphProperty", 5L);
+        shops.put("GraphBindings", """
+                package fx;
+                import io.github.graphmaquina.annotation.GraphBindings;
+                public class Shop {
+                    static {
+                        Runnable runnable = () -> {
+                            @GraphBindings
+                            class Handlers {}
+                        };
+                    }
+                }
+                """);
+        lines.put("GraphBindings", 6L);
+        for (Map.Entry<String, String> shop : shops.entrySet()) {
+            CodegenException failure = assertThrows(CodegenException.class,
+                    () -> collect(Map.of("fx.Order", ORDER, "fx.Shop", shop.getValue())), shop.getKey());
+
+            assertEquals("SG604", failure.code());
+            assertEquals("the marker @" + shop.getKey() + " is written in a local or anonymous class of fx.Shop,"
+                    + " which no references container can name, so it exports nothing: mark a member of a top-level"
+                    + " or member class instead", failure.getMessage());
+            assertEquals("fx/Shop.java", failure.location().orElseThrow().path());
+            assertEquals(lines.get(shop.getKey()), failure.location().orElseThrow().line());
+        }
+
+        assertEquals(List.of(), collect(Map.of("fx.Order", ORDER, "fx.Shop", """
+                package fx;
+                public class Shop {
+                    public static Object handlers() {
+                        class Handlers {
+                            @Deprecated
+                            public void archive(Order order) {}
+                        }
+                        return new Handlers();
+                    }
+                }
+                """)));
+    }
+
+    /**
      * The references container is a top-level type of the host's package and names its host by a class
      * literal, so a host that is private, or nested in a private type, is refused at the host. A host that is
      * only package-private, or a member of an interface, is still accessible there.

@@ -22,6 +22,7 @@ import com.sun.source.tree.VariableTree;
 import com.sun.source.tree.WildcardTree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.SourcePositions;
+import com.sun.source.util.TreeScanner;
 import io.github.graphmaquina.codegen.CodegenException;
 import io.github.graphmaquina.codegen.GenerationRequest;
 import io.github.graphmaquina.codegen.model.SourceLocation;
@@ -52,8 +53,9 @@ import javax.tools.ToolProvider;
 
 /**
  * Reads the consumer's original sources with {@link JavacTask#parse()} only. The declarations, modifiers,
- * types and annotations of a unit are read syntactically; bodies are never visited and no expression is
- * evaluated, so a source may name a type this generator has not produced yet. javac still parses every body,
+ * types and annotations of a unit are read syntactically; a body is visited only for the annotations written in
+ * the local and anonymous classes it declares, and no expression is evaluated, so a source may name a type this
+ * generator has not produced yet. javac still parses every body,
  * so the sources are parsed at the release and in the encoding the compilation that follows reads them with:
  * a source may use the syntax of that release anywhere, and characters of that encoding.
  */
@@ -218,8 +220,12 @@ public final class SourceDeclarations {
         }
 
         List<TypeHeader.Member> members = new ArrayList<>();
+        List<TypeHeader.Marker> localMarkers = new ArrayList<>();
         List<String> constants = new ArrayList<>();
         for (Tree member : type.getMembers()) {
+            if (!(member instanceof ClassTree)) {
+                localMarkers.addAll(localMarkers(unit, positions, member));
+            }
             if (member instanceof ClassTree nested) {
                 read(unit, positions, scope, canonicalName, Optional.of(kind(type)), nested, variables, headers);
             } else if (member instanceof MethodTree method) {
@@ -236,8 +242,32 @@ public final class SourceDeclarations {
         }
 
         headers.add(new TypeHeader(canonicalName, kind(type), modifiers(type, enclosingKind), typeParameters,
-                supertypes, members, markers(unit, positions, type.getModifiers()), constants, scope,
+                supertypes, members, markers(unit, positions, type.getModifiers()), localMarkers, constants, scope,
                 Optional.of(location(unit, positions, type))));
+    }
+
+    /**
+     * The annotations written in the local and anonymous classes {@code member} declares, at any depth, in its body,
+     * its initializer or, for an enum constant, its class body: on such a class and on its methods and fields.
+     * Nothing else of the member is read.
+     */
+    private static List<TypeHeader.Marker> localMarkers(SourceUnit unit, SourcePositions positions, Tree member) {
+        List<TypeHeader.Marker> found = new ArrayList<>();
+        new TreeScanner<Void, Void>() {
+            @Override
+            public Void visitClass(ClassTree local, Void unused) {
+                found.addAll(markers(unit, positions, local.getModifiers()));
+                for (Tree declared : local.getMembers()) {
+                    if (declared instanceof MethodTree method) {
+                        found.addAll(markers(unit, positions, method.getModifiers()));
+                    } else if (declared instanceof VariableTree field) {
+                        found.addAll(markers(unit, positions, field.getModifiers()));
+                    }
+                }
+                return super.visitClass(local, unused);
+            }
+        }.scan(member, null);
+        return found;
     }
 
     /**

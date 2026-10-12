@@ -1088,7 +1088,7 @@ class UnnamedPackageClassTest {
     @Test
     void aHeaderTheIndexDidNotReadIsStillAContext() {
         TypeHeader foreign = new TypeHeader("lib.Foreign", ElementKind.CLASS, Set.of(Modifier.PUBLIC), List.of(),
-                List.of(), List.of(), List.of(), List.of(), TypeHeader.Scope.BINARY, Optional.empty());
+                List.of(), List.of(), List.of(), List.of(), List.of(), TypeHeader.Scope.BINARY, Optional.empty());
         try (DeclarationIndex index = DeclarationIndex.open(List.of(), SourceFiles.classpath())) {
             assertEquals(Optional.of("java.util.Map.Entry"),
                     index.resolve(foreign, "java.util.Map.Entry").map(TypeHeader::canonicalName));

@@ -629,6 +629,7 @@ observe. Most items refuse up front what used to fail later, in generated code o
   differs), and symbolic links are followed. See the [build guide](typed-annotations-build.md).
 - **New generator refusals:** a generic facade, a marker whose annotation type is not on the generator's
   classpath, and a facade, enum, host or peer that the generated code cannot access (`SG601`, `SG604`, `SG608`);
+  a marker written in a local or anonymous class, which used to export nothing without a word (`SG604`);
   a type that takes over a name the generated code writes, such as a type of the package named `io`, `java` or
   like a `java.lang` type (`SG603`); a generated type that an original source declares in a file of another
   name, or that differs from one, or from another generated type, only in case where the volume does not tell

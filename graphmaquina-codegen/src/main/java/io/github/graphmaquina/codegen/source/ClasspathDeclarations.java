@@ -361,8 +361,8 @@ final class ClasspathDeclarations implements AutoCloseable {
             }
         }
         return new TypeHeader(element.getQualifiedName().toString(), element.getKind(),
-                element.getModifiers(), typeParameters, supertypes, members, markers(element, referenced), constants,
-                TypeHeader.Scope.BINARY, Optional.empty());
+                element.getModifiers(), typeParameters, supertypes, members, markers(element, referenced), List.of(),
+                constants, TypeHeader.Scope.BINARY, Optional.empty());
     }
 
     private static TypeHeader.Member method(ExecutableElement method, Set<TypeElement> referenced) {

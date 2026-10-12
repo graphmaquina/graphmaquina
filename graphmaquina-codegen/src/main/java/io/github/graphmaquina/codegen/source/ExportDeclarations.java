@@ -56,7 +56,9 @@ public final class ExportDeclarations {
     /**
      * Every symbol the original sources of {@code index} export, ordered by qualified name so that neither the
      * order of the files nor the order of a hash table can change the result. A host its references container
-     * cannot name, because it is private or nested in a private type, is refused with {@code SG604}. A host is
+     * cannot name, because it is private or nested in a private type, is refused with {@code SG604}, and so is a
+     * marker written in a local or anonymous class, on the class or on one of its members, which no references
+     * container can name at all. A host is
      * refused with {@code SG603} when a qualified name its container writes, StateGraph's {@code io} package,
      * {@code java.lang.SuppressWarnings} or, for a host of a named package, the host's own name, starts with the
      * simple name of a type the host's package declares or of a public type of {@code java.lang}: inside the
@@ -69,6 +71,7 @@ public final class ExportDeclarations {
         Map<String, TypeHeader> containers = new LinkedHashMap<>();
         List<SymbolDescriptor> symbols = new ArrayList<>();
         for (TypeHeader host : hosts) {
+            requireNoLocalMarker(index, host);
             List<SymbolDescriptor> exported = exports(index, host);
             if (exported.isEmpty()) {
                 continue;
@@ -93,6 +96,26 @@ public final class ExportDeclarations {
         }
         symbols.sort(Comparator.comparing(SymbolDescriptor::qualifiedName));
         return List.copyOf(symbols);
+    }
+
+    /**
+     * Refuses with {@code SG604} the first export marker, or {@code @GraphBindings}, written in a local or anonymous
+     * class that {@code declaration} declares in its body: such a class has no canonical name, so it can be no host,
+     * and the marker would otherwise export nothing without a word.
+     */
+    private static void requireNoLocalMarker(DeclarationIndex index, TypeHeader declaration) {
+        List<String> markers = new ArrayList<>(ROLES.keySet());
+        markers.add(BINDINGS);
+        for (TypeHeader.Marker marker : declaration.localMarkers()) {
+            for (String annotationType : markers) {
+                if (index.marks(declaration, marker, annotationType)) {
+                    throw new CodegenException(INVALID_ROLE, "the marker @" + marker.name() + " is written in a local"
+                        + " or anonymous class of " + declaration.canonicalName() + ", which no references container"
+                        + " can name, so it exports nothing: mark a member of a top-level or member class instead",
+                        marker.origin().orElseGet(() -> origin(declaration)));
+                }
+            }
+        }
     }
 
     /** The symbols of one host: its method families first, then its properties. */

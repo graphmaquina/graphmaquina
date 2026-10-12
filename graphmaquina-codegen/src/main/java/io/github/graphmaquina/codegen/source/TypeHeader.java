@@ -12,7 +12,8 @@ import javax.lang.model.element.Modifier;
  * The header of one type declaration, read from an original source or materialized from a classpath binary.
  * A header keeps the canonical identity of the declaration, the type parameters it declares, its direct
  * supertypes, its members, the annotations written on it and, for an enum, its constants in declaration
- * order. Bodies are never read, so nothing here depends on attributing an expression.
+ * order. Of a body, only the annotations written in the local and anonymous classes it declares are read, so
+ * nothing here depends on attributing an expression.
  *
  * @param canonicalName the canonical name of the declaration, for example {@code fx.Holder.Status}
  * @param kind the declaration kind, one of {@code CLASS}, {@code INTERFACE}, {@code ENUM}, {@code RECORD} or
@@ -26,13 +27,17 @@ import javax.lang.model.element.Modifier;
  * @param members the declared methods and fields; constructors, initializers and enum constants are not
  *     members of a header
  * @param markers the annotations written on the declaration, unresolved until a caller needs one
+ * @param localMarkers the annotations written in a local or anonymous class the declaration's own body declares, at
+ *     any depth, on the class or on one of its methods and fields, unresolved like {@code markers}; always empty for
+ *     a classpath header
  * @param constants the enum constants in declaration order, empty for every other kind
  * @param scope the lexical context this header's spelled names resolve in
  * @param origin the declaration's position in its original source, absent for a classpath header
  */
 public record TypeHeader(String canonicalName, ElementKind kind, Set<Modifier> modifiers,
         List<String> typeParameters, List<TypeUse> supertypes, List<Member> members,
-        List<Marker> markers, List<String> constants, Scope scope, Optional<SourceLocation> origin) {
+        List<Marker> markers, List<Marker> localMarkers, List<String> constants, Scope scope,
+        Optional<SourceLocation> origin) {
 
     public TypeHeader {
         Objects.requireNonNull(canonicalName, "canonicalName");
@@ -44,6 +49,7 @@ public record TypeHeader(String canonicalName, ElementKind kind, Set<Modifier> m
         supertypes = List.copyOf(supertypes);
         members = List.copyOf(members);
         markers = List.copyOf(markers);
+        localMarkers = List.copyOf(localMarkers);
         constants = List.copyOf(constants);
     }
 
