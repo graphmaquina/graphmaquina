@@ -211,7 +211,7 @@ class GenerationOutputTest {
         SourceFiles.Compilation compiled = SourceFiles.compileStrict(oldFiles, request().classesOutput());
         assertTrue(compiled.success(), () -> String.valueOf(compiled.messages()));
         ManifestCodec.writeCompile(initial.annotationManifest(), new CompileManifest(current.schemaVersion(),
-            "1.0.0", current.local(), current.dependencies(), current.processorInventory(),
+            "2.0.0-test", current.local(), current.dependencies(), current.processorInventory(),
             List.of("fx/Outer_InnerRefs.java", oldCarrier)));
         ManifestCodec.writeOwned(request().workDirectory().resolve("owned-outputs.json"), new OwnedOutputs(2,
             List.of("fx/Outer_InnerRefs.java", oldCarrier),
@@ -400,7 +400,7 @@ class GenerationOutputTest {
     }
 
     /**
-     * A previous manifest this run cannot read, here the one GraphMaquina 1.x left under the same name, stays
+     * A previous manifest this run cannot read, here one of a schema it does not know, stays
      * where it is: the refusal repeats until the user cleans the build, instead of the next run calling the
      * files that manifest owned unowned.
      */
@@ -409,15 +409,15 @@ class GenerationOutputTest {
         SourceFiles.write(sources(), ORIGINALS);
         StateGraphCodegen.generate(request());
         Path manifest = directory.resolve("work").resolve("annotation-manifest.json");
-        String retired = Files.readString(manifest).replaceFirst("\"schemaVersion\": 2", "\"schemaVersion\": 1");
-        Files.writeString(manifest, retired);
+        String unreadable = Files.readString(manifest).replaceFirst("\"schemaVersion\": 2", "\"schemaVersion\": 99");
+        Files.writeString(manifest, unreadable);
 
         for (int attempt = 0; attempt < 2; attempt++) {
             CodegenException failure =
                     assertThrows(CodegenException.class, () -> StateGraphCodegen.generate(request()));
             assertEquals("SG602", failure.code());
-            assertTrue(failure.getMessage().startsWith("the schema 1 of " + manifest), failure.getMessage());
-            assertEquals(retired, Files.readString(manifest));
+            assertEquals("unsupported schemaVersion 99 in " + manifest + "; expected 2", failure.getMessage());
+            assertEquals(unreadable, Files.readString(manifest));
         }
     }
 

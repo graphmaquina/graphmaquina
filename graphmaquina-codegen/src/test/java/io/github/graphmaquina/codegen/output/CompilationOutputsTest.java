@@ -92,10 +92,10 @@ class CompilationOutputsTest {
 
     @ParameterizedTest
     @ValueSource(strings = {INVENTORY, PENDING_INVENTORY})
-    void refusesRetiredInventoriesBeforeChangingAnyOutput(String inventoryName) throws IOException {
+    void refusesInventoriesOfAnotherSchemaBeforeChangingAnyOutput(String inventoryName) throws IOException {
         writeManifest(List.of(CARRIER_SOURCE));
         Path inventory = workDirectory.resolve(inventoryName);
-        ManifestCodec.writeOwned(inventory, new OwnedOutputs(1,
+        ManifestCodec.writeOwned(inventory, new OwnedOutputs(99,
                 List.of("fx/Old.java"), List.of("fx/Old.class"), List.of(PUBLISHED), List.of()));
         Map<Path, byte[]> original = new LinkedHashMap<>();
         original.put(inventory, Files.readAllBytes(inventory));
@@ -113,7 +113,7 @@ class CompilationOutputsTest {
         CodegenException failure = assertThrows(CodegenException.class, () -> CompilationOutputs.prepare(request()));
 
         assertEquals("SG602", failure.code());
-        assertTrue(failure.getMessage().contains("clean"), failure.getMessage());
+        assertEquals("unsupported schemaVersion 99 in " + inventory + "; expected 2", failure.getMessage());
         for (Map.Entry<Path, byte[]> entry : original.entrySet()) {
             assertArrayEquals(entry.getValue(), Files.readAllBytes(entry.getKey()), entry.getKey().toString());
         }

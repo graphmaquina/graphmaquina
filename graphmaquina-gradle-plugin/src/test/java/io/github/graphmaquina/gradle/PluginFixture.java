@@ -60,7 +60,7 @@ public final class PluginFixture {
     /** The published index a compilation leaves beside its classes. */
     private static final String EXPORTS = "META-INF/graphmaquina/exports.json";
 
-    /** The manifest and index schema this release of the tool reads; the retired one is 1. */
+    /** The manifest and index schema this release of the tool reads. */
     private static final int SCHEMA_VERSION = 2;
 
     /** The nested types of the retired matrix vocabulary; no 2.0 artefact may carry one. */

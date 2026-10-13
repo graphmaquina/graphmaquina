@@ -51,9 +51,9 @@ import java.util.stream.Stream;
  * there the sources the previous manifests list. A publication that fails after that deletes the manifest, so no
  * build ever reads a manifest that does not describe the sources on disk. One that fails before it, as when a
  * previous manifest cannot be read or the first write of the pending manifest fails, leaves the manifest in place,
- * since no source has changed yet. A previous manifest that cannot be read at all, such as the retired format of
- * GraphMaquina 1.x, therefore stays, so the refusal repeats until the user cleans the build rather than the next run
- * calling the files it owned unowned. Both manifests are written beside their place and moved into it, so an
+ * since no source has changed yet. A previous manifest that cannot be read at all, such as one of a schema this
+ * tool does not read, therefore stays, so the refusal repeats until the user cleans the build rather than the next
+ * run calling the files it owned unowned. Both manifests are written beside their place and moved into it, so an
  * interrupted run never leaves half of one.</p>
  *
  * <p>The files carry exactly the emitted text with LF endings, in the encoding of the compilation that reads

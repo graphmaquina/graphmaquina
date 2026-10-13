@@ -66,26 +66,6 @@ class DependencyExportsTest {
         assertTrue(failure.getMessage().contains("0.0.1-OTHER"), failure.getMessage());
     }
 
-    /** A dependency published by 1.x must send its owner back to the generator, not be read half-way. */
-    @Test
-    void refusesAnIndexOfTheRetiredSemanticSchemaNamingTheRegeneration() throws IOException {
-        Path classes = Files.createDirectories(directory.resolve("classes/META-INF/graphmaquina"));
-        Files.writeString(classes.resolve("exports.json"),
-                "{\"schemaVersion\": 1, \"toolVersion\": \"" + ToolVersion.current()
-                    + "\", \"compilationId\": \"x\", \"model\": {\"graphs\": [], \"symbols\": []},"
-                    + " \"annotationTypes\": []}\n", StandardCharsets.UTF_8);
-
-        CodegenException failure = assertThrows(CodegenException.class,
-                () -> DependencyExports.read(List.of(directory.resolve("classes"))));
-
-        assertEquals("SG602", failure.code());
-        assertTrue(failure.getMessage().contains("schema 1"), failure.getMessage());
-        assertTrue(failure.getMessage().contains("regenerate"), failure.getMessage());
-        assertTrue(failure.getMessage().contains("recompile"), failure.getMessage());
-        assertTrue(failure.getMessage().contains(directory.resolve("classes").toString()),
-                failure.getMessage());
-    }
-
     @Test
     void refusesAnIndexOfAnotherSchema() throws IOException {
         Path classes = Files.createDirectories(directory.resolve("classes/META-INF/graphmaquina"));
