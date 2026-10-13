@@ -251,7 +251,8 @@ public final class MachineGenerator {
             String argument = input.map((String name) -> ", " + name).orElse("");
             out.blank();
             out.line(override);
-            out.open("public " + outcome + generics + " " + operation.name() + "(" + e + " " + target + declaration + ")");
+            out.open("public " + outcome + generics + " " + operation.name() + "(" + e + " " + target + declaration
+                    + ")");
             out.line(objects + ".requireNonNull(" + target + ", " + quote(operation.entityParameter()) + ");");
             if (operation.inputType().filter((TypeMirror type) -> !type.getKind().isPrimitive()).isPresent()) {
                 out.line(objects + ".requireNonNull(" + input.orElseThrow() + ", "
