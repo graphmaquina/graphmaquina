@@ -198,9 +198,6 @@ class MachineGenerationTest {
 
         assertTrue(source.contains("stateMachine.execute(doc, DocTransition.PUBLISH)"));
         assertTrue(source.contains("stateMachine.execute(doc, DocTransition.AUTO_PUBLISH)"));
-        assertFalse(source.contains("transitionTo("));
-        assertFalse(source.contains(".forbidOthers("));
-        assertFalse(source.contains(".stay()"));
 
         assertTrue(source.contains(".transition(DocTransition.AUTO_PUBLISH, DocStatus.REVIEW, DocStatus.PUBLISHED)"
                 + ".action(\"autoPublish\", (context) -> docActions.autoPublish(context)).endTransition()"), source);

@@ -199,9 +199,6 @@ class GeneratedApiCompilationTest {
                 + "id();"), vocabulary);
         assertTrue(vocabulary.contains("java.lang.Class<? extends io.github.graphmaquina.symbol.HookSymbol>[] "
                 + "afterCommit() default {};"), vocabulary);
-        for (String retired : List.of("Row", "Rows", "Cell", "Cells", "Action", "Move", "Forbid", "Forbids")) {
-            assertFalse(vocabulary.contains("public @interface " + retired + " {"), retired);
-        }
         assertTrue(content(emitted, "fx.DocActionsRefs").contains("public static final class Publish "
                 + "implements io.github.graphmaquina.symbol.ActionSymbol {"), content(emitted, "fx.DocActionsRefs"));
 

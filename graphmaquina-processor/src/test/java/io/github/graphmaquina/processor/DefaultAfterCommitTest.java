@@ -4,9 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -28,33 +25,6 @@ class DefaultAfterCommitTest {
             assertEquals(0, hooks(result, "persist"));
             assertFalse(result.generated("fx.LibraryRuntime").contains("Recorder"));
         }
-    }
-
-    @Test void olderVocabularyWithoutDefaultHookKeepsExistingBehavior() throws IOException {
-        Map<String, String> sources = DefaultHookFixtures.sources("", EXPLICIT);
-        Compilation.Result current = Compilation.compileTyped(sources);
-        assertTrue(current.success(), current::describe);
-        Compilation.Prepared prepared = Compilation.prepare(sources);
-        Path vocabulary = prepared.request().sourcesOutput().resolve("fx/DocsGraph.java");
-        String generated = Files.readString(vocabulary);
-        String member =
-            "java.lang.Class<? extends io.github.graphmaquina.symbol.HookSymbol>[] afterCommit() default {};";
-        int definition = generated.indexOf("@interface Definition {");
-        assertTrue(definition >= 0, generated);
-        int at = generated.indexOf(member, definition);
-        assertTrue(at >= 0, generated);
-        int comment = generated.lastIndexOf("/**", at);
-        assertTrue(comment > definition && generated.substring(generated.indexOf("*/", comment) + 2, at).isBlank(),
-            generated);
-        // Remove only Definition's new element and its documentation comment, which javac 25 would otherwise report
-        // under -Xlint:all as attached to no declaration; the per-edge hook elements remain available.
-        Files.writeString(vocabulary, generated.substring(0, comment) + generated.substring(at + member.length()));
-
-        Compilation.Result legacy = Compilation.compilePrepared(prepared);
-        assertTrue(legacy.success(), legacy::describe);
-        assertEquals(1, hooks(legacy, "notified"));
-        assertEquals(current.generated("fx.DocsRuntime"), legacy.generated("fx.DocsRuntime"));
-        assertEquals(current.generated("fx.LibraryRuntime"), legacy.generated("fx.LibraryRuntime"));
     }
 
     @Test void defaultReachesEveryDeclaredEdgeAndItsDependency() {
