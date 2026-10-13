@@ -68,11 +68,11 @@ public abstract class CallFailedException extends StateMachineException {
      * failure: the root call's entity and the values present then, each under the key that put it. They are what the
      * steps wrote up to the failure, minus the writes of each step whose failure its edge expects, a failure it
      * returned or a throwable of a declared type, which the engine rolls back whether a route takes it or the step
-     * aborts with {@link UnhandledFailureException}, and of each {@code COLLECT} element that aborted, unless an
-     * identity's {@code equals} or {@code hashCode} stopped that rollback, which leaves what it had not undone. A step
-     * whose action returns or throws such a failure after a failed cascade poisoned the call is not rolled back for it:
-     * it ends in the failure that poisoned the call and keeps its writes and its hop, unless a {@code COLLECT} collects
-     * that failure and rolls the whole element back. No other abort undoes a write,
+     * aborts with {@link UnhandledFailureException}, and of each {@code COLLECT} element whose abort the cascade
+     * collected, unless an identity's {@code equals} or {@code hashCode} stopped that rollback, which leaves what it
+     * had not undone. A step whose action returns or throws such a failure after a failed cascade poisoned the call is
+     * not rolled back for it: it ends in the failure that poisoned the call and keeps its writes and its hop, unless a
+     * {@code COLLECT} collects that failure and rolls the whole element back. No other abort undoes a write,
      * so the step that aborted keeps its writes, and so do the steps it cascaded to. After the commit, they also hold
      * what the hooks wrote, a failing hook's writes before it threw included. The view is immutable, any thread can
      * read it for as long as it is kept, and it compares by value; its values are the very objects that were put. When

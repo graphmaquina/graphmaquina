@@ -3564,7 +3564,7 @@ static List<String> timeline(FlowView flow) {
 The trail follows the rollbacks of the call:
 
 - A failure route drops the hop of the step that failed, with the hops and starts of the steps it cascaded to, and
-  its recovery hop carries the `Recovery`. A `COLLECT` element whose step aborts leaves no entry either.
+  its recovery hop carries the `Recovery`. A `COLLECT` element whose abort the cascade collects leaves no entry either.
 - A failed call keeps what it took up to the failure, then its `Failed` entry, unless the clock threw as the call
   read that entry's instant, as below. An abort undoes nothing, but the engine rolls back the step of an
   `UnhandledFailureException` first, so its trail lacks that step's entries.

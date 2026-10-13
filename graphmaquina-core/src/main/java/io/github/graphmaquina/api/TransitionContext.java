@@ -106,18 +106,18 @@ public interface TransitionContext<E, S extends Enum<S>, T extends Enum<T>> {
      * {@link FlowView#entity()} describes, and, when the root machine records its trail, what the call took so far,
      * this step's hop included, as {@link FlowView#trail()} describes. A write is undone with the step that made it:
      * when this step fails with a failure its edge expects, one it returns or a throwable of a type the edge declares,
-     * whether a route takes it or the step aborts with {@code UnhandledFailureException}, and when this step is an
-     * element of a {@code COLLECT} cascade and aborts, the call drops every write made since this step took its hop,
-     * this action's and those of the steps it cascaded to, and keeps what earlier steps wrote; the recovery action of a
-     * route writes again. An identity's {@code equals} or {@code hashCode} that throws while a {@code COLLECT} element
-     * is rolled back stops that rollback, which leaves what it had not undone. Once a failed cascade poisoned the
-     * call, a failure this step's edge expects rolls nothing back: this step ends in the failure that poisoned the
-     * call and keeps its writes, unless a {@code COLLECT} collects that failure, which drops the writes of the whole
-     * element this step ran in. No other abort undoes a write. The caller receives the flow as the call
-     * ended, frozen, from {@link Outcome#flow()} or from the {@code flow()} of the failure the call throws. A cascaded
-     * step and the exit of a sub-machine receive no {@link #input()}: copy what they need from the input into the flow
-     * first. Like peer views and cascades, {@code flow()} and every operation of the flow it returns work only on the
-     * thread that called {@code process()} and only until the root transaction ends: elsewhere they throw
+     * whether a route takes it or the step aborts with {@code UnhandledFailureException}, and when this step is a
+     * {@code COLLECT} element whose abort the cascade collects, the call drops every write made since this step took
+     * its hop, this action's and those of the steps it cascaded to, and keeps what earlier steps wrote; the recovery
+     * action of a route writes again. An identity's {@code equals} or {@code hashCode} that throws while a
+     * {@code COLLECT} element is rolled back stops that rollback, which leaves what it had not undone. Once a failed
+     * cascade poisoned the call, a failure this step's edge expects rolls nothing back: this step ends in the failure
+     * that poisoned the call and keeps its writes, unless a {@code COLLECT} collects that failure, which drops the
+     * writes of the whole element this step ran in. No other abort undoes a write. The caller receives the flow as the
+     * call ended, frozen, from {@link Outcome#flow()} or from the {@code flow()} of the failure the call throws. A
+     * cascaded step and the exit of a sub-machine receive no {@link #input()}: copy what they need from the input into
+     * the flow first. Like peer views and cascades, {@code flow()} and every operation of the flow it returns work only
+     * on the thread that called {@code process()} and only until the root transaction ends: elsewhere they throw
      * {@code WrongThreadException}, afterwards {@code StaleContextException}. Cascades additionally require that the
      * commit has not begun and that no step is being rolled back. An asynchronous action writes before it returns its
      * stage, never in a callback of the stage, which may run on another thread.
