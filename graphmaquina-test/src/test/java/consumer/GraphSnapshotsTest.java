@@ -164,7 +164,7 @@ class GraphSnapshotsTest {
         GraphDefinition<Entity, State, Id> graph = TestDomain.graph(Duration.ofSeconds(1));
         Files.createDirectories(root.resolve("contracts"));
         Files.write(root.resolve(RESOURCE),
-                "graphmaquina-snapshot-v2\n/policies/NEW/otherwise\tcaf\u00e9\n"
+                "graphmaquina-snapshot-v1\n/policies/NEW/otherwise\tcaf\u00e9\n"
                         .getBytes(StandardCharsets.ISO_8859_1));
         List<Path> written = new ArrayList<>();
         try (URLClassLoader loader = new URLClassLoader(new URL[] {root.toUri().toURL()}, null)) {

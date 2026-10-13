@@ -973,9 +973,8 @@ logic.
   cluster's for a bound state. This is a visual regression test only: a diagram change must not be the evidence
   for a change in machine behavior.
 
-Snapshots are `graphmaquina-snapshot-v2`. `GraphSnapshot.parse` refuses a v1 document by name and asks for
-it to be regenerated; it is never converted, so a 1.x `.graph` resource is rewritten from the migrated
-definition and its diff reviewed. `PublishedArtifactSmokeTest` compiles and runs a semantic consumer after
+Snapshots are `graphmaquina-snapshot-v1` documents; `GraphSnapshot.parse` refuses any other header.
+`PublishedArtifactSmokeTest` compiles and runs a semantic consumer after
 removing every graphic-export class from the core JAR; assertions, state observation and structural
 snapshots must still work.
 

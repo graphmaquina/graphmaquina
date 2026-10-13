@@ -467,7 +467,7 @@ class GraphAssertionsTest {
                 .build();
     }
 
-    /** Two identifiers leaving {@code A} for the same destination: a matrix could not tell them apart. */
+    /** Two identifiers leaving {@code A} for the same destination, told apart by their identifiers. */
     private static GraphDefinition<String, Cycle, CycleId> parallelGraph() {
         return StateGraph.define(MachineKey.of(String.class, Cycle.class, CycleId.class))
                 .initial(Cycle.A).terminal(Cycle.B)

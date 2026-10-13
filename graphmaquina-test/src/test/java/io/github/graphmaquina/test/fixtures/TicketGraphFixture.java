@@ -11,13 +11,13 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * The fixture of {@code GraphOnlyContractTest}: a ticket machine with three states and a catalogue of six
+ * The fixture of {@code GraphContractTest}: a ticket machine with three states and a catalogue of six
  * identifiers, of which {@link #builder()} declares only two edges. It returns the builder unbuilt, so a test can
  * add the edges it needs before building; until it does, four identifiers have no edge and absence stays
  * observable.
  */
-public final class GraphOnlyFixture {
-    private GraphOnlyFixture() { }
+public final class TicketGraphFixture {
+    private TicketGraphFixture() { }
 
     /** States of the ticket machine. */
     public enum State { OPEN, REVIEW, DONE }

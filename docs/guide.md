@@ -4280,8 +4280,7 @@ The example applies the included plugin and uses the sibling generator project.
 
 `./gradlew test` runs the ordinary suites for core, processor, codegen, example, Maven adapter and testing
 support. In `graphmaquina-test`, it excludes `PublishedArtifactSmokeTest`, `ReadmeQuickstartTest`,
-`GraphOnlySurfaceTest`, `GuideOutcomeFragmentsTest` and `TestingGuideFragmentsTest`. `./gradlew build` reaches all
-five through `check` →
+`GuideOutcomeFragmentsTest` and `TestingGuideFragmentsTest`. `./gradlew build` reaches all four through `check` →
 `:graphmaquina-test:publishedArtifactTest`, which stages core, testing support, generator, processor, Maven
 plugin, Gradle plugin and its marker into the local file repository.
 The published-artifact task also runs independently with the command above. Its external README consumer

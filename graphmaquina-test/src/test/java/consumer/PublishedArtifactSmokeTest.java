@@ -119,7 +119,7 @@ class PublishedArtifactSmokeTest {
                     assertThat(definition).policy(State.NEW).hasDefaultReason("finish first")
                             .rejects(Id.ABANDON, "finish first");
                     GraphSnapshot snapshot = GraphSnapshot.capture(definition);
-                    if (!snapshot.serialize().startsWith("graphmaquina-snapshot-v2\\n")) {
+                    if (!snapshot.serialize().startsWith("graphmaquina-snapshot-v1\\n")) {
                         throw new AssertionError("the published snapshot must be version 2");
                     }
                     GraphDiff diff = GraphDiff.compare(snapshot, GraphSnapshot.capture(graph("complete")));
