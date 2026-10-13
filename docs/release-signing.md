@@ -46,6 +46,9 @@ id `private_key` and the label `Private PGP key`; they are one field, and the co
 its label. Replace the placeholders with your vault and item names or IDs after signing in to 1Password CLI:
 
 ```bash
+./gradlew --no-daemon :graphmaquina-core:publishMavenPublicationToAdapterTestsRepository \
+          :graphmaquina-codegen:publishMavenPublicationToAdapterTestsRepository \
+          :graphmaquina-processor:publishMavenPublicationToAdapterTestsRepository
 ./gradlew --no-daemon test :graphmaquina-gradle-plugin:test
 
 SIGNING_KEY='op://<vault>/<item>/Private PGP key' \
