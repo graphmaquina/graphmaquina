@@ -6,7 +6,7 @@ val centralModules = listOf("graphmaquina-core", "graphmaquina-codegen", "graphm
     "graphmaquina-maven-plugin", "graphmaquina-gradle-plugin", "graphmaquina-test")
 val centralArtifacts = providers.provider {
     val release = project(":graphmaquina-core").version.toString()
-    // A version derived on a commit no tag names, such as 1.0.2-553-g03952fd, is no release either.
+    // A version derived on a commit no tag names, such as 2.0.0-12-g03952fd, is no release either.
     check(!release.endsWith("-SNAPSHOT") && release != "0.0.0-dev"
             && !Regex("-[0-9]+-g[0-9a-f]+$").containsMatchIn(release)) {
         "Central releases need a resolved version, got '$release'. Create a tag or pass -PgraphmaquinaVersion."

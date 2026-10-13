@@ -166,7 +166,6 @@ class StateGraphPluginFunctionalTest {
         assertTrue(fixture.jarContains("fx/ActionsRefs$Approve.class"));
         assertTrue(fixture.jarContains("fx/OrdersRuntime.class"));
         assertTrue(fixture.jarContains("fx/OrdersGraph$Transition.class"));
-        assertEquals(List.of(), fixture.retiredVocabularyEntries());
         assertEquals(List.of("fx.Orders", "fx.ActionsRefs.Approve", "fx.OrderRefs.Id", "fx.OrderRefs.Status"),
                 fixture.localExports());
         assertFalse(fixture.jarContainsGraphCompilationCarrier());

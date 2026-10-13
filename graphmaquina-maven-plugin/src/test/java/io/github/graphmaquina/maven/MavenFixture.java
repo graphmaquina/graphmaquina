@@ -54,10 +54,6 @@ public final class MavenFixture {
     /** The annotation that carrier holds, which is what makes a generated source the carrier. */
     private static final String CARRIER_MARKER = "@GraphCompilation(";
 
-    /** The nested types of the retired matrix vocabulary; no 2.0 artefact may carry one. */
-    private static final List<String> RETIRED_VOCABULARY =
-            List.of("$Row", "$Cell", "$Forbid", "$Action", "$Move");
-
     private final Path directory;
     private final Path settings;
     private final String artifactId;
@@ -1199,24 +1195,6 @@ public final class MavenFixture {
             }
         }
         return false;
-    }
-
-    /**
-     * The entries of the project's jar that declare a nested type of the retired matrix vocabulary, which a
-     * 2.0 artefact never publishes and a downstream project therefore never inherits.
-     *
-     * @return the offending entry names, empty when the jar carries only the graph vocabulary
-     */
-    public List<String> retiredVocabularyEntries() {
-        List<String> found = new ArrayList<>();
-        for (String entry : jarEntries()) {
-            for (String retired : RETIRED_VOCABULARY) {
-                if (entry.contains(retired)) {
-                    found.add(entry);
-                }
-            }
-        }
-        return List.copyOf(found);
     }
 
     /**

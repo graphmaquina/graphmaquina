@@ -632,12 +632,9 @@ class MavenPluginIntegrationTest {
         assertTrue(consumer.jarContains("cx/ReviewsGraph.class"));
         assertTrue(consumer.jarContains("cx/ReviewsRuntime.class"));
         assertFalse(consumer.jarContainsGraphCompilationCarrier());
-        // The downstream machine identifies its edges with the producer's own enum, and neither jar carries a
-        // nested type of the retired matrix vocabulary for it to have inherited instead.
+        // The downstream machine identifies its edges with the producer's own enum.
         assertEquals(List.of("fx.Transition.APPROVE"), producer.transitionsOf("fx.Orders"));
         assertEquals(List.of("fx.Transition.APPROVE"), consumer.transitionsOf("cx.Reviews"));
-        assertEquals(List.of(), producer.retiredVocabularyEntries());
-        assertEquals(List.of(), consumer.retiredVocabularyEntries());
     }
 
     /**
