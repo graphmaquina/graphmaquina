@@ -98,9 +98,7 @@ final class TypedTransitions {
         Optional<Duration> timeout = declaredTimeout.flatMap((AnnotationValue value) -> duration(value, element, mirror));
         Optional<String> onFailure = single(element, mirror, "onFailure")
                 .flatMap((AnnotationValue value) -> TypedValues.constantName(value, machine.transitionsElement()));
-        List<AnnotationValue> failsOnValues = annotations.find(mirror, "failsOn").isEmpty()
-                ? List.of()
-                : classValues(annotations.array(mirror, "failsOn"));
+        List<AnnotationValue> failsOnValues = classValues(annotations.array(mirror, "failsOn"));
         List<TypeMirror> failsOn = classes(failsOnValues);
         structure.checkFailsOn(failsOn, failsOnValues, element, mirror);
         List<RecoveryModel> recoveries = recoveries(mirror, machine);
@@ -186,16 +184,10 @@ final class TypedTransitions {
         return timeouts.read(timeout, DiagnosticAnchor.of(element, mirror, value));
     }
 
-    /**
-     * The recovery rules {@code mirror} declares in its {@code recoveries}, in declaration order: none when its
-     * annotation type declares no such element.
-     */
+    /** The recovery rules {@code mirror} declares in its {@code recoveries}, in declaration order. */
     private List<RecoveryModel> recoveries(AnnotationMirror mirror, MachineTypes machine) {
-        List<AnnotationValue> declared = annotations.find(mirror, "recoveries").isEmpty()
-                ? List.of()
-                : annotations.array(mirror, "recoveries");
         List<RecoveryModel> recoveries = new ArrayList<>();
-        for (AnnotationValue value : declared) {
+        for (AnnotationValue value : annotations.array(mirror, "recoveries")) {
             if (value.getValue() instanceof AnnotationMirror recovery) {
                 recovery(recovery, machine).ifPresent(recoveries::add);
             }
