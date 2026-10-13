@@ -179,8 +179,8 @@ class CascadeTest {
     }
 
     /**
-     * Convergence by destination is gone: re-entering an entity that is already in flight is a cycle, even when
-     * the nested call asks for the transition that entity is already running.
+     * Re-entering an entity that is already in flight is a cycle, whichever identifier the nested call asks for,
+     * including the transition that entity is already running.
      */
     @Test
     void reentryOnAnEntityInFlightIsACycleWhicheverIdentifierIsAsked() {

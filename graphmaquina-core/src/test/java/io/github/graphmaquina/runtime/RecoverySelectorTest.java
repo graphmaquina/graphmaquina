@@ -164,14 +164,14 @@ class RecoverySelectorTest {
      */
     @Test
     void theMostSpecificTypeWinsBetweenARuleAndFailsOn() {
-        TransitionSpec<Ticket, TicketState, TicketChange> legacySubtype = publish(
+        TransitionSpec<Ticket, TicketState, TicketChange> failsOnSubtype = publish(
                 Optional.of(TicketChange.MARK_INTEGRATION_FAILED), List.of(SocketTimeoutException.class),
                 List.of(new RecoveryRule<>(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY,
                         List.of(IOException.class))));
         assertEquals(fallback(Optional.of(TicketChange.MARK_INTEGRATION_FAILED)),
-                RecoverySelector.thrown(legacySubtype, new SocketTimeoutException("read timed out")));
+                RecoverySelector.thrown(failsOnSubtype, new SocketTimeoutException("read timed out")));
         assertEquals(route(TicketChange.SCHEDULE_RETRY, PublicationFailures.Unavailable.class),
-                RecoverySelector.thrown(legacySubtype, new IOException("connection reset")));
+                RecoverySelector.thrown(failsOnSubtype, new IOException("connection reset")));
 
         TransitionSpec<Ticket, TicketState, TicketChange> ruleSubtype = publish(
                 Optional.of(TicketChange.MARK_INTEGRATION_FAILED), List.of(IOException.class),

@@ -1,12 +1,12 @@
-package io.github.graphmaquina.graphonly;
+package io.github.graphmaquina.semantics;
 
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.APPROVE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.AUTO_APPROVE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.SUBMIT;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.KEY;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.DONE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.OPEN;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.REVIEW;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.APPROVE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.AUTO_APPROVE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.SUBMIT;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.KEY;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.DONE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.OPEN;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.REVIEW;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -18,10 +18,10 @@ import io.github.graphmaquina.api.Outcome;
 import io.github.graphmaquina.api.PeerView;
 import io.github.graphmaquina.dsl.GraphBuilder;
 import io.github.graphmaquina.dsl.StateGraph;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.Id;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.State;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.Ticket;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.Id;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.State;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.Ticket;
+import io.github.graphmaquina.fixtures.TicketMachineFixture;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import java.util.Collection;
 import java.util.List;
@@ -30,7 +30,7 @@ import java.util.function.Predicate;
 import org.junit.jupiter.api.Test;
 
 /** A watch rule names the transition it runs, so two edges to the same state stay distinguishable. */
-class GraphOnlyWatchTest {
+class GraphWatchTest {
 
     /** The peer of every watching ticket; the fixture watches its own machine, so the peer is another ticket. */
     final Ticket peer = new Ticket(9, OPEN);
@@ -56,7 +56,7 @@ class GraphOnlyWatchTest {
     }
 
     @Test void theRuleRunsItsOwnTransitionAndNotTheOtherEdgeToTheSameState() {
-        try (MachineRegistry registry = GraphOnlyFixture.registry(watching((Ticket ticket) -> true))) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(watching((Ticket ticket) -> true))) {
             Ticket ticket = new Ticket(1, REVIEW);
             Outcome<Ticket,State,Id> result = registry.of(KEY).reevaluate(ticket);
             assertInstanceOf(Outcome.Applied.class, result);
@@ -67,7 +67,7 @@ class GraphOnlyWatchTest {
     }
 
     @Test void rulesKeepTheirFirstMatchOrder() {
-        try (MachineRegistry registry = GraphOnlyFixture.registry(watching((Ticket ticket) -> false))) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(watching((Ticket ticket) -> false))) {
             Ticket ticket = new Ticket(1, REVIEW);
             assertInstanceOf(Outcome.Applied.class, registry.of(KEY).reevaluate(ticket));
             assertEquals(List.of("manual"), ticket.calls);
@@ -86,7 +86,7 @@ class GraphOnlyWatchTest {
                             PeerView<Ticket,State,Id> view) -> false)
                         .execute(APPROVE)
                     .endWatch().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket watched = new Ticket(1, REVIEW);
             Outcome<Ticket,State,Id> noRule = registry.of(KEY).reevaluate(watched);
             assertEquals(IgnoreReason.NO_RULE_MATCHED,
@@ -121,7 +121,7 @@ class GraphOnlyWatchTest {
                             PeerView<Ticket,State,Id> view) -> true)
                         .execute(APPROVE)
                     .endWatch().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket looping = new Ticket(1, REVIEW);
             Outcome<Ticket,State,Id> result = registry.of(KEY).execute(looping, Id.RETOUCH);
             assertInstanceOf(Outcome.Applied.class, result);
@@ -154,7 +154,7 @@ class GraphOnlyWatchTest {
                             PeerView<Ticket,State,Id> view) -> true)
                         .execute(Id.RETOUCH)
                     .endWatch().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket ticket = new Ticket(1, REVIEW);
             Outcome<Ticket,State,Id> result = registry.of(KEY).reevaluate(ticket);
             assertInstanceOf(Outcome.Applied.class, result);

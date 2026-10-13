@@ -92,7 +92,7 @@ class TransitionSpecTest {
         assertFalse(spec(Optional.empty(), List.of(), Optional.empty(), Optional.empty()).isAsync());
     }
 
-    /** A self-loop is an ordinary edge in 2.0: it needs no special kind and no special construction. */
+    /** A self-loop is an ordinary edge: it needs no special kind and no special construction. */
     @Test
     void aSelfLoopIsAnOrdinaryEdge() {
         TransitionSpec<String, DayOfWeek, Month> loop = new TransitionSpec<>(DayOfWeek.MONDAY, Month.JANUARY,

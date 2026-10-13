@@ -209,7 +209,7 @@ class ThrownFailureRoutingTest {
      */
     @Test
     void theMostSpecificTypeWinsBetweenARuleAndFailsOn() {
-        UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> legacySubtype =
+        UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>> failsOnSubtype =
                 (TransitionBuilder<Ticket, TicketState, TicketChange> publish) -> publish
                         .failsOn(SocketTimeoutException.class).onFailure(TicketChange.MARK_INTEGRATION_FAILED)
                         .recover(PublicationFailures.Unavailable.class, TicketChange.SCHEDULE_RETRY, IOException.class);
@@ -220,7 +220,7 @@ class ThrownFailureRoutingTest {
                                 SocketTimeoutException.class);
         Map<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> edges =
                 new LinkedHashMap<>();
-        edges.put("failsOn SocketTimeoutException, rule IOException", legacySubtype);
+        edges.put("failsOn SocketTimeoutException, rule IOException", failsOnSubtype);
         edges.put("failsOn IOException, rule SocketTimeoutException", ruleSubtype);
         List<String> ends = new ArrayList<>();
         for (Map.Entry<String, UnaryOperator<TransitionBuilder<Ticket, TicketState, TicketChange>>> edge

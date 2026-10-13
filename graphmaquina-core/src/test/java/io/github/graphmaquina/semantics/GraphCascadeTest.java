@@ -1,13 +1,13 @@
-package io.github.graphmaquina.graphonly;
+package io.github.graphmaquina.semantics;
 
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.APPROVE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.AUTO_APPROVE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.FAIL;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.Id.SUBMIT;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.KEY;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.DONE;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.OPEN;
-import static io.github.graphmaquina.fixtures.GraphOnlyFixture.State.REVIEW;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.APPROVE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.AUTO_APPROVE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.FAIL;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.Id.SUBMIT;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.KEY;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.DONE;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.OPEN;
+import static io.github.graphmaquina.fixtures.TicketMachineFixture.State.REVIEW;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -21,21 +21,21 @@ import io.github.graphmaquina.dsl.StateGraph;
 import io.github.graphmaquina.error.CascadeCycleException;
 import io.github.graphmaquina.error.TransitionAbortedException;
 import io.github.graphmaquina.error.UnhandledFailureException;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.Id;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.State;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture.Ticket;
-import io.github.graphmaquina.fixtures.GraphOnlyFixture;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.Id;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.State;
+import io.github.graphmaquina.fixtures.TicketMachineFixture.Ticket;
+import io.github.graphmaquina.fixtures.TicketMachineFixture;
 import io.github.graphmaquina.runtime.MachineRegistry;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Cascades and failure routes over graph-only machines: the recovering edge taken as declared, parallel edges that do
+ * Cascades and failure routes over machines: the recovering edge taken as declared, parallel edges that do
  * not merge, cycles by identifier, the pending state between cascades and after a failure route, hooks of reverted
  * edges, a cascade with no edge, and a failure with no route.
  */
-class GraphOnlyCascadeTest {
+class GraphCascadeTest {
 
     /**
      * The peer the tests that cascade to a second entity drive; the actions reach it through this field, not through
@@ -54,7 +54,7 @@ class GraphOnlyCascadeTest {
                 .action("recover", ctx -> { ctx.entity().calls.add("recover"); return ActionOutcome.ok(); })
                 .afterCommitWith("recovered", (ticket, commit) -> ticket.calls.add(commit.transition().name()))
                 .endTransition().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket ticket = new Ticket(1, REVIEW);
             Outcome<Ticket,State,Id> result = registry.of(KEY).execute(ticket, APPROVE);
             assertInstanceOf(Outcome.Failed.class, result);
@@ -79,7 +79,7 @@ class GraphOnlyCascadeTest {
                 .transition(AUTO_APPROVE, REVIEW, DONE)
                     .action("auto", ctx -> { ctx.entity().calls.add("auto"); return ActionOutcome.ok(); })
                     .endTransition().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket ticket = new Ticket(1, REVIEW);
             TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(KEY).execute(ticket, APPROVE));
@@ -92,11 +92,11 @@ class GraphOnlyCascadeTest {
 
     /** Two identifiers reaching the same state are two edges: asking for one never runs the other. */
     @Test void twoIdentifiersToTheSameDestinationDoNotMerge() {
-        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
+        GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder()
                 .transition(AUTO_APPROVE, REVIEW, DONE)
                     .action("auto", ctx -> { ctx.entity().calls.add("auto"); return ActionOutcome.ok(); })
                     .endTransition().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket manual = new Ticket(1, REVIEW);
             Ticket automatic = new Ticket(2, REVIEW);
             registry.of(KEY).execute(manual, APPROVE);
@@ -108,7 +108,7 @@ class GraphOnlyCascadeTest {
         }
     }
 
-    /** No convergence: asking again for the very identifier already in flight is still a cycle. */
+    /** Asking again for the very identifier already in flight is a cycle. */
     @Test void recursionOnAnEntityInFlightFailsEvenWithTheSameIdentifier() {
         GraphDefinition<Ticket,State,Id> graph = StateGraph.define(KEY).initial(OPEN).terminal(DONE)
                 .statePolicy(OPEN, "submit first").statePolicy(REVIEW, "review required")
@@ -116,7 +116,7 @@ class GraphOnlyCascadeTest {
                     .action("submit", ctx -> { ctx.cascade(KEY, ctx.entity(), SUBMIT); return ActionOutcome.ok(); })
                     .endTransition()
                 .transition(APPROVE, REVIEW, DONE).endTransition().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket ticket = new Ticket(1, OPEN);
             CascadeCycleException error = assertThrows(CascadeCycleException.class,
                     () -> registry.of(KEY).execute(ticket, SUBMIT));
@@ -138,7 +138,7 @@ class GraphOnlyCascadeTest {
                     ctx.cascade(KEY, ctx.entity(), FAIL);
                     return ActionOutcome.ok();
                 }).afterCommit("hook", ticket -> ticket.calls.add("hook")).endTransition().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket ticket = new Ticket(1, REVIEW);
             CascadeCycleException error = assertThrows(CascadeCycleException.class,
                     () -> registry.of(KEY).execute(ticket, APPROVE));
@@ -168,7 +168,7 @@ class GraphOnlyCascadeTest {
                         }
                         return ActionOutcome.ok();
                     }).endTransition().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket owner = new Ticket(1, REVIEW);
             assertInstanceOf(Outcome.Applied.class, registry.of(KEY).execute(owner, APPROVE));
             assertEquals(List.of("submit@1", "approve@1"), steps);
@@ -194,7 +194,7 @@ class GraphOnlyCascadeTest {
                     .action("recover", ctx -> { ctx.entity().calls.add("recover from " + ctx.from()); return ActionOutcome.ok(); })
                     .afterCommit("recovered", ticket -> hooks.add("recovered:" + ticket.id)).endTransition()
                 .build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket owner = new Ticket(1, REVIEW);
             Outcome<Ticket,State,Id> result = registry.of(KEY).execute(owner, APPROVE);
             assertInstanceOf(Outcome.Failed.class, result);
@@ -213,7 +213,7 @@ class GraphOnlyCascadeTest {
                 .transition(APPROVE, REVIEW, DONE)
                     .action("approve", ctx -> { ctx.cascade(KEY, peer, APPROVE); return ActionOutcome.ok(); })
                     .endTransition().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket owner = new Ticket(1, REVIEW);
             TransitionAbortedException error = assertThrows(TransitionAbortedException.class,
                     () -> registry.of(KEY).execute(owner, APPROVE));
@@ -225,10 +225,10 @@ class GraphOnlyCascadeTest {
 
     /** A failure with no route at all is unhandled, and nothing is written. */
     @Test void aFailureWithoutARouteIsUnhandled() {
-        GraphDefinition<Ticket,State,Id> graph = GraphOnlyFixture.builder()
+        GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder()
                 .transition(AUTO_APPROVE, REVIEW, DONE)
                     .action("auto", ctx -> ActionOutcome.failed("declined")).endTransition().build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket ticket = new Ticket(1, REVIEW);
             assertThrows(UnhandledFailureException.class, () -> registry.of(KEY).execute(ticket, AUTO_APPROVE));
             assertEquals(REVIEW, ticket.state);
@@ -265,7 +265,7 @@ class GraphOnlyCascadeTest {
                     .action("recover", ctx -> { seen.add(ctx.peer(KEY).stateOf(peer).name()); return ActionOutcome.ok(); })
                     .afterCommit("recovered", ticket -> hooks.add("recovered:" + ticket.id)).endTransition()
                 .build();
-        try (MachineRegistry registry = GraphOnlyFixture.registry(graph)) {
+        try (MachineRegistry registry = TicketMachineFixture.registry(graph)) {
             Ticket owner = new Ticket(1, REVIEW);
             Outcome<Ticket,State,Id> result = registry.of(KEY).execute(owner, APPROVE);
             assertInstanceOf(Outcome.Applied.class, result);
