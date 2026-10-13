@@ -581,10 +581,10 @@ observe. Most items refuse up front what used to fail later, in generated code o
   `RecoveryRule`, `StatePolicy` and `WatchSpec`, the refusals of a registry's build, and a call's refusal of an
   identifier of another enum name states and identifiers by `name()`, never through a `toString()` the application
   overrides, which used to change their text or, when it threw, replace the refusal, or refuse a valid declaration.
-- **Guard names are unique per edge.** A rejection reports the name of the guard that rejected, and 1.x let two guards
-  of one edge share it. `SG105` now refuses a second guard of one name on an edge: in the DSL, two given names, or the
-  class name that two instances of one class take; in the processor, two symbols whose members share a simple name,
-  such as `DocActionsRefs.Approved` and `ReviewsRefs.Approved`. Rename one of the two.
+- **Guard names are unique per edge in the DSL and the processor.** A rejection reports the name of the guard that
+  rejected, and 1.x let two guards of one edge share it. `SG105` now refuses a second guard of one name on an edge: in
+  the DSL, two given names, or the class name that two instances of one class take; in the processor, two symbols whose
+  members share a simple name, such as `DocActionsRefs.Approved` and `ReviewsRefs.Approved`. Rename one of the two.
 - **`failsOn`.** `SG302` also refuses a `CancellationException` or one of its subtypes, and
   `CompletionException` and `ExecutionException` themselves, in the DSL and in the processor. A cancellation
   never matched, and the two wrappers are unwrapped before matching whenever they carry a cause.

@@ -1281,9 +1281,10 @@ The ticket quickstart shows synchronous actions and a guard. Actions receive `Tr
 Guards receive `GuardContext<E, S, T>`, which exposes the entity, the identifier, both endpoints, read-only
 peer access, the same `input` accessors and a read-only `flow()`. It has no cascade API. Return `GuardResult.pass()` or
 `GuardResult.reject("reason")`; do not return null. A rejecting guard stops the edge before its action runs
-and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. The guards of one edge have distinct names, so
-the name tells which one rejected: a generated guard is named by its member's simple name, and two guards of one name
-on an edge are refused with `SG105`. Guard code should be free of mutations and external side effects.
+and produces `Rejected` with `RejectionKind.GUARD` and the guard's name. In a graph the DSL built, the guards of one
+edge have distinct names, so the name tells which one rejected: a generated guard is named by its member's simple name,
+and two guards of one name on an edge are refused with `SG105`. A definition assembled without the DSL is not checked
+for it. Guard code should be free of mutations and external side effects.
 
 Without an input the optional is empty. A null input is refused before the call starts, as a null entity is, with a
 `NullPointerException` that names the parameter. A value of an incompatible class throws `ClassCastException`;
