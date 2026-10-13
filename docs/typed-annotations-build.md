@@ -44,7 +44,7 @@ otherwise derive it with `git describe --tags`, so no file in the repository sta
 the tag itself on a tagged commit, and on any other commit the most recent tag followed by the commits since it
 and the abbreviated commit, as `2.0.0-12-g03952fd`, so a development build never takes the coordinates of a
 published release; `centralBundle` refuses such a version. A published version is immutable. The
-[README](guide.md#release-to-maven-central) describes the release, the steps below among them.
+[guide](guide.md#release-to-maven-central) describes the release, the steps below among them.
 
 Set `SIGNING_KEY` to the ASCII-armored private release key and `SIGNING_PASSWORD` to its passphrase, then run:
 
@@ -67,7 +67,7 @@ GraphMaquina is published to Maven Central under `io.github.graphmaquina`, which
 The rest of this section covers the other two cases: testing a build that is not released yet, and serving
 every component, including the Gradle implementation and its marker, from an internal repository. The source
 repository is private and requires authorized access; the published artifacts are public.
-See the [README](guide.md#configure-gradle) for a complete consumer configuration.
+See the [guide](guide.md#configure-gradle) for a complete consumer configuration.
 
 To test local changes, publish from an authorized checkout of this repository, under a version string of your
 choice, the one the consumer then sets as `graphmaquinaVersion` or `graphmaquina.version`:
