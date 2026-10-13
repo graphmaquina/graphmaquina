@@ -104,7 +104,7 @@ class GraphRuntimeTest {
         }
     }
 
-    /** A rejection reports why, and never invents a destination the request never had. */
+    /** A rejection carries its kind, the state's reason, no guard, and the identifier the request asked for. */
     @Test void aRejectionCarriesItsKindAndTheRequestedIdentity() {
         try (MachineRegistry registry = TicketMachineFixture.registry(TicketMachineFixture.builder().build())) {
             Outcome<Ticket,State,Id> result = registry.of(KEY).execute(new Ticket(1, OPEN), APPROVE);

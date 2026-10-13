@@ -145,7 +145,7 @@ class GraphExportTest {
         assertEquals(List.of(), done.rejections());
     }
 
-    /** The identifier leads every label, and routing is rendered by identity rather than by destination. */
+    /** The identifier leads every label, and a failure route is rendered by the identifier it takes. */
     @Test void labelsCarryIdentityActionGuardsAndRouting() {
         GraphDefinition<Ticket,State,Id> graph = TicketMachineFixture.builder()
                 .transition(AUTO_APPROVE, REVIEW, DONE)

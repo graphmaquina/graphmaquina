@@ -1780,11 +1780,10 @@ final class Transaction {
 
     /**
      * The cascade to {@code peer}, once its identity is registered as {@code ref}: re-entry, depth, and only then the
-     * step. A request that resolves no edge is rejected, and a request on an entity
-     * already in flight is a cycle. A call that logs at TRACE logs the cascade before the checks and its result once
-     * the step returns, both at the depth of the step that asked for it; {@code policy} is the policy of the
-     * cascadeAll that runs this element, which the first line names, empty for a single cascade and when the call
-     * does not log at TRACE.
+     * step. A request that resolves no edge is rejected, and a request on an entity already in flight is a cycle. A
+     * call that logs at TRACE logs the cascade before the checks and its result once the step returns, both at the
+     * depth of the step that asked for it; {@code policy} is the policy of the cascadeAll that runs this element, which
+     * the first line names, empty for a single cascade and when the call does not log at TRACE.
      */
     private <P, Q extends Enum<Q>, U extends Enum<U>> Outcome<P, Q, U> cascadeTo(
             ContextHandle caller, DefaultStateMachine<P, Q, U> machine, EntityRef ref, P peer, U id,

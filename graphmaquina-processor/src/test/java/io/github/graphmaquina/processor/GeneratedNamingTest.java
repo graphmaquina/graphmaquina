@@ -141,8 +141,9 @@ class GeneratedNamingTest {
     }
 
     /**
-     * A refused companion name withholds only what depends on it, here that companion alone: the round still reports
-     * a machine and a set with problems of their own, each once.
+     * A refused companion name withholds only what depends on it, here that companion alone: the round reports that
+     * refusal, {@code SG603}, and a machine and a set with problems of their own, {@code SG103} and {@code SG510},
+     * each once and nothing else.
      */
     @Test
     void aRefusedRuntimeNameDoesNotHideTheOtherProblemsOfItsRound() {

@@ -31,9 +31,12 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /**
- * Cascades and failure routes over machines: the recovering edge taken as declared, parallel edges that do
- * not merge, cycles by identifier, the pending state between cascades and after a failure route, hooks of reverted
- * edges, a cascade with no edge, and a failure with no route.
+ * Failure routes and cascades within one transaction: only the recovering edge commits its action and hook, taken
+ * as declared and from the failed edge's origin; two identifiers to one state stay two edges; a cascade to an entity
+ * in flight is a cycle naming the identifier executing, the recovering one during a recovery; a cascade resolves
+ * from the pending state an earlier one left; a failure route undoes the cascades of the failed action, restoring
+ * the state, pending or committed, each peer held before and running none of their hooks; a cascade with no edge
+ * aborts the transaction; and a failure with no route is unhandled.
  */
 class GraphCascadeTest {
 

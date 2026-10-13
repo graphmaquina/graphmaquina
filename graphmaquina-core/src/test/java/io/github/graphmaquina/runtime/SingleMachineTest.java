@@ -154,8 +154,8 @@ class SingleMachineTest {
     }
 
     /**
-     * Asking for an identifier that leaves no edge from the current state is a rejection, not an ignore: the
-     * entity never stays in place by default. Nothing runs and the state is untouched.
+     * Asking for an identifier that leaves no edge from the current state is a rejection, not an ignore. Nothing
+     * runs and the state is untouched.
      */
     @Test
     void anIdentifierWithNoEdgeFromHereIsRejectedAndNothingRuns() {
