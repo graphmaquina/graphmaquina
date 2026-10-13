@@ -36,16 +36,13 @@ final class Submit {
      */
     private static final Executor THREAD_PER_TASK = (Runnable task) -> new Thread(task).start();
 
-    /** What a thread's cell holds while it runs no task of a default executor: an executor that refuses every task. */
-    private static final Executor NO_TASK = (Runnable task) -> {
-        throw new RejectedExecutionException("no task runs on this executor");
-    };
-
     /**
-     * The thread's cell: its only element is the default executor whose task the thread runs, or {@link #NO_TASK}.
-     * The thread keeps it, so that marking the thread and releasing it are stores into it, as Reentrancy's are.
+     * The cell of a thread that runs a task of a default executor: its only element is that executor until the task
+     * ends, when a store releases it, as Reentrancy's marker is released. No other thread has a cell, and this
+     * ThreadLocal has no initial value, so that reading it on any other thread, the thread that closes a registry for
+     * one, finds none and leaves nothing on that thread that holds a class of the library.
      */
-    private static final ThreadLocal<Executor[]> TASK_OF = ThreadLocal.withInitial(() -> new Executor[] {NO_TASK});
+    private static final ThreadLocal<Executor[]> TASK_OF = new ThreadLocal<>();
 
     private Submit() { }
 
@@ -80,20 +77,23 @@ final class Submit {
 
     /** Whether the current thread runs a task of {@code executor}, a default executor, as {@link #supply} marks it. */
     static boolean runsTaskOf(Executor executor) {
-        return TASK_OF.get()[0] == executor;
+        Executor[] cell = TASK_OF.get();
+        return cell != null && cell[0] == executor;
     }
 
     /**
-     * Runs the task with its thread marked with {@code executor}. A default executor runs each task on a thread of its
-     * own, so the mark it replaces is {@link #NO_TASK}, which the first statement of the finally stores back.
+     * Runs the task with its thread marked with {@code executor}. A default executor runs each task on a new virtual
+     * thread, which has no cell before and ends with the task: the first statement of the finally releases the mark
+     * with a store, which needs no stack, then the cell is removed.
      */
     private static <R> void runMarked(Executor executor, CompletableFuture<R> future, Supplier<R> call) {
-        Executor[] cell = TASK_OF.get();
-        cell[0] = executor;
+        Executor[] cell = {executor};
+        TASK_OF.set(cell);
         try {
             run(future, call);
         } finally {
-            cell[0] = NO_TASK;
+            cell[0] = null;
+            TASK_OF.remove();
         }
     }
 
